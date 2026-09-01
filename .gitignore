@@ -1,0 +1,10 @@
+.gradle/
+build/
+src/main/gen/
+.idea/
+*.iml
+*.log
+.intellijPlatform/
+src/test/resources/shared-fixtures/
+scratch/
+/temp
