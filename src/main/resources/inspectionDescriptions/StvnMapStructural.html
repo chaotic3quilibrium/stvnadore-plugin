@@ -1,0 +1,29 @@
+<html>
+<body>
+<p>Detects flat sequence literals (<code>[ ... ]</code>) placed in slot positions requiring associative map structures (<code>{ ... }</code>) according to the resolved STVN schema (STVN Spec §5.4).</p>
+<!-- tooltip end -->
+<p>In STVN, associative maps (<code>:Map</code>, <code>:MapNonEmpty</code>, <code>:MapInv</code>, <code>:MapInvNonEmpty</code>) require a distinct map envelope containing ordered key-value pairs wrapped in brackets: <code>{ [ key value ] ... }</code>. Placing a flat list <code>[ key1 val1 key2 val2 ]</code> directly into a map slot is a structural type violation common when transitioning from JSON habits.</p>
+
+<p><b>Quick-Fix Available:</b></p>
+<p>Press <b>Alt+Enter</b> (macOS: <b>⌥Enter</b>) on the highlighted flat list to invoke the <b>Convert to Map Literal</b> auto-healer. The quick-fix automatically partitions the sequence elements into pairwise <code>[ key value ]</code> entries enclosed within canonical map braces <code>{ ... }</code>.</p>
+
+<p><b>Example (Incorrect):</b></p>
+<pre><code>{
+  :type :Map( :String :Int32 )
+  // Structural Error: Flat list in map slot
+  :body [ "alice" 100 "bob" 200 ]
+}
+</code></pre>
+
+<p><b>After Applying Quick-Fix:</b></p>
+<pre><code>{
+  :type :Map( :String :Int32 )
+  // Valid canonical map literal envelope
+  :body {
+    [ "alice" 100 ]
+    [ "bob"   200 ]
+  }
+}
+</code></pre>
+</body>
+</html>

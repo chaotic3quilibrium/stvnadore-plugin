@@ -1,0 +1,304 @@
+{
+  parserClass="org.stvnadore.parser.StvnParser"
+
+  psiPackage="org.stvnadore.psi"
+  psiImplPackage="org.stvnadore.psi.impl"
+
+  elementTypeHolderClass="org.stvnadore.psi.StvnTypes"
+  elementTypeClass="org.stvnadore.psi.StvnElementType"
+  tokenTypeClass="org.stvnadore.psi.StvnTokenType"
+
+  tokens = [
+    space      = 'regexp:\s+'
+    comment    = 'regexp://.*'
+
+    LITERAL_STRING_FENCED  = 'regexp:"""->\[[-a-zA-Z0-9_ ]*][^\n]*\n([^\]]|\]+[^"\]]|\]+"[^"\]]|\]+""[^"\]])*\]+"""'
+    LITERAL_STRING_BLOCK   = 'regexp:"""[ \t]*\n([^"]|"[^"]|""[^"])*"""'
+    LITERAL_STRING_SIMPLE  = 'regexp:"([^"\\\r\n]|\\.)*"'
+
+    LBRACK                        = '['
+    RBRACK                        = ']'
+    LPAREN                        = '('
+    RPAREN                        = ')'
+    LBRACE                        = '{'
+    RBRACE                        = '}'
+    COLON                         = ':'
+    FSLASH                        = '/'
+
+    KW_TRUE                       = '#TRUE'
+    KW_FALSE                      = '#FALSE'
+    KW_TRUE_SHORT                 = '#T'
+    KW_FALSE_SHORT                = '#F'
+    KW_NONE                       = '#None'
+    KW_NONE_SHORT                 = '#N'
+    KW_SOME                       = '#Some'
+    KW_SOME_SHORT                 = '#S'
+    KW_LEFT                       = '#Left'
+    KW_LEFT_SHORT                 = '#L'
+    KW_RIGHT                      = '#Right'
+    KW_RIGHT_SHORT                = '#R'
+    
+    KW_TUPLE                      = ':Tuple'
+    KW_MAP_ENTRY                  = ':MapEntry'
+    KW_ENUM                       = ':Enum'
+    KW_OPTION                     = ':Option'
+    KW_EITHER                     = ':Either'
+    KW_UNION                      = ':Union'
+
+    KW_DEFS                       = ':defs'
+    KW_TYPE                       = ':type'
+    KW_BODY                       = ':body'
+    KW_INCLUDE                    = ':include'
+
+    KW_EQUATABLE                  = '#equatable'
+    KW_COMPARABLE                 = '#comparable'
+    KW_PRESERVE_INDENT            = '#preserveIndent'
+    KW_MIN_INCL                   = '#minIncl'
+    KW_MIN_EXCL                   = '#minExcl'
+    KW_MAX_INCL                   = '#maxIncl'
+    KW_MAX_EXCL                   = '#maxExcl'
+    KW_REGEX                      = '#regex'
+
+    ATOM_BOOLEAN                  = ':Boolean'
+    ATOM_UINT                     = 'regexp::Uint[0-9]*'
+    ATOM_INT                      = 'regexp::Int[0-9]*'
+    ATOM_FLOAT                    = 'regexp::Float[0-9]*'
+    ATOM_FLOAT_EXACT              = ':FloatExact'
+    ATOM_STRING_FIXED             = 'regexp::StringFixed[0-9]*'
+    ATOM_STRING                   = 'regexp::String[0-9]*'
+    ATOM_STRING_NON_EMPTY         = 'regexp::StringNonEmpty[0-9]*'
+    ATOM_TIME_EPOCH_S             = ':TimeEpochS'
+    ATOM_TIME_EPOCH_MS            = ':TimeEpochMs'
+    ATOM_TIME_EPOCH_NS            = ':TimeEpochNs'
+    ATOM_DATE_TIME_OFFSET         = ':DateTimeOffset'
+    ATOM_DATE_TIME_ZONED          = ':DateTimeZoned'
+    ATOM_DATE_TIME_AUDITED        = ':DateTimeAudited'
+
+    COLL_SEQ                      = ':Seq'
+    COLL_SEQ_NON_EMPTY            = ':SeqNonEmpty'
+    COLL_SET                      = ':Set'
+    COLL_SET_NON_EMPTY            = ':SetNonEmpty'
+    COLL_MAP                      = ':Map'
+    COLL_MAP_NON_EMPTY            = ':MapNonEmpty'
+    COLL_MAP_INV                  = ':MapInv'
+    COLL_MAP_INV_NON_EMPTY        = ':MapInvNonEmpty'
+
+    UNION_TAG_PREFIX              = 'regexp:#[1-9][0-9]*'
+    TYPE_KEYWORD_BASE             = 'regexp::[a-zA-Z_][a-zA-Z0-9_]*'
+    VALUE_KEYWORD_BASE            = 'regexp:#[a-zA-Z_][a-zA-Z0-9_]*'
+    IDENTIFIER                    = 'regexp:[a-zA-Z_][a-zA-Z0-9_]*'
+
+    LITERAL_INTEGER               = 'regexp:-?(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[1-9][0-9]*|0)'
+    LITERAL_FLOAT                 = 'regexp:-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?'
+  ]
+}
+
+// --- ROOT-LEVEL ENTRY POINTS ---
+stvn_file ::= stvn_payload_document | stvn_incl_document | stvn_inclf_document
+
+stvn_payload_document     ::= LBRACE payload_document_body RBRACE
+private payload_document_body ::= defs_entry? type_entry body_entry { recoverWhile = document_recover }
+
+stvn_incl_document        ::= LBRACE incl_document_body RBRACE
+private incl_document_body ::= defs_incl_entry { recoverWhile = document_recover }
+
+stvn_inclf_document       ::= LBRACE inclf_document_body RBRACE
+private inclf_document_body ::= defs_inclf_entry { recoverWhile = document_recover }
+
+private document_recover  ::= !(RBRACE)
+
+// --- DEFINITIONS SECTION ---
+defs_entry                ::= KW_DEFS LBRACE ( include_stmt | type_definition | constant_definition )* RBRACE {pin=1}
+type_entry                ::= KW_TYPE type_entry_content {pin=1}
+private type_entry_content ::= schema_type {recoverWhile=type_recover}
+private type_recover      ::= !(KW_BODY | RBRACE)
+body_entry                ::= KW_BODY value {pin=1}
+
+defs_incl_entry           ::= KW_DEFS LBRACE ( include_stmt | type_definition | constant_definition )* RBRACE {pin=1}
+defs_inclf_entry          ::= KW_DEFS LBRACE ( type_definition | constant_definition )* RBRACE {pin=1}
+
+// --- IDENTIFIERS & BASE NAMESPACES ---
+type_keyword              ::= type_keyword_start ( FSLASH id_token )* {
+  mixin="org.stvnadore.plugin.psi.impl.StvnTypeKeywordMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private type_keyword_start ::= TYPE_KEYWORD_BASE
+                            | KW_TUPLE | KW_MAP_ENTRY | KW_ENUM | KW_OPTION | KW_EITHER | KW_UNION
+                            | KW_DEFS | KW_TYPE | KW_BODY | KW_INCLUDE
+
+value_keyword             ::= value_keyword_start ( FSLASH id_token )* {
+  mixin="org.stvnadore.plugin.psi.impl.StvnValueKeywordMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private value_keyword_start ::= VALUE_KEYWORD_BASE
+                              | KW_TRUE | KW_TRUE_SHORT | KW_FALSE | KW_FALSE_SHORT
+                              | KW_NONE | KW_NONE_SHORT | KW_SOME | KW_SOME_SHORT
+                              | KW_LEFT | KW_LEFT_SHORT | KW_RIGHT | KW_RIGHT_SHORT
+                              | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT
+                              | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL
+                              | KW_REGEX
+
+// --- INCLUDES & DEFINITIONS ---
+include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}
+include_element         ::= string_literal include_alias_block? {pin=1}
+include_alias_block     ::= LBRACE include_map_alias+ RBRACE {pin=1}
+include_map_alias       ::= type_keyword type_keyword {
+  pin=1
+  recoverWhile=include_alias_recover
+  mixin="org.stvnadore.plugin.psi.impl.StvnIncludeMapAliasMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private include_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
+
+type_definition          ::= type_keyword metadata_map? schema_type {
+  pin=1
+  recoverWhile=type_def_recover
+  mixin="org.stvnadore.plugin.psi.impl.StvnTypeDefinitionMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private type_def_recover ::= !(RBRACE | KW_INCLUDE | KW_TYPE | KW_BODY | type_keyword | value_keyword
+                            | ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT
+                            | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
+                            | ATOM_TIME_EPOCH_S | ATOM_TIME_EPOCH_MS | ATOM_TIME_EPOCH_NS
+                            | ATOM_DATE_TIME_OFFSET | ATOM_DATE_TIME_ZONED | ATOM_DATE_TIME_AUDITED
+                            | COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY
+                            | COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY
+                            | LPAREN | LBRACK)
+
+constant_definition      ::= value_keyword metadata_map? schema_type value {
+  pin=1
+  recoverWhile=const_def_recover
+  mixin="org.stvnadore.plugin.psi.impl.StvnConstantDefinitionMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_TYPE | KW_BODY | type_keyword | value_keyword
+                             | ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT
+                             | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
+                             | ATOM_TIME_EPOCH_S | ATOM_TIME_EPOCH_MS | ATOM_TIME_EPOCH_NS
+                             | ATOM_DATE_TIME_OFFSET | ATOM_DATE_TIME_ZONED | ATOM_DATE_TIME_AUDITED
+                             | COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY
+                             | COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY
+                             | LPAREN | LBRACK)
+
+metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
+metadata_entry            ::= metadata_bool | metadata_num | metadata_string { recoverWhile=metadata_entry_recover }
+
+private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT ) metadata_value { pin=1 }
+private metadata_num     ::= ( KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
+private metadata_string  ::= KW_REGEX metadata_value { pin=1 }
+
+metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
+
+private metadata_entry_recover ::= !(RBRACE | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX)
+
+// --- TYPE SYSTEM CORE ---
+schema_type             ::= schema_constructor | type_keyword
+schema_constructor      ::= atomic_type | collection_type | product_type | sum_type
+atomic_type             ::= ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY | ATOM_TIME_EPOCH_S | ATOM_TIME_EPOCH_MS | ATOM_TIME_EPOCH_NS | ATOM_DATE_TIME_OFFSET | ATOM_DATE_TIME_ZONED | ATOM_DATE_TIME_AUDITED
+
+// --- COLLECTIONS & ENVELOPE STRUCTURING ---
+collection_type         ::= sequence_or_set_type | map_collection_type
+
+private sequence_or_set_type ::= ( COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY ) LPAREN schema_type RPAREN {pin=2}
+private map_collection_type  ::= ( COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY ) LPAREN schema_type schema_type RPAREN {pin=2}
+
+product_type            ::= tuple_product_type
+private tuple_product_type     ::= KW_TUPLE LPAREN schema_type+ RPAREN {pin=2}
+sum_type                 ::= option_sum_type | enum_sum_type | either_sum_type | union_sum_type
+
+private option_sum_type  ::= KW_OPTION LPAREN schema_type RPAREN {pin=2}
+private enum_sum_type    ::= KW_ENUM enum_def
+private either_sum_type  ::= KW_EITHER LPAREN schema_type schema_type RPAREN {pin=2}
+private union_sum_type   ::= KW_UNION LPAREN schema_type+ RPAREN {pin=2}
+
+// --- ENUMS ---
+enum_def                ::= LBRACK value_keyword+ RBRACK {pin=1}
+
+// --- PAYLOAD VALUES ---
+value                   ::= explicit_option_value 
+                          | explicit_either_value 
+                          | explicit_union_value
+                          | boolean_value 
+                          | integer_literal 
+                          | float_literal 
+                          | string_literal 
+                          | value_keyword
+                          | collection_value
+
+boolean_value           ::= true_literal | false_literal | true_short_literal | false_short_literal {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+true_literal            ::= KW_TRUE {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+false_literal           ::= KW_FALSE {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+true_short_literal      ::= KW_TRUE_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+false_short_literal     ::= KW_FALSE_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+
+explicit_option_value   ::= none_literal 
+                          | none_short_literal 
+                          | some_literal value 
+                          | some_short_literal value {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+none_literal            ::= KW_NONE {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+none_short_literal      ::= KW_NONE_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+some_literal            ::= KW_SOME {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+some_short_literal      ::= KW_SOME_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+
+explicit_either_value   ::= left_literal value 
+                          | left_short_literal value 
+                          | right_literal value 
+                          | right_short_literal value {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+left_literal            ::= KW_LEFT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+left_short_literal      ::= KW_LEFT_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+right_literal           ::= KW_RIGHT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+right_short_literal     ::= KW_RIGHT_SHORT {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+
+explicit_union_value    ::= UNION_TAG_PREFIX value {
+  mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
+}
+
+collection_value        ::= list_literal | map_literal | tuple_literal
+list_literal            ::= LBRACK value_list_body RBRACK {pin=1}
+private value_list_body ::= value* {recoverWhile=list_recover}
+private list_recover    ::= !(RBRACK | RBRACE)
+map_literal             ::= LBRACE map_body RBRACE {pin=1}
+private map_body        ::= map_entry* {recoverWhile=map_recover}
+private map_entry       ::= LBRACK value value RBRACK {pin=1}
+private map_recover     ::= !(RBRACE | RBRACK)
+tuple_literal           ::= LPAREN tuple_body RPAREN {pin=1}
+private tuple_body      ::= value+ {recoverWhile=tuple_recover}
+private tuple_recover   ::= !(RPAREN | RBRACE | RBRACK)
+
+// --- TERMINALS ---
+id_token                ::= IDENTIFIER
+integer_literal         ::= LITERAL_INTEGER
+float_literal           ::= LITERAL_FLOAT
+string_literal          ::= LITERAL_STRING_SIMPLE | LITERAL_STRING_BLOCK | LITERAL_STRING_FENCED {
+  mixin="org.stvnadore.plugin.psi.impl.StvnStringLiteralMixin"
+}

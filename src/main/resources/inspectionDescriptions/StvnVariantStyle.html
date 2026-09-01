@@ -1,0 +1,63 @@
+<html>
+<body>
+<p>Reports style discrepancies and redundant discriminator tags on algebraic sum types (<code>:Option</code>, <code>:Either</code>, <code>:Union</code>) and boolean literals according to project code style preferences.</p>
+<!-- tooltip end -->
+<p>This inspection enforces two distinct style rules:</p>
+<ol>
+    <li><b>Redundant Variant Tags:</b> When <i>"Prefer Implied Sum Types"</i> is enabled in project settings, explicit tags on unambiguous payload variants are flagged as redundant:
+        <ul>
+            <li><code>#Some "text"</code> in <code>:Option(:String)</code> (Rule A inference)</li>
+            <li><code>#Right 42</code> in <code>:Either(:String :Int32)</code> (Rule B inference)</li>
+            <li><code>#1 "payload"</code> in <code>:Union(:String :Int32)</code> (Rule C inference)</li>
+        </ul>
+    </li>
+    <li><b>Form Discrepancies (Long vs. Short):</b> Flags sum-type tags and boolean literals that do not match the configured long-form or short-form style preference:
+        <ul>
+            <li><b>Long Form:</b> <code>#Some</code>, <code>#None</code>, <code>#Left</code>, <code>#Right</code>, <code>#TRUE</code>, <code>#FALSE</code></li>
+            <li><b>Short Form:</b> <code>#S</code>, <code>#N</code>, <code>#L</code>, <code>#R</code>, <code>#T</code>, <code>#F</code></li>
+        </ul>
+        <i>Note: Numeric union branch tags (e.g. <code>#1</code>, <code>#2</code>) possess invariant fixed syntax.</i>
+    </li>
+</ol>
+
+<p><b>Quick-Fixes Available:</b></p>
+<ul>
+    <li><b>Remove redundant tag:</b> Strips the superfluous discriminator tag (<code>#Some</code>, <code>#Right</code>, <code>#1</code>, etc.), leaving the clean inferred payload literal.</li>
+    <li><b>Change tag to #...:</b> Converts short-form tags to long-form or vice versa to align with project settings.</li>
+</ul>
+
+<p><b>Example (Redundant Tag & Form Discrepancy):</b></p>
+<pre><code>{
+  :type :Tuple(
+    :Option( :String )
+    :Either( :String :Int32 )
+    :Union( :String :Int32 )
+    :Boolean
+  )
+  :body (
+    #S "active"    // Warning: Use long-form tag '#Some' (or redundant tag if implied)
+    #Right 42      // Warning: Redundant variant tag (Rule B inference)
+    #1 "payload"   // Warning: Redundant variant tag (Rule C inference)
+    #T             // Warning: Use long-form tag '#TRUE'
+  )
+}
+</code></pre>
+
+<p><b>Canonical Compliant Form:</b></p>
+<pre><code>{
+  :type :Tuple(
+    :Option( :String )
+    :Either( :String :Int32 )
+    :Union( :String :Int32 )
+    :Boolean
+  )
+  :body (
+    "active"       // Clean implied sum type (Rule A inference)
+    42             // Clean implied sum type (Rule B inference)
+    "payload"      // Clean implied sum type (Rule C inference)
+    #TRUE          // Canonical long-form boolean
+  )
+}
+</code></pre>
+</body>
+</html>

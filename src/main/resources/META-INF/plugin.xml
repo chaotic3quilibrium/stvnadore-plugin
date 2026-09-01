@@ -1,0 +1,182 @@
+<idea-plugin>
+    <id>org.stvnadore.plugin</id>
+    <name>STVN Data Grammar Language</name>
+    <vendor email="jim.oflaherty.jr@gmail.com">chaotic3quilibrium</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 1. File Type Extension Registrations -->
+        <fileType name="STVN_PAYLOAD"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$Payload"
+                  fieldName="INSTANCE"
+                  extensions="stvn"/>
+
+        <fileType name="STVN_INCL"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$Incl"
+                  fieldName="INSTANCE"
+                  extensions="stvn_incl"/>
+
+        <fileType name="STVN_INCLF"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$Inclf"
+                  fieldName="INSTANCE"
+                  extensions="stvn_inclf"/>
+
+        <!-- 2. Core Parser Definition -->
+        <lang.parserDefinition language="STVN"
+                               implementationClass="org.stvnadore.plugin.StvnParserDefinition"/>
+
+        <!-- 2b. Line Commenter -->
+        <lang.commenter language="STVN"
+                        implementationClass="org.stvnadore.plugin.lang.StvnCommenter"/>
+
+        <!-- 3. Annotator for downstream tag parity semantic checks -->
+        <annotator language="STVN"
+                   implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>
+
+        <!-- 4. Syntax Highlighting & Coloring -->
+        <lang.syntaxHighlighterFactory language="STVN"
+                                       implementationClass="org.stvnadore.plugin.StvnSyntaxHighlighterFactory"/>
+
+        <colorSettingsPage implementation="org.stvnadore.plugin.StvnColorSettingsPage"/>
+
+        <!-- 5. Real-time Compiler Diagnostics Bridge -->
+        <externalAnnotator language="STVN"
+                           implementationClass="org.stvnadore.plugin.validation.StvnExternalAnnotator"/>
+
+        <!-- 5b. Project View Problem Highlighter Filter -->
+        <problemFileHighlightFilter implementation="org.stvnadore.plugin.validation.StvnProblemFileHighlightFilter"/>
+
+        <!-- 5c. Grammar-Kit PSI Error Element Suppressor -->
+        <highlightErrorFilter implementation="org.stvnadore.plugin.validation.StvnHighlightErrorFilter"/>
+
+        <!-- 6. Find Usages Support -->
+        <lang.findUsagesProvider language="STVN"
+                                 implementationClass="org.stvnadore.plugin.findusages.StvnFindUsagesProvider"/>
+
+        <!-- 6b. Goto Symbol Navigation -->
+        <chooseByNameContributor implementation="org.stvnadore.plugin.reference.StvnChooseByNameContributor"/>
+
+        <!-- 6c. PSI Reference Contributor -->
+        <psi.referenceContributor language="STVN"
+                                  implementation="org.stvnadore.plugin.reference.StvnReferenceContributor"/>
+
+        <!-- 7. Inlay Hints Provider -->
+        <codeInsight.inlayProvider
+                language="STVN"
+                implementationClass="org.stvnadore.plugin.hints.StvnTypeInlayHintsProvider"/>
+
+        <!-- 7b. Code Completion Contributor -->
+        <completion.contributor
+                language="STVN"
+                implementationClass="org.stvnadore.plugin.completion.StvnValueCompletionContributor"/>
+
+        <!-- 8. Project-Scoped Settings Component -->
+        <projectService serviceImplementation="org.stvnadore.plugin.settings.StvnProjectSettings"/>
+        <projectService serviceImplementation="org.stvnadore.plugin.settings.StvnSettings"/>
+        <projectService serviceImplementation="org.stvnadore.plugin.settings.StvnRepositorySettings"/>
+
+        <projectConfigurable groupId="language"
+                             instance="org.stvnadore.plugin.settings.StvnConfigurable"
+                             id="org.stvnadore.plugin.settings.StvnConfigurable"
+                             displayName="STVN"
+                             icon="/icons/stvn_icon.svg"/>
+
+        <projectConfigurable parentId="tools"
+                             instance="org.stvnadore.plugin.settings.StvnRepositorySettingsConfigurable"
+                             id="org.stvnadore.plugin.settings.StvnRepositorySettingsConfigurable"
+                             displayName="STVN Schema Repository"
+                             nonDefaultProject="false"/>
+
+        <!-- 9. Documentation Provider -->
+        <lang.documentationProvider language="STVN"
+                                    implementationClass="org.stvnadore.plugin.documentation.StvnDocumentationProvider"/>
+
+        <!-- 10. Local Inspection for Variant tag style -->
+        <localInspection language="STVN"
+                         shortName="StvnVariantStyle"
+                         displayName="Variant tag style inspection"
+                         groupPath="STVN"
+                         groupName="Style"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnVariantStyleInspection"/>
+
+        <!-- 11. Local Inspection for Boolean validity -->
+        <localInspection language="STVN"
+                         shortName="StvnBooleanValidity"
+                         displayName="Boolean validity inspection"
+                         groupPath="STVN"
+                         groupName="Validity"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnBooleanValidityInspection"/>
+
+        <!-- 12. Local Inspection for Flat list in map slot -->
+        <localInspection language="STVN"
+                         shortName="StvnMapStructural"
+                         displayName="Flat list in map slot inspection"
+                         groupPath="STVN"
+                         groupName="Structural"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnMapStructuralInspection"/>
+
+        <!-- 12b. Local Inspection for Degraded Schemas -->
+        <localInspection language="STVN"
+                         shortName="StvnDegradedSchema"
+                         displayName="Degraded schema payload evaluation"
+                         groupPath="STVN"
+                         groupName="Quality &amp; Semantics"
+                         enabledByDefault="true"
+                         level="WEAK WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnDegradedSchemaInspection"/>
+
+        <!-- 12c. Local Inspection for Degenerate Arity-1 Composites -->
+        <localInspection language="STVN"
+                         shortName="StvnDegenerateComposite"
+                         displayName="Degenerate arity-1 composite schema"
+                         groupPath="STVN"
+                         groupName="Schema Design"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnDegenerateCompositeInspection"/>
+
+        <!-- 13. Notification Group for Workspace compilation alerts -->
+        <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
+
+        <!-- 13b. Notification Group for STVN Repository Client Alerts -->
+        <notificationGroup id="STVN Repository Group" displayType="BALLOON"/>
+
+        <!-- 14. Schema-Driven Skeleton Generator Intention Action -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction</className>
+            <category>STVN</category>
+            <description>Scaffolds canonical data templates from resolved document schemas</description>
+        </intentionAction>
+
+    </extensions>
+
+    <actions>
+        <action id="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
+                class="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
+                text="Flatten STVN Workspace"
+                description="Resolves workspace dependencies and exports a canonical stripped .stvn_inclf file">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="WeighingAction"/>
+            <add-to-group group-id="BuildMenu" anchor="last"/>
+        </action>
+
+        <action id="org.stvnadore.plugin.actions.PublishSchemaAction"
+                class="org.stvnadore.plugin.actions.PublishSchemaAction"
+                text="Publish Schema to STVN Repository"
+                description="Publishes flattened STVN schema to the configured remote STVN Schema Repository"
+                icon="/icons/stvn_icon.svg">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

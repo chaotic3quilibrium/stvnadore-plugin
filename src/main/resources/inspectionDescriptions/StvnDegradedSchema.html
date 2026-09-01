@@ -1,0 +1,34 @@
+<html>
+<body>
+<p>Reports payload values in the <code>:body</code> block that are bound to nominal schemas whose metadata constraints failed validation in <code>:defs</code> (Tier 1 constraint errors) and are operating on fallback primitive base types.</p>
+<!-- tooltip end -->
+<p>When an STVN schema definition contains invalid metadata constraints (such as an invalid regex pattern in <code>#regex</code>, out-of-range numeric limits, or contradictory constraints), the STVN compiler degrades the nominal schema to its primitive base type to permit continued AST parsing and editing.</p>
+
+<p><b>Inspection Options:</b></p>
+<ul>
+    <li><b>Highlight body values bound to degraded schemas</b>: When enabled, every leaf value in the document payload bound to a degraded schema is highlighted with a weak warning, identifying the affected schema and the fallback base type in use. When disabled (default), degraded schema errors are reported only at the definition site in <code>:defs</code>.</li>
+</ul>
+
+<p><b>Example (Degraded Schema):</b></p>
+<pre><code>{
+  :defs {
+    // Tier 1 Error: Invalid regex pattern syntax degrades schema to :String
+    :BrokenRegex { #regex "[" } :String
+  }
+  :type :BrokenRegex
+  :body "payload_value" // Highlighted as weak warning when option is enabled
+}
+</code></pre>
+
+<p><b>How to Fix:</b></p>
+<p>Correct the invalid metadata constraint in the nominal definition within <code>:defs</code> to restore full schema validation:</p>
+<pre><code>{
+  :defs {
+    :ValidRegex { #regex "[a-z]+" } :String
+  }
+  :type :ValidRegex
+  :body "payload_value"
+}
+</code></pre>
+</body>
+</html>

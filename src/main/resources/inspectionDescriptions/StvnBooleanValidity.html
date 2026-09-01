@@ -1,0 +1,35 @@
+<html>
+<body>
+<p>Identifies non-canonical boolean casing and invalid literal tokens placed in slots constrained by <code>:Boolean</code> schemas.</p>
+<!-- tooltip end -->
+<p>In STVN, boolean literals are strictly case-sensitive keywords belonging to the Variable/Value track (<code>#</code>). Valid forms are limited exclusively to:</p>
+<ul>
+    <li><b>Long-form:</b> <code>#TRUE</code>, <code>#FALSE</code></li>
+    <li><b>Short-form:</b> <code>#T</code>, <code>#F</code></li>
+</ul>
+
+<p>Common casing near-misses such as <code>#True</code>, <code>#False</code>, <code>#true</code>, or <code>#false</code>, as well as unquoted identifiers or invalid tokens placed in boolean slots, are reported as errors.</p>
+
+<p><b>Quick-Fixes Available:</b></p>
+<ul>
+    <li><b>Change tag to #TRUE / #FALSE / #T / #F:</b> Instantly corrects near-miss casing errors to the project-preferred canonical form.</li>
+    <li><b>Change to boolean literal:</b> Replaces invalid tokens with a valid boolean literal placeholder.</li>
+</ul>
+
+<p><b>Example (Invalid Casing):</b></p>
+<pre><code>{
+  :type :Boolean
+  // Error: Invalid boolean literal casing: '#True'
+  :body #True
+}
+</code></pre>
+
+<p><b>Valid Canonical Forms:</b></p>
+<pre><code>{
+  :type :Boolean
+  :body #TRUE   // Canonical uppercase long-form
+  // or: #T     // Canonical uppercase short-form
+}
+</code></pre>
+</body>
+</html>
