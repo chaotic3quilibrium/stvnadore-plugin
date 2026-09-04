@@ -6,8 +6,8 @@ plugins {
     id("org.jetbrains.grammarkit") version "2023.3.0.3"
 }
 
-group = "org.stvnadore"
-version = "1.0.0-SNAPSHOT"
+group = "io.github.chaotic3quilibrium"
+version = "1.0.2"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("org.stvnadore:stvnadore-core:1.0.0-SNAPSHOT")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.0.2")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("org.stvnadore:stvnadore-core:1.0.0-SNAPSHOT:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.0.2:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -90,14 +90,32 @@ intellijPlatform {
     pluginConfiguration {
         id.set("org.stvnadore.plugin")
         name.set("STVN Language Support")
+        version.set(project.version.toString())
+        description.set("""
+            Provides comprehensive language support for Strongly Typed Value Notation (STVN).
+            Features include syntax highlighting, BNF-based parser inspection, 
+            type resolution, diagnostics, and test fixture support.
+        """.trimIndent())
+        changeNotes.set("""
+            Initial General Availability release of STVN Language Support for IntelliJ 2025.3+.
+            - Full syntax highlighting for STVN primitives, compounds, and types
+            - Compile-time diagnostics and parser verification
+            - Integration with stvnadore-core 1.0.1
+        """.trimIndent())
         vendor {
             name.set("chaotic3quilibrium")
             email.set("jim.oflaherty.jr@gmail.com")
+            url.set("https://github.com/chaotic3quilibrium/stvnadore-plugin")
         }
         ideaVersion {
             sinceBuild.set("253.0")
         }
     }
+
+    publishing {
+        token.set(providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN"))
+    }
+
     buildSearchableOptions.set(false)
     instrumentCode.set(false)
 }
