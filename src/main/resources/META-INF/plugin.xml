@@ -146,6 +146,16 @@
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnDegenerateCompositeInspection"/>
 
+        <!-- 12d. Local Inspection for Enum Subset Filtering -->
+        <localInspection language="STVN"
+                         shortName="StvnEnumSubset"
+                         displayName="Enum subset filtering inspection"
+                         groupPath="STVN"
+                         groupName="Semantics"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnEnumSubsetInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 

@@ -14,6 +14,7 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.ir.VariantStep;
+import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.*;
@@ -1324,6 +1325,92 @@ public final class StvnTypeResolver {
         }
         return curr;
     }
+
+    /**
+     * Resolves the EnumSubset model for a given schema type if it represents an enum subset,
+     * computing allowed variants transitively across arbitrary chain depths.
+     *
+     * @param schemaType the schema type to inspect
+     * @return the resolved {@link ResolvedType.EnumSubset}, or {@code null} if not a subset
+     */
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable SchemaType schemaType) {
+        if (schemaType == null) return null;
+        var kw = schemaType.getTypeKeyword();
+        if (kw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+    }
+
+    private static ResolvedType.@Nullable EnumSubset resolveEnumSubsetInternal(
+            PsiFile file,
+            String typeName,
+            Set<String> visited
+    ) {
+        if (!visited.add(typeName)) return null;
+
+        var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+        if (targetDef == null || !(targetDef.getParent() instanceof TypeDefinition typeDef)) {
+            return null;
+        }
+
+        var metaMap = typeDef.getMetadataMap();
+        MetadataFilter filter = null;
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                if (entry.getMetadataFilter() != null) {
+                    filter = entry.getMetadataFilter();
+                    break;
+                }
+            }
+        }
+
+        var parentSchema = typeDef.getSchemaType();
+        if (filter == null) {
+            // Pass-through: If this type is an alias of an enum subset, inherit parent's subset model
+            return parentSchema != null ? resolveEnumSubset(parentSchema) : null;
+        }
+
+        if (parentSchema == null) return null;
+        var parentSubset = resolveEnumSubset(parentSchema);
+
+        List<String> parentAllowed;
+        String parentName;
+        String rootEnumName;
+        List<String> rootVariants;
+
+        if (parentSubset != null) {
+            parentAllowed = parentSubset.allowedVariants();
+            parentName = parentSubset.name();
+            rootEnumName = parentSubset.rootEnum();
+            rootVariants = parentSubset.rootVariants();
+        } else {
+            var resolvedParent = resolveNominalSchema(parentSchema);
+            if (resolvedParent == null || resolvedParent.getSchemaConstructor() == null ||
+                resolvedParent.getSchemaConstructor().getSumType() == null ||
+                resolvedParent.getSchemaConstructor().getSumType().getEnumDef() == null) {
+                return null;
+            }
+            var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
+            rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+            parentAllowed = rootVariants;
+            parentName = parentSchema.getTypeKeyword() != null ? parentSchema.getTypeKeyword().getText() : ":Enum";
+            rootEnumName = parentName;
+        }
+
+        var isIncl = filter.getNode().findChildByType(StvnTypes.FILTER_INCL) != null;
+        var variantList = filter.getVariantList();
+        var facetVariants = variantList != null
+            ? variantList.getValueKeywordList().stream().map(ValueKeyword::getText).toList()
+            : List.<String>of();
+
+        List<String> computedAllowed = isIncl
+            ? facetVariants.stream().filter(parentAllowed::contains).toList()
+            : parentAllowed.stream().filter(v -> !facetVariants.contains(v)).toList();
+
+        return new ResolvedType.EnumSubset(typeName, parentName, rootEnumName, computedAllowed, rootVariants, isIncl);
+    }
+
 
     /**
      * Determines whether the target leaf type context of the given value slot resolves to a boolean primitive,

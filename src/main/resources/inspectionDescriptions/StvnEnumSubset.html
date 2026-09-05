@@ -1,0 +1,33 @@
+<html>
+<body>
+<p>Reports violations of Strong Typed Value Notation (STVN) Enum Subset Filtering rules (STVN Spec &sect;4.8):</p>
+<!-- tooltip end -->
+<ul>
+    <li><b>Relative Root Order Violation:</b> Variants inside <code>#filterIncl</code> or <code>#filterExcl</code> must match the relative declaration order of the root <code>:Enum</code>. Provides an automatic in-place reordering quick-fix.</li>
+    <li><b>Monotonic Narrowing Violation:</b> Every variant in a filter facet must exist in the immediate parent type's allowed variant set.</li>
+    <li><b>Mutual Exclusivity Violation:</b> A single metadata block must not contain both <code>#filterIncl</code> and <code>#filterExcl</code>.</li>
+    <li><b>Target Attachment Violations:</b> Filter facets must not attach to inline enum constructors, non-enum primitives, or constants.</li>
+    <li><b>Non-Empty Constraints:</b> Filter bracket lists must not be empty, and <code>#filterExcl</code> must not exclude all parent variants.</li>
+</ul>
+
+<p><b>Quick-Fixes Available:</b></p>
+<ul>
+    <li><b>Sort variants to match root enum declaration order:</b> In-place AST rewrite that reorders out-of-order variants in the filter list to match the canonical root enum declaration order.</li>
+</ul>
+
+<p><b>Example (Root Ordering Violation):</b></p>
+<pre><code>:defs {
+  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+  // Error: Root ordering violation: variant #MEDIUM does not match relative declaration order of root :Enum :Priority
+  :InvalidOrder { #filterIncl [ #HIGH #MEDIUM ] } :Priority
+}
+</code></pre>
+
+<p><b>Correct Form:</b></p>
+<pre><code>:defs {
+  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+  :ValidOrder { #filterIncl [ #MEDIUM #HIGH ] } :Priority
+}
+</code></pre>
+</body>
+</html>

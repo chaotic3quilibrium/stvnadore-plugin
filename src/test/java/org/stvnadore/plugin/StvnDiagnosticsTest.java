@@ -128,6 +128,41 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
+    public void testInvalidBinaryFixtures() throws Exception {
+        var invalidDir = Paths.get(getTestDataPath(), "invalid-syntax");
+        if (!Files.exists(invalidDir)) {
+            return;
+        }
+
+        try (var stream = Files.walk(invalidDir)) {
+            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_bin")).toList();
+            for (var binPath : binaryFixtures) {
+                var fileName = binPath.getFileName().toString();
+                var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+                var contractPath = binPath.resolveSibling(baseName + ".contract.stvn");
+                assertTrue("Contract must exist for binary fixture: " + fileName, Files.exists(contractPath));
+
+                var contractContent = Files.readString(contractPath);
+                var compileOpt = org.stvnadore.core.StvnCompiler.compile(contractContent, contractPath.toAbsolutePath().toString(), org.stvnadore.core.StvnParserConfig.DEFAULT);
+                assertTrue("Contract failed to compile for " + fileName, compileOpt.isPresent());
+                var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) compileOpt.get();
+                var expectedSubstring = ((org.stvnadore.core.ir.StvnValue.StvnString) tuple.elements().get(1)).value();
+
+                var binBytes = Files.readAllBytes(binPath);
+                var buf = java.nio.ByteBuffer.wrap(binBytes);
+                try {
+                    var root = org.stvnadore.core.binary.StvnBinaryDecoder.open(buf);
+                    org.stvnadore.core.binary.StvnBinaryDecoder.unpack(root, java.util.Optional.empty());
+                    fail("Expected decode exception matching '" + expectedSubstring + "' for " + fileName);
+                } catch (Exception e) {
+                    var msg = e.getMessage();
+                    assertTrue("Exception message '" + msg + "' must contain '" + expectedSubstring + "' for " + fileName,
+                        msg != null && msg.contains(expectedSubstring));
+                }
+            }
+        }
+    }
+
     public void testValidSyntaxFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "valid-syntax");
         if (!Files.exists(validDir)) {
