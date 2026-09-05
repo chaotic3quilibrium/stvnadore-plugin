@@ -213,4 +213,17 @@ public final class StvnSchemaFormatter {
         var stripped = COMMENT_PATTERN.matcher(raw).replaceAll("");
         return WHITESPACE_PATTERN.matcher(stripped).replaceAll(" ").trim();
     }
+
+    /**
+     * Formats an enum structure from an explicit list of variant keywords.
+     *
+     * @param variants the list of variant keywords (e.g. ["#KNIGHT", "#BISHOP"])
+     * @return canonical formatted enum string, e.g. ":Enum [ #KNIGHT #BISHOP ]" or ":Enum []" if empty
+     */
+    public static @NotNull String formatEnumVariants(List<String> variants) {
+        if (variants.isEmpty()) {
+            return ":Enum []";
+        }
+        return ":Enum [ " + String.join(" ", variants) + " ]";
+    }
 }

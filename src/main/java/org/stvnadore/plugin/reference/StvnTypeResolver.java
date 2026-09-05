@@ -1342,6 +1342,41 @@ public final class StvnTypeResolver {
         return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
     }
 
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeDefinition typeDef) {
+        if (typeDef == null) return null;
+        var kw = typeDef.getTypeKeyword();
+        if (kw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
+        if (typeKeyword == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable IncludeMapAlias alias) {
+        if (alias == null) return null;
+        var list = alias.getTypeKeywordList();
+        var localKw = list.size() >= 2 ? list.get(1) : (list.size() >= 1 ? list.get(0) : null);
+        if (localKw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubsetFromElement(@Nullable PsiElement element) {
+        if (element == null) return null;
+        if (element instanceof SchemaType st) return resolveEnumSubset(st);
+        if (element instanceof TypeDefinition td) return resolveEnumSubset(td);
+        if (element instanceof TypeKeyword tk) return resolveEnumSubset(tk);
+        if (element instanceof IncludeMapAlias ima) return resolveEnumSubset(ima);
+        return null;
+    }
+
     private static ResolvedType.@Nullable EnumSubset resolveEnumSubsetInternal(
             PsiFile file,
             String typeName,
@@ -1350,7 +1385,22 @@ public final class StvnTypeResolver {
         if (!visited.add(typeName)) return null;
 
         var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        if (targetDef == null || !(targetDef.getParent() instanceof TypeDefinition typeDef)) {
+        if (targetDef == null) return null;
+
+        TypeDefinition typeDef = null;
+        if (targetDef.getParent() instanceof TypeDefinition td) {
+            typeDef = td;
+        } else if (targetDef.getParent() instanceof IncludeMapAlias alias) {
+            var list = alias.getTypeKeywordList();
+            var remoteKw = list.size() >= 1 ? list.get(0) : null;
+            if (remoteKw != null) {
+                var resolved = new StvnTypeReference(remoteKw).resolve();
+                if (resolved != null && resolved.getParent() instanceof TypeDefinition td) {
+                    typeDef = td;
+                }
+            }
+        }
+        if (typeDef == null) {
             return null;
         }
 
@@ -1368,7 +1418,20 @@ public final class StvnTypeResolver {
         var parentSchema = typeDef.getSchemaType();
         if (filter == null) {
             // Pass-through: If this type is an alias of an enum subset, inherit parent's subset model
-            return parentSchema != null ? resolveEnumSubset(parentSchema) : null;
+            if (parentSchema != null) {
+                var parentSubset = resolveEnumSubset(parentSchema);
+                if (parentSubset != null) {
+                    return new ResolvedType.EnumSubset(
+                        typeName,
+                        parentSubset.name(),
+                        parentSubset.rootEnum(),
+                        parentSubset.allowedVariants(),
+                        parentSubset.rootVariants(),
+                        parentSubset.isInclusive()
+                    );
+                }
+            }
+            return null;
         }
 
         if (parentSchema == null) return null;
