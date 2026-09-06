@@ -1,4 +1,4 @@
-# STVN Plugin Developer Guide & Feature Handbook
+# STVN IDE Authoring Guide & Feature Handbook
 
 **Strongly Typed Value Notation (STVN) for IntelliJ Platform**  
 *An Authoritative, Example-Driven Guide for Software Engineers, Data Engineers, and System Architects*
@@ -20,6 +20,7 @@
   - [2.2 Trap 2 Map Auto-Healer (`Alt+Enter` on Flat Lists in `:Map` Slots)](#22-trap-2-map-auto-healer-altenter-on-flat-lists-in-map-slots)
     - [The Mental Model: Maps vs. Lists](#the-mental-model-maps-vs-lists)
     - [One-Click Atomic Healing](#one-click-atomic-healing)
+  - [2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)](#23-enum-subset-variant-reordering-altenter-on-out-of-order-filter-lists)
 - [3. Visual Grammar & Inlay Hint Badging Guide](#3-visual-grammar--inlay-hint-badging-guide)
   - [3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags](#31-inlay-hint-badging-semantics-explicit-vs-inferred-variant-tags)
     - [Option Types (`:Option( :T )`)](#option-types-option-t-)
@@ -29,6 +30,7 @@
     - [3.1.4 Temporal Primitives Inlay Hints & Hover Inspection](#314-temporal-primitives-inlay-hints--hover-inspection)
   - [3.2 Container Delimiter Signatures & Formatting](#32-container-delimiter-signatures--formatting)
   - [3.3 Configuration Settings & Long/Short Form Toggles](#33-configuration-settings--longshort-form-toggles)
+  - [3.4 Enum Subset Domain Completion & Inlay Badging](#34-enum-subset-domain-completion--inlay-badging)
 - [4. Sub-Token Precision Diagnostics & Recovery](#4-sub-token-precision-diagnostics--recovery)
   - [4.1 Pinpoint Leaf-Token Error Targeting](#41-pinpoint-leaf-token-error-targeting)
   - [4.2 Guaranteed Structural Immunity for `:defs`, `:type`, and Root Enclosures](#42-guaranteed-structural-immunity-for-defs-type-and-root-enclosures)
@@ -46,6 +48,7 @@
   - [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
   - [6.3 Sum Types: Options, Eithers, and Algebraic Unions](#63-sum-types-options-eithers-and-algebraic-unions)
   - [6.4 Enumerations & Value Keywords](#64-enumerations--value-keywords)
+    - [Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)](#enum-subsets--filter-metadata-facets-filterincl-filterexcl)
   - [6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes](#65-temporal-types-epoch-timestamps-vs-tripartite-datetimes)
 
 ---
@@ -110,15 +113,15 @@ STVN strictly partitions the grammar into two physical tracks:
 
 ### 1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN
 
-| Feature / Dimension | JSON | YAML | TOML | STVN (`.stvn`) |
-|:---|:---|:---|:---|:---|
-| **Type Rigor** | None (Untyped) | Implicit (Loose) | Primitive Tables | Formal Algebraic Types (ADTs) |
-| **Schema Binding** | Out-of-band (JSON Schema) | Out-of-band (SchemaStore) | None | Embedded In-File & Modular (`:include`) |
-| **Sum Types (Unions)** | Ad-hoc (e.g. `{"type": "A"}`) | Tagged union hacks | Not supported | First-Class (`:Option`, `:Either`, `:Union`) |
-| **Map Syntax** | `{ "k": "v" }` (Unordered) | `k: v` (Whitespace-sensitive) | `k = "v"` (Flat tables) | `{ [ "k" "v" ] }` (Ordered Sequenced Pairs) |
-| **Null Safety** | Ambiguous `null` | Multi-form (`null`, `~`, empty) | Missing key semantics | Formal `:Option` (`#Some` / `#None`), Zero Nulls |
-| **IDE Diagnostics** | Document-level | Indentation errors | Key syntax errors | Sub-Token Precision on leaf literals |
-| **Editor Inlays** | None | Limited plugin hints | None | Contextual Inlay Badges & Closing Delimiters |
+| Feature / Dimension    | JSON                          | YAML                            | TOML                    | STVN (`.stvn`)                                   |
+|:-----------------------|:------------------------------|:--------------------------------|:------------------------|:-------------------------------------------------|
+| **Type Rigor**         | None (Untyped)                | Implicit (Loose)                | Primitive Tables        | Formal Algebraic Types (ADTs)                    |
+| **Schema Binding**     | Out-of-band (JSON Schema)     | Out-of-band (SchemaStore)       | None                    | Embedded In-File & Modular (`:include`)          |
+| **Sum Types (Unions)** | Ad-hoc (e.g. `{"type": "A"}`) | Tagged union hacks              | Not supported           | First-Class (`:Option`, `:Either`, `:Union`)     |
+| **Map Syntax**         | `{ "k": "v" }` (Unordered)    | `k: v` (Whitespace-sensitive)   | `k = "v"` (Flat tables) | `{ [ "k" "v" ] }` (Ordered Sequenced Pairs)      |
+| **Null Safety**        | Ambiguous `null`              | Multi-form (`null`, `~`, empty) | Missing key semantics   | Formal `:Option` (`#Some` / `#None`), Zero Nulls |
+| **IDE Diagnostics**    | Document-level                | Indentation errors              | Key syntax errors       | Sub-Token Precision on leaf literals             |
+| **Editor Inlays**      | None                          | Limited plugin hints            | None                    | Contextual Inlay Badges & Closing Delimiters     |
 
 ---
 
@@ -277,6 +280,48 @@ Multi-line lists are formatted with canonical indentation:
 :body {
   [ "alpha" 10 ]
   [ "beta" 20 ]
+}
+```
+
+### 2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)
+
+#### The Problem: Root Declaration Order Violations
+When authoring nominal enum subsets using `#filterIncl` or `#filterExcl`, variants must strictly preserve the relative declaration order of the root `:Enum` (§4.8). Listing variants out of order triggers a compile error from `StvnEnumSubsetInspection`:
+
+```stvn
+:defs {
+  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+  // Error: Root ordering violation: variant #MEDIUM does not match relative declaration order of root :Enum :Priority
+  :AlertPriority { #filterIncl [ #CRITICAL #MEDIUM ] } :Priority
+}
+```
+
+#### One-Click Canonical Reordering
+The plugin registers `StvnReorderEnumFilterVariantsQuickFix`. Position the caret on any highlighted out-of-order variant and press `Alt+Enter` (macOS: `⌥Enter`):
+
+> 💡 **Sort variants to match root enum declaration order**
+
+The quick-fix executes an in-place AST rewrite, reordering the bracketed list into canonical root enum sequence:
+
+```stvn
+// Before Quick-Fix:
+:AlertPriority { #filterIncl [ #CRITICAL #MEDIUM ] } :Priority
+
+// Press Alt+Enter -> Sort variants to match root enum declaration order
+// After Quick-Fix:
+:AlertPriority { #filterIncl [ #MEDIUM #CRITICAL ] } :Priority
+```
+
+The quick-fix also handles multi-tier transitive derivation chains by resolving intermediate parents back to the canonical root enum:
+
+```stvn
+:defs {
+  :Status          :Enum [ #Pending #Active #Suspended #Deleted ]
+  :WorkingStatus   { #filterExcl [ #Deleted ] } :Status
+  // Before Quick-Fix:
+  :ImmediateStatus { #filterIncl [ #Suspended #Active ] } :WorkingStatus
+  // After Quick-Fix (Alt+Enter):
+  :ImmediateStatus { #filterIncl [ #Active #Suspended ] } :WorkingStatus
 }
 ```
 
@@ -494,6 +539,33 @@ You can configure STVN inlay hints and presentation options under:
   * When **Unchecked (Short Form):** Renders ultra-compact badges: `:OptText #S`, `:OptText [#S]`, `:Disjoint #R`, `:Disjoint [#R]`, `:Disjoint #L`, `:OptText #N`.
 * **Show Hover Documentation:** Enables rich HTML type lineage and schema inspection popups on hover.
 
+### 3.4 Enum Subset Domain Completion & Inlay Badging
+
+`StvnValueCompletionContributor` provides context-aware code completion tailored for enum subsets:
+
+#### Bracketed Filter Facet Authoring
+When authoring `#filterIncl [ <caret> ]` or `#filterExcl [ <caret> ]`:
+* Completion suggests only valid variants declared in the immediate parent type.
+* Completion suppresses variants already declared in the active bracketed list to prevent duplicates.
+* Completion suppresses variants excluded by intermediate ancestor subsets in transitive chains.
+* Suggestions display with icon `AllIcons.Nodes.Enum`, tail text ` (parent: :ParentType)`, and bold styling, sorted by root enum order.
+
+```stvn
+:defs {
+  :Environment :Enum [ #LOCAL #DEV #STAGING #CANARY #PROD ]
+  :DeployEnv   { #filterIncl [ #DEV #STAGING #CANARY ] } :Environment
+  // In facet brackets, completion suggests only #DEV, #STAGING, #CANARY:
+  :ExternalEnv { #filterExcl [ #DEV <caret> ] } :DeployEnv
+}
+```
+
+#### Subset Payload Domain Filtering
+When typing in value positions expecting an enum subset (such as `:body <caret>` where `:type` resolves to `:DeployEnv`):
+* Completion restricts suggestions strictly to the subset's allowed variants (`#DEV`, `#STAGING`, `#CANARY`).
+* Disallowed variants (`#LOCAL`, `#PROD`) are completely excluded from the lookup popup.
+* Items display numbered tail text indicating subset index (e.g. ` (1/3)`).
+* Inlay hint badges annotate literals with the resolved nominal subset alias (e.g. `#DEV` `:DeployEnv`).
+
 ---
 
 ## 4. Sub-Token Precision Diagnostics & Recovery
@@ -607,6 +679,21 @@ The documentation popup reveals:
 2. **Underlying Concrete Structure:** Formats the final structural AST.
 3. **Value Type & Evaluation:** For payload values, shows the resolved type, active variant branch, and parsed literal value.
 
+#### Enum Subset Quick Documentation Hover Card
+
+When hovering over an enum subset alias (such as `:PromotionRole`), `StvnDocumentationProvider` unrolls the effective subset structure, displays the constrained variant count, and traces the derivation lineage:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ Type Alias: :PromotionRole                                             │
+│ Imported From: "chess_turn.stvn_inclf"                                 │
+│ Variant Count: 4                                                       │
+│ Derivation: Parent: :PieceRole via #filterExcl [ #PAWN #KING ]         │
+│ ────────────────────────────────────────────────────────────────────── │
+│ Underlying Structure: :Enum [ #KNIGHT #BISHOP #ROOK #QUEEN ]           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ### 5.3 Polyglot Multi-Language Fenced Strings (`"""->[LANG] ... [LANG]"""`)
@@ -708,7 +795,7 @@ Enumerations define finite sets of constant value keywords:
 
 ```stvn
 :defs {
-  :Environment :Enum( #DEVELOPMENT #STAGING #PRODUCTION )
+  :Environment :Enum [ #DEVELOPMENT #STAGING #PRODUCTION ]
 }
 :type :Environment
 :body #PRODUCTION
@@ -716,6 +803,36 @@ Enumerations define finite sets of constant value keywords:
 
 * Enum tags always begin with `#` and uppercase identifiers.
 * Autocompletion suggestions trigger automatically after `#`.
+
+#### Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)
+
+STVN Specification §4.8 enables nominal type aliases to derive constrained subsets from existing `:Enum` declarations:
+
+| Filter Facet         |    Keyword    | Semantics                                                 | Example                                                     |
+|:---------------------|:-------------:|:----------------------------------------------------------|:------------------------------------------------------------|
+| **Inclusive Subset** | `#filterIncl` | Permits only the explicitly listed variants.              | `:DeployEnv { #filterIncl [ #DEV #STAGING ] } :Environment` |
+| **Exclusive Subset** | `#filterExcl` | Permits all parent variants except the listed exclusions. | `:ActiveStatus { #filterExcl [ #DELETED ] } :Status`        |
+
+##### Invariants & Rules
+1. **Monotonic Narrowing:** Every variant in a filter list must exist in the immediate parent type.
+2. **Mutual Exclusivity:** `#filterIncl` and `#filterExcl` cannot coexist within the same metadata block `{ ... }`.
+3. **Relative Root Order:** Variants in filter lists must preserve the declaration order of the root `:Enum`.
+4. **Target Attachment:** Filter facets can attach only to nominal aliases of `:Enum` or existing subsets.
+5. **Non-Empty Guards:** Filter lists cannot be empty (`[]`), and `#filterExcl` cannot remove all parent variants.
+
+##### Transitive Subset Chaining
+Subsets can derive from other subsets across multiple specialization tiers:
+
+```stvn
+:defs {
+  :TaskStatus      :Enum [ #BACKLOG #TODO #IN_PROGRESS #CODE_REVIEW #TESTING #DONE #BLOCKED #CANCELLED ]
+  :ActiveStatus    { #filterExcl [ #BACKLOG #DONE #CANCELLED ] } :TaskStatus
+  :WorkableStatus  { #filterIncl [ #TODO #IN_PROGRESS #CODE_REVIEW #TESTING ] } :ActiveStatus
+  :ExecutionStatus { #filterExcl [ #CODE_REVIEW #TESTING ] } :WorkableStatus
+}
+:type :ExecutionStatus
+:body #IN_PROGRESS // Inlay badge renders: :ExecutionStatus
+```
 
 ---
 
@@ -766,15 +883,16 @@ graph TD
 
 ## 7. Keyboard Shortcut Quick Reference
 
-| Feature                     | Action Name                     | Windows / Linux         | macOS                      |
-|:----------------------------|:--------------------------------|:------------------------|:---------------------------|
-| **Scaffold Data Skeleton**  | Schema Skeleton Intention       | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Heal Flat Map List**      | Convert flat list to map        | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Next Scaffold Field**     | Next Live Template Variable     | `Tab`                   | `Tab`                      |
-| **Previous Scaffold Field** | Previous Live Template Variable | `Shift+Tab`             | `⇧Tab`                     |
-| **Quick Documentation**     | Show Documentation & Lineage    | `Ctrl+Q`                | `F1` / `Ctrl+J`            |
-| **Jump to Definition**      | Go to Type/Constant Declaration | `Ctrl+B` / `Ctrl+Click` | `⌘B` / `⌘Click`            |
-| **Flatten Workspace**       | Flatten STVN Workspace Action   | *Project Menu / Build*  | *Project Menu / Build*     |
+| Feature                          | Action Name                            | Windows / Linux         | macOS                      |
+|:---------------------------------|:---------------------------------------|:------------------------|:---------------------------|
+| **Scaffold Data Skeleton**       | Schema Skeleton Intention              | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
+| **Heal Flat Map List**           | Convert flat list to map               | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
+| **Next Scaffold Field**          | Next Live Template Variable            | `Tab`                   | `Tab`                      |
+| **Previous Scaffold Field**      | Previous Live Template Variable        | `Shift+Tab`             | `⇧Tab`                     |
+| **Quick Documentation**          | Show Documentation & Lineage           | `Ctrl+Q`                | `F1` / `Ctrl+J`            |
+| **Jump to Definition**           | Go to Type/Constant Declaration        | `Ctrl+B` / `Ctrl+Click` | `⌘B` / `⌘Click`            |
+| **Reorder Enum Filter Variants** | Sort variants to match root enum order | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
+| **Flatten Workspace**            | Flatten STVN Workspace Action          | *Project Menu / Build*  | *Project Menu / Build*     |
 
 ---
 

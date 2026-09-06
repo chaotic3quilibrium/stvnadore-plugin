@@ -14,6 +14,7 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.ir.VariantStep;
+import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.*;
@@ -1324,6 +1325,155 @@ public final class StvnTypeResolver {
         }
         return curr;
     }
+
+    /**
+     * Resolves the EnumSubset model for a given schema type if it represents an enum subset,
+     * computing allowed variants transitively across arbitrary chain depths.
+     *
+     * @param schemaType the schema type to inspect
+     * @return the resolved {@link ResolvedType.EnumSubset}, or {@code null} if not a subset
+     */
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable SchemaType schemaType) {
+        if (schemaType == null) return null;
+        var kw = schemaType.getTypeKeyword();
+        if (kw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeDefinition typeDef) {
+        if (typeDef == null) return null;
+        var kw = typeDef.getTypeKeyword();
+        if (kw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
+        if (typeKeyword == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable IncludeMapAlias alias) {
+        if (alias == null) return null;
+        var list = alias.getTypeKeywordList();
+        var localKw = list.size() >= 2 ? list.get(1) : (list.size() >= 1 ? list.get(0) : null);
+        if (localKw == null) return null;
+
+        var visited = new HashSet<String>();
+        return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), visited);
+    }
+
+    public static ResolvedType.@Nullable EnumSubset resolveEnumSubsetFromElement(@Nullable PsiElement element) {
+        if (element == null) return null;
+        if (element instanceof SchemaType st) return resolveEnumSubset(st);
+        if (element instanceof TypeDefinition td) return resolveEnumSubset(td);
+        if (element instanceof TypeKeyword tk) return resolveEnumSubset(tk);
+        if (element instanceof IncludeMapAlias ima) return resolveEnumSubset(ima);
+        return null;
+    }
+
+    private static ResolvedType.@Nullable EnumSubset resolveEnumSubsetInternal(
+            PsiFile file,
+            String typeName,
+            Set<String> visited
+    ) {
+        if (!visited.add(typeName)) return null;
+
+        var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+        if (targetDef == null) return null;
+
+        TypeDefinition typeDef = null;
+        if (targetDef.getParent() instanceof TypeDefinition td) {
+            typeDef = td;
+        } else if (targetDef.getParent() instanceof IncludeMapAlias alias) {
+            var list = alias.getTypeKeywordList();
+            var remoteKw = list.size() >= 1 ? list.get(0) : null;
+            if (remoteKw != null) {
+                var resolved = new StvnTypeReference(remoteKw).resolve();
+                if (resolved != null && resolved.getParent() instanceof TypeDefinition td) {
+                    typeDef = td;
+                }
+            }
+        }
+        if (typeDef == null) {
+            return null;
+        }
+
+        var metaMap = typeDef.getMetadataMap();
+        MetadataFilter filter = null;
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                if (entry.getMetadataFilter() != null) {
+                    filter = entry.getMetadataFilter();
+                    break;
+                }
+            }
+        }
+
+        var parentSchema = typeDef.getSchemaType();
+        if (filter == null) {
+            // Pass-through: If this type is an alias of an enum subset, inherit parent's subset model
+            if (parentSchema != null) {
+                var parentSubset = resolveEnumSubset(parentSchema);
+                if (parentSubset != null) {
+                    return new ResolvedType.EnumSubset(
+                        typeName,
+                        parentSubset.name(),
+                        parentSubset.rootEnum(),
+                        parentSubset.allowedVariants(),
+                        parentSubset.rootVariants(),
+                        parentSubset.isInclusive()
+                    );
+                }
+            }
+            return null;
+        }
+
+        if (parentSchema == null) return null;
+        var parentSubset = resolveEnumSubset(parentSchema);
+
+        List<String> parentAllowed;
+        String parentName;
+        String rootEnumName;
+        List<String> rootVariants;
+
+        if (parentSubset != null) {
+            parentAllowed = parentSubset.allowedVariants();
+            parentName = parentSubset.name();
+            rootEnumName = parentSubset.rootEnum();
+            rootVariants = parentSubset.rootVariants();
+        } else {
+            var resolvedParent = resolveNominalSchema(parentSchema);
+            if (resolvedParent == null || resolvedParent.getSchemaConstructor() == null ||
+                resolvedParent.getSchemaConstructor().getSumType() == null ||
+                resolvedParent.getSchemaConstructor().getSumType().getEnumDef() == null) {
+                return null;
+            }
+            var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
+            rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+            parentAllowed = rootVariants;
+            parentName = parentSchema.getTypeKeyword() != null ? parentSchema.getTypeKeyword().getText() : ":Enum";
+            rootEnumName = parentName;
+        }
+
+        var isIncl = filter.getNode().findChildByType(StvnTypes.FILTER_INCL) != null;
+        var variantList = filter.getVariantList();
+        var facetVariants = variantList != null
+            ? variantList.getValueKeywordList().stream().map(ValueKeyword::getText).toList()
+            : List.<String>of();
+
+        List<String> computedAllowed = isIncl
+            ? facetVariants.stream().filter(parentAllowed::contains).toList()
+            : parentAllowed.stream().filter(v -> !facetVariants.contains(v)).toList();
+
+        return new ResolvedType.EnumSubset(typeName, parentName, rootEnumName, computedAllowed, rootVariants, isIncl);
+    }
+
 
     /**
      * Determines whether the target leaf type context of the given value slot resolves to a boolean primitive,

@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.0.2"
+version = "1.1.0-SNAPSHOT"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.0.2")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.1.0-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.0.2:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.1.0-SNAPSHOT:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -159,7 +159,10 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnVariantStyleInspectionTest.class")
     exclude("**/StvnDegenerateCompositeInspectionTest.class")
     exclude("**/StvnDocumentationTest.class")
+    exclude("**/StvnDocumentationProviderTest.class")
     exclude("**/StvnCompletionTest.class")
+    exclude("**/StvnEnumSubsetCompletionTest.class")
+    exclude("**/StvnEnumSubsetQuickFixTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

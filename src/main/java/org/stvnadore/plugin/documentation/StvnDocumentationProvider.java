@@ -8,6 +8,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -114,7 +115,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (target instanceof TypeDefinition typeDef) {
             var keyword = typeDef.getTypeKeyword();
             var schemaType = typeDef.getSchemaType();
-            var underlying = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
+            var subset = StvnTypeResolver.resolveEnumSubset(typeDef);
+
+            var underlying = subset != null
+                ? StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants())
+                : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown");
 
             var sb = new StringBuilder();
             if (keyword != null) {
@@ -144,6 +149,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var metricHtml = extractStructuralMetricHtml(typeDef);
             if (metricHtml != null) {
                 sb.append(metricHtml).append("<br/>");
+            }
+
+            if (subset != null) {
+                var lineage = formatDerivationLineage(typeDef, subset);
+                if (lineage != null) {
+                    sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
+                }
             }
 
             sb.append("<hr/>");
@@ -184,8 +196,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             var resolvedTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
+            var remTypeDef = (resolvedTarget != null && resolvedTarget.getParent() instanceof TypeDefinition td) ? td : null;
+            var subset = StvnTypeResolver.resolveEnumSubset(alias);
+            if (subset == null && remTypeDef != null) {
+                subset = StvnTypeResolver.resolveEnumSubset(remTypeDef);
+            }
+
+            if (subset != null) {
+                var lineage = formatDerivationLineage(remTypeDef, subset);
+                if (lineage != null) {
+                    sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
+                }
+            }
+
             var underlying = "Unknown";
-            if (resolvedTarget != null && resolvedTarget.getParent() instanceof TypeDefinition remTypeDef && remTypeDef.getSchemaType() != null) {
+            if (subset != null) {
+                underlying = StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants());
+            } else if (remTypeDef != null && remTypeDef.getSchemaType() != null) {
                 underlying = StvnSchemaFormatter.formatCleanSchema(remTypeDef.getSchemaType());
             }
             sb.append("<hr/>");
@@ -1056,6 +1083,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable String extractStructuralMetricHtml(PsiElement element) {
+        var subset = StvnTypeResolver.resolveEnumSubsetFromElement(element);
+        if (subset != null) {
+            return "<b>Variant Count:</b> " + subset.allowedVariants().size();
+        }
+
         var terminal = resolveTerminalSchemaType(element, new HashSet<>());
         if (terminal == null || terminal.getSchemaConstructor() == null) {
             return null;
@@ -1081,6 +1113,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        return null;
+    }
+
+    private static @Nullable String formatDerivationLineage(@Nullable TypeDefinition typeDef, ResolvedType.EnumSubset subset) {
+        if (typeDef != null) {
+            var metaMap = typeDef.getMetadataMap();
+            if (metaMap != null) {
+                for (var entry : metaMap.getMetadataEntryList()) {
+                    var filter = entry.getMetadataFilter();
+                    if (filter != null) {
+                        var isIncl = filter.getNode().findChildByType(StvnTypes.FILTER_INCL) != null;
+                        var filterKw = isIncl ? "#filterIncl" : "#filterExcl";
+                        var variants = filter.getVariantList() != null
+                            ? filter.getVariantList().getValueKeywordList().stream().map(ValueKeyword::getText).toList()
+                            : java.util.List.<String>of();
+                        var formattedList = variants.isEmpty() ? "[]" : "[ " + String.join(" ", variants) + " ]";
+                        return "Parent: " + subset.parentType() + " via " + filterKw + " " + formattedList;
+                    }
+                }
+            }
+        }
+        if (subset.parentType() != null && !subset.parentType().isEmpty()) {
+            return "Parent: " + subset.parentType();
+        }
         return null;
     }
 

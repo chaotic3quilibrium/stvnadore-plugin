@@ -4,6 +4,7 @@ import com.intellij.codeInsight.completion.*;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.patterns.PlatformPatterns;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ProcessingContext;
@@ -13,7 +14,13 @@ import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.psi.MetadataFilter;
 import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.ValueKeyword;
+import org.stvnadore.psi.VariantList;
+
+import java.util.List;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -21,6 +28,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Schema-directed code completion contributor pro-offering contextual values,
@@ -44,6 +52,11 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     var position = parameters.getPosition();
                     var file = parameters.getOriginalFile();
 
+                    // Check if caret is inside a filter facet list (#filterIncl / #filterExcl [ <caret> ])
+                    if (populateFilterListCompletions(position, result)) {
+                        return;
+                    }
+
                     // 1. Resolve expected schema at caret offset
                     var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(position);
                     if (expectedSchema == null) {
@@ -65,7 +78,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     var typeLabel = StvnSchemaFormatter.formatCleanSchema(targetSchema);
 
                     // 2. Enum Variant Suggestions (:Enum [ #A #B ... ])
-                    populateEnumVariants(schemaToInspect, typeLabel, result);
+                    populateEnumVariants(targetSchema, schemaToInspect, typeLabel, result);
 
                     // 3. Boolean Literal Suggestions (:Boolean)
                     populateBooleanLiterals(schemaToInspect, typeLabel, result);
@@ -88,7 +101,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                                 populateSumConstructors(schemaToPopulate, label, result);
                             } else {
                                 // Terminal inferable leaf payload emission
-                                populateEnumVariants(schemaToPopulate, label, result);
+                                populateEnumVariants(pathTargetSchema, schemaToPopulate, label, result);
                                 populateBooleanLiterals(schemaToPopulate, label, result);
                                 populateMatchingConstants(file, schemaToPopulate, label, result);
                                 populateDynamicGenerators(cleanSchemaText, label, result);
@@ -106,11 +119,103 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         );
     }
 
+    private static boolean populateFilterListCompletions(PsiElement position, CompletionResultSet result) {
+        var variantList = PsiTreeUtil.getParentOfType(position, VariantList.class);
+        MetadataFilter filter = null;
+        if (variantList != null) {
+            filter = PsiTreeUtil.getParentOfType(variantList, MetadataFilter.class);
+        } else {
+            filter = PsiTreeUtil.getParentOfType(position, MetadataFilter.class);
+            if (filter != null) {
+                variantList = filter.getVariantList();
+            }
+        }
+        if (filter == null) {
+            return false;
+        }
+
+        var typeDef = PsiTreeUtil.getParentOfType(filter, TypeDefinition.class);
+        if (typeDef == null || typeDef.getSchemaType() == null) {
+            return false;
+        }
+
+        var parentSchema = typeDef.getSchemaType();
+        var parentSubset = StvnTypeResolver.resolveEnumSubset(parentSchema);
+        List<String> parentAllowed;
+        List<String> rootVariants;
+
+        if (parentSubset != null) {
+            parentAllowed = parentSubset.allowedVariants();
+            rootVariants = parentSubset.rootVariants();
+        } else {
+            var resolvedParent = StvnTypeResolver.resolveNominalSchema(parentSchema);
+            if (resolvedParent == null || resolvedParent.getSchemaConstructor() == null ||
+                resolvedParent.getSchemaConstructor().getSumType() == null ||
+                resolvedParent.getSchemaConstructor().getSumType().getEnumDef() == null) {
+                return false;
+            }
+            rootVariants = resolvedParent.getSchemaConstructor().getSumType().getEnumDef()
+                .getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+            parentAllowed = rootVariants;
+        }
+
+        var alreadyDeclared = variantList != null
+            ? variantList.getValueKeywordList().stream()
+                .map(ValueKeyword::getText)
+                .filter(t -> !t.equals(position.getText()))
+                .collect(Collectors.toSet())
+            : java.util.Collections.<String>emptySet();
+
+        var candidates = parentAllowed.stream()
+            .filter(v -> !alreadyDeclared.contains(v))
+            .toList();
+
+        var parentTypeName = StvnSchemaFormatter.formatCleanSchema(parentSchema);
+        var prefix = result.getPrefixMatcher().getPrefix();
+        var matcher = result.getPrefixMatcher();
+        if (!prefix.isEmpty() && !prefix.startsWith("#")) {
+            matcher = matcher.cloneWithPrefix("#" + prefix);
+        }
+        var targetResult = result.withPrefixMatcher(matcher);
+
+        for (var variant : candidates) {
+            int rootIdx = rootVariants.indexOf(variant);
+            var element = LookupElementBuilder.create(variant)
+                .withIcon(AllIcons.Nodes.Enum)
+                .withTailText(" (parent: " + parentTypeName + ")", true)
+                .withTypeText(parentTypeName, true)
+                .withBoldness(true);
+            targetResult.addElement(PrioritizedLookupElement.withPriority(element, 100.0 - (rootIdx >= 0 ? rootIdx : 0)));
+        }
+        return true;
+    }
+
     private static void populateEnumVariants(
+        SchemaType targetSchema,
         SchemaType schema,
         String typeLabel,
         CompletionResultSet result
     ) {
+        var subset = StvnTypeResolver.resolveEnumSubset(targetSchema);
+        if (subset != null) {
+            var allowed = subset.allowedVariants();
+            var rootVariants = subset.rootVariants();
+            int total = allowed.size();
+            for (int i = 0; i < total; i++) {
+                var tagText = allowed.get(i);
+                int rootIdx = rootVariants.indexOf(tagText);
+                var variantInfo = " (" + (i + 1) + "/" + total + ")";
+                var element = LookupElementBuilder.create(tagText)
+                    .withIcon(AllIcons.Nodes.Enum)
+                    .withTailText(variantInfo, true)
+                    .withTypeText(typeLabel, true)
+                    .withBoldness(true);
+
+                result.addElement(PrioritizedLookupElement.withPriority(element, 100.0 - (rootIdx >= 0 ? rootIdx : i)));
+            }
+            return;
+        }
+
         var constructor = schema.getSchemaConstructor();
         if (constructor == null || constructor.getSumType() == null) {
             return;

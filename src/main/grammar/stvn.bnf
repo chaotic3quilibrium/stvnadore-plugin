@@ -58,6 +58,8 @@
     KW_MAX_INCL                   = '#maxIncl'
     KW_MAX_EXCL                   = '#maxExcl'
     KW_REGEX                      = '#regex'
+    FILTER_INCL                   = '#filterIncl'
+    FILTER_EXCL                   = '#filterExcl'
 
     ATOM_BOOLEAN                  = ':Boolean'
     ATOM_UINT                     = 'regexp::Uint[0-9]*'
@@ -137,6 +139,7 @@ private value_keyword_start ::= VALUE_KEYWORD_BASE
                               | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT
                               | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL
                               | KW_REGEX
+                              | FILTER_INCL | FILTER_EXCL
 
 // --- INCLUDES & DEFINITIONS ---
 include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}
@@ -181,15 +184,19 @@ private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_TYPE | KW_BODY | type_k
                              | LPAREN | LBRACK)
 
 metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
-metadata_entry            ::= metadata_bool | metadata_num | metadata_string { recoverWhile=metadata_entry_recover }
+metadata_entry            ::= metadata_bool | metadata_num | metadata_string | metadata_filter { recoverWhile=metadata_entry_recover }
 
 private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT ) metadata_value { pin=1 }
 private metadata_num     ::= ( KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
 private metadata_string  ::= KW_REGEX metadata_value { pin=1 }
+metadata_filter          ::= ( FILTER_INCL | FILTER_EXCL ) variant_list { pin=1 }
+variant_list             ::= LBRACK variant_list_body RBRACK { pin=1 }
+private variant_list_body ::= (value_keyword | id_token)* { recoverWhile=variant_list_recover }
+private variant_list_recover ::= !(RBRACK | RBRACE)
 
 metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
 
-private metadata_entry_recover ::= !(RBRACE | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX)
+private metadata_entry_recover ::= !(RBRACE | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
 
 // --- TYPE SYSTEM CORE ---
 schema_type             ::= schema_constructor | type_keyword

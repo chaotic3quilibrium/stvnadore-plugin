@@ -93,6 +93,8 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   "#maxIncl"                     { return KW_MAX_INCL; }
   "#maxExcl"                     { return KW_MAX_EXCL; }
   "#regex"                       { return KW_REGEX; }
+  "#filterIncl"                  { return FILTER_INCL; }
+  "#filterExcl"                  { return FILTER_EXCL; }
   
   // Atomic type descriptors (: namespace)
   ":Boolean"                     { return ATOM_BOOLEAN; }

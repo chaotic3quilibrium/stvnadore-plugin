@@ -131,6 +131,8 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_MIN_EXCL) ||
                type.equals(StvnTypes.KW_MAX_INCL) ||
                type.equals(StvnTypes.KW_MAX_EXCL) ||
-               type.equals(StvnTypes.KW_REGEX);
+               type.equals(StvnTypes.KW_REGEX) ||
+               type.equals(StvnTypes.FILTER_INCL) ||
+               type.equals(StvnTypes.FILTER_EXCL);
     }
 }

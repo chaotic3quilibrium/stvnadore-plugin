@@ -3,6 +3,18 @@
     <name>STVN Data Grammar Language</name>
     <vendor email="jim.oflaherty.jr@gmail.com">chaotic3quilibrium</vendor>
 
+    <change-notes><![CDATA[
+      <h3>1.1.0-SNAPSHOT</h3>
+      <ul>
+        <li><b>Language Grammar:</b> Added grammar and lexer support for Enum Subset Filtering metadata facets (<code>#filterIncl</code> and <code>#filterExcl</code>) on nominal type aliases.</li>
+        <li><b>Semantic Inspection:</b> Introduced <code>StvnEnumSubsetInspection</code> enforcing root declaration ordering, monotonic narrowing, mutual exclusivity, target attachment constraints, non-empty filter lists, and payload membership.</li>
+        <li><b>In-Place Quick-Fix:</b> Implemented <code>StvnReorderEnumFilterVariantsQuickFix</code> (&quot;Sort variants to match root enum declaration order&quot;) to rewrite out-of-order filter lists automatically.</li>
+        <li><b>Context-Aware Completion:</b> Enhanced <code>StvnValueCompletionContributor</code> with subset payload domain filtering and bracketed filter facet authoring that suppresses duplicate and invalid variants.</li>
+        <li><b>Hover Documentation:</b> Upgraded <code>StvnDocumentationProvider</code> to display effective subset variant counts, unrolled <code>:Enum [ ... ]</code> structures, derivation lineage, and resolution paths.</li>
+        <li><b>Wire Framing Protocol:</b> Integrated Byte 4 wire framing awareness in binary verification fixtures, covering Bit 7 CRC-32C trailer detection and Bits 6..4 encoding strategy sentinel <code>0x7</code> header extension handling.</li>
+      </ul>
+    ]]></change-notes>
+
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
 
@@ -145,6 +157,16 @@
                          enabledByDefault="true"
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnDegenerateCompositeInspection"/>
+
+        <!-- 12d. Local Inspection for Enum Subset Filtering -->
+        <localInspection language="STVN"
+                         shortName="StvnEnumSubset"
+                         displayName="Enum subset filtering inspection"
+                         groupPath="STVN"
+                         groupName="Semantics"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnEnumSubsetInspection"/>
 
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
