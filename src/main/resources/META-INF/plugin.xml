@@ -4,7 +4,7 @@
     <vendor email="jim.oflaherty.jr@gmail.com">chaotic3quilibrium</vendor>
 
     <change-notes><![CDATA[
-      <h3>1.1.0-SNAPSHOT</h3>
+      <h3>1.1.0</h3>
       <ul>
         <li><b>Language Grammar:</b> Added grammar and lexer support for Enum Subset Filtering metadata facets (<code>#filterIncl</code> and <code>#filterExcl</code>) on nominal type aliases.</li>
         <li><b>Semantic Inspection:</b> Introduced <code>StvnEnumSubsetInspection</code> enforcing root declaration ordering, monotonic narrowing, mutual exclusivity, target attachment constraints, non-empty filter lists, and payload membership.</li>
