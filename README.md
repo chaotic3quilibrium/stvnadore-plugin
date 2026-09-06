@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.0--SNAPSHOT-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.1.0-SNAPSHOT - 2026.09.05
+- Version: 1.1.0 - 2026.09.06
 
 ---
 
@@ -41,6 +41,9 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [REALLY HATE the GNU AFFERO GENERAL PUBLIC LICENSE, a.k.a. AGPLv3?](#really-hate-the-gnu-affero-general-public-license-aka-agplv3)
     * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
     * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
+* [Version History](#version-history)
+  * [v1.1.0](#v110)
+  * [v1.0.2](#v102)
 <!-- TOC -->
 
 ---
@@ -151,7 +154,7 @@ Settings
 
 ### Prerequisites
 * JDK 21 LTS
-* Local installation of `stvnadore-core:1.1.0-SNAPSHOT` (`mvn clean install` in `ij_stvnadore_core`)
+* Local installation of `stvnadore-core:1.1.0` (`mvn clean install` in `ij_stvnadore_core`)
 
 ### Build Commands
 ```bash
@@ -206,3 +209,18 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ---
 
 ### I'm not looking to win the lottery, I just don't want to work for free
+
+---
+
+# Version History
+
+## v1.1.0
+
+- 2026.09.06
+- Implemented enum subset filtering with transitive chaining
+- Added Control Byte 4 bitwise partitioning (1:3:4) for CRC-32C, SchemaIdentityStrategy, and BinaryEncodingStrategy
+
+## v1.0.2
+
+- 2026.09.04
+- Initial release across all four repositories
