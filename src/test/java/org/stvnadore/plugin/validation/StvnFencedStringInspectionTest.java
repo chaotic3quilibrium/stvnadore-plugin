@@ -200,7 +200,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("empty_tag_unclosed.stvn", code);
         myFixture.doHighlighting();
         var action = myFixture.getAllQuickFixes().stream()
-            .filter(f -> f.getText().contains("Supply default tag '[TEXT]'"))
+            .filter(f -> f.getText().contains("Supply default tag '[FENCE]'"))
             .findFirst()
             .orElse(null);
         assertNotNull("Expected supply default tag quick-fix to be registered", action);
@@ -209,8 +209,8 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             {
               :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
               :body (
-                \"\"\"[TEXT]
-                [TEXT]\"\"\"
+                \"\"\"[FENCE]
+                [FENCE]\"\"\"
                 (10 20)
               )
             }
@@ -227,9 +227,9 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
               :type :Tuple( :String :String )
               :body (
                 \"\"\"[SQL]
-                \"\"\"[TEXT]
+                \"\"\"[FENCE]
                 Hello world
-                [TEXT]\"\"\"
+                [FENCE]\"\"\"
               )
             }
             """;
@@ -365,7 +365,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         var intention = myFixture.findSingleIntention("Convert to Fenced String Block");
         assertNotNull("Expected 'Convert to Fenced String Block' intention", intention);
         myFixture.launchAction(intention);
-        String expected = "{\n  :type :String\n  :body \"\"\"[TEXT]\n    \n  [TEXT]\"\"\"\n}\n";
+        String expected = "{\n  :type :String\n  :body \"\"\"[FENCE]\n    \n  [FENCE]\"\"\"\n}\n";
         myFixture.checkResult(expected);
     }
 
@@ -374,8 +374,8 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("typed_bracket_template.stvn", code);
         myFixture.type('[');
         String docText = myFixture.getEditor().getDocument().getText();
-        assertTrue("Live template expansion must insert opening fence with default TAG", docText.contains("\"\"\"[TEXT]"));
-        assertTrue("Live template expansion must insert closing fence with matching TAG", docText.contains("[TEXT]\"\"\""));
+        assertTrue("Live template expansion must insert opening fence with default TAG", docText.contains("\"\"\"[FENCE]"));
+        assertTrue("Live template expansion must insert closing fence with matching TAG", docText.contains("[FENCE]\"\"\""));
     }
 
     public void testEnterKeyAutoClosesFencedString() {
@@ -408,5 +408,56 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.type('\n');
         String expected = "{\n  :type :String\n  :body \"\"\"[S\n  QL]\n}\n";
         myFixture.checkResult(expected);
+    }
+
+    public void testBalanceClosingTagQuickFixReplacesImmediateDelimiterLeavingDownstreamIdenticalBlockUntouched() {
+        String code = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[NEW_TAG]
+
+                [OLD_TAG]\"\"\"
+
+                \"\"\"[OLD_TAG]
+                content
+                [OLD_TAG]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("exact_repro_swallowed_blocks.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var mismatchHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[OLD_TAG]', expected '[NEW_TAG]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected mismatch error on immediate closing delimiter for [NEW_TAG]", mismatchHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[OLD_TAG]\"\"\"' with '[NEW_TAG]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected BalanceClosingTagQuickFix to be available", action);
+        myFixture.launchAction(action);
+
+        String expected = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[NEW_TAG]
+
+                [NEW_TAG]\"\"\"
+
+                \"\"\"[OLD_TAG]
+                content
+                [OLD_TAG]\"\"\"
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Both fenced string blocks must be valid with zero errors after targeted replacement", hasErrors);
     }
 }

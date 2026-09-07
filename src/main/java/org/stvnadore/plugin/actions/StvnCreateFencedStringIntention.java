@@ -101,11 +101,11 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
         String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
 
         int insertOffset = lineStart + tripleIdx + 3;
-        String insertion = "[TEXT]" + lineSep + innerIndent + lineSep + baseIndent + "[TEXT]\"\"\"";
+        String insertion = "[FENCE]" + lineSep + innerIndent + lineSep + baseIndent + "[FENCE]\"\"\"";
         doc.insertString(insertOffset, insertion);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
 
-        int caretPos = insertOffset + "[TEXT]".length() + lineSep.length() + innerIndent.length();
+        int caretPos = insertOffset + "[FENCE]".length() + lineSep.length() + innerIndent.length();
         editor.getCaretModel().moveToOffset(caretPos);
     }
 }

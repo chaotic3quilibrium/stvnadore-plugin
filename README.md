@@ -111,7 +111,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
   * Repositions the editor caret directly onto the body line between delimiters following fix execution.
   * Pairs nested fenced strings via depth-aware sequential scanning.
   * Strips illegal characters and whitespace from tags.
-  * Atomically supplies default tag `[TEXT]` and closes unclosed delimiters on the next line.
+  * Atomically supplies default tag `[FENCE]` and closes unclosed delimiters on the next line.
   * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
 * **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical closing delimiters for both bare `"""` and fenced `"""[TAG]` blocks under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
 * **Interactive Live Template Launch**: Typing `[` after `"""` launches the `fence` Live Template with synchronized dual-tag variables.

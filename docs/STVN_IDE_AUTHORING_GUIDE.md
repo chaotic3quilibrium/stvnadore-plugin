@@ -735,7 +735,7 @@ Every fenced string literal must comply with **Rule STR-04**:
 ### IDE Inspection & Quick-Fixes (`StvnFencedString`)
 The IDE validates Rule STR-04 in real time:
 * **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
-  * Press `Alt+Enter` to sanitize tags or supply default tag `[TEXT]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[TEXT]` and inserts `[TEXT]"""` directly on the next line.
+  * Press `Alt+Enter` to sanitize tags or supply default tag `[FENCE]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[FENCE]` and inserts `[FENCE]"""` directly on the next line.
 * **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
   * Press `Alt+Enter` on either the opening or closing delimiter line to balance tags bidirectionally.
   * Options include updating the closing tag from the opening tag, or updating the opening tag from the closing tag.
@@ -750,7 +750,7 @@ When pressing **`Enter`** immediately behind multiline string opening delimiters
 
 ### Interactive Live Templates and Intentions
 * **Live Template Trigger on `[`:** Typing `[` immediately following `"""` launches the interactive `fence` Live Template with synchronized tag variables (`$TAG$`) and positions the final caret at `$END$` in the body line.
-* **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[TEXT]\n  \n[TEXT]"""`.
+* **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[FENCE]\n  \n[FENCE]"""`.
 * **Live Template (`fence`):** Type `fence` and press `Tab` to expand `"""[$TAG$]\n  $END$\n[$TAG$]"""` with dynamic multi-caret tag synchronization.
 
 ---

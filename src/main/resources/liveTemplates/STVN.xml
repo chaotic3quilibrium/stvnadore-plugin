@@ -4,7 +4,7 @@
               description="Fenced string block"
               toReformat="false"
               toShortenFQNames="true">
-        <variable name="TAG" expression="" defaultValue="&quot;TEXT&quot;" alwaysStopAt="true"/>
+        <variable name="TAG" expression="" defaultValue="&quot;FENCE&quot;" alwaysStopAt="true"/>
         <context>
             <option name="STVN" value="true"/>
         </context>

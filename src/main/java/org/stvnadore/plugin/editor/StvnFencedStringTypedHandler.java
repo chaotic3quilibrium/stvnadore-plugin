@@ -56,7 +56,7 @@ public final class StvnFencedStringTypedHandler extends TypedHandlerDelegate {
         } else {
             var templateManager = TemplateManager.getInstance(project);
             Template dynamicTemplate = templateManager.createTemplate("", "", "\"\"\"[$TAG$]\n  $END$\n[$TAG$]\"\"\"");
-            dynamicTemplate.addVariable("TAG", new com.intellij.codeInsight.template.impl.ConstantNode("TEXT"), true);
+            dynamicTemplate.addVariable("TAG", new com.intellij.codeInsight.template.impl.ConstantNode("FENCE"), true);
             dynamicTemplate.setToReformat(false);
             templateManager.startTemplate(editor, dynamicTemplate);
         }
