@@ -56,6 +56,9 @@
         <!-- 2c. Enter Handler for Fenced String Delimiters -->
         <enterHandlerDelegate implementationClass="org.stvnadore.plugin.editor.StvnEnterInFencedStringHandler"/>
 
+        <!-- 2d. Typed Handler for Bracket Auto-Pairing in Fenced Strings -->
+        <typedHandler implementationClass="org.stvnadore.plugin.editor.StvnFencedStringTypedHandler"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>
@@ -193,6 +196,17 @@
 
         <!-- 13b. Notification Group for STVN Repository Client Alerts -->
         <notificationGroup id="STVN Repository Group" displayType="BALLOON"/>
+
+        <!-- 13c. Live Templates -->
+        <defaultLiveTemplates file="liveTemplates/STVN.xml"/>
+        <liveTemplateContext contextId="STVN" implementation="org.stvnadore.plugin.templates.StvnTemplateContextType"/>
+
+        <!-- 13d. Intention Action for Bare Triple-Quote to Fenced String Block -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.actions.StvnCreateFencedStringIntention</className>
+            <category>STVN</category>
+            <description>Convert bare triple-quote string to fenced string block</description>
+        </intentionAction>
 
         <!-- 14. Schema-Driven Skeleton Generator Intention Action -->
         <intentionAction>

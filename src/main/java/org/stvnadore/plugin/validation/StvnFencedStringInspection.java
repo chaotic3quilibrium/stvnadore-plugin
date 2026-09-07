@@ -169,13 +169,23 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             int lastCloseBracket = text.lastIndexOf(']', lastCloseTriple);
             if (lastOpenBracket >= 0 && lastCloseBracket > lastOpenBracket && lastCloseBracket == lastCloseTriple - 1) {
                 String closingTag = text.substring(lastOpenBracket + 1, lastCloseBracket);
-                if (!closingTag.equals(openTag)) {
+                String middleContent = text.substring(openDelimiterEnd, lastOpenBracket);
+                if (!middleContent.contains("\"\"\"") && !closingTag.equals(openTag)) {
                     TextRange closingRange = new TextRange(lastOpenBracket, text.length());
                     holder.registerProblem(
                         element,
                         closingRange,
                         "Rule STR-04 violation: Mismatched closing fence tag '[" + closingTag + "]', expected '[" + openTag + "]'",
-                        new BalanceClosingTagQuickFix(openTag, closingTag)
+                        new BalanceClosingTagQuickFix(openTag, closingTag),
+                        new BalanceOpeningTagQuickFix(openTag, closingTag)
+                    );
+                    holder.registerProblem(
+                        element,
+                        openRange,
+                        "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + closingTag + "]'",
+                        new AppendClosingFenceQuickFix(openTag),
+                        new BalanceClosingTagQuickFix(openTag, closingTag),
+                        new BalanceOpeningTagQuickFix(openTag, closingTag)
                     );
                     return;
                 }
@@ -393,6 +403,52 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     docManager.commitDocument(doc);
                 } else {
                     String updated = text.substring(0, lastIdx) + balancedClosing + text.substring(lastIdx + targetClosing.length());
+                    var dummy = StvnElementFactory.createValue(project, updated);
+                    var newLiteral = dummy.getStringLiteral();
+                    element.replace(newLiteral != null ? newLiteral : dummy);
+                }
+            }
+        }
+    }
+
+    private static final class BalanceOpeningTagQuickFix implements LocalQuickFix {
+        private final String currentOpeningTag;
+        private final String expectedOpeningTag;
+
+        public BalanceOpeningTagQuickFix(String currentOpeningTag, String expectedOpeningTag) {
+            this.currentOpeningTag = currentOpeningTag;
+            this.expectedOpeningTag = expectedOpeningTag;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            return "Replace '[" + currentOpeningTag + "]' with '[" + expectedOpeningTag + "]'";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Balance opening fence delimiter";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var docManager = PsiDocumentManager.getInstance(project);
+            var doc = file.getViewProvider().getDocument();
+            String text = element.getText();
+            String targetOpening = "[" + currentOpeningTag + "]";
+            String balancedOpening = "[" + expectedOpeningTag + "]";
+            int firstIdx = text.indexOf(targetOpening);
+            if (firstIdx >= 0) {
+                if (doc != null) {
+                    int startOffset = element.getTextRange().getStartOffset() + firstIdx;
+                    doc.replaceString(startOffset, startOffset + targetOpening.length(), balancedOpening);
+                    docManager.commitDocument(doc);
+                } else {
+                    String updated = text.substring(0, firstIdx) + balancedOpening + text.substring(firstIdx + targetOpening.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
                     var newLiteral = dummy.getStringLiteral();
                     element.replace(newLiteral != null ? newLiteral : dummy);

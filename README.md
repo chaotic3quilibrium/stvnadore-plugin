@@ -107,11 +107,14 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
-  * Balances mismatched closing tags to match the opening tag via resilient offset replacement.
+  * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
   * Strips illegal characters and whitespace from tags.
   * Atomically supplies default tag `[TEXT]` and closes unclosed delimiters on the next line.
   * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
-* **Enter-Key Auto-Closing**: Automatically generates the indented newline and symmetrical closing fence `[TAG]"""` when pressing `Enter` on an unclosed opening fence line.
+* **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical closing delimiters for both bare `"""` and fenced `"""[TAG]` blocks under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
+* **Bracket Auto-Pairing**: Typing `[` after `"""` generates `"""[<caret>]\n  \n[]"""`.
+* **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
+* **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
 
 ### 9. Byte 4 Wire Framing Awareness
 * **Control Byte Inspection**: Verifies binary headers against the 1:3:4 bitwise layout of Byte 4 (`T` trailer flag, `STRAT` encoding strategy, `SCHEMA` identity strategy).

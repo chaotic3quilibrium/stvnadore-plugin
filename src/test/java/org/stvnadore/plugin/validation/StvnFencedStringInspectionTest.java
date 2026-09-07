@@ -4,6 +4,7 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.settings.StvnSettings;
 
 import java.util.List;
 
@@ -18,6 +19,12 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         myFixture.enableInspections(new StvnFencedStringInspection());
+    }
+
+    @Override
+    protected void tearDown() throws Exception {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        super.tearDown();
     }
 
     public void testValidFencedStringWithoutArrowPassesCleanly() {
@@ -212,6 +219,113 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         List<HighlightInfo> postHighlights = myFixture.doHighlighting();
         boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
         assertFalse("Atomically supplied tag and closed block must produce zero errors", hasErrors);
+    }
+
+    public void testOpeningFencePrecedingExistingFencedBlockRegistersErrorOnOpeningLine() {
+        String code = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[SQL]
+                \"\"\"[TEXT]
+                Hello world
+                [TEXT]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("preceding_block.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var sqlHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("expected closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected unclosed error on opening line for [SQL]", sqlHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Append closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected AppendClosingFenceQuickFix to be available on opening line", action);
+        myFixture.launchAction(action);
+        assertTrue(myFixture.getEditor().getDocument().getText().contains("\"\"\"[SQL]\n    [SQL]\"\"\""));
+    }
+
+    public void testBidirectionalQuickFixesOnMismatchedFences() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.configureByText("mismatched_bidirectional.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue("Highlight on closing range must exist", highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[JSON]', expected '[SQL]'")));
+        assertTrue("Highlight on opening range must exist", highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched opening fence tag '[SQL]', closing fence has '[JSON]'")));
+
+        var updateOpeningAction = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[SQL]' with '[JSON]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Quick-fix updating opening from closing must be available", updateOpeningAction);
+        myFixture.launchAction(updateOpeningAction);
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[JSON]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesBareBlockStringExpandedThreeLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("enter_bare_expanded.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"\n    \n  \"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesBareBlockStringTightTwoLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("enter_bare_tight.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"\n    \"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesFencedStringTightTwoLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n}\n";
+        myFixture.configureByText("enter_fenced_tight.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n    [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testCreateFencedStringIntentionExecution() {
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("convert_intention.stvn", code);
+        var intention = myFixture.findSingleIntention("Convert to Fenced String Block");
+        assertNotNull("Expected 'Convert to Fenced String Block' intention", intention);
+        myFixture.launchAction(intention);
+        String expected = "{\n  :type :String\n  :body \"\"\"[TEXT]\n    \n  [TEXT]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testBracketTypingAutoPairsFencedString() {
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("typed_bracket.stvn", code);
+        myFixture.type('[');
+        assertEquals("{\n  :type :String\n  :body \"\"\"[]\n    \n  []\"\"\"\n}\n", myFixture.getEditor().getDocument().getText());
+        int caretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int openBracketPos = myFixture.getEditor().getDocument().getText().indexOf('[');
+        assertEquals("Caret must be placed inside opening brackets", openBracketPos + 1, caretOffset);
     }
 
     public void testEnterKeyAutoClosesFencedString() {
