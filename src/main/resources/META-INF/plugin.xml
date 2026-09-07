@@ -4,6 +4,14 @@
     <vendor email="jim.oflaherty.jr@gmail.com">chaotic3quilibrium</vendor>
 
     <change-notes><![CDATA[
+      <h3>1.1.1</h3>
+      <ul>
+        <li><b>Rule STR-04 Arrow Delimiter Deprecation:</b> Flagged deprecated <code>"""->[TAG]</code> opening delimiter with <code>LIKE_DEPRECATED</code> strikeout diagnostic and introduced <code>Remove deprecated '-&gt;' arrow</code> quick-fix supporting whole-project batch Code Cleanup.</li>
+        <li><b>Rule STR-04 Delimiter Invariants:</b> Synchronized JFlex lexer and Grammar-Kit BNF to support optional arrow syntax (<code>"""->[TAG]</code> and <code>"""[TAG]</code>), enforcing character class <code>^[a-zA-Z0-9_-]{1,256}$</code>.</li>
+        <li><b>Exact Symmetrical Suffix Scanning:</b> Implemented exact-match scanning in JFlex, ensuring arbitrary recursive nesting (e.g. CAS envelopes enclosing inner payloads) never prematurely terminates.</li>
+        <li><b>Fenced String Inspection:</b> Introduced <code>StvnFencedStringInspection</code> providing real-time in-editor validation and quick-fixes for malformed opening tags, length violations, and mismatched closing delimiters.</li>
+        <li><b>Comprehensive Orphan Delimiter Guard:</b> Intercepts orphan closing fences in default mode, preventing accidental block string triggering.</li>
+      </ul>
       <h3>1.1.0</h3>
       <ul>
         <li><b>Language Grammar:</b> Added grammar and lexer support for Enum Subset Filtering metadata facets (<code>#filterIncl</code> and <code>#filterExcl</code>) on nominal type aliases.</li>
@@ -45,6 +53,15 @@
         <!-- 2b. Line Commenter -->
         <lang.commenter language="STVN"
                         implementationClass="org.stvnadore.plugin.lang.StvnCommenter"/>
+
+        <!-- 2c. Enter Handler for Fenced String Delimiters -->
+        <enterHandlerDelegate implementationClass="org.stvnadore.plugin.editor.StvnEnterInFencedStringHandler"/>
+
+        <!-- 2d. Typed Handler for Bracket Auto-Pairing in Fenced Strings -->
+        <typedHandler implementationClass="org.stvnadore.plugin.editor.StvnFencedStringTypedHandler"/>
+
+        <!-- 2e. Rename Handler for Balanced Fenced String Delimiter Tags -->
+        <renameHandler implementation="org.stvnadore.plugin.editor.StvnFencedStringTagRenameHandler"/>
 
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
@@ -168,11 +185,33 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnEnumSubsetInspection"/>
 
+        <!-- 12e. Local Inspection for Fenced String Delimiters (Rule STR-04) -->
+        <localInspection language="STVN"
+                         shortName="StvnFencedString"
+                         displayName="Fenced string delimiter inspection"
+                         groupPath="STVN"
+                         groupName="Syntax"
+                         enabledByDefault="true"
+                         cleanupTool="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnFencedStringInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 
         <!-- 13b. Notification Group for STVN Repository Client Alerts -->
         <notificationGroup id="STVN Repository Group" displayType="BALLOON"/>
+
+        <!-- 13c. Live Templates -->
+        <defaultLiveTemplates file="liveTemplates/STVN.xml"/>
+        <liveTemplateContext contextId="STVN" implementation="org.stvnadore.plugin.templates.StvnTemplateContextType"/>
+
+        <!-- 13d. Intention Action for Bare Triple-Quote to Fenced String Block -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.actions.StvnCreateFencedStringIntention</className>
+            <category>STVN</category>
+            <description>Convert bare triple-quote string to fenced string block</description>
+        </intentionAction>
 
         <!-- 14. Schema-Driven Skeleton Generator Intention Action -->
         <intentionAction>

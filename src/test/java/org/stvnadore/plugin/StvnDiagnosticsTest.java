@@ -5539,5 +5539,80 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("Expected 0 errors for Section 8.1 Rule F positive examples", 0, errors.size());
         assertEquals("Expected 0 warnings for Section 8.1 Rule F positive examples", 0, warnings.size());
     }
+
+    public void testRuleStr04FencedStringInspectionAndWolfIntegration() {
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnFencedStringInspection());
+        String invalidText = """
+            {
+              :type :String
+              :body \"\"\"[C++]
+              int main() { return 0; }
+              [C++]\"\"\"
+            }
+            """;
+        var psiFile = myFixture.configureByText("str04_wolf_test.stvn", invalidText);
+        var virtualFile = psiFile.getVirtualFile();
+        assertNotNull("VirtualFile must not be null", virtualFile);
+
+        var wolf = WolfTheProblemSolver.getInstance(getProject());
+        if (wolf instanceof com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver mockWolf) {
+            mockWolf.setDelegate(com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl.createTestInstance(getProject()));
+        }
+
+        try {
+            var highlights = myFixture.doHighlighting();
+            var hasErrors = highlights.stream().anyMatch(h ->
+                h.getSeverity().equals(HighlightSeverity.ERROR) &&
+                h.getDescription() != null &&
+                h.getDescription().contains("Rule STR-04 violation"));
+            assertTrue("Highlighting must emit ERROR citing Rule STR-04 for illegal tag 'C++'", hasErrors);
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+            assertTrue("WolfTheProblemSolver must report str04_wolf_test.stvn as problem file",
+                    wolf.isProblemFile(virtualFile));
+
+            // Fix the opening and closing delimiters to valid identifier
+            var validText = """
+                {
+                  :type :String
+                  :body \"\"\"[CPP]
+                  int main() { return 0; }
+                  [CPP]\"\"\"
+                }
+                """;
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                myFixture.getEditor().getDocument().setText(validText);
+            });
+            com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+
+            var cleanHighlights = myFixture.doHighlighting();
+            var cleanErrors = cleanHighlights.stream().anyMatch(h ->
+                h.getSeverity().equals(HighlightSeverity.ERROR));
+            assertFalse("Highlighting must emit zero errors for valid fenced string", cleanErrors);
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+            assertFalse("WolfTheProblemSolver must clear str04_wolf_test.stvn after fix",
+                    wolf.isProblemFile(virtualFile));
+        } finally {
+            if (wolf instanceof com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver mockWolf) {
+                mockWolf.resetDelegate();
+            }
+        }
+    }
+
+    public void testRuleStr04OrphanClosingDelimiterRejectedWithoutBlockTrigger() {
+        String invalidText = """
+            {
+              :type :String
+              :body [SQL]\"\"\"
+            }
+            """;
+        myFixture.configureByText("str04_orphan_test.stvn", invalidText);
+        var highlights = myFixture.doHighlighting();
+        var hasOrphanError = highlights.stream().anyMatch(h ->
+            h.getSeverity().equals(HighlightSeverity.ERROR) &&
+            h.getDescription() != null &&
+            h.getDescription().contains("Rule STR-04 violation: Orphan or unexpected closing fence delimiter"));
+        assertTrue("Highlighting must emit ERROR citing Rule STR-04 orphan delimiter", hasOrphanError);
+    }
 }
+
 

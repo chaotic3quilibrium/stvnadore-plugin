@@ -1,0 +1,12 @@
+<templateSet group="STVN">
+    <template name="fence"
+              value="&quot;&quot;&quot;[$TAG$]&#10;  $END$&#10;[$TAG$]&quot;&quot;&quot;"
+              description="Fenced string block"
+              toReformat="false"
+              toShortenFQNames="true">
+        <variable name="TAG" expression="" defaultValue="&quot;FENCE&quot;" alwaysStopAt="true"/>
+        <context>
+            <option name="STVN" value="true"/>
+        </context>
+    </template>
+</templateSet>

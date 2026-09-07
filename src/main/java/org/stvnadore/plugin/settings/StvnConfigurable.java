@@ -10,10 +10,13 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.icons.StvnIcons;
 
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.Icon;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 
 @NullMarked
 public final class StvnConfigurable implements SearchableConfigurable {
@@ -26,6 +29,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox enableRedundantTagInspectionCheckBox;
     private @Nullable JCheckBox enableFormDiscrepancyInspectionCheckBox;
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
+    private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
 
     public StvnConfigurable(Project project) {
         this.project = project;
@@ -68,6 +72,29 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(cb5);
         panel.add(cb6);
 
+        panel.add(javax.swing.Box.createVerticalStrut(10));
+        var styleLabel = new JLabel("Multiline string auto-closing style:");
+        styleLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        panel.add(styleLabel);
+
+        var styleCombo = new JComboBox<>(StvnSettings.BlockStringEnterStyle.values());
+        styleCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value == StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE) {
+                    setText("Expanded (3 lines): Delimiter on line 3 (Default)");
+                } else if (value == StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE) {
+                    setText("Tight (2 lines): Delimiter on line 2");
+                }
+                return this;
+            }
+        });
+        styleCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        styleCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, styleCombo.getPreferredSize().height));
+        panel.add(styleCombo);
+        panel.add(javax.swing.Box.createVerticalGlue());
+
         mainPanel = panel;
         useLongFormSumTypesCheckBox = cb1;
         showTypeHintsCheckBox = cb2;
@@ -75,6 +102,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableRedundantTagInspectionCheckBox = cb4;
         enableFormDiscrepancyInspectionCheckBox = cb5;
         preferImpliedSumTypesCheckBox = cb6;
+        blockStringEnterStyleComboBox = styleCombo;
 
         reset();
         return panel;
@@ -88,8 +116,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var combo = blockStringEnterStyleComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
             return false;
         }
 
@@ -101,7 +130,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
                cb3.isSelected() != projSettings.getState().showHoverDocs ||
                cb4.isSelected() != projSettings.getState().enableRedundantTagInspection ||
                cb5.isSelected() != projSettings.getState().enableFormDiscrepancyInspection ||
-               cb6.isSelected() != projSettings.getState().preferImpliedSumTypes;
+               cb6.isSelected() != projSettings.getState().preferImpliedSumTypes ||
+               combo.getSelectedItem() != settings.getState().blockStringEnterStyle;
     }
 
     @Override
@@ -112,8 +142,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var combo = blockStringEnterStyleComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
             return;
         }
 
@@ -126,6 +157,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         projSettings.getState().enableRedundantTagInspection = cb4.isSelected();
         projSettings.getState().enableFormDiscrepancyInspection = cb5.isSelected();
         projSettings.getState().preferImpliedSumTypes = cb6.isSelected();
+        settings.getState().blockStringEnterStyle = (StvnSettings.BlockStringEnterStyle) combo.getSelectedItem();
     }
 
     @Override
@@ -136,8 +168,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var combo = blockStringEnterStyleComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
             return;
         }
 
@@ -150,6 +183,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb4.setSelected(projSettings.getState().enableRedundantTagInspection);
         cb5.setSelected(projSettings.getState().enableFormDiscrepancyInspection);
         cb6.setSelected(projSettings.getState().preferImpliedSumTypes);
+        combo.setSelectedItem(settings.getState().blockStringEnterStyle);
     }
 
     @Override
@@ -161,6 +195,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableRedundantTagInspectionCheckBox = null;
         enableFormDiscrepancyInspectionCheckBox = null;
         preferImpliedSumTypesCheckBox = null;
+        blockStringEnterStyleComboBox = null;
     }
 
 }

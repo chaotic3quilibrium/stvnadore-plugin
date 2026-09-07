@@ -1,0 +1,584 @@
+package org.stvnadore.plugin.validation;
+
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.settings.StvnSettings;
+
+import java.util.List;
+
+/**
+ * Platform tests verifying Rule STR-04 fenced string inspection diagnostics,
+ * resilient quick-fixes, arbitrary recursive nesting, and orphan fence guards.
+ */
+@NullMarked
+public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        myFixture.enableInspections(new StvnFencedStringInspection());
+    }
+
+    @Override
+    protected void tearDown() throws Exception {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        super.tearDown();
+    }
+
+    public void testValidFencedStringWithoutArrowPassesCleanly() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT * FROM users;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.configureByText("valid_no_arrow.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Valid fenced string without arrow must produce zero errors", hasErrors);
+        boolean hasDeprecation = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("deprecated"));
+        assertFalse("Canonical fenced string without arrow must produce zero deprecation diagnostics", hasDeprecation);
+    }
+
+    public void testValidFencedStringWithArrowPassesCompilationWithDeprecationWarning() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"->[SHA256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad]
+              nested content
+              [SHA256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad]\"\"\"
+            }
+            """;
+        myFixture.configureByText("valid_with_arrow.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasSyntaxViolations = highlights.stream().anyMatch(h ->
+            h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation"));
+        assertFalse("Valid fenced string with arrow must produce zero delimiter violation errors", hasSyntaxViolations);
+        boolean hasDeprecation = highlights.stream().anyMatch(h ->
+            h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation"));
+        assertTrue("Legacy fenced string with arrow must emit Rule STR-04 deprecation diagnostic", hasDeprecation);
+    }
+
+    public void testDeprecatedArrowDelimiterHighlightsAndQuickFixRemoves() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"->[SQL]
+              SELECT 1;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.configureByText("deprecated_arrow.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var deprecation = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated; use '\"\"\"[TAG]' instead."))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected Rule STR-04 deprecation highlight for '->'", deprecation);
+        assertTrue("Highlight message must match core deprecation contract",
+            deprecation.getDescription().contains("Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated"));
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected 'Remove deprecated \\'->\\' arrow' quick-fix to be available", action);
+        myFixture.launchAction(action);
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT 1;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        // Caret must be positioned on the body line between delimiters
+        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
+
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasPostDiagnostics = postHighlights.stream().anyMatch(h ->
+            h.getDescription() != null && (h.getDescription().contains("STR-04") || h.getDescription().contains("deprecated")));
+        assertFalse("Post-fix highlighting must contain zero diagnostics", hasPostDiagnostics);
+    }
+
+    public void testDeprecatedArrowWithMismatchedClosingTagEmitsBothDiagnostics() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"->[SQL]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.configureByText("mismatched_and_deprecated.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasDeprecation = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation"));
+        boolean hasMismatch = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag"));
+        assertTrue("Must emit deprecation warning for '->'", hasDeprecation);
+        assertTrue("Must emit mismatch error for closing fence tag", hasMismatch);
+    }
+
+    public void testBatchCleanupRemovesAllDeprecatedArrowsInDocument() {
+        String code = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"->[FIRST]
+                First body
+                [FIRST]\"\"\"
+                \"\"\"->[SECOND]
+                Second body
+                [SECOND]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("batch_cleanup.stvn", code);
+        myFixture.doHighlighting();
+        var fixes = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
+            .toList();
+        assertEquals("Expected 2 quick-fix actions available in document", 2, fixes.size());
+
+        // Execute quick-fix on the first occurrence
+        myFixture.launchAction(fixes.get(0));
+
+        // Execute quick-fix on the second occurrence
+        var remainingFixes = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
+            .toList();
+        assertEquals("Expected 1 remaining quick-fix action", 1, remainingFixes.size());
+        myFixture.launchAction(remainingFixes.get(0));
+
+        String expected = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[FIRST]
+                First body
+                [FIRST]\"\"\"
+                \"\"\"[SECOND]
+                Second body
+                [SECOND]\"\"\"
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasWarningsOrErrors = postHighlights.stream().anyMatch(h ->
+            h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING));
+        assertFalse("Post-batch cleanup highlighting must contain 0 warnings and 0 errors", hasWarningsOrErrors);
+    }
+
+    public void testRecursiveNestedFencedStringsPreserveInnerDelimiters() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[OUTER]
+              Here is an embedded inner block:
+              \"\"\"[INNER]
+              SELECT id FROM inner_table;
+              [INNER]\"\"\"
+              Trailing outer content.
+              [OUTER]\"\"\"
+            }
+            """;
+        myFixture.configureByText("recursive_nesting.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Recursive nested fenced strings must parse with zero errors and preserve inner delimiters", hasErrors);
+    }
+
+    public void testEmptyTagRejectedWithRuleStr04() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[]
+              content
+              []\"\"\"
+            }
+            """;
+        myFixture.configureByText("empty_tag.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue(highlights.stream().anyMatch(h -> h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter tag must not be empty")));
+    }
+
+    public void testWhitespaceInTagRejectedWithRuleStr04() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[ ]
+              content
+              [ ]\"\"\"
+            }
+            """;
+        myFixture.configureByText("whitespace_tag.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue(highlights.stream().anyMatch(h -> h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter tag must not contain whitespace")));
+    }
+
+    public void testIllegalCharactersRejectedWithRuleStr04() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[C++]
+              int main() {}
+              [C++]\"\"\"
+            }
+            """;
+        myFixture.configureByText("illegal_char_tag.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue(highlights.stream().anyMatch(h -> h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter tag 'C++' contains invalid characters")));
+    }
+
+    public void testTagLengthExceeding256Rejected() {
+        String longTag = "A".repeat(257);
+        String code = "{\n  :type :String\n  :body \"\"\"[" + longTag + "]\n  content\n  [" + longTag + "]\"\"\"\n}\n";
+        myFixture.configureByText("long_tag.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue(highlights.stream().anyMatch(h -> h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter tag length exceeds maximum of 256 characters")));
+    }
+
+    public void testMismatchedClosingTagRejected() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.configureByText("mismatched_close.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue(highlights.stream().anyMatch(h -> h.getDescription().contains("Rule STR-04 violation: Mismatched closing fence tag '[JSON]', expected '[SQL]'")));
+    }
+
+    public void testQuickFixBalancesClosingTagWithTrailingWhitespace() {
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]\n  SELECT 1;\n  [JSON]\"\"\"  \n}\n";
+        myFixture.configureByText("quickfix_balance_trailing.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[JSON]\"\"\"' with '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected balance closing tag quick-fix to be registered", action);
+        myFixture.launchAction(action);
+        myFixture.checkResult("{\n  :type :String\n  :body \"\"\"[SQL]\n  SELECT 1;\n  [SQL]\"\"\"  \n}\n");
+    }
+
+    public void testAppendClosingFenceDoesNotSwallowDownstreamContent() {
+        String code = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[SQL]
+                (10 20)
+              )
+            }
+            """;
+        myFixture.configureByText("unclosed_before_tuple.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Append closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected append closing delimiter quick-fix to be registered", action);
+        myFixture.launchAction(action);
+        String expected = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[SQL]
+                [SQL]\"\"\"
+                (10 20)
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Repaired fenced string block must produce zero errors and preserve downstream tuple", hasErrors);
+    }
+
+    public void testSupplyDefaultTagAtomicallyClosesUnclosedBlock() {
+        String code = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[]
+                (10 20)
+              )
+            }
+            """;
+        myFixture.configureByText("empty_tag_unclosed.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Supply default tag '[FENCE]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected supply default tag quick-fix to be registered", action);
+        myFixture.launchAction(action);
+        String expected = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[FENCE]
+                [FENCE]\"\"\"
+                (10 20)
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Atomically supplied tag and closed block must produce zero errors", hasErrors);
+    }
+
+    public void testOpeningFencePrecedingExistingFencedBlockRegistersErrorOnOpeningLine() {
+        String code = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[SQL]
+                \"\"\"[FENCE]
+                Hello world
+                [FENCE]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("preceding_block.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var sqlHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("expected closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected unclosed error on opening line for [SQL]", sqlHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Append closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected AppendClosingFenceQuickFix to be available on opening line", action);
+        myFixture.launchAction(action);
+        assertTrue(myFixture.getEditor().getDocument().getText().contains("\"\"\"[SQL]\n    [SQL]\"\"\""));
+
+        // Caret must be positioned on the body line between delimiters
+        int caretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int targetLineOffset = myFixture.getEditor().getDocument().getLineStartOffset(4);
+        assertTrue("Caret must be positioned on the body line following mutation", caretOffset >= targetLineOffset);
+    }
+
+    public void testBidirectionalQuickFixesOnMismatchedFences() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.configureByText("mismatched_bidirectional.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        assertTrue("Highlight on closing range must exist", highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[JSON]', expected '[SQL]'")));
+        assertTrue("Highlight on opening range must exist", highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched opening fence tag '[SQL]', closing fence has '[JSON]'")));
+
+        var updateOpeningAction = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[SQL]' with '[JSON]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Quick-fix updating opening from closing must be available", updateOpeningAction);
+        myFixture.launchAction(updateOpeningAction);
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[JSON]
+              SELECT 1;
+              [JSON]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        // Caret must be repositioned to the body line between delimiters
+        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
+    }
+
+    public void testDepthAwareMismatchDetectionWithNestedFencedString() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[NEW_OUTER]
+                \"\"\"[INNER]
+                [INNER]\"\"\"
+              [OLD_OUTER]\"\"\"
+            }
+            """;
+        myFixture.configureByText("nested_depth_aware.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var mismatchHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[OLD_OUTER]', expected '[NEW_OUTER]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected depth-aware mismatch error for [OLD_OUTER]", mismatchHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[OLD_OUTER]\"\"\"' with '[NEW_OUTER]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected BalanceClosingTagQuickFix to be registered", action);
+        myFixture.launchAction(action);
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[NEW_OUTER]
+                \"\"\"[INNER]
+                [INNER]\"\"\"
+              [NEW_OUTER]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+        assertTrue("Inner nested fenced string must remain untouched", myFixture.getEditor().getDocument().getText().contains("\"\"\"[INNER]\n    [INNER]\"\"\""));
+
+        // Caret must be positioned on the body line between delimiters
+        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
+    }
+
+    public void testEnterKeyAutoClosesBareBlockStringExpandedThreeLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("enter_bare_expanded.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"\n    \n  \"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesBareBlockStringTightTwoLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("enter_bare_tight.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"\n    \"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesFencedStringTightTwoLine() {
+        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE;
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n}\n";
+        myFixture.configureByText("enter_fenced_tight.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n    [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testCreateFencedStringIntentionExecution() {
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("convert_intention.stvn", code);
+        var intention = myFixture.findSingleIntention("Convert to Fenced String Block");
+        assertNotNull("Expected 'Convert to Fenced String Block' intention", intention);
+        myFixture.launchAction(intention);
+        String expected = "{\n  :type :String\n  :body \"\"\"[FENCE]\n    \n  [FENCE]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testBracketTypingLaunchesInteractiveLiveTemplate() {
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
+        myFixture.configureByText("typed_bracket_template.stvn", code);
+        myFixture.type('[');
+        String docText = myFixture.getEditor().getDocument().getText();
+        assertTrue("Live template expansion must insert opening fence with default TAG", docText.contains("\"\"\"[FENCE]"));
+        assertTrue("Live template expansion must insert closing fence with matching TAG", docText.contains("[FENCE]\"\"\""));
+    }
+
+    public void testEnterKeyAutoClosesFencedString() {
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n}\n";
+        myFixture.configureByText("enter_auto_close.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n    \n  [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesWithArrowSyntax() {
+        String code = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]<caret>\n}\n";
+        myFixture.configureByText("enter_arrow_close.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]\n    \n  [MARKDOWN]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyDoesNotDuplicateExistingClosingFence() {
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n  [SQL]\"\"\"\n}\n";
+        myFixture.configureByText("enter_no_dup.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n  \n  [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyCaretInsideTagDoesNotAutoClose() {
+        String code = "{\n  :type :String\n  :body \"\"\"[S<caret>QL]\n}\n";
+        myFixture.configureByText("enter_inside_tag.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[S\n  QL]\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testBalanceClosingTagQuickFixReplacesImmediateDelimiterLeavingDownstreamIdenticalBlockUntouched() {
+        String code = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[NEW_TAG]
+
+                [OLD_TAG]\"\"\"
+
+                \"\"\"[OLD_TAG]
+                content
+                [OLD_TAG]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("exact_repro_swallowed_blocks.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var mismatchHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[OLD_TAG]', expected '[NEW_TAG]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected mismatch error on immediate closing delimiter for [NEW_TAG]", mismatchHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[OLD_TAG]\"\"\"' with '[NEW_TAG]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected BalanceClosingTagQuickFix to be available", action);
+        myFixture.launchAction(action);
+
+        String expected = """
+            {
+              :type :Tuple( :String :String )
+              :body (
+                \"\"\"[NEW_TAG]
+
+                [NEW_TAG]\"\"\"
+
+                \"\"\"[OLD_TAG]
+                content
+                [OLD_TAG]\"\"\"
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Both fenced string blocks must be valid with zero errors after targeted replacement", hasErrors);
+    }
+}

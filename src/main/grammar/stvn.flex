@@ -118,8 +118,12 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
 
   {COMMENT}                      { return COMMENT; }
   
-  // Dynamic Fenced String with exact matching closing fence [TAG]"""
-  \"\"\"->\[[-a-zA-Z0-9_ ]*\][^\n]*\n {
+  // Comprehensive orphan fence interceptor: Reject unmatched or naked closing fences
+  // outside fenced string bodies to prevent block-string fallback triggers
+  \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
+
+  // Permissive Dynamic Fenced String: Matches standard [TAG] or legacy ->[TAG]
+  \"\"\"(->)?\[[^\r\n\]]*\][ \t\r]*\n {
     String text = yytext().toString();
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);

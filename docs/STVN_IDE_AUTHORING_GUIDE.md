@@ -41,7 +41,7 @@
 - [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
   - [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
   - [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
-  - [5.3 Polyglot Multi-Language Fenced Strings (`"""->[LANG] ... [LANG]"""`)](#53-polyglot-multi-language-fenced-strings--lang--lang)
+  - [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
   - [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
 - [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
   - [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
@@ -696,10 +696,20 @@ When hovering over an enum subset alias (such as `:PromotionRole`), `StvnDocumen
 
 ---
 
-### 5.3 Polyglot Multi-Language Fenced Strings (`"""->[LANG] ... [LANG]"""`)
+### 5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)
 
 Data pipelines often embed queries, templates, or scripts inside data files. STVN provides native **Fenced String Literals** with dedicated syntax highlighting:
 
+### Delimiter Invariant (Rule STR-04)
+Every fenced string literal must comply with **Rule STR-04**:
+1. **Opening Delimiter:** `"""[TAG]` (Canonical). Legacy syntax `"""->[TAG]` is **deprecated as of 1.1.1** and scheduled for removal in 2.0.0. Compilers and IDE inspections emit a `WARNING` diagnostic when `->` is encountered. The delimiter must be followed by optional horizontal whitespace and a newline.
+2. **Closing Delimiter:** `[TAG]"""`. The closing tag must match the opening tag identically ($\text{TAG}_{\text{close}} == \text{TAG}_{\text{open}}$).
+3. **Valid Character Class:** Tags must match positive character class `^[a-zA-Z0-9_-]{1,256}$`.
+4. **Length Bounds:** Tag length must satisfy $1 \le \text{length}(\text{TAG}) \le 256$.
+5. **Prohibited Patterns:** Empty tags (`[]`), whitespace (`0x20`, `\t`), quotes (`"`), brackets (`[` / `]`), and punctuation characters (`:`, `;`, `,`, `/`) are strictly prohibited.
+6. **Recursive Nesting:** Fenced strings may nest arbitrarily. Outer blocks encapsulate inner blocks with distinct tags.
+
+### Authoring Example
 ```stvn
 {
   :defs {
@@ -708,7 +718,7 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
   :type :QueryDef
   :body (
     "user_analytics"
-    """->[SQL]
+    """[SQL]
     SELECT
       u.user_id,
       u.email,
@@ -722,11 +732,38 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
 }
 ```
 
-Supported language fences include:
-* `"""->[SQL] ... [SQL]"""` &rarr; SQL query syntax
-* `"""->[JSON] ... [JSON]"""` &rarr; Embedded JSON payloads
-* `"""->[PYTHON] ... [PYTHON]"""` &rarr; Python transformation scripts
-* `"""->[BASH] ... [BASH]"""` / `"""->[SHELL] ... [SHELL]"""` &rarr; Shell commands
+### IDE Inspection & Quick-Fixes (`StvnFencedString`)
+The IDE validates Rule STR-04 in real time:
+* **Deprecated Delimiter Arrow (`->`):** Highlights `->` with deprecation strikethrough styling. Press `Alt+Enter` to invoke **Remove deprecated '->' arrow**. Supports IntelliJ `Code | Code Cleanup...` for single-pass project-wide migration.
+* **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
+  * Press `Alt+Enter` to sanitize tags or supply default tag `[FENCE]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[FENCE]` and inserts `[FENCE]"""` directly on the next line.
+* **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
+  * Press `Alt+Enter` on either the opening or closing delimiter line to balance tags bidirectionally.
+  * Options include updating the closing tag from the opening tag, or updating the opening tag from the closing tag.
+  * Delimiter pairing uses depth-aware scanning to preserve nested fenced strings.
+* **Unclosed Blocks:** Underlines unclosed fences reaching EOF.
+  * Press `Alt+Enter` to insert `[TAG]"""` directly on the line below the opening delimiter, matching opening indentation and leaving downstream code untouched.
+
+### Editor Enter-Key Auto-Closing & Layout Shapes
+When pressing **`Enter`** immediately behind multiline string opening delimiters (`"""` or `"""[TAG]`), the editor auto-closes the block according to the configured `BlockStringEnterStyle` (**Settings | Languages & Frameworks | STVN**):
+1. **`EXPANDED_THREE_LINE` (Default):** Inserts a newline, indented body line, and the closing delimiter on line 3. Positions the caret on the indented body line.
+2. **`TIGHT_TWO_LINE`:** Inserts a newline, indented body offset, and the closing delimiter on line 2. Positions the caret directly in front of the closing delimiter.
+
+### Interactive Live Templates and Intentions
+* **Live Template Trigger on `[`:** Typing `[` immediately following `"""` launches the interactive `fence` Live Template with synchronized tag variables (`$TAG$`) and positions the final caret at `$END$` in the body line.
+* **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[FENCE]\n  \n[FENCE]"""`.
+* **Live Template (`fence`):** Type `fence` and press `Tab` to expand `"""[$TAG$]\n  $END$\n[$TAG$]"""` with dynamic multi-caret tag synchronization.
+
+### In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection
+Position the caret on either the opening `[TAG]` or closing `[TAG]` bracket and press **`Shift+F6`** (macOS: **`⇧F6`**):
+1. **Synchronized Linked Editing:** Both opening and closing delimiter tags enter interactive linked editing. Editing one tag automatically updates its symmetrical counterpart in real time.
+2. **Bidirectional Caret Affinity:** Invoking rename on the closing delimiter keeps cursor focus on the closing delimiter, editing seamlessly from the bottom of large multiline blocks.
+3. **Character Class Enforcement:** Pressing `Enter` commits the rename only if the new tag matches `^[a-zA-Z0-9_-]{1,256}$`. Invalid characters (whitespace, quotes, punctuation) are rejected and reverted.
+4. **AST Fracture & Collision Guard:** The rename listener inspects the enclosed body payload. If the proposed tag matches any delimiter sequence inside the payload (`[TAG]"""`, `"""[TAG]`, or `"""->[TAG]`), the commit aborts:
+   ```
+   Cannot rename tag: proposed tag collides with a delimiter sequence inside the string payload.
+   ```
+   The original tag is restored automatically, preventing catastrophic lexer token swallowing and premature closure.
 
 ---
 

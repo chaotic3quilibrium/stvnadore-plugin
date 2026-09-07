@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.1--SNAPSHOT-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.1.0 - 2026.09.06
+- Version: 1.1.1-SNAPSHOT - 2026.09.07
 
 ---
 
@@ -28,6 +28,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [6. Semantic Inspections & Quick-Fixes](#6-semantic-inspections--quick-fixes)
     * [7. Context-Aware Code Completion](#7-context-aware-code-completion)
     * [8. Enhanced Hover Documentation](#8-enhanced-hover-documentation)
+    * [8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)](#8b-polyglot-fenced-strings--delimiter-invariants-rule-str-04)
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
@@ -100,6 +101,26 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Derivation Lineage**: Details the immediate parent type and filter facet (e.g., `Parent: :PieceRole via #filterExcl [ #PAWN #KING ]`).
 * **Resolution Path**: Traces transitive type aliases back to the root declaration (`:Terminal -> :Intermediate -> :RootEnum`).
 
+### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 2.0.0) and generates an in-editor deprecation diagnostic.
+* **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
+* **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
+* **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
+* **In-Editor Quick-Fixes (`Alt+Enter`)**:
+  * Strips deprecated `->` opening delimiter arrow via `"Remove deprecated '->' arrow"` with full IntelliJ Code Cleanup batch support.
+  * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
+  * Repositions the editor caret directly onto the body line between delimiters following fix execution.
+  * Pairs nested fenced strings via depth-aware sequential scanning.
+  * Strips illegal characters and whitespace from tags.
+  * Atomically supplies default tag `[FENCE]` and closes unclosed delimiters on the next line.
+  * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
+* **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical closing delimiters for both bare `"""` and fenced `"""[TAG]` blocks under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
+* **Interactive Live Template Launch**: Typing `[` after `"""` launches the `fence` Live Template with synchronized dual-tag variables.
+* **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
+* **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
+* **In-Editor `Shift+F6` Synchronized Tag Renaming**: Place caret on opening or closing tag brackets and press `Shift+F6` to launch live linked editing across both delimiters.
+* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`, `"""->[TAG]`) or violating character class `^[a-zA-Z0-9_-]{1,256}$`, preserving document integrity.
+
 ### 9. Byte 4 Wire Framing Awareness
 * **Control Byte Inspection**: Verifies binary headers against the 1:3:4 bitwise layout of Byte 4 (`T` trailer flag, `STRAT` encoding strategy, `SCHEMA` identity strategy).
 * **Hardware-Accelerated CRC-32C Trailer Detection**: Recognizes Bit 7 (`0x80`), validating 4-byte Little-Endian CRC-32C trailers appended at `limit - 4` to protect against payload corruption and truncation.
@@ -125,6 +146,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 | `StvnEnumSubsetInspection`          | `StvnEnumSubset`          | Enum subset filtering inspection    | `STVN / Semantics`           |    `ERROR`     |
 | `StvnVariantStyleInspection`        | `StvnVariantStyle`        | Variant tag style inspection        | `STVN / Style`               |   `WARNING`    |
 | `StvnBooleanValidityInspection`     | `StvnBooleanValidity`     | Boolean validity inspection         | `STVN / Validity`            |    `ERROR`     |
+| `StvnFencedStringInspection`        | `StvnFencedString`        | Fenced string delimiter inspection  | `STVN / Syntax`              |    `ERROR`     |
 | `StvnMapStructuralInspection`       | `StvnMapStructural`       | Flat list in map slot inspection    | `STVN / Structural`          |    `ERROR`     |
 | `StvnDegradedSchemaInspection`      | `StvnDegradedSchema`      | Degraded schema payload evaluation  | `STVN / Quality & Semantics` | `WEAK WARNING` |
 | `StvnDegenerateCompositeInspection` | `StvnDegenerateComposite` | Degenerate arity-1 composite schema | `STVN / Schema Design`       |   `WARNING`    |
