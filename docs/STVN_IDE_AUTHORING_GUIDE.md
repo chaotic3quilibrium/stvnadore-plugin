@@ -754,6 +754,17 @@ When pressing **`Enter`** immediately behind multiline string opening delimiters
 * **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[FENCE]\n  \n[FENCE]"""`.
 * **Live Template (`fence`):** Type `fence` and press `Tab` to expand `"""[$TAG$]\n  $END$\n[$TAG$]"""` with dynamic multi-caret tag synchronization.
 
+### In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection
+Position the caret on either the opening `[TAG]` or closing `[TAG]` bracket and press **`Shift+F6`** (macOS: **`⇧F6`**):
+1. **Synchronized Linked Editing:** Both opening and closing delimiter tags enter interactive linked editing. Editing one tag automatically updates its symmetrical counterpart in real time.
+2. **Bidirectional Caret Affinity:** Invoking rename on the closing delimiter keeps cursor focus on the closing delimiter, editing seamlessly from the bottom of large multiline blocks.
+3. **Character Class Enforcement:** Pressing `Enter` commits the rename only if the new tag matches `^[a-zA-Z0-9_-]{1,256}$`. Invalid characters (whitespace, quotes, punctuation) are rejected and reverted.
+4. **AST Fracture & Collision Guard:** The rename listener inspects the enclosed body payload. If the proposed tag matches any delimiter sequence inside the payload (`[TAG]"""`, `"""[TAG]`, or `"""->[TAG]`), the commit aborts:
+   ```
+   Cannot rename tag: proposed tag collides with a delimiter sequence inside the string payload.
+   ```
+   The original tag is restored automatically, preventing catastrophic lexer token swallowing and premature closure.
+
 ---
 
 ### 5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)

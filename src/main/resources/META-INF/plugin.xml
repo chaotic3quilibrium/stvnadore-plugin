@@ -60,6 +60,9 @@
         <!-- 2d. Typed Handler for Bracket Auto-Pairing in Fenced Strings -->
         <typedHandler implementationClass="org.stvnadore.plugin.editor.StvnFencedStringTypedHandler"/>
 
+        <!-- 2e. Rename Handler for Balanced Fenced String Delimiter Tags -->
+        <renameHandler implementation="org.stvnadore.plugin.editor.StvnFencedStringTagRenameHandler"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>

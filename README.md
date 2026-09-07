@@ -118,6 +118,8 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Interactive Live Template Launch**: Typing `[` after `"""` launches the `fence` Live Template with synchronized dual-tag variables.
 * **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
 * **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
+* **In-Editor `Shift+F6` Synchronized Tag Renaming**: Place caret on opening or closing tag brackets and press `Shift+F6` to launch live linked editing across both delimiters.
+* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`, `"""->[TAG]`) or violating character class `^[a-zA-Z0-9_-]{1,256}$`, preserving document integrity.
 
 ### 9. Byte 4 Wire Framing Awareness
 * **Control Byte Inspection**: Verifies binary headers against the 1:3:4 bitwise layout of Byte 4 (`T` trailer flag, `STRAT` encoding strategy, `SCHEMA` identity strategy).
