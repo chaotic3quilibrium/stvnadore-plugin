@@ -6,6 +6,7 @@
     <change-notes><![CDATA[
       <h3>1.1.1</h3>
       <ul>
+        <li><b>Rule STR-04 Arrow Delimiter Deprecation:</b> Flagged deprecated <code>"""->[TAG]</code> opening delimiter with <code>LIKE_DEPRECATED</code> strikeout diagnostic and introduced <code>Remove deprecated '-&gt;' arrow</code> quick-fix supporting whole-project batch Code Cleanup.</li>
         <li><b>Rule STR-04 Delimiter Invariants:</b> Synchronized JFlex lexer and Grammar-Kit BNF to support optional arrow syntax (<code>"""->[TAG]</code> and <code>"""[TAG]</code>), enforcing character class <code>^[a-zA-Z0-9_-]{1,256}$</code>.</li>
         <li><b>Exact Symmetrical Suffix Scanning:</b> Implemented exact-match scanning in JFlex, ensuring arbitrary recursive nesting (e.g. CAS envelopes enclosing inner payloads) never prematurely terminates.</li>
         <li><b>Fenced String Inspection:</b> Introduced <code>StvnFencedStringInspection</code> providing real-time in-editor validation and quick-fixes for malformed opening tags, length violations, and mismatched closing delimiters.</li>
@@ -188,6 +189,7 @@
                          groupPath="STVN"
                          groupName="Syntax"
                          enabledByDefault="true"
+                         cleanupTool="true"
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnFencedStringInspection"/>
 

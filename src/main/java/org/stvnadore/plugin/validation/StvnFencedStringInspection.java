@@ -1,8 +1,13 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.HighPriorityAction;
+import com.intellij.codeInspection.BatchQuickFix;
+import com.intellij.codeInspection.CleanupLocalInspectionTool;
+import com.intellij.codeInspection.CommonProblemDescriptor;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -12,11 +17,14 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -27,9 +35,13 @@ import java.util.regex.Pattern;
  * 4. Closing delimiter must match opening tag identically ([TAG]""").
  * 5. Supports arbitrary recursive nesting without premature collapse.
  * 6. Provides quick-fixes to sanitize tags and balance closing fences using resilient lastIndexOf targeting.
+ * 7. Flags deprecated '->' arrow delimiters with LIKE_DEPRECATED severity and provides automated cleanup.
  */
 @NullMarked
-public final class StvnFencedStringInspection extends LocalInspectionTool {
+public final class StvnFencedStringInspection extends LocalInspectionTool implements CleanupLocalInspectionTool {
+
+    public static final String RULE_STR_04_ARROW_DEPRECATION_MSG =
+        "Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated; use '\"\"\"[TAG]' instead.";
 
     private static final Pattern VALID_TAG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,256}$");
     private static final Pattern DELIMITER_BOUNDARY_PATTERN = Pattern.compile("(\"\"\"(?:->)?\\[([a-zA-Z0-9_-]{1,256})\\])|(\\[([a-zA-Z0-9_-]{1,256})\\]\"\"\")");
@@ -43,12 +55,8 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             public void visitElement(@NotNull PsiElement element) {
                 super.visitElement(element);
                 var node = element.getNode();
-                if (node != null) {
-                    if (element instanceof StringLiteral && node.findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
-                        validateFencedString(element, holder);
-                    } else if (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED && !(element.getParent() instanceof StringLiteral)) {
-                        validateFencedString(element, holder);
-                    }
+                if (node != null && node.getElementType() == StvnTypes.LITERAL_STRING_FENCED && !(element.getParent() instanceof StringLiteral)) {
+                    validateFencedString(element, holder);
                 }
             }
 
@@ -116,6 +124,19 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         TextRange openRange = new TextRange(0, Math.min(openDelimiterEnd, text.length()));
+
+        // 0. Detect Rule STR-04 Deprecated '->' Arrow Sigil
+        int arrowIdx = text.indexOf("->");
+        if (arrowIdx == 3 && arrowIdx < openBracket) {
+            TextRange arrowRange = new TextRange(arrowIdx, arrowIdx + 2);
+            holder.registerProblem(
+                element,
+                RULE_STR_04_ARROW_DEPRECATION_MSG,
+                ProblemHighlightType.LIKE_DEPRECATED,
+                arrowRange,
+                new RemoveDeprecatedArrowQuickFix()
+            );
+        }
 
         // 1. Validate Opening Delimiter Tag
         if (openTag.isEmpty()) {
@@ -215,6 +236,95 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             "Rule STR-04 violation: Unclosed fenced string block; expected closing delimiter '[" + openTag + "]\"\"\"'",
             new AppendClosingFenceQuickFix(openTag)
         );
+    }
+
+    public static final class RemoveDeprecatedArrowQuickFix implements LocalQuickFix, HighPriorityAction, BatchQuickFix {
+
+        @Override
+        public @NotNull String getName() {
+            return "Remove deprecated '->' arrow";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Remove deprecated '->' arrow";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var docManager = PsiDocumentManager.getInstance(project);
+            var doc = file.getViewProvider().getDocument();
+            String text = element.getText();
+            int openBracket = text.indexOf('[');
+            int arrowIdx = text.indexOf("->");
+            if (arrowIdx < 0 || arrowIdx != 3 || (openBracket >= 0 && arrowIdx >= openBracket)) {
+                return;
+            }
+
+            int elementStart = element.getTextRange().getStartOffset();
+            int arrowStart = elementStart + arrowIdx;
+            if (doc != null) {
+                doc.deleteString(arrowStart, arrowStart + 2);
+                docManager.commitDocument(doc);
+                repositionCaretToBodyLine(project, doc, elementStart);
+            } else {
+                String updated = text.substring(0, arrowIdx) + text.substring(arrowIdx + 2);
+                var dummy = StvnElementFactory.createValue(project, updated);
+                var newLiteral = dummy.getStringLiteral();
+                element.replace(newLiteral != null ? newLiteral : dummy);
+            }
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project,
+                             @NotNull CommonProblemDescriptor[] descriptors,
+                             @NotNull List<PsiElement> psiElementsToIgnore,
+                             @Nullable Runnable refreshViews) {
+            var descriptorsList = new ArrayList<ProblemDescriptor>();
+            for (var d : descriptors) {
+                if (d instanceof ProblemDescriptor pd && pd.getPsiElement() != null) {
+                    descriptorsList.add(pd);
+                }
+            }
+            // Sort in descending order of start offset to preserve text offsets across mutations
+            descriptorsList.sort((a, b) -> Integer.compare(
+                b.getPsiElement().getTextRange().getStartOffset(),
+                a.getPsiElement().getTextRange().getStartOffset()
+            ));
+
+            for (var desc : descriptorsList) {
+                var element = desc.getPsiElement();
+                if (element == null || !element.isValid()) continue;
+                var file = element.getContainingFile();
+                if (file == null) continue;
+                var docManager = PsiDocumentManager.getInstance(project);
+                var doc = file.getViewProvider().getDocument();
+                String text = element.getText();
+                int openBracket = text.indexOf('[');
+                int arrowIdx = text.indexOf("->");
+                if (arrowIdx < 0 || arrowIdx != 3 || (openBracket >= 0 && arrowIdx >= openBracket)) {
+                    continue;
+                }
+                int elementStart = element.getTextRange().getStartOffset();
+                int arrowStart = elementStart + arrowIdx;
+                if (doc != null) {
+                    doc.deleteString(arrowStart, arrowStart + 2);
+                    docManager.commitDocument(doc);
+                } else {
+                    String updated = text.substring(0, arrowIdx) + text.substring(arrowIdx + 2);
+                    var dummy = StvnElementFactory.createValue(project, updated);
+                    var newLiteral = dummy.getStringLiteral();
+                    element.replace(newLiteral != null ? newLiteral : dummy);
+                }
+            }
+            if (refreshViews != null) {
+                refreshViews.run();
+            }
+        }
     }
 
     private static final class SupplyDefaultTagQuickFix implements LocalQuickFix {

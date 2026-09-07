@@ -702,7 +702,7 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
 
 ### Delimiter Invariant (Rule STR-04)
 Every fenced string literal must comply with **Rule STR-04**:
-1. **Opening Delimiter:** `"""->[TAG]` OR `"""[TAG]`. The directional arrow `->` is optional. The delimiter must be followed by optional horizontal whitespace and a newline.
+1. **Opening Delimiter:** `"""[TAG]` (Canonical). Legacy syntax `"""->[TAG]` is **deprecated as of 1.1.1** and scheduled for removal in 2.0.0. Compilers and IDE inspections emit a `WARNING` diagnostic when `->` is encountered. The delimiter must be followed by optional horizontal whitespace and a newline.
 2. **Closing Delimiter:** `[TAG]"""`. The closing tag must match the opening tag identically ($\text{TAG}_{\text{close}} == \text{TAG}_{\text{open}}$).
 3. **Valid Character Class:** Tags must match positive character class `^[a-zA-Z0-9_-]{1,256}$`.
 4. **Length Bounds:** Tag length must satisfy $1 \le \text{length}(\text{TAG}) \le 256$.
@@ -734,6 +734,7 @@ Every fenced string literal must comply with **Rule STR-04**:
 
 ### IDE Inspection & Quick-Fixes (`StvnFencedString`)
 The IDE validates Rule STR-04 in real time:
+* **Deprecated Delimiter Arrow (`->`):** Highlights `->` with deprecation strikethrough styling. Press `Alt+Enter` to invoke **Remove deprecated '->' arrow**. Supports IntelliJ `Code | Code Cleanup...` for single-pass project-wide migration.
 * **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
   * Press `Alt+Enter` to sanitize tags or supply default tag `[FENCE]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[FENCE]` and inserts `[FENCE]"""` directly on the next line.
 * **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).

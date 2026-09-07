@@ -102,11 +102,12 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Resolution Path**: Traces transitive type aliases back to the root declaration (`:Terminal -> :Intermediate -> :RootEnum`).
 
 ### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
-* **Flexible Delimiters**: Supports both standard `"""[TAG]` and directional `"""->[TAG]` opening fences.
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 2.0.0) and generates an in-editor deprecation diagnostic.
 * **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
 * **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
+  * Strips deprecated `->` opening delimiter arrow via `"Remove deprecated '->' arrow"` with full IntelliJ Code Cleanup batch support.
   * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
   * Repositions the editor caret directly onto the body line between delimiters following fix execution.
   * Pairs nested fenced strings via depth-aware sequential scanning.
