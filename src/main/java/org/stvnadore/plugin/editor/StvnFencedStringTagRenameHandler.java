@@ -130,7 +130,9 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
                 closeTagRange,
                 blockData.payloadStart,
                 blockData.payloadEnd,
-                initialCaretOffset
+                initialCaretOffset,
+                inCloseTag,
+                blockData.openBracketIdx
             );
 
             editor.getCaretModel().moveToOffset(elementStart);

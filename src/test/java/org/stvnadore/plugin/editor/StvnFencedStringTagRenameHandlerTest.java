@@ -53,6 +53,10 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
             }
             """;
         myFixture.checkResult(expected);
+
+        int expectedCaretOffset = expected.indexOf("[QUERY]") + "[QUERY".length();
+        assertEquals("Caret must sit immediately after new tag inside opening bracket",
+            expectedCaretOffset, myFixture.getEditor().getCaretModel().getOffset());
     }
 
     public void testShiftF6OnClosingTagRenamesBothDelimiters() {
@@ -92,6 +96,10 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
             }
             """;
         myFixture.checkResult(expected);
+
+        int expectedCaretOffset = expected.lastIndexOf("[PAYLOAD]") + "[PAYLOAD".length();
+        assertEquals("Caret must sit immediately after new tag inside closing bracket",
+            expectedCaretOffset, myFixture.getEditor().getCaretModel().getOffset());
     }
 
     public void testRenameToInvalidCharacterClassIsRejected() {
@@ -318,5 +326,93 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
             initialCaretOffset, myFixture.getEditor().getCaretModel().getOffset());
         assertEquals("Caret line must remain on closing delimiter after collision rollback",
             initialLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
+    }
+
+    public void testShiftF6TagShorteningOnOpeningTagRenamesAndAnchorsCaret() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[FENCE<caret>]
+              payload content
+              [FENCE]\"\"\"
+            }
+            """;
+        myFixture.configureByText("shorten_open.stvn", code);
+
+        var handler = new StvnFencedStringTagRenameHandler();
+        DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
+        assertTrue("Handler must be available on opening tag", handler.isAvailableOnDataContext(dataContext));
+
+        int openLine = myFixture.getEditor().getCaretModel().getLogicalPosition().line;
+
+        handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
+
+        TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
+        assertNotNull("Live template state must be active", state);
+
+        myFixture.type("F\n");
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[F]
+              payload content
+              [F]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        int expectedCaretOffset = expected.indexOf("[F]") + "[F".length();
+        int actualCaretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        assertEquals("Caret must sit immediately after shortened tag inside opening bracket",
+            expectedCaretOffset, actualCaretOffset);
+        assertEquals("Caret must remain on opening delimiter line",
+            openLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
+        assertTrue("Caret must not advance past closing bracket",
+            actualCaretOffset <= expected.indexOf(']', expected.indexOf("[F]")));
+    }
+
+    public void testShiftF6TagShorteningOnClosingTagRenamesAndAnchorsCaret() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[FENCE]
+              payload content
+              [FENCE<caret>]\"\"\"
+            }
+            """;
+        myFixture.configureByText("shorten_close.stvn", code);
+
+        var handler = new StvnFencedStringTagRenameHandler();
+        DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
+        assertTrue("Handler must be available on closing tag", handler.isAvailableOnDataContext(dataContext));
+
+        int closeLine = myFixture.getEditor().getCaretModel().getLogicalPosition().line;
+
+        handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
+
+        TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
+        assertNotNull("Live template state must be active", state);
+
+        myFixture.type("F\n");
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[F]
+              payload content
+              [F]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+
+        int expectedCaretOffset = expected.lastIndexOf("[F]") + "[F".length();
+        int actualCaretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        assertEquals("Caret must sit immediately after shortened tag inside closing bracket",
+            expectedCaretOffset, actualCaretOffset);
+        assertEquals("Caret must remain on closing delimiter line",
+            closeLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
+        assertTrue("Caret must not advance past closing bracket",
+            actualCaretOffset <= expected.indexOf(']', expected.lastIndexOf("[F]")));
     }
 }

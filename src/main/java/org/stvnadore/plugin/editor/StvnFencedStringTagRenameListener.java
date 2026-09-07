@@ -42,7 +42,10 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
     private final int payloadRelativeStart;
     private final int payloadRelativeEnd;
     private final int initialCaretOffset;
+    private final boolean inCloseTag;
+    private final int openBracketIdx;
 
+    private @Nullable String committedTag = null;
     private boolean reverted = false;
 
     public StvnFencedStringTagRenameListener(Project project,
@@ -54,7 +57,9 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
                                             TextRange originalCloseTagRange,
                                             int payloadRelativeStart,
                                             int payloadRelativeEnd,
-                                            int initialCaretOffset) {
+                                            int initialCaretOffset,
+                                            boolean inCloseTag,
+                                            int openBracketIdx) {
         this.project = project;
         this.editor = editor;
         this.file = file;
@@ -65,6 +70,8 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
         this.payloadRelativeStart = payloadRelativeStart;
         this.payloadRelativeEnd = payloadRelativeEnd;
         this.initialCaretOffset = initialCaretOffset;
+        this.inCloseTag = inCloseTag;
+        this.openBracketIdx = openBracketIdx;
     }
 
     @Override
@@ -86,6 +93,7 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
         }
 
         // Commit valid document changes
+        this.committedTag = newTag;
         PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
     }
 
@@ -101,16 +109,46 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
             if (initialCaretOffset >= 0 && initialCaretOffset <= doc.getTextLength()) {
                 editor.getCaretModel().moveToOffset(initialCaretOffset);
             }
+            return;
+        }
+
+        String newTag = this.committedTag;
+        int openTagStart = elementStartOffset + openBracketIdx + 1;
+        if (newTag == null) {
+            int openCloseBracket = doc.getText().indexOf(']', openTagStart);
+            if (openCloseBracket > openTagStart) {
+                newTag = doc.getText(new TextRange(openTagStart, openCloseBracket));
+            } else {
+                newTag = originalTag;
+            }
+        }
+
+        if (!inCloseTag) {
+            int targetOffset = openTagStart + newTag.length();
+            if (targetOffset >= 0 && targetOffset <= doc.getTextLength()) {
+                editor.getCaretModel().moveToOffset(targetOffset);
+            }
         } else {
-            if (initialCaretOffset >= 0 && initialCaretOffset <= doc.getTextLength()) {
-                int initialLine = doc.getLineNumber(initialCaretOffset);
-                int currentLine = editor.getCaretModel().getLogicalPosition().line;
-                if (currentLine != initialLine) {
-                    int lineStart = doc.getLineStartOffset(initialLine);
-                    int lineEnd = doc.getLineEndOffset(initialLine);
-                    int targetOffset = Math.min(Math.max(initialCaretOffset, lineStart), lineEnd);
-                    editor.getCaretModel().moveToOffset(targetOffset);
+            int delta = newTag.length() - originalTag.length();
+            int closingTagStart = elementStartOffset + originalCloseTagRange.getStartOffset() + delta;
+            if (closingTagStart < 0 || closingTagStart + newTag.length() > doc.getTextLength() ||
+                !doc.getText(new TextRange(closingTagStart, closingTagStart + newTag.length())).equals(newTag)) {
+                String fullText = doc.getText();
+                int searchBoundary = Math.min(fullText.length(), elementStartOffset + payloadRelativeEnd + delta + 300);
+                int lastTriple = fullText.lastIndexOf("\"\"\"", searchBoundary);
+                if (lastTriple > elementStartOffset) {
+                    int closeBracket = fullText.lastIndexOf(']', lastTriple);
+                    if (closeBracket > elementStartOffset) {
+                        int openBracket = fullText.lastIndexOf('[', closeBracket);
+                        if (openBracket >= 0 && openBracket < closeBracket) {
+                            closingTagStart = openBracket + 1;
+                        }
+                    }
                 }
+            }
+            int targetOffset = closingTagStart + newTag.length();
+            if (targetOffset >= 0 && targetOffset <= doc.getTextLength()) {
+                editor.getCaretModel().moveToOffset(targetOffset);
             }
         }
     }
