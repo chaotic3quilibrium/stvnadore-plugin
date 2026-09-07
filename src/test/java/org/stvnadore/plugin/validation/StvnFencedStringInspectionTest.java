@@ -145,4 +145,104 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.launchAction(action);
         myFixture.checkResult("{\n  :type :String\n  :body \"\"\"[SQL]\n  SELECT 1;\n  [SQL]\"\"\"  \n}\n");
     }
+
+    public void testAppendClosingFenceDoesNotSwallowDownstreamContent() {
+        String code = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[SQL]
+                (10 20)
+              )
+            }
+            """;
+        myFixture.configureByText("unclosed_before_tuple.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Append closing delimiter '[SQL]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected append closing delimiter quick-fix to be registered", action);
+        myFixture.launchAction(action);
+        String expected = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[SQL]
+                [SQL]\"\"\"
+                (10 20)
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Repaired fenced string block must produce zero errors and preserve downstream tuple", hasErrors);
+    }
+
+    public void testSupplyDefaultTagAtomicallyClosesUnclosedBlock() {
+        String code = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[]
+                (10 20)
+              )
+            }
+            """;
+        myFixture.configureByText("empty_tag_unclosed.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Supply default tag '[TEXT]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected supply default tag quick-fix to be registered", action);
+        myFixture.launchAction(action);
+        String expected = """
+            {
+              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :body (
+                \"\"\"[TEXT]
+                [TEXT]\"\"\"
+                (10 20)
+              )
+            }
+            """;
+        myFixture.checkResult(expected);
+        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
+        boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Atomically supplied tag and closed block must produce zero errors", hasErrors);
+    }
+
+    public void testEnterKeyAutoClosesFencedString() {
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n}\n";
+        myFixture.configureByText("enter_auto_close.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n    \n  [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyAutoClosesWithArrowSyntax() {
+        String code = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]<caret>\n}\n";
+        myFixture.configureByText("enter_arrow_close.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]\n    \n  [MARKDOWN]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyDoesNotDuplicateExistingClosingFence() {
+        String code = "{\n  :type :String\n  :body \"\"\"[SQL]<caret>\n  [SQL]\"\"\"\n}\n";
+        myFixture.configureByText("enter_no_dup.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[SQL]\n  \n  [SQL]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
+
+    public void testEnterKeyCaretInsideTagDoesNotAutoClose() {
+        String code = "{\n  :type :String\n  :body \"\"\"[S<caret>QL]\n}\n";
+        myFixture.configureByText("enter_inside_tag.stvn", code);
+        myFixture.type('\n');
+        String expected = "{\n  :type :String\n  :body \"\"\"[S\n  QL]\n}\n";
+        myFixture.checkResult(expected);
+    }
 }

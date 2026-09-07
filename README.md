@@ -109,7 +109,9 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
   * Balances mismatched closing tags to match the opening tag via resilient offset replacement.
   * Strips illegal characters and whitespace from tags.
-  * Supplies default tag `[TEXT]` for empty delimiters.
+  * Atomically supplies default tag `[TEXT]` and closes unclosed delimiters on the next line.
+  * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
+* **Enter-Key Auto-Closing**: Automatically generates the indented newline and symmetrical closing fence `[TAG]"""` when pressing `Enter` on an unclosed opening fence line.
 
 ### 9. Byte 4 Wire Framing Awareness
 * **Control Byte Inspection**: Verifies binary headers against the 1:3:4 bitwise layout of Byte 4 (`T` trailer flag, `STRAT` encoding strategy, `SCHEMA` identity strategy).

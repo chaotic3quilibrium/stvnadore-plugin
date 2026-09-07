@@ -60,6 +60,38 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         };
     }
 
+    private static String computeOpeningIndent(CharSequence docText, int startOffset) {
+        int lineStart = 0;
+        for (int i = startOffset - 1; i >= 0; i--) {
+            char c = docText.charAt(i);
+            if (c == '\n') {
+                lineStart = i + 1;
+                break;
+            }
+        }
+        boolean pureWhitespace = true;
+        for (int i = lineStart; i < startOffset; i++) {
+            char c = docText.charAt(i);
+            if (c != ' ' && c != '\t') {
+                pureWhitespace = false;
+                break;
+            }
+        }
+        if (pureWhitespace) {
+            return docText.subSequence(lineStart, startOffset).toString();
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = lineStart; i < startOffset; i++) {
+            char c = docText.charAt(i);
+            if (c == ' ' || c == '\t') {
+                sb.append(c);
+            } else {
+                break;
+            }
+        }
+        return sb.toString();
+    }
+
     private static void validateFencedString(PsiElement element, ProblemsHolder holder) {
         String text = element.getText();
         if (!text.startsWith("\"\"\"")) {
@@ -186,20 +218,57 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             String text = element.getText();
             int openBracket = text.indexOf("[]");
-            if (openBracket >= 0) {
-                String replaced = text.replaceFirst("\\[\\]", "[" + defaultTag + "]");
-                int closeEmptyIdx = replaced.lastIndexOf("[]\"\"\"");
-                if (closeEmptyIdx >= 0) {
-                    replaced = replaced.substring(0, closeEmptyIdx) + "[" + defaultTag + "]\"\"\"" + replaced.substring(closeEmptyIdx + 5);
-                }
+            if (openBracket < 0) return;
+
+            int closeEmptyIdx = text.lastIndexOf("[]\"\"\"");
+            int startOffset = element.getTextRange().getStartOffset();
+
+            if (closeEmptyIdx >= 0 && closeEmptyIdx > openBracket) {
+                String updated = text.substring(0, openBracket)
+                        + "[" + defaultTag + "]"
+                        + text.substring(openBracket + 2, closeEmptyIdx)
+                        + "[" + defaultTag + "]\"\"\""
+                        + text.substring(closeEmptyIdx + 5);
                 if (doc != null) {
-                    var range = element.getTextRange();
-                    doc.replaceString(range.getStartOffset(), range.getEndOffset(), replaced);
+                    doc.replaceString(startOffset, startOffset + text.length(), updated);
                     docManager.commitDocument(doc);
                 } else {
-                    var dummy = StvnElementFactory.createValue(project, replaced);
+                    var dummy = StvnElementFactory.createValue(project, updated);
                     var newLiteral = dummy.getStringLiteral();
                     element.replace(newLiteral != null ? newLiteral : dummy);
+                }
+            } else {
+                int newlineIndex = text.indexOf('\n');
+                if (doc != null) {
+                    var docChars = doc.getCharsSequence();
+                    String indent = computeOpeningIndent(docChars, startOffset);
+                    if (newlineIndex >= 0) {
+                        String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";
+                        String openingLine = text.substring(0, newlineIndex + 1).replaceFirst("\\[\\]", "[" + defaultTag + "]");
+                        String closingLine = indent + "[" + defaultTag + "]\"\"\"" + lineSep;
+                        doc.replaceString(startOffset, startOffset + newlineIndex + 1, openingLine + closingLine);
+                    } else {
+                        String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
+                        String updatedOpening = text.replaceFirst("\\[\\]", "[" + defaultTag + "]");
+                        String closingLine = lineSep + indent + "[" + defaultTag + "]\"\"\"";
+                        doc.replaceString(startOffset, startOffset + text.length(), updatedOpening + closingLine);
+                    }
+                    docManager.commitDocument(doc);
+                } else {
+                    if (newlineIndex >= 0) {
+                        String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";
+                        String openingLine = text.substring(0, newlineIndex + 1).replaceFirst("\\[\\]", "[" + defaultTag + "]");
+                        String closingLine = "  [" + defaultTag + "]\"\"\"" + lineSep;
+                        String rest = text.substring(newlineIndex + 1);
+                        var dummy = StvnElementFactory.createValue(project, openingLine + closingLine + rest);
+                        var newLiteral = dummy.getStringLiteral();
+                        element.replace(newLiteral != null ? newLiteral : dummy);
+                    } else {
+                        String updated = text.replaceFirst("\\[\\]", "[" + defaultTag + "]") + "\n  [" + defaultTag + "]\"\"\"";
+                        var dummy = StvnElementFactory.createValue(project, updated);
+                        var newLiteral = dummy.getStringLiteral();
+                        element.replace(newLiteral != null ? newLiteral : dummy);
+                    }
                 }
             }
         }
@@ -357,16 +426,39 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             if (file == null) return;
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            String fence = "\n[" + tag + "]\"\"\"";
+            String text = element.getText();
+            int newlineIndex = text.indexOf('\n');
+            int startOffset = element.getTextRange().getStartOffset();
             if (doc != null) {
-                int endOffset = element.getTextRange().getEndOffset();
-                doc.insertString(endOffset, fence);
+                var docChars = doc.getCharsSequence();
+                String indent = computeOpeningIndent(docChars, startOffset);
+                if (newlineIndex >= 0) {
+                    String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";
+                    int insertOffset = startOffset + newlineIndex + 1;
+                    String fence = indent + "[" + tag + "]\"\"\"" + lineSep;
+                    doc.insertString(insertOffset, fence);
+                } else {
+                    String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
+                    int insertOffset = startOffset + text.length();
+                    String fence = lineSep + indent + "[" + tag + "]\"\"\"";
+                    doc.insertString(insertOffset, fence);
+                }
                 docManager.commitDocument(doc);
             } else {
-                String updated = element.getText() + fence;
-                var dummy = StvnElementFactory.createValue(project, updated);
-                var newLiteral = dummy.getStringLiteral();
-                element.replace(newLiteral != null ? newLiteral : dummy);
+                if (newlineIndex >= 0) {
+                    String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";
+                    String firstLine = text.substring(0, newlineIndex + 1);
+                    String rest = text.substring(newlineIndex + 1);
+                    String updated = firstLine + "  [" + tag + "]\"\"\"" + lineSep + rest;
+                    var dummy = StvnElementFactory.createValue(project, updated);
+                    var newLiteral = dummy.getStringLiteral();
+                    element.replace(newLiteral != null ? newLiteral : dummy);
+                } else {
+                    String updated = text + "\n  [" + tag + "]\"\"\"";
+                    var dummy = StvnElementFactory.createValue(project, updated);
+                    var newLiteral = dummy.getStringLiteral();
+                    element.replace(newLiteral != null ? newLiteral : dummy);
+                }
             }
         }
     }

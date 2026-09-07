@@ -53,6 +53,9 @@
         <lang.commenter language="STVN"
                         implementationClass="org.stvnadore.plugin.lang.StvnCommenter"/>
 
+        <!-- 2c. Enter Handler for Fenced String Delimiters -->
+        <enterHandlerDelegate implementationClass="org.stvnadore.plugin.editor.StvnEnterInFencedStringHandler"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>

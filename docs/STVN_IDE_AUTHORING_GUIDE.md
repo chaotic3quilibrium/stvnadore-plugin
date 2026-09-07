@@ -735,11 +735,17 @@ Every fenced string literal must comply with **Rule STR-04**:
 ### IDE Inspection & Quick-Fixes (`StvnFencedString`)
 The IDE validates Rule STR-04 in real time:
 * **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
-  * Press `Alt+Enter` to sanitize tags or supply default tag `[TEXT]`.
+  * Press `Alt+Enter` to sanitize tags or supply default tag `[TEXT]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[TEXT]` and inserts `[TEXT]"""` directly on the next line.
 * **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
   * Press `Alt+Enter` to balance the closing tag to match the opening tag automatically.
 * **Unclosed Blocks:** Underlines unclosed fences reaching EOF.
-  * Press `Alt+Enter` to append `[TAG]"""` automatically.
+  * Press `Alt+Enter` to insert `[TAG]"""` directly on the line below the opening delimiter, matching opening indentation and leaving downstream code untouched.
+
+### Editor Enter-Key Auto-Closing
+When authoring fenced strings, pressing **`Enter`** immediately after typing an opening delimiter (`"""[TAG]` or `"""->[TAG]`) automatically inserts:
+1. A newline with indented body column spacing.
+2. The symmetrical closing fence `[TAG]"""` on the following line matching opening column indentation.
+3. Positions the editor caret between the delimiters for immediate typing.
 
 ---
 
