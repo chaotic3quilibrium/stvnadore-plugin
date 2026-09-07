@@ -4,6 +4,8 @@ import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
@@ -30,6 +32,7 @@ import java.util.regex.Pattern;
 public final class StvnFencedStringInspection extends LocalInspectionTool {
 
     private static final Pattern VALID_TAG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,256}$");
+    private static final Pattern DELIMITER_BOUNDARY_PATTERN = Pattern.compile("(\"\"\"(?:->)?\\[([a-zA-Z0-9_-]{1,256})\\])|(\\[([a-zA-Z0-9_-]{1,256})\\]\"\"\")");
 
     public StvnFencedStringInspection() {}
 
@@ -155,44 +158,55 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             return;
         }
 
-        // 2. Validate Closing Delimiter
-        String expectedCloseFence = "[" + openTag + "]\"\"\"";
-        int lastExpectedIdx = text.lastIndexOf(expectedCloseFence);
-        if (lastExpectedIdx >= 0 && lastExpectedIdx >= text.length() - expectedCloseFence.length() - 5) {
-            return; // Symmetrically and validly closed fence
-        }
+        // 2. Validate Closing Delimiter via Sequential Depth-Counter Scan
+        var delimiterMatcher = DELIMITER_BOUNDARY_PATTERN.matcher(text);
+        int depth = 0;
+        int searchStart = openDelimiterEnd;
+        String candidateClosingTag = null;
+        TextRange candidateClosingRange = null;
 
-        // Check for mismatched closing fence candidate near terminal position
-        int lastCloseTriple = text.lastIndexOf("\"\"\"");
-        if (lastCloseTriple > closeBracket) {
-            int lastOpenBracket = text.lastIndexOf('[', lastCloseTriple);
-            int lastCloseBracket = text.lastIndexOf(']', lastCloseTriple);
-            if (lastOpenBracket >= 0 && lastCloseBracket > lastOpenBracket && lastCloseBracket == lastCloseTriple - 1) {
-                String closingTag = text.substring(lastOpenBracket + 1, lastCloseBracket);
-                String middleContent = text.substring(openDelimiterEnd, lastOpenBracket);
-                if (!middleContent.contains("\"\"\"") && !closingTag.equals(openTag)) {
-                    TextRange closingRange = new TextRange(lastOpenBracket, text.length());
-                    holder.registerProblem(
-                        element,
-                        closingRange,
-                        "Rule STR-04 violation: Mismatched closing fence tag '[" + closingTag + "]', expected '[" + openTag + "]'",
-                        new BalanceClosingTagQuickFix(openTag, closingTag),
-                        new BalanceOpeningTagQuickFix(openTag, closingTag)
-                    );
-                    holder.registerProblem(
-                        element,
-                        openRange,
-                        "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + closingTag + "]'",
-                        new AppendClosingFenceQuickFix(openTag),
-                        new BalanceClosingTagQuickFix(openTag, closingTag),
-                        new BalanceOpeningTagQuickFix(openTag, closingTag)
-                    );
-                    return;
+        while (delimiterMatcher.find(searchStart)) {
+            if (delimiterMatcher.group(1) != null) {
+                // Opening delimiter: increment nesting depth
+                depth++;
+            } else if (delimiterMatcher.group(3) != null) {
+                // Closing delimiter: decrement if nested, evaluate if at depth 0
+                if (depth > 0) {
+                    depth--;
+                } else {
+                    candidateClosingTag = delimiterMatcher.group(4);
+                    candidateClosingRange = new TextRange(delimiterMatcher.start(3), delimiterMatcher.end(3));
+                    break;
                 }
             }
+            searchStart = delimiterMatcher.end();
         }
 
-        // If no matching or candidate closing fence exists at the terminal boundary
+        if (candidateClosingTag != null) {
+            if (candidateClosingTag.equals(openTag)) {
+                return; // Symmetrically closed block
+            }
+
+            // Tag mismatch at depth 0
+            holder.registerProblem(
+                element,
+                candidateClosingRange,
+                "Rule STR-04 violation: Mismatched closing fence tag '[" + candidateClosingTag + "]', expected '[" + openTag + "]'",
+                new BalanceClosingTagQuickFix(openTag, candidateClosingTag),
+                new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
+            );
+            holder.registerProblem(
+                element,
+                openRange,
+                "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + candidateClosingTag + "]'",
+                new AppendClosingFenceQuickFix(openTag),
+                new BalanceClosingTagQuickFix(openTag, candidateClosingTag),
+                new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
+            );
+            return;
+        }
+
+        // If no candidate closing delimiter exists at depth 0, classify as Unclosed
         holder.registerProblem(
             element,
             openRange,
@@ -365,6 +379,29 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
     }
 
+    private static void repositionCaretToBodyLine(@NotNull Project project, @NotNull Document doc, int openOffset) {
+        var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
+        if (editor == null || editor.getDocument() != doc) {
+            var editors = com.intellij.openapi.editor.EditorFactory.getInstance().getEditors(doc, project);
+            if (editors.length > 0) {
+                editor = editors[0];
+            }
+        }
+        if (editor != null && editor.getDocument() == doc) {
+            int openLine = doc.getLineNumber(openOffset);
+            int targetLine = openLine + 1;
+            if (targetLine < doc.getLineCount()) {
+                int targetOffset = doc.getLineStartOffset(targetLine);
+                CharSequence seq = doc.getCharsSequence();
+                int lineEnd = doc.getLineEndOffset(targetLine);
+                while (targetOffset < lineEnd && (seq.charAt(targetOffset) == ' ' || seq.charAt(targetOffset) == '\t')) {
+                    targetOffset++;
+                }
+                editor.getCaretModel().moveToOffset(targetOffset);
+            }
+        }
+    }
+
     private static final class BalanceClosingTagQuickFix implements LocalQuickFix {
         private final String expectedTag;
         private final String currentClosingTag;
@@ -393,14 +430,16 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
             String text = element.getText();
+            int elementStart = element.getTextRange().getStartOffset();
             String targetClosing = "[" + currentClosingTag + "]\"\"\"";
             String balancedClosing = "[" + expectedTag + "]\"\"\"";
             int lastIdx = text.lastIndexOf(targetClosing);
             if (lastIdx >= 0) {
                 if (doc != null) {
-                    int startOffset = element.getTextRange().getStartOffset() + lastIdx;
+                    int startOffset = elementStart + lastIdx;
                     doc.replaceString(startOffset, startOffset + targetClosing.length(), balancedClosing);
                     docManager.commitDocument(doc);
+                    repositionCaretToBodyLine(project, doc, elementStart);
                 } else {
                     String updated = text.substring(0, lastIdx) + balancedClosing + text.substring(lastIdx + targetClosing.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
@@ -439,14 +478,16 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
             String text = element.getText();
+            int elementStart = element.getTextRange().getStartOffset();
             String targetOpening = "[" + currentOpeningTag + "]";
             String balancedOpening = "[" + expectedOpeningTag + "]";
             int firstIdx = text.indexOf(targetOpening);
             if (firstIdx >= 0) {
                 if (doc != null) {
-                    int startOffset = element.getTextRange().getStartOffset() + firstIdx;
+                    int startOffset = elementStart + firstIdx;
                     doc.replaceString(startOffset, startOffset + targetOpening.length(), balancedOpening);
                     docManager.commitDocument(doc);
+                    repositionCaretToBodyLine(project, doc, elementStart);
                 } else {
                     String updated = text.substring(0, firstIdx) + balancedOpening + text.substring(firstIdx + targetOpening.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
@@ -500,6 +541,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     doc.insertString(insertOffset, fence);
                 }
                 docManager.commitDocument(doc);
+                repositionCaretToBodyLine(project, doc, startOffset);
             } else {
                 if (newlineIndex >= 0) {
                     String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";

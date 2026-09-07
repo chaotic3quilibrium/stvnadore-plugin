@@ -248,6 +248,11 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         assertNotNull("Expected AppendClosingFenceQuickFix to be available on opening line", action);
         myFixture.launchAction(action);
         assertTrue(myFixture.getEditor().getDocument().getText().contains("\"\"\"[SQL]\n    [SQL]\"\"\""));
+
+        // Caret must be positioned on the body line between delimiters
+        int caretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int targetLineOffset = myFixture.getEditor().getDocument().getLineStartOffset(4);
+        assertTrue("Caret must be positioned on the body line following mutation", caretOffset >= targetLineOffset);
     }
 
     public void testBidirectionalQuickFixesOnMismatchedFences() {
@@ -279,6 +284,52 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             }
             """;
         myFixture.checkResult(expected);
+
+        // Caret must be repositioned to the body line between delimiters
+        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
+    }
+
+    public void testDepthAwareMismatchDetectionWithNestedFencedString() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[NEW_OUTER]
+                \"\"\"[INNER]
+                [INNER]\"\"\"
+              [OLD_OUTER]\"\"\"
+            }
+            """;
+        myFixture.configureByText("nested_depth_aware.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var mismatchHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag '[OLD_OUTER]', expected '[NEW_OUTER]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected depth-aware mismatch error for [OLD_OUTER]", mismatchHighlight);
+
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Replace '[OLD_OUTER]\"\"\"' with '[NEW_OUTER]\"\"\"'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected BalanceClosingTagQuickFix to be registered", action);
+        myFixture.launchAction(action);
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[NEW_OUTER]
+                \"\"\"[INNER]
+                [INNER]\"\"\"
+              [NEW_OUTER]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+        assertTrue("Inner nested fenced string must remain untouched", myFixture.getEditor().getDocument().getText().contains("\"\"\"[INNER]\n    [INNER]\"\"\""));
+
+        // Caret must be positioned on the body line between delimiters
+        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
     }
 
     public void testEnterKeyAutoClosesBareBlockStringExpandedThreeLine() {
@@ -318,14 +369,13 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.checkResult(expected);
     }
 
-    public void testBracketTypingAutoPairsFencedString() {
+    public void testBracketTypingLaunchesInteractiveLiveTemplate() {
         String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
-        myFixture.configureByText("typed_bracket.stvn", code);
+        myFixture.configureByText("typed_bracket_template.stvn", code);
         myFixture.type('[');
-        assertEquals("{\n  :type :String\n  :body \"\"\"[]\n    \n  []\"\"\"\n}\n", myFixture.getEditor().getDocument().getText());
-        int caretOffset = myFixture.getEditor().getCaretModel().getOffset();
-        int openBracketPos = myFixture.getEditor().getDocument().getText().indexOf('[');
-        assertEquals("Caret must be placed inside opening brackets", openBracketPos + 1, caretOffset);
+        String docText = myFixture.getEditor().getDocument().getText();
+        assertTrue("Live template expansion must insert opening fence with default TAG", docText.contains("\"\"\"[TEXT]"));
+        assertTrue("Live template expansion must insert closing fence with matching TAG", docText.contains("[TEXT]\"\"\""));
     }
 
     public void testEnterKeyAutoClosesFencedString() {

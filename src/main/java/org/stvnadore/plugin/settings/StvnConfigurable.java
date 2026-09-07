@@ -16,6 +16,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.Icon;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 
 @NullMarked
 public final class StvnConfigurable implements SearchableConfigurable {
@@ -90,7 +91,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
             }
         });
         styleCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        styleCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, styleCombo.getPreferredSize().height));
         panel.add(styleCombo);
+        panel.add(javax.swing.Box.createVerticalGlue());
 
         mainPanel = panel;
         useLongFormSumTypesCheckBox = cb1;

@@ -739,6 +739,7 @@ The IDE validates Rule STR-04 in real time:
 * **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
   * Press `Alt+Enter` on either the opening or closing delimiter line to balance tags bidirectionally.
   * Options include updating the closing tag from the opening tag, or updating the opening tag from the closing tag.
+  * Delimiter pairing uses depth-aware scanning to preserve nested fenced strings.
 * **Unclosed Blocks:** Underlines unclosed fences reaching EOF.
   * Press `Alt+Enter` to insert `[TAG]"""` directly on the line below the opening delimiter, matching opening indentation and leaving downstream code untouched.
 
@@ -747,8 +748,8 @@ When pressing **`Enter`** immediately behind multiline string opening delimiters
 1. **`EXPANDED_THREE_LINE` (Default):** Inserts a newline, indented body line, and the closing delimiter on line 3. Positions the caret on the indented body line.
 2. **`TIGHT_TWO_LINE`:** Inserts a newline, indented body offset, and the closing delimiter on line 2. Positions the caret directly in front of the closing delimiter.
 
-### Bracket Auto-Pairing and Intentions
-* **Bracket Auto-Pairing:** Typing `[` immediately following `"""` automatically generates `]\n  \n[]"""` and positions the editor caret inside the opening brackets: `"""[<caret>]`.
+### Interactive Live Templates and Intentions
+* **Live Template Trigger on `[`:** Typing `[` immediately following `"""` launches the interactive `fence` Live Template with synchronized tag variables (`$TAG$`) and positions the final caret at `$END$` in the body line.
 * **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[TEXT]\n  \n[TEXT]"""`.
 * **Live Template (`fence`):** Type `fence` and press `Tab` to expand `"""[$TAG$]\n  $END$\n[$TAG$]"""` with dynamic multi-caret tag synchronization.
 

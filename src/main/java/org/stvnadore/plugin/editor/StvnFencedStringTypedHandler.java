@@ -1,6 +1,9 @@
 package org.stvnadore.plugin.editor;
 
 import com.intellij.codeInsight.editorActions.TypedHandlerDelegate;
+import com.intellij.codeInsight.template.Template;
+import com.intellij.codeInsight.template.TemplateManager;
+import com.intellij.codeInsight.template.impl.TemplateSettings;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
@@ -11,7 +14,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
 
 /**
- * Automatically inserts matching bracket and closing fence when typing '[' immediately following '"""'.
+ * Automatically launches the interactive 'fence' Live Template when typing '[' immediately following '"""'.
  */
 @NullMarked
 public final class StvnFencedStringTypedHandler extends TypedHandlerDelegate {
@@ -43,27 +46,21 @@ public final class StvnFencedStringTypedHandler extends TypedHandlerDelegate {
             return Result.CONTINUE;
         }
 
-        int lineNum = doc.getLineNumber(offset);
-        int lineStart = doc.getLineStartOffset(lineNum);
-        int lineEnd = doc.getLineEndOffset(lineNum);
-
-        StringBuilder baseIndentSb = new StringBuilder();
-        for (int i = lineStart; i < lineEnd; i++) {
-            char ch = doc.getCharsSequence().charAt(i);
-            if (ch == ' ' || ch == '\t') {
-                baseIndentSb.append(ch);
-            } else {
-                break;
-            }
-        }
-        String baseIndent = baseIndentSb.toString();
-        String innerIndent = baseIndent + "  ";
-        String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
-
-        String insertion = "]" + lineSep + innerIndent + lineSep + baseIndent + "[]\"\"\"";
-        doc.insertString(offset, insertion);
+        // Delete the delimiter prefix '"""[' (including the typed '[') to prepare insertion boundary
+        doc.deleteString(offset - 4, offset);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
-        editor.getCaretModel().moveToOffset(offset);
+
+        Template template = TemplateSettings.getInstance().getTemplate("fence", "STVN");
+        if (template != null) {
+            TemplateManager.getInstance(project).startTemplate(editor, template);
+        } else {
+            var templateManager = TemplateManager.getInstance(project);
+            Template dynamicTemplate = templateManager.createTemplate("", "", "\"\"\"[$TAG$]\n  $END$\n[$TAG$]\"\"\"");
+            dynamicTemplate.addVariable("TAG", new com.intellij.codeInsight.template.impl.ConstantNode("TEXT"), true);
+            dynamicTemplate.setToReformat(false);
+            templateManager.startTemplate(editor, dynamicTemplate);
+        }
+
         return Result.STOP;
     }
 }

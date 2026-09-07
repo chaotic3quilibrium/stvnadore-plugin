@@ -108,11 +108,13 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
   * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
+  * Repositions the editor caret directly onto the body line between delimiters following fix execution.
+  * Pairs nested fenced strings via depth-aware sequential scanning.
   * Strips illegal characters and whitespace from tags.
   * Atomically supplies default tag `[TEXT]` and closes unclosed delimiters on the next line.
   * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
 * **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical closing delimiters for both bare `"""` and fenced `"""[TAG]` blocks under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
-* **Bracket Auto-Pairing**: Typing `[` after `"""` generates `"""[<caret>]\n  \n[]"""`.
+* **Interactive Live Template Launch**: Typing `[` after `"""` launches the `fence` Live Template with synchronized dual-tag variables.
 * **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
 * **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
 
