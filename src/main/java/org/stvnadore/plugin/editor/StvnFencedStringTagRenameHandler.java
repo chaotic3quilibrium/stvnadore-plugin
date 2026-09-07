@@ -4,6 +4,7 @@ import com.intellij.codeInsight.template.Template;
 import com.intellij.codeInsight.template.TemplateBuilderImpl;
 import com.intellij.codeInsight.template.TemplateManager;
 import com.intellij.codeInsight.template.impl.ConstantNode;
+import com.intellij.codeInsight.template.impl.TemplateImpl;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.command.WriteCommandAction;
@@ -107,12 +108,17 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
         TextRange openTagRange = new TextRange(blockData.openBracketIdx + 1, blockData.openCloseBracketIdx);
         TextRange closeTagRange = new TextRange(blockData.closingTagStart, blockData.closingTagEnd);
 
+        int initialCaretOffset = editor.getCaretModel().getOffset();
+
         WriteCommandAction.runWriteCommandAction(project, () -> {
             TemplateBuilderImpl builder = new TemplateBuilderImpl(fencedElement);
             builder.replaceRange(closeTagRange, "TAG", new ConstantNode(blockData.tag), true);
             builder.replaceRange(openTagRange, "TAG", new ConstantNode(blockData.tag), false);
 
             Template template = builder.buildInlineTemplate();
+            if (inCloseTag && template instanceof TemplateImpl impl) {
+                impl.setPrimarySegment(1);
+            }
 
             var listener = new StvnFencedStringTagRenameListener(
                 project,
@@ -123,7 +129,8 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
                 openTagRange,
                 closeTagRange,
                 blockData.payloadStart,
-                blockData.payloadEnd
+                blockData.payloadEnd,
+                initialCaretOffset
             );
 
             editor.getCaretModel().moveToOffset(elementStart);

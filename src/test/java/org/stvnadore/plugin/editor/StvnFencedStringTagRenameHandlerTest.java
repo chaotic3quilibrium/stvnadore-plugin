@@ -70,12 +70,18 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
         DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
         assertTrue("Handler must be available on closing tag", handler.isAvailableOnDataContext(dataContext));
 
+        int closingDelimiterLine = myFixture.getEditor().getCaretModel().getLogicalPosition().line;
+
         handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
 
         TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
         assertNotNull("Live template state must be active", state);
+        assertEquals("Caret line must remain on closing delimiter immediately after startTemplate",
+            closingDelimiterLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
 
         myFixture.type("PAYLOAD\n");
+        assertEquals("Caret line must remain on closing delimiter after template completion",
+            closingDelimiterLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
 
         String expected = """
             {
@@ -246,5 +252,71 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
         DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
         assertFalse("Handler must not trigger when caret is inside string body",
             handler.isAvailableOnDataContext(dataContext));
+    }
+
+    public void testRenameCancelledRestoresInitialCaretOffset() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[JSON]
+              {"key": "value"}
+              [JSON<caret>]\"\"\"
+            }
+            """;
+        myFixture.configureByText("rename_cancel.stvn", code);
+
+        var handler = new StvnFencedStringTagRenameHandler();
+        DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
+        assertTrue(handler.isAvailableOnDataContext(dataContext));
+
+        int initialCaretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int initialLine = myFixture.getEditor().getCaretModel().getLogicalPosition().line;
+
+        handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
+
+        TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
+        assertNotNull(state);
+
+        state.cancelTemplate();
+
+        assertEquals("Caret offset must be restored to initial position upon cancellation",
+            initialCaretOffset, myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret line must match closing delimiter line upon cancellation",
+            initialLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
+
+        myFixture.checkResult(code.replace("<caret>", ""));
+    }
+
+    public void testRenameCollidingWithPayloadClosingDelimiterRestoresCaret() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[OUTER]
+              Some nested code:
+              [INNER]\"\"\"
+              more text
+              [OUTER<caret>]\"\"\"
+            }
+            """;
+        myFixture.configureByText("collision_close_caret.stvn", code);
+
+        var handler = new StvnFencedStringTagRenameHandler();
+        DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
+        assertTrue(handler.isAvailableOnDataContext(dataContext));
+
+        int initialCaretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int initialLine = myFixture.getEditor().getCaretModel().getLogicalPosition().line;
+
+        handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
+
+        TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
+        assertNotNull(state);
+
+        myFixture.type("INNER\n");
+
+        assertEquals("Caret offset must be restored to initial position upon collision rollback",
+            initialCaretOffset, myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Caret line must remain on closing delimiter after collision rollback",
+            initialLine, myFixture.getEditor().getCaretModel().getLogicalPosition().line);
     }
 }

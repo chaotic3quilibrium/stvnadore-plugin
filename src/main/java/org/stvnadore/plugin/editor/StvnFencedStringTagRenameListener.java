@@ -41,6 +41,7 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
     private final TextRange originalCloseTagRange;
     private final int payloadRelativeStart;
     private final int payloadRelativeEnd;
+    private final int initialCaretOffset;
 
     private boolean reverted = false;
 
@@ -52,7 +53,8 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
                                             TextRange originalOpenTagRange,
                                             TextRange originalCloseTagRange,
                                             int payloadRelativeStart,
-                                            int payloadRelativeEnd) {
+                                            int payloadRelativeEnd,
+                                            int initialCaretOffset) {
         this.project = project;
         this.editor = editor;
         this.file = file;
@@ -62,6 +64,7 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
         this.originalCloseTagRange = originalCloseTagRange;
         this.payloadRelativeStart = payloadRelativeStart;
         this.payloadRelativeEnd = payloadRelativeEnd;
+        this.initialCaretOffset = initialCaretOffset;
     }
 
     @Override
@@ -89,6 +92,27 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
     @Override
     public void templateCancelled(Template template) {
         revertToOriginalTag();
+    }
+
+    @Override
+    public void templateFinished(@NotNull Template template, boolean brokenOff) {
+        Document doc = editor.getDocument();
+        if (reverted) {
+            if (initialCaretOffset >= 0 && initialCaretOffset <= doc.getTextLength()) {
+                editor.getCaretModel().moveToOffset(initialCaretOffset);
+            }
+        } else {
+            if (initialCaretOffset >= 0 && initialCaretOffset <= doc.getTextLength()) {
+                int initialLine = doc.getLineNumber(initialCaretOffset);
+                int currentLine = editor.getCaretModel().getLogicalPosition().line;
+                if (currentLine != initialLine) {
+                    int lineStart = doc.getLineStartOffset(initialLine);
+                    int lineEnd = doc.getLineEndOffset(initialLine);
+                    int targetOffset = Math.min(Math.max(initialCaretOffset, lineStart), lineEnd);
+                    editor.getCaretModel().moveToOffset(targetOffset);
+                }
+            }
+        }
     }
 
     private @Nullable String extractProposedTag(TemplateState state) {
@@ -160,6 +184,10 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
             }
 
             PsiDocumentManager.getInstance(project).commitDocument(doc);
+
+            if (initialCaretOffset >= 0 && initialCaretOffset <= doc.getTextLength()) {
+                editor.getCaretModel().moveToOffset(initialCaretOffset);
+            }
         };
 
         if (ApplicationManager.getApplication().isWriteAccessAllowed()) {
