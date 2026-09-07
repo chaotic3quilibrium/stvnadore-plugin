@@ -1,0 +1,22 @@
+<html>
+<body>
+<p>Validates fenced string literals against <b>Rule STR-04 (Fenced String Language Discriminator Invariant)</b>.</p>
+
+<p>Every fenced string literal must comply with the following invariants:</p>
+<ul>
+  <li><b>Opening Delimiter:</b> Must start with <code>"""-&gt;[TAG]</code> or <code>"""[TAG]</code>, followed by optional horizontal whitespace and a newline.</li>
+  <li><b>Closing Delimiter:</b> Must end with <code>[TAG]"""</code>, where the closing tag matches the opening tag identically.</li>
+  <li><b>Character Constraints:</b> The tag must match positive character class <code>^[a-zA-Z0-9_-]{1,256}$</code>.</li>
+  <li><b>Prohibited Patterns:</b> Empty tags (<code>[]</code>), whitespace, quotation marks, and punctuation characters are disallowed.</li>
+  <li><b>Recursive Nesting:</b> Fenced string literals may nest arbitrarily. Outer blocks encapsulate inner blocks with distinct tags.</li>
+</ul>
+
+<p><b>Quick-Fixes Available:</b></p>
+<ul>
+  <li>Supply default tag <code>[TEXT]</code> for empty tags.</li>
+  <li>Strip whitespace and illegal characters from delimiter tags.</li>
+  <li>Balance mismatched closing tags to match the opening tag.</li>
+  <li>Append missing closing delimiter to unclosed blocks.</li>
+</ul>
+</body>
+</html>

@@ -41,7 +41,7 @@
 - [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
   - [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
   - [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
-  - [5.3 Polyglot Multi-Language Fenced Strings (`"""->[LANG] ... [LANG]"""`)](#53-polyglot-multi-language-fenced-strings--lang--lang)
+  - [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
   - [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
 - [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
   - [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
@@ -696,10 +696,20 @@ When hovering over an enum subset alias (such as `:PromotionRole`), `StvnDocumen
 
 ---
 
-### 5.3 Polyglot Multi-Language Fenced Strings (`"""->[LANG] ... [LANG]"""`)
+### 5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)
 
 Data pipelines often embed queries, templates, or scripts inside data files. STVN provides native **Fenced String Literals** with dedicated syntax highlighting:
 
+### Delimiter Invariant (Rule STR-04)
+Every fenced string literal must comply with **Rule STR-04**:
+1. **Opening Delimiter:** `"""->[TAG]` OR `"""[TAG]`. The directional arrow `->` is optional. The delimiter must be followed by optional horizontal whitespace and a newline.
+2. **Closing Delimiter:** `[TAG]"""`. The closing tag must match the opening tag identically ($\text{TAG}_{\text{close}} == \text{TAG}_{\text{open}}$).
+3. **Valid Character Class:** Tags must match positive character class `^[a-zA-Z0-9_-]{1,256}$`.
+4. **Length Bounds:** Tag length must satisfy $1 \le \text{length}(\text{TAG}) \le 256$.
+5. **Prohibited Patterns:** Empty tags (`[]`), whitespace (`0x20`, `\t`), quotes (`"`), brackets (`[` / `]`), and punctuation characters (`:`, `;`, `,`, `/`) are strictly prohibited.
+6. **Recursive Nesting:** Fenced strings may nest arbitrarily. Outer blocks encapsulate inner blocks with distinct tags.
+
+### Authoring Example
 ```stvn
 {
   :defs {
@@ -708,7 +718,7 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
   :type :QueryDef
   :body (
     "user_analytics"
-    """->[SQL]
+    """[SQL]
     SELECT
       u.user_id,
       u.email,
@@ -722,11 +732,14 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
 }
 ```
 
-Supported language fences include:
-* `"""->[SQL] ... [SQL]"""` &rarr; SQL query syntax
-* `"""->[JSON] ... [JSON]"""` &rarr; Embedded JSON payloads
-* `"""->[PYTHON] ... [PYTHON]"""` &rarr; Python transformation scripts
-* `"""->[BASH] ... [BASH]"""` / `"""->[SHELL] ... [SHELL]"""` &rarr; Shell commands
+### IDE Inspection & Quick-Fixes (`StvnFencedString`)
+The IDE validates Rule STR-04 in real time:
+* **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
+  * Press `Alt+Enter` to sanitize tags or supply default tag `[TEXT]`.
+* **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
+  * Press `Alt+Enter` to balance the closing tag to match the opening tag automatically.
+* **Unclosed Blocks:** Underlines unclosed fences reaching EOF.
+  * Press `Alt+Enter` to append `[TAG]"""` automatically.
 
 ---
 

@@ -21,7 +21,8 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         StvnVariantStyleInspection.class, List.of("variant", "tag", ":Union", ":Either", ":Option", "#Some", "#Right", "#1"),
         StvnBooleanValidityInspection.class, List.of("boolean", "#TRUE", "#FALSE", "#T", "#F"),
         StvnDegenerateCompositeInspection.class, List.of("degenerate", ":Enum", ":Union", ":Tuple", "unwrap"),
-        StvnEnumSubsetInspection.class, List.of("Enum Subset", "#filterIncl", "#filterExcl", "order", "narrowing")
+        StvnEnumSubsetInspection.class, List.of("Enum Subset", "#filterIncl", "#filterExcl", "order", "narrowing"),
+        StvnFencedStringInspection.class, List.of("fenced", "string", "delimiter", "Rule STR-04")
     );
 
     public void testDirectInspectionToolDescriptionLoading() throws Exception {
@@ -63,7 +64,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 6 registered STVN local inspections in plugin.xml", 6, stvnInspections.size());
+        assertEquals("Expected exactly 7 registered STVN local inspections in plugin.xml", 7, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);
