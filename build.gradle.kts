@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.1.1-SNAPSHOT"
+version = "1.1.1"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.1.1-SNAPSHOT")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.1.1")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.1.1-SNAPSHOT:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.1.1:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -97,10 +97,25 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
-            Initial General Availability release of STVN Language Support for IntelliJ 2025.3+.
-            - Full syntax highlighting for STVN primitives, compounds, and types
-            - Compile-time diagnostics and parser verification
-            - Integration with stvnadore-core 1.0.2
+            <h3>1.1.1 - 2026.09.07</h3>
+            <ul>
+              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>\"\"\"[TAG]</code> opening delimiter; deprecated legacy <code>\"\"\"-&gt;[TAG]</code> with a <code>LIKE_DEPRECATED</code> strikeout diagnostic and inspection warning.</li>
+              <li><b>Automated Code Cleanup:</b> Added <code>Remove deprecated '-&gt;' arrow</code> intention quick-fix with full IntelliJ batch <b>Code | Code Cleanup</b> support across files and projects.</li>
+              <li><b>Interactive Tag Renaming (Shift+F6):</b> Implemented live linked editing for opening and closing delimiter tags with bidirectional caret focus retention and delta-aware cursor anchoring.</li>
+              <li><b>AST Fracture & Collision Guard:</b> Intercepts tag renames that collide with delimiter sequences inside the string payload, preventing AST breakage and rolling back invalid commits.</li>
+              <li><b>Core Dependency Alignment:</b> Upgraded compiler and runtime engine to <code>stvnadore-core:1.1.1</code>.</li>
+            </ul>
+            <h3>1.1.0 - 2026.09.06</h3>
+            <ul>
+              <li>Implemented enum subset filtering with transitive chaining.</li>
+              <li>Added Control Byte 4 bitwise partitioning (1:3:4) for CRC-32C, SchemaIdentityStrategy, and BinaryEncodingStrategy.</li>
+            </ul>
+            <h3>1.0.2 - 2026.09.04</h3>
+            <ul>
+              <li>Initial General Availability release of STVN Language Support for IntelliJ 2025.3+.</li>
+              <li>Full syntax highlighting for STVN primitives, compounds, and types.</li>
+              <li>Compile-time diagnostics, parser verification, and test fixture support.</li>
+            </ul>
         """.trimIndent())
         vendor {
             name.set("chaotic3quilibrium")

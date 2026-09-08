@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.1--SNAPSHOT-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.1-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.1.1-SNAPSHOT - 2026.09.07
+- Version: 1.1.1 - 2026.09.07
 
 ---
 
@@ -43,6 +43,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
     * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
 * [Version History](#version-history)
+  * [v1.1.1](#v111)
   * [v1.1.0](#v110)
   * [v1.0.2](#v102)
 <!-- TOC -->
@@ -176,7 +177,7 @@ Settings
 
 ### Prerequisites
 * JDK 21 LTS
-* Local installation of `stvnadore-core:1.1.0` (`mvn clean install` in `ij_stvnadore_core`)
+* Local installation of `stvnadore-core:1.1.1` (`mvn clean install` in `ij_stvnadore_core`)
 
 ### Build Commands
 ```bash
@@ -235,6 +236,15 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ---
 
 # Version History
+
+## v1.1.1
+
+- 2026.09.07
+- Formalized **Rule STR-04 (Fenced String Language Discriminator Invariant)** in Grammar-Kit lexer and parser
+- Deprecated `"""->[TAG]` in favor of canonical `"""[TAG]` (scheduled for removal in 2.0.0)
+- Enforced strict fence tag character class `^[a-zA-Z0-9_-]{1,256}$` with length bounding from 1 to 256 characters
+- Enhanced edit code-assists for automatic templating and Shift-F6 renaming
+
 
 ## v1.1.0
 
