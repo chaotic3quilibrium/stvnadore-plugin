@@ -1,0 +1,17 @@
+<html>
+<body>
+<p>Detects illegal nested <code>:package</code> enclosures inside other package enclosures.</p>
+<!-- tooltip end -->
+<p>STVN enforces flat package namespaces. Nested packages are prohibited.</p>
+
+<p><b>Example (Prohibited Nested Package):</b></p>
+<pre><code>:defs {
+  :package :com/example/outer {
+    // Error: Nested packages are prohibited
+    :package :inner {
+    }
+  }
+}
+</code></pre>
+</body>
+</html>

@@ -87,7 +87,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (StvnTypeResolver.isDegradedNominalAlias(typeKw.getContainingFile(), alias)) {
                 var targetDef = StvnTypeReference.resolveTypeInFile(typeKw.getContainingFile(), alias, new HashSet<>());
                 var fallbackBase = ":Value";
-                if (targetDef != null && targetDef.getParent() instanceof TypeDefinition td && td.getSchemaType() != null) {
+                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
+                if (td != null && td.getSchemaType() != null) {
                     var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                     if (resolved != null) {
                         fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
@@ -114,6 +115,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private @Nullable String buildTargetDocumentation(PsiElement target, @Nullable PsiElement originalElement) {
         if (target instanceof TypeDefinition typeDef) {
             var keyword = typeDef.getTypeKeyword();
+            if (keyword != null) {
+                var kwText = keyword.getText();
+                if (kwText.startsWith(":org/stvnadore/prelude/")) {
+                    kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
+                }
+                var specDoc = getBuiltInSpecificationDoc(kwText);
+                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.startsWith(":DateTime") || kwText.startsWith(":TimeEpoch"))) {
+                    return specDoc;
+                }
+            }
             var schemaType = typeDef.getSchemaType();
             var subset = StvnTypeResolver.resolveEnumSubset(typeDef);
 
@@ -196,7 +207,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             var resolvedTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-            var remTypeDef = (resolvedTarget != null && resolvedTarget.getParent() instanceof TypeDefinition td) ? td : null;
+            var remTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedTarget);
             var subset = StvnTypeResolver.resolveEnumSubset(alias);
             if (subset == null && remTypeDef != null) {
                 subset = StvnTypeResolver.resolveEnumSubset(remTypeDef);
@@ -218,6 +229,34 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("<hr/>");
             sb.append("<b>Underlying Structure:</b> ").append(underlying);
             return sb.toString();
+        }
+
+        if (target instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var typeList = alias.getTypeKeywordList();
+            var valList = alias.getValueKeywordList();
+            var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
+            var targetText = useStmt != null && useStmt.getUseTarget() != null
+                ? useStmt.getUseTarget().getText()
+                : "Unknown";
+
+            var sb = new StringBuilder();
+            if (typeList.size() >= 2) {
+                var remoteKw = typeList.get(0);
+                var localKw = typeList.get(1);
+                sb.append("<b>Type Alias:</b> ").append(localKw.getText()).append("<br/>");
+                sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
+                sb.append("<hr/>");
+                sb.append("<b>Target Type:</b> ").append(remoteKw.getText());
+                return sb.toString();
+            } else if (valList.size() >= 2) {
+                var remoteKw = valList.get(0);
+                var localKw = valList.get(1);
+                sb.append("<b>Constant Alias:</b> ").append(localKw.getText()).append("<br/>");
+                sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
+                sb.append("<hr/>");
+                sb.append("<b>Target Constant:</b> ").append(remoteKw.getText());
+                return sb.toString();
+            }
         }
 
         if (target instanceof ConstantDefinition constDef) {
@@ -393,6 +432,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (target instanceof TypeDefinition typeDef) {
             var keyword = typeDef.getTypeKeyword();
             if (keyword != null) {
+                var kwText = keyword.getText();
+                if (kwText.startsWith(":org/stvnadore/prelude/")) {
+                    kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
+                }
+                var specQuick = getBuiltInSpecificationQuickNavigateInfo(kwText);
+                if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.startsWith(":DateTime") || kwText.startsWith(":TimeEpoch"))) {
+                    return specQuick;
+                }
                 var trace = StvnTypeReference.extractResolutionTrace(keyword);
                 var resolutionStr = String.join(" -> ", trace);
                 return "Type Alias: " + resolutionStr;
@@ -477,6 +524,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable String getBuiltInSpecificationDoc(String keyword) {
+        if (keyword.startsWith(":org/stvnadore/prelude/")) {
+            var shortName = ":" + keyword.substring(":org/stvnadore/prelude/".length());
+            var doc = getBuiltInSpecificationDoc(shortName);
+            if (doc != null) {
+                return doc.replace("<b>Standard Library Prelude:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword)
+                          .replace("<b>Built-in Temporal Type:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword);
+            }
+        }
         var temporalDoc = getBuiltInTemporalDoc(keyword);
         if (temporalDoc != null) {
             return temporalDoc;
@@ -625,6 +680,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable String getBuiltInSpecificationQuickNavigateInfo(String keyword) {
+        if (keyword.startsWith(":org/stvnadore/prelude/")) {
+            return "Standard Library Prelude: " + keyword;
+        }
         var temporalQuick = getBuiltInTemporalQuickNavigateInfo(keyword);
         if (temporalQuick != null) {
             return temporalQuick;
@@ -874,21 +932,39 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (element instanceof TypeKeyword typeKw) {
-            var parent = typeKw.getParent();
-            if (parent instanceof TypeDefinition typeDef && typeDef.getTypeKeyword() == typeKw) {
-                return typeDef;
+            if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(typeKw)) {
+                var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(typeKw);
+                if (typeDef != null) {
+                    return typeDef;
+                }
             }
 
+            var parent = typeKw.getParent();
             if (parent instanceof IncludeMapAlias alias) {
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2 && list.get(1) == typeKw) {
                     return alias;
                 }
                 var resolved = new StvnTypeReference(typeKw).resolve();
-                if (resolved != null && resolved.getParent() instanceof TypeDefinition targetTypeDef) {
+                var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (targetTypeDef != null) {
                     return targetTypeDef;
                 }
                 if (resolved != null && resolved.getParent() instanceof IncludeMapAlias targetAlias) {
+                    return targetAlias;
+                }
+            }
+            if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+                var list = alias.getTypeKeywordList();
+                if (list.size() >= 2 && list.get(1) == typeKw) {
+                    return alias;
+                }
+                var resolved = new StvnTypeReference(typeKw).resolve();
+                var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (targetTypeDef != null) {
+                    return targetTypeDef;
+                }
+                if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                     return targetAlias;
                 }
             }
@@ -897,11 +973,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var ref = typeKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
             if (resolved instanceof TypeKeyword resolvedKw) {
-                var resParent = resolvedKw.getParent();
-                if (resParent instanceof TypeDefinition targetDef) {
+                var targetDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedKw);
+                if (targetDef != null) {
                     return targetDef;
                 }
+                var resParent = resolvedKw.getParent();
                 if (resParent instanceof IncludeMapAlias targetAlias) {
+                    return targetAlias;
+                }
+                if (resParent instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                     return targetAlias;
                 }
                 return resolvedKw;
@@ -1065,11 +1145,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private static @Nullable SchemaType resolveTerminalFromKeyword(TypeKeyword keyword, Set<PsiElement> visited) {
         var resolved = new StvnTypeReference(keyword).resolve();
         if (resolved instanceof TypeKeyword targetKw) {
-            var targetParent = targetKw.getParent();
-            if (targetParent instanceof TypeDefinition targetDef) {
+            var targetDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetKw);
+            if (targetDef != null) {
                 return resolveTerminalSchemaType(targetDef, visited);
             }
+            var targetParent = targetKw.getParent();
             if (targetParent instanceof IncludeMapAlias targetAlias) {
+                return resolveTerminalSchemaType(targetAlias, visited);
+            }
+            if (targetParent instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                 return resolveTerminalSchemaType(targetAlias, visited);
             }
         }
@@ -1077,6 +1161,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return resolveTerminalSchemaType(targetDef, visited);
         }
         if (resolved instanceof IncludeMapAlias targetAlias) {
+            return resolveTerminalSchemaType(targetAlias, visited);
+        }
+        if (resolved instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
             return resolveTerminalSchemaType(targetAlias, visited);
         }
         return null;

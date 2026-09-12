@@ -93,8 +93,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var project = file.getProject();
 
         // 1. Pre-filter diagnostics to eliminate verified false-positive diagnostics
-        var activeDiagnostics = result.diagnostics().stream()
+        var rawDiagnostics = result.diagnostics();
+        var activeDiagnostics = rawDiagnostics.stream()
             .filter(d -> !isDiagnosticSuppressed(file, d))
+            .filter(d -> !isDuplicateOrCascadingMismatchedInput(rawDiagnostics, d))
             .toList();
 
         var activeErrorDiagnostics = activeDiagnostics.stream()
@@ -447,8 +449,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 var typeKeywords = PsiTreeUtil.findChildrenOfType(file, TypeKeyword.class);
                 for (var typeKw : typeKeywords) {
                     if (typeKw.getText().equals(typeName)) {
-                        var parent = typeKw.getParent();
-                        var isLhsDef = (parent instanceof TypeDefinition td && td.getTypeKeyword() == typeKw);
+                        var isLhsDef = org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(typeKw);
                         if (!isLhsDef) {
                             holder.newAnnotation(severity, message)
                                   .range(typeKw.getTextRange())
@@ -562,7 +563,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (StvnTypeResolver.isDegradedNominalAlias(file, aliasName)) {
                     var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new java.util.HashSet<>());
                     var fallbackBase = ":Value";
-                    if (targetDef != null && targetDef.getParent() instanceof TypeDefinition td && td.getSchemaType() != null) {
+                    var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
+                    if (td != null && td.getSchemaType() != null) {
                         var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                         if (resolved != null) {
                             fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
@@ -706,7 +708,67 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return null;
     }
 
+    private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
+        if (d.message().contains("mismatched input") && d.message().contains("expecting ')'")) {
+            for (var other : allDiagnostics) {
+                if (other != d && Math.abs(other.startOffset() - d.startOffset()) <= 15 &&
+                    (other.message().contains("empty composite") || other.message().contains("insufficient composite"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static @Nullable TextRange clampToOffendingChildIfTypeDef(PsiFile file, TextRange range, String message) {
+        if (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix")) {
+            var colonIdx = message.lastIndexOf(": ");
+            if (colonIdx >= 0) {
+                var baseTypeToken = message.substring(colonIdx + 2).trim();
+                var atomicTypes = PsiTreeUtil.findChildrenOfType(file, AtomicType.class);
+                for (var elem : atomicTypes) {
+                    var text = elem.getText();
+                    if (text.equals(baseTypeToken)) {
+                        var elemRange = elem.getTextRange();
+                        if (range.contains(elemRange) || elemRange.contains(range) || range.intersects(elemRange)) {
+                            var suffixOffset = getSuffixOffset(baseTypeToken);
+                            if (suffixOffset > 0 && suffixOffset < text.length()) {
+                                return new TextRange(elemRange.getStartOffset() + suffixOffset, elemRange.getEndOffset());
+                            }
+                            return elemRange;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (message.contains("require types to be #equatable #TRUE")) {
+            var collections = PsiTreeUtil.findChildrenOfType(file, CollectionType.class);
+            for (var coll : collections) {
+                var cr = coll.getTextRange();
+                if (range.contains(cr) || cr.contains(range) || range.intersects(cr)) {
+                    var firstChild = coll.getFirstChild();
+                    if (firstChild == null) continue;
+                    var tokenText = firstChild.getText();
+                    var innerSchemas = coll.getSchemaTypeList();
+                    if (innerSchemas.isEmpty()) continue;
+
+                    if (message.contains("Set elements") && (tokenText.equals(":Set") || tokenText.equals(":SetNonEmpty"))) {
+                        var targetSchema = innerSchemas.get(0);
+                        if (targetSchema != null) return targetSchema.getTextRange();
+                    } else if (message.contains("Map keys") && (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty"))) {
+                        var targetSchema = innerSchemas.get(0);
+                        if (targetSchema != null) return targetSchema.getTextRange();
+                    } else if (message.contains("Inverted map values") && tokenText.contains("MapInv")) {
+                        if (innerSchemas.size() >= 2) {
+                            var targetSchema = innerSchemas.get(1);
+                            if (targetSchema != null) return targetSchema.getTextRange();
+                        }
+                    }
+                }
+            }
+        }
+
         var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var typeDef : typeDefs) {
             var tr = typeDef.getTextRange();
@@ -723,49 +785,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         var isLhs = (typeDef.getTypeKeyword() == typeKw);
                         if (!isLhs && typeKw.getText().equals(typeName)) {
                             return typeKw.getTextRange();
-                        }
-                    }
-                }
-
-                if (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix")) {
-                    var colonIdx = message.lastIndexOf(": ");
-                    if (colonIdx >= 0) {
-                        var baseTypeToken = message.substring(colonIdx + 2).trim();
-                        var atomicTypes = PsiTreeUtil.findChildrenOfType(typeDef, AtomicType.class);
-                        for (var elem : atomicTypes) {
-                            var text = elem.getText();
-                            if (text.equals(baseTypeToken)) {
-                                var elemRange = elem.getTextRange();
-                                var suffixOffset = getSuffixOffset(baseTypeToken);
-                                if (suffixOffset > 0 && suffixOffset < text.length()) {
-                                    return new TextRange(elemRange.getStartOffset() + suffixOffset, elemRange.getEndOffset());
-                                }
-                                return elemRange;
-                            }
-                        }
-                    }
-                }
-
-                if (message.contains("require types to be #equatable #TRUE")) {
-                    var collections = PsiTreeUtil.findChildrenOfType(typeDef, CollectionType.class);
-                    for (var coll : collections) {
-                        var firstChild = coll.getFirstChild();
-                        if (firstChild == null) continue;
-                        var tokenText = firstChild.getText();
-                        var innerSchemas = coll.getSchemaTypeList();
-                        if (innerSchemas.isEmpty()) continue;
-
-                        if (message.contains("Set elements") && (tokenText.equals(":Set") || tokenText.equals(":SetNonEmpty"))) {
-                            var targetSchema = innerSchemas.get(0);
-                            if (targetSchema != null) return targetSchema.getTextRange();
-                        } else if (message.contains("Map keys") && (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty"))) {
-                            var targetSchema = innerSchemas.get(0);
-                            if (targetSchema != null) return targetSchema.getTextRange();
-                        } else if (message.contains("Inverted map values") && tokenText.contains("MapInv")) {
-                            if (innerSchemas.size() >= 2) {
-                                var targetSchema = innerSchemas.get(1);
-                                if (targetSchema != null) return targetSchema.getTextRange();
-                            }
                         }
                     }
                 }

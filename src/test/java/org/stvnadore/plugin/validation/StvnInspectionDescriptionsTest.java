@@ -15,14 +15,19 @@ import java.util.Map;
 @NullMarked
 public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
 
-    private static final Map<Class<? extends LocalInspectionTool>, List<String>> EXPECTED_INSPECTION_KEYWORDS = Map.of(
-        StvnDegradedSchemaInspection.class, List.of("degraded", "schema", "fallback", "defs"),
-        StvnMapStructuralInspection.class, List.of("map", "list", "Convert to Map Literal"),
-        StvnVariantStyleInspection.class, List.of("variant", "tag", ":Union", ":Either", ":Option", "#Some", "#Right", "#1"),
-        StvnBooleanValidityInspection.class, List.of("boolean", "#TRUE", "#FALSE", "#T", "#F"),
-        StvnDegenerateCompositeInspection.class, List.of("degenerate", ":Enum", ":Union", ":Tuple", "unwrap"),
-        StvnEnumSubsetInspection.class, List.of("Enum Subset", "#filterIncl", "#filterExcl", "order", "narrowing"),
-        StvnFencedStringInspection.class, List.of("fenced", "string", "delimiter", "Rule STR-04")
+    private static final Map<Class<? extends LocalInspectionTool>, List<String>> EXPECTED_INSPECTION_KEYWORDS = Map.ofEntries(
+        Map.entry(StvnDegradedSchemaInspection.class, List.of("degraded", "schema", "fallback", "defs")),
+        Map.entry(StvnMapStructuralInspection.class, List.of("map", "list", "Convert to Map Literal")),
+        Map.entry(StvnVariantStyleInspection.class, List.of("variant", "tag", ":Union", ":Either", ":Option", "#Some", "#Right", "#1")),
+        Map.entry(StvnBooleanValidityInspection.class, List.of("boolean", "#TRUE", "#FALSE", "#T", "#F")),
+        Map.entry(StvnDegenerateCompositeInspection.class, List.of("degenerate", ":Enum", ":Union", ":Tuple", "unwrap")),
+        Map.entry(StvnEnumSubsetInspection.class, List.of("Enum Subset", "#filterIncl", "#filterExcl", "order", "narrowing")),
+        Map.entry(StvnFencedStringInspection.class, List.of("fenced", "string", "delimiter", "Rule STR-04")),
+        Map.entry(StvnLhsReservedTypeInspection.class, List.of("fundamental", "LHS", "aliased")),
+        Map.entry(StvnConstantRangeInspection.class, List.of("bit-width", "constant", "range")),
+        Map.entry(StvnFlatDocumentIncludeInspection.class, List.of("flat", "leaf", "include")),
+        Map.entry(StvnNestedPackageInspection.class, List.of("nested", "package")),
+        Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use"))
     );
 
     public void testDirectInspectionToolDescriptionLoading() throws Exception {
@@ -64,7 +69,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 7 registered STVN local inspections in plugin.xml", 7, stvnInspections.size());
+        assertEquals("Expected exactly 12 registered STVN local inspections in plugin.xml", 12, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);

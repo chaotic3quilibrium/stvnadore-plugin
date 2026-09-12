@@ -73,18 +73,12 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
 
     private static boolean isPrimitiveTokenType(IElementType type) {
         return type.equals(StvnTypes.ATOM_BOOLEAN) ||
-               type.equals(StvnTypes.ATOM_DATE_TIME_OFFSET) ||
-               type.equals(StvnTypes.ATOM_DATE_TIME_ZONED) ||
-               type.equals(StvnTypes.ATOM_DATE_TIME_AUDITED) ||
                type.equals(StvnTypes.ATOM_FLOAT) ||
                type.equals(StvnTypes.ATOM_FLOAT_EXACT) ||
                type.equals(StvnTypes.ATOM_INT) ||
                type.equals(StvnTypes.ATOM_STRING) ||
                type.equals(StvnTypes.ATOM_STRING_FIXED) ||
                type.equals(StvnTypes.ATOM_STRING_NON_EMPTY) ||
-               type.equals(StvnTypes.ATOM_TIME_EPOCH_MS) ||
-               type.equals(StvnTypes.ATOM_TIME_EPOCH_NS) ||
-               type.equals(StvnTypes.ATOM_TIME_EPOCH_S) ||
                type.equals(StvnTypes.ATOM_UINT) ||
                type.equals(StvnTypes.COLL_MAP) ||
                type.equals(StvnTypes.COLL_MAP_INV) ||
@@ -103,7 +97,9 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_DEFS) ||
                type.equals(StvnTypes.KW_TYPE) ||
                type.equals(StvnTypes.KW_BODY) ||
-               type.equals(StvnTypes.KW_INCLUDE);
+               type.equals(StvnTypes.KW_INCLUDE) ||
+               type.equals(StvnTypes.KW_PACKAGE) ||
+               type.equals(StvnTypes.KW_USE);
     }
 
     private static boolean isValueTokenType(IElementType type) {
@@ -132,7 +128,8 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_MAX_INCL) ||
                type.equals(StvnTypes.KW_MAX_EXCL) ||
                type.equals(StvnTypes.KW_REGEX) ||
+               type.equals(StvnTypes.KW_STRIP) ||
                type.equals(StvnTypes.FILTER_INCL) ||
                type.equals(StvnTypes.FILTER_EXCL);
     }
-}
+}

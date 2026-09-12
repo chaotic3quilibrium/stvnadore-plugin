@@ -4,6 +4,14 @@
     <vendor email="jim.oflaherty.jr@gmail.com">chaotic3quilibrium</vendor>
 
     <change-notes><![CDATA[
+      <h3>1.2.0</h3>
+      <ul>
+        <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>
+        <li><b>Flat Payload Documents (<code>.stvn_f</code>):</b> Registered new <code>.stvn_f</code> file type and parser definition for detached flat payload evaluation without embedded headers.</li>
+        <li><b>Prelude Standard Library Synchronization:</b> Synchronized with <code>stvnadore-core:1.2.0-SNAPSHOT</code>, transitioning temporal atoms (<code>:DateTimeOffset</code>, <code>:DateTimeZoned</code>, <code>:DateTimeAudited</code>, epoch timestamps) to regex-constrained standard library prelude definitions under <code>:org/stvnadore/prelude/*</code>.</li>
+        <li><b>5 New In-Editor Inspections:</b> Implemented real-time inspections for nested package declarations (<code>StvnNestedPackage</code>), trailing slashes in type definitions (<code>StvnTrailingSlash</code>), LHS reserved type keywords (<code>StvnLhsReservedType</code>), <code>:include</code> directives in flat payload documents (<code>StvnFlatDocumentInclude</code>), and out-of-order constant definitions (<code>StvnConstantRange</code>).</li>
+        <li><b>Precise Error Range Clamping:</b> Clamped external compiler diagnostic ranges directly to offending AST elements across file definitions, resolving error displacement and suppressing cascading parser artifacts.</li>
+      </ul>
       <h3>1.1.1</h3>
       <ul>
         <li><b>Rule STR-04 Arrow Delimiter Deprecation:</b> Flagged deprecated <code>"""->[TAG]</code> opening delimiter with <code>LIKE_DEPRECATED</code> strikeout diagnostic and introduced <code>Remove deprecated '-&gt;' arrow</code> quick-fix supporting whole-project batch Code Cleanup.</li>
@@ -33,6 +41,12 @@
                   implementationClass="org.stvnadore.plugin.StvnFileType$Payload"
                   fieldName="INSTANCE"
                   extensions="stvn"/>
+
+        <fileType name="STVN_FLAT_PAYLOAD"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$FlatPayload"
+                  fieldName="INSTANCE"
+                  extensions="stvn_f"/>
 
         <fileType name="STVN_INCL"
                   language="STVN"
@@ -195,6 +209,56 @@
                          cleanupTool="true"
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnFencedStringInspection"/>
+
+        <!-- 12f. Local Inspection for LHS Reserved Types -->
+        <localInspection language="STVN"
+                         shortName="StvnLhsReservedType"
+                         displayName="LHS reserved type inspection"
+                         groupPath="STVN"
+                         groupName="Semantics"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnLhsReservedTypeInspection"/>
+
+        <!-- 12g. Local Inspection for Constant Integer Range -->
+        <localInspection language="STVN"
+                         shortName="StvnConstantRange"
+                         displayName="Constant integer range inspection"
+                         groupPath="STVN"
+                         groupName="Validity"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnConstantRangeInspection"/>
+
+        <!-- 12h. Local Inspection for Flat Document Includes -->
+        <localInspection language="STVN"
+                         shortName="StvnFlatDocumentInclude"
+                         displayName="Flat document include inspection"
+                         groupPath="STVN"
+                         groupName="Structural"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnFlatDocumentIncludeInspection"/>
+
+        <!-- 12i. Local Inspection for Nested Package Enclosures -->
+        <localInspection language="STVN"
+                         shortName="StvnNestedPackage"
+                         displayName="Nested package inspection"
+                         groupPath="STVN"
+                         groupName="Structural"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnNestedPackageInspection"/>
+
+        <!-- 12j. Local Inspection for Trailing Slashes in :use Targets -->
+        <localInspection language="STVN"
+                         shortName="StvnTrailingSlash"
+                         displayName="Trailing slash inspection"
+                         groupPath="STVN"
+                         groupName="Syntax"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnTrailingSlashInspection"/>
 
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>

@@ -1,0 +1,14 @@
+<html>
+<body>
+<p>Flags fundamental scalar and structural types declared on the left-hand side (LHS) of a type definition.</p>
+<!-- tooltip end -->
+<p>STVN prohibits redefining or aliasing built-in fundamental keywords (such as <code>:Int32</code>, <code>:Boolean</code>, <code>:String</code>, or <code>:Tuple</code>). Fundamental type keywords cannot be aliased.</p>
+
+<p><b>Example (LHS Violation):</b></p>
+<pre><code>:defs {
+  // Error: Fundamental type ':Int32' cannot be aliased
+  :Int32 :Int64
+}
+</code></pre>
+</body>
+</html>

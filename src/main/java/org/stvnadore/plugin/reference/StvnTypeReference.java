@@ -49,10 +49,11 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         var parent = keyword.getParent();
 
         // 1. Declarations should not resolve to anything else
-        if (parent instanceof TypeDefinition typeDef) {
-            if (typeDef.getTypeKeyword() == keyword) {
-                return null;
-            }
+        if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(keyword)) {
+            return null;
+        }
+        if (parent instanceof org.stvnadore.psi.PackagePath) {
+            return null;
         }
 
         var isAliasFirstKeyword = false;
@@ -64,6 +65,17 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                     isAliasFirstKeyword = true;
                 } else {
                     // Second keyword (alias definition name) does not resolve
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        } else if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var list = alias.getTypeKeywordList();
+            if (list.size() >= 2) {
+                if (list.get(0) == keyword) {
+                    isAliasFirstKeyword = true;
+                } else {
                     return null;
                 }
             } else {
@@ -114,6 +126,68 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
             if (keyword != null && keyword.getText().equals(targetName)) {
                 return keyword;
             }
+        }
+
+        // 1b. Package enclosure scanning (FQNI expansion and in-scope relative names)
+        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+        for (var pkg : packages) {
+            var pkgPath = pkg.getPackagePath();
+            if (pkgPath == null) continue;
+            var pathText = pkgPath.getText();
+            for (var elem : pkg.getPackageElementList()) {
+                var typeDef = elem.getTypeDefinition();
+                if (typeDef != null) {
+                    var kw = typeDef.getTypeKeyword();
+                    if (kw != null) {
+                        var kwText = kw.getText();
+                        var fqni = pathText + "/" + (kwText.startsWith(":") ? kwText.substring(1) : kwText);
+                        if (fqni.equals(targetName) || kwText.equals(targetName)) {
+                            return kw;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1c. Scoped :use statement scanning
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
+        for (var use : useStmts) {
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (list.size() >= 2) {
+                        var localKw = list.get(1);
+                        if (localKw != null && localKw.getText().equals(targetName)) {
+                            if (trace != null) {
+                                var remoteKw = list.get(0);
+                                if (remoteKw != null) {
+                                    trace.add(remoteKw.getText());
+                                }
+                            }
+                            return localKw;
+                        }
+                    }
+                }
+            }
+            var optBlock = use.getUseOptionsBlock();
+            if (optBlock != null && optBlock.getText().contains("#strip")) {
+                var target = use.getUseTarget();
+                if (target != null && targetName.startsWith(":")) {
+                    var prefix = target.getText();
+                    var fqni = prefix + "/" + targetName.substring(1);
+                    var resolved = resolveTypeInFile(file, fqni, visited, trace);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                }
+            }
+        }
+
+        // 1d. Standard Library Prelude resolution (:org/stvnadore/prelude/* or implicit prelude types)
+        var preludeTarget = StvnPreludeBridge.resolvePreludeType(file.getProject(), targetName);
+        if (preludeTarget != null) {
+            return preludeTarget;
         }
 
         // 2. Local include alias map scanning (first leg of multi-hop)
@@ -245,7 +319,8 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
 
         while (currentElement != null) {
             var parent = currentElement.getParent();
-            if (parent instanceof TypeDefinition typeDef) {
+            var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(currentElement);
+            if (typeDef != null) {
                 var schemaType = typeDef.getSchemaType();
                 if (schemaType != null) {
                     var nextKeyword = schemaType.getTypeKeyword();
@@ -304,7 +379,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         return trace;
     }
 
-    private static final Set<String> EXACT_TERMINAL_TYPE_NAMES = Set.of(
+    public static final Set<String> EXACT_TERMINAL_TYPE_NAMES = Set.of(
         ":Boolean",
         ":Enum",
         ":TimeEpochS",

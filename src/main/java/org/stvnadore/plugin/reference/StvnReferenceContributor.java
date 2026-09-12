@@ -40,12 +40,21 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                     var parent = typeKw.getParent();
 
                     // Declaration Isolation: LHS of TypeDefinition is a declaration point and returns no reference
-                    if (parent instanceof TypeDefinition typeDef && typeDef.getTypeKeyword() == typeKw) {
+                    if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(typeKw)) {
+                        return PsiReference.EMPTY_ARRAY;
+                    }
+                    if (parent instanceof org.stvnadore.psi.PackagePath) {
                         return PsiReference.EMPTY_ARRAY;
                     }
 
                     // Declaration Isolation: RHS (second keyword) of IncludeMapAlias is a local declaration point
                     if (parent instanceof IncludeMapAlias alias) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2 && list.get(1) == typeKw) {
+                            return PsiReference.EMPTY_ARRAY;
+                        }
+                    }
+                    if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
                         var list = alias.getTypeKeywordList();
                         if (list.size() >= 2 && list.get(1) == typeKw) {
                             return PsiReference.EMPTY_ARRAY;
@@ -73,6 +82,12 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                     // Declaration Isolation: Enum variant inside EnumDef is a declaration site
                     if (parent instanceof org.stvnadore.psi.EnumDef) {
                         return PsiReference.EMPTY_ARRAY;
+                    }
+                    if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+                        var list = alias.getValueKeywordList();
+                        if (list.size() >= 2 && list.get(1) == element) {
+                            return PsiReference.EMPTY_ARRAY;
+                        }
                     }
 
                     return new PsiReference[]{new StvnValueKeywordReference(element)};

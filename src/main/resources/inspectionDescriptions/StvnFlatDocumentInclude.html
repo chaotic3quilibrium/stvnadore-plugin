@@ -1,0 +1,15 @@
+<html>
+<body>
+<p>Detects forbidden <code>:include</code> statements inside hermetic flat documents (<code>.stvn_f</code>) and flat leaf modules (<code>.stvn_inclf</code>).</p>
+<!-- tooltip end -->
+<p>Flat documents and leaf include modules must remain completely self-contained and cannot contain include directives.</p>
+
+<p><b>Example (Prohibited Include in Flat File):</b></p>
+<pre><code>// Inside file.stvn_f
+:defs {
+  // Error: Flat document or leaf module (.stvn_f / .stvn_inclf) cannot contain include statements
+  :include [ "types.stvn_incl" ]
+}
+</code></pre>
+</body>
+</html>

@@ -54,6 +54,34 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     }
                 }
             }
+            var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+            for (var pkg : packages) {
+                var pkgPath = pkg.getPackagePath();
+                if (pkgPath == null) continue;
+                var pathText = pkgPath.getText();
+                for (var elem : pkg.getPackageElementList()) {
+                    var typeDef = elem.getTypeDefinition();
+                    if (typeDef != null) {
+                        var kw = typeDef.getTypeKeyword();
+                        if (kw != null) {
+                            var fqni = pathText + "/" + (kw.getText().startsWith(":") ? kw.getText().substring(1) : kw.getText());
+                            if (seenNames.add(fqni)) {
+                                if (!processor.process(fqni)) return false;
+                            }
+                        }
+                    }
+                    var constDef = elem.getConstantDefinition();
+                    if (constDef != null) {
+                        var kw = constDef.getValueKeyword();
+                        if (kw != null) {
+                            var fqni = pathText + "/" + kw.getText();
+                            if (seenNames.add(fqni)) {
+                                if (!processor.process(fqni)) return false;
+                            }
+                        }
+                    }
+                }
+            }
             return true;
         });
     }
@@ -90,6 +118,38 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     }
                 }
             }
+            var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+            for (var pkg : packages) {
+                var pkgPath = pkg.getPackagePath();
+                if (pkgPath == null) continue;
+                var pathText = pkgPath.getText();
+                for (var elem : pkg.getPackageElementList()) {
+                    var typeDef = elem.getTypeDefinition();
+                    if (typeDef != null) {
+                        var kw = typeDef.getTypeKeyword();
+                        if (kw != null) {
+                            var fqni = pathText + "/" + (kw.getText().startsWith(":") ? kw.getText().substring(1) : kw.getText());
+                            if (name.equals(fqni) || name.equals(kw.getText()) || name.equals(typeDef.getName())) {
+                                if (kw instanceof NavigationItem item) {
+                                    if (!processor.process(item)) return false;
+                                }
+                            }
+                        }
+                    }
+                    var constDef = elem.getConstantDefinition();
+                    if (constDef != null) {
+                        var kw = constDef.getValueKeyword();
+                        if (kw != null) {
+                            var fqni = pathText + "/" + kw.getText();
+                            if (name.equals(fqni) || name.equals(kw.getText()) || name.equals(constDef.getName())) {
+                                if (kw instanceof NavigationItem item) {
+                                    if (!processor.process(item)) return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return true;
         });
     }
@@ -98,6 +158,13 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
         var psiManager = PsiManager.getInstance(project);
         var files = FileTypeIndex.getFiles(StvnFileType.Payload.INSTANCE, scope);
         for (var vf : files) {
+            var psiFile = psiManager.findFile(vf);
+            if (psiFile != null && !fileProcessor.process(psiFile)) {
+                return;
+            }
+        }
+        var flatFiles = FileTypeIndex.getFiles(StvnFileType.FlatPayload.INSTANCE, scope);
+        for (var vf : flatFiles) {
             var psiFile = psiManager.findFile(vf);
             if (psiFile != null && !fileProcessor.process(psiFile)) {
                 return;

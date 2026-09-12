@@ -50,6 +50,12 @@ public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement impleme
         if (parent instanceof org.stvnadore.psi.EnumDef) {
             return PsiReference.EMPTY_ARRAY;
         }
+        if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var list = alias.getValueKeywordList();
+            if (list.size() >= 2 && list.get(1) == this) {
+                return PsiReference.EMPTY_ARRAY;
+            }
+        }
         return new PsiReference[]{new org.stvnadore.plugin.reference.StvnValueKeywordReference(this)};
     }
 }

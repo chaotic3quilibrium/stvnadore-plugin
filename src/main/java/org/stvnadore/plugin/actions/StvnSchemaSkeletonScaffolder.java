@@ -140,6 +140,18 @@ public final class StvnSchemaSkeletonScaffolder {
         List<PlaceholderSpec> placeholders,
         Set<String> visited
     ) {
+        var rawKeyword = schema.getTypeKeyword();
+        if (rawKeyword != null) {
+            var rawText = rawKeyword.getText().trim();
+            if (rawText.startsWith(":org/stvnadore/prelude/")) {
+                rawText = ":" + rawText.substring(":org/stvnadore/prelude/".length());
+            }
+            if (rawText.equals(":DateTimeOffset") || rawText.equals(":DateTimeZoned") || rawText.equals(":DateTimeAudited")) {
+                scaffoldFromKeywordText(rawText, sb, placeholders);
+                return;
+            }
+        }
+
         var resolved = StvnTypeResolver.resolveNominalSchema(schema);
         if (resolved == null) {
             appendPlaceholder("0", sb, placeholders);

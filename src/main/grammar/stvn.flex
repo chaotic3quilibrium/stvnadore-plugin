@@ -83,8 +83,11 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   ":type"                        { return KW_TYPE; }
   ":body"                        { return KW_BODY; }
   ":include"                     { return KW_INCLUDE; }
+  ":package"                     { return KW_PACKAGE; }
+  ":use"                         { return KW_USE; }
   
   // Metadata constraints (# namespace)
+  "#strip"                       { return KW_STRIP; }
   "#equatable"                   { return KW_EQUATABLE; }
   "#comparable"                  { return KW_COMPARABLE; }
   "#preserveIndent"              { return KW_PRESERVE_INDENT; }
@@ -99,12 +102,6 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   // Atomic type descriptors (: namespace)
   ":Boolean"                     { return ATOM_BOOLEAN; }
   ":FloatExact"                  { return ATOM_FLOAT_EXACT; }
-  ":TimeEpochS"                  { return ATOM_TIME_EPOCH_S; }
-  ":TimeEpochMs"                 { return ATOM_TIME_EPOCH_MS; }
-  ":TimeEpochNs"                 { return ATOM_TIME_EPOCH_NS; }
-  ":DateTimeOffset"              { return ATOM_DATE_TIME_OFFSET; }
-  ":DateTimeZoned"               { return ATOM_DATE_TIME_ZONED; }
-  ":DateTimeAudited"             { return ATOM_DATE_TIME_AUDITED; }
   
   // Collection type descriptors (: namespace)
   ":Seq"                         { return COLL_SEQ; }
