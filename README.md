@@ -1,16 +1,16 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.1.1-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.2.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
 [![Null Safety](https://img.shields.io/badge/NullMarked-JSpecify%201.0.0-brightgreen.svg)]()
 
-Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrains IntelliJ IDEA and compatible IDEs. The plugin provides sub-token precision diagnostics, type inlay hint badges, live template skeleton generation, structural map auto-healing, module flattening, enum subset filtering, and remote schema repository integration.
+Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrains IntelliJ IDEA and compatible IDEs. The plugin provides sub-token precision diagnostics, type inlay hint badges, live template skeleton generation, structural map auto-healing, module flattening, enum subset filtering, package enclaves, lexical import resolution, flat payload processing, and remote schema repository integration.
 
 ---
 
-- Version: 1.1.1 - 2026.09.07
+- Version: 1.2.0 - 2026.09.12
 
 ---
 
@@ -30,6 +30,8 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [8. Enhanced Hover Documentation](#8-enhanced-hover-documentation)
     * [8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)](#8b-polyglot-fenced-strings--delimiter-invariants-rule-str-04)
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
+    * [10. Package Enclaves & Lexical Scoping (STVN 1.2)](#10-package-enclaves--lexical-scoping-stvn-12)
+    * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -37,12 +39,8 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [Prerequisites](#prerequisites)
     * [Build Commands](#build-commands)
 * [Support](#support)
-  * [License](#license)
-    * [GNU AFFERO GENERAL PUBLIC LICENSE](#gnu-affero-general-public-license)
-    * [REALLY HATE the GNU AFFERO GENERAL PUBLIC LICENSE, a.k.a. AGPLv3?](#really-hate-the-gnu-affero-general-public-license-aka-agplv3)
-    * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
-    * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
 * [Version History](#version-history)
+  * [v1.2.0](#v120)
   * [v1.1.1](#v111)
   * [v1.1.0](#v110)
   * [v1.0.2](#v102)
@@ -127,6 +125,15 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Hardware-Accelerated CRC-32C Trailer Detection**: Recognizes Bit 7 (`0x80`), validating 4-byte Little-Endian CRC-32C trailers appended at `limit - 4` to protect against payload corruption and truncation.
 * **Encoding Strategy Sentinel `0x7` Handling**: Enforces protocol boundaries on Bits 6..4 (`0x70`), detecting sentinel `0x7` reserved for multi-byte header extension frames.
 
+### 10. Package Enclaves & Lexical Scoping (STVN 1.2)
+* **`:package` Enclaves**: Author modular package enclosures (`:package [ :org :stvnadore :domain ] { ... }`) inside schemas, establishing formal multi-file lexical boundaries.
+* **Lexical Imports (`:use`)**: Selectively import types using scoped `:use` statements inside `:defs` and `:package` blocks with multi-target maps and aliasing (`:use [ :org/stvnadore/prelude { #strip } ]`).
+* **Cross-File Scoped Resolution**: Resolves relative, absolute, and nested package identifiers seamlessly with full IDE navigation and type completion.
+
+### 11. Flat Payload Documents (`.stvn_f`)
+* **Detached Flat Payloads**: First-class support for `.stvn_f` files representing headerless, high-throughput flat payloads evaluated against detached or pre-negotiated schemas.
+* **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring `.stvn_f` files adhere strictly to single-payload root syntax while prohibiting `:include` statements.
+
 ---
 
 ## Action Registrations
@@ -142,15 +149,20 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ## Inspection Registrations
 
-| Inspection Class                    | Short Name                | Display Name                        | Group Path                   | Default Level  |
-|:------------------------------------|:--------------------------|:------------------------------------|:-----------------------------|:--------------:|
-| `StvnEnumSubsetInspection`          | `StvnEnumSubset`          | Enum subset filtering inspection    | `STVN / Semantics`           |    `ERROR`     |
-| `StvnVariantStyleInspection`        | `StvnVariantStyle`        | Variant tag style inspection        | `STVN / Style`               |   `WARNING`    |
-| `StvnBooleanValidityInspection`     | `StvnBooleanValidity`     | Boolean validity inspection         | `STVN / Validity`            |    `ERROR`     |
-| `StvnFencedStringInspection`        | `StvnFencedString`        | Fenced string delimiter inspection  | `STVN / Syntax`              |    `ERROR`     |
-| `StvnMapStructuralInspection`       | `StvnMapStructural`       | Flat list in map slot inspection    | `STVN / Structural`          |    `ERROR`     |
-| `StvnDegradedSchemaInspection`      | `StvnDegradedSchema`      | Degraded schema payload evaluation  | `STVN / Quality & Semantics` | `WEAK WARNING` |
-| `StvnDegenerateCompositeInspection` | `StvnDegenerateComposite` | Degenerate arity-1 composite schema | `STVN / Schema Design`       |   `WARNING`    |
+| Inspection Class                     | Short Name                 | Display Name                         | Group Path                   | Default Level  |
+|:-------------------------------------|:---------------------------|:-------------------------------------|:-----------------------------|:--------------:|
+| `StvnEnumSubsetInspection`           | `StvnEnumSubset`           | Enum subset filtering inspection     | `STVN / Semantics`           |    `ERROR`     |
+| `StvnVariantStyleInspection`         | `StvnVariantStyle`         | Variant tag style inspection         | `STVN / Style`               |   `WARNING`    |
+| `StvnBooleanValidityInspection`      | `StvnBooleanValidity`      | Boolean validity inspection          | `STVN / Validity`            |    `ERROR`     |
+| `StvnFencedStringInspection`         | `StvnFencedString`         | Fenced string delimiter inspection   | `STVN / Syntax`              |    `ERROR`     |
+| `StvnMapStructuralInspection`        | `StvnMapStructural`        | Flat list in map slot inspection     | `STVN / Structural`          |    `ERROR`     |
+| `StvnDegradedSchemaInspection`       | `StvnDegradedSchema`       | Degraded schema payload evaluation   | `STVN / Quality & Semantics` | `WEAK WARNING` |
+| `StvnDegenerateCompositeInspection`  | `StvnDegenerateComposite`  | Degenerate arity-1 composite schema  | `STVN / Schema Design`       |   `WARNING`    |
+| `StvnNestedPackageInspection`        | `StvnNestedPackage`        | Nested package declaration           | `STVN / Semantics`           |    `ERROR`     |
+| `StvnTrailingSlashInspection`        | `StvnTrailingSlash`        | Trailing slash in type target        | `STVN / Syntax`              |    `ERROR`     |
+| `StvnLhsReservedTypeInspection`      | `StvnLhsReservedType`      | Reserved keyword in LHS definition   | `STVN / Validity`            |    `ERROR`     |
+| `StvnFlatDocumentIncludeInspection`  | `StvnFlatDocumentInclude`  | Include directive in flat payload    | `STVN / Validity`            |    `ERROR`     |
+| `StvnConstantRangeInspection`        | `StvnConstantRange`        | Inverted numeric constant range      | `STVN / Semantics`           |    `ERROR`     |
 
 ---
 
@@ -236,6 +248,15 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ---
 
 # Version History
+
+## v1.2.0
+
+- 2026.09.12
+- STVN 1.2 Namespace & Lexical Scope Architecture: added support for `:package` enclaves and lexical `:use` statements with target maps, aliasing, and `#strip`
+- Flat Payload Documents (`.stvn_f`): registered new file type and parser definition for headerless flat payload evaluation
+- Standard Library Prelude Synchronization: updated temporal types (`:DateTimeOffset`, `:DateTimeZoned`, `:DateTimeAudited`, epoch timestamps) to prelude regex constraints under `:org/stvnadore/prelude/*`
+- 5 New In-Editor Inspections: added `StvnNestedPackage`, `StvnTrailingSlash`, `StvnLhsReservedType`, `StvnFlatDocumentInclude`, and `StvnConstantRange`
+- Precise Error Clamping: clamped external compiler diagnostic error ranges to offending leaf AST nodes and eliminated cascading duplicate parser artifacts
 
 ## v1.1.1
 

@@ -433,7 +433,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var nowLocal = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         var zoneId = zone.getId();
 
-        if (schemaText.equals(":DateTimeAudited") || typeLabel.startsWith(":DateTimeAudited")) {
+        if (schemaText.contains("DateTimeAudited") || typeLabel.contains("DateTimeAudited")) {
             var offsetStr = nowZoned.getOffset().getId();
             if (offsetStr.equals("Z")) offsetStr = "+00:00";
             var timestamp = nowLocal.toString() + offsetStr + "[" + zoneId + "]";
@@ -446,7 +446,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.equals(":DateTimeOffset") || typeLabel.startsWith(":DateTimeOffset")) {
+        } else if (schemaText.contains("DateTimeOffset") || typeLabel.contains("DateTimeOffset")) {
             var timestamp = nowOffset.toString();
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -457,7 +457,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.equals(":DateTimeZoned") || typeLabel.startsWith(":DateTimeZoned")) {
+        } else if (schemaText.contains("DateTimeZoned") || typeLabel.contains("DateTimeZoned")) {
             var timestamp = nowLocal.toString() + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -468,7 +468,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.equals(":TimeEpochMs") || typeLabel.startsWith(":TimeEpochMs")) {
+        } else if (schemaText.contains("TimeEpochMs") || typeLabel.contains("TimeEpochMs")) {
             var epochMs = String.valueOf(System.currentTimeMillis());
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochMs)
@@ -477,7 +477,16 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (schemaText.equals(":TimeEpochS") || typeLabel.startsWith(":TimeEpochS")) {
+        } else if (schemaText.contains("TimeEpochNs") || typeLabel.contains("TimeEpochNs")) {
+            var epochNs = String.valueOf(System.currentTimeMillis()) + "000000";
+            result.addElement(PrioritizedLookupElement.withPriority(
+                LookupElementBuilder.create(epochNs)
+                    .withIcon(AllIcons.Nodes.Function)
+                    .withTailText(" (current epoch ns)", true)
+                    .withTypeText(typeLabel, true),
+                95.0
+            ));
+        } else if (schemaText.contains("TimeEpochS") || typeLabel.contains("TimeEpochS")) {
             var epochS = String.valueOf(System.currentTimeMillis() / 1000L);
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochS)
@@ -486,7 +495,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (schemaText.equals(":Uuid") || schemaText.equals(":UUID") || typeLabel.startsWith(":Uuid") || typeLabel.toLowerCase().startsWith(":uuid")) {
+        } else if (schemaText.contains("Uuid") || schemaText.contains("UUID") || typeLabel.toLowerCase().contains("uuid")) {
             var uuidStr = UUID.randomUUID().toString();
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + uuidStr + "\"")

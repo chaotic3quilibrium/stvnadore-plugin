@@ -19,14 +19,33 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
     }
 
     @Override
+    public @Nullable TypeKeyword getTypeKeyword() {
+        var target = getTypeDefTarget();
+        if (target != null) {
+            return target.getTypeKeyword();
+        }
+        return findChildByClass(TypeKeyword.class);
+    }
+
+    @Override
     public @Nullable PsiElement getNameIdentifier() {
+        var target = getTypeDefTarget();
+        if (target != null) {
+            if (target.getTypeKeyword() != null) {
+                return target.getTypeKeyword();
+            }
+            return target;
+        }
         return findChildByClass(TypeKeyword.class);
     }
 
     @Override
     public String getName() {
         var identifier = getNameIdentifier();
-        return identifier instanceof com.intellij.psi.PsiNamedElement ? ((com.intellij.psi.PsiNamedElement) identifier).getName() : "";
+        if (identifier instanceof com.intellij.psi.PsiNamedElement named) {
+            return named.getName();
+        }
+        return identifier != null ? identifier.getText() : "";
     }
 
     @Override

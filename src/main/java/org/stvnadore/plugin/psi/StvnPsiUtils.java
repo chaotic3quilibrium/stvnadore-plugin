@@ -83,4 +83,36 @@ public final class StvnPsiUtils {
         }
         return text.matches("^#[1-9][0-9]*$");
     }
+
+    /**
+     * Retrieves the enclosing {@link TypeDefinition} if the element is its declared name target
+     * (either directly as a child of TypeDefinition or via TypeDefTarget).
+     */
+    public static @Nullable TypeDefinition getParentTypeDefinition(@Nullable PsiElement element) {
+        if (element == null) return null;
+        if (element instanceof TypeDefinition td) return td;
+        var parent = element.getParent();
+        if (parent instanceof TypeDefTarget && parent.getParent() instanceof TypeDefinition td) {
+            return td;
+        }
+        if (parent instanceof TypeDefinition td) {
+            return td;
+        }
+        return null;
+    }
+
+    /**
+     * Determines whether the given element is the declaration target of a {@link TypeDefinition}.
+     */
+    public static boolean isTypeDefinitionTarget(@Nullable PsiElement element) {
+        if (element == null) return false;
+        var parent = element.getParent();
+        if (parent instanceof TypeDefTarget) {
+            return true;
+        }
+        if (parent instanceof TypeDefinition td) {
+            return td.getTypeKeyword() == element;
+        }
+        return false;
+    }
 }

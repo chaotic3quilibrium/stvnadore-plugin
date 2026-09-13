@@ -45,10 +45,19 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
     @Override
     public PsiReference @NotNull [] getReferences() {
         var parent = getParent();
-        if (parent instanceof TypeDefinition typeDef && typeDef.getTypeKeyword() == this) {
+        if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(this)) {
+            return PsiReference.EMPTY_ARRAY;
+        }
+        if (parent instanceof org.stvnadore.psi.PackagePath) {
             return PsiReference.EMPTY_ARRAY;
         }
         if (parent instanceof IncludeMapAlias alias) {
+            var list = alias.getTypeKeywordList();
+            if (list.size() >= 2 && list.get(1) == this) {
+                return PsiReference.EMPTY_ARRAY;
+            }
+        }
+        if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
             var list = alias.getTypeKeywordList();
             if (list.size() >= 2 && list.get(1) == this) {
                 return PsiReference.EMPTY_ARRAY;

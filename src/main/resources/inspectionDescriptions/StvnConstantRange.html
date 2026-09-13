@@ -1,0 +1,14 @@
+<html>
+<body>
+<p>Validates that integer literals assigned to typed constant declarations fit within the physical bit-width boundaries of their declared integer types.</p>
+<!-- tooltip end -->
+<p>Derives capacity bounds using arbitrary-precision integers for <code>:Uint</code><i>n</i> and <code>:Int</i>n</i> types, flagging any constant literal whose value falls out of range.</p>
+
+<p><b>Example (Range Violation):</b></p>
+<pre><code>:defs {
+  // Error: Integer literal out of range for :Int8 [-128, 127]
+  #MAX_VAL :Int8 300
+}
+</code></pre>
+</body>
+</html>

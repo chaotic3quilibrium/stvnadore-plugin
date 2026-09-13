@@ -127,4 +127,41 @@ public abstract class StvnFileType extends LanguageFileType {
             return StvnIcons.FILE;
         }
     }
+
+    /**
+     * File type representation for flat STVN payload documents (.stvn_f).
+     */
+    @NullMarked
+    public static final class FlatPayload extends StvnFileType {
+        public static final FlatPayload INSTANCE = new FlatPayload();
+
+        private FlatPayload() {
+            super();
+        }
+
+        @Override
+        public String getName() {
+            return "STVN_FLAT_PAYLOAD";
+        }
+
+        @Override
+        public String getDisplayName() {
+            return "STVN Flat Payload";
+        }
+
+        @Override
+        public String getDescription() {
+            return "STVN Flat Payload Document";
+        }
+
+        @Override
+        public String getDefaultExtension() {
+            return "stvn_f";
+        }
+
+        @Override
+        public Icon getIcon() {
+            return StvnIcons.FILE;
+        }
+    }
 }

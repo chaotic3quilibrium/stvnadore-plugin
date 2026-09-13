@@ -38,11 +38,14 @@
     - [Non-Empty Constraint Checking (`:SeqNonEmpty`, `:MapNonEmpty`)](#non-empty-constraint-checking-seqnonempty-mapnonempty)
     - [Duplicate Map Key Detection](#duplicate-map-key-detection)
     - [Zero-Shadowing Constraints](#zero-shadowing-constraints)
+  - [4.4 STVN 1.2 Structural & Semantic Inspections](#44-stvn-12-structural--semantic-inspections)
 - [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
   - [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
   - [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
   - [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
   - [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
+  - [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
+  - [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
 - [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
   - [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
   - [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -640,6 +643,28 @@ STVN enforces strict **Zero-Shadowing**: you cannot declare duplicate type alias
 
 ---
 
+### 4.4 STVN 1.2 Structural & Semantic Inspections
+
+STVN 1.2 introduces five dedicated, in-editor real-time inspections that actively enforce architectural invariants before compilation or code generation:
+
+1. **`StvnNestedPackage` (Illegal Nested Package Inspection):**
+   * STVN prohibits nesting package enclaves (`:package [ ... ] { ... }`) inside existing package blocks.
+   * Highlights offending nested package keywords with `ERROR` severity.
+2. **`StvnTrailingSlash` (Trailing Slash in Type Target):**
+   * Type definition targets must terminate with a valid symbol or identifier, not a dangling delimiter slash.
+   * Flags definitions like `:Target :org/stvnadore/` with `ERROR` severity.
+3. **`StvnLhsReservedType` (Reserved Keyword in LHS Definition):**
+   * Prevents overriding or redefining built-in STVN atomic or composite type keywords on the left-hand side of `:defs` (e.g., `:String :Int32` or `:Tuple :Seq`).
+   * Highlights the reserved keyword with `ERROR` severity.
+4. **`StvnFlatDocumentInclude` (Include Directive in Flat Payload):**
+   * Detached flat payload documents (`.stvn_f`) must be self-contained or pre-bound; they cannot contain `:include` statements.
+   * Highlights illegal `:include` directives in `.stvn_f` files with `ERROR` severity.
+5. **`StvnConstantRange` (Inverted Numeric Constant Range):**
+   * When declaring numeric bounding metadata (`#minIncl`, `#maxIncl`, `#minExcl`, `#maxExcl`), asserts that minimum bounds do not exceed maximum bounds.
+   * Highlights inverted range facets with `ERROR` severity.
+
+---
+
 ## 5. Navigation, Quick Documentation & Polyglot Features
 
 ### 5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)
@@ -777,6 +802,61 @@ When preparing STVN schemas for production deployments or microservice distribut
 
 ---
 
+### 5.5 Package Enclaves & Lexical Scoping (STVN 1.2)
+
+STVN 1.2 formalizes modular namespace organization via `:package` enclosures and lexical `:use` statements:
+
+#### Package Enclaves (`:package`)
+Package declarations group nominal type definitions under formal, hierarchical namespace paths:
+
+```stvn
+:defs {
+  :package [ :org :stvnadore :domain ] {
+    :UserId   :String
+    :OrderId  :Int64
+  }
+}
+```
+
+* All types declared inside the enclosure are qualified automatically under `:org/stvnadore/domain/*` (e.g., `:org/stvnadore/domain/UserId`).
+* Direct intra-package references resolve without qualification.
+* Cross-package references use either full namespace paths or scoped `:use` statements.
+
+#### Lexical Imports (`:use`)
+The `:use` statement imports nominal types into the local lexical scope:
+
+```stvn
+:defs {
+  // Import prelude standard library types stripped of namespace prefixes
+  :use [ :org/stvnadore/prelude { #strip } ]
+
+  // Map-based import with local aliasing
+  :use [
+    :org/stvnadore/telemetry {
+      :SpanId :LocalSpanId
+      :TraceId :LocalTraceId
+    }
+  ]
+
+  :Transaction :Tuple( :Uuid :LocalSpanId :LocalTraceId )
+}
+```
+
+* **`#strip` Modifier**: Strips the namespace path, making member types directly accessible under their bare names (e.g., `:Uuid`, `:Sha256`, `:DateTimeZoned`).
+* **Aliasing Maps**: Rename imported types to avoid collisions in local definitions.
+
+---
+
+### 5.6 Flat Payload Documents (`.stvn_f`)
+
+STVN 1.2 introduces `.stvn_f` files for high-throughput, headerless flat data payloads:
+
+* **Detached Schema Evaluation**: Flat payload files omit top-level `:defs` and `:type` blocks. They contain only a single root data payload (`:Tuple`, `:Seq`, `:Map`, or primitive).
+* **Wire Protocol Efficiency**: Ideal for streaming partitions, columnar chunks, or pre-negotiated RPC boundaries where transmitting schema metadata in every message creates unacceptable overhead.
+* **Prohibition of `:include`**: Because flat files have no schema enclosure, `:include` statements are strictly prohibited and immediately flagged by the `StvnFlatDocumentInclude` inspection.
+
+---
+
 ## 6. STVN Data Type Cheat Sheet for Data Engineers
 
 ### 6.1 Atomic Primitives & Exact Numerics
@@ -876,6 +956,9 @@ Subsets can derive from other subsets across multiple specialization tiers:
 ### 6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes
 
 STVN partitions temporal data into two distinct domains: low-level Unix epoch counters for machine processing and a formalized **Tripartite Temporal Type System** for ISO-8601 calendar representations.
+
+> [!NOTE]
+> **STVN 1.2 Prelude Architecture:** In STVN 1.2, temporal types (`:TimeEpochS`, `:TimeEpochMs`, `:TimeEpochNs`, `:DateTimeOffset`, `:DateTimeZoned`, `:DateTimeAudited`) are no longer hardcoded grammar tokens. They reside canonically in the standard library prelude (`:org/stvnadore/prelude/*`) using regex pattern constraints and integer bit-width bounds. To use bare type names, import them via `:use [ :org/stvnadore/prelude { #strip } ]` inside `:defs`.
 
 #### Machine-Level Epoch Timestamps
 

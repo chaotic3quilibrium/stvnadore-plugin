@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.1.1"
+version = "1.2.0-SNAPSHOT"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.1.1")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.2.0-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.1.1:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.2.0-SNAPSHOT:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -97,9 +97,17 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
+            <h3>1.2.0 - 2026.09.12</h3>
+            <ul>
+              <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>
+              <li><b>Flat Payload Documents (<code>.stvn_f</code>):</b> Registered new <code>.stvn_f</code> file type and parser definition for detached flat payload evaluation without embedded headers.</li>
+              <li><b>Prelude Standard Library Synchronization:</b> Synchronized with <code>stvnadore-core:1.2.0-SNAPSHOT</code>, transitioning temporal atoms (<code>:DateTimeOffset</code>, <code>:DateTimeZoned</code>, <code>:DateTimeAudited</code>, epoch timestamps) to regex-constrained standard library prelude definitions under <code>:org/stvnadore/prelude/*</code>.</li>
+              <li><b>5 New In-Editor Inspections:</b> Implemented real-time inspections for nested package declarations (<code>StvnNestedPackage</code>), trailing slashes in type definitions (<code>StvnTrailingSlash</code>), LHS reserved type keywords (<code>StvnLhsReservedType</code>), <code>:include</code> directives in flat payload documents (<code>StvnFlatDocumentInclude</code>), and out-of-order constant definitions (<code>StvnConstantRange</code>).</li>
+              <li><b>Precise Error Range Clamping:</b> Clamped external compiler diagnostic ranges directly to offending AST elements across file definitions, resolving error displacement and suppressing cascading parser artifacts.</li>
+            </ul>
             <h3>1.1.1 - 2026.09.07</h3>
             <ul>
-              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>\"\"\"[TAG]</code> opening delimiter; deprecated legacy <code>\"\"\"-&gt;[TAG]</code> with a <code>LIKE_DEPRECATED</code> strikeout diagnostic and inspection warning.</li>
+              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>&quot;&quot;&quot;[TAG]</code> opening delimiter; deprecated legacy <code>&quot;&quot;&quot;-&gt;[TAG]</code> with a <code>LIKE_DEPRECATED</code> strikeout diagnostic and inspection warning.</li>
               <li><b>Automated Code Cleanup:</b> Added <code>Remove deprecated '-&gt;' arrow</code> intention quick-fix with full IntelliJ batch <b>Code | Code Cleanup</b> support across files and projects.</li>
               <li><b>Interactive Tag Renaming (Shift+F6):</b> Implemented live linked editing for opening and closing delimiter tags with bidirectional caret focus retention and delta-aware cursor anchoring.</li>
               <li><b>AST Fracture & Collision Guard:</b> Intercepts tag renames that collide with delimiter sequences inside the string payload, preventing AST breakage and rolling back invalid commits.</li>
@@ -180,6 +188,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnEnumSubsetQuickFixTest.class")
     exclude("**/StvnFencedStringInspectionTest.class")
     exclude("**/StvnFencedStringTagRenameHandlerTest.class")
+    exclude("**/StvnDefsOverhaulInspectionsTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

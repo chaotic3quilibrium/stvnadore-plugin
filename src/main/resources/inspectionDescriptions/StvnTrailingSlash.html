@@ -1,0 +1,14 @@
+<html>
+<body>
+<p>Detects prohibited trailing slash characters in <code>:use</code> target specifications.</p>
+<!-- tooltip end -->
+<p>Target package paths in <code>:use</code> statements must terminate on an identifier segment without trailing slashes.</p>
+
+<p><b>Example (Prohibited Trailing Slash):</b></p>
+<pre><code>:defs {
+  // Error: Trailing slash prohibited in :use target
+  :use [ :com/example/util/ ]
+}
+</code></pre>
+</body>
+</html>

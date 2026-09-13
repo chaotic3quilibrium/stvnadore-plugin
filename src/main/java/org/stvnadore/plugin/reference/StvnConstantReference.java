@@ -61,7 +61,57 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
             }
         }
 
-        // 2. Scan imported modules
+        // 2. Scan package enclosures (FQNI expansion and in-scope relative names)
+        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+        for (var pkg : packages) {
+            var pkgPath = pkg.getPackagePath();
+            if (pkgPath == null) continue;
+            var pathText = pkgPath.getText();
+            for (var elem : pkg.getPackageElementList()) {
+                var cDef = elem.getConstantDefinition();
+                if (cDef != null) {
+                    var kw = cDef.getValueKeyword();
+                    if (kw != null) {
+                        var kwText = kw.getText();
+                        var fqni = pathText + "/" + kwText;
+                        if (fqni.equals(constName) || kwText.equals(constName)) {
+                            return kw;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Scan :use statements
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
+        for (var use : useStmts) {
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getValueKeywordList();
+                    if (list.size() >= 2) {
+                        var localKw = list.get(1);
+                        if (localKw != null && localKw.getText().equals(constName)) {
+                            return localKw;
+                        }
+                    }
+                }
+            }
+            var optBlock = use.getUseOptionsBlock();
+            if (optBlock != null && optBlock.getText().contains("#strip")) {
+                var target = use.getUseTarget();
+                if (target != null) {
+                    var prefix = target.getText();
+                    var fqni = prefix + "/" + constName;
+                    var resolved = resolveConstantInFile(file, fqni, visited);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                }
+            }
+        }
+
+        // 4. Scan imported modules
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         for (var incl : includes) {
             var stringLit = incl.getStringLiteral();

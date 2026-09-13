@@ -90,10 +90,10 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
     }
 
     private static boolean isDeclarationKeyword(PsiElement keyword) {
-        var parent = keyword.getParent();
-        if (parent instanceof TypeDefinition) {
-            return ((TypeDefinition) parent).getTypeKeyword() == keyword;
+        if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(keyword)) {
+            return true;
         }
+        var parent = keyword.getParent();
         if (parent instanceof ConstantDefinition) {
             return ((ConstantDefinition) parent).getValueKeyword() == keyword;
         }
@@ -101,6 +101,13 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
             var alias = (IncludeMapAlias) parent;
             var list = alias.getTypeKeywordList();
             return list.size() >= 2 && list.get(1) == keyword;
+        }
+        if (parent instanceof org.stvnadore.psi.UseMapAlias) {
+            var alias = (org.stvnadore.psi.UseMapAlias) parent;
+            var list = alias.getTypeKeywordList();
+            if (list.size() >= 2 && list.get(1) == keyword) return true;
+            var vlist = alias.getValueKeywordList();
+            return vlist.size() >= 2 && vlist.get(1) == keyword;
         }
         return false;
     }
