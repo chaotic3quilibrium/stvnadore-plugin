@@ -5,54 +5,80 @@
 
 ---
 
-## Table of Contents <!-- omit in toc -->
+**Table of Contents**
 
-- [1. Core Philosophy & Quick Start](#1-core-philosophy--quick-start)
-  - [1.1 Mathematical Typing Meets IDE Ergonomics](#11-mathematical-typing-meets-ide-ergonomics)
-  - [1.2 The "Typic vs. Variable" Track (Colon `:` vs. Hash `#`)](#12-the-typic-vs-variable-track-colon--vs-hash-)
-  - [1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN](#13-comparison-matrix-json-vs-yaml-vs-toml-vs-stvn)
-  - [1.4 60-Second Quick Start: Your First Valid STVN Document](#14-60-second-quick-start-your-first-valid-stvn-document)
-- [2. Interactive Authoring & Scaffolding](#2-interactive-authoring--scaffolding)
-  - [2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on empty `:body`)](#21-schema-driven-skeleton-generator-altenter-on-empty-body)
-    - [The Problem: Blank Canvas Friction](#the-problem-blank-canvas-friction)
-    - [How the Skeleton Generator Works](#how-the-skeleton-generator-works)
-    - [Interactive Live Template Tab-Stop Navigation Flow](#interactive-live-template-tab-stop-navigation-flow)
-  - [2.2 Trap 2 Map Auto-Healer (`Alt+Enter` on Flat Lists in `:Map` Slots)](#22-trap-2-map-auto-healer-altenter-on-flat-lists-in-map-slots)
-    - [The Mental Model: Maps vs. Lists](#the-mental-model-maps-vs-lists)
-    - [One-Click Atomic Healing](#one-click-atomic-healing)
-  - [2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)](#23-enum-subset-variant-reordering-altenter-on-out-of-order-filter-lists)
-- [3. Visual Grammar & Inlay Hint Badging Guide](#3-visual-grammar--inlay-hint-badging-guide)
-  - [3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags](#31-inlay-hint-badging-semantics-explicit-vs-inferred-variant-tags)
-    - [Option Types (`:Option( :T )`)](#option-types-option-t-)
-    - [Either Types (`:Either( :L :R )`)](#either-types-either-l-r-)
-    - [Algebraic Unions (`:Union( :T1 :T2 ... )`)](#algebraic-unions-union-t1-t2--)
-    - [Master Visual Inlay Badging Key](#master-visual-inlay-badging-key)
-    - [3.1.4 Temporal Primitives Inlay Hints & Hover Inspection](#314-temporal-primitives-inlay-hints--hover-inspection)
-  - [3.2 Container Delimiter Signatures & Formatting](#32-container-delimiter-signatures--formatting)
-  - [3.3 Configuration Settings & Long/Short Form Toggles](#33-configuration-settings--longshort-form-toggles)
-  - [3.4 Enum Subset Domain Completion & Inlay Badging](#34-enum-subset-domain-completion--inlay-badging)
-- [4. Sub-Token Precision Diagnostics & Recovery](#4-sub-token-precision-diagnostics--recovery)
-  - [4.1 Pinpoint Leaf-Token Error Targeting](#41-pinpoint-leaf-token-error-targeting)
-  - [4.2 Guaranteed Structural Immunity for `:defs`, `:type`, and Root Enclosures](#42-guaranteed-structural-immunity-for-defs-type-and-root-enclosures)
-  - [4.3 Real-Time Semantic Checkpoints](#43-real-time-semantic-checkpoints)
-    - [Non-Empty Constraint Checking (`:SeqNonEmpty`, `:MapNonEmpty`)](#non-empty-constraint-checking-seqnonempty-mapnonempty)
-    - [Duplicate Map Key Detection](#duplicate-map-key-detection)
-    - [Zero-Shadowing Constraints](#zero-shadowing-constraints)
-  - [4.4 STVN 1.2 Structural & Semantic Inspections](#44-stvn-12-structural--semantic-inspections)
-- [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
-  - [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
-  - [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
-  - [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
-  - [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
-  - [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
-  - [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
-- [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
-  - [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
-  - [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
-  - [6.3 Sum Types: Options, Eithers, and Algebraic Unions](#63-sum-types-options-eithers-and-algebraic-unions)
-  - [6.4 Enumerations & Value Keywords](#64-enumerations--value-keywords)
-    - [Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)](#enum-subsets--filter-metadata-facets-filterincl-filterexcl)
-  - [6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes](#65-temporal-types-epoch-timestamps-vs-tripartite-datetimes)
+<!-- TOC -->
+* [STVN IDE Authoring Guide & Feature Handbook](#stvn-ide-authoring-guide--feature-handbook)
+  * [1. Core Philosophy & Quick Start](#1-core-philosophy--quick-start)
+    * [1.1 Mathematical Typing Meets IDE Ergonomics](#11-mathematical-typing-meets-ide-ergonomics)
+    * [1.2 The "Typic vs. Variable" Track (Colon `:` vs. Hash `#`)](#12-the-typic-vs-variable-track-colon--vs-hash-)
+      * [Why This Partition Matters](#why-this-partition-matters)
+    * [1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN](#13-comparison-matrix-json-vs-yaml-vs-toml-vs-stvn)
+    * [1.4 60-Second Quick Start: Your First Valid STVN Document](#14-60-second-quick-start-your-first-valid-stvn-document)
+  * [2. Interactive Authoring & Scaffolding](#2-interactive-authoring--scaffolding)
+    * [2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on empty `:body`)](#21-schema-driven-skeleton-generator-altenter-on-empty-body)
+      * [The Problem: Blank Canvas Friction](#the-problem-blank-canvas-friction)
+      * [How the Skeleton Generator Works](#how-the-skeleton-generator-works)
+      * [Interactive Live Template Tab-Stop Navigation Flow](#interactive-live-template-tab-stop-navigation-flow)
+    * [2.2 Trap 2 Map Auto-Healer (`Alt+Enter` on Flat Lists in `:Map` Slots)](#22-trap-2-map-auto-healer-altenter-on-flat-lists-in-map-slots)
+      * [The Mental Model: Maps vs. Lists](#the-mental-model-maps-vs-lists)
+      * [One-Click Atomic Healing](#one-click-atomic-healing)
+    * [2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)](#23-enum-subset-variant-reordering-altenter-on-out-of-order-filter-lists)
+      * [The Problem: Root Declaration Order Violations](#the-problem-root-declaration-order-violations)
+      * [One-Click Canonical Reordering](#one-click-canonical-reordering)
+  * [3. Visual Grammar & Inlay Hint Badging Guide](#3-visual-grammar--inlay-hint-badging-guide)
+    * [3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags](#31-inlay-hint-badging-semantics-explicit-vs-inferred-variant-tags)
+      * [Option Types (`:Option( :T )`)](#option-types-option-t-)
+      * [Either Types (`:Either( :L :R )`)](#either-types-either-l-r-)
+      * [Algebraic Unions (`:Union( :T1 :T2 ... )`)](#algebraic-unions-union-t1-t2--)
+      * [Master Visual Inlay Badging Key](#master-visual-inlay-badging-key)
+      * [3.1.4 Temporal Primitives Inlay Hints & Hover Inspection](#314-temporal-primitives-inlay-hints--hover-inspection)
+        * [Rendered Inlay Badges for Temporal Literals](#rendered-inlay-badges-for-temporal-literals)
+        * [Quick Documentation (`Ctrl+Q` / Hover) Inspection Tooltips](#quick-documentation-ctrlq--hover-inspection-tooltips)
+        * [Deep Semantic Assertions & Diagnostics](#deep-semantic-assertions--diagnostics)
+    * [3.2 Container Delimiter Signatures & Formatting](#32-container-delimiter-signatures--formatting)
+    * [3.3 Configuration Settings & Long/Short Form Toggles](#33-configuration-settings--longshort-form-toggles)
+    * [3.4 Enum Subset Domain Completion & Inlay Badging](#34-enum-subset-domain-completion--inlay-badging)
+      * [Bracketed Filter Facet Authoring](#bracketed-filter-facet-authoring)
+      * [Subset Payload Domain Filtering](#subset-payload-domain-filtering)
+  * [4. Sub-Token Precision Diagnostics & Recovery](#4-sub-token-precision-diagnostics--recovery)
+    * [4.1 Pinpoint Leaf-Token Error Targeting](#41-pinpoint-leaf-token-error-targeting)
+    * [4.2 Guaranteed Structural Immunity for `:defs`, `:type`, and Root Enclosures](#42-guaranteed-structural-immunity-for-defs-type-and-root-enclosures)
+    * [4.3 Real-Time Semantic Checkpoints](#43-real-time-semantic-checkpoints)
+      * [Non-Empty Constraint Checking (`:SeqNonEmpty`, `:MapNonEmpty`)](#non-empty-constraint-checking-seqnonempty-mapnonempty)
+      * [Duplicate Map Key Detection](#duplicate-map-key-detection)
+      * [Zero-Shadowing Constraints](#zero-shadowing-constraints)
+    * [4.4 STVN 1.2 Structural & Semantic Inspections](#44-stvn-12-structural--semantic-inspections)
+  * [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
+    * [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
+    * [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
+      * [Enum Subset Quick Documentation Hover Card](#enum-subset-quick-documentation-hover-card)
+    * [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
+    * [Delimiter Invariant (Rule STR-04)](#delimiter-invariant-rule-str-04)
+    * [Authoring Example](#authoring-example)
+    * [IDE Inspection & Quick-Fixes (`StvnFencedString`)](#ide-inspection--quick-fixes-stvnfencedstring)
+    * [Editor Enter-Key Auto-Closing & Layout Shapes](#editor-enter-key-auto-closing--layout-shapes)
+    * [Interactive Live Templates and Intentions](#interactive-live-templates-and-intentions)
+    * [In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection](#in-editor-tag-renaming-shiftf6--delimiter-collision-protection)
+    * [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
+    * [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
+      * [Package Enclaves (`:package`)](#package-enclaves-package)
+      * [Lexical Imports (`:use`)](#lexical-imports-use)
+    * [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
+  * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
+    * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
+    * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
+    * [6.3 Sum Types: Options, Eithers, and Algebraic Unions](#63-sum-types-options-eithers-and-algebraic-unions)
+    * [6.4 Enumerations & Value Keywords](#64-enumerations--value-keywords)
+      * [Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)](#enum-subsets--filter-metadata-facets-filterincl-filterexcl)
+        * [Invariants & Rules](#invariants--rules)
+        * [Transitive Subset Chaining](#transitive-subset-chaining)
+    * [6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes](#65-temporal-types-epoch-timestamps-vs-tripartite-datetimes)
+      * [Machine-Level Epoch Timestamps](#machine-level-epoch-timestamps)
+      * [The Tripartite Temporal Type System](#the-tripartite-temporal-type-system)
+      * [Architectural Decision Guide: Which Temporal Type to Choose?](#architectural-decision-guide-which-temporal-type-to-choose)
+  * [7. Keyboard Shortcut Quick Reference](#7-keyboard-shortcut-quick-reference)
+<!-- TOC -->
 
 ---
 
@@ -601,16 +627,16 @@ The plugin strictly enforces the **Structural Immunity Invariant**:
 * If a payload literal is invalid, only that literal is underlined. Your schema definitions remain visually clean and stable.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ IMMUNITY BOUNDARY GUARANTEE:                            │
-│ {                                    <- [IMMUNE]        │
-│   :defs { :Id :Int32 }               <- [IMMUNE]        │
-│   :type :Tuple( :Id )                <- [IMMUNE]        │
-│   :body (                            <- [IMMUNE]        │
-│     "invalid_id"                     <- [ERROR HIGHLIGHT]
-│   )                                  <- [IMMUNE]        │
-│ }                                    <- [IMMUNE]        │
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│ IMMUNITY BOUNDARY GUARANTEE:                              │
+│ {                                    <- [IMMUNE]          │
+│   :defs { :Id :Int32 }               <- [IMMUNE]          │
+│   :type :Tuple( :Id )                <- [IMMUNE]          │
+│   :body (                            <- [IMMUNE]          │
+│     "invalid_id"                     <- [ERROR HIGHLIGHT] │
+│   )                                  <- [IMMUNE]          │
+│ }                                    <- [IMMUNE]          │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -727,7 +753,7 @@ Data pipelines often embed queries, templates, or scripts inside data files. STV
 
 ### Delimiter Invariant (Rule STR-04)
 Every fenced string literal must comply with **Rule STR-04**:
-1. **Opening Delimiter:** `"""[TAG]` (Canonical). Legacy syntax `"""->[TAG]` is **deprecated as of 1.1.1** and scheduled for removal in 2.0.0. Compilers and IDE inspections emit a `WARNING` diagnostic when `->` is encountered. The delimiter must be followed by optional horizontal whitespace and a newline.
+1. **Opening Delimiter:** `"""[TAG]` (Canonical). Legacy syntax `"""->[TAG]` is **deprecated as of 1.1.1** and scheduled for removal in 1.3.0. Compilers and IDE inspections emit a `WARNING` diagnostic when `->` is encountered. The delimiter must be followed by optional horizontal whitespace and a newline.
 2. **Closing Delimiter:** `[TAG]"""`. The closing tag must match the opening tag identically ($\text{TAG}_{\text{close}} == \text{TAG}_{\text{open}}$).
 3. **Valid Character Class:** Tags must match positive character class `^[a-zA-Z0-9_-]{1,256}$`.
 4. **Length Bounds:** Tag length must satisfy $1 \le \text{length}(\text{TAG}) \le 256$.

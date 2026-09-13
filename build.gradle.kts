@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.2.0-SNAPSHOT"
+version = "1.2.0"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.2.0-SNAPSHOT")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.2.0")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.2.0-SNAPSHOT:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.2.0:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -99,9 +99,20 @@ intellijPlatform {
         changeNotes.set("""
             <h3>1.2.0 - 2026.09.12</h3>
             <ul>
+              <li>Integrated changes to `stvnadore-core`:
+                <ul>
+                  <li>Standard prelude relocated to namespace <code>:org/stvnadore/prelude/*</code> and out of root, completely clearing the root namespace</li>
+                  <li>Atomic temporal primitives pruned to nominal prelude schemas</li>
+                  <li>Package enclosures (<code>:package</code>) with automatic LHS FQNI expansion</li>
+                  <li>Scoped <code>:use</code> with atomic unary <code>#strip</code> terminal slicing</li>
+                  <li>Hermetic flat payload tier (newly introduced <code>.stvn_f</code>) and flat schema tier (existing <code>.stvn_inclf</code>)</li>
+                  <li>Arbitrary bit-width integer overflow enforcement (BigInteger)</li>
+                  <li>Updated shared-fixtures conformance suite</li>
+                </ul>
+              </li>
               <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>
               <li><b>Flat Payload Documents (<code>.stvn_f</code>):</b> Registered new <code>.stvn_f</code> file type and parser definition for detached flat payload evaluation without embedded headers.</li>
-              <li><b>Prelude Standard Library Synchronization:</b> Synchronized with <code>stvnadore-core:1.2.0-SNAPSHOT</code>, transitioning temporal atoms (<code>:DateTimeOffset</code>, <code>:DateTimeZoned</code>, <code>:DateTimeAudited</code>, epoch timestamps) to regex-constrained standard library prelude definitions under <code>:org/stvnadore/prelude/*</code>.</li>
+              <li><b>Prelude Standard Library Synchronization:</b> Synchronized with <code>stvnadore-core:1.2.0</code>, transitioning temporal atoms (<code>:DateTimeOffset</code>, <code>:DateTimeZoned</code>, <code>:DateTimeAudited</code>, epoch timestamps) to regex-constrained standard library prelude definitions under <code>:org/stvnadore/prelude/*</code>.</li>
               <li><b>5 New In-Editor Inspections:</b> Implemented real-time inspections for nested package declarations (<code>StvnNestedPackage</code>), trailing slashes in type definitions (<code>StvnTrailingSlash</code>), LHS reserved type keywords (<code>StvnLhsReservedType</code>), <code>:include</code> directives in flat payload documents (<code>StvnFlatDocumentInclude</code>), and out-of-order constant definitions (<code>StvnConstantRange</code>).</li>
               <li><b>Precise Error Range Clamping:</b> Clamped external compiler diagnostic ranges directly to offending AST elements across file definitions, resolving error displacement and suppressing cascading parser artifacts.</li>
             </ul>
