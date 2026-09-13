@@ -14,11 +14,10 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-# Table of Contents <!-- omit in toc -->
+**Table of Contents**
 
 <!-- TOC -->
 * [STVN IntelliJ Platform Plugin (`stvnadore-plugin`)](#stvn-intellij-platform-plugin-stvnadore-plugin)
-* [Table of Contents <!-- omit in toc -->](#table-of-contents----omit-in-toc---)
   * [Key Features](#key-features)
     * [1. Interactive Authoring & Scaffolding](#1-interactive-authoring--scaffolding)
     * [2. Visual Inlay Badging](#2-visual-inlay-badging)
@@ -39,6 +38,11 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [Prerequisites](#prerequisites)
     * [Build Commands](#build-commands)
 * [Support](#support)
+  * [License](#license)
+    * [GNU AFFERO GENERAL PUBLIC LICENSE](#gnu-affero-general-public-license)
+    * [REALLY HATE the GNU AFFERO GENERAL PUBLIC LICENSE, a.k.a. AGPLv3?](#really-hate-the-gnu-affero-general-public-license-aka-agplv3)
+    * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
+    * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
 * [Version History](#version-history)
   * [v1.2.0](#v120)
   * [v1.1.1](#v111)
@@ -101,7 +105,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Resolution Path**: Traces transitive type aliases back to the root declaration (`:Terminal -> :Intermediate -> :RootEnum`).
 
 ### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
-* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 2.0.0) and generates an in-editor deprecation diagnostic.
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 1.3.0) and generates an in-editor deprecation diagnostic.
 * **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
 * **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
@@ -189,7 +193,7 @@ Settings
 
 ### Prerequisites
 * JDK 21 LTS
-* Local installation of `stvnadore-core:1.1.1` (`mvn clean install` in `ij_stvnadore_core`)
+* Local installation of `stvnadore-core:1.2.0` (`mvn clean install` in `ij_stvnadore_core`)
 
 ### Build Commands
 ```bash
@@ -252,6 +256,14 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ## v1.2.0
 
 - 2026.09.12
+- Integrated changes to `stvnadore-core`
+    - Standard prelude relocated to namespace `:org/stvnadore/prelude/*` and out of root, completely clearing the root namespace
+    - Atomic temporal primitives pruned to nominal prelude schemas
+    - Package enclosures (`:package`) with automatic LHS FQNI expansion
+    - Scoped `:use` with atomic unary `#strip` terminal slicing
+    - Hermetic flat payload tier (newly introduced `.stvn_f`) and flat schema tier (existing `.stvn_inclf`)
+    - Arbitrary bit-width integer overflow enforcement (BigInteger)
+    - Updated shared-fixtures conformance suite
 - STVN 1.2 Namespace & Lexical Scope Architecture: added support for `:package` enclaves and lexical `:use` statements with target maps, aliasing, and `#strip`
 - Flat Payload Documents (`.stvn_f`): registered new file type and parser definition for headerless flat payload evaluation
 - Standard Library Prelude Synchronization: updated temporal types (`:DateTimeOffset`, `:DateTimeZoned`, `:DateTimeAudited`, epoch timestamps) to prelude regex constraints under `:org/stvnadore/prelude/*`
