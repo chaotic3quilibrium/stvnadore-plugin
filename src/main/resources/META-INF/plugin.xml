@@ -104,6 +104,16 @@
 
         <colorSettingsPage implementation="org.stvnadore.plugin.StvnColorSettingsPage"/>
 
+        <!-- 4b. Native Formatter & Code Style Providers -->
+        <lang.formatter language="STVN"
+                        implementationClass="org.stvnadore.plugin.formatting.StvnFormattingModelBuilder"/>
+
+        <codeStyleSettingsProvider
+                implementation="org.stvnadore.plugin.formatting.StvnCodeStyleSettingsProvider"/>
+
+        <langCodeStyleSettingsProvider
+                implementation="org.stvnadore.plugin.formatting.StvnLanguageCodeStyleSettingsProvider"/>
+
         <!-- 5. Real-time Compiler Diagnostics Bridge -->
         <externalAnnotator language="STVN"
                            implementationClass="org.stvnadore.plugin.validation.StvnExternalAnnotator"/>
@@ -330,5 +340,20 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
+
+        <group id="org.stvnadore.plugin.actions.StvnEditorPopupMenu"
+               text="STVN"
+               description="STVN data projection and formatting actions"
+               popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
+                    text="STVN: Convert to Pretty Print"
+                    description="Formats active STVN document with 2-space indentation and long-form symbols"/>
+            <action id="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
+                    text="STVN: Convert to Compact Print"
+                    description="Formats active STVN document into compact single-line layout with short-form symbols"/>
+        </group>
     </actions>
 </idea-plugin>

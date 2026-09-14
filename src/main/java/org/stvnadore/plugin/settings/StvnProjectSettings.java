@@ -31,6 +31,8 @@ public final class StvnProjectSettings implements PersistentStateComponent<StvnP
         public boolean enableFormDiscrepancyInspection = true;
         /** If true, favors implied sum types during completion. */
         public boolean preferImpliedSumTypes = true;
+        /** If true, suppresses the confirmation dialog when compact formatting strips comments. */
+        public boolean suppressCompactCommentWarning = false;
     }
 
     private State myState = new State();

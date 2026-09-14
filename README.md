@@ -32,6 +32,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [10. Package Enclaves & Lexical Scoping (STVN 1.2)](#10-package-enclaves--lexical-scoping-stvn-12)
     * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
     * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
+    * [13. Native Code Formatter & Dual Projections (STVN 1.3)](#13-native-code-formatter--dual-projections-stvn-13)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -145,6 +146,14 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
 * **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
 
+### 13. Native Code Formatter & Dual Projections (STVN 1.3)
+* **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy and the Zero-Tab Invariant across all files and selections.
+* **Immutable Leaf Preservation**: Preserves user comments (`// ...`) and multiline fenced string bodies (`"""[TAG]...[TAG]"""`) without text distortion.
+* **Dual Projection Actions**:
+  * **STVN: Convert to Pretty Print**: Projects document into multi-line 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
+  * **STVN: Convert to Compact Print**: Projects document into single-line dense representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
+* **Comment Destruction Warning Guard**: Intercepts compact conversion on commented documents, displaying an interactive confirmation dialog with persistent preference storage.
+
 ---
 
 ## Action Registrations
@@ -153,6 +162,8 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 |:----------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-----------------------------------------|
 | `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction` | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn` or `.stvn_incl`  |
 | `org.stvnadore.plugin.actions.PublishSchemaAction`        | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn` or `.stvn_inclf` |
+| `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction` | **STVN: Convert to Pretty Print**                  | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction` | **STVN: Convert to Compact Print**                | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
 | `StvnSchemaSkeletonIntentionAction`                       | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body` |
 | `StvnReorderEnumFilterVariantsQuickFix`                   | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list  |
 
