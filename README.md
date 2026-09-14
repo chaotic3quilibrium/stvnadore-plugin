@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.2.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.3.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.2.0 - 2026.09.12
+- Version: 1.3.0-SNAPSHOT - 2026.09.13
 
 ---
 
@@ -31,6 +31,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
     * [10. Package Enclaves & Lexical Scoping (STVN 1.2)](#10-package-enclaves--lexical-scoping-stvn-12)
     * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
+    * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -138,6 +139,12 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Detached Flat Payloads**: First-class support for `.stvn_f` files representing headerless, high-throughput flat payloads evaluated against detached or pre-negotiated schemas.
 * **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring `.stvn_f` files adhere strictly to single-payload root syntax while prohibiting `:include` statements.
 
+### 12. String Capacity Governance (STVN 1.3)
+* **Schema Scope Governance**: Detects unadorned `:String` tokens and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
+* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to rewrite to threshold (`:String4096`) and secondary QuickFix to rewrite to architectural default (`:String16777216`).
+* **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
+* **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
+
 ---
 
 ## Action Registrations
@@ -167,6 +174,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 | `StvnLhsReservedTypeInspection`      | `StvnLhsReservedType`      | Reserved keyword in LHS definition   | `STVN / Validity`            |    `ERROR`     |
 | `StvnFlatDocumentIncludeInspection`  | `StvnFlatDocumentInclude`  | Include directive in flat payload    | `STVN / Validity`            |    `ERROR`     |
 | `StvnConstantRangeInspection`        | `StvnConstantRange`        | Inverted numeric constant range      | `STVN / Semantics`           |    `ERROR`     |
+| `StvnStringCapacityInspection`       | `StvnStringCapacity`       | String capacity governance inspection | `STVN / Governance`         |   `WARNING`    |
 
 ---
 

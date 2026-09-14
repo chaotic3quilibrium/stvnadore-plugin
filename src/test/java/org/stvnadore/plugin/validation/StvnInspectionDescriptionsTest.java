@@ -27,7 +27,8 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnConstantRangeInspection.class, List.of("bit-width", "constant", "range")),
         Map.entry(StvnFlatDocumentIncludeInspection.class, List.of("flat", "leaf", "include")),
         Map.entry(StvnNestedPackageInspection.class, List.of("nested", "package")),
-        Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use"))
+        Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use")),
+        Map.entry(StvnStringCapacityInspection.class, List.of("capacity", "threshold", ":String", "governance"))
     );
 
     public void testDirectInspectionToolDescriptionLoading() throws Exception {
@@ -69,7 +70,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 12 registered STVN local inspections in plugin.xml", 12, stvnInspections.size());
+        assertEquals("Expected exactly 13 registered STVN local inspections in plugin.xml", 13, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);

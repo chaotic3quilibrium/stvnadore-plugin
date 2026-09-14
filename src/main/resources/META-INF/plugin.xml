@@ -277,6 +277,16 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnTrailingSlashInspection"/>
 
+        <!-- 12k. Local Inspection for String Capacity Governance -->
+        <localInspection language="STVN"
+                         shortName="StvnStringCapacity"
+                         displayName="String capacity governance inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnStringCapacityInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 
