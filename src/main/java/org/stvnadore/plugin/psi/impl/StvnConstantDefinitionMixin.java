@@ -38,4 +38,16 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
         }
         return this;
     }
+
+    /**
+     * Returns the text offset within the file where the declared constant identifier begins.
+     *
+     * @return the start offset of the constant name identifier token, or the container offset if null
+     */
+    @Override
+    public int getTextOffset() {
+        var identifier = getNameIdentifier();
+        return identifier != null ? identifier.getTextOffset() : super.getTextOffset();
+    }
 }
+

@@ -43,4 +43,16 @@ public abstract class StvnIncludeMapAliasMixin extends ASTWrapperPsiElement impl
         }
         return this;
     }
+
+    /**
+     * Returns the text offset within the file where the declared include alias identifier begins.
+     *
+     * @return the start offset of the alias name identifier token, or the container offset if null
+     */
+    @Override
+    public int getTextOffset() {
+        var identifier = getNameIdentifier();
+        return identifier != null ? identifier.getTextOffset() : super.getTextOffset();
+    }
 }
+

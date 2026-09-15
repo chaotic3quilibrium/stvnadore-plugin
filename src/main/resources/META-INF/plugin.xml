@@ -94,6 +94,10 @@
         <!-- 2e. Rename Handler for Balanced Fenced String Delimiter Tags -->
         <renameHandler implementation="org.stvnadore.plugin.editor.StvnFencedStringTagRenameHandler"/>
 
+        <!-- 2f. Refactoring Names Validator -->
+        <lang.namesValidator language="STVN"
+                             implementationClass="org.stvnadore.plugin.refactoring.StvnNamesValidator"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>

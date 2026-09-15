@@ -33,6 +33,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
     * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
     * [13. Native Code Formatter & Dual Projections (STVN 1.3)](#13-native-code-formatter--dual-projections-stvn-13)
+    * [14. First-Class Rename Refactoring (Shift+F6)](#14-first-class-rename-refactoring-shiftf6)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -153,6 +154,12 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
   * **STVN: Convert to Pretty Print**: Projects document into multi-line 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
   * **STVN: Convert to Compact Print**: Projects document into single-line dense representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
 * **Comment Destruction Warning Guard**: Intercepts compact conversion on commented documents, displaying an interactive confirmation dialog with persistent preference storage.
+
+### 14. First-Class Rename Refactoring (Shift+F6)
+* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, include alias (`:include`), or package enclave use alias (`:use`) to trigger synchronized in-place rename refactoring across the document and included files.
+* **Precise Caret Anchoring**: Mixins override `getTextOffset()`, guaranteeing the refactoring template highlights the exact identifier token rather than enclosing block delimiters.
+* **Syntax Validation & Keyword Guard**: `StvnNamesValidator` validates user entries in real-time, enforcing leading colon syntax (`:`), alphanumeric character rules, and rejecting reserved section keywords (`:defs`, `:type`, `:body`, `:package`, `:use`, `:include`).
+* **Atomic Cross-File Mutation**: Renaming declarations in modular flat schema files (`.stvn_inclf`) propagates atomically across all consumer documents (`.stvn`, `.stvn_f`).
 
 ---
 

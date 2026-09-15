@@ -130,7 +130,14 @@ use_target                ::= type_keyword | use_target_illegal
 use_target_illegal        ::= type_keyword FSLASH+
 use_options_block         ::= LBRACE KW_STRIP RBRACE {pin=2}
 use_alias_block           ::= LBRACE use_map_alias+ RBRACE {pin=1}
-use_map_alias             ::= (type_keyword type_keyword) | (value_keyword value_keyword)
+use_map_alias             ::= (type_keyword type_keyword) | (value_keyword value_keyword) {
+  pin=1
+  recoverWhile=use_alias_recover
+  mixin="org.stvnadore.plugin.psi.mixin.StvnUseMapAliasMixin"
+  implements="com.intellij.psi.PsiNameIdentifierOwner"
+}
+private use_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
+
 
 type_entry                ::= KW_TYPE type_entry_content {pin=1}
 private type_entry_content ::= schema_type {recoverWhile=type_recover}

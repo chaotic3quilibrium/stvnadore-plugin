@@ -5,6 +5,8 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiReferenceBase;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.psi.ConstantDefinition;
@@ -34,6 +36,61 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
             return new TextRange(0, firstWord.length());
         }
         return new TextRange(0, element.getTextLength());
+    }
+
+    /**
+     * Handles renaming of the referenced value element by replacing the ValueKeyword PSI element.
+     * Preserves modular path prefixes when renaming constant identifiers.
+     *
+     * @param newElementName the new name string to assign to the value element
+     * @return the newly created ValueKeyword PSI element
+     * @throws IncorrectOperationException if the element replacement fails
+     */
+    @Override
+    public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
+        var element = getElement();
+        if (element instanceof ValueKeyword valKw) {
+            var currentText = valKw.getText();
+            String replacementText;
+            if (currentText.contains("/")) {
+                var lastSlashIndex = currentText.lastIndexOf('/');
+                var prefix = currentText.substring(0, lastSlashIndex + 1);
+                var cleanName = newElementName.startsWith("#") ? newElementName.substring(1) : newElementName;
+                replacementText = prefix + cleanName;
+            } else {
+                replacementText = newElementName.startsWith("#") ? newElementName : "#" + newElementName;
+            }
+            var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createValueKeyword(element.getProject(), replacementText);
+            return valKw.replace(newKeyword);
+        }
+        return super.handleElementRename(newElementName);
+    }
+
+    /**
+     * Evaluates whether this reference points to the specified target element,
+     * matching both direct keyword declarations and enclosing definition containers.
+     *
+     * @param element the potential target declaration element
+     * @return {@code true} if this reference resolves to the element or its declared name token
+     */
+    @Override
+    public boolean isReferenceTo(@NotNull PsiElement element) {
+        var resolved = resolve();
+        if (resolved == null) {
+            return false;
+        }
+        var manager = getElement().getManager();
+        if (manager.areElementsEquivalent(resolved, element)) {
+            return true;
+        }
+        if (element instanceof ConstantDefinition constDef) {
+            return manager.areElementsEquivalent(resolved, constDef.getValueKeyword())
+                || manager.areElementsEquivalent(resolved, constDef.getNameIdentifier());
+        }
+        if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
+            return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
+        }
+        return false;
     }
 
     @Override

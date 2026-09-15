@@ -30,7 +30,7 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
 
     @Override
     public boolean canFindUsagesFor(@NotNull PsiElement psiElement) {
-        if (psiElement instanceof TypeDefinition || psiElement instanceof ConstantDefinition || psiElement instanceof IncludeMapAlias) {
+        if (psiElement instanceof TypeDefinition || psiElement instanceof ConstantDefinition || psiElement instanceof IncludeMapAlias || psiElement instanceof org.stvnadore.psi.UseMapAlias) {
             return true;
         }
         if (psiElement instanceof TypeKeyword || psiElement instanceof ValueKeyword) {
@@ -55,6 +55,9 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         if (element instanceof IncludeMapAlias) {
             return "Include Alias";
         }
+        if (element instanceof org.stvnadore.psi.UseMapAlias) {
+            return "Use Alias";
+        }
         if (element instanceof ValueKeyword) {
             return "Constant Declaration";
         }
@@ -76,6 +79,10 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         }
         if (element instanceof IncludeMapAlias) {
             var name = ((IncludeMapAlias) element).getName();
+            return name != null ? name : "";
+        }
+        if (element instanceof org.stvnadore.psi.UseMapAlias) {
+            var name = ((org.stvnadore.psi.UseMapAlias) element).getName();
             return name != null ? name : "";
         }
         if (element instanceof TypeKeyword || element instanceof ValueKeyword) {
