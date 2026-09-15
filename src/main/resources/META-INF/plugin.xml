@@ -98,6 +98,10 @@
         <lang.namesValidator language="STVN"
                              implementationClass="org.stvnadore.plugin.refactoring.StvnNamesValidator"/>
 
+        <!-- 2g. Section Navigation Line Marker Provider -->
+        <codeInsight.lineMarkerProvider language="STVN"
+                                        implementationClass="org.stvnadore.plugin.browser.StvnSectionNavigationLineMarkerProvider"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>
@@ -359,5 +363,17 @@
                     text="STVN: Convert to Compact Print"
                     description="Formats active STVN document into compact single-line layout with short-form symbols"/>
         </group>
+
+        <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                text="Browse STVN Namespace Dependencies"
+                description="Inspects and filters symbols across document sections in an interactive table popup"
+                icon="/icons/stvn_icon.svg">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
+            <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
+            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="org.stvnadore.plugin.actions.StvnEditorPopupMenu" anchor="first"/>
+        </action>
     </actions>
 </idea-plugin>

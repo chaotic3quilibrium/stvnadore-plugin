@@ -34,6 +34,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
     * [13. Native Code Formatter & Dual Projections (STVN 1.3)](#13-native-code-formatter--dual-projections-stvn-13)
     * [14. First-Class Rename Refactoring (Shift+F6)](#14-first-class-rename-refactoring-shiftf6)
+    * [15. Interactive Namespace Dependency Browser](#15-interactive-namespace-dependency-browser)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -161,6 +162,17 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Syntax Validation & Keyword Guard**: `StvnNamesValidator` validates user entries in real-time, enforcing leading colon syntax (`:`), alphanumeric character rules, and rejecting reserved section keywords (`:defs`, `:type`, `:body`, `:package`, `:use`, `:include`).
 * **Atomic Cross-File Mutation**: Renaming declarations in modular flat schema files (`.stvn_inclf`) propagates atomically across all consumer documents (`.stvn`, `.stvn_f`).
 
+### 15. Interactive Namespace Dependency Browser
+* **Gutter Navigation Markers**: Displays interactive gutter icons on section headers (`:defs`, `:type`, `:body`). Clicking an icon launches the browser filtered to the target section scope.
+* **Global Keyboard Shortcut (`Ctrl+Alt+N` / `Cmd+Alt+N`)**: Resolves the editor caret to determine the enclosing section scope, falling back to full `:defs` scope when invoked outside section blocks.
+* **Searchable Grid (`JBTable` & `JBPopup`)**: Backed by `ListTableModel` with multi-column sorting:
+  1. `Name`: Symbol identifier token (alphabetical sort).
+  2. `Root Namespaced Source`: Origin file path, package enclave URI, or prelude standard library URI (alphabetical sort).
+  3. `Type`: Terminal schema structure or constructor layout (alphabetical sort).
+  4. `Use Depth`: Resolution depth as integer (alias hop count in `:defs`, derivation depth in `:type`, nesting depth in `:body`; numeric sort).
+* **Zero-Latency Speed Search**: Attached via `TableSpeedSearch` for immediate keyboard-driven filtering.
+* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a synthetic, read-only `LightVirtualFile` (`stvn://prelude/org_stvnadore_prelude.stvn_inclf`) positioned at the nominal declaration.
+
 ---
 
 ## Action Registrations
@@ -171,6 +183,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 | `org.stvnadore.plugin.actions.PublishSchemaAction`        | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn` or `.stvn_inclf` |
 | `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction` | **STVN: Convert to Pretty Print**                  | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
 | `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction` | **STVN: Convert to Compact Print**                | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`       | **Browse STVN Namespace Dependencies**            | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)       |
 | `StvnSchemaSkeletonIntentionAction`                       | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body` |
 | `StvnReorderEnumFilterVariantsQuickFix`                   | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list  |
 

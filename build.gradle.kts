@@ -181,7 +181,6 @@ val mirrorSharedFixtures by tasks.registering {
     doLast {
         if (siblingDir.exists() && siblingDir.isDirectory) {
             logger.lifecycle("Syncing shared-fixtures from sibling core repository: ${siblingDir.absolutePath}")
-            targetDir.deleteRecursively()
             siblingDir.copyRecursively(targetDir, overwrite = true)
         } else {
             logger.warn("WARNING: Sibling core repository fixtures directory not found at: ${siblingDir.absolutePath}. Test execution will proceed with standard classpath assets.")
@@ -218,6 +217,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnFormatterTest.class")
     exclude("**/StvnDualProjectionActionsTest.class")
     exclude("**/StvnRenameRefactoringTest.class")
+    exclude("**/StvnNamespaceBrowserTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

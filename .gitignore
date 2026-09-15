@@ -5,6 +5,7 @@ src/main/gen/
 *.iml
 *.log
 .intellijPlatform/
-src/test/resources/shared-fixtures/
+src/test/resources/shared-fixtures/*
+!src/test/resources/shared-fixtures/browser/
 scratch/
 /temp
