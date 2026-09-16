@@ -32,6 +32,9 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
 
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
+        if (name.startsWith(":")) {
+            throw new IncorrectOperationException("Cannot rename constant to type symbol '" + name + "'");
+        }
         var identifier = getNameIdentifier();
         if (identifier != null) {
             var newValueKw = StvnElementFactory.createValueKeyword(getProject(), name.startsWith("#") ? name : "#" + name);

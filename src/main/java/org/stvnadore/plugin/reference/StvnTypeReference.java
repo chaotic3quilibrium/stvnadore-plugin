@@ -55,6 +55,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
      */
     @Override
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
+        if (newElementName.startsWith("#")) {
+            throw new IncorrectOperationException("Cannot rename type to constant symbol '" + newElementName + "'");
+        }
         var element = getElement();
         var currentText = element.getText();
         String replacementText;

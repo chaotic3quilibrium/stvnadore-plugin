@@ -347,4 +347,95 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             """;
         myFixture.checkResult(expected);
     }
+
+    /**
+     * Verifies that StvnRenameInputValidator rejects '#' names for types and ':' names
+     * for constants with explicit error messages in both direct and registry lookups.
+     */
+    public void testRenameInputValidatorRejectsConflictingSigilsWithExplicitErrors() {
+        var validator = new StvnRenameInputValidator();
+        var code = """
+            {
+              :defs {
+                :MyType :String
+                #MyConst :Int32 42
+              }
+            }
+            """;
+        var file = myFixture.configureByText("validator_test.stvn", code);
+        var typeDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
+        var constDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, ConstantDefinition.class);
+        assertNotNull(typeDef);
+        assertNotNull(constDef);
+
+        var context = new com.intellij.util.ProcessingContext();
+        assertTrue(validator.getPattern().accepts(typeDef, context));
+        assertTrue(validator.getPattern().accepts(constDef, context));
+
+        // Registry lookup for TypeDefinition: '#' sigil yields explicit error message
+        var typeErrorFn = com.intellij.refactoring.rename.RenameInputValidatorRegistry.getInputErrorValidator(typeDef);
+        assertNotNull(typeErrorFn);
+        assertEquals(StvnRenameInputValidator.TYPE_ERROR_MESSAGE, typeErrorFn.fun("#InvalidConst"));
+
+        // Registry lookup for ConstantDefinition: ':' sigil yields explicit error message
+        var constErrorFn = com.intellij.refactoring.rename.RenameInputValidatorRegistry.getInputErrorValidator(constDef);
+        assertNotNull(constErrorFn);
+        assertEquals(StvnRenameInputValidator.CONSTANT_ERROR_MESSAGE, constErrorFn.fun(":InvalidType"));
+
+        // Direct validator invocation
+        assertEquals(StvnRenameInputValidator.TYPE_ERROR_MESSAGE, validator.getErrorMessage("#InvalidConst", typeDef, getProject()));
+        assertEquals(StvnRenameInputValidator.CONSTANT_ERROR_MESSAGE, validator.getErrorMessage(":InvalidType", constDef, getProject()));
+
+        // Valid names return null error
+        assertNull(validator.getErrorMessage(":ValidType", typeDef, getProject()));
+        assertNull(validator.getErrorMessage("ValidBareType", typeDef, getProject()));
+        assertNull(validator.getErrorMessage("#ValidConst", constDef, getProject()));
+        assertNull(validator.getErrorMessage("ValidBareConst", constDef, getProject()));
+    }
+
+    /**
+     * Verifies that programmatic rename operations with conflicting sigils throw
+     * IncorrectOperationException rather than unhandled IllegalStateException.
+     */
+    public void testProgrammaticRenameWithConflictingSigilThrowsIncorrectOperationException() {
+        var beforeCode = """
+            {
+              :defs {
+                :AccountHolder<caret> :String
+                #DefaultPort :Int32 8080
+              }
+              :type :AccountHolder
+              :body "Alice"
+            }
+            """;
+        myFixture.configureByText("conflicting_sigil.stvn", beforeCode);
+
+        // Attempting to rename TypeDefinition with constant sigil '#' throws IncorrectOperationException
+        try {
+            myFixture.renameElementAtCaret("#ConflictingConstName");
+            fail("Expected IncorrectOperationException when renaming type to constant symbol");
+        } catch (Throwable e) {
+            var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
+                : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
+            assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
+            assertTrue(ioe.getMessage().contains("Cannot rename type to constant symbol '#ConflictingConstName'"));
+        }
+
+        // Navigate caret to ConstantDefinition
+        var file = myFixture.getFile();
+        var constDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, ConstantDefinition.class);
+        assertNotNull(constDef);
+        myFixture.getEditor().getCaretModel().moveToOffset(constDef.getTextOffset());
+
+        // Attempting to rename ConstantDefinition with type sigil ':' throws IncorrectOperationException
+        try {
+            myFixture.renameElementAtCaret(":ConflictingTypeName");
+            fail("Expected IncorrectOperationException when renaming constant to type symbol");
+        } catch (Throwable e) {
+            var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
+                : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
+            assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
+            assertTrue(ioe.getMessage().contains("Cannot rename constant to type symbol ':ConflictingTypeName'"));
+        }
+    }
 }

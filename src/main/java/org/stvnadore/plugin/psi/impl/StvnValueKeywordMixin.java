@@ -30,6 +30,9 @@ public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement impleme
 
     @Override
     public PsiElement setName(@NotNull String name) throws com.intellij.util.IncorrectOperationException {
+        if (name.startsWith(":")) {
+            throw new com.intellij.util.IncorrectOperationException("Cannot rename constant to type symbol '" + name + "'");
+        }
         var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createValueKeyword(getProject(), name.startsWith("#") ? name : "#" + name);
         return replace(newKw);
     }

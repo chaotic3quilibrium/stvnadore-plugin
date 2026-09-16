@@ -37,6 +37,9 @@ public abstract class StvnIncludeMapAliasMixin extends ASTWrapperPsiElement impl
 
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
+        if (name.startsWith("#")) {
+            throw new IncorrectOperationException("Cannot rename type to constant symbol '" + name + "'");
+        }
         var identifier = getNameIdentifier();
         if (identifier != null) {
             var newKeyword = StvnElementFactory.createTypeKeyword(getProject(), name.startsWith(":") ? name : ":" + name);

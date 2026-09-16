@@ -20,6 +20,9 @@ public final class StvnElementFactory {
     private StvnElementFactory() {}
 
     public static TypeKeyword createTypeKeyword(Project project, String name) {
+        if (name.startsWith("#") || name.startsWith(":#") || name.startsWith("#:")) {
+            throw new IllegalArgumentException("Cannot create TypeKeyword with constant or malformed sigil: '" + name + "'");
+        }
         var cleanName = name.startsWith(":") ? name : ":" + name;
         var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int32\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
@@ -32,6 +35,9 @@ public final class StvnElementFactory {
     }
 
     public static ValueKeyword createValueKeyword(Project project, String name) {
+        if (name.startsWith(":") || name.startsWith("#:") || name.startsWith(":#")) {
+            throw new IllegalArgumentException("Cannot create ValueKeyword with type or malformed sigil: '" + name + "'");
+        }
         var cleanName = name.startsWith("#") ? name : "#" + name;
         var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int32 0\n  }\n}";
         var file = PsiFileFactory.getInstance(project)

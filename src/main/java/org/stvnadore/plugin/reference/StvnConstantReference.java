@@ -34,6 +34,9 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      */
     @Override
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
+        if (newElementName.startsWith(":")) {
+            throw new IncorrectOperationException("Cannot rename constant to type symbol '" + newElementName + "'");
+        }
         var element = getElement();
         var currentText = element.getText();
         String replacementText;

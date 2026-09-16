@@ -98,6 +98,8 @@
         <lang.namesValidator language="STVN"
                              implementationClass="org.stvnadore.plugin.refactoring.StvnNamesValidator"/>
 
+        <renameInputValidator implementation="org.stvnadore.plugin.refactoring.StvnRenameInputValidator"/>
+
         <!-- 2g. Section Navigation Line Marker Provider -->
         <codeInsight.lineMarkerProvider language="STVN"
                                         implementationClass="org.stvnadore.plugin.browser.StvnSectionNavigationLineMarkerProvider"/>

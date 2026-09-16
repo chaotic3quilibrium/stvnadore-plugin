@@ -50,6 +50,9 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
         var element = getElement();
         if (element instanceof ValueKeyword valKw) {
+            if (newElementName.startsWith(":")) {
+                throw new IncorrectOperationException("Cannot rename constant to type symbol '" + newElementName + "'");
+            }
             var currentText = valKw.getText();
             String replacementText;
             if (currentText.contains("/")) {
