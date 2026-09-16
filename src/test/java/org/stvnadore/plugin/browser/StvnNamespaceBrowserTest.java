@@ -101,7 +101,46 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertFalse(entries.isEmpty());
 
         assertNotNull(findEntryByName(entries, "#ACTIVE"));
+        assertNotNull(findEntryByName(entries, ":LocalTx"));
+        assertNotNull(findEntryByName(entries, ":StatusAlias"));
         assertNull(findEntryByName(entries, ":AppConfig"));
+    }
+
+    /**
+     * Verifies nominal shape resolution on composite payloads governed by :Tuple(:LocalTx :A).
+     */
+    public void testBodyScopeCompositePayloadNominalShapeResolution() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/finance {
+                  :LocalTx :Tuple( :Int64 :Float64 )
+                }
+                :A :String32
+              }
+              :type :Tuple( :LocalTx :A )
+              :body (
+                ( 1001 49.99 )
+                "a"
+              )
+            }
+            """;
+        var file = myFixture.configureByText("composite_payload.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
+
+        var localTx = findEntryByName(entries, ":LocalTx");
+        assertNotNull(localTx);
+        assertEquals(":org/stvnadore/finance", localTx.source());
+        assertEquals(":Tuple( :Int64 :Float64 )", localTx.typeStructure());
+        assertEquals(1, localTx.useDepth());
+        assertEquals(StvnNamespaceScope.BODY, localTx.scope());
+
+        var aEntry = findEntryByName(entries, ":A");
+        assertNotNull(aEntry);
+        assertEquals("composite_payload.stvn", aEntry.source());
+        assertEquals(":String32", aEntry.typeStructure());
+        assertEquals(1, aEntry.useDepth());
+        assertEquals(StvnNamespaceScope.BODY, aEntry.scope());
     }
 
     /**

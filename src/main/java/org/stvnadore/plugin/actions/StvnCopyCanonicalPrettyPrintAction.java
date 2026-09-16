@@ -4,38 +4,34 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
-import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.ir.StvnValue;
-import org.stvnadore.core.printer.AstCompactPrinter;
+import org.stvnadore.core.printer.AstPrettyPrinter;
 import org.stvnadore.plugin.StvnFile;
 
+import java.awt.datatransfer.StringSelection;
 import java.util.Optional;
 
 /**
- * Editor context action converting active STVN document text into canonical compact single-line layout.
- * <p>
- * This action parses the document text, lowers the syntax into an AST {@link StvnValue},
- * and serializes it using {@link AstCompactPrinter} with short-form keywords.
- * </p>
+ * Editor context action that compiles active document text and copies canonical pretty-printed format
+ * directly to the system clipboard without mutating the editor document buffer.
  *
  * @since 1.3.0
  */
 @NullMarked
-public final class StvnConvertToCompactPrintAction extends AnAction {
+public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
 
     /**
-     * Default constructor for the compact-print projection action.
+     * Default constructor for copying canonical pretty-print projection.
      */
-    public StvnConvertToCompactPrintAction() {
-        super();
-        getTemplatePresentation().setText("STVN: Canonicalize & Compact Print", false);
+    public StvnCopyCanonicalPrettyPrintAction() {
+        super("STVN: Copy Canonical Pretty Print to Clipboard");
     }
 
     @Override
@@ -47,13 +43,7 @@ public final class StvnConvertToCompactPrintAction extends AnAction {
             return;
         }
 
-        if (!StvnCanonicalizationGuard.confirmCanonicalization(project, psiFile)) {
-            return;
-        }
-
-        Document document = editor.getDocument();
-        String text = document.getText();
-
+        String text = editor.getDocument().getText();
         Optional<StvnValue> astOptional;
         try {
             astOptional = StvnCompiler.compile(text);
@@ -66,10 +56,8 @@ public final class StvnConvertToCompactPrintAction extends AnAction {
             return;
         }
 
-        String compact = AstCompactPrinter.print(astOptional.get());
-        WriteCommandAction.runWriteCommandAction(project, "STVN: Canonicalize & Compact Print", null, () -> {
-            document.replaceString(0, document.getTextLength(), compact);
-        });
+        String formatted = AstPrettyPrinter.print(astOptional.get());
+        CopyPasteManager.getInstance().setContents(new StringSelection(formatted));
     }
 
     @Override

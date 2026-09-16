@@ -12,6 +12,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
+import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
 
 /**
@@ -276,6 +277,14 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         var processed = new HashSet<String>();
+
+        // 1. Lockstep positional schema shape correlation
+        var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
+        if (typeEntry != null && typeEntry.getSchemaType() != null) {
+            correlateShapeAndValue(typeEntry.getSchemaType(), bodyEntry.getValue(), file, 0, results, processed, new HashSet<>());
+        }
+
+        // 2. Preserve collection of all explicit # value keywords and variants
         collectValueSymbols(bodyEntry.getValue(), file, 0, results, processed);
         return results;
     }
@@ -405,5 +414,277 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         return 1;
+    }
+
+    private static void correlateShapeAndValue(
+            @Nullable SchemaType currentSchema,
+            @Nullable Value currentValue,
+            PsiFile file,
+            int depth,
+            List<StvnNamespaceSymbolEntry> results,
+            Set<String> processed,
+            Set<String> visitedNominals
+    ) {
+        if (currentSchema == null || currentValue == null) {
+            return;
+        }
+
+        var kw = currentSchema.getTypeKeyword();
+        if (kw != null) {
+            var name = kw.getText();
+            if (!visitedNominals.add(name)) {
+                return;
+            }
+
+            if (processed.add(name)) {
+                var info = resolveNominalShapeInfo(file, name);
+                results.add(new StvnNamespaceSymbolEntry(
+                        name,
+                        info.source(),
+                        info.typeStructure(),
+                        depth,
+                        info.targetElement(),
+                        info.isPrelude(),
+                        info.targetElement() != null ? info.targetElement().getTextOffset() : kw.getTextOffset(),
+                        StvnNamespaceScope.BODY
+                ));
+            }
+
+            var resolvedSchema = StvnTypeResolver.resolveNominalSchema(currentSchema);
+            if (resolvedSchema != null && resolvedSchema != currentSchema) {
+                correlateShapeAndValue(resolvedSchema, currentValue, file, depth, results, processed, visitedNominals);
+            }
+            return;
+        }
+
+        var constructor = currentSchema.getSchemaConstructor();
+        if (constructor == null) {
+            return;
+        }
+
+        var product = constructor.getProductType();
+        if (product != null) {
+            var childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(product, SchemaType.class);
+            var coll = currentValue.getCollectionValue();
+            var tuple = coll != null ? coll.getTupleLiteral() : null;
+            if (tuple != null) {
+                var childValues = tuple.getValueList();
+                int limit = Math.min(childSchemas.size(), childValues.size());
+                for (int i = 0; i < limit; i++) {
+                    correlateShapeAndValue(childSchemas.get(i), childValues.get(i), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                }
+            }
+            return;
+        }
+
+        var collType = constructor.getCollectionType();
+        if (collType != null) {
+            var childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(collType, SchemaType.class);
+            var coll = currentValue.getCollectionValue();
+            var list = coll != null ? coll.getListLiteral() : null;
+            if (list != null && !childSchemas.isEmpty()) {
+                var elemSchema = childSchemas.get(0);
+                for (var val : list.getValueList()) {
+                    correlateShapeAndValue(elemSchema, val, file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                }
+            }
+            var map = coll != null ? coll.getMapLiteral() : null;
+            if (map != null && childSchemas.size() >= 2) {
+                var keySchema = childSchemas.get(0);
+                var valSchema = childSchemas.get(1);
+                var entryVals = map.getValueList();
+                for (int i = 0; i + 1 < entryVals.size(); i += 2) {
+                    correlateShapeAndValue(keySchema, entryVals.get(i), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                    correlateShapeAndValue(valSchema, entryVals.get(i + 1), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                }
+            }
+            return;
+        }
+
+        var sum = constructor.getSumType();
+        if (sum != null) {
+            var childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            if (sum.getText().startsWith(":Option")) {
+                var innerSchema = !childSchemas.isEmpty() ? childSchemas.get(0) : null;
+                var optVal = currentValue.getExplicitOptionValue();
+                if (optVal != null) {
+                    if ((optVal.getSomeLiteral() != null || optVal.getSomeShortLiteral() != null) && optVal.getValue() != null && innerSchema != null) {
+                        correlateShapeAndValue(innerSchema, optVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                    }
+                } else if (innerSchema != null) {
+                    correlateShapeAndValue(innerSchema, currentValue, file, depth, results, processed, new HashSet<>(visitedNominals));
+                }
+            } else if (sum.getText().startsWith(":Either")) {
+                var eitherVal = currentValue.getExplicitEitherValue();
+                if (eitherVal != null && eitherVal.getValue() != null && childSchemas.size() >= 2) {
+                    if (eitherVal.getLeftLiteral() != null || eitherVal.getLeftShortLiteral() != null) {
+                        correlateShapeAndValue(childSchemas.get(0), eitherVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                    } else if (eitherVal.getRightLiteral() != null || eitherVal.getRightShortLiteral() != null) {
+                        correlateShapeAndValue(childSchemas.get(1), eitherVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                    }
+                }
+            } else if (sum.getText().startsWith(":Union")) {
+                var unionVal = currentValue.getExplicitUnionValue();
+                if (unionVal != null && unionVal.getValue() != null) {
+                    var tagElem = unionVal.getFirstChild();
+                    var tagText = tagElem != null ? tagElem.getText() : "";
+                    if (tagText.startsWith("#") && tagText.substring(1).matches("\\d+")) {
+                        int idx = Integer.parseInt(tagText.substring(1)) - 1;
+                        if (idx >= 0 && idx < childSchemas.size()) {
+                            correlateShapeAndValue(childSchemas.get(idx), unionVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private record NominalResolutionInfo(
+            String source,
+            String typeStructure,
+            @Nullable PsiElement targetElement,
+            boolean isPrelude
+    ) {}
+
+    private static NominalResolutionInfo resolveNominalShapeInfo(PsiFile file, String name) {
+        var preludeKw = StvnPreludeBridge.resolvePreludeType(file.getProject(), name);
+        if (preludeKw != null) {
+            return new NominalResolutionInfo(PRELUDE_URI, preludeKw.getText(), preludeKw, true);
+        }
+
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
+        for (var use : useStmts) {
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (list.size() >= 2) {
+                        var remoteKw = list.get(0);
+                        var localKw = list.get(1);
+                        if (localKw != null && remoteKw != null && name.equals(localKw.getText())) {
+                            var target = use.getUseTarget();
+                            var targetText = target != null ? target.getText() : ":use";
+                            var fqni = target != null ? targetText + "/" + stripColon(remoteKw.getText()) : remoteKw.getText();
+                            var terminalStructure = resolveTerminalStructure(file, fqni, new HashSet<>());
+                            return new NominalResolutionInfo(
+                                    targetText,
+                                    terminalStructure != null ? terminalStructure : remoteKw.getText(),
+                                    localKw,
+                                    false
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        for (var incl : includes) {
+            var stringLit = incl.getStringLiteral();
+            var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
+            var includeSource = targetFile != null ? targetFile.getName() : (stringLit != null ? stringLit.getText() : "include");
+            var aliasBlock = incl.getIncludeAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getIncludeMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (list.size() >= 2) {
+                        var remoteKw = list.get(0);
+                        var localKw = list.get(1);
+                        if (localKw != null && remoteKw != null && name.equals(localKw.getText())) {
+                            var terminalStructure = targetFile != null
+                                    ? resolveTerminalStructure(targetFile, remoteKw.getText(), new HashSet<>())
+                                    : remoteKw.getText();
+                            return new NominalResolutionInfo(
+                                    includeSource,
+                                    terminalStructure != null ? terminalStructure : remoteKw.getText(),
+                                    localKw,
+                                    false
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
+        for (var pkg : packages) {
+            var pkgPath = pkg.getPackagePath();
+            var pathText = pkgPath != null ? pkgPath.getText() : ":package";
+            for (var elem : pkg.getPackageElementList()) {
+                var typeDef = elem.getTypeDefinition();
+                if (typeDef != null) {
+                    var kw = typeDef.getTypeKeyword();
+                    if (kw != null) {
+                        var kwText = kw.getText();
+                        var fqni = pathText + "/" + stripColon(kwText);
+                        if (name.equals(kwText) || name.equals(fqni)) {
+                            var terminal = resolveTerminalStructureFromDef(typeDef, new HashSet<>());
+                            return new NominalResolutionInfo(pathText, terminal, kw, false);
+                        }
+                    }
+                }
+            }
+        }
+
+        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var td : typeDefs) {
+            var kw = td.getTypeKeyword();
+            if (kw != null && name.equals(kw.getText())) {
+                var terminal = resolveTerminalStructureFromDef(td, new HashSet<>());
+                return new NominalResolutionInfo(file.getName(), terminal, kw, false);
+            }
+        }
+
+        for (var incl : includes) {
+            var stringLit = incl.getStringLiteral();
+            var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
+            if (targetFile != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(targetFile, name, new HashSet<>());
+                if (resolved instanceof TypeKeyword targetKw) {
+                    var parent = StvnPsiUtils.getParentTypeDefinition(targetKw);
+                    var struct = parent != null ? resolveTerminalStructureFromDef(parent, new HashSet<>()) : name;
+                    return new NominalResolutionInfo(targetFile.getName(), struct, targetKw, false);
+                }
+            }
+        }
+
+        var resolved = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
+        var source = resolved != null && resolved.getContainingFile() != null ? resolved.getContainingFile().getName() : file.getName();
+        return new NominalResolutionInfo(source, name, resolved, false);
+    }
+
+    private static @Nullable String resolveTerminalStructure(PsiFile file, String name, Set<String> visited) {
+        if (!visited.add(name)) {
+            return name;
+        }
+        var resolved = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
+        if (resolved instanceof TypeKeyword kw) {
+            var parent = StvnPsiUtils.getParentTypeDefinition(kw);
+            if (parent != null) {
+                return resolveTerminalStructureFromDef(parent, visited);
+            }
+        }
+        return null;
+    }
+
+    private static String resolveTerminalStructureFromDef(TypeDefinition def, Set<String> visited) {
+        var defKw = def.getTypeKeyword();
+        if (defKw != null && !visited.add(defKw.getText())) {
+            return defKw.getText();
+        }
+        var schemaType = def.getSchemaType();
+        if (schemaType == null) {
+            return defKw != null ? defKw.getText() : "Unknown";
+        }
+        var nextKw = schemaType.getTypeKeyword();
+        if (nextKw != null) {
+            var nextResolved = resolveNominalShapeInfo(def.getContainingFile(), nextKw.getText());
+            return nextResolved.typeStructure();
+        }
+        return schemaType.getText();
+    }
+
+    private static String stripColon(String text) {
+        return text.startsWith(":") ? text.substring(1) : text;
     }
 }

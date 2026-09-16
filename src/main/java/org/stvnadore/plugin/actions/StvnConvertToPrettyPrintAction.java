@@ -35,6 +35,7 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
      */
     public StvnConvertToPrettyPrintAction() {
         super();
+        getTemplatePresentation().setText("STVN: Canonicalize & Pretty Print", false);
     }
 
     @Override
@@ -43,6 +44,10 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);
         if (project == null || editor == null || !(psiFile instanceof StvnFile)) {
+            return;
+        }
+
+        if (!StvnCanonicalizationGuard.confirmCanonicalization(project, psiFile)) {
             return;
         }
 
@@ -62,7 +67,7 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
         }
 
         String formatted = AstPrettyPrinter.print(astOptional.get());
-        WriteCommandAction.runWriteCommandAction(project, "STVN: Convert to Pretty Print", null, () -> {
+        WriteCommandAction.runWriteCommandAction(project, "STVN: Canonicalize & Pretty Print", null, () -> {
             document.replaceString(0, document.getTextLength(), formatted);
         });
     }

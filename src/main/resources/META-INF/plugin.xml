@@ -365,12 +365,20 @@
             </action>
             <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
-                    text="STVN: Convert to Pretty Print"
+                    text="STVN: Canonicalize &amp; Pretty Print"
                     description="Formats active STVN document with 2-space indentation and long-form symbols"/>
             <action id="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
-                    text="STVN: Convert to Compact Print"
+                    text="STVN: Canonicalize &amp; Compact Print"
                     description="Formats active STVN document into compact single-line layout with short-form symbols"/>
+            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
+                    text="STVN: Copy Canonical Pretty Print to Clipboard"
+                    description="Copies canonical pretty-printed format to the system clipboard without modifying document"/>
+            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
+                    text="STVN: Copy Canonical Compact Print to Clipboard"
+                    description="Copies canonical compact single-line layout to the system clipboard without modifying document"/>
         </group>
     </actions>
 </idea-plugin>
