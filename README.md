@@ -144,7 +144,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ### 12. String Capacity Governance (STVN 1.3)
 * **Schema Scope Governance**: Detects unadorned `:String` tokens and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
-* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to rewrite to threshold (`:String4096`) and secondary QuickFix to rewrite to architectural default (`:String16777216`).
+* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to rewrite to threshold (`:String4096`) and secondary QuickFix to rewrite to default capacity (`:String16777216`).
 * **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
 * **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
 

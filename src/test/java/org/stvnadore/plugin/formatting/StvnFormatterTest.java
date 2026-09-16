@@ -129,4 +129,27 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         var text = psiFile.getText();
         assertTrue("Selected section must be reformatted:\n" + text, text.contains("  :defs {\n    :UserID :Uint64\n  }"));
     }
+
+    public void testCommentFollowingClosingBraceFormatsOnDedicatedLine() {
+        var unformatted = """
+            {
+              :defs {
+                :UserID :Uint64
+              }// comment
+              :type :UserID
+              :body 1001
+            }
+            """;
+        var psiFile = myFixture.configureByText("closing_brace_comment.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertFalse("Closing brace must not collapse directly against comment prefix:\n" + text,
+                text.contains("}//"));
+        assertTrue("Comment following closing brace must appear on dedicated indented line:\n" + text,
+                text.contains("  }\n  // comment\n"));
+    }
 }

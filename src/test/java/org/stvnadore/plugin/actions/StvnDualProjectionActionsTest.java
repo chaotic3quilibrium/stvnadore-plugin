@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.actions;
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.psi.PsiComment;
@@ -100,5 +101,15 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
 
         var result = myFixture.getEditor().getDocument().getText();
         assertEquals("{:type :Int32 :body 10}", result);
+    }
+
+    public void testActionUpdateThreadReturnsBgt() {
+        var prettyAction = new StvnConvertToPrettyPrintAction();
+        assertEquals("Pretty print action must run update on BGT",
+                ActionUpdateThread.BGT, prettyAction.getActionUpdateThread());
+
+        var compactAction = new StvnConvertToCompactPrintAction();
+        assertEquals("Compact print action must run update on BGT",
+                ActionUpdateThread.BGT, compactAction.getActionUpdateThread());
     }
 }

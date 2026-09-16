@@ -50,7 +50,7 @@ import java.util.OptionalInt;
  * inspection threshold.
  * </p>
  * <p>
- * Provides dual QuickFixes (configured threshold vs architectural default) under
+ * Provides dual QuickFixes (configured threshold vs default capacity) under
  * {@code WARNING} severity, while strictly suppressing the secondary default QuickFix
  * when configured as {@code ERROR}.
  * </p>
@@ -162,7 +162,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     boolean isError = isErrorSeverity(holder);
                     String msg;
                     if (isUnadorned) {
-                        msg = "Nominal string type '" + typeName + "' is unadorned; architectural default is "
+                        msg = "Nominal string type '" + typeName + "' is unadorned; default capacity is "
                             + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY
                             + " characters. Specify explicit capacity bound.";
                     } else {
@@ -402,7 +402,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * Secondary QuickFix rewriting nominal string types to the architectural default capacity.
+     * Secondary QuickFix rewriting nominal string types to the default capacity.
      */
     public static final class ApplyDefaultCapacityQuickFix implements LocalQuickFix {
 
@@ -414,12 +414,12 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getName() {
-            return "Set nominal string capacity to default (" + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + ")";
+            return "Set nominal string capacity to default capacity (" + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + ")";
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Set nominal string capacity to architectural default";
+            return "Set nominal string capacity to default capacity";
         }
 
         @Override

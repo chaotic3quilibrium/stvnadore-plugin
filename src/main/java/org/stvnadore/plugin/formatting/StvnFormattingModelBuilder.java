@@ -106,6 +106,22 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .afterInside(StvnTypes.LBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
 
+                // Line breaks following closing braces
+                .after(StvnTypes.RBRACE).lineBreakInCode()
+
+                // Spacing between section entries and comments
+                .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.DEFS_INCL_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.DEFS_INCLF_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+
+                // Standalone comments inside document roots preceded by line break
+                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_PAYLOAD_DOCUMENT).lineBreakInCode()
+                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT).lineBreakInCode()
+                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_INCL_DOCUMENT).lineBreakInCode()
+                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_INCLF_DOCUMENT).lineBreakInCode()
+
                 // Entries inside documents separated by line breaks
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()

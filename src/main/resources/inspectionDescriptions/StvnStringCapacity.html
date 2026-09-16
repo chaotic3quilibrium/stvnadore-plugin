@@ -3,7 +3,7 @@
 <p>Validates that nominal string type declarations adhere to capacity governance policies by specifying explicit capacity bounds within configured allocation limits.</p>
 <!-- tooltip end -->
 <p>
-  STVN defines an architectural allocation limit of 16 MiB (16,777,216 characters) for unadorned <code>:String</code> types.
+  STVN defines a default allocation capacity of 16 MiB (16,777,216 characters) for unadorned <code>:String</code> types.
   This inspection identifies unadorned string tokens (such as <code>:String</code>, <code>:StringFixed</code>, and <code>:StringNonEmpty</code>)
   and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
 </p>
@@ -13,7 +13,7 @@
   <li><b>Under WARNING / WEAK WARNING severity:</b>
     <ul>
       <li><i>Primary QuickFix:</i> Rewrites the nominal type to the configured threshold (e.g. <code>:String</code> &rarr; <code>:String4096</code>).</li>
-      <li><i>Secondary QuickFix:</i> Rewrites the nominal type to the architectural default (e.g. <code>:String</code> &rarr; <code>:String16777216</code>).</li>
+      <li><i>Secondary QuickFix:</i> Rewrites the nominal type to the default capacity (e.g. <code>:String</code> &rarr; <code>:String16777216</code>).</li>
     </ul>
   </li>
   <li><b>Under ERROR severity:</b>
@@ -31,7 +31,7 @@
 
 <p><b>Example (Violation):</b></p>
 <pre><code>:defs {
-  // Warning: Unadorned :String defaults to 16 MiB allocation limit
+  // Warning: Unadorned :String defaults to 16 MiB default capacity
   :Username :String
 
   // Warning: Capacity 8192 exceeds configured threshold 4096

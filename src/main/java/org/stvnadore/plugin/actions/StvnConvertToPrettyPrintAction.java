@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.actions;
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
@@ -73,5 +74,10 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
         PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);
         boolean enabled = project != null && editor != null && (psiFile instanceof StvnFile);
         e.getPresentation().setEnabledAndVisible(enabled);
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+        return ActionUpdateThread.BGT;
     }
 }

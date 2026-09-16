@@ -40,7 +40,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
             .toList();
         assertFalse("Expected unadorned string warning", warnings.isEmpty());
-        assertTrue(warnings.get(0).getDescription().contains("architectural default is 16777216"));
+        assertTrue(warnings.get(0).getDescription().contains("default capacity is 16777216"));
     }
 
     public void testThresholdExceededWarning() {
@@ -119,7 +119,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        var actions = myFixture.filterAvailableIntentions("Set nominal string capacity to default (16777216)");
+        var actions = myFixture.filterAvailableIntentions("Set nominal string capacity to default capacity (16777216)");
         assertFalse("Expected secondary quick-fix under warning", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
@@ -150,7 +150,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         var primaryActions = myFixture.filterAvailableIntentions("Set nominal string capacity to 4096");
         assertFalse("Primary quick-fix must remain available under ERROR severity", primaryActions.isEmpty());
 
-        var secondaryActions = myFixture.filterAvailableIntentions("Set nominal string capacity to default (16777216)");
+        var secondaryActions = myFixture.filterAvailableIntentions("Set nominal string capacity to default capacity (16777216)");
         assertTrue("Secondary quick-fix must be suppressed under ERROR severity", secondaryActions.isEmpty());
     }
 

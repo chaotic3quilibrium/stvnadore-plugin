@@ -354,6 +354,15 @@
                description="STVN data projection and formatting actions"
                popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                    class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                    text="Browse STVN Namespace Dependencies"
+                    description="Inspects and filters symbols across document sections in an interactive table popup"
+                    icon="/icons/stvn_icon.svg">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
+                <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
+                <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
+            </action>
             <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     text="STVN: Convert to Pretty Print"
@@ -363,17 +372,5 @@
                     text="STVN: Convert to Compact Print"
                     description="Formats active STVN document into compact single-line layout with short-form symbols"/>
         </group>
-
-        <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
-                class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
-                text="Browse STVN Namespace Dependencies"
-                description="Inspects and filters symbols across document sections in an interactive table popup"
-                icon="/icons/stvn_icon.svg">
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
-            <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
-            <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-            <add-to-group group-id="org.stvnadore.plugin.actions.StvnEditorPopupMenu" anchor="first"/>
-        </action>
     </actions>
 </idea-plugin>
