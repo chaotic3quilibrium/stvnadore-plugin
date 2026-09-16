@@ -152,10 +152,10 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy and the Zero-Tab Invariant across all files and selections.
 * **Immutable Leaf Preservation**: Preserves user comments (`// ...`) and multiline fenced string bodies (`"""[TAG]...[TAG]"""`) without text distortion.
 * **Dual Projection Actions**:
-  * **STVN: Canonicalize & Pretty Print**: Lowers active document into canonical 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
-  * **STVN: Canonicalize & Compact Print**: Lowers active document into canonical single-line representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
-  * **STVN: Copy Canonical Pretty Print to Clipboard**: Compiles active document and copies canonical pretty-printed format to clipboard without document buffer mutation.
-  * **STVN: Copy Canonical Compact Print to Clipboard**: Compiles active document and copies canonical compact format to clipboard without document buffer mutation.
+  * **Canonicalize & Pretty Print**: Lowers active document into canonical 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
+  * **Canonicalize & Compact Print**: Lowers active document into canonical single-line representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
+  * **Copy Canonical Pretty Print to Clipboard**: Compiles active document and copies canonical pretty-printed format to clipboard without document buffer mutation.
+  * **Copy Canonical Compact Print to Clipboard**: Compiles active document and copies canonical compact format to clipboard without document buffer mutation.
 * **Comprehensive Authoring Loss Guard**: Intercepts in-place canonicalization when documents contain user comments, package enclaves, scoped import aliases, or unreferenced definitions, presenting a confirmation dialog with persistent project suppression.
 
 ### 14. First-Class Rename Refactoring (Shift+F6)
@@ -183,11 +183,11 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 |:----------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-----------------------------------------|
 | `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction` | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn` or `.stvn_incl`  |
 | `org.stvnadore.plugin.actions.PublishSchemaAction`        | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn` or `.stvn_inclf` |
-| `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction` | **STVN: Canonicalize & Pretty Print**              | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
-| `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction` | **STVN: Canonicalize & Compact Print**            | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
-| `org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction` | **STVN: Copy Canonical Pretty Print to Clipboard** | Editor Popup Menu (`STVN`)     | Context menu in STVN editor             |
-| `org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction` | **STVN: Copy Canonical Compact Print to Clipboard** | Editor Popup Menu (`STVN`)     | Context menu in STVN editor             |
-| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`       | **Browse STVN Namespace Dependencies**            | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)       |
+| `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction` | **Canonicalize & Pretty Print**                    | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction` | **Canonicalize & Compact Print**                  | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction` | **Copy Canonical Pretty Print to Clipboard**      | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction` | **Copy Canonical Compact Print to Clipboard**    | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`       | **Browse Namespace Dependencies**                 | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)       |
 | `StvnSchemaSkeletonIntentionAction`                       | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body` |
 | `StvnReorderEnumFilterVariantsQuickFix`                   | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list  |
 

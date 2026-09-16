@@ -3,9 +3,11 @@ package org.stvnadore.plugin.browser;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Queue;
 import java.util.Set;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -96,19 +98,35 @@ public final class StvnNamespaceSymbolCollector {
                 var pkgTypeDef = elem.getTypeDefinition();
                 if (pkgTypeDef != null) {
                     var kw = pkgTypeDef.getTypeKeyword();
-                    if (kw != null && processedNames.add(kw.getText())) {
+                    if (kw != null) {
+                        var kwText = kw.getText();
+                        var fqni = pathText + "/" + stripColon(kwText);
                         var schemaType = pkgTypeDef.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                        results.add(new StvnNamespaceSymbolEntry(
-                            kw.getText(),
-                            pathText,
-                            schemaText,
-                            0,
-                            kw,
-                            false,
-                            kw.getTextOffset(),
-                            StvnNamespaceScope.DEFS
-                        ));
+                        if (processedNames.add(kwText)) {
+                            results.add(new StvnNamespaceSymbolEntry(
+                                kwText,
+                                pathText,
+                                schemaText,
+                                0,
+                                kw,
+                                false,
+                                kw.getTextOffset(),
+                                StvnNamespaceScope.DEFS
+                            ));
+                        }
+                        if (processedNames.add(fqni)) {
+                            results.add(new StvnNamespaceSymbolEntry(
+                                fqni,
+                                pathText,
+                                schemaText,
+                                0,
+                                kw,
+                                false,
+                                kw.getTextOffset(),
+                                StvnNamespaceScope.DEFS
+                            ));
+                        }
                     }
                 }
             }
@@ -207,66 +225,112 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         var processed = new HashSet<String>();
-        collectSchemaTypeSymbols(typeEntry.getSchemaType(), file, 0, results, processed);
-        return results;
-    }
+        var visitedNominals = new HashSet<String>();
 
-    private static void collectSchemaTypeSymbols(
-        SchemaType schema,
-        PsiFile file,
-        int depth,
-        List<StvnNamespaceSymbolEntry> results,
-        Set<String> processed
-    ) {
-        var kw = schema.getTypeKeyword();
-        if (kw != null) {
-            var name = kw.getText();
-            if (processed.add(name)) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
-                if (resolved instanceof TypeKeyword targetKw) {
-                    var targetFile = targetKw.getContainingFile();
-                    var source = targetFile != null ? targetFile.getName() : file.getName();
-                    var parentDef = StvnPsiUtils.getParentTypeDefinition(targetKw);
-                    var typeStruct = parentDef != null && parentDef.getSchemaType() != null
-                        ? parentDef.getSchemaType().getText()
-                        : name;
-                    results.add(new StvnNamespaceSymbolEntry(
-                        name,
-                        source,
-                        typeStruct,
-                        depth,
-                        targetKw,
-                        false,
-                        targetKw.getTextOffset(),
-                        StvnNamespaceScope.TYPE
-                    ));
-                } else {
-                    var preludeKw = StvnPreludeBridge.resolvePreludeType(file.getProject(), name);
-                    if (preludeKw != null) {
+        record TypeWorkItem(SchemaType schema, int depth, PsiFile contextFile) {}
+        Queue<TypeWorkItem> worklist = new ArrayDeque<>();
+        worklist.add(new TypeWorkItem(typeEntry.getSchemaType(), 0, file));
+
+        while (!worklist.isEmpty()) {
+            var item = worklist.poll();
+            var currentSchema = item.schema();
+            var currentDepth = item.depth();
+            var currentFile = item.contextFile();
+
+            var kw = currentSchema.getTypeKeyword();
+            if (kw != null) {
+                var name = kw.getText();
+                if (visitedNominals.add(name)) {
+                    var info = resolveNominalShapeInfo(currentFile, name);
+                    if (processed.add(name)) {
                         results.add(new StvnNamespaceSymbolEntry(
                             name,
-                            PRELUDE_URI,
-                            preludeKw.getText(),
-                            depth,
-                            preludeKw,
-                            true,
-                            preludeKw.getTextOffset(),
+                            info.source(),
+                            info.typeStructure(),
+                            currentDepth,
+                            info.targetElement(),
+                            info.isPrelude(),
+                            info.targetElement() != null ? info.targetElement().getTextOffset() : kw.getTextOffset(),
                             StvnNamespaceScope.TYPE
                         ));
+                    }
+
+                    // Transitive expansion into underlying definition
+                    var targetElem = info.targetElement();
+                    if (targetElem instanceof TypeKeyword targetKw) {
+                        var parentDef = StvnPsiUtils.getParentTypeDefinition(targetKw);
+                        if (parentDef != null && parentDef.getSchemaType() != null) {
+                            worklist.add(new TypeWorkItem(
+                                parentDef.getSchemaType(),
+                                currentDepth + 1,
+                                parentDef.getContainingFile()
+                            ));
+                        } else {
+                            var parent = targetKw.getParent();
+                            if (parent instanceof UseMapAlias alias) {
+                                var list = alias.getTypeKeywordList();
+                                if (list.size() >= 2) {
+                                    var remoteKw = list.get(0);
+                                    var useStmt = PsiTreeUtil.getParentOfType(parent, UseStmt.class);
+                                    var target = useStmt != null ? useStmt.getUseTarget() : null;
+                                    var targetText = target != null ? target.getText() : "";
+                                    var fqni = !targetText.isEmpty()
+                                        ? targetText + "/" + stripColon(remoteKw.getText())
+                                        : remoteKw.getText();
+                                    var resolvedRemote = StvnTypeReference.resolveTypeInFile(currentFile, fqni, new HashSet<>());
+                                    if (resolvedRemote == null) {
+                                        resolvedRemote = StvnTypeReference.resolveTypeInFile(currentFile, remoteKw.getText(), new HashSet<>());
+                                    }
+                                    if (resolvedRemote instanceof TypeKeyword rKw) {
+                                        var rDef = StvnPsiUtils.getParentTypeDefinition(rKw);
+                                        if (rDef != null && rDef.getSchemaType() != null) {
+                                            worklist.add(new TypeWorkItem(
+                                                rDef.getSchemaType(),
+                                                currentDepth + 1,
+                                                rDef.getContainingFile()
+                                            ));
+                                        }
+                                    }
+                                }
+                            } else if (parent instanceof IncludeMapAlias alias) {
+                                var list = alias.getTypeKeywordList();
+                                if (list.size() >= 2) {
+                                    var remoteKw = list.get(0);
+                                    var incl = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
+                                    var stringLit = incl != null ? incl.getStringLiteral() : null;
+                                    var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
+                                    if (targetFile != null) {
+                                        var resolvedRemote = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>());
+                                        if (resolvedRemote instanceof TypeKeyword rKw) {
+                                            var rDef = StvnPsiUtils.getParentTypeDefinition(rKw);
+                                            if (rDef != null && rDef.getSchemaType() != null) {
+                                                worklist.add(new TypeWorkItem(
+                                                    rDef.getSchemaType(),
+                                                    currentDepth + 1,
+                                                    targetFile
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var constructor = currentSchema.getSchemaConstructor();
+            if (constructor != null) {
+                var childSchemas = PsiTreeUtil.findChildrenOfType(constructor, SchemaType.class);
+                for (var child : childSchemas) {
+                    if (child != currentSchema) {
+                        worklist.add(new TypeWorkItem(child, currentDepth + 1, currentFile));
                     }
                 }
             }
         }
 
-        var constructor = schema.getSchemaConstructor();
-        if (constructor != null) {
-            var childSchemas = PsiTreeUtil.findChildrenOfType(constructor, SchemaType.class);
-            for (var child : childSchemas) {
-                if (child != schema) {
-                    collectSchemaTypeSymbols(child, file, depth + 1, results, processed);
-                }
-            }
-        }
+        return results;
     }
 
     private static List<StvnNamespaceSymbolEntry> collectBodySymbols(PsiFile file) {

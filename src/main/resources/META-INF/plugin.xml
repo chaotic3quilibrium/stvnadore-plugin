@@ -356,7 +356,7 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
                     class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
-                    text="Browse STVN Namespace Dependencies"
+                    text="Browse Namespace Dependencies"
                     description="Inspects and filters symbols across document sections in an interactive table popup"
                     icon="/icons/stvn_icon.svg">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
@@ -365,19 +365,19 @@
             </action>
             <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
-                    text="STVN: Canonicalize &amp; Pretty Print"
+                    text="Canonicalize &amp; Pretty Print"
                     description="Formats active STVN document with 2-space indentation and long-form symbols"/>
             <action id="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
-                    text="STVN: Canonicalize &amp; Compact Print"
+                    text="Canonicalize &amp; Compact Print"
                     description="Formats active STVN document into compact single-line layout with short-form symbols"/>
             <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
                     class="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
-                    text="STVN: Copy Canonical Pretty Print to Clipboard"
+                    text="Copy Canonical Pretty Print to Clipboard"
                     description="Copies canonical pretty-printed format to the system clipboard without modifying document"/>
             <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
                     class="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
-                    text="STVN: Copy Canonical Compact Print to Clipboard"
+                    text="Copy Canonical Compact Print to Clipboard"
                     description="Copies canonical compact single-line layout to the system clipboard without modifying document"/>
         </group>
     </actions>

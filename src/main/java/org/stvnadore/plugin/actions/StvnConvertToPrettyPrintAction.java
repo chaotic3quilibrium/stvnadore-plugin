@@ -35,7 +35,7 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
      */
     public StvnConvertToPrettyPrintAction() {
         super();
-        getTemplatePresentation().setText("STVN: Canonicalize & Pretty Print", false);
+        getTemplatePresentation().setText("Canonicalize & Pretty Print", false);
     }
 
     @Override

@@ -35,7 +35,7 @@ public final class StvnConvertToCompactPrintAction extends AnAction {
      */
     public StvnConvertToCompactPrintAction() {
         super();
-        getTemplatePresentation().setText("STVN: Canonicalize & Compact Print", false);
+        getTemplatePresentation().setText("Canonicalize & Compact Print", false);
     }
 
     @Override

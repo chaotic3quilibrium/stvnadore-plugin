@@ -188,6 +188,47 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals(StvnNamespaceScope.DEFS, StvnNamespaceScope.resolveFromElement(file.getFirstChild()));
     }
 
+    /**
+     * Verifies that for an intermediate nominal type definition (:type :T where :T :Tuple(:LocalTx :A)),
+     * :type scope returns transitive closure :T, :LocalTx, and :A satisfying the scope-narrowing cascade.
+     */
+    public void testTypeScopeIntermediateNominalDefinitionTransitiveCascade() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/finance {
+                  :LocalTx :Tuple( :Int64 :Float64 )
+                }
+                :A :String32
+                :T :Tuple( :LocalTx :A )
+              }
+              :type :T
+              :body (
+                ( 1001 49.99 )
+                "a"
+              )
+            }
+            """;
+        var file = myFixture.configureByText("cascade_document.stvn", content);
+
+        var defsEntries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+        var typeEntries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
+        var bodyEntries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
+
+        // Verify :type scope transitive closure contains :T, :LocalTx, and :A
+        assertNotNull("Root nominal type :T must be present in :type scope", findEntryByName(typeEntries, ":T"));
+        assertNotNull("Transitively referenced :LocalTx must be present in :type scope", findEntryByName(typeEntries, ":LocalTx"));
+        assertNotNull("Transitively referenced :A must be present in :type scope", findEntryByName(typeEntries, ":A"));
+
+        // Verify Mathematical Scope-Narrowing Invariant: Symbols(:body) ⊆ Symbols(:type) ⊆ Symbols(:defs)
+        var defsNames = defsEntries.stream().map(StvnNamespaceSymbolEntry::name).collect(java.util.stream.Collectors.toSet());
+        var typeNames = typeEntries.stream().map(StvnNamespaceSymbolEntry::name).collect(java.util.stream.Collectors.toSet());
+        var bodyNames = bodyEntries.stream().map(StvnNamespaceSymbolEntry::name).collect(java.util.stream.Collectors.toSet());
+
+        assertTrue("Symbols(:body) must be subset of Symbols(:type)", typeNames.containsAll(bodyNames));
+        assertTrue("Symbols(:type) must be subset of Symbols(:defs)", defsNames.containsAll(typeNames));
+    }
+
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {
         var textRange = file.getText().indexOf(text);
         if (textRange >= 0) {

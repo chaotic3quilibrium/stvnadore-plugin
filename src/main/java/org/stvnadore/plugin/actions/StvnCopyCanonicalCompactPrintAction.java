@@ -31,7 +31,7 @@ public final class StvnCopyCanonicalCompactPrintAction extends AnAction {
      * Default constructor for copying canonical compact projection.
      */
     public StvnCopyCanonicalCompactPrintAction() {
-        super("STVN: Copy Canonical Compact Print to Clipboard");
+        super("Copy Canonical Compact Print to Clipboard");
     }
 
     @Override

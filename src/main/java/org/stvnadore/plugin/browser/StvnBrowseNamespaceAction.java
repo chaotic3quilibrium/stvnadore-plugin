@@ -13,6 +13,13 @@ import org.stvnadore.plugin.StvnFile;
 @NullMarked
 public final class StvnBrowseNamespaceAction extends AnAction {
 
+    /**
+     * Default constructor for the namespace dependency browser action.
+     */
+    public StvnBrowseNamespaceAction() {
+        super("Browse Namespace Dependencies");
+    }
+
     @Override
     public void actionPerformed(AnActionEvent e) {
         var project = e.getProject();

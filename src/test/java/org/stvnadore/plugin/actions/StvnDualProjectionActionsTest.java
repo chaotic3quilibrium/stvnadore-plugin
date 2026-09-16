@@ -166,24 +166,61 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
     }
 
     public void testActionNamingAndBgtExecution() {
+        var browseAction = new org.stvnadore.plugin.browser.StvnBrowseNamespaceAction();
+        assertEquals("Browse Namespace Dependencies", browseAction.getTemplatePresentation().getText());
+
         var prettyAction = new StvnConvertToPrettyPrintAction();
-        assertEquals("STVN: Canonicalize & Pretty Print", prettyAction.getTemplatePresentation().getText());
+        assertEquals("Canonicalize & Pretty Print", prettyAction.getTemplatePresentation().getText());
         assertEquals("Pretty print action must run update on BGT",
                 ActionUpdateThread.BGT, prettyAction.getActionUpdateThread());
 
         var compactAction = new StvnConvertToCompactPrintAction();
-        assertEquals("STVN: Canonicalize & Compact Print", compactAction.getTemplatePresentation().getText());
+        assertEquals("Canonicalize & Compact Print", compactAction.getTemplatePresentation().getText());
         assertEquals("Compact print action must run update on BGT",
                 ActionUpdateThread.BGT, compactAction.getActionUpdateThread());
 
         var copyPrettyAction = new StvnCopyCanonicalPrettyPrintAction();
-        assertEquals("STVN: Copy Canonical Pretty Print to Clipboard", copyPrettyAction.getTemplatePresentation().getText());
+        assertEquals("Copy Canonical Pretty Print to Clipboard", copyPrettyAction.getTemplatePresentation().getText());
         assertEquals("Copy pretty action must run update on BGT",
                 ActionUpdateThread.BGT, copyPrettyAction.getActionUpdateThread());
 
         var copyCompactAction = new StvnCopyCanonicalCompactPrintAction();
-        assertEquals("STVN: Copy Canonical Compact Print to Clipboard", copyCompactAction.getTemplatePresentation().getText());
+        assertEquals("Copy Canonical Compact Print to Clipboard", copyCompactAction.getTemplatePresentation().getText());
         assertEquals("Copy compact action must run update on BGT",
                 ActionUpdateThread.BGT, copyCompactAction.getActionUpdateThread());
+    }
+
+    public void testCopyCanonicalProjectionWithTransitiveDefinitionsAndNoDanglingAliases() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/finance {
+                  :Transaction :Tuple( :Int64 :Float64 )
+                }
+                :use [ :org/stvnadore/finance { :Transaction :LocalTx } ]
+                :A :String32
+                :T :Tuple( :LocalTx :A )
+              }
+              :type :T
+              :body ( ( 1001 49.99 ) "sample" )
+            }
+            """;
+        var psiFile = myFixture.configureByText("canonical_projection.stvn", content);
+
+        var action = new StvnCopyCanonicalCompactPrintAction();
+        var dataContext = SimpleDataContext.builder()
+                .add(CommonDataKeys.PROJECT, getProject())
+                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+                .add(CommonDataKeys.PSI_FILE, psiFile)
+                .build();
+
+        var event = TestActionEvent.createTestEvent(action, dataContext);
+        action.actionPerformed(event);
+
+        var clipboardContent = (String) CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+        assertNotNull(clipboardContent);
+        assertFalse("Clipboard must not contain unresolved dangling alias token :LocalTx", clipboardContent.contains(":LocalTx"));
+        assertTrue("Clipboard must contain desugared package reference", clipboardContent.contains(":org/stvnadore/finance/Transaction"));
+        assertTrue("Clipboard must retain intermediate type definition :T", clipboardContent.contains(":T"));
     }
 }

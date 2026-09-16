@@ -31,7 +31,7 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
      * Default constructor for copying canonical pretty-print projection.
      */
     public StvnCopyCanonicalPrettyPrintAction() {
-        super("STVN: Copy Canonical Pretty Print to Clipboard");
+        super("Copy Canonical Pretty Print to Clipboard");
     }
 
     @Override
