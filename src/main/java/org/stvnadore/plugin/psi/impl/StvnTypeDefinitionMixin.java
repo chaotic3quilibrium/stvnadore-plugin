@@ -43,7 +43,8 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
     public String getName() {
         var identifier = getNameIdentifier();
         if (identifier instanceof com.intellij.psi.PsiNamedElement named) {
-            return named.getName();
+            var name = named.getName();
+            return name != null ? name : "";
         }
         return identifier != null ? identifier.getText() : "";
     }

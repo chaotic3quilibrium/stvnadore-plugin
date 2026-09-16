@@ -2,6 +2,7 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.ui.table.JBTable;
 import java.util.List;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -227,6 +228,73 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
         assertTrue("Symbols(:body) must be subset of Symbols(:type)", typeNames.containsAll(bodyNames));
         assertTrue("Symbols(:type) must be subset of Symbols(:defs)", defsNames.containsAll(typeNames));
+    }
+
+    /**
+     * Verifies that speed search prioritizes Column 0 (Name) over secondary metadata columns (Type).
+     */
+    public void testSpeedSearchPrioritizesNameColumnOverTypeMetadata() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/finance {
+                  :LocalTx :Tuple( :Int64 :Float64 )
+                }
+                :A :String32
+                :T :Tuple( :LocalTx :A )
+              }
+              :type :T
+              :body (
+                ( 1001 49.99 )
+                "a"
+              )
+            }
+            """;
+        var file = myFixture.configureByText("speed_search_priority.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+        var model = new StvnNamespaceTableModel(entries);
+        var table = new JBTable(model);
+        var speedSearch = StvnPrioritizedTableSpeedSearch.installOn(table);
+
+        // Execute search for :LocalTx
+        speedSearch.findAndSelectElement(":LocalTx");
+
+        int selectedVisualRow = table.getSelectedRow();
+        int selectedCol = table.getSelectedColumn();
+        assertTrue("A row must be selected", selectedVisualRow >= 0);
+        assertEquals("Selected column must be Column 0 (Name)", 0, selectedCol);
+
+        int modelRow = table.convertRowIndexToModel(selectedVisualRow);
+        var selectedEntry = model.getItem(modelRow);
+        assertEquals("Selected entry must be :LocalTx declaration, not :T", ":LocalTx", selectedEntry.name());
+    }
+
+    /**
+     * Verifies that speed search cleanly falls back to metadata columns when Column 0 contains no match.
+     */
+    public void testSpeedSearchFallsBackToMetadataColumnsWhenNameDoesNotMatch() {
+        var content = """
+            {
+              :defs {
+                :Record :Tuple( :Int64 :Float64 )
+              }
+              :type :Record
+              :body ( 100 20.5 )
+            }
+            """;
+        var file = myFixture.configureByText("speed_search_fallback.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+        var model = new StvnNamespaceTableModel(entries);
+        var table = new JBTable(model);
+        var speedSearch = StvnPrioritizedTableSpeedSearch.installOn(table);
+
+        // Search for :Float64, which appears only in the Type column of :Record
+        speedSearch.findAndSelectElement(":Float64");
+
+        int selectedVisualRow = table.getSelectedRow();
+        int selectedCol = table.getSelectedColumn();
+        assertTrue("A row must be selected", selectedVisualRow >= 0);
+        assertEquals("Selected column must fall back to Column 2 (Type)", 2, selectedCol);
     }
 
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {

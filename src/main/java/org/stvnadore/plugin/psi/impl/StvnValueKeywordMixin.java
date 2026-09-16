@@ -25,8 +25,7 @@ public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement impleme
 
     @Override
     public String getName() {
-        var text = getText();
-        return text.startsWith("#") ? text.substring(1) : text;
+        return getText();
     }
 
     @Override

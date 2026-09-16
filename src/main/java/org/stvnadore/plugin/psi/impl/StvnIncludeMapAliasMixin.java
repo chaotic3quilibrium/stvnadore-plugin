@@ -31,7 +31,8 @@ public abstract class StvnIncludeMapAliasMixin extends ASTWrapperPsiElement impl
     @Override
     public String getName() {
         var identifier = getNameIdentifier();
-        return identifier instanceof com.intellij.psi.PsiNamedElement ? ((com.intellij.psi.PsiNamedElement) identifier).getName() : "";
+        var name = identifier instanceof com.intellij.psi.PsiNamedElement named ? named.getName() : null;
+        return name != null ? name : (identifier != null ? identifier.getText() : "");
     }
 
     @Override

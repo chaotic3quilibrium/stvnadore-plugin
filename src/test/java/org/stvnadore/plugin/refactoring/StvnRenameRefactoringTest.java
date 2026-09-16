@@ -1,7 +1,10 @@
 package org.stvnadore.plugin.refactoring;
 
+import com.intellij.psi.PsiNamedElement;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.TypeDefinition;
 
 /**
  * Automated tests verifying Shift+F6 rename refactoring operations,
@@ -255,5 +258,93 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         assertTrue(validator.isKeyword(":include", getProject()));
         assertFalse(validator.isKeyword(":ValidType", getProject()));
         assertFalse(validator.isKeyword("#validConst", getProject()));
+    }
+
+    /**
+     * Verifies that getName() on TypeDefinition and TypeKeyword preserves the leading colon prefix.
+     */
+    public void testTypeDefinitionGetNamePreservesLeadingColon() {
+        var code = """
+            {
+              :defs {
+                :AccountHolder :String
+              }
+            }
+            """;
+        var file = myFixture.configureByText("colon_check.stvn", code);
+        var typeDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
+        assertNotNull(typeDef);
+        assertEquals(":AccountHolder", typeDef.getName());
+        assertNotNull(typeDef.getTypeKeyword());
+        assertEquals(":AccountHolder", typeDef.getTypeKeyword().getName());
+    }
+
+    /**
+     * Verifies that getName() on ConstantDefinition and ValueKeyword preserves the leading hash prefix.
+     */
+    public void testConstantDefinitionGetNamePreservesLeadingHash() {
+        var code = """
+            {
+              :defs {
+                #DefaultPort :Int32 8080
+              }
+            }
+            """;
+        var file = myFixture.configureByText("hash_check.stvn", code);
+        var constDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, ConstantDefinition.class);
+        assertNotNull(constDef);
+        assertEquals("#DefaultPort", constDef.getName());
+        assertNotNull(constDef.getValueKeyword());
+        assertEquals("#DefaultPort", constDef.getValueKeyword().getName());
+    }
+
+    /**
+     * Verifies that the initial name retrieved by RenameDialog passes StvnNamesValidator cleanly.
+     */
+    public void testRenameDialogInitialNamePassesValidationCleanly() {
+        var code = """
+            {
+              :defs {
+                :AccountHolder<caret> :String
+              }
+            }
+            """;
+        myFixture.configureByText("dialog_init.stvn", code);
+        var element = myFixture.getElementAtCaret();
+        assertTrue(element instanceof PsiNamedElement);
+        var initialName = ((PsiNamedElement) element).getName();
+        assertNotNull(initialName);
+        assertEquals(":AccountHolder", initialName);
+
+        var validator = new StvnNamesValidator();
+        assertTrue("Initial rename string must be a valid identifier", validator.isIdentifier(initialName, getProject()));
+    }
+
+    /**
+     * Verifies that setName accepts names with or without the leading prefix, canonicalizing safely.
+     */
+    public void testRenameAcceptsNamesWithOrWithoutPrefix() {
+        var code = """
+            {
+              :defs {
+                :OldName<caret> :String
+              }
+              :type :OldName
+              :body "Test"
+            }
+            """;
+        myFixture.configureByText("bare_rename.stvn", code);
+        // Supply bare name without leading colon
+        myFixture.renameElementAtCaret("NewName");
+        var expected = """
+            {
+              :defs {
+                :NewName :String
+              }
+              :type :NewName
+              :body "Test"
+            }
+            """;
+        myFixture.checkResult(expected);
     }
 }

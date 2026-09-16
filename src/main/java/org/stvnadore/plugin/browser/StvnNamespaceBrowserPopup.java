@@ -9,7 +9,6 @@ import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.testFramework.LightVirtualFile;
-import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
@@ -51,7 +50,7 @@ public final class StvnNamespaceBrowserPopup {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setRowSorter(new TableRowSorter<>(tableModel));
         table.setAutoResizeMode(JBTable.AUTO_RESIZE_ALL_COLUMNS);
-        TableSpeedSearch.installOn(table);
+        StvnPrioritizedTableSpeedSearch.installOn(table);
 
         var panel = new JPanel(new BorderLayout(0, 5));
         panel.setBorder(JBUI.Borders.empty(8));

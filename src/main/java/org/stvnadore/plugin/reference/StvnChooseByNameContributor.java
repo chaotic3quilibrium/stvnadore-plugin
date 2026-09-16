@@ -43,6 +43,10 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     if (!processor.process(name)) {
                         return false;
                     }
+                    var bareName = name.startsWith(":") ? name.substring(1) : name;
+                    if (!bareName.isEmpty() && seenNames.add(bareName)) {
+                        if (!processor.process(bareName)) return false;
+                    }
                 }
             }
             var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
@@ -51,6 +55,10 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                 if (name != null && !name.isEmpty() && seenNames.add(name)) {
                     if (!processor.process(name)) {
                         return false;
+                    }
+                    var bareName = name.startsWith("#") ? name.substring(1) : name;
+                    if (!bareName.isEmpty() && seenNames.add(bareName)) {
+                        if (!processor.process(bareName)) return false;
                     }
                 }
             }
@@ -98,7 +106,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
         processAllFiles(project, scope, file -> {
             var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
             for (var def : typeDefs) {
-                if (name.equals(def.getName()) || name.equals(":" + def.getName())) {
+                var defName = def.getName();
+                if (defName != null && (name.equals(defName) || (":" + name).equals(defName) || (defName.startsWith(":") && name.equals(defName.substring(1))))) {
                     var kw = def.getTypeKeyword();
                     if (kw instanceof NavigationItem item) {
                         if (!processor.process(item)) {
@@ -109,7 +118,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             }
             var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
             for (var def : constDefs) {
-                if (name.equals(def.getName()) || name.equals("#" + def.getName())) {
+                var defName = def.getName();
+                if (defName != null && (name.equals(defName) || ("#" + name).equals(defName) || (defName.startsWith("#") && name.equals(defName.substring(1))))) {
                     var kw = def.getValueKeyword();
                     if (kw instanceof NavigationItem item) {
                         if (!processor.process(item)) {

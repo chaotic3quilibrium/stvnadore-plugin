@@ -52,14 +52,15 @@ public abstract class StvnUseMapAliasMixin extends ASTWrapperPsiElement implemen
     /**
      * Returns the name of the alias identifier.
      *
-     * @return the string name of the alias, stripped of symbol prefix if applicable,
+     * @return the canonical string name of the alias preserving symbol prefix,
      *         or an empty string if no identifier is present
      */
     @Override
     public String getName() {
         var identifier = getNameIdentifier();
         if (identifier instanceof com.intellij.psi.PsiNamedElement named) {
-            return named.getName();
+            var name = named.getName();
+            return name != null ? name : "";
         }
         return identifier != null ? identifier.getText() : "";
     }
