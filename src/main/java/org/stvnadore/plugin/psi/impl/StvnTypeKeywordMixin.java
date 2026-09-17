@@ -2,11 +2,13 @@ package org.stvnadore.plugin.psi.impl;
 
 import com.intellij.extapi.psi.ASTWrapperPsiElement;
 import com.intellij.lang.ASTNode;
+import com.intellij.navigation.ItemPresentation;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.TypeKeyword;
@@ -32,8 +34,33 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
 
     @Override
     public PsiElement setName(@NotNull String name) throws com.intellij.util.IncorrectOperationException {
-        var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(getProject(), name.startsWith(":") ? name : ":" + name);
+        if (name.startsWith(":") || name.startsWith("#")) {
+            throw new com.intellij.util.IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
+        }
+        var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(getProject(), ":" + name);
         return replace(newKw);
+    }
+
+    @Override
+    public @Nullable ItemPresentation getPresentation() {
+        return new ItemPresentation() {
+            @Override
+            public @Nullable String getPresentableText() {
+                var name = getName();
+                return name != null && !name.isEmpty() ? ":" + name : null;
+            }
+
+            @Override
+            public @Nullable String getLocationString() {
+                var file = getContainingFile();
+                return file != null ? file.getName() : null;
+            }
+
+            @Override
+            public @Nullable javax.swing.Icon getIcon(boolean unused) {
+                return StvnIcons.FILE;
+            }
+        };
     }
 
     @Override

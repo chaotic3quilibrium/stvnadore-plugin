@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.2.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.3.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.2.0 - 2026.09.12
+- Version: 1.3.0-SNAPSHOT - 2026.09.13
 
 ---
 
@@ -31,6 +31,10 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
     * [10. Package Enclaves & Lexical Scoping (STVN 1.2)](#10-package-enclaves--lexical-scoping-stvn-12)
     * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
+    * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
+    * [13. Native Code Formatter & Dual Projections (STVN 1.3)](#13-native-code-formatter--dual-projections-stvn-13)
+    * [14. First-Class Rename Refactoring (Shift+F6)](#14-first-class-rename-refactoring-shiftf6)
+    * [15. Interactive Namespace Dependency Browser](#15-interactive-namespace-dependency-browser)
   * [Action Registrations](#action-registrations)
   * [Inspection Registrations](#inspection-registrations)
   * [IDE Settings & Configuration](#ide-settings--configuration)
@@ -138,6 +142,44 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Detached Flat Payloads**: First-class support for `.stvn_f` files representing headerless, high-throughput flat payloads evaluated against detached or pre-negotiated schemas.
 * **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring `.stvn_f` files adhere strictly to single-payload root syntax while prohibiting `:include` statements.
 
+### 12. String Capacity Governance (STVN 1.3)
+* **Schema Scope Governance**: Detects unadorned `:String` tokens and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
+* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to rewrite to threshold (`:String4096`) and secondary QuickFix to rewrite to default capacity (`:String16777216`).
+* **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
+* **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
+
+### 13. Native Code Formatter & Dual Projections (STVN 1.3)
+* **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy and the Zero-Tab Invariant across all files and selections.
+* **Immutable Leaf Preservation**: Preserves user comments (`// ...`) and multiline fenced string bodies (`"""[TAG]...[TAG]"""`) without text distortion.
+* **Dual Projection Actions**:
+  * **Canonicalize & Pretty Print**: Lowers active document into canonical 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
+  * **Canonicalize & Compact Print**: Lowers active document into canonical single-line representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
+  * **Copy Canonical Pretty Print to Clipboard**: Compiles active document and copies canonical pretty-printed format to clipboard without document buffer mutation.
+  * **Copy Canonical Compact Print to Clipboard**: Compiles active document and copies canonical compact format to clipboard without document buffer mutation.
+* **Comprehensive Authoring Loss Guard**: Intercepts in-place canonicalization when documents contain user comments, package enclaves, scoped import aliases, or unreferenced definitions, presenting a confirmation dialog with persistent project suppression.
+
+### 14. First-Class Rename Refactoring (Shift+F6)
+* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, constant declaration, include alias (`:include`), or package enclave use alias (`:use`) to trigger synchronized in-place rename refactoring across the document and included files.
+* **Value-Oriented Programming (VOP) Architecture**: Strictly decouples mutable identifier strings from immutable syntax kinds.
+* **Bare Identifier Input**: Text input field initializes with bare names (`AccountHolder`, `DefaultPort`), eliminating sigil corruption (`::`, `:#`, `#:`) by design.
+* **Canonical Presentation Projection**: Dialog header titles (`Rename Type Declaration ':AccountHolder'`), Find Usages trees, and Project Structure project canonical syntax (`:Type`, `#Constant`).
+* **Fail-Closed Mutator Perimeter**: Rejects permissive parsing; invoking `setName()` or `handleElementRename()` with leading `:` or `#` immediately throws `IncorrectOperationException`.
+* **Real-time Rename Validation**: `StvnRenameInputValidator` blocks sigil prefixes in real time with explicit footer errors, disabling the Refactor action until a bare identifier is entered.
+* **Dual Search Everywhere Indexing**: Indexes symbols by both bare name and canonical prefixed name for zero-friction `Ctrl+N` / `Shift+Shift` navigation.
+* **Precise Caret Anchoring**: Mixins override `getTextOffset()`, guaranteeing the refactoring template highlights the exact identifier token rather than enclosing block delimiters.
+* **Atomic Cross-File Mutation**: Renaming declarations in modular flat schema files (`.stvn_inclf`) propagates atomically across all consumer documents (`.stvn`, `.stvn_f`).
+
+### 15. Interactive Namespace Dependency Browser
+* **Gutter Navigation Markers**: Displays interactive gutter icons on section headers (`:defs`, `:type`, `:body`). Clicking an icon launches the browser filtered to the target section scope.
+* **Global Keyboard Shortcut (`Ctrl+Alt+N` / `Cmd+Alt+N`)**: Resolves the editor caret to determine the enclosing section scope, falling back to full `:defs` scope when invoked outside section blocks.
+* **Searchable Grid (`JBTable` & `JBPopup`)**: Backed by `ListTableModel` with multi-column sorting:
+  1. `Name`: Symbol identifier token (alphabetical sort).
+  2. `Root Namespaced Source`: Origin file path, package enclave URI, or prelude standard library URI (alphabetical sort).
+  3. `Type`: Terminal schema structure or constructor layout (alphabetical sort).
+  4. `Use Depth`: Resolution depth as integer (alias hop count in `:defs`, derivation depth in `:type`, nesting depth in `:body`; numeric sort).
+* **Zero-Latency Speed Search**: Attached via `TableSpeedSearch` for immediate keyboard-driven filtering.
+* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a synthetic, read-only `LightVirtualFile` (`stvn://prelude/org_stvnadore_prelude.stvn_inclf`) positioned at the nominal declaration.
+
 ---
 
 ## Action Registrations
@@ -146,6 +188,11 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 |:----------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-----------------------------------------|
 | `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction` | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn` or `.stvn_incl`  |
 | `org.stvnadore.plugin.actions.PublishSchemaAction`        | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn` or `.stvn_inclf` |
+| `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction` | **Canonicalize & Pretty Print**                    | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction` | **Canonicalize & Compact Print**                  | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction` | **Copy Canonical Pretty Print to Clipboard**      | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction` | **Copy Canonical Compact Print to Clipboard**    | Editor Popup Menu (`STVN`)        | Context menu in STVN editor             |
+| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`       | **Browse Namespace Dependencies**                 | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)       |
 | `StvnSchemaSkeletonIntentionAction`                       | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body` |
 | `StvnReorderEnumFilterVariantsQuickFix`                   | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list  |
 
@@ -167,6 +214,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 | `StvnLhsReservedTypeInspection`      | `StvnLhsReservedType`      | Reserved keyword in LHS definition   | `STVN / Validity`            |    `ERROR`     |
 | `StvnFlatDocumentIncludeInspection`  | `StvnFlatDocumentInclude`  | Include directive in flat payload    | `STVN / Validity`            |    `ERROR`     |
 | `StvnConstantRangeInspection`        | `StvnConstantRange`        | Inverted numeric constant range      | `STVN / Semantics`           |    `ERROR`     |
+| `StvnStringCapacityInspection`       | `StvnStringCapacity`       | String capacity governance inspection | `STVN / Governance`         |   `WARNING`    |
 
 ---
 

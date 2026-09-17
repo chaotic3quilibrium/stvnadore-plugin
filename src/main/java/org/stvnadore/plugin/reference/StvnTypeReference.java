@@ -5,6 +5,8 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiReferenceBase;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.psi.IncludeElement;
@@ -41,6 +43,63 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
      */
     public StvnTypeReference(TypeKeyword element) {
         super(element, new TextRange(0, element.getTextLength()));
+    }
+
+    /**
+     * Handles renaming of the referenced element by replacing the TypeKeyword PSI element.
+     * Preserves modular path prefixes when renaming leaf type symbols.
+     *
+     * @param newElementName the new name string to assign to the type
+     * @return the newly created TypeKeyword PSI element
+     * @throws IncorrectOperationException if the element replacement fails
+     */
+    @Override
+    public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
+        if (newElementName.startsWith(":") || newElementName.startsWith("#")) {
+            throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + newElementName);
+        }
+        var element = getElement();
+        var currentText = element.getText();
+        String replacementText;
+        if (currentText.contains("/")) {
+            var lastSlashIndex = currentText.lastIndexOf('/');
+            var prefix = currentText.substring(0, lastSlashIndex + 1);
+            replacementText = prefix + newElementName;
+        } else {
+            replacementText = ":" + newElementName;
+        }
+        var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(element.getProject(), replacementText);
+        return element.replace(newKeyword);
+    }
+
+    /**
+     * Evaluates whether this reference points to the specified target element,
+     * matching both direct keyword declarations and enclosing definition containers.
+     *
+     * @param element the potential target declaration element
+     * @return {@code true} if this reference resolves to the element or its declared name token
+     */
+    @Override
+    public boolean isReferenceTo(@NotNull PsiElement element) {
+        var resolved = resolve();
+        if (resolved == null) {
+            return false;
+        }
+        var manager = getElement().getManager();
+        if (manager.areElementsEquivalent(resolved, element)) {
+            return true;
+        }
+        if (element instanceof TypeDefinition typeDef) {
+            return manager.areElementsEquivalent(resolved, typeDef.getTypeKeyword())
+                || manager.areElementsEquivalent(resolved, typeDef.getNameIdentifier());
+        }
+        if (element instanceof IncludeMapAlias alias) {
+            return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
+        }
+        if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
+            return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
+        }
+        return false;
     }
 
     @Override

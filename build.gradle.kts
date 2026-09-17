@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.2.0"
+version = "1.3.0-SNAPSHOT"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.2.0")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.0-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.2.0:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.0-SNAPSHOT:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -97,6 +97,20 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
+            <h3>1.3.0 - 2026.09.13</h3>
+            <ul>
+              <li><b>String Capacity Governance Inspection (<code>StvnStringCapacity</code>):</b>
+                <ul>
+                  <li>Inspects nominal string declarations in <code>:defs</code> and <code>:type</code> sections.</li>
+                  <li>Audits unadorned <code>:String</code> tokens and explicit capacities exceeding threshold (default: 4,096).</li>
+                  <li>Dual QuickFix Resolution Protocol: rewrites nominal types to configured threshold (<code>:String4096</code>) or default (<code>:String16777216</code>).</li>
+                  <li>Suppresses secondary default upgrade QuickFix under <code>ERROR</code> severity.</li>
+                  <li>Optional payload scope detecting string literals exceeding declared schema capacity bounds.</li>
+                  <li>QuickFixes for payload truncation and automated schema capacity widening.</li>
+                </ul>
+              </li>
+              <li>Upgraded compiler and runtime engine dependency to <code>stvnadore-core:1.3.0-SNAPSHOT</code>.</li>
+            </ul>
             <h3>1.2.0 - 2026.09.12</h3>
             <ul>
               <li>Integrated changes to `stvnadore-core`:
@@ -167,7 +181,6 @@ val mirrorSharedFixtures by tasks.registering {
     doLast {
         if (siblingDir.exists() && siblingDir.isDirectory) {
             logger.lifecycle("Syncing shared-fixtures from sibling core repository: ${siblingDir.absolutePath}")
-            targetDir.deleteRecursively()
             siblingDir.copyRecursively(targetDir, overwrite = true)
         } else {
             logger.warn("WARNING: Sibling core repository fixtures directory not found at: ${siblingDir.absolutePath}. Test execution will proceed with standard classpath assets.")
@@ -200,6 +213,11 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnFencedStringInspectionTest.class")
     exclude("**/StvnFencedStringTagRenameHandlerTest.class")
     exclude("**/StvnDefsOverhaulInspectionsTest.class")
+    exclude("**/StvnStringCapacityInspectionTest.class")
+    exclude("**/StvnFormatterTest.class")
+    exclude("**/StvnDualProjectionActionsTest.class")
+    exclude("**/StvnRenameRefactoringTest.class")
+    exclude("**/StvnNamespaceBrowserTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

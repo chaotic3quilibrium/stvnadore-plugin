@@ -94,6 +94,16 @@
         <!-- 2e. Rename Handler for Balanced Fenced String Delimiter Tags -->
         <renameHandler implementation="org.stvnadore.plugin.editor.StvnFencedStringTagRenameHandler"/>
 
+        <!-- 2f. Refactoring Names Validator -->
+        <lang.namesValidator language="STVN"
+                             implementationClass="org.stvnadore.plugin.refactoring.StvnNamesValidator"/>
+
+        <renameInputValidator implementation="org.stvnadore.plugin.refactoring.StvnRenameInputValidator"/>
+
+        <!-- 2g. Section Navigation Line Marker Provider -->
+        <codeInsight.lineMarkerProvider language="STVN"
+                                        implementationClass="org.stvnadore.plugin.browser.StvnSectionNavigationLineMarkerProvider"/>
+
         <!-- 3. Annotator for downstream tag parity semantic checks -->
         <annotator language="STVN"
                    implementationClass="org.stvnadore.plugin.validation.StvnSemanticAnnotator"/>
@@ -103,6 +113,16 @@
                                        implementationClass="org.stvnadore.plugin.StvnSyntaxHighlighterFactory"/>
 
         <colorSettingsPage implementation="org.stvnadore.plugin.StvnColorSettingsPage"/>
+
+        <!-- 4b. Native Formatter & Code Style Providers -->
+        <lang.formatter language="STVN"
+                        implementationClass="org.stvnadore.plugin.formatting.StvnFormattingModelBuilder"/>
+
+        <codeStyleSettingsProvider
+                implementation="org.stvnadore.plugin.formatting.StvnCodeStyleSettingsProvider"/>
+
+        <langCodeStyleSettingsProvider
+                implementation="org.stvnadore.plugin.formatting.StvnLanguageCodeStyleSettingsProvider"/>
 
         <!-- 5. Real-time Compiler Diagnostics Bridge -->
         <externalAnnotator language="STVN"
@@ -277,6 +297,16 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnTrailingSlashInspection"/>
 
+        <!-- 12k. Local Inspection for String Capacity Governance -->
+        <localInspection language="STVN"
+                         shortName="StvnStringCapacity"
+                         displayName="String capacity governance inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnStringCapacityInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 
@@ -320,5 +350,37 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
+
+        <group id="org.stvnadore.plugin.actions.StvnEditorPopupMenu"
+               text="STVN"
+               description="STVN data projection and formatting actions"
+               popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                    class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
+                    text="Browse Namespace Dependencies"
+                    description="Inspects and filters symbols across document sections in an interactive table popup"
+                    icon="/icons/stvn_icon.svg">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
+                <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
+                <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
+            </action>
+            <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
+                    text="Canonicalize &amp; Pretty Print"
+                    description="Formats active STVN document with 2-space indentation and long-form symbols"/>
+            <action id="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
+                    text="Canonicalize &amp; Compact Print"
+                    description="Formats active STVN document into compact single-line layout with short-form symbols"/>
+            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
+                    text="Copy Canonical Pretty Print to Clipboard"
+                    description="Copies canonical pretty-printed format to the system clipboard without modifying document"/>
+            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
+                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
+                    text="Copy Canonical Compact Print to Clipboard"
+                    description="Copies canonical compact single-line layout to the system clipboard without modifying document"/>
+        </group>
     </actions>
 </idea-plugin>

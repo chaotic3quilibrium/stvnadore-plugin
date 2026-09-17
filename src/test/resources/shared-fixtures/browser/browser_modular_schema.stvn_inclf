@@ -1,0 +1,9 @@
+{
+  :defs {
+    :AccountStatus :Enum [ #ACTIVE #SUSPENDED #CLOSED ]
+    :BaseEntity    :Tuple( :Int64 :String64 )
+    :package :org/stvnadore/finance {
+      :Transaction :Tuple( :Int64 :Float64 :String32 )
+    }
+  }
+}

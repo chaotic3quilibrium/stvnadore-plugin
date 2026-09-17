@@ -30,7 +30,7 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
 
     @Override
     public boolean canFindUsagesFor(@NotNull PsiElement psiElement) {
-        if (psiElement instanceof TypeDefinition || psiElement instanceof ConstantDefinition || psiElement instanceof IncludeMapAlias) {
+        if (psiElement instanceof TypeDefinition || psiElement instanceof ConstantDefinition || psiElement instanceof IncludeMapAlias || psiElement instanceof org.stvnadore.psi.UseMapAlias) {
             return true;
         }
         if (psiElement instanceof TypeKeyword || psiElement instanceof ValueKeyword) {
@@ -55,6 +55,9 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         if (element instanceof IncludeMapAlias) {
             return "Include Alias";
         }
+        if (element instanceof org.stvnadore.psi.UseMapAlias) {
+            return "Use Alias";
+        }
         if (element instanceof ValueKeyword) {
             return "Constant Declaration";
         }
@@ -68,18 +71,28 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
     public @NotNull String getDescriptiveName(@NotNull PsiElement element) {
         if (element instanceof TypeDefinition) {
             var name = ((TypeDefinition) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? ":" + name : "";
         }
         if (element instanceof ConstantDefinition) {
             var name = ((ConstantDefinition) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? "#" + name : "";
         }
         if (element instanceof IncludeMapAlias) {
             var name = ((IncludeMapAlias) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? ":" + name : "";
         }
-        if (element instanceof TypeKeyword || element instanceof ValueKeyword) {
-            return element.getText();
+        if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var name = alias.getName();
+            if (name == null || name.isEmpty()) return "";
+            return (alias.getValueKeywordList().size() >= 2 && alias.getTypeKeywordList().isEmpty() ? "#" : ":") + name;
+        }
+        if (element instanceof TypeKeyword tk) {
+            var name = tk.getName();
+            return name != null && !name.isEmpty() ? ":" + name : element.getText();
+        }
+        if (element instanceof ValueKeyword vk) {
+            var name = vk.getName();
+            return name != null && !name.isEmpty() ? "#" + name : element.getText();
         }
         return "";
     }

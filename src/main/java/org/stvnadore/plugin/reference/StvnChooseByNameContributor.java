@@ -39,18 +39,28 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
             for (var def : typeDefs) {
                 var name = def.getName();
-                if (name != null && !name.isEmpty() && seenNames.add(name)) {
-                    if (!processor.process(name)) {
-                        return false;
+                if (name != null && !name.isEmpty()) {
+                    var bareName = name.startsWith(":") ? name.substring(1) : name;
+                    var canonicalName = ":" + bareName;
+                    if (!bareName.isEmpty() && seenNames.add(bareName)) {
+                        if (!processor.process(bareName)) return false;
+                    }
+                    if (seenNames.add(canonicalName)) {
+                        if (!processor.process(canonicalName)) return false;
                     }
                 }
             }
             var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
             for (var def : constDefs) {
                 var name = def.getName();
-                if (name != null && !name.isEmpty() && seenNames.add(name)) {
-                    if (!processor.process(name)) {
-                        return false;
+                if (name != null && !name.isEmpty()) {
+                    var bareName = name.startsWith("#") ? name.substring(1) : name;
+                    var canonicalName = "#" + bareName;
+                    if (!bareName.isEmpty() && seenNames.add(bareName)) {
+                        if (!processor.process(bareName)) return false;
+                    }
+                    if (seenNames.add(canonicalName)) {
+                        if (!processor.process(canonicalName)) return false;
                     }
                 }
             }
@@ -98,22 +108,32 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
         processAllFiles(project, scope, file -> {
             var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
             for (var def : typeDefs) {
-                if (name.equals(def.getName()) || name.equals(":" + def.getName())) {
-                    var kw = def.getTypeKeyword();
-                    if (kw instanceof NavigationItem item) {
-                        if (!processor.process(item)) {
-                            return false;
+                var defName = def.getName();
+                if (defName != null) {
+                    var bareDefName = defName.startsWith(":") ? defName.substring(1) : defName;
+                    var bareSearchName = name.startsWith(":") ? name.substring(1) : name;
+                    if (bareDefName.equals(bareSearchName)) {
+                        var kw = def.getTypeKeyword();
+                        if (kw instanceof NavigationItem item) {
+                            if (!processor.process(item)) {
+                                return false;
+                            }
                         }
                     }
                 }
             }
             var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
             for (var def : constDefs) {
-                if (name.equals(def.getName()) || name.equals("#" + def.getName())) {
-                    var kw = def.getValueKeyword();
-                    if (kw instanceof NavigationItem item) {
-                        if (!processor.process(item)) {
-                            return false;
+                var defName = def.getName();
+                if (defName != null) {
+                    var bareDefName = defName.startsWith("#") ? defName.substring(1) : defName;
+                    var bareSearchName = name.startsWith("#") ? name.substring(1) : name;
+                    if (bareDefName.equals(bareSearchName)) {
+                        var kw = def.getValueKeyword();
+                        if (kw instanceof NavigationItem item) {
+                            if (!processor.process(item)) {
+                                return false;
+                            }
                         }
                     }
                 }

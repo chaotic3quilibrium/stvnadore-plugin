@@ -1,0 +1,19 @@
+{
+  :defs {
+    :include [
+      "browser_modular_schema.stvn_inclf" {
+        :BaseEntity    :LocalEntity
+        :AccountStatus :StatusAlias
+      }
+    ]
+    :use [ :org/stvnadore/finance { :Transaction :LocalTx } ]
+    :AppConfig  :Tuple( :String32 :Boolean )
+    :DeepAlias  :LocalEntity
+    #DefaultPort :Port 8080
+  }
+  :type :Tuple( :LocalTx :StatusAlias )
+  :body (
+    ( 1001 49.99 "Subscription" )
+    #ACTIVE
+  )
+}
