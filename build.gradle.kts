@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.3.0-SNAPSHOT"
+version = "1.3.0"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.0-SNAPSHOT")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.0")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.0-SNAPSHOT:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.0:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -97,19 +97,50 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
-            <h3>1.3.0 - 2026.09.13</h3>
+            <h3>1.3.0 - 2026.09.17</h3>
             <ul>
+              <li>Integrated changes to <code>stvnadore-core:1.3.0</code>:
+                <ul>
+                  <li>Enforced strict Zero-Tab Invariant (<code>ERR_TAB_CHARACTER_FORBIDDEN</code>) across all document parsers.</li>
+                  <li>Integrated centralized string capacity bounds (<code>StvnStringCapacityUtils</code>).</li>
+                  <li>Added transitive reachability analysis, dead-code pruning in <code>:defs</code>, and universal alias desugaring to FQNI.</li>
+                  <li>Added deterministic canonical AST formatting via <code>AstPrettyPrinter</code> and <code>AstCompactPrinter</code>.</li>
+                </ul>
+              </li>
+              <li><b>Value-Oriented Programming (VOP) Rename Refactoring (Shift+F6):</b>
+                <ul>
+                  <li>Decoupled mutable bare identifiers from immutable syntax kinds, initializing the rename text field with bare names (e.g. <code>AccountHolder</code>, <code>DefaultPort</code>).</li>
+                  <li>Projected canonical syntax in dialog headers (<code>Rename Type Declaration ':AccountHolder' and its usages to:</code>), Find Usages trees, and Structure View.</li>
+                  <li>Added real-time dialog input validation via <code>StvnRenameInputValidator</code> (<code>RenameInputValidatorEx</code>) rejecting leading <code>:</code> and <code>#</code> with explicit footer guidance and disabling the Refactor button.</li>
+                  <li>Established a fail-closed mutator perimeter: invoking <code>setName()</code> or <code>handleElementRename()</code> with leading sigils throws <code>IncorrectOperationException</code>.</li>
+                  <li>Implemented dual Search Everywhere indexing for bare and canonical symbols (<code>Ctrl+N</code> / <code>Shift+Shift</code>).</li>
+                </ul>
+              </li>
+              <li><b>Interactive Namespace Dependency Browser (Ctrl+Alt+N / Cmd+Alt+N):</b>
+                <ul>
+                  <li>Added interactive gutter navigation markers on <code>:defs</code>, <code>:type</code>, and <code>:body</code> section headers.</li>
+                  <li>Added a multi-column searchable grid displaying symbol name, namespaced source URI, type structure, and usage resolution depth.</li>
+                  <li>Implemented <code>StvnPrioritizedTableSpeedSearch</code> prioritizing Column 0 (<code>Name</code>) declarations over secondary metadata mentions with clean fallback.</li>
+                  <li>Supported synthetic standard library navigation via read-only <code>LightVirtualFile</code>.</li>
+                </ul>
+              </li>
               <li><b>String Capacity Governance Inspection (<code>StvnStringCapacity</code>):</b>
                 <ul>
                   <li>Inspects nominal string declarations in <code>:defs</code> and <code>:type</code> sections.</li>
                   <li>Audits unadorned <code>:String</code> tokens and explicit capacities exceeding threshold (default: 4,096).</li>
                   <li>Dual QuickFix Resolution Protocol: rewrites nominal types to configured threshold (<code>:String4096</code>) or default (<code>:String16777216</code>).</li>
                   <li>Suppresses secondary default upgrade QuickFix under <code>ERROR</code> severity.</li>
-                  <li>Optional payload scope detecting string literals exceeding declared schema capacity bounds.</li>
-                  <li>QuickFixes for payload truncation and automated schema capacity widening.</li>
+                  <li>Optional payload scope detecting string literals exceeding declared schema capacity bounds with truncation and widening quick-fixes.</li>
                 </ul>
               </li>
-              <li>Upgraded compiler and runtime engine dependency to <code>stvnadore-core:1.3.0-SNAPSHOT</code>.</li>
+              <li><b>Native Code Formatter &amp; Dual Projections:</b>
+                <ul>
+                  <li>Added native code formatter (<code>Ctrl+Alt+L</code> / <code>Cmd+Alt+L</code>) enforcing canonical 2-space indentation hierarchy and zero tabs while preserving comments and fenced strings.</li>
+                  <li>Added editor popup actions to canonicalize or copy pretty-printed and compact STVN projections.</li>
+                  <li>Added Authoring Loss Guard dialog intercepting lossy formatting when documents contain comments, package enclaves, or unreferenced definitions.</li>
+                </ul>
+              </li>
+              <li><b>Action Nomenclature &amp; UI Modernization:</b> Harmonized action menu display names and modernized file icons to transparent 2D vector wireframe geometry conforming to JetBrains New UI guidelines.</li>
             </ul>
             <h3>1.2.0 - 2026.09.12</h3>
             <ul>
