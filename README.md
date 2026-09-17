@@ -159,9 +159,14 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Comprehensive Authoring Loss Guard**: Intercepts in-place canonicalization when documents contain user comments, package enclaves, scoped import aliases, or unreferenced definitions, presenting a confirmation dialog with persistent project suppression.
 
 ### 14. First-Class Rename Refactoring (Shift+F6)
-* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, include alias (`:include`), or package enclave use alias (`:use`) to trigger synchronized in-place rename refactoring across the document and included files.
+* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, constant declaration, include alias (`:include`), or package enclave use alias (`:use`) to trigger synchronized in-place rename refactoring across the document and included files.
+* **Value-Oriented Programming (VOP) Architecture**: Strictly decouples mutable identifier strings from immutable syntax kinds.
+* **Bare Identifier Input**: Text input field initializes with bare names (`AccountHolder`, `DefaultPort`), eliminating sigil corruption (`::`, `:#`, `#:`) by design.
+* **Canonical Presentation Projection**: Dialog header titles (`Rename Type Declaration ':AccountHolder'`), Find Usages trees, and Project Structure project canonical syntax (`:Type`, `#Constant`).
+* **Fail-Closed Mutator Perimeter**: Rejects permissive parsing; invoking `setName()` or `handleElementRename()` with leading `:` or `#` immediately throws `IncorrectOperationException`.
+* **Real-time Rename Validation**: `StvnRenameInputValidator` blocks sigil prefixes in real time with explicit footer errors, disabling the Refactor action until a bare identifier is entered.
+* **Dual Search Everywhere Indexing**: Indexes symbols by both bare name and canonical prefixed name for zero-friction `Ctrl+N` / `Shift+Shift` navigation.
 * **Precise Caret Anchoring**: Mixins override `getTextOffset()`, guaranteeing the refactoring template highlights the exact identifier token rather than enclosing block delimiters.
-* **Syntax Validation & Keyword Guard**: `StvnNamesValidator` validates user entries in real-time, enforcing leading colon syntax (`:`), alphanumeric character rules, and rejecting reserved section keywords (`:defs`, `:type`, `:body`, `:package`, `:use`, `:include`).
 * **Atomic Cross-File Mutation**: Renaming declarations in modular flat schema files (`.stvn_inclf`) propagates atomically across all consumer documents (`.stvn`, `.stvn_f`).
 
 ### 15. Interactive Namespace Dependency Browser

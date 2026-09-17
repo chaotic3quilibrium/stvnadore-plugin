@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.refactoring;
 
+import com.intellij.navigation.NavigationItem;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
@@ -33,7 +34,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             }
             """;
         myFixture.configureByText("local_rename.stvn", beforeCode);
-        myFixture.renameElementAtCaret(":CustomerName");
+        myFixture.renameElementAtCaret("CustomerName");
 
         var expected = """
             {
@@ -75,7 +76,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             }
             """;
         myFixture.configureByText("include_alias_rename.stvn", beforeCode);
-        myFixture.renameElementAtCaret(":RenamedLocalRecord");
+        myFixture.renameElementAtCaret("RenamedLocalRecord");
 
         var expected = """
             {
@@ -111,7 +112,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             }
             """;
         myFixture.configureByText("use_alias_rename.stvn", beforeCode);
-        myFixture.renameElementAtCaret(":RenamedItem");
+        myFixture.renameElementAtCaret("RenamedItem");
 
         var expected = """
             {
@@ -143,7 +144,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             }
             """;
         myFixture.configureByText("ref_rename.stvn", beforeCode);
-        myFixture.renameElementAtCaret(":NewType");
+        myFixture.renameElementAtCaret("NewType");
 
         var expected = """
             {
@@ -183,7 +184,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             """);
 
         myFixture.configureFromExistingVirtualFile(moduleFile.getVirtualFile());
-        myFixture.renameElementAtCaret(":RenamedSharedRecord");
+        myFixture.renameElementAtCaret("RenamedSharedRecord");
 
         var expectedModule = """
             {
@@ -215,18 +216,19 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
     public void testNamesValidatorEnforcesSyntaxAndRejectsReservedKeywords() {
         var validator = new StvnNamesValidator();
 
-        // Valid colon type identifiers
-        assertTrue(validator.isIdentifier(":ValidType", getProject()));
-        assertTrue(validator.isIdentifier(":org/stvnadore/prelude/CustomType", getProject()));
-        assertTrue(validator.isIdentifier(":Account123", getProject()));
+        // Valid bare type identifiers
+        assertTrue(validator.isIdentifier("ValidType", getProject()));
+        assertTrue(validator.isIdentifier("org/stvnadore/prelude/CustomType", getProject()));
+        assertTrue(validator.isIdentifier("Account123", getProject()));
 
-        // Valid hash value identifiers
-        assertTrue(validator.isIdentifier("#validConst", getProject()));
-        assertTrue(validator.isIdentifier("#finance/taxRate", getProject()));
-        assertTrue(validator.isIdentifier("#VariantTag", getProject()));
+        // Valid bare constant identifiers
+        assertTrue(validator.isIdentifier("validConst", getProject()));
+        assertTrue(validator.isIdentifier("finance/taxRate", getProject()));
+        assertTrue(validator.isIdentifier("VariantTag", getProject()));
 
-        // Invalid: missing leading symbol prefix
-        assertFalse(validator.isIdentifier("MissingPrefix", getProject()));
+        // Invalid: sigil prefix must be rejected by validator
+        assertFalse(validator.isIdentifier(":ValidType", getProject()));
+        assertFalse(validator.isIdentifier("#validConst", getProject()));
 
         // Invalid: leading digit immediately following prefix
         assertFalse(validator.isIdentifier(":123BadDigit", getProject()));
@@ -242,28 +244,28 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         assertFalse(validator.isIdentifier("#Bad@Symbol", getProject()));
 
         // Invalid: reserved section keywords
+        assertFalse(validator.isIdentifier("defs", getProject()));
+        assertFalse(validator.isIdentifier("type", getProject()));
+        assertFalse(validator.isIdentifier("body", getProject()));
+        assertFalse(validator.isIdentifier("package", getProject()));
+        assertFalse(validator.isIdentifier("use", getProject()));
+        assertFalse(validator.isIdentifier("include", getProject()));
         assertFalse(validator.isIdentifier(":defs", getProject()));
         assertFalse(validator.isIdentifier(":type", getProject()));
-        assertFalse(validator.isIdentifier(":body", getProject()));
-        assertFalse(validator.isIdentifier(":package", getProject()));
-        assertFalse(validator.isIdentifier(":use", getProject()));
-        assertFalse(validator.isIdentifier(":include", getProject()));
 
         // Keyword checks
+        assertTrue(validator.isKeyword("defs", getProject()));
+        assertTrue(validator.isKeyword("type", getProject()));
         assertTrue(validator.isKeyword(":defs", getProject()));
         assertTrue(validator.isKeyword(":type", getProject()));
-        assertTrue(validator.isKeyword(":body", getProject()));
-        assertTrue(validator.isKeyword(":package", getProject()));
-        assertTrue(validator.isKeyword(":use", getProject()));
-        assertTrue(validator.isKeyword(":include", getProject()));
-        assertFalse(validator.isKeyword(":ValidType", getProject()));
-        assertFalse(validator.isKeyword("#validConst", getProject()));
+        assertFalse(validator.isKeyword("ValidType", getProject()));
+        assertFalse(validator.isKeyword("validConst", getProject()));
     }
 
     /**
-     * Verifies that getName() on TypeDefinition and TypeKeyword preserves the leading colon prefix.
+     * Verifies that getName() returns bare identifiers while FindUsagesProvider and ItemPresentation project canonical sigils.
      */
-    public void testTypeDefinitionGetNamePreservesLeadingColon() {
+    public void testTypeDefinitionGetNameReturnsBareIdentifierAndProjectsCanonicalSigil() {
         var code = """
             {
               :defs {
@@ -274,15 +276,22 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         var file = myFixture.configureByText("colon_check.stvn", code);
         var typeDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
         assertNotNull(typeDef);
-        assertEquals(":AccountHolder", typeDef.getName());
+        assertEquals("AccountHolder", typeDef.getName());
         assertNotNull(typeDef.getTypeKeyword());
-        assertEquals(":AccountHolder", typeDef.getTypeKeyword().getName());
+        assertEquals("AccountHolder", typeDef.getTypeKeyword().getName());
+        var provider = new org.stvnadore.plugin.findusages.StvnFindUsagesProvider();
+        assertEquals(":AccountHolder", provider.getDescriptiveName(typeDef));
+        assertEquals(":AccountHolder", provider.getNodeText(typeDef, false));
+        assertTrue(typeDef instanceof NavigationItem);
+        var typePresentation = ((NavigationItem) typeDef).getPresentation();
+        assertNotNull(typePresentation);
+        assertEquals(":AccountHolder", typePresentation.getPresentableText());
     }
 
     /**
-     * Verifies that getName() on ConstantDefinition and ValueKeyword preserves the leading hash prefix.
+     * Verifies that getName() returns bare identifiers while FindUsagesProvider and ItemPresentation project canonical sigils.
      */
-    public void testConstantDefinitionGetNamePreservesLeadingHash() {
+    public void testConstantDefinitionGetNameReturnsBareIdentifierAndProjectsCanonicalSigil() {
         var code = """
             {
               :defs {
@@ -293,9 +302,16 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         var file = myFixture.configureByText("hash_check.stvn", code);
         var constDef = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, ConstantDefinition.class);
         assertNotNull(constDef);
-        assertEquals("#DefaultPort", constDef.getName());
+        assertEquals("DefaultPort", constDef.getName());
         assertNotNull(constDef.getValueKeyword());
-        assertEquals("#DefaultPort", constDef.getValueKeyword().getName());
+        assertEquals("DefaultPort", constDef.getValueKeyword().getName());
+        var provider = new org.stvnadore.plugin.findusages.StvnFindUsagesProvider();
+        assertEquals("#DefaultPort", provider.getDescriptiveName(constDef));
+        assertEquals("#DefaultPort", provider.getNodeText(constDef, false));
+        assertTrue(constDef instanceof NavigationItem);
+        var constPresentation = ((NavigationItem) constDef).getPresentation();
+        assertNotNull(constPresentation);
+        assertEquals("#DefaultPort", constPresentation.getPresentableText());
     }
 
     /**
@@ -314,45 +330,17 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         assertTrue(element instanceof PsiNamedElement);
         var initialName = ((PsiNamedElement) element).getName();
         assertNotNull(initialName);
-        assertEquals(":AccountHolder", initialName);
+        assertEquals("AccountHolder", initialName);
 
         var validator = new StvnNamesValidator();
         assertTrue("Initial rename string must be a valid identifier", validator.isIdentifier(initialName, getProject()));
     }
 
     /**
-     * Verifies that setName accepts names with or without the leading prefix, canonicalizing safely.
+     * Verifies that StvnRenameInputValidator strictly requires bare identifiers, rejects sigil prefixes
+     * with immediate error messages, and disables the Refactor action.
      */
-    public void testRenameAcceptsNamesWithOrWithoutPrefix() {
-        var code = """
-            {
-              :defs {
-                :OldName<caret> :String
-              }
-              :type :OldName
-              :body "Test"
-            }
-            """;
-        myFixture.configureByText("bare_rename.stvn", code);
-        // Supply bare name without leading colon
-        myFixture.renameElementAtCaret("NewName");
-        var expected = """
-            {
-              :defs {
-                :NewName :String
-              }
-              :type :NewName
-              :body "Test"
-            }
-            """;
-        myFixture.checkResult(expected);
-    }
-
-    /**
-     * Verifies that StvnRenameInputValidator rejects '#' names for types and ':' names
-     * for constants with explicit error messages in both direct and registry lookups.
-     */
-    public void testRenameInputValidatorRejectsConflictingSigilsWithExplicitErrors() {
+    public void testRenameInputValidatorEnforcesBareIdentifiersAndRejectsSigils() {
         var validator = new StvnRenameInputValidator();
         var code = """
             {
@@ -375,29 +363,33 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         // Registry lookup for TypeDefinition: '#' sigil yields explicit error message
         var typeErrorFn = com.intellij.refactoring.rename.RenameInputValidatorRegistry.getInputErrorValidator(typeDef);
         assertNotNull(typeErrorFn);
-        assertEquals(StvnRenameInputValidator.TYPE_ERROR_MESSAGE, typeErrorFn.fun("#InvalidConst"));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, typeErrorFn.fun("#InvalidConst"));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, typeErrorFn.fun(":InvalidType"));
 
         // Registry lookup for ConstantDefinition: ':' sigil yields explicit error message
         var constErrorFn = com.intellij.refactoring.rename.RenameInputValidatorRegistry.getInputErrorValidator(constDef);
         assertNotNull(constErrorFn);
-        assertEquals(StvnRenameInputValidator.CONSTANT_ERROR_MESSAGE, constErrorFn.fun(":InvalidType"));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, constErrorFn.fun(":InvalidType"));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, constErrorFn.fun("#InvalidConst"));
 
         // Direct validator invocation
-        assertEquals(StvnRenameInputValidator.TYPE_ERROR_MESSAGE, validator.getErrorMessage("#InvalidConst", typeDef, getProject()));
-        assertEquals(StvnRenameInputValidator.CONSTANT_ERROR_MESSAGE, validator.getErrorMessage(":InvalidType", constDef, getProject()));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, validator.getErrorMessage("#InvalidConst", typeDef, getProject()));
+        assertEquals(StvnRenameInputValidator.PREFIX_ERROR_MESSAGE, validator.getErrorMessage(":InvalidType", constDef, getProject()));
+        assertFalse(validator.isInputValid(":InvalidType", typeDef, context));
+        assertFalse(validator.isInputValid("#InvalidConst", constDef, context));
 
-        // Valid names return null error
-        assertNull(validator.getErrorMessage(":ValidType", typeDef, getProject()));
+        // Valid bare names return null error and true validity
         assertNull(validator.getErrorMessage("ValidBareType", typeDef, getProject()));
-        assertNull(validator.getErrorMessage("#ValidConst", constDef, getProject()));
+        assertTrue(validator.isInputValid("ValidBareType", typeDef, context));
         assertNull(validator.getErrorMessage("ValidBareConst", constDef, getProject()));
+        assertTrue(validator.isInputValid("ValidBareConst", constDef, context));
     }
 
     /**
-     * Verifies that programmatic rename operations with conflicting sigils throw
-     * IncorrectOperationException rather than unhandled IllegalStateException.
+     * Verifies that programmatic invocation with any prefixed name throws IncorrectOperationException,
+     * confirming the strict fail-closed perimeter.
      */
-    public void testProgrammaticRenameWithConflictingSigilThrowsIncorrectOperationException() {
+    public void testProgrammaticRenameWithPrefixedNameThrowsIncorrectOperationException() {
         var beforeCode = """
             {
               :defs {
@@ -413,12 +405,23 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         // Attempting to rename TypeDefinition with constant sigil '#' throws IncorrectOperationException
         try {
             myFixture.renameElementAtCaret("#ConflictingConstName");
-            fail("Expected IncorrectOperationException when renaming type to constant symbol");
+            fail("Expected IncorrectOperationException when renaming type with '#' prefix");
         } catch (Throwable e) {
             var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
                 : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
             assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
-            assertTrue(ioe.getMessage().contains("Cannot rename type to constant symbol '#ConflictingConstName'"));
+            assertTrue(ioe.getMessage().contains("Identifier must be a bare name without ':' or '#' prefix: #ConflictingConstName"));
+        }
+
+        // Attempting to rename TypeDefinition with type sigil ':' also throws IncorrectOperationException
+        try {
+            myFixture.renameElementAtCaret(":ConflictingTypeName");
+            fail("Expected IncorrectOperationException when renaming type with ':' prefix");
+        } catch (Throwable e) {
+            var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
+                : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
+            assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
+            assertTrue(ioe.getMessage().contains("Identifier must be a bare name without ':' or '#' prefix: :ConflictingTypeName"));
         }
 
         // Navigate caret to ConstantDefinition
@@ -430,12 +433,23 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         // Attempting to rename ConstantDefinition with type sigil ':' throws IncorrectOperationException
         try {
             myFixture.renameElementAtCaret(":ConflictingTypeName");
-            fail("Expected IncorrectOperationException when renaming constant to type symbol");
+            fail("Expected IncorrectOperationException when renaming constant with ':' prefix");
         } catch (Throwable e) {
             var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
                 : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
             assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
-            assertTrue(ioe.getMessage().contains("Cannot rename constant to type symbol ':ConflictingTypeName'"));
+            assertTrue(ioe.getMessage().contains("Identifier must be a bare name without ':' or '#' prefix: :ConflictingTypeName"));
+        }
+
+        // Attempting to rename ConstantDefinition with constant sigil '#' also throws IncorrectOperationException
+        try {
+            myFixture.renameElementAtCaret("#ConflictingConstName");
+            fail("Expected IncorrectOperationException when renaming constant with '#' prefix");
+        } catch (Throwable e) {
+            var ioe = (e instanceof com.intellij.util.IncorrectOperationException i) ? i
+                : (e.getCause() instanceof com.intellij.util.IncorrectOperationException i ? i : null);
+            assertNotNull("Expected IncorrectOperationException or wrapped cause, but got: " + e, ioe);
+            assertTrue(ioe.getMessage().contains("Identifier must be a bare name without ':' or '#' prefix: #ConflictingConstName"));
         }
     }
 }

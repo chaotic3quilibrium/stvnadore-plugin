@@ -30,37 +30,18 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnRenameInputValidator implements RenameInputValidatorEx {
 
-    /**
-     * Target symbol category for rename validation.
-     */
-    public enum TargetKind {
-        /**
-         * Represents STVN nominal type declarations and references.
-         */
-        TYPE,
-        /**
-         * Represents STVN constant bindings, enum variants, and value keywords.
-         */
-        CONSTANT
-    }
+    public static final String PREFIX_ERROR_MESSAGE =
+        "Identifier must be a bare name without ':' or '#' prefix";
 
-    /**
-     * Error message displayed when a hash sigil is provided for a type symbol.
-     */
-    public static final String TYPE_ERROR_MESSAGE =
-        "Type identifier cannot begin with '#'; type declarations must begin with ':'";
+    public static final String KEYWORD_ERROR_MESSAGE =
+        "Identifier cannot be a reserved section keyword: ";
 
-    /**
-     * Error message displayed when a colon sigil is provided for a constant symbol.
-     */
-    public static final String CONSTANT_ERROR_MESSAGE =
-        "Constant identifier cannot begin with ':'; constant declarations must begin with '#'";
+    public static final String INVALID_IDENTIFIER_ERROR_MESSAGE =
+        "Identifier is not a valid bare STVN identifier: ";
 
     private static final Pattern BARE_IDENTIFIER_PATTERN = Pattern.compile(
         "^[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*$"
     );
-
-    private static final ThreadLocal<TargetKind> CURRENT_TARGET = new ThreadLocal<>();
 
     private final ElementPattern<? extends PsiElement> pattern;
 
@@ -72,12 +53,12 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
             .with(new PatternCondition<PsiElement>("stvnSymbolTarget") {
                 @Override
                 public boolean accepts(@NotNull PsiElement element, ProcessingContext context) {
-                    var kind = classifyTarget(element);
-                    if (kind != null) {
-                        CURRENT_TARGET.set(kind);
-                        return true;
-                    }
-                    return false;
+                    return element instanceof TypeDefinition
+                        || element instanceof TypeKeyword
+                        || element instanceof ConstantDefinition
+                        || element instanceof ValueKeyword
+                        || element instanceof IncludeMapAlias
+                        || element instanceof UseMapAlias;
                 }
             });
     }
@@ -87,47 +68,10 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
         return pattern;
     }
 
-    /**
-     * Classifies a target PSI element into a type or constant symbol category.
-     *
-     * @param element the PSI element undergoing rename
-     * @return the resolved {@link TargetKind}, or {@code null} if not an STVN symbol
-     */
-    public static @Nullable TargetKind classifyTarget(@Nullable PsiElement element) {
-        if (element == null) {
-            return null;
-        }
-        if (element instanceof TypeDefinition || element instanceof TypeKeyword || element instanceof IncludeMapAlias) {
-            return TargetKind.TYPE;
-        }
-        if (element instanceof ConstantDefinition || element instanceof ValueKeyword) {
-            return TargetKind.CONSTANT;
-        }
-        if (element instanceof UseMapAlias alias) {
-            if (alias.getTypeKeywordList().size() >= 2) {
-                return TargetKind.TYPE;
-            }
-            if (alias.getValueKeywordList().size() >= 2) {
-                return TargetKind.CONSTANT;
-            }
-        }
-        return null;
-    }
-
     @Override
     public boolean isInputValid(@NotNull String newName, @NotNull PsiElement element, @NotNull ProcessingContext context) {
-        var kind = classifyTarget(element);
-        if (kind != null) {
-            CURRENT_TARGET.set(kind);
-        }
-        if (kind == TargetKind.TYPE && newName.startsWith("#")) {
-            return true;
-        }
-        if (kind == TargetKind.CONSTANT && newName.startsWith(":")) {
-            return true;
-        }
-        if (!newName.startsWith(":") && !newName.startsWith("#")) {
-            return isValidBareIdentifier(newName, element.getProject());
+        if (newName.startsWith(":") || newName.startsWith("#")) {
+            return false;
         }
         var namesValidator = new StvnNamesValidator();
         return namesValidator.isIdentifier(newName, element.getProject());
@@ -135,53 +79,15 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
 
     @Override
     public @Nullable @DialogMessage String getErrorMessage(@NotNull String newName, @NotNull Project project) {
-        var kind = CURRENT_TARGET.get();
-        return getErrorMessage(newName, kind, project);
-    }
-
-    /**
-     * Evaluates error messages for a specified symbol kind and proposed name.
-     *
-     * @param newName the proposed new symbol name
-     * @param kind the target symbol category
-     * @param project the current project context
-     * @return an error message string if invalid, or {@code null} if valid
-     */
-    public @Nullable @DialogMessage String getErrorMessage(
-        @NotNull String newName,
-        @Nullable TargetKind kind,
-        @NotNull Project project
-    ) {
-        if (kind == TargetKind.TYPE) {
-            if (newName.startsWith("#")) {
-                return TYPE_ERROR_MESSAGE;
-            }
-            if (newName.startsWith(":")) {
-                var namesValidator = new StvnNamesValidator();
-                if (!namesValidator.isIdentifier(newName, project)) {
-                    return "Identifier '" + newName + "' is not a valid STVN type name";
-                }
-                return null;
-            }
-            if (!isValidBareIdentifier(newName, project)) {
-                return "Identifier '" + newName + "' is not a valid STVN identifier body";
-            }
-            return null;
-        } else if (kind == TargetKind.CONSTANT) {
-            if (newName.startsWith(":")) {
-                return CONSTANT_ERROR_MESSAGE;
-            }
-            if (newName.startsWith("#")) {
-                var namesValidator = new StvnNamesValidator();
-                if (!namesValidator.isIdentifier(newName, project)) {
-                    return "Identifier '" + newName + "' is not a valid STVN constant name";
-                }
-                return null;
-            }
-            if (!isValidBareIdentifier(newName, project)) {
-                return "Identifier '" + newName + "' is not a valid STVN identifier body";
-            }
-            return null;
+        if (newName.startsWith(":") || newName.startsWith("#")) {
+            return PREFIX_ERROR_MESSAGE;
+        }
+        var namesValidator = new StvnNamesValidator();
+        if (namesValidator.isKeyword(newName, project)) {
+            return KEYWORD_ERROR_MESSAGE + newName;
+        }
+        if (!namesValidator.isIdentifier(newName, project)) {
+            return INVALID_IDENTIFIER_ERROR_MESSAGE + newName;
         }
         return null;
     }
@@ -199,11 +105,7 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
         @NotNull PsiElement element,
         @NotNull Project project
     ) {
-        var kind = classifyTarget(element);
-        if (kind != null) {
-            CURRENT_TARGET.set(kind);
-        }
-        return getErrorMessage(newName, kind, project);
+        return getErrorMessage(newName, project);
     }
 
     /**

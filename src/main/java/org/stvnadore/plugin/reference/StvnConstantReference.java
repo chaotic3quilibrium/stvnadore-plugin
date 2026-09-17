@@ -34,8 +34,8 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      */
     @Override
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
-        if (newElementName.startsWith(":")) {
-            throw new IncorrectOperationException("Cannot rename constant to type symbol '" + newElementName + "'");
+        if (newElementName.startsWith(":") || newElementName.startsWith("#")) {
+            throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + newElementName);
         }
         var element = getElement();
         var currentText = element.getText();
@@ -43,10 +43,9 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         if (currentText.contains("/")) {
             var lastSlashIndex = currentText.lastIndexOf('/');
             var prefix = currentText.substring(0, lastSlashIndex + 1);
-            var cleanName = newElementName.startsWith("#") ? newElementName.substring(1) : newElementName;
-            replacementText = prefix + cleanName;
+            replacementText = prefix + newElementName;
         } else {
-            replacementText = newElementName.startsWith("#") ? newElementName : "#" + newElementName;
+            replacementText = "#" + newElementName;
         }
         var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createValueKeyword(element.getProject(), replacementText);
         return element.replace(newKeyword);

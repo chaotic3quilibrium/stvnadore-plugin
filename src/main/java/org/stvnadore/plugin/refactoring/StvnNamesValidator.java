@@ -19,6 +19,12 @@ import java.util.regex.Pattern;
 public final class StvnNamesValidator implements NamesValidator {
 
     private static final Set<String> RESERVED_KEYWORDS = Set.of(
+        "defs",
+        "type",
+        "body",
+        "package",
+        "use",
+        "include",
         ":defs",
         ":type",
         ":body",
@@ -28,7 +34,7 @@ public final class StvnNamesValidator implements NamesValidator {
     );
 
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile(
-        "^[:#][a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*$"
+        "^[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*$"
     );
 
     /**
@@ -46,10 +52,7 @@ public final class StvnNamesValidator implements NamesValidator {
     @Override
     public boolean isKeyword(@NotNull String name, @Nullable Project project) {
         var trimmed = name.trim();
-        if (RESERVED_KEYWORDS.contains(trimmed)) {
-            return true;
-        }
-        return RESERVED_KEYWORDS.contains(trimmed.startsWith(":") ? trimmed : ":" + trimmed);
+        return RESERVED_KEYWORDS.contains(trimmed);
     }
 
     /**
@@ -66,18 +69,10 @@ public final class StvnNamesValidator implements NamesValidator {
         if (name.isEmpty()) {
             return false;
         }
-        var prefix = name.charAt(0);
-        if (prefix != ':' && prefix != '#') {
+        if (name.startsWith(":") || name.startsWith("#")) {
             return false;
         }
         if (isKeyword(name, project)) {
-            return false;
-        }
-        if (name.length() < 2) {
-            return false;
-        }
-        var firstAfterPrefix = name.charAt(1);
-        if (Character.isDigit(firstAfterPrefix)) {
             return false;
         }
         return IDENTIFIER_PATTERN.matcher(name).matches();

@@ -71,22 +71,28 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
     public @NotNull String getDescriptiveName(@NotNull PsiElement element) {
         if (element instanceof TypeDefinition) {
             var name = ((TypeDefinition) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? ":" + name : "";
         }
         if (element instanceof ConstantDefinition) {
             var name = ((ConstantDefinition) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? "#" + name : "";
         }
         if (element instanceof IncludeMapAlias) {
             var name = ((IncludeMapAlias) element).getName();
-            return name != null ? name : "";
+            return name != null && !name.isEmpty() ? ":" + name : "";
         }
-        if (element instanceof org.stvnadore.psi.UseMapAlias) {
-            var name = ((org.stvnadore.psi.UseMapAlias) element).getName();
-            return name != null ? name : "";
+        if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var name = alias.getName();
+            if (name == null || name.isEmpty()) return "";
+            return (alias.getValueKeywordList().size() >= 2 && alias.getTypeKeywordList().isEmpty() ? "#" : ":") + name;
         }
-        if (element instanceof TypeKeyword || element instanceof ValueKeyword) {
-            return element.getText();
+        if (element instanceof TypeKeyword tk) {
+            var name = tk.getName();
+            return name != null && !name.isEmpty() ? ":" + name : element.getText();
+        }
+        if (element instanceof ValueKeyword vk) {
+            var name = vk.getName();
+            return name != null && !name.isEmpty() ? "#" + name : element.getText();
         }
         return "";
     }
