@@ -1,7 +1,7 @@
 # STVN IDE Authoring Guide & Feature Handbook
 
-**Strongly Typed Value Notation (STVN) for IntelliJ Platform**  
-*An Authoritative, Example-Driven Guide for Software Engineers, Data Engineers, and System Architects*
+- **Strongly Typed Value Notation (STVN) for IntelliJ Platform**  
+- *An Authoritative, Example-Driven Guide for Software Engineers, Data Engineers, and System Architects*
 
 ---
 
