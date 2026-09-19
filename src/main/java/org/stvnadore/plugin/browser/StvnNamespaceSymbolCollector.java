@@ -151,6 +151,9 @@ public final class StvnNamespaceSymbolCollector {
         // 4. Scoped :use statements
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : useStmts) {
+            if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
+                continue;
+            }
             var target = use.getUseTarget();
             var targetText = target != null ? target.getText() : ":use";
             var aliasBlock = use.getUseAliasBlock();
@@ -300,9 +303,13 @@ public final class StvnNamespaceSymbolCollector {
                     if (targetElem instanceof TypeKeyword targetKw) {
                         var parentDef = StvnPsiUtils.getParentTypeDefinition(targetKw);
                         if (parentDef != null && parentDef.getSchemaType() != null) {
+                            var nextSchema = parentDef.getSchemaType();
+                            int nextDepth = (currentDepth == 0 || nextSchema.getSchemaConstructor() != null)
+                                    ? currentDepth
+                                    : currentDepth + 1;
                             worklist.add(new TypeWorkItem(
-                                parentDef.getSchemaType(),
-                                currentDepth + 1,
+                                nextSchema,
+                                nextDepth,
                                 parentDef.getContainingFile()
                             ));
                         } else {
@@ -324,9 +331,13 @@ public final class StvnNamespaceSymbolCollector {
                                     if (resolvedRemote instanceof TypeKeyword rKw) {
                                         var rDef = StvnPsiUtils.getParentTypeDefinition(rKw);
                                         if (rDef != null && rDef.getSchemaType() != null) {
+                                            var nextSchema = rDef.getSchemaType();
+                                            int nextDepth = (currentDepth == 0 || nextSchema.getSchemaConstructor() != null)
+                                                    ? currentDepth
+                                                    : currentDepth + 1;
                                             worklist.add(new TypeWorkItem(
-                                                rDef.getSchemaType(),
-                                                currentDepth + 1,
+                                                nextSchema,
+                                                nextDepth,
                                                 rDef.getContainingFile()
                                             ));
                                         }
@@ -344,9 +355,13 @@ public final class StvnNamespaceSymbolCollector {
                                         if (resolvedRemote instanceof TypeKeyword rKw) {
                                             var rDef = StvnPsiUtils.getParentTypeDefinition(rKw);
                                             if (rDef != null && rDef.getSchemaType() != null) {
+                                                var nextSchema = rDef.getSchemaType();
+                                                int nextDepth = (currentDepth == 0 || nextSchema.getSchemaConstructor() != null)
+                                                        ? currentDepth
+                                                        : currentDepth + 1;
                                                 worklist.add(new TypeWorkItem(
-                                                    rDef.getSchemaType(),
-                                                    currentDepth + 1,
+                                                    nextSchema,
+                                                    nextDepth,
                                                     targetFile
                                                 ));
                                             }
