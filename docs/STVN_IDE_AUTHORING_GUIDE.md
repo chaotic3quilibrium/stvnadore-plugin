@@ -68,6 +68,10 @@
     * [5.7 Token Boundary & Sum Disambiguation Quick-Fixes](#57-token-boundary--sum-disambiguation-quick-fixes)
       * [Token Boundary Completion Guard](#token-boundary-completion-guard)
       * [Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)](#right-first-sum-intention-actions-wrap-with-right--wrap-with-1)
+    * [5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization](#58-hash-sigil-autocomplete-activation-bare--quick-fixes--arity-localization)
+      * [Hash Sigil Autocomplete Activation](#hash-sigil-autocomplete-activation)
+      * [Bare '#' Completion Quick-Fixes](#bare--completion-quick-fixes)
+      * [Tuple Arity Error Localization](#tuple-arity-error-localization)
   * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
     * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
     * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -900,6 +904,27 @@ When an untagged literal matches multiple branches in an algebraic sum type, the
 * **`:Either( L R )`:** Evaluates branch $R$ first. `Wrap with #Right (-> R)` appears as the primary action, followed by `Wrap with #Left (-> L)`.
 * **`:Union( T1 ... Tn )`:** Filters branches to compatible types. `Wrap with #k (-> Tk)` appears in 1-based index order.
 * Selecting the action wraps the literal (e.g. `42` becomes `#Right 42`), positions the caret after the tag, and clears all compile errors.
+
+---
+
+### 5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization
+
+#### Hash Sigil Autocomplete Activation
+When authoring variant tags in sum slots (`:Either`, `:Union`, `:Option`) or boolean slots (`:Boolean`), typing `#` immediately activates context-sensitive completion:
+* In empty tuple slots, typing `#` offers candidate tags (`#Right`, `#Left`, `#1`, `#2`) without lookahead suppression.
+* Raw numeric digits (such as `1` or `2`) do not trigger lookahead to subsequent elements.
+
+#### Bare '#' Completion Quick-Fixes
+When an author pauses or enters a bare `#` token, the IDE flags the incomplete token and provides quick-fixes (`Alt+Enter`):
+* For `:Either( L R )`: Offers `Complete with #Right (-> R)` (Priority HIGH) and `Complete with #Left (-> L)` (Priority NORMAL).
+* For `:Union( T1 ... Tn )`: Offers `Complete with #k (-> Tk)` for all candidate branches.
+* Invoking the quick-fix replaces the bare `#` with the completed variant tag and positions the caret for immediate payload entry.
+
+#### Tuple Arity Error Localization
+When a tuple contains fewer elements than declared in its schema:
+* The error squiggly pins strictly to the closing delimiter `)` (`RPAREN`).
+* Valid child scalar values remain unblemished with zero false-positive highlights.
+* The error message displays: `Tuple arity mismatch: Expected N elements, got M (X missing)`.
 
 ---
 

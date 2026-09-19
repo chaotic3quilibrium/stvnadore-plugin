@@ -140,7 +140,10 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
             return false;
         }
         char prevChar = text.charAt(offset - 1);
-        if (Character.isWhitespace(prevChar) || prevChar == '(' || prevChar == '[' || prevChar == '{') {
+        if (Character.isWhitespace(prevChar) || prevChar == '(' || prevChar == '[' || prevChar == '{' || prevChar == '#') {
+            return false;
+        }
+        if (isVariantTagPrefixAt(text, offset)) {
             return false;
         }
         var origElem = originalFile.findElementAt(offset - 1);
@@ -154,6 +157,14 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         // If the completion dummy position starts at or after the caret offset, it represents
         // a subsequent token/element lookahead immediately touching the preceding completed value
         return position.getTextRange().getStartOffset() >= offset;
+    }
+
+    private static boolean isVariantTagPrefixAt(String text, int offset) {
+        int idx = offset - 1;
+        while (idx >= 0 && Character.isLetterOrDigit(text.charAt(idx))) {
+            idx--;
+        }
+        return idx >= 0 && text.charAt(idx) == '#';
     }
 
     private static boolean populateFilterListCompletions(PsiElement position, CompletionResultSet result) {

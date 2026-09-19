@@ -5757,6 +5757,44 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Explicit tags on identical branches are mandatory discriminators and must produce 0 redundant tag warnings", 0, warnings.size());
     }
+
+    public void testTupleArityUnderflowPinsToClosingParen() {
+        var psiFile = myFixture.configureByText(
+            "tuple_underflow.stvn",
+            """
+            {
+              :type :Tuple( :Int32 :Int32 )
+              :body (
+                10
+              )
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected tuple arity underflow error", errors.isEmpty());
+        var arityError = errors.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"))
+            .findFirst();
+        assertTrue("Expected error matching 'Tuple arity mismatch'", arityError.isPresent());
+        assertEquals("Tuple arity mismatch: Expected 2 elements, got 1 (1 missing)", arityError.get().getDescription());
+
+        var text = psiFile.getText();
+        var rparenOffset = text.lastIndexOf(')');
+        assertEquals("Error highlight must start precisely at ')'", rparenOffset, arityError.get().getStartOffset());
+        assertEquals("Error highlight must end precisely after ')'", rparenOffset + 1, arityError.get().getEndOffset());
+
+        var tenOffset = text.indexOf("10");
+        var childError = errors.stream()
+            .filter(h -> h.getStartOffset() == tenOffset)
+            .findFirst();
+        assertTrue("Valid child value '10' must remain completely unblemished", childError.isEmpty());
+    }
 }
+
 
 

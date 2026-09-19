@@ -160,6 +160,22 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 message = "Duplicate map key detected: '" + rawKey + "'";
             }
 
+            // Align Tuple arity mismatch display message and enforce container-level coordinate pinning
+            if ((diag.errorCode().isPresent() && "TUPLE_ARITY_MISMATCH".equals(diag.errorCode().get()))
+                || message.startsWith("Tuple arity mismatch")) {
+                if (!message.contains("missing") && message.matches(".*Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+).*")) {
+                    var matcher = java.util.regex.Pattern.compile("Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+)").matcher(message);
+                    if (matcher.find()) {
+                        int exp = Integer.parseInt(matcher.group(1));
+                        int got = Integer.parseInt(matcher.group(2));
+                        if (exp > got) {
+                            int missing = exp - got;
+                            message = "Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)";
+                        }
+                    }
+                }
+            }
+
             // 1. Direct Coordinate Range Highlighting with Defensive Clamping
             // startOffset and endOffset from stvnadore-core:1.3.1 are 0-based half-open [start, end)
             if (start >= 0 && end >= start) {
@@ -177,7 +193,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (s < e) {
                     var range = new TextRange(s, e);
                     range = expandEmptyCompositeRange(file, range, message);
-                    var clamped = clampToOffendingChildIfContainer(file, range);
+                    var clamped = clampToOffendingChildIfContainer(file, range, message);
                     if (clamped != null) {
                         range = clamped;
                     }
@@ -190,6 +206,43 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var listLit = findMapTargetListLiteral(file, range);
                     if (listLit != null) {
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
+                    }
+
+                    // Intercept bare '#' token in value position and attach CompleteSumVariantQuickFix actions
+                    var elemAtStart = file.findElementAt(s);
+                    var tokenText = (elemAtStart != null) ? elemAtStart.getText().trim() : "";
+                    if ("#".equals(tokenText) || (s < e && "#".equals(file.getText().substring(s, e).trim()))) {
+                        var targetElem = (elemAtStart != null) ? elemAtStart : file.findElementAt(s);
+                        if (targetElem != null) {
+                            var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(targetElem);
+                            if (expectedSchema != null) {
+                                var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+                                var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
+                                var constructor = schemaToInspect.getSchemaConstructor();
+                                if (constructor != null && constructor.getSumType() != null) {
+                                    var sumType = constructor.getSumType();
+                                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                                    if (sumType.getText().startsWith(":Either")) {
+                                        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
+                                        if (innerSchemas.size() >= 2) {
+                                            var rightBranch = innerSchemas.get(1);
+                                            var leftBranch = innerSchemas.get(0);
+                                            var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
+                                            var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH));
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
+                                        }
+                                    } else if (sumType.getText().startsWith(":Union")) {
+                                        for (int i = 0; i < innerSchemas.size(); i++) {
+                                            var branch = innerSchemas.get(i);
+                                            var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
+                                            var tag = "#" + (i + 1);
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, tag, branchLabel, PriorityAction.Priority.NORMAL));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Intercept ERR_AMBIGUOUS_SUM_INFERENCE and attach WrapSumVariantQuickFix actions
@@ -710,7 +763,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
-    private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range) {
+    private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range, String message) {
+        // Container-level cardinality errors (arity underflow) must never clamp to valid child scalars
+        if (range == null || message.contains("Tuple arity mismatch") || message.contains("arity mismatch")) {
+            return null;
+        }
         var tuples = PsiTreeUtil.findChildrenOfType(file, TupleLiteral.class);
         for (var tuple : tuples) {
             var tr = tuple.getTextRange();

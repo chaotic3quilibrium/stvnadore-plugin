@@ -119,4 +119,81 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         var hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
         assertFalse("Explicitly tagged #1 payload must eliminate all compile errors", hasErrors);
     }
+
+    public void testBareHashEitherCompleteRightFirstIntentionOrder() {
+        myFixture.configureByText(
+            "bare_hash_either.stvn",
+            """
+            {
+              :defs {
+                :Pair :Tuple( :Int32 :Either( :Int32 :String ) )
+              }
+              :type :Pair
+              :body (
+                1
+                #<caret>
+              )
+            }
+            """
+        );
+
+        myFixture.doHighlighting();
+
+        var intentions = myFixture.filterAvailableIntentions("Complete with");
+        assertEquals("Expected exactly two completion intention actions for :Either on bare '#'", 2, intentions.size());
+
+        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
+        assertEquals("Complete with #Right (-> :String)", intentions.get(0).getText());
+        assertEquals("Complete with #Left (-> :Int32)", intentions.get(1).getText());
+
+        // Apply primary quick-fix (#Right)
+        myFixture.launchAction(intentions.get(0));
+
+        myFixture.checkResult(
+            """
+            {
+              :defs {
+                :Pair :Tuple( :Int32 :Either( :Int32 :String ) )
+              }
+              :type :Pair
+              :body (
+                1
+                #Right
+              )
+            }
+            """
+        );
+    }
+
+    public void testBareHashUnionCompleteBranchActions() {
+        myFixture.configureByText(
+            "bare_hash_union.stvn",
+            """
+            {
+              :type :Union( :Int32 :Float64 :String )
+              :body #<caret>
+            }
+            """
+        );
+
+        myFixture.doHighlighting();
+
+        var intentions = myFixture.filterAvailableIntentions("Complete with");
+        assertEquals("Expected three completion intention actions for 3-branch union on bare '#'", 3, intentions.size());
+        assertEquals("Complete with #1 (-> :Int32)", intentions.get(0).getText());
+        assertEquals("Complete with #2 (-> :Float64)", intentions.get(1).getText());
+        assertEquals("Complete with #3 (-> :String)", intentions.get(2).getText());
+
+        myFixture.launchAction(intentions.get(0));
+
+        myFixture.checkResult(
+            """
+            {
+              :type :Union( :Int32 :Float64 :String )
+              :body #1
+            }
+            """
+        );
+    }
 }
+
