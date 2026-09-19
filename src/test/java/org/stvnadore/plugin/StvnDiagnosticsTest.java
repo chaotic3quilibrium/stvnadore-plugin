@@ -5640,6 +5640,123 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             h.getDescription().contains("Rule STR-04 violation: Orphan or unexpected closing fence delimiter"));
         assertTrue("Highlighting must emit ERROR citing Rule STR-04 orphan delimiter", hasOrphanError);
     }
+
+    public void testUnionDuplicateNominalBranchesAmbiguousUntagged() {
+        var psiFile = myFixture.configureByText(
+            "union_duplicate_untagged.stvn",
+            """
+            {
+              :defs {
+                :MyInt { #minIncl 1 } :Int32
+                :BadUnion :Union( :MyInt :MyInt )
+              }
+              :type :BadUnion
+              :body 42
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected ambiguity compilation error for untagged payload targeting duplicate union branches", errors.isEmpty());
+        var errorDescriptions = errors.stream().map(HighlightInfo::getDescription).toList();
+        assertTrue(
+            "Expected error containing 'Ambiguous implicit resolution: Value matches multiple branches'. Found: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit resolution: Value matches multiple branches"))
+        );
+
+        var text = psiFile.getText();
+        var fortyTwoOffset = text.lastIndexOf("42");
+        var errorAtToken = errors.stream()
+            .filter(h -> h.getStartOffset() == fortyTwoOffset && h.getEndOffset() == fortyTwoOffset + 2)
+            .findFirst();
+        assertTrue("Expected error highlight to clamp precisely to '42'", errorAtToken.isPresent());
+    }
+
+    public void testEitherDuplicateNominalBranchesAmbiguousUntagged() {
+        var psiFile = myFixture.configureByText(
+            "either_duplicate_untagged.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+              }
+              :type :IdenticalEither
+              :body 42
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected ambiguity compilation error for untagged payload targeting duplicate either branches", errors.isEmpty());
+        var errorDescriptions = errors.stream().map(HighlightInfo::getDescription).toList();
+        assertTrue(
+            "Expected error containing 'Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required'. Found: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required"))
+        );
+
+        var text = psiFile.getText();
+        var fortyTwoOffset = text.lastIndexOf("42");
+        var errorAtToken = errors.stream()
+            .filter(h -> h.getStartOffset() == fortyTwoOffset && h.getEndOffset() == fortyTwoOffset + 2)
+            .findFirst();
+        assertTrue("Expected error highlight to clamp precisely to '42'", errorAtToken.isPresent());
+    }
+
+    public void testSumTypeDuplicateNominalBranchesExplicitTagsZeroErrors() {
+        setUseLongFormSumTypes(true);
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnVariantStyleInspection());
+        var projSettings = StvnProjectSettings.getInstance(getProject());
+        if (projSettings != null) {
+            projSettings.getState().enableRedundantTagInspection = true;
+            projSettings.getState().preferImpliedSumTypes = true;
+        }
+
+        myFixture.configureByText(
+            "sum_type_duplicate_explicit.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :RootPayload     :Tuple(
+                  :IdenticalEither
+                  :IdenticalEither
+                  :IdenticalUnion
+                  :IdenticalUnion
+                  :IdenticalUnion
+                )
+              }
+              :type :RootPayload
+              :body (
+                #Left 100
+                #Right 200
+                #1 300
+                #2 400
+                #3 500
+              )
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Expected 0 compilation errors for explicit variant tags on duplicate branches", 0, errors.size());
+
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag".equals(h.getDescription()))
+            .toList();
+        assertEquals("Explicit tags on identical branches are mandatory discriminators and must produce 0 redundant tag warnings", 0, warnings.size());
+    }
 }
 
 
