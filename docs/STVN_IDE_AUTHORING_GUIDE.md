@@ -72,6 +72,10 @@
       * [Hash Sigil Autocomplete Activation](#hash-sigil-autocomplete-activation)
       * [Bare '#' Completion Quick-Fixes](#bare--completion-quick-fixes)
       * [Tuple Arity Error Localization](#tuple-arity-error-localization)
+    * [5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds](#59-quick-documentation-container-guards--in-flight-union-tag-bounds)
+      * [Container Documentation Leakage Guard](#container-documentation-leakage-guard)
+      * [In-Flight Rule G Union Tag Bounds Enforcement](#in-flight-rule-g-union-tag-bounds-enforcement)
+      * [Child Fault Isolation & Arity Underflow Immunity](#child-fault-isolation--arity-underflow-immunity)
   * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
     * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
     * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -925,6 +929,28 @@ When a tuple contains fewer elements than declared in its schema:
 * The error squiggly pins strictly to the closing delimiter `)` (`RPAREN`).
 * Valid child scalar values remain unblemished with zero false-positive highlights.
 * The error message displays: `Tuple arity mismatch: Expected N elements, got M (X missing)`.
+
+---
+
+### 5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds
+
+#### Container Documentation Leakage Guard
+When inspecting STVN documents via Quick Documentation (`Ctrl+Q` or mouse hover), incomplete tokens, syntax errors, and punctuation tokens must never trigger ancestor tree climbs.
+
+Hovering over a bare `#` sigil, a `PsiErrorElement`, or unparsed punctuation inside a `:Tuple` or `:Seq` produces `null`. Container documentation displays only when the author explicitly hovers over container header keywords (`:Tuple`, `:Union`, `:Enum`) or opening and closing container delimiters (`(`, `)`).
+
+#### In-Flight Rule G Union Tag Bounds Enforcement
+In algebraic sum unions (`:Union( T1 T2 ... Tn )`), variant tags must adhere to branch count bounds $1 \le k \le n$.
+
+The IDE enforces this rule immediately while typing:
+1. The grammar pins `explicit_union_value` on the variant tag prefix (`#k`).
+2. As soon as the author types `#3` in a 2-branch union slot, `StvnSemanticAnnotator` validates $k=3$ against $n=2$.
+3. The editor immediately underlines `#3` with `HighlightSeverity.ERROR`:
+   `Union variant tag '#3' exceeds branch count (2)`
+4. The error displays before the payload value is entered.
+
+#### Child Fault Isolation & Arity Underflow Immunity
+When an invalid child element (such as `#3 3`) occurs inside a `:Tuple`, the error remains strictly localized to `#3`. The container element count is preserved. The editor produces zero cascading `TUPLE_ARITY_MISMATCH` squigglies on the closing delimiter `)`.
 
 ---
 

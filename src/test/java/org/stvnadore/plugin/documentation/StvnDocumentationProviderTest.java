@@ -224,4 +224,57 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Include alias hover must resolve derivation lineage",
             doc.contains("<b>Derivation:</b> Parent: :PieceRole via #filterExcl [ #PAWN #KING ]"));
     }
+
+    public void testBareHashSigilHoverSuppressesContainerDocumentation() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple( :EitherA :EitherB :Boolean :UnionLikeEitherC :UnionLikeEitherC :UnionLikeEitherC )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #
+              )
+            }
+            """;
+        myFixture.configureByText("bare_hash_hover.stvn", text);
+
+        var offset = text.lastIndexOf("#");
+        var elem = myFixture.getFile().findElementAt(offset);
+        assertNotNull(elem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem, offset);
+        var doc = (docElem != null) ? provider.generateDoc(docElem, elem) : provider.generateDoc(elem, elem);
+
+        assertNull("Hovering on bare '#' must return null and never leak container documentation", doc);
+    }
+
+    public void testPsiErrorElementHoverSuppressesContainerDocumentation() {
+        var text = """
+            {
+              :type :Tuple( :Int32 :Int32 )
+              :body (
+                42
+                )
+            }
+            """;
+        myFixture.configureByText("error_hover.stvn", text);
+
+        var offset = text.indexOf(")");
+        var elem = myFixture.getFile().findElementAt(offset);
+        assertNotNull(elem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem, offset);
+        var doc = (docElem != null) ? provider.generateDoc(docElem, elem) : provider.generateDoc(elem, elem);
+
+        // Container documentation must only display when hovering on valid container delimiters of valid containers
+        assertFalse("Must NOT leak tuple expression card on mismatched error parenthesis",
+            doc != null && doc.contains("<b>Expression:</b>"));
+    }
 }
+

@@ -5794,7 +5794,98 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .findFirst();
         assertTrue("Valid child value '10' must remain completely unblemished", childError.isEmpty());
     }
+
+    public void testInFlightUnionTagBoundsEnforcement() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #3
+              )
+            }
+            """;
+        myFixture.configureByText("in_flight_union_bounds.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var boundsError = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"))
+            .findFirst();
+
+        assertTrue("Expected in-flight Rule G error on '#3' before payload value is entered", boundsError.isPresent());
+        var error = boundsError.get();
+        var docText = myFixture.getEditor().getDocument().getText();
+        var targetText = docText.substring(error.getStartOffset(), error.getEndOffset());
+        assertEquals("Error range must clamp strictly to '#3'", "#3", targetText);
+    }
+
+    public void testChildFaultIsolationSingleErrorOnOutOfBoundsUnionTag() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Left 9
+                #Left 1
+                #TRUE
+                #1 1
+                #2 "ok"
+                #3 3
+              )
+            }
+            """;
+        myFixture.configureByText("child_fault_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertEquals("Expected exactly 1 error highlight for '#3 3' in 6-element tuple", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertNotNull(error.getDescription());
+        assertTrue("Error message must match canonical Rule G text",
+            error.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"));
+
+        var docText = myFixture.getEditor().getDocument().getText();
+        var targetText = docText.substring(error.getStartOffset(), error.getEndOffset());
+        assertEquals("Error range must clamp strictly to variant tag '#3'", "#3", targetText);
+
+        var hasArityMismatch = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"));
+        assertFalse("Must have zero cascading TUPLE_ARITY_MISMATCH errors on closing delimiter ')'", hasArityMismatch);
+    }
 }
+
 
 
 

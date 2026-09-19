@@ -323,6 +323,7 @@ right_short_literal     ::= KW_RIGHT_SHORT {
 }
 
 explicit_union_value    ::= UNION_TAG_PREFIX value {
+  pin=1
   mixin="org.stvnadore.plugin.psi.impl.StvnLiteralReferenceMixin"
 }
 

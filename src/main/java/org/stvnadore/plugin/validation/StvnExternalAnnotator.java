@@ -680,6 +680,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
         var message = diag.message();
+        // Suppress external compiler Rule G diagnostics; StvnSemanticAnnotator handles Rule G in-flight and at commit
+        if (diag.errorCode().isPresent() && "UNION_BRANCH_OVERFLOW".equals(diag.errorCode().get())) {
+            return true;
+        }
+        if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
+            return true;
+        }
         if (!message.contains("Unresolved schema for value context")) {
             return false;
         }
