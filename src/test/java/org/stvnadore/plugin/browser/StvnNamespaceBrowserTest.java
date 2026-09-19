@@ -557,6 +557,91 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals(1, buy.useDepth());
     }
 
+    /**
+     * Verifies that json_example.stvn under :defs scope collects exactly 8 stripped symbols at Use Depth = 1.
+     */
+    public void testJsonExampleDefsScopeCollectsEightStrippedSymbolsAtDepthOne() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must collect exactly 8 stripped symbols in :defs scope", 8, entries.size());
+        String[] expectedSymbols = {
+            ":JsonNull", ":JsonBoolean", ":JsonNumberInteger", ":JsonNumberFloat",
+            ":JsonString", ":JsonObject", ":JsonArray", ":JsonValue"
+        };
+        for (var expected : expectedSymbols) {
+            var entry = findEntryByName(entries, expected);
+            assertNotNull("Symbol " + expected + " must exist in :defs scope", entry);
+            assertEquals(1, entry.useDepth());
+            assertEquals(":org/ietf/rfc8259/json", entry.source());
+        }
+    }
+
+    /**
+     * Verifies that json_example.stvn under :type scope correctly renders all 8 symbols
+     * (1 root union at Depth 0 + 7 constituent branches at Depth 1).
+     */
+    public void testJsonExampleTypeScopeMaintainsEightSymbols() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
+
+        assertEquals("Must contain exactly 8 symbols (1 root at Depth 0 + 7 branches at Depth 1)", 8, entries.size());
+        var root = findEntryByName(entries, ":JsonValue");
+        assertNotNull(root);
+        assertEquals(0, root.useDepth());
+
+        String[] branches = {
+            ":JsonNull", ":JsonBoolean", ":JsonNumberInteger", ":JsonNumberFloat",
+            ":JsonString", ":JsonObject", ":JsonArray"
+        };
+        for (var branch : branches) {
+            var entry = findEntryByName(entries, branch);
+            assertNotNull("Branch " + branch + " must exist in :type scope", entry);
+            assertEquals(1, entry.useDepth());
+        }
+    }
+
+    /**
+     * Verifies that json_example.stvn under :body scope captures all instantiated nominal types
+     * and variants across the JSON map payload.
+     */
+    public void testJsonExampleBodyScopeCapturesAllInferredNominalTypesAndVariants() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
+
+        // Assert all instantiated nominal types are captured
+        assertNotNull("Root contract :JsonValue must exist", findEntryByName(entries, ":JsonValue"));
+        assertNotNull("Instantiated :JsonObject must exist", findEntryByName(entries, ":JsonObject"));
+        assertNotNull("Instantiated :JsonString must exist", findEntryByName(entries, ":JsonString"));
+        assertNotNull("Instantiated :JsonBoolean must exist", findEntryByName(entries, ":JsonBoolean"));
+        assertNotNull("Instantiated :JsonNull must exist", findEntryByName(entries, ":JsonNull"));
+        assertNotNull("Instantiated :JsonArray must exist", findEntryByName(entries, ":JsonArray"));
+        assertNotNull("Instantiated :JsonNumberInteger must exist", findEntryByName(entries, ":JsonNumberInteger"));
+        assertNotNull("Instantiated :JsonNumberFloat must exist", findEntryByName(entries, ":JsonNumberFloat"));
+
+        // Assert variant keywords are captured
+        assertNotNull("Variant keyword #NULL must exist", findEntryByName(entries, "#NULL"));
+        assertNotNull("Variant keyword #TRUE must exist", findEntryByName(entries, "#TRUE"));
+    }
+
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {
         var textRange = file.getText().indexOf(text);
         if (textRange >= 0) {

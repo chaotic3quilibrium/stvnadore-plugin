@@ -24,6 +24,44 @@ import org.stvnadore.psi.*;
 public final class StvnNamespaceSymbolCollector {
 
     private static final String PRELUDE_URI = "stvn://prelude/org_stvnadore_prelude.stvn_inclf";
+    private static final java.util.regex.Pattern PRIMITIVE_TYPE_PATTERN = java.util.regex.Pattern.compile(
+        "^:(?:Boolean|Uint[0-9]*|Int[0-9]*|Float[0-9]*|FloatExact|StringFixed[0-9]*|StringNonEmpty[0-9]*|String[0-9]*)$"
+    );
+
+    private static boolean isPrimitiveTypeName(String name) {
+        return PRIMITIVE_TYPE_PATTERN.matcher(name).matches();
+    }
+
+    private static boolean isPackageStripped(PsiFile file, String packagePath) {
+        var uses = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
+        for (var use : uses) {
+            var target = use.getUseTarget();
+            if (target != null && target.getText().equals(packagePath)) {
+                var opts = use.getUseOptionsBlock();
+                if (opts != null && opts.getText().contains("#strip")) {
+                    return true;
+                }
+            }
+        }
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        for (var incl : includes) {
+            var opts = incl.getIncludeOptionsBlock();
+            if (opts != null && opts.getText().contains("#strip")) {
+                var stringLit = incl.getStringLiteral();
+                var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
+                if (targetFile != null) {
+                    var pkgs = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
+                    for (var pkg : pkgs) {
+                        var p = pkg.getPackagePath();
+                        if (p != null && p.getText().equals(packagePath)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
     private StvnNamespaceSymbolCollector() {
     }
@@ -232,6 +270,17 @@ public final class StvnNamespaceSymbolCollector {
                 }
             }
 
+            var optionsBlock = incl.getIncludeOptionsBlock();
+            boolean hasStrip = optionsBlock != null && optionsBlock.getText().contains("#strip");
+            if (hasStrip && targetFile != null) {
+                var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
+                for (var pkg : remotePackages) {
+                    var path = pkg.getPackagePath();
+                    var pathText = path != null ? path.getText() : includeSource;
+                    collectStrippedElements(pkg, pathText, processedNames, results);
+                }
+            }
+
             if (targetFile != null) {
                 var remoteDefs = PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class);
                 for (var rDef : remoteDefs) {
@@ -241,6 +290,27 @@ public final class StvnNamespaceSymbolCollector {
                     var kw = rDef.getTypeKeyword();
                     if (kw != null && processedNames.add(kw.getText())) {
                         var schemaType = rDef.getSchemaType();
+                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                        results.add(new StvnNamespaceSymbolEntry(
+                            kw.getText(),
+                            includeSource,
+                            schemaText,
+                            1,
+                            kw,
+                            false,
+                            kw.getTextOffset(),
+                            StvnNamespaceScope.DEFS
+                        ));
+                    }
+                }
+                var remoteConsts = PsiTreeUtil.findChildrenOfType(targetFile, ConstantDefinition.class);
+                for (var rConst : remoteConsts) {
+                    if (PsiTreeUtil.getParentOfType(rConst, PackageEnclosure.class) != null) {
+                        continue;
+                    }
+                    var kw = rConst.getValueKeyword();
+                    if (kw != null && processedNames.add(kw.getText())) {
+                        var schemaType = rConst.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                         results.add(new StvnNamespaceSymbolEntry(
                             kw.getText(),
@@ -283,6 +353,9 @@ public final class StvnNamespaceSymbolCollector {
             var kw = currentSchema.getTypeKeyword();
             if (kw != null) {
                 var name = kw.getText();
+                if (isPrimitiveTypeName(name)) {
+                    continue;
+                }
                 if (visitedNominals.add(name)) {
                     var info = resolveNominalShapeInfo(currentFile, name);
                     if (processed.add(name)) {
@@ -400,22 +473,39 @@ public final class StvnNamespaceSymbolCollector {
         // 1. Lockstep positional schema shape correlation
         var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
         if (typeEntry != null && typeEntry.getSchemaType() != null) {
+            var rootKw = typeEntry.getSchemaType().getTypeKeyword();
+            if (rootKw != null && !isPrimitiveTypeName(rootKw.getText()) && processed.add(rootKw.getText())) {
+                var info = resolveNominalShapeInfo(file, rootKw.getText());
+                results.add(new StvnNamespaceSymbolEntry(
+                    rootKw.getText(),
+                    info.source(),
+                    info.typeStructure(),
+                    0,
+                    info.targetElement(),
+                    info.isPrelude(),
+                    info.targetElement() != null ? info.targetElement().getTextOffset() : rootKw.getTextOffset(),
+                    StvnNamespaceScope.BODY
+                ));
+            }
             correlateShapeAndValue(typeEntry.getSchemaType(), bodyEntry.getValue(), file, 0, results, processed, new HashSet<>());
         }
 
-        // 2. Preserve collection of all explicit # value keywords and variants
-        collectValueSymbols(bodyEntry.getValue(), file, 0, results, processed);
+        // 2. Modernized payload IR and AST traversal for nominal types and variants
+        collectPayloadSymbols(bodyEntry.getValue(), bodyEntry.getValue(), file, results, processed);
         return results;
     }
 
-    private static void collectValueSymbols(
-        Value value,
+    private static void collectPayloadSymbols(
+        Value currentVal,
+        Value rootVal,
         PsiFile file,
-        int depth,
         List<StvnNamespaceSymbolEntry> results,
         Set<String> processed
     ) {
-        var valueKw = value.getValueKeyword();
+        var depth = calculateValueNestingDepth(currentVal, rootVal);
+
+        // 1. Check for value keywords (#NULL, #BUY)
+        var valueKw = currentVal.getValueKeyword();
         if (valueKw != null) {
             var name = valueKw.getText();
             if (processed.add(name)) {
@@ -436,26 +526,163 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        // Traverse nested values
-        var collValue = value.getCollectionValue();
-        if (collValue != null) {
-            var childValues = PsiTreeUtil.findChildrenOfType(collValue, Value.class);
-            for (var child : childValues) {
-                if (child != value) {
-                    collectValueSymbols(child, file, depth + 1, results, processed);
+        // 2. Check for boolean variants (#TRUE, #FALSE)
+        var boolVal = currentVal.getBooleanValue();
+        if (boolVal != null) {
+            var name = boolVal.getText().trim();
+            if (name.startsWith("#") && processed.add(name)) {
+                results.add(new StvnNamespaceSymbolEntry(
+                    name,
+                    file.getName(),
+                    "Boolean Variant",
+                    depth,
+                    boolVal,
+                    false,
+                    boolVal.getTextOffset(),
+                    StvnNamespaceScope.BODY
+                ));
+            }
+        }
+
+        // 3. Inspect resolved core IR node for nominal type
+        var coreNode = StvnTypeResolver.resolveCoreValue(currentVal);
+        String nominalName = null;
+        if (coreNode != null) {
+            if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union && union.schema().aliasName().isPresent()) {
+                var branchPsi = StvnTypeResolver.getNominalUnionBranchPsi(file, union.schema().aliasName().get(), union.tagIndex());
+                if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
+                    nominalName = branchPsi.getTypeKeyword().getText();
+                }
+            } else if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt && !opt.isNone() && opt.schema().aliasName().isPresent()) {
+                var branchPsi = StvnTypeResolver.getNominalOptionBranchPsi(file, opt.schema().aliasName().get());
+                if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
+                    nominalName = branchPsi.getTypeKeyword().getText();
+                }
+            } else if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnEither either && either.schema().aliasName().isPresent()) {
+                var branchPsi = StvnTypeResolver.getNominalEitherBranchPsi(file, either.schema().aliasName().get(), either.isRight());
+                if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
+                    nominalName = branchPsi.getTypeKeyword().getText();
+                }
+            } else if (coreNode.schema().aliasName().isPresent()) {
+                nominalName = coreNode.schema().aliasName().get();
+            }
+        }
+
+        if (nominalName != null) {
+            if (!nominalName.startsWith(":")) {
+                nominalName = ":" + nominalName;
+            }
+            if (isPrimitiveTypeName(nominalName)) {
+                nominalName = null;
+            }
+        }
+
+        if (nominalName != null && !nominalName.isEmpty()) {
+            if (nominalName.contains("/")) {
+                var pkgPath = nominalName.substring(0, nominalName.lastIndexOf('/'));
+                if (isPackageStripped(file, pkgPath)) {
+                    nominalName = ":" + nominalName.substring(nominalName.lastIndexOf('/') + 1);
+                }
+            }
+            if (processed.add(nominalName)) {
+                var info = resolveNominalShapeInfo(file, nominalName);
+                results.add(new StvnNamespaceSymbolEntry(
+                    nominalName,
+                    info.source(),
+                    info.typeStructure(),
+                    depth,
+                    info.targetElement(),
+                    info.isPrelude(),
+                    info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
+                    StvnNamespaceScope.BODY
+                ));
+            }
+        } else {
+            var inferred = org.stvnadore.plugin.hints.StvnTypeInferenceHelper.resolveValueTypeWithDepth(currentVal, 16);
+            if (inferred != null && !inferred.isEmpty()) {
+                var matcher = java.util.regex.Pattern.compile(":[a-zA-Z0-9_/-]+").matcher(inferred);
+                while (matcher.find()) {
+                    var candidate = matcher.group();
+                    if (!candidate.startsWith(":org/stvnadore/prelude/")
+                            && !StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(candidate)
+                            && !isPrimitiveTypeName(candidate)) {
+                        if (candidate.contains("/")) {
+                            var pkgPath = candidate.substring(0, candidate.lastIndexOf('/'));
+                            if (isPackageStripped(file, pkgPath)) {
+                                candidate = ":" + candidate.substring(candidate.lastIndexOf('/') + 1);
+                            }
+                        }
+                        if (processed.add(candidate)) {
+                            var info = resolveNominalShapeInfo(file, candidate);
+                            results.add(new StvnNamespaceSymbolEntry(
+                                candidate,
+                                info.source(),
+                                info.typeStructure(),
+                                depth,
+                                info.targetElement(),
+                                info.isPrelude(),
+                                info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
+                                StvnNamespaceScope.BODY
+                            ));
+                        }
+                    }
                 }
             }
         }
 
-        if (value.getExplicitOptionValue() != null && value.getExplicitOptionValue().getValue() != null) {
-            collectValueSymbols(value.getExplicitOptionValue().getValue(), file, depth + 1, results, processed);
+        // 4. Traverse child values in collection structures
+        var coll = currentVal.getCollectionValue();
+        if (coll != null) {
+            var mapLit = coll.getMapLiteral();
+            if (mapLit != null) {
+                for (var child : mapLit.getValueList()) {
+                    collectPayloadSymbols(child, rootVal, file, results, processed);
+                }
+            }
+            var listLit = coll.getListLiteral();
+            if (listLit != null) {
+                for (var child : listLit.getValueList()) {
+                    collectPayloadSymbols(child, rootVal, file, results, processed);
+                }
+            }
+            var tupleLit = coll.getTupleLiteral();
+            if (tupleLit != null) {
+                for (var child : tupleLit.getValueList()) {
+                    collectPayloadSymbols(child, rootVal, file, results, processed);
+                }
+            }
         }
-        if (value.getExplicitEitherValue() != null && value.getExplicitEitherValue().getValue() != null) {
-            collectValueSymbols(value.getExplicitEitherValue().getValue(), file, depth + 1, results, processed);
+
+        var optVal = currentVal.getExplicitOptionValue();
+        if (optVal != null && optVal.getValue() != null) {
+            collectPayloadSymbols(optVal.getValue(), rootVal, file, results, processed);
         }
-        if (value.getExplicitUnionValue() != null && value.getExplicitUnionValue().getValue() != null) {
-            collectValueSymbols(value.getExplicitUnionValue().getValue(), file, depth + 1, results, processed);
+        var eitherVal = currentVal.getExplicitEitherValue();
+        if (eitherVal != null && eitherVal.getValue() != null) {
+            collectPayloadSymbols(eitherVal.getValue(), rootVal, file, results, processed);
         }
+        var unionVal = currentVal.getExplicitUnionValue();
+        if (unionVal != null && unionVal.getValue() != null) {
+            collectPayloadSymbols(unionVal.getValue(), rootVal, file, results, processed);
+        }
+    }
+
+    private static int calculateValueNestingDepth(Value value, Value rootValue) {
+        if (value == rootValue) {
+            return 0;
+        }
+        int depth = 0;
+        var curr = value.getParent();
+        while (curr != null && curr != rootValue) {
+            if (curr instanceof MapLiteral || curr instanceof ListLiteral || curr instanceof TupleLiteral) {
+                depth++;
+            }
+            curr = curr.getParent();
+        }
+        if (depth == 0) {
+            depth = 1;
+        }
+        return depth;
     }
 
     private static int computeAliasHopCount(TypeDefinition def, Set<String> visited) {
@@ -551,6 +778,9 @@ public final class StvnNamespaceSymbolCollector {
         var kw = currentSchema.getTypeKeyword();
         if (kw != null) {
             var name = kw.getText();
+            if (isPrimitiveTypeName(name)) {
+                return;
+            }
             if (!visitedNominals.add(name)) {
                 return;
             }
