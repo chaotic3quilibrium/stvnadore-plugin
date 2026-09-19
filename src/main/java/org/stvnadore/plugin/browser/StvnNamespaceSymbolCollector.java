@@ -51,6 +51,9 @@ public final class StvnNamespaceSymbolCollector {
         // 1. Local TypeDefinitions in :defs
         var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : typeDefs) {
+            if (PsiTreeUtil.getParentOfType(def, PackageEnclosure.class) != null) {
+                continue;
+            }
             var kw = def.getTypeKeyword();
             if (kw != null && processedNames.add(kw.getText())) {
                 var schemaType = def.getSchemaType();
@@ -72,6 +75,9 @@ public final class StvnNamespaceSymbolCollector {
         // 2. Local ConstantDefinitions in :defs
         var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
         for (var def : constDefs) {
+            if (PsiTreeUtil.getParentOfType(def, PackageEnclosure.class) != null) {
+                continue;
+            }
             var kw = def.getValueKeyword();
             if (kw != null && processedNames.add(kw.getText())) {
                 var schemaType = def.getSchemaType();
@@ -103,9 +109,9 @@ public final class StvnNamespaceSymbolCollector {
                         var fqni = pathText + "/" + stripColon(kwText);
                         var schemaType = pkgTypeDef.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                        if (processedNames.add(kwText)) {
+                        if (processedNames.add(fqni)) {
                             results.add(new StvnNamespaceSymbolEntry(
-                                kwText,
+                                fqni,
                                 pathText,
                                 schemaText,
                                 0,
@@ -115,6 +121,16 @@ public final class StvnNamespaceSymbolCollector {
                                 StvnNamespaceScope.DEFS
                             ));
                         }
+                    }
+                }
+                var pkgConstDef = elem.getConstantDefinition();
+                if (pkgConstDef != null) {
+                    var kw = pkgConstDef.getValueKeyword();
+                    if (kw != null) {
+                        var kwText = kw.getText();
+                        var fqni = pathText + "/" + kwText;
+                        var schemaType = pkgConstDef.getSchemaType();
+                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                         if (processedNames.add(fqni)) {
                             results.add(new StvnNamespaceSymbolEntry(
                                 fqni,
@@ -157,7 +173,28 @@ public final class StvnNamespaceSymbolCollector {
                             ));
                         }
                     }
+                    var valList = alias.getValueKeywordList();
+                    if (valList.size() >= 2) {
+                        var localKw = valList.get(1);
+                        var remoteKw = valList.get(0);
+                        if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
+                            results.add(new StvnNamespaceSymbolEntry(
+                                localKw.getText(),
+                                targetText,
+                                remoteKw.getText(),
+                                1,
+                                localKw,
+                                false,
+                                localKw.getTextOffset(),
+                                StvnNamespaceScope.DEFS
+                            ));
+                        }
+                    }
                 }
+            }
+            var optionsBlock = use.getUseOptionsBlock();
+            if (optionsBlock != null && optionsBlock.getText().contains("#strip")) {
+                collectStrippedPackageSymbols(file, targetText, processedNames, results);
             }
         }
 
@@ -195,6 +232,9 @@ public final class StvnNamespaceSymbolCollector {
             if (targetFile != null) {
                 var remoteDefs = PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class);
                 for (var rDef : remoteDefs) {
+                    if (PsiTreeUtil.getParentOfType(rDef, PackageEnclosure.class) != null) {
+                        continue;
+                    }
                     var kw = rDef.getTypeKeyword();
                     if (kw != null && processedNames.add(kw.getText())) {
                         var schemaType = rDef.getSchemaType();
@@ -750,5 +790,86 @@ public final class StvnNamespaceSymbolCollector {
 
     private static String stripColon(String text) {
         return text.startsWith(":") ? text.substring(1) : text;
+    }
+
+    private static void collectStrippedPackageSymbols(
+            PsiFile file,
+            String targetPackagePath,
+            Set<String> processedNames,
+            List<StvnNamespaceSymbolEntry> results
+    ) {
+        var localPackages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
+        for (var pkg : localPackages) {
+            var path = pkg.getPackagePath();
+            if (path != null && path.getText().equals(targetPackagePath)) {
+                collectStrippedElements(pkg, targetPackagePath, processedNames, results);
+            }
+        }
+
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        for (var incl : includes) {
+            var stringLit = incl.getStringLiteral();
+            if (stringLit == null) continue;
+            var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+            if (targetFile != null) {
+                var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
+                for (var pkg : remotePackages) {
+                    var path = pkg.getPackagePath();
+                    if (path != null && path.getText().equals(targetPackagePath)) {
+                        collectStrippedElements(pkg, targetPackagePath, processedNames, results);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void collectStrippedElements(
+            PackageEnclosure pkg,
+            String targetPackagePath,
+            Set<String> processedNames,
+            List<StvnNamespaceSymbolEntry> results
+    ) {
+        for (var elem : pkg.getPackageElementList()) {
+            var typeDef = elem.getTypeDefinition();
+            if (typeDef != null) {
+                var kw = typeDef.getTypeKeyword();
+                if (kw != null) {
+                    var bareName = kw.getText();
+                    var fqni = targetPackagePath + "/" + stripColon(bareName);
+                    if (processedNames.add(bareName)) {
+                        results.add(new StvnNamespaceSymbolEntry(
+                            bareName,
+                            targetPackagePath,
+                            fqni,
+                            1,
+                            kw,
+                            false,
+                            kw.getTextOffset(),
+                            StvnNamespaceScope.DEFS
+                        ));
+                    }
+                }
+            }
+            var constDef = elem.getConstantDefinition();
+            if (constDef != null) {
+                var kw = constDef.getValueKeyword();
+                if (kw != null) {
+                    var bareName = kw.getText();
+                    var fqni = targetPackagePath + "/" + bareName;
+                    if (processedNames.add(bareName)) {
+                        results.add(new StvnNamespaceSymbolEntry(
+                            bareName,
+                            targetPackagePath,
+                            fqni,
+                            1,
+                            kw,
+                            false,
+                            kw.getTextOffset(),
+                            StvnNamespaceScope.DEFS
+                        ));
+                    }
+                }
+            }
+        }
     }
 }

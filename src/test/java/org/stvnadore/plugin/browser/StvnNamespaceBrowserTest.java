@@ -76,6 +76,84 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
+     * Verifies that a packaged module without root definitions returns exactly
+     * its declared canonical FQNIs, producing zero bare phantom duplicates.
+     */
+    public void testPackagedModuleWithoutRootDefinitionsReturnsExactCanonicalFqnis() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var content = java.nio.file.Files.readString(rfcPath);
+        var file = myFixture.configureByText("rfc8259_json_substrate.stvn_inclf", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain exactly 8 declared symbols", 8, entries.size());
+        for (var entry : entries) {
+            assertTrue("Symbol must be a canonical FQNI starting with package prefix: " + entry.name(),
+                entry.name().startsWith(":org/ietf/rfc8259/json/"));
+            assertEquals(":org/ietf/rfc8259/json", entry.source());
+            assertEquals(0, entry.useDepth());
+        }
+        assertNull("Bare phantom symbol :JsonNull must not exist", findEntryByName(entries, ":JsonNull"));
+        assertNotNull("Canonical FQNI must exist", findEntryByName(entries, ":org/ietf/rfc8259/json/JsonNull"));
+    }
+
+    /**
+     * Verifies that a document with mixed declarations isolates root symbols bare
+     * and packaged symbols strictly under FQNIs.
+     */
+    public void testMixedRootAndPackagedDefinitionsScopeIsolation() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/sample {
+                  :PackagedItem :Int64
+                  #PackagedPort 9090
+                }
+                :RootItem :String32
+                #RootPort 8080
+              }
+            }
+            """;
+        var file = myFixture.configureByText("mixed_scope.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain exactly 4 symbols (2 root + 2 packaged)", 4, entries.size());
+        assertNotNull(findEntryByName(entries, ":RootItem"));
+        assertNotNull(findEntryByName(entries, "#RootPort"));
+        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/PackagedItem"));
+        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/#PackagedPort"));
+        assertNull(findEntryByName(entries, ":PackagedItem"));
+        assertNull(findEntryByName(entries, "#PackagedPort"));
+    }
+
+    /**
+     * Verifies that :use with #strip creates desugared bare aliases with incremented Use Depth.
+     */
+    public void testPackageImportWithStripProducesDesugaredAliasWithIncrementedDepth() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/sample {
+                  :PackagedItem :Int64
+                }
+                :use [ :org/stvnadore/sample { #strip } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("use_strip.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain 2 symbols (1 canonical FQNI + 1 stripped alias)", 2, entries.size());
+        var canonical = findEntryByName(entries, ":org/stvnadore/sample/PackagedItem");
+        assertNotNull(canonical);
+        assertEquals(0, canonical.useDepth());
+
+        var alias = findEntryByName(entries, ":PackagedItem");
+        assertNotNull(alias);
+        assertEquals(1, alias.useDepth());
+        assertEquals(":org/stvnadore/sample", alias.source());
+    }
+
+    /**
      * Verifies symbol filtering under :type scope strictly matches referenced schema symbols.
      */
     public void testTypeScopeFiltering() {
@@ -200,6 +278,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 :package :org/stvnadore/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
+                :use [ :org/stvnadore/finance { #strip } ]
                 :A :String32
                 :T :Tuple( :LocalTx :A )
               }
@@ -240,6 +319,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 :package :org/stvnadore/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
+                :use [ :org/stvnadore/finance { #strip } ]
                 :A :String32
                 :T :Tuple( :LocalTx :A )
               }
