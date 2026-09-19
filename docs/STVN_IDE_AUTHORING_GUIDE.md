@@ -76,6 +76,10 @@
       * [Container Documentation Leakage Guard](#container-documentation-leakage-guard)
       * [In-Flight Rule G Union Tag Bounds Enforcement](#in-flight-rule-g-union-tag-bounds-enforcement)
       * [Child Fault Isolation & Arity Underflow Immunity](#child-fault-isolation--arity-underflow-immunity)
+    * [5.10 Container Fault Isolation & Diagnostic Sanitization](#510-container-fault-isolation--diagnostic-sanitization)
+      * [Container Clamping Defanging](#container-clamping-defanging)
+      * [Explicit Union Value Type Resolution](#explicit-union-value-type-resolution)
+      * [Bare '#' Message Normalization](#bare--message-normalization)
   * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
     * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
     * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -951,6 +955,25 @@ The IDE enforces this rule immediately while typing:
 
 #### Child Fault Isolation & Arity Underflow Immunity
 When an invalid child element (such as `#3 3`) occurs inside a `:Tuple`, the error remains strictly localized to `#3`. The container element count is preserved. The editor produces zero cascading `TUPLE_ARITY_MISMATCH` squigglies on the closing delimiter `)`.
+
+---
+
+### 5.10 Container Fault Isolation & Diagnostic Sanitization
+
+#### Container Clamping Defanging
+Compiler diagnostic coordinates emitted by `stvnadore-core` are authoritative. The plugin annotator never diverts container-level errors onto earlier valid child elements. When typing an incomplete variant tag (`#3` or `#`) at the end of a tuple, earlier valid elements remain unblemished with zero false-positive highlights.
+
+#### Explicit Union Value Type Resolution
+When resolving expected schemas inside an `ExplicitUnionValue` (`#k <value>`), the type resolver unwraps the parent union schema and extracts the $k$-th branch schema. Inlay hints, annotators, and completion contributors accurately identify the expected payload type without unmapped schema warnings.
+
+#### Bare '#' Message Normalization
+When entering a bare `#` in value position, the editor normalizes internal compiler generator messages. The editor presents the clean domain notification:
+```text
+Incomplete variant tag '#'
+> Complete with #1 (-> :Int32)
+> Complete with #2 (-> :String)
+```
+Authors can press `Alt+Enter` to invoke completion quick-fixes immediately.
 
 ---
 

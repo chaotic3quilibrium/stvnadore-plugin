@@ -1050,6 +1050,28 @@ public final class StvnTypeResolver {
             }
             return false;
         }
+        if (text.startsWith(":Union")) {
+            if (value.getExplicitUnionValue() != null) {
+                var expUnion = value.getExplicitUnionValue();
+                var tagElem = expUnion.getUnionTagPrefix();
+                var tagText = tagElem.getText().trim();
+                if (tagText.startsWith("#")) {
+                    try {
+                        int k = Integer.parseInt(tagText.substring(1));
+                        var constructor = schemaToInspect.getSchemaConstructor();
+                        if (constructor != null && constructor.getSumType() != null) {
+                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
+                            int idx = k - 1;
+                            if (idx >= 0 && idx < innerSchemas.size()) {
+                                var innerVal = expUnion.getValue();
+                                return innerVal == null || matchesSchemaPattern(innerVal, innerSchemas.get(idx));
+                            }
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+                return false;
+            }
+        }
         var constructor = schemaToInspect.getSchemaConstructor();
         if (constructor != null) {
             var sum = constructor.getSumType();
@@ -1131,7 +1153,7 @@ public final class StvnTypeResolver {
                 var isLeft = text.startsWith("#Left") || text.startsWith("#L");
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof org.stvnadore.psi.ExplicitUnionValue union) {
-                var firstChild = union.getFirstChild();
+                var firstChild = union.getUnionTagPrefix();
                 var tagIndex = 0;
                 if (firstChild != null && firstChild.getText().startsWith("#")) {
                     try {
@@ -1963,6 +1985,35 @@ public final class StvnTypeResolver {
             return null;
         }
 
+        // Unpack explicit union constructor when evaluating an inner payload Value
+        var explicitUnion = PsiTreeUtil.getParentOfType(position, ExplicitUnionValue.class);
+        if (explicitUnion != null && explicitUnion.getValue() != null
+                && (position == explicitUnion.getValue() || PsiTreeUtil.isAncestor(explicitUnion.getValue(), position, false))) {
+            var tagElem = explicitUnion.getUnionTagPrefix();
+            var tagText = tagElem.getText().trim();
+            if (tagText.startsWith("#")) {
+                try {
+                    int k = Integer.parseInt(tagText.substring(1));
+                    var parentExpected = resolveExpectedSchemaAtCaret(explicitUnion);
+                    if (parentExpected != null) {
+                        var resolvedNominal = resolveNominalSchema(parentExpected);
+                        var schemaToInspect = resolvedNominal != null ? resolvedNominal : parentExpected;
+                        var constructor = schemaToInspect.getSchemaConstructor();
+                        if (constructor != null && constructor.getSumType() != null) {
+                            var sumType = constructor.getSumType();
+                            if (sumType.getText().startsWith(":Union")) {
+                                var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                                int idx = k - 1;
+                                if (idx >= 0 && idx < innerSchemas.size()) {
+                                    return innerSchemas.get(idx);
+                                }
+                            }
+                        }
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         // 1. Check if position is inside a ConstantDefinition in :defs
         var constDef = PsiTreeUtil.getParentOfType(position, ConstantDefinition.class);
         SchemaType rootSchema = null;
@@ -2053,7 +2104,7 @@ public final class StvnTypeResolver {
                 var isLeft = text.startsWith("#Left") || text.startsWith("#L");
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof ExplicitUnionValue union) {
-                var firstChild = union.getFirstChild();
+                var firstChild = union.getUnionTagPrefix();
                 var tagIndex = 0;
                 if (firstChild != null && firstChild.getText().startsWith("#")) {
                     try {

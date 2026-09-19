@@ -113,7 +113,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 for (var diag : activeErrorDiagnostics) {
                     var line = Math.max(0, diag.line() - 1);
                     var col = Math.max(0, diag.column());
-                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diag.message() });
+                    var diagMsg = diag.message();
+                    if (diagMsg.contains("token recognition error at: '#'")) {
+                        diagMsg = "Incomplete variant tag '#'";
+                    }
+                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
                     if (problem != null) {
                         problems.add(problem);
                     }
@@ -151,6 +155,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var severity = mapSeverity(diag.severity());
             var start = diag.startOffset();
             var end = diag.endOffset();
+
+            // Intercept raw ANTLR lexer token recognition error on bare '#' and sanitize to domain terminology
+            if (message.contains("token recognition error at: '#'")) {
+                message = "Incomplete variant tag '#'";
+            }
 
             if (diag.errorCode().isPresent() && diag.errorCode().get().equals("DUPLICATE_MAP_KEY") && start >= 0 && end > start && end <= textLength) {
                 var rawKey = file.getText().substring(start, end).trim();
@@ -770,51 +779,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
+    /**
+     * Defanged container clamping heuristic.
+     * Diagnostic coordinates emitted by stvnadore-core:1.3.1-SNAPSHOT are authoritative.
+     * Container diagnostics must never divert or clamp onto earlier valid child elements.
+     */
     private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range, String message) {
-        // Container-level cardinality errors (arity underflow) must never clamp to valid child scalars
-        if (range == null || message.contains("Tuple arity mismatch") || message.contains("arity mismatch")) {
-            return null;
-        }
-        var tuples = PsiTreeUtil.findChildrenOfType(file, TupleLiteral.class);
-        for (var tuple : tuples) {
-            var tr = tuple.getTextRange();
-            if (range.equals(tr) || (range.getStartOffset() <= tr.getStartOffset() && range.getEndOffset() >= tr.getEndOffset())) {
-                for (var child : tuple.getValueList()) {
-                    var info = StvnTypeResolver.resolveBaseTypeInfo(child);
-                    if (info == null || !StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                        var innerVal = child;
-                        if (child.getExplicitUnionValue() != null && child.getExplicitUnionValue().getValue() != null) {
-                            innerVal = child.getExplicitUnionValue().getValue();
-                        } else if (child.getExplicitOptionValue() != null && child.getExplicitOptionValue().getValue() != null) {
-                            innerVal = child.getExplicitOptionValue().getValue();
-                        } else if (child.getExplicitEitherValue() != null && child.getExplicitEitherValue().getValue() != null) {
-                            innerVal = child.getExplicitEitherValue().getValue();
-                        }
-                        return innerVal.getTextRange();
-                    }
-                }
-            }
-        }
-        var lists = PsiTreeUtil.findChildrenOfType(file, ListLiteral.class);
-        for (var listLit : lists) {
-            var lr = listLit.getTextRange();
-            if (range.equals(lr) || (range.getStartOffset() <= lr.getStartOffset() && range.getEndOffset() >= lr.getEndOffset())) {
-                for (var child : listLit.getValueList()) {
-                    var info = StvnTypeResolver.resolveBaseTypeInfo(child);
-                    if (info == null || !StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                        var innerVal = child;
-                        if (child.getExplicitUnionValue() != null && child.getExplicitUnionValue().getValue() != null) {
-                            innerVal = child.getExplicitUnionValue().getValue();
-                        } else if (child.getExplicitOptionValue() != null && child.getExplicitOptionValue().getValue() != null) {
-                            innerVal = child.getExplicitOptionValue().getValue();
-                        } else if (child.getExplicitEitherValue() != null && child.getExplicitEitherValue().getValue() != null) {
-                            innerVal = child.getExplicitEitherValue().getValue();
-                        }
-                        return innerVal.getTextRange();
-                    }
-                }
-            }
-        }
         return null;
     }
 

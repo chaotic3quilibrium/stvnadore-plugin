@@ -5884,6 +5884,129 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"));
         assertFalse("Must have zero cascading TUPLE_ARITY_MISMATCH errors on closing delimiter ')'", hasArityMismatch);
     }
+
+    public void testInFlightUnionTagOutOfBoundsZeroErrorsOnValidSiblings() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #3
+              )
+            }
+            """;
+        myFixture.configureByText("union_sibling_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var element4Offset = text.indexOf("#1 1");
+        var element4End = element4Offset + "#1 1".length();
+
+        var element4Errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING))
+            .filter(h -> h.getStartOffset() >= element4Offset && h.getEndOffset() <= element4End)
+            .toList();
+
+        assertTrue("Element 4 ('#1 1') on line 30 must have zero errors and zero warnings when element 6 has '#3'",
+            element4Errors.isEmpty());
+
+        var boundsErrors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"))
+            .toList();
+        assertEquals("Expected exactly 1 Rule G bounds error on '#3'", 1, boundsErrors.size());
+    }
+
+    public void testInFlightBareHashZeroErrorsOnValidSiblings() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #
+              )
+            }
+            """;
+        myFixture.configureByText("bare_hash_sibling_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var element4Offset = text.indexOf("#1 1");
+        var element4End = element4Offset + "#1 1".length();
+
+        var element4Errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING))
+            .filter(h -> h.getStartOffset() >= element4Offset && h.getEndOffset() <= element4End)
+            .toList();
+
+        assertTrue("Element 4 ('#1 1') on line 30 must have zero errors and zero warnings when element 6 has bare '#'",
+            element4Errors.isEmpty());
+    }
+
+    public void testBareHashDisplaysSanitizedDomainMessageAndQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple( :UnionLikeEitherC )
+              :body (
+                #
+              )
+            }
+            """;
+        myFixture.configureByText("bare_hash_sanitized.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var hashOffset = text.lastIndexOf("#");
+
+        var tokenErrorPresent = highlights.stream()
+            .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("token recognition error"));
+        assertFalse("Editor must never display raw ANTLR jargon 'token recognition error'", tokenErrorPresent);
+
+        var sanitizedHighlight = highlights.stream()
+            .filter(h -> h.getStartOffset() == hashOffset)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Incomplete variant tag '#'"))
+            .findFirst();
+        assertTrue("Bare '#' highlight must display sanitized domain message 'Incomplete variant tag '#''",
+            sanitizedHighlight.isPresent());
+
+        var quickFixes = myFixture.getAllQuickFixes();
+        var hasComplete1 = quickFixes.stream().anyMatch(f -> f.getText().contains("Complete with #1"));
+        var hasComplete2 = quickFixes.stream().anyMatch(f -> f.getText().contains("Complete with #2"));
+        assertTrue("Must offer quick-fix 'Complete with #1'", hasComplete1);
+        assertTrue("Must offer quick-fix 'Complete with #2'", hasComplete2);
+    }
 }
 
 
