@@ -160,6 +160,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
 
             // 1. Direct Coordinate Range Highlighting with Defensive Clamping
+            // startOffset and endOffset from stvnadore-core:1.3.1 are 0-based half-open [start, end)
             if (start >= 0 && end >= start) {
                 var s = Math.max(0, Math.min(start, textLength));
                 var e = Math.max(s, Math.min(end, textLength));

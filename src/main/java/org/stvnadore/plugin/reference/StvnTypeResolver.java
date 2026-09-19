@@ -1717,12 +1717,7 @@ public final class StvnTypeResolver {
                 } else if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnMap mapVal) {
                     var mapPsi = collPsi.getMapLiteral();
                     if (mapPsi != null) {
-                        var psiChildren = new java.util.ArrayList<Value>();
-                        for (var val : PsiTreeUtil.findChildrenOfType(mapPsi, Value.class)) {
-                            if (!isInnerChildOfAlgebraicContainer(val)) {
-                                psiChildren.add(val);
-                            }
-                        }
+                        var psiChildren = mapPsi.getValueList();
                         var iterator = mapVal.entries().entrySet().iterator();
                         for (int i = 0; i < psiChildren.size() / 2 && iterator.hasNext(); i++) {
                             var entry = iterator.next();

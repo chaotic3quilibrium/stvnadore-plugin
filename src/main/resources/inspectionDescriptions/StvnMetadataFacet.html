@@ -1,0 +1,22 @@
+<html>
+<body>
+<p>Reports invalid metadata facets and empty blocks in type declarations, constant definitions, and module directives to enforce language governance.</p>
+
+<p><b>Empty Blocks (ERR_EMPTY_METADATA_BLOCK / ERR_EMPTY_DIRECTIVE_BLOCK):</b></p>
+<ul>
+    <li>Empty metadata blocks <code>{}</code> on type or constant definitions are invalid. Specify valid facets or delete <code>{}</code>.</li>
+    <li>Empty directive blocks <code>{}</code> in <code>:use</code> or <code>:include</code> statements are invalid. Specify <code>{#strip}</code>, alias mappings, or delete <code>{}</code>.</li>
+</ul>
+
+<p><b>Permitted Facet Matrix (ERR_INVALID_METADATA_FACET):</b></p>
+<ul>
+    <li><b>Numeric Types (<code>:Int*</code>, <code>:Uint*</code>, <code>:Float*</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#minIncl</code>, <code>#maxIncl</code>, <code>#minExcl</code>, <code>#maxExcl</code></li>
+    <li><b>String Types (<code>:String*</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#regex</code>, <code>#preserveIndent</code></li>
+    <li><b>Enum Types (<code>:Enum</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#filterIncl</code>, <code>#filterExcl</code></li>
+    <li><b>Constants:</b> Metadata facets are strictly prohibited on constants.</li>
+    <li><b>Directives:</b> <code>#strip</code> is valid strictly in <code>:use</code> and <code>:include</code> statements and prohibited on type declarations.</li>
+</ul>
+
+<p>Provides automated quick-fixes to delete empty blocks or remove invalid facets.</p>
+</body>
+</html>

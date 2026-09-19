@@ -588,4 +588,116 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertEquals(expectedSchema + " [#S] #R [#S] [#R]", StvnTypeResolver.resolveValueType(values.get(3)));
         assertEquals(expectedSchema + " [#S] [#R] [#S] [#R]", StvnTypeResolver.resolveValueType(values.get(4)));
     }
+
+    public void testPackageEnclaveUnqualifiedLeakFails() {
+        myFixture.addFileToProject("packaged_module.stvn_incl", """
+            {
+              :defs {
+                :package :Remote {
+                  :LocalPort :Uint16
+                }
+              }
+            }
+            """);
+
+        var psiFile = myFixture.configureByText("consumer.stvn", """
+            {
+              :defs {
+                :include [ "packaged_module.stvn_incl" ]
+              }
+              :type :LocalPort
+              :body 8080
+            }
+            """);
+
+        var typeKws = PsiTreeUtil.findChildrenOfType(psiFile, org.stvnadore.psi.TypeKeyword.class);
+        var targetKw = typeKws.stream()
+            .filter(kw -> kw.getText().equals(":LocalPort"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(targetKw);
+        var ref = targetKw.getReference();
+        assertNotNull(ref);
+        assertNull("Bare packaged symbol without #strip must not resolve", ref.resolve());
+    }
+
+    public void testPackageEnclaveWithStripResolves() {
+        myFixture.addFileToProject("packaged_module_strip.stvn_incl", """
+            {
+              :defs {
+                :package :Remote {
+                  :LocalPort :Uint16
+                }
+              }
+            }
+            """);
+
+        var psiFile = myFixture.configureByText("consumer_strip.stvn", """
+            {
+              :defs {
+                :include [ "packaged_module_strip.stvn_incl" { #strip } ]
+              }
+              :type :LocalPort
+              :body 8080
+            }
+            """);
+
+        var typeKws = PsiTreeUtil.findChildrenOfType(psiFile, org.stvnadore.psi.TypeKeyword.class);
+        var targetKw = typeKws.stream()
+            .filter(kw -> kw.getText().equals(":LocalPort"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(targetKw);
+        var ref = targetKw.getReference();
+        assertNotNull(ref);
+        assertNotNull("Packaged symbol included with #strip must resolve", ref.resolve());
+    }
+
+    public void testRecursiveSchemaJsonValueResolvesAcrossAllLevels() {
+        var psiFile = myFixture.configureByText("json_test.stvn", """
+            {
+              :defs {
+                :JsonNull :Enum [ #NULL ]
+                :JsonObject :Map( :String :JsonValue )
+                :JsonArray  :Seq( :JsonValue )
+                :JsonValue :Union(
+                  :JsonNull
+                  :String
+                  :Int64
+                  :JsonObject
+                  :JsonArray
+                )
+              }
+              :type :JsonValue
+              :body {
+                [ "name" "test" ]
+                [ "nested" {
+                    [ "inner_key" "inner_val" ]
+                  }
+                ]
+              }
+            }
+            """);
+
+        var mapLit = PsiTreeUtil.findChildOfType(psiFile, org.stvnadore.psi.MapLiteral.class);
+        assertNotNull("Root map literal must exist", mapLit);
+        var entries = mapLit.getValueList();
+        assertTrue(entries.size() >= 4);
+
+        // Verify root value type resolves
+        var rootVal = PsiTreeUtil.getParentOfType(mapLit, Value.class);
+        assertNotNull(rootVal);
+        assertNotNull("Root map value type must resolve", StvnTypeResolver.resolveValueType(rootVal));
+
+        // Find nested inner map literal
+        var innerMaps = PsiTreeUtil.findChildrenOfType(mapLit, org.stvnadore.psi.MapLiteral.class);
+        assertEquals(1, innerMaps.size());
+        for (var m : innerMaps) {
+            var val = PsiTreeUtil.getParentOfType(m, Value.class);
+            if (val != null) {
+                var resolved = StvnTypeResolver.resolveValueType(val);
+                assertNotNull("Nested map type must resolve", resolved);
+            }
+        }
+    }
 }

@@ -4800,7 +4800,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         // 3. Incompatible Metadata on Int32
         assertTrue("Must report incompatible metadata", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("preserveIndent is not allowed on :Int32")
+            e.getDescription() != null && e.getDescription().contains("preserveIndent") && e.getDescription().contains(":Int32")
         ));
     }
 

@@ -174,6 +174,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
     }
 
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace) {
+        return resolveTypeInFile(file, targetName, visited, trace, false);
+    }
+
+    public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace, boolean allowUnqualifiedPackaged) {
         if (!visited.add(file)) {
             return null;
         }
@@ -181,6 +185,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         // 1. Local definitions scanning
         var definitions = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : definitions) {
+            // Ignore definitions inside package enclosures when searching for bare root names
+            if (PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class) != null && !allowUnqualifiedPackaged) {
+                continue;
+            }
             var keyword = def.getTypeKeyword();
             if (keyword != null && keyword.getText().equals(targetName)) {
                 return keyword;
@@ -200,7 +208,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                     if (kw != null) {
                         var kwText = kw.getText();
                         var fqni = pathText + "/" + (kwText.startsWith(":") ? kwText.substring(1) : kwText);
-                        if (fqni.equals(targetName) || kwText.equals(targetName)) {
+                        if (fqni.equals(targetName) || (allowUnqualifiedPackaged && kwText.equals(targetName))) {
                             return kw;
                         }
                     }
@@ -232,12 +240,41 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
             var optBlock = use.getUseOptionsBlock();
             if (optBlock != null && optBlock.getText().contains("#strip")) {
                 var target = use.getUseTarget();
-                if (target != null && targetName.startsWith(":")) {
+                if (target != null && targetName.startsWith(":") && !targetName.substring(1).contains("/")) {
                     var prefix = target.getText();
                     var fqni = prefix + "/" + targetName.substring(1);
-                    var resolved = resolveTypeInFile(file, fqni, visited, trace);
-                    if (resolved != null) {
-                        return resolved;
+
+                    // Check local packages directly
+                    for (var pkg : packages) {
+                        var pkgPath = pkg.getPackagePath();
+                        if (pkgPath == null) continue;
+                        var pathText = pkgPath.getText();
+                        for (var elem : pkg.getPackageElementList()) {
+                            var typeDef = elem.getTypeDefinition();
+                            if (typeDef != null) {
+                                var kw = typeDef.getTypeKeyword();
+                                if (kw != null) {
+                                    var kwText = kw.getText();
+                                    var candidateFqni = pathText + "/" + (kwText.startsWith(":") ? kwText.substring(1) : kwText);
+                                    if (candidateFqni.equals(fqni)) {
+                                        return kw;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check included files for FQNI
+                    var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+                    for (var incl : includes) {
+                        var stringLit = incl.getStringLiteral();
+                        if (stringLit == null) continue;
+                        var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                        if (targetFile == null) continue;
+                        var resolved = resolveTypeInFile(targetFile, fqni, visited, trace, false);
+                        if (resolved != null) {
+                            return resolved;
+                        }
                     }
                 }
             }
@@ -285,6 +322,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                 continue;
             }
 
+            var optBlock = incl.getIncludeOptionsBlock();
+            var hasStrip = optBlock != null && optBlock.getText().contains("#strip");
+
             var aliasBlock = incl.getIncludeAliasBlock();
             if (aliasBlock != null) {
                 var aliases = PsiTreeUtil.findChildrenOfType(aliasBlock, IncludeMapAlias.class);
@@ -306,13 +346,13 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
 
                 if (rhsMatched && matchedAlias != null) {
                     var remoteKw = matchedAlias.getTypeKeywordList().get(0);
-                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), visited, trace);
+                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), visited, trace, hasStrip);
                     if (resolved != null) {
                         candidates.add(new Candidate(resolved, false));
                     }
                 } else {
                     // Fallthrough to search target file for the un-aliased raw name
-                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace);
+                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace, hasStrip);
                     if (resolved != null) {
                         var isLhsRename = false;
                         for (var alias : aliases) {
@@ -330,7 +370,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                 }
             } else {
                 // No alias block: search target file for raw name
-                var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace);
+                var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace, hasStrip);
                 if (resolved != null) {
                     candidates.add(new Candidate(resolved, false));
                 }
