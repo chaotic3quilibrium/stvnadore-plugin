@@ -65,6 +65,9 @@
       * [Package Enclaves (`:package`)](#package-enclaves-package)
       * [Lexical Imports (`:use`)](#lexical-imports-use)
     * [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
+    * [5.7 Token Boundary & Sum Disambiguation Quick-Fixes](#57-token-boundary--sum-disambiguation-quick-fixes)
+      * [Token Boundary Completion Guard](#token-boundary-completion-guard)
+      * [Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)](#right-first-sum-intention-actions-wrap-with-right--wrap-with-1)
   * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
     * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
     * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -880,6 +883,23 @@ STVN 1.2 introduces `.stvn_f` files for high-throughput, headerless flat data pa
 * **Detached Schema Evaluation**: Flat payload files omit top-level `:defs` and `:type` blocks. They contain only a single root data payload (`:Tuple`, `:Seq`, `:Map`, or primitive).
 * **Wire Protocol Efficiency**: Ideal for streaming partitions, columnar chunks, or pre-negotiated RPC boundaries where transmitting schema metadata in every message creates unacceptable overhead.
 * **Prohibition of `:include`**: Because flat files have no schema enclosure, `:include` statements are strictly prohibited and immediately flagged by the `StvnFlatDocumentInclude` inspection.
+
+---
+
+### 5.7 Token Boundary & Sum Disambiguation Quick-Fixes
+
+#### Token Boundary Completion Guard
+The IDE protects document integrity during typing in composite containers (`:Tuple`, `:Seq`):
+* Typing a scalar value (e.g. `1`) suppresses lookahead completions for subsequent elements until the author enters whitespace.
+* Raw integer digits never match `#`-prefixed constructor tags across element boundaries.
+* Accepting a variant completion guarantees proper leading whitespace separation.
+
+#### Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)
+When an untagged literal matches multiple branches in an algebraic sum type, the compiler marks the value with an `ERR_AMBIGUOUS_SUM_INFERENCE` error squiggly:
+* Press `Alt+Enter` (macOS: `⌥Enter`) to display available wrapping quick-fixes.
+* **`:Either( L R )`:** Evaluates branch $R$ first. `Wrap with #Right (-> R)` appears as the primary action, followed by `Wrap with #Left (-> L)`.
+* **`:Union( T1 ... Tn )`:** Filters branches to compatible types. `Wrap with #k (-> Tk)` appears in 1-based index order.
+* Selecting the action wraps the literal (e.g. `42` becomes `#Right 42`), positions the caret after the tag, and clears all compile errors.
 
 ---
 

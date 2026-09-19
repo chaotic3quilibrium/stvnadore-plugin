@@ -22,8 +22,20 @@ public final class StvnSumConstructorInsertionHandler implements InsertHandler<L
     public void handleInsert(@NotNull InsertionContext context, @NotNull LookupElement item) {
         var editor = context.getEditor();
         var document = context.getDocument();
-        var tailOffset = context.getTailOffset();
+        int startOffset = context.getStartOffset();
         var text = document.getText();
+
+        // 1. Leading Whitespace Hygiene: Prepend space if preceding character is a token
+        if (startOffset > 0) {
+            char prevChar = text.charAt(startOffset - 1);
+            if (!Character.isWhitespace(prevChar) && prevChar != '(' && prevChar != '[' && prevChar != '{') {
+                document.insertString(startOffset, " ");
+            }
+        }
+
+        // 2. Trailing Whitespace Hygiene & Caret Positioning
+        var tailOffset = context.getTailOffset();
+        text = document.getText();
 
         if (tailOffset > 0 && text.charAt(tailOffset - 1) == ' ') {
             editor.getCaretModel().moveToOffset(tailOffset);

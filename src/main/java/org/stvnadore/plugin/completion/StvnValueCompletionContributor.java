@@ -51,9 +51,21 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 ) {
                     var position = parameters.getPosition();
                     var file = parameters.getOriginalFile();
+                    int offset = parameters.getOffset();
+
+                    // Strict Token Boundary Guard:
+                    // Suppress element N+1 lookahead suggestions if caret directly touches
+                    // an existing completed value token without intervening whitespace
+                    if (isLookaheadToNextElement(position, file, offset)) {
+                        return;
+                    }
+
+                    // Enforce Prefix Sigil Discipline: Raw digits must not match '#'-prefixed tags
+                    var disciplinedMatcher = new StvnSigilPrefixMatcher(result.getPrefixMatcher());
+                    var targetResult = result.withPrefixMatcher(disciplinedMatcher);
 
                     // Check if caret is inside a filter facet list (#filterIncl / #filterExcl [ <caret> ])
-                    if (populateFilterListCompletions(position, result)) {
+                    if (populateFilterListCompletions(position, targetResult)) {
                         return;
                     }
 
@@ -78,13 +90,13 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     var typeLabel = StvnSchemaFormatter.formatCleanSchema(targetSchema);
 
                     // 2. Enum Variant Suggestions (:Enum [ #A #B ... ])
-                    populateEnumVariants(targetSchema, schemaToInspect, typeLabel, result);
+                    populateEnumVariants(targetSchema, schemaToInspect, typeLabel, targetResult);
 
                     // 3. Boolean Literal Suggestions (:Boolean)
-                    populateBooleanLiterals(schemaToInspect, typeLabel, result);
+                    populateBooleanLiterals(schemaToInspect, typeLabel, targetResult);
 
                     // 4. Sum Variant Constructor Suggestions (:Option, :Either, :Union) for target level
-                    populateSumConstructors(schemaToInspect, typeLabel, result);
+                    populateSumConstructors(schemaToInspect, typeLabel, targetResult);
 
                     // 5. Recursive Inferred Sum Branch Payloads & Intermediate Constructors
                     if (isUntaggedSite) {
@@ -98,25 +110,50 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
 
                             if (pathway.isSumType()) {
                                 // Intermediate sum constructor pro-offering
-                                populateSumConstructors(schemaToPopulate, label, result);
+                                populateSumConstructors(schemaToPopulate, label, targetResult);
                             } else {
                                 // Terminal inferable leaf payload emission
-                                populateEnumVariants(pathTargetSchema, schemaToPopulate, label, result);
-                                populateBooleanLiterals(schemaToPopulate, label, result);
-                                populateMatchingConstants(file, schemaToPopulate, label, result);
-                                populateDynamicGenerators(cleanSchemaText, label, result);
+                                populateEnumVariants(pathTargetSchema, schemaToPopulate, label, targetResult);
+                                populateBooleanLiterals(schemaToPopulate, label, targetResult);
+                                populateMatchingConstants(file, schemaToPopulate, label, targetResult);
+                                populateDynamicGenerators(cleanSchemaText, label, targetResult);
                             }
                         }
                     }
 
                     // 6. Matching Defined Constants (#CONST in :defs / :include)
-                    populateMatchingConstants(file, targetSchema, typeLabel, result);
+                    populateMatchingConstants(file, targetSchema, typeLabel, targetResult);
 
                     // 7. Dynamic Temporal & Prelude Generators
-                    populateDynamicGenerators(schemaText, typeLabel, result);
+                    populateDynamicGenerators(schemaText, typeLabel, targetResult);
                 }
             }
         );
+    }
+
+    private static boolean isLookaheadToNextElement(PsiElement position, PsiFile originalFile, int offset) {
+        if (offset <= 0) {
+            return false;
+        }
+        var text = originalFile.getText();
+        if (offset > text.length()) {
+            return false;
+        }
+        char prevChar = text.charAt(offset - 1);
+        if (Character.isWhitespace(prevChar) || prevChar == '(' || prevChar == '[' || prevChar == '{') {
+            return false;
+        }
+        var origElem = originalFile.findElementAt(offset - 1);
+        if (origElem == null) {
+            return false;
+        }
+        var origVal = PsiTreeUtil.getParentOfType(origElem, org.stvnadore.psi.Value.class);
+        if (origVal == null) {
+            return false;
+        }
+        // If the completion dummy position starts at or after the caret offset, it represents
+        // a subsequent token/element lookahead immediately touching the preceding completed value
+        return position.getTextRange().getStartOffset() >= offset;
     }
 
     private static boolean populateFilterListCompletions(PsiElement position, CompletionResultSet result) {
@@ -184,7 +221,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 .withIcon(AllIcons.Nodes.Enum)
                 .withTailText(" (parent: " + parentTypeName + ")", true)
                 .withTypeText(parentTypeName, true)
-                .withBoldness(true);
+                .withBoldness(true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY);
             targetResult.addElement(PrioritizedLookupElement.withPriority(element, 100.0 - (rootIdx >= 0 ? rootIdx : 0)));
         }
         return true;
@@ -209,7 +247,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withIcon(AllIcons.Nodes.Enum)
                     .withTailText(variantInfo, true)
                     .withTypeText(typeLabel, true)
-                    .withBoldness(true);
+                    .withBoldness(true)
+                    .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY);
 
                 result.addElement(PrioritizedLookupElement.withPriority(element, 100.0 - (rootIdx >= 0 ? rootIdx : i)));
             }
@@ -235,7 +274,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 .withIcon(AllIcons.Nodes.Enum)
                 .withTailText(variantInfo, true)
                 .withTypeText(typeLabel, true)
-                .withBoldness(true);
+                .withBoldness(true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY);
 
             result.addElement(PrioritizedLookupElement.withPriority(element, 100.0 - i));
         }
@@ -256,7 +296,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (boolean true)", true)
                 .withTypeText(typeLabel, true)
-                .withBoldness(true),
+                .withBoldness(true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
             95.0
         ));
 
@@ -265,7 +306,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (boolean false)", true)
                 .withTypeText(typeLabel, true)
-                .withBoldness(true),
+                .withBoldness(true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
             94.0
         ));
 
@@ -273,7 +315,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
             LookupElementBuilder.create("#T")
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (short-form true)", true)
-                .withTypeText(typeLabel, true),
+                .withTypeText(typeLabel, true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
             85.0
         ));
 
@@ -281,7 +324,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
             LookupElementBuilder.create("#F")
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (short-form false)", true)
-                .withTypeText(typeLabel, true),
+                .withTypeText(typeLabel, true)
+                .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
             84.0
         ));
     }
@@ -324,14 +368,16 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (empty option)", true)
                     .withTypeText(typeLabel, true)
-                    .withBoldness(true),
+                    .withBoldness(true)
+                    .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
                 89.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("#N")
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (short empty option)", true)
-                    .withTypeText(typeLabel, true),
+                    .withTypeText(typeLabel, true)
+                    .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
                 79.0
             ));
         } else if (sumType.getText().startsWith(":Either")) {
