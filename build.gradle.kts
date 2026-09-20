@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.3.1"
+version = "2.0.0-SNAPSHOT"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
