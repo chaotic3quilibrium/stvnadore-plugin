@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.3.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.3.1-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.3.0 - 2026.09.17
+- Version: 1.3.1 - 2026.09.20
 
 ---
 
@@ -48,6 +48,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
     * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
 * [Version History](#version-history)
+  * [v1.3.1](#v131)
   * [v1.3.0](#v130)
   * [v1.2.0](#v120)
   * [v1.1.1](#v111)
@@ -119,7 +120,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
 
-* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 1.3.0) and generates an in-editor deprecation diagnostic.
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 2.0.0) and generates an in-editor deprecation diagnostic.
 * **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
 * **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
@@ -142,7 +143,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 * **Control Byte Inspection**: Verifies binary headers against the 1:3:4 bitwise layout of Byte 4 (`T` trailer flag, `STRAT` encoding strategy, `SCHEMA` identity strategy).
 * **Hardware-Accelerated CRC-32C Trailer Detection**: Recognizes Bit 7 (`0x80`), validating 4-byte Little-Endian CRC-32C trailers appended at `limit - 4` to protect against payload corruption and truncation.
-* **Encoding Strategy Sentinel `0x7` Handling**: Enforces protocol boundaries on Bits 6..4 (`0x70`), detecting sentinel `0x7` reserved for multi-byte header extension frames.
+* **Encoding Strategy Sentinel `0x7` Handling**: Enforces protocol boundaries on Bits 6..4 (`0x70`), detecting sentinel `0x7` reserved for multibyte header extension frames.
 
 ### 10. Package Enclaves & Lexical Scoping (STVN 1.2)
 
@@ -259,7 +260,7 @@ Settings
 ### Prerequisites
 
 * JDK 21 LTS
-* Local installation of `stvnadore-core:1.3.0` (`mvn clean install` in `ij_stvnadore_core`)
+* Local installation of `stvnadore-core:1.3.1` (`mvn clean install` in `ij_stvnadore_core`)
 
 ### Build Commands
 
@@ -319,6 +320,16 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ---
 
 # Version History
+
+## v1.3.1
+
+- 2026.09.20
+- Integrated changes to `stvnadore-core:1.3.1`:
+  - Tolerant grammar recovery for empty `{}` blocks in directives and metadata.
+  - Normalized token coordinate spans preventing off-by-one clipping on error squiggles.
+  - Enforced package enclave isolation across module boundaries.
+  - Restored recursive inlay hints via bounded depth traversal (`maxDepth = 16`).
+  - Added `StvnMetadataFacetInspection` with automated quick-fixes.
 
 ## v1.3.0
 

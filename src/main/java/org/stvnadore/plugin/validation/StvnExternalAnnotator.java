@@ -781,7 +781,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     /**
      * Defanged container clamping heuristic.
-     * Diagnostic coordinates emitted by stvnadore-core:1.3.1-SNAPSHOT are authoritative.
+     * Diagnostic coordinates emitted by stvnadore-core:1.3.1 are authoritative.
      * Container diagnostics must never divert or clamp onto earlier valid child elements.
      */
     private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range, String message) {
