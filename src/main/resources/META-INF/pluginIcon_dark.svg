@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+  <!-- Top facet translucent accent fill (tuned for dark theme contrast) -->
+  <polygon points="20,5.8 32.2,12.8 20,19.8 7.8,12.8" 
+           fill="#DFB26E" 
+           fill-opacity="0.22"/>
+
+  <!-- Outer isometric hexagon boundary -->
+  <path d="M20 4L34 12V28L20 36L6 28V12L20 4Z" 
+        stroke="#DFB26E" 
+        stroke-width="2.6" 
+        stroke-linejoin="round"/>
+
+  <!-- Interior isometric creases -->
+  <path d="M20 4V36M6 12L20 20L34 12" 
+        stroke="#DFB26E" 
+        stroke-width="2.6" 
+        stroke-linejoin="round" 
+        stroke-opacity="0.90"/>
+</svg>

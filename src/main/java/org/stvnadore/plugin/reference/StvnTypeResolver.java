@@ -51,7 +51,12 @@ public final class StvnTypeResolver {
                 if (virtualFile != null) {
                     var path = virtualFile.getPath();
                     if (path.startsWith("/src/") || path.startsWith("temp://")) {
-                        if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
+                        var fileName = virtualFile.getName();
+                        if (new java.io.File("temp/examples/json/" + fileName).exists()) {
+                            path = new java.io.File("temp/examples/json/" + fileName).getAbsolutePath();
+                        } else if (new java.io.File("temp/examples/package_and_use/" + fileName).exists()) {
+                            path = new java.io.File("temp/examples/package_and_use/" + fileName).getAbsolutePath();
+                        } else if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
                             path = new java.io.File("src/test/resources/shared-fixtures/invalid-syntax/dummy.stvn").getAbsolutePath();
                         } else if (path.contains("valid-syntax") && !text.contains("shared-fixtures/")) {
                             path = new java.io.File("src/test/resources/shared-fixtures/valid-syntax/dummy.stvn").getAbsolutePath();
@@ -196,7 +201,12 @@ public final class StvnTypeResolver {
                 if (virtualFile != null) {
                     var path = virtualFile.getPath();
                     if (path.startsWith("/src/") || path.startsWith("temp://")) {
-                        if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
+                        var fileName = virtualFile.getName();
+                        if (new java.io.File("temp/examples/json/" + fileName).exists()) {
+                            path = new java.io.File("temp/examples/json/" + fileName).getAbsolutePath();
+                        } else if (new java.io.File("temp/examples/package_and_use/" + fileName).exists()) {
+                            path = new java.io.File("temp/examples/package_and_use/" + fileName).getAbsolutePath();
+                        } else if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
                             path = new java.io.File("src/test/resources/shared-fixtures/invalid-syntax/dummy.stvn").getAbsolutePath();
                         } else if (path.contains("valid-syntax") && !text.contains("shared-fixtures/")) {
                             path = new java.io.File("src/test/resources/shared-fixtures/valid-syntax/dummy.stvn").getAbsolutePath();
@@ -658,8 +668,12 @@ public final class StvnTypeResolver {
         return "";
     }
 
-    private static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
+    public static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+        if (kw == null && alias.contains("/")) {
+            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+        }
         var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
@@ -676,8 +690,12 @@ public final class StvnTypeResolver {
         return null;
     }
 
-    private static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
+    public static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+        if (kw == null && alias.contains("/")) {
+            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+        }
         var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
@@ -694,8 +712,12 @@ public final class StvnTypeResolver {
         return null;
     }
 
-    private static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
+    public static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+        if (kw == null && alias.contains("/")) {
+            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+        }
         var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
@@ -1028,6 +1050,28 @@ public final class StvnTypeResolver {
             }
             return false;
         }
+        if (text.startsWith(":Union")) {
+            if (value.getExplicitUnionValue() != null) {
+                var expUnion = value.getExplicitUnionValue();
+                var tagElem = expUnion.getUnionTagPrefix();
+                var tagText = tagElem.getText().trim();
+                if (tagText.startsWith("#")) {
+                    try {
+                        int k = Integer.parseInt(tagText.substring(1));
+                        var constructor = schemaToInspect.getSchemaConstructor();
+                        if (constructor != null && constructor.getSumType() != null) {
+                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
+                            int idx = k - 1;
+                            if (idx >= 0 && idx < innerSchemas.size()) {
+                                var innerVal = expUnion.getValue();
+                                return innerVal == null || matchesSchemaPattern(innerVal, innerSchemas.get(idx));
+                            }
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+                return false;
+            }
+        }
         var constructor = schemaToInspect.getSchemaConstructor();
         if (constructor != null) {
             var sum = constructor.getSumType();
@@ -1109,7 +1153,7 @@ public final class StvnTypeResolver {
                 var isLeft = text.startsWith("#Left") || text.startsWith("#L");
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof org.stvnadore.psi.ExplicitUnionValue union) {
-                var firstChild = union.getFirstChild();
+                var firstChild = union.getUnionTagPrefix();
                 var tagIndex = 0;
                 if (firstChild != null && firstChild.getText().startsWith("#")) {
                     try {
@@ -1717,12 +1761,7 @@ public final class StvnTypeResolver {
                 } else if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnMap mapVal) {
                     var mapPsi = collPsi.getMapLiteral();
                     if (mapPsi != null) {
-                        var psiChildren = new java.util.ArrayList<Value>();
-                        for (var val : PsiTreeUtil.findChildrenOfType(mapPsi, Value.class)) {
-                            if (!isInnerChildOfAlgebraicContainer(val)) {
-                                psiChildren.add(val);
-                            }
-                        }
+                        var psiChildren = mapPsi.getValueList();
                         var iterator = mapVal.entries().entrySet().iterator();
                         for (int i = 0; i < psiChildren.size() / 2 && iterator.hasNext(); i++) {
                             var entry = iterator.next();
@@ -1946,6 +1985,35 @@ public final class StvnTypeResolver {
             return null;
         }
 
+        // Unpack explicit union constructor when evaluating an inner payload Value
+        var explicitUnion = PsiTreeUtil.getParentOfType(position, ExplicitUnionValue.class);
+        if (explicitUnion != null && explicitUnion.getValue() != null
+                && (position == explicitUnion.getValue() || PsiTreeUtil.isAncestor(explicitUnion.getValue(), position, false))) {
+            var tagElem = explicitUnion.getUnionTagPrefix();
+            var tagText = tagElem.getText().trim();
+            if (tagText.startsWith("#")) {
+                try {
+                    int k = Integer.parseInt(tagText.substring(1));
+                    var parentExpected = resolveExpectedSchemaAtCaret(explicitUnion);
+                    if (parentExpected != null) {
+                        var resolvedNominal = resolveNominalSchema(parentExpected);
+                        var schemaToInspect = resolvedNominal != null ? resolvedNominal : parentExpected;
+                        var constructor = schemaToInspect.getSchemaConstructor();
+                        if (constructor != null && constructor.getSumType() != null) {
+                            var sumType = constructor.getSumType();
+                            if (sumType.getText().startsWith(":Union")) {
+                                var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                                int idx = k - 1;
+                                if (idx >= 0 && idx < innerSchemas.size()) {
+                                    return innerSchemas.get(idx);
+                                }
+                            }
+                        }
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         // 1. Check if position is inside a ConstantDefinition in :defs
         var constDef = PsiTreeUtil.getParentOfType(position, ConstantDefinition.class);
         SchemaType rootSchema = null;
@@ -2036,7 +2104,7 @@ public final class StvnTypeResolver {
                 var isLeft = text.startsWith("#Left") || text.startsWith("#L");
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof ExplicitUnionValue union) {
-                var firstChild = union.getFirstChild();
+                var firstChild = union.getUnionTagPrefix();
                 var tagIndex = 0;
                 if (firstChild != null && firstChild.getText().startsWith("#")) {
                     try {

@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
@@ -112,7 +113,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 for (var diag : activeErrorDiagnostics) {
                     var line = Math.max(0, diag.line() - 1);
                     var col = Math.max(0, diag.column());
-                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diag.message() });
+                    var diagMsg = diag.message();
+                    if (diagMsg.contains("token recognition error at: '#'")) {
+                        diagMsg = "Incomplete variant tag '#'";
+                    }
+                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
                     if (problem != null) {
                         problems.add(problem);
                     }
@@ -151,6 +156,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var start = diag.startOffset();
             var end = diag.endOffset();
 
+            // Intercept raw ANTLR lexer token recognition error on bare '#' and sanitize to domain terminology
+            if (message.contains("token recognition error at: '#'")) {
+                message = "Incomplete variant tag '#'";
+            }
+
             if (diag.errorCode().isPresent() && diag.errorCode().get().equals("DUPLICATE_MAP_KEY") && start >= 0 && end > start && end <= textLength) {
                 var rawKey = file.getText().substring(start, end).trim();
                 if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
@@ -159,7 +169,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 message = "Duplicate map key detected: '" + rawKey + "'";
             }
 
+            // Align Tuple arity mismatch display message and enforce container-level coordinate pinning
+            if ((diag.errorCode().isPresent() && "TUPLE_ARITY_MISMATCH".equals(diag.errorCode().get()))
+                || message.startsWith("Tuple arity mismatch")) {
+                if (!message.contains("missing") && message.matches(".*Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+).*")) {
+                    var matcher = java.util.regex.Pattern.compile("Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+)").matcher(message);
+                    if (matcher.find()) {
+                        int exp = Integer.parseInt(matcher.group(1));
+                        int got = Integer.parseInt(matcher.group(2));
+                        if (exp > got) {
+                            int missing = exp - got;
+                            message = "Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)";
+                        }
+                    }
+                }
+            }
+
             // 1. Direct Coordinate Range Highlighting with Defensive Clamping
+            // startOffset and endOffset from stvnadore-core:1.3.1 are 0-based half-open [start, end)
             if (start >= 0 && end >= start) {
                 var s = Math.max(0, Math.min(start, textLength));
                 var e = Math.max(s, Math.min(end, textLength));
@@ -175,7 +202,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (s < e) {
                     var range = new TextRange(s, e);
                     range = expandEmptyCompositeRange(file, range, message);
-                    var clamped = clampToOffendingChildIfContainer(file, range);
+                    var clamped = clampToOffendingChildIfContainer(file, range, message);
                     if (clamped != null) {
                         range = clamped;
                     }
@@ -189,6 +216,87 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (listLit != null) {
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
                     }
+
+                    // Intercept bare '#' token in value position and attach CompleteSumVariantQuickFix actions
+                    var elemAtStart = file.findElementAt(s);
+                    var tokenText = (elemAtStart != null) ? elemAtStart.getText().trim() : "";
+                    if ("#".equals(tokenText) || (s < e && "#".equals(file.getText().substring(s, e).trim()))) {
+                        var targetElem = (elemAtStart != null) ? elemAtStart : file.findElementAt(s);
+                        if (targetElem != null) {
+                            var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(targetElem);
+                            if (expectedSchema != null) {
+                                var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+                                var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
+                                var constructor = schemaToInspect.getSchemaConstructor();
+                                if (constructor != null && constructor.getSumType() != null) {
+                                    var sumType = constructor.getSumType();
+                                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                                    if (sumType.getText().startsWith(":Either")) {
+                                        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
+                                        if (innerSchemas.size() >= 2) {
+                                            var rightBranch = innerSchemas.get(1);
+                                            var leftBranch = innerSchemas.get(0);
+                                            var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
+                                            var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH));
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
+                                        }
+                                    } else if (sumType.getText().startsWith(":Union")) {
+                                        for (int i = 0; i < innerSchemas.size(); i++) {
+                                            var branch = innerSchemas.get(i);
+                                            var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
+                                            var tag = "#" + (i + 1);
+                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, tag, branchLabel, PriorityAction.Priority.NORMAL));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Intercept ERR_AMBIGUOUS_SUM_INFERENCE and attach WrapSumVariantQuickFix actions
+                    if ((diag.errorCode().isPresent() && "ERR_AMBIGUOUS_SUM_INFERENCE".equals(diag.errorCode().get()))
+                        || (message.contains("Ambiguous implicit resolution") || message.contains("Ambiguous implicit either") || message.contains("matches multiple candidate branches"))) {
+                        var elem = file.findElementAt(s);
+                        if (elem != null) {
+                            var valueElement = PsiTreeUtil.getParentOfType(elem, Value.class, false);
+                            if (valueElement == null) {
+                                valueElement = PsiTreeUtil.getNonStrictParentOfType(elem, Value.class);
+                            }
+                            var targetElement = (valueElement != null) ? valueElement : elem;
+                            var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(elem);
+                            if (expectedSchema != null) {
+                                var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+                                var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
+                                var constructor = schemaToInspect.getSchemaConstructor();
+                                if (constructor != null && constructor.getSumType() != null) {
+                                    var sumType = constructor.getSumType();
+                                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                                    if (sumType.getText().startsWith(":Either")) {
+                                        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
+                                        if (innerSchemas.size() >= 2) {
+                                            var rightBranch = innerSchemas.get(1);
+                                            var leftBranch = innerSchemas.get(0);
+                                            var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
+                                            var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
+                                            annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH));
+                                            annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
+                                        }
+                                    } else if (sumType.getText().startsWith(":Union")) {
+                                        for (int i = 0; i < innerSchemas.size(); i++) {
+                                            var branch = innerSchemas.get(i);
+                                            if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
+                                                var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
+                                                var tag = "#" + (i + 1);
+                                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, tag, branchLabel));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     annotationBuilder.create();
                     continue;
                 }
@@ -581,6 +689,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
         var message = diag.message();
+        // Suppress external compiler Rule G diagnostics; StvnSemanticAnnotator handles Rule G in-flight and at commit
+        if (diag.errorCode().isPresent() && "UNION_BRANCH_OVERFLOW".equals(diag.errorCode().get())) {
+            return true;
+        }
+        if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
+            return true;
+        }
         if (!message.contains("Unresolved schema for value context")) {
             return false;
         }
@@ -664,47 +779,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
-    private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range) {
-        var tuples = PsiTreeUtil.findChildrenOfType(file, TupleLiteral.class);
-        for (var tuple : tuples) {
-            var tr = tuple.getTextRange();
-            if (range.equals(tr) || (range.getStartOffset() <= tr.getStartOffset() && range.getEndOffset() >= tr.getEndOffset())) {
-                for (var child : tuple.getValueList()) {
-                    var info = StvnTypeResolver.resolveBaseTypeInfo(child);
-                    if (info == null || !StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                        var innerVal = child;
-                        if (child.getExplicitUnionValue() != null && child.getExplicitUnionValue().getValue() != null) {
-                            innerVal = child.getExplicitUnionValue().getValue();
-                        } else if (child.getExplicitOptionValue() != null && child.getExplicitOptionValue().getValue() != null) {
-                            innerVal = child.getExplicitOptionValue().getValue();
-                        } else if (child.getExplicitEitherValue() != null && child.getExplicitEitherValue().getValue() != null) {
-                            innerVal = child.getExplicitEitherValue().getValue();
-                        }
-                        return innerVal.getTextRange();
-                    }
-                }
-            }
-        }
-        var lists = PsiTreeUtil.findChildrenOfType(file, ListLiteral.class);
-        for (var listLit : lists) {
-            var lr = listLit.getTextRange();
-            if (range.equals(lr) || (range.getStartOffset() <= lr.getStartOffset() && range.getEndOffset() >= lr.getEndOffset())) {
-                for (var child : listLit.getValueList()) {
-                    var info = StvnTypeResolver.resolveBaseTypeInfo(child);
-                    if (info == null || !StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                        var innerVal = child;
-                        if (child.getExplicitUnionValue() != null && child.getExplicitUnionValue().getValue() != null) {
-                            innerVal = child.getExplicitUnionValue().getValue();
-                        } else if (child.getExplicitOptionValue() != null && child.getExplicitOptionValue().getValue() != null) {
-                            innerVal = child.getExplicitOptionValue().getValue();
-                        } else if (child.getExplicitEitherValue() != null && child.getExplicitEitherValue().getValue() != null) {
-                            innerVal = child.getExplicitEitherValue().getValue();
-                        }
-                        return innerVal.getTextRange();
-                    }
-                }
-            }
-        }
+    /**
+     * Defanged container clamping heuristic.
+     * Diagnostic coordinates emitted by stvnadore-core:1.3.1-SNAPSHOT are authoritative.
+     * Container diagnostics must never divert or clamp onto earlier valid child elements.
+     */
+    private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range, String message) {
         return null;
     }
 

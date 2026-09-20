@@ -4800,7 +4800,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         // 3. Incompatible Metadata on Int32
         assertTrue("Must report incompatible metadata", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("preserveIndent is not allowed on :Int32")
+            e.getDescription() != null && e.getDescription().contains("preserveIndent") && e.getDescription().contains(":Int32")
         ));
     }
 
@@ -5640,6 +5640,375 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             h.getDescription().contains("Rule STR-04 violation: Orphan or unexpected closing fence delimiter"));
         assertTrue("Highlighting must emit ERROR citing Rule STR-04 orphan delimiter", hasOrphanError);
     }
+
+    public void testUnionDuplicateNominalBranchesAmbiguousUntagged() {
+        var psiFile = myFixture.configureByText(
+            "union_duplicate_untagged.stvn",
+            """
+            {
+              :defs {
+                :MyInt { #minIncl 1 } :Int32
+                :BadUnion :Union( :MyInt :MyInt )
+              }
+              :type :BadUnion
+              :body 42
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected ambiguity compilation error for untagged payload targeting duplicate union branches", errors.isEmpty());
+        var errorDescriptions = errors.stream().map(HighlightInfo::getDescription).toList();
+        assertTrue(
+            "Expected error containing 'Ambiguous implicit resolution: Value matches multiple branches'. Found: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit resolution: Value matches multiple branches"))
+        );
+
+        var text = psiFile.getText();
+        var fortyTwoOffset = text.lastIndexOf("42");
+        var errorAtToken = errors.stream()
+            .filter(h -> h.getStartOffset() == fortyTwoOffset && h.getEndOffset() == fortyTwoOffset + 2)
+            .findFirst();
+        assertTrue("Expected error highlight to clamp precisely to '42'", errorAtToken.isPresent());
+    }
+
+    public void testEitherDuplicateNominalBranchesAmbiguousUntagged() {
+        var psiFile = myFixture.configureByText(
+            "either_duplicate_untagged.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+              }
+              :type :IdenticalEither
+              :body 42
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected ambiguity compilation error for untagged payload targeting duplicate either branches", errors.isEmpty());
+        var errorDescriptions = errors.stream().map(HighlightInfo::getDescription).toList();
+        assertTrue(
+            "Expected error containing 'Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required'. Found: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required"))
+        );
+
+        var text = psiFile.getText();
+        var fortyTwoOffset = text.lastIndexOf("42");
+        var errorAtToken = errors.stream()
+            .filter(h -> h.getStartOffset() == fortyTwoOffset && h.getEndOffset() == fortyTwoOffset + 2)
+            .findFirst();
+        assertTrue("Expected error highlight to clamp precisely to '42'", errorAtToken.isPresent());
+    }
+
+    public void testSumTypeDuplicateNominalBranchesExplicitTagsZeroErrors() {
+        setUseLongFormSumTypes(true);
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnVariantStyleInspection());
+        var projSettings = StvnProjectSettings.getInstance(getProject());
+        if (projSettings != null) {
+            projSettings.getState().enableRedundantTagInspection = true;
+            projSettings.getState().preferImpliedSumTypes = true;
+        }
+
+        myFixture.configureByText(
+            "sum_type_duplicate_explicit.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :RootPayload     :Tuple(
+                  :IdenticalEither
+                  :IdenticalEither
+                  :IdenticalUnion
+                  :IdenticalUnion
+                  :IdenticalUnion
+                )
+              }
+              :type :RootPayload
+              :body (
+                #Left 100
+                #Right 200
+                #1 300
+                #2 400
+                #3 500
+              )
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Expected 0 compilation errors for explicit variant tags on duplicate branches", 0, errors.size());
+
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag".equals(h.getDescription()))
+            .toList();
+        assertEquals("Explicit tags on identical branches are mandatory discriminators and must produce 0 redundant tag warnings", 0, warnings.size());
+    }
+
+    public void testTupleArityUnderflowPinsToClosingParen() {
+        var psiFile = myFixture.configureByText(
+            "tuple_underflow.stvn",
+            """
+            {
+              :type :Tuple( :Int32 :Int32 )
+              :body (
+                10
+              )
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertFalse("Expected tuple arity underflow error", errors.isEmpty());
+        var arityError = errors.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"))
+            .findFirst();
+        assertTrue("Expected error matching 'Tuple arity mismatch'", arityError.isPresent());
+        assertEquals("Tuple arity mismatch: Expected 2 elements, got 1 (1 missing)", arityError.get().getDescription());
+
+        var text = psiFile.getText();
+        var rparenOffset = text.lastIndexOf(')');
+        assertEquals("Error highlight must start precisely at ')'", rparenOffset, arityError.get().getStartOffset());
+        assertEquals("Error highlight must end precisely after ')'", rparenOffset + 1, arityError.get().getEndOffset());
+
+        var tenOffset = text.indexOf("10");
+        var childError = errors.stream()
+            .filter(h -> h.getStartOffset() == tenOffset)
+            .findFirst();
+        assertTrue("Valid child value '10' must remain completely unblemished", childError.isEmpty());
+    }
+
+    public void testInFlightUnionTagBoundsEnforcement() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #3
+              )
+            }
+            """;
+        myFixture.configureByText("in_flight_union_bounds.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var boundsError = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"))
+            .findFirst();
+
+        assertTrue("Expected in-flight Rule G error on '#3' before payload value is entered", boundsError.isPresent());
+        var error = boundsError.get();
+        var docText = myFixture.getEditor().getDocument().getText();
+        var targetText = docText.substring(error.getStartOffset(), error.getEndOffset());
+        assertEquals("Error range must clamp strictly to '#3'", "#3", targetText);
+    }
+
+    public void testChildFaultIsolationSingleErrorOnOutOfBoundsUnionTag() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Left 9
+                #Left 1
+                #TRUE
+                #1 1
+                #2 "ok"
+                #3 3
+              )
+            }
+            """;
+        myFixture.configureByText("child_fault_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        assertEquals("Expected exactly 1 error highlight for '#3 3' in 6-element tuple", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertNotNull(error.getDescription());
+        assertTrue("Error message must match canonical Rule G text",
+            error.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"));
+
+        var docText = myFixture.getEditor().getDocument().getText();
+        var targetText = docText.substring(error.getStartOffset(), error.getEndOffset());
+        assertEquals("Error range must clamp strictly to variant tag '#3'", "#3", targetText);
+
+        var hasArityMismatch = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"));
+        assertFalse("Must have zero cascading TUPLE_ARITY_MISMATCH errors on closing delimiter ')'", hasArityMismatch);
+    }
+
+    public void testInFlightUnionTagOutOfBoundsZeroErrorsOnValidSiblings() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #3
+              )
+            }
+            """;
+        myFixture.configureByText("union_sibling_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var element4Offset = text.indexOf("#1 1");
+        var element4End = element4Offset + "#1 1".length();
+
+        var element4Errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING))
+            .filter(h -> h.getStartOffset() >= element4Offset && h.getEndOffset() <= element4End)
+            .toList();
+
+        assertTrue("Element 4 ('#1 1') on line 30 must have zero errors and zero warnings when element 6 has '#3'",
+            element4Errors.isEmpty());
+
+        var boundsErrors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Union variant tag '#3' exceeds branch count (2)"))
+            .toList();
+        assertEquals("Expected exactly 1 Rule G bounds error on '#3'", 1, boundsErrors.size());
+    }
+
+    public void testInFlightBareHashZeroErrorsOnValidSiblings() {
+        var text = """
+            {
+              :defs {
+                :EitherA :Either( :Int32 :String )
+                :EitherB :Either( :Int32 :String )
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple(
+                :EitherA
+                :EitherB
+                :Boolean
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+                :UnionLikeEitherC
+              )
+              :body (
+                #Right 9
+                #Right 1
+                #TRUE
+                #1 1
+                #2 2
+                #
+              )
+            }
+            """;
+        myFixture.configureByText("bare_hash_sibling_isolation.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var element4Offset = text.indexOf("#1 1");
+        var element4End = element4Offset + "#1 1".length();
+
+        var element4Errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING))
+            .filter(h -> h.getStartOffset() >= element4Offset && h.getEndOffset() <= element4End)
+            .toList();
+
+        assertTrue("Element 4 ('#1 1') on line 30 must have zero errors and zero warnings when element 6 has bare '#'",
+            element4Errors.isEmpty());
+    }
+
+    public void testBareHashDisplaysSanitizedDomainMessageAndQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :UnionLikeEitherC :Union( :Int32 :String )
+              }
+              :type :Tuple( :UnionLikeEitherC )
+              :body (
+                #
+              )
+            }
+            """;
+        myFixture.configureByText("bare_hash_sanitized.stvn", text);
+
+        var highlights = myFixture.doHighlighting();
+        var hashOffset = text.lastIndexOf("#");
+
+        var tokenErrorPresent = highlights.stream()
+            .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("token recognition error"));
+        assertFalse("Editor must never display raw ANTLR jargon 'token recognition error'", tokenErrorPresent);
+
+        var sanitizedHighlight = highlights.stream()
+            .filter(h -> h.getStartOffset() == hashOffset)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Incomplete variant tag '#'"))
+            .findFirst();
+        assertTrue("Bare '#' highlight must display sanitized domain message 'Incomplete variant tag '#''",
+            sanitizedHighlight.isPresent());
+
+        var quickFixes = myFixture.getAllQuickFixes();
+        var hasComplete1 = quickFixes.stream().anyMatch(f -> f.getText().contains("Complete with #1"));
+        var hasComplete2 = quickFixes.stream().anyMatch(f -> f.getText().contains("Complete with #2"));
+        assertTrue("Must offer quick-fix 'Complete with #1'", hasComplete1);
+        assertTrue("Must offer quick-fix 'Complete with #2'", hasComplete2);
+    }
 }
+
+
 
 

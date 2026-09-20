@@ -76,6 +76,84 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
+     * Verifies that a packaged module without root definitions returns exactly
+     * its declared canonical FQNIs, producing zero bare phantom duplicates.
+     */
+    public void testPackagedModuleWithoutRootDefinitionsReturnsExactCanonicalFqnis() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var content = java.nio.file.Files.readString(rfcPath);
+        var file = myFixture.configureByText("rfc8259_json_substrate.stvn_inclf", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain exactly 8 declared symbols", 8, entries.size());
+        for (var entry : entries) {
+            assertTrue("Symbol must be a canonical FQNI starting with package prefix: " + entry.name(),
+                entry.name().startsWith(":org/ietf/rfc8259/json/"));
+            assertEquals(":org/ietf/rfc8259/json", entry.source());
+            assertEquals(0, entry.useDepth());
+        }
+        assertNull("Bare phantom symbol :JsonNull must not exist", findEntryByName(entries, ":JsonNull"));
+        assertNotNull("Canonical FQNI must exist", findEntryByName(entries, ":org/ietf/rfc8259/json/JsonNull"));
+    }
+
+    /**
+     * Verifies that a document with mixed declarations isolates root symbols bare
+     * and packaged symbols strictly under FQNIs.
+     */
+    public void testMixedRootAndPackagedDefinitionsScopeIsolation() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/sample {
+                  :PackagedItem :Int64
+                  #PackagedPort 9090
+                }
+                :RootItem :String32
+                #RootPort 8080
+              }
+            }
+            """;
+        var file = myFixture.configureByText("mixed_scope.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain exactly 4 symbols (2 root + 2 packaged)", 4, entries.size());
+        assertNotNull(findEntryByName(entries, ":RootItem"));
+        assertNotNull(findEntryByName(entries, "#RootPort"));
+        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/PackagedItem"));
+        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/#PackagedPort"));
+        assertNull(findEntryByName(entries, ":PackagedItem"));
+        assertNull(findEntryByName(entries, "#PackagedPort"));
+    }
+
+    /**
+     * Verifies that :use with #strip creates desugared bare aliases with incremented Use Depth.
+     */
+    public void testPackageImportWithStripProducesDesugaredAliasWithIncrementedDepth() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/sample {
+                  :PackagedItem :Int64
+                }
+                :use [ :org/stvnadore/sample { #strip } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("use_strip.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain 2 symbols (1 canonical FQNI + 1 stripped alias)", 2, entries.size());
+        var canonical = findEntryByName(entries, ":org/stvnadore/sample/PackagedItem");
+        assertNotNull(canonical);
+        assertEquals(0, canonical.useDepth());
+
+        var alias = findEntryByName(entries, ":PackagedItem");
+        assertNotNull(alias);
+        assertEquals(1, alias.useDepth());
+        assertEquals(":org/stvnadore/sample", alias.source());
+    }
+
+    /**
      * Verifies symbol filtering under :type scope strictly matches referenced schema symbols.
      */
     public void testTypeScopeFiltering() {
@@ -200,6 +278,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 :package :org/stvnadore/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
+                :use [ :org/stvnadore/finance { #strip } ]
                 :A :String32
                 :T :Tuple( :LocalTx :A )
               }
@@ -240,6 +319,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 :package :org/stvnadore/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
+                :use [ :org/stvnadore/finance { #strip } ]
                 :A :String32
                 :T :Tuple( :LocalTx :A )
               }
@@ -295,6 +375,271 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         int selectedCol = table.getSelectedColumn();
         assertTrue("A row must be selected", selectedVisualRow >= 0);
         assertEquals("Selected column must fall back to Column 2 (Type)", 2, selectedCol);
+    }
+
+    /**
+     * Verifies that calcified_audit.stvn_f under :defs scope produces exactly 10 symbols
+     * (8 canonical declarations at Depth 0 and 2 root-level stripped aliases at Depth 1),
+     * completely isolating package-local :use directives and generating zero bare phantom duplicates.
+     */
+    public void testCalcifiedAuditDefsScopeProducesExactTenSymbolsWithoutPackageLocalLeakage() throws Exception {
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var content = java.nio.file.Files.readString(path);
+        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must contain exactly 10 symbols (8 canonical declarations + 2 stripped aliases)", 10, entries.size());
+
+        // Canonical package declarations at Depth 0
+        var micFqni = findEntryByName(entries, ":com/nyse/primitives/MicCode");
+        assertNotNull(micFqni);
+        assertEquals(0, micFqni.useDepth());
+        assertEquals(":com/nyse/primitives", micFqni.source());
+
+        var orderFqni = findEntryByName(entries, ":com/nyse/primitives/OrderId");
+        assertNotNull(orderFqni);
+        assertEquals(0, orderFqni.useDepth());
+
+        var seqFqni = findEntryByName(entries, ":com/nyse/primitives/SequenceNumber");
+        assertNotNull(seqFqni);
+        assertEquals(0, seqFqni.useDepth());
+
+        var qtyFqni = findEntryByName(entries, ":com/nyse/primitives/ShareQuantity");
+        assertNotNull(qtyFqni);
+        assertEquals(0, qtyFqni.useDepth());
+
+        var priceFqni = findEntryByName(entries, ":com/nyse/primitives/ExecutionPrice");
+        assertNotNull(priceFqni);
+        assertEquals(0, priceFqni.useDepth());
+
+        var sideFqni = findEntryByName(entries, ":com/nyse/primitives/OrderSide");
+        assertNotNull(sideFqni);
+        assertEquals(0, sideFqni.useDepth());
+
+        var agencyFqni = findEntryByName(entries, ":com/nyse/events/AgencySide");
+        assertNotNull(agencyFqni);
+        assertEquals(0, agencyFqni.useDepth());
+        assertEquals(":com/nyse/events", agencyFqni.source());
+
+        var auditFqni = findEntryByName(entries, ":com/nyse/events/AuditRecord");
+        assertNotNull(auditFqni);
+        assertEquals(0, auditFqni.useDepth());
+        assertEquals(":com/nyse/events", auditFqni.source());
+
+        // Root-level stripped aliases at Depth 1
+        var agencyBare = findEntryByName(entries, ":AgencySide");
+        assertNotNull("Root-level stripped alias :AgencySide must exist", agencyBare);
+        assertEquals(1, agencyBare.useDepth());
+        assertEquals(":com/nyse/events", agencyBare.source());
+
+        var auditBare = findEntryByName(entries, ":AuditRecord");
+        assertNotNull("Root-level stripped alias :AuditRecord must exist", auditBare);
+        assertEquals(1, auditBare.useDepth());
+        assertEquals(":com/nyse/events", auditBare.source());
+
+        // Ensure package-private shorthand aliases do not leak bare symbols
+        assertNull("Package-local bare symbol :MicCode must not leak into defs scope", findEntryByName(entries, ":MicCode"));
+        assertNull("Package-local bare symbol :OrderId must not leak into defs scope", findEntryByName(entries, ":OrderId"));
+        assertNull("Package-local bare symbol :SequenceNumber must not leak into defs scope", findEntryByName(entries, ":SequenceNumber"));
+        assertNull("Package-local bare symbol :ShareQuantity must not leak into defs scope", findEntryByName(entries, ":ShareQuantity"));
+        assertNull("Package-local bare symbol :ExecutionPrice must not leak into defs scope", findEntryByName(entries, ":ExecutionPrice"));
+        assertNull("Package-local bare symbol :OrderSide must not leak into defs scope", findEntryByName(entries, ":OrderSide"));
+    }
+
+    /**
+     * Verifies that calcified_audit.stvn_f under :type scope produces contiguous depths (0, 1, 2)
+     * without phantom hop skips, stamping :AuditRecord at Depth 0, direct tuple members at Depth 1,
+     * and transitive sub-dependencies at Depth 2.
+     */
+    public void testCalcifiedAuditTypeScopeProducesContiguousDepthsWithoutPhantomHops() throws Exception {
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var content = java.nio.file.Files.readString(path);
+        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
+
+        assertEquals("Must contain exactly 10 symbols across depths 0, 1, 2", 10, entries.size());
+
+        // Depth 0: Root contract identifier
+        var audit = findEntryByName(entries, ":AuditRecord");
+        assertNotNull("Root contract :AuditRecord must exist", audit);
+        assertEquals(0, audit.useDepth());
+
+        // Depth 1: 7 immediate tuple members
+        var mic = findEntryByName(entries, ":MicCode");
+        assertNotNull(":MicCode must exist at Depth 1", mic);
+        assertEquals(1, mic.useDepth());
+
+        var seq = findEntryByName(entries, ":SequenceNumber");
+        assertNotNull(":SequenceNumber must exist at Depth 1", seq);
+        assertEquals(1, seq.useDepth());
+
+        var order = findEntryByName(entries, ":OrderId");
+        assertNotNull(":OrderId must exist at Depth 1", order);
+        assertEquals(1, order.useDepth());
+
+        var agency = findEntryByName(entries, ":AgencySide");
+        assertNotNull(":AgencySide must exist at Depth 1", agency);
+        assertEquals(1, agency.useDepth());
+
+        var qty = findEntryByName(entries, ":ShareQuantity");
+        assertNotNull(":ShareQuantity must exist at Depth 1", qty);
+        assertEquals(1, qty.useDepth());
+
+        var price = findEntryByName(entries, ":ExecutionPrice");
+        assertNotNull(":ExecutionPrice must exist at Depth 1", price);
+        assertEquals(1, price.useDepth());
+
+        var dt = findEntryByName(entries, ":org/stvnadore/prelude/DateTimeAudited");
+        assertNotNull(":DateTimeAudited must exist at Depth 1", dt);
+        assertEquals(1, dt.useDepth());
+
+        // Depth 2: 2 transitive types
+        var side = findEntryByName(entries, ":OrderSide");
+        assertNotNull("Transitive type :OrderSide must exist at Depth 2", side);
+        assertEquals(2, side.useDepth());
+
+        var currency = findEntryByName(entries, ":org/stvnadore/prelude/Currency");
+        if (currency == null) {
+            currency = findEntryByName(entries, ":Currency");
+        }
+        assertNotNull("Transitive type :Currency must exist at Depth 2", currency);
+        assertEquals(2, currency.useDepth());
+    }
+
+    /**
+     * Verifies that calcified_audit.stvn_f under :body scope produces exactly 9 symbols
+     * (1 root contract at Depth 0 and 8 instantiated elements/variants at Depth 1).
+     */
+    public void testCalcifiedAuditBodyScopeProducesExactNineSymbols() throws Exception {
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var content = java.nio.file.Files.readString(path);
+        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
+
+        assertEquals("Must contain exactly 9 symbols (1 root at Depth 0 + 8 instantiated elements/variants at Depth 1)", 9, entries.size());
+
+        // Depth 0: Root contract shape
+        var audit = findEntryByName(entries, ":AuditRecord");
+        assertNotNull("Root contract :AuditRecord must exist at Depth 0", audit);
+        assertEquals(0, audit.useDepth());
+
+        // Depth 1: 7 correlated tuple positional values + 1 variant keyword
+        var mic = findEntryByName(entries, ":MicCode");
+        assertNotNull(":MicCode must exist at Depth 1", mic);
+        assertEquals(1, mic.useDepth());
+
+        var seq = findEntryByName(entries, ":SequenceNumber");
+        assertNotNull(":SequenceNumber must exist at Depth 1", seq);
+        assertEquals(1, seq.useDepth());
+
+        var order = findEntryByName(entries, ":OrderId");
+        assertNotNull(":OrderId must exist at Depth 1", order);
+        assertEquals(1, order.useDepth());
+
+        var agency = findEntryByName(entries, ":AgencySide");
+        assertNotNull(":AgencySide must exist at Depth 1", agency);
+        assertEquals(1, agency.useDepth());
+
+        var qty = findEntryByName(entries, ":ShareQuantity");
+        assertNotNull(":ShareQuantity must exist at Depth 1", qty);
+        assertEquals(1, qty.useDepth());
+
+        var price = findEntryByName(entries, ":ExecutionPrice");
+        assertNotNull(":ExecutionPrice must exist at Depth 1", price);
+        assertEquals(1, price.useDepth());
+
+        var dt = findEntryByName(entries, ":org/stvnadore/prelude/DateTimeAudited");
+        assertNotNull(":DateTimeAudited must exist at Depth 1", dt);
+        assertEquals(1, dt.useDepth());
+
+        var buy = findEntryByName(entries, "#BUY");
+        assertNotNull("Variant keyword #BUY must exist at Depth 1", buy);
+        assertEquals(1, buy.useDepth());
+    }
+
+    /**
+     * Verifies that json_example.stvn under :defs scope collects exactly 8 stripped symbols at Use Depth = 1.
+     */
+    public void testJsonExampleDefsScopeCollectsEightStrippedSymbolsAtDepthOne() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertEquals("Must collect exactly 8 stripped symbols in :defs scope", 8, entries.size());
+        String[] expectedSymbols = {
+            ":JsonNull", ":JsonBoolean", ":JsonNumberInteger", ":JsonNumberFloat",
+            ":JsonString", ":JsonObject", ":JsonArray", ":JsonValue"
+        };
+        for (var expected : expectedSymbols) {
+            var entry = findEntryByName(entries, expected);
+            assertNotNull("Symbol " + expected + " must exist in :defs scope", entry);
+            assertEquals(1, entry.useDepth());
+            assertEquals(":org/ietf/rfc8259/json", entry.source());
+        }
+    }
+
+    /**
+     * Verifies that json_example.stvn under :type scope correctly renders all 8 symbols
+     * (1 root union at Depth 0 + 7 constituent branches at Depth 1).
+     */
+    public void testJsonExampleTypeScopeMaintainsEightSymbols() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
+
+        assertEquals("Must contain exactly 8 symbols (1 root at Depth 0 + 7 branches at Depth 1)", 8, entries.size());
+        var root = findEntryByName(entries, ":JsonValue");
+        assertNotNull(root);
+        assertEquals(0, root.useDepth());
+
+        String[] branches = {
+            ":JsonNull", ":JsonBoolean", ":JsonNumberInteger", ":JsonNumberFloat",
+            ":JsonString", ":JsonObject", ":JsonArray"
+        };
+        for (var branch : branches) {
+            var entry = findEntryByName(entries, branch);
+            assertNotNull("Branch " + branch + " must exist in :type scope", entry);
+            assertEquals(1, entry.useDepth());
+        }
+    }
+
+    /**
+     * Verifies that json_example.stvn under :body scope captures all instantiated nominal types
+     * and variants across the JSON map payload.
+     */
+    public void testJsonExampleBodyScopeCapturesAllInferredNominalTypesAndVariants() throws Exception {
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcContent = java.nio.file.Files.readString(rfcPath);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonContent = java.nio.file.Files.readString(jsonPath);
+        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
+
+        // Assert all instantiated nominal types are captured
+        assertNotNull("Root contract :JsonValue must exist", findEntryByName(entries, ":JsonValue"));
+        assertNotNull("Instantiated :JsonObject must exist", findEntryByName(entries, ":JsonObject"));
+        assertNotNull("Instantiated :JsonString must exist", findEntryByName(entries, ":JsonString"));
+        assertNotNull("Instantiated :JsonBoolean must exist", findEntryByName(entries, ":JsonBoolean"));
+        assertNotNull("Instantiated :JsonNull must exist", findEntryByName(entries, ":JsonNull"));
+        assertNotNull("Instantiated :JsonArray must exist", findEntryByName(entries, ":JsonArray"));
+        assertNotNull("Instantiated :JsonNumberInteger must exist", findEntryByName(entries, ":JsonNumberInteger"));
+        assertNotNull("Instantiated :JsonNumberFloat must exist", findEntryByName(entries, ":JsonNumberFloat"));
+
+        // Assert variant keywords are captured
+        assertNotNull("Variant keyword #NULL must exist", findEntryByName(entries, "#NULL"));
+        assertNotNull("Variant keyword #TRUE must exist", findEntryByName(entries, "#TRUE"));
     }
 
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {

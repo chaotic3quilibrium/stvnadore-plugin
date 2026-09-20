@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.psi;
 
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
@@ -30,7 +31,9 @@ public final class StvnPsiUtils {
         var prev = PsiTreeUtil.prevLeaf(position);
 
         while (prev != null) {
-            if (prev instanceof PsiWhiteSpace || prev.getText().equals("IntellijIdeaRulezzz")) {
+            if (prev instanceof PsiWhiteSpace || prev instanceof PsiErrorElement ||
+                prev.getParent() instanceof PsiErrorElement || prev.getText().equals("IntellijIdeaRulezzz") ||
+                prev.getText().trim().isEmpty()) {
                 prev = PsiTreeUtil.prevLeaf(prev);
                 continue;
             }

@@ -65,6 +65,21 @@
       * [Package Enclaves (`:package`)](#package-enclaves-package)
       * [Lexical Imports (`:use`)](#lexical-imports-use)
     * [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
+    * [5.7 Token Boundary & Sum Disambiguation Quick-Fixes](#57-token-boundary--sum-disambiguation-quick-fixes)
+      * [Token Boundary Completion Guard](#token-boundary-completion-guard)
+      * [Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)](#right-first-sum-intention-actions-wrap-with-right--wrap-with-1)
+    * [5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization](#58-hash-sigil-autocomplete-activation-bare--quick-fixes--arity-localization)
+      * [Hash Sigil Autocomplete Activation](#hash-sigil-autocomplete-activation)
+      * [Bare '#' Completion Quick-Fixes](#bare--completion-quick-fixes)
+      * [Tuple Arity Error Localization](#tuple-arity-error-localization)
+    * [5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds](#59-quick-documentation-container-guards--in-flight-union-tag-bounds)
+      * [Container Documentation Leakage Guard](#container-documentation-leakage-guard)
+      * [In-Flight Rule G Union Tag Bounds Enforcement](#in-flight-rule-g-union-tag-bounds-enforcement)
+      * [Child Fault Isolation & Arity Underflow Immunity](#child-fault-isolation--arity-underflow-immunity)
+    * [5.10 Container Fault Isolation & Diagnostic Sanitization](#510-container-fault-isolation--diagnostic-sanitization)
+      * [Container Clamping Defanging](#container-clamping-defanging)
+      * [Explicit Union Value Type Resolution](#explicit-union-value-type-resolution)
+      * [Bare '#' Message Normalization](#bare--message-normalization)
   * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
     * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
     * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
@@ -880,6 +895,85 @@ STVN 1.2 introduces `.stvn_f` files for high-throughput, headerless flat data pa
 * **Detached Schema Evaluation**: Flat payload files omit top-level `:defs` and `:type` blocks. They contain only a single root data payload (`:Tuple`, `:Seq`, `:Map`, or primitive).
 * **Wire Protocol Efficiency**: Ideal for streaming partitions, columnar chunks, or pre-negotiated RPC boundaries where transmitting schema metadata in every message creates unacceptable overhead.
 * **Prohibition of `:include`**: Because flat files have no schema enclosure, `:include` statements are strictly prohibited and immediately flagged by the `StvnFlatDocumentInclude` inspection.
+
+---
+
+### 5.7 Token Boundary & Sum Disambiguation Quick-Fixes
+
+#### Token Boundary Completion Guard
+The IDE protects document integrity during typing in composite containers (`:Tuple`, `:Seq`):
+* Typing a scalar value (e.g. `1`) suppresses lookahead completions for subsequent elements until the author enters whitespace.
+* Raw integer digits never match `#`-prefixed constructor tags across element boundaries.
+* Accepting a variant completion guarantees proper leading whitespace separation.
+
+#### Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)
+When an untagged literal matches multiple branches in an algebraic sum type, the compiler marks the value with an `ERR_AMBIGUOUS_SUM_INFERENCE` error squiggly:
+* Press `Alt+Enter` (macOS: `⌥Enter`) to display available wrapping quick-fixes.
+* **`:Either( L R )`:** Evaluates branch $R$ first. `Wrap with #Right (-> R)` appears as the primary action, followed by `Wrap with #Left (-> L)`.
+* **`:Union( T1 ... Tn )`:** Filters branches to compatible types. `Wrap with #k (-> Tk)` appears in 1-based index order.
+* Selecting the action wraps the literal (e.g. `42` becomes `#Right 42`), positions the caret after the tag, and clears all compile errors.
+
+---
+
+### 5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization
+
+#### Hash Sigil Autocomplete Activation
+When authoring variant tags in sum slots (`:Either`, `:Union`, `:Option`) or boolean slots (`:Boolean`), typing `#` immediately activates context-sensitive completion:
+* In empty tuple slots, typing `#` offers candidate tags (`#Right`, `#Left`, `#1`, `#2`) without lookahead suppression.
+* Raw numeric digits (such as `1` or `2`) do not trigger lookahead to subsequent elements.
+
+#### Bare '#' Completion Quick-Fixes
+When an author pauses or enters a bare `#` token, the IDE flags the incomplete token and provides quick-fixes (`Alt+Enter`):
+* For `:Either( L R )`: Offers `Complete with #Right (-> R)` (Priority HIGH) and `Complete with #Left (-> L)` (Priority NORMAL).
+* For `:Union( T1 ... Tn )`: Offers `Complete with #k (-> Tk)` for all candidate branches.
+* Invoking the quick-fix replaces the bare `#` with the completed variant tag and positions the caret for immediate payload entry.
+
+#### Tuple Arity Error Localization
+When a tuple contains fewer elements than declared in its schema:
+* The error squiggly pins strictly to the closing delimiter `)` (`RPAREN`).
+* Valid child scalar values remain unblemished with zero false-positive highlights.
+* The error message displays: `Tuple arity mismatch: Expected N elements, got M (X missing)`.
+
+---
+
+### 5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds
+
+#### Container Documentation Leakage Guard
+When inspecting STVN documents via Quick Documentation (`Ctrl+Q` or mouse hover), incomplete tokens, syntax errors, and punctuation tokens must never trigger ancestor tree climbs.
+
+Hovering over a bare `#` sigil, a `PsiErrorElement`, or unparsed punctuation inside a `:Tuple` or `:Seq` produces `null`. Container documentation displays only when the author explicitly hovers over container header keywords (`:Tuple`, `:Union`, `:Enum`) or opening and closing container delimiters (`(`, `)`).
+
+#### In-Flight Rule G Union Tag Bounds Enforcement
+In algebraic sum unions (`:Union( T1 T2 ... Tn )`), variant tags must adhere to branch count bounds $1 \le k \le n$.
+
+The IDE enforces this rule immediately while typing:
+1. The grammar pins `explicit_union_value` on the variant tag prefix (`#k`).
+2. As soon as the author types `#3` in a 2-branch union slot, `StvnSemanticAnnotator` validates $k=3$ against $n=2$.
+3. The editor immediately underlines `#3` with `HighlightSeverity.ERROR`:
+   `Union variant tag '#3' exceeds branch count (2)`
+4. The error displays before the payload value is entered.
+
+#### Child Fault Isolation & Arity Underflow Immunity
+When an invalid child element (such as `#3 3`) occurs inside a `:Tuple`, the error remains strictly localized to `#3`. The container element count is preserved. The editor produces zero cascading `TUPLE_ARITY_MISMATCH` squigglies on the closing delimiter `)`.
+
+---
+
+### 5.10 Container Fault Isolation & Diagnostic Sanitization
+
+#### Container Clamping Defanging
+Compiler diagnostic coordinates emitted by `stvnadore-core` are authoritative. The plugin annotator never diverts container-level errors onto earlier valid child elements. When typing an incomplete variant tag (`#3` or `#`) at the end of a tuple, earlier valid elements remain unblemished with zero false-positive highlights.
+
+#### Explicit Union Value Type Resolution
+When resolving expected schemas inside an `ExplicitUnionValue` (`#k <value>`), the type resolver unwraps the parent union schema and extracts the $k$-th branch schema. Inlay hints, annotators, and completion contributors accurately identify the expected payload type without unmapped schema warnings.
+
+#### Bare '#' Message Normalization
+When entering a bare `#` in value position, the editor normalizes internal compiler generator messages. The editor presents the clean domain notification:
+```text
+Incomplete variant tag '#'
+> Complete with #1 (-> :Int32)
+> Complete with #2 (-> :String)
+```
+Authors can press `Alt+Enter` to invoke completion quick-fixes immediately.
 
 ---
 

@@ -712,5 +712,144 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         }
         return null;
     }
+
+    public void testDigitTokenTouchingLookaheadSuppression() {
+        myFixture.configureByText(
+            "temp_repro.stvn",
+            """
+            {
+              :defs {
+                :UnionLikeEitherB :Union( :Int32 :Boolean :String )
+              }
+              :type :Tuple(
+                :Int32
+                :Int32
+                :Int32
+                :Int32
+                :UnionLikeEitherB
+              )
+              :body (
+                10
+                20
+                30
+                1<caret>
+              )
+            }
+            """
+        );
+
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+
+        // Caret touches '1' without space: Lookahead suggestions for element 5 (#1, #2, #3) must be suppressed!
+        if (lookupStrings != null) {
+            assertFalse("Element 5 tag #1 must not be offered when caret touches element 4 literal", lookupStrings.contains("#1 ") || lookupStrings.contains("#1"));
+            assertFalse("Element 5 tag #2 must not be offered when caret touches element 4 literal", lookupStrings.contains("#2 ") || lookupStrings.contains("#2"));
+            assertFalse("Element 5 tag #3 must not be offered when caret touches element 4 literal", lookupStrings.contains("#3 ") || lookupStrings.contains("#3"));
+        }
+    }
+
+    public void testDigitTokenWhitespacePermitsLookahead() {
+        myFixture.configureByText(
+            "temp_permits.stvn",
+            """
+            {
+              :defs {
+                :UnionLikeEitherB :Union( :Int32 :Boolean :String )
+              }
+              :type :Tuple(
+                :Int32
+                :UnionLikeEitherB
+              )
+              :body (
+                10
+                <caret>
+              )
+            }
+            """
+        );
+
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull(lookupStrings);
+        assertTrue(lookupStrings.contains("#1 ") || lookupStrings.contains("#1"));
+        assertTrue(lookupStrings.contains("#2 ") || lookupStrings.contains("#2"));
+        assertTrue(lookupStrings.contains("#3 ") || lookupStrings.contains("#3"));
+    }
+
+    public void testPrefixSigilDisciplineRawDigitRejection() {
+        myFixture.configureByText(
+            "sigil_discipline.stvn",
+            """
+            {
+              :type :Either( :Int32 :String )
+              :body <caret>
+            }
+            """
+        );
+
+        // 1. In empty whitespace: #Right and #Left must be offered
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull(lookupStrings);
+        assertTrue(lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
+
+        // 2. Author types raw digit '1': Sigil discipline must reject '#'-prefixed tags
+        myFixture.type('1');
+        lookupStrings = myFixture.getLookupElementStrings();
+        if (lookupStrings != null) {
+            assertFalse("Raw digit '1' must not match '#Right'", lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
+            assertFalse("Raw digit '1' must not match '#Left'", lookupStrings.contains("#Left ") || lookupStrings.contains("#Left"));
+        }
+    }
+
+    public void testHashSigilActivationInTupleSlot() {
+        myFixture.configureByText(
+            "hash_tuple_slot.stvn",
+            """
+            {
+              :defs {
+                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+              }
+              :type :Tuple(
+                :DisjointUnion
+                :DisjointUnion
+              )
+              :body (
+                #TRUE
+                #<caret>
+              )
+            }
+            """
+        );
+
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Completion items must be pro-offered when typing '#' in tuple slot", lookupStrings);
+        assertTrue("Candidate sum tag #1 must be offered", lookupStrings.contains("#1 ") || lookupStrings.contains("#1"));
+        assertTrue("Candidate sum tag #2 must be offered", lookupStrings.contains("#2 ") || lookupStrings.contains("#2"));
+        assertTrue("Candidate sum tag #3 must be offered", lookupStrings.contains("#3 ") || lookupStrings.contains("#3"));
+        assertTrue("Candidate sum tag #4 must be offered", lookupStrings.contains("#4 ") || lookupStrings.contains("#4"));
+    }
+
+    public void testHashSigilActivationInEitherSlot() {
+        myFixture.configureByText(
+            "hash_either_slot.stvn",
+            """
+            {
+              :type :Either( :Int32 :String )
+              :body #<caret>
+            }
+            """
+        );
+
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Completion items must be pro-offered when typing '#' in either slot", lookupStrings);
+        assertTrue("Candidate tag #Right must be offered", lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
+        assertTrue("Candidate tag #Left must be offered", lookupStrings.contains("#Left ") || lookupStrings.contains("#Left"));
+    }
 }
+
 

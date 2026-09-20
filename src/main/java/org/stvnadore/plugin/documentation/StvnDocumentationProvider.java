@@ -3,7 +3,9 @@ package org.stvnadore.plugin.documentation;
 import com.intellij.lang.documentation.DocumentationProvider;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.TokenType;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
@@ -41,6 +43,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     public @Nullable String generateDoc(PsiElement element, @Nullable PsiElement originalElement) {
         var settings = StvnProjectSettings.getInstance(element.getProject());
         if (settings != null && !settings.getState().showHoverDocs) {
+            return null;
+        }
+        if (isContainerDocumentationSuppressionTarget(element) || (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement))) {
             return null;
         }
         var target = getDocumentationElement(element, originalElement);
@@ -422,6 +427,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     public @Nullable String getQuickNavigateInfo(PsiElement element, @Nullable PsiElement originalElement) {
         var settings = StvnProjectSettings.getInstance(element.getProject());
         if (settings != null && !settings.getState().showHoverDocs) {
+            return null;
+        }
+        if (isContainerDocumentationSuppressionTarget(element) || (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement))) {
             return null;
         }
         var target = getDocumentationElement(element, originalElement);
@@ -927,6 +935,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private @Nullable PsiElement getDocumentationElement(PsiElement element, @Nullable PsiElement originalElement) {
+        if (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement)) {
+            return null;
+        }
+        if (isContainerDocumentationSuppressionTarget(element)) {
+            return null;
+        }
         if (element instanceof TypeDefinition || element instanceof ConstantDefinition) {
             return element;
         }
@@ -1041,6 +1055,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
             if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+                if (isContainerLiteral(valueAncestor)) {
+                    if (!isExplicitContainerDelimiter(valueAncestor, originalElement)) {
+                        return null;
+                    }
+                }
                 return valueAncestor;
             }
             var atomicType = PsiTreeUtil.getParentOfType(originalElement, AtomicType.class);
@@ -1058,6 +1077,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (element instanceof Value && PsiTreeUtil.getParentOfType(element, BodyEntry.class) != null) {
+            if (isContainerLiteral((Value) element)) {
+                if (originalElement != null && !isExplicitContainerDelimiter((Value) element, originalElement)) {
+                    return null;
+                }
+            }
             return element;
         }
 
@@ -1070,11 +1094,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             @NotNull PsiFile file,
             @Nullable PsiElement contextElement,
             int targetOffset) {
-        if (contextElement == null) {
+        if (contextElement == null || isContainerDocumentationSuppressionTarget(contextElement)) {
             return null;
         }
         var valueAncestor = PsiTreeUtil.getParentOfType(contextElement, Value.class);
         if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+            if (isContainerLiteral(valueAncestor)) {
+                if (!isExplicitContainerDelimiter(valueAncestor, contextElement)) {
+                    return null;
+                }
+            }
             return valueAncestor;
         }
         var typeKwAncestor = PsiTreeUtil.getParentOfType(contextElement, TypeKeyword.class);
@@ -1237,5 +1266,43 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var firstChild = sumType.getFirstChild();
         return firstChild != null && firstChild.getText().equals(":Union");
+    }
+
+    private static boolean isContainerDocumentationSuppressionTarget(@Nullable PsiElement element) {
+        if (element == null) {
+            return false;
+        }
+        if (element instanceof PsiErrorElement) {
+            return true;
+        }
+        var node = element.getNode();
+        if (node != null && node.getElementType() == TokenType.BAD_CHARACTER) {
+            return true;
+        }
+        var text = element.getText().trim();
+        return text.equals("#");
+    }
+
+    private static boolean isContainerLiteral(Value value) {
+        var coll = value.getCollectionValue();
+        return coll != null && (coll.getTupleLiteral() != null || coll.getListLiteral() != null || coll.getMapLiteral() != null);
+    }
+
+    private static boolean isExplicitContainerDelimiter(Value container, PsiElement element) {
+        var coll = container.getCollectionValue();
+        if (coll == null) {
+            return false;
+        }
+        PsiElement targetContainer = coll.getTupleLiteral();
+        if (targetContainer == null) {
+            targetContainer = coll.getListLiteral();
+        }
+        if (targetContainer == null) {
+            targetContainer = coll.getMapLiteral();
+        }
+        if (targetContainer == null) {
+            return false;
+        }
+        return element == targetContainer.getFirstChild() || element == targetContainer.getLastChild();
     }
 }

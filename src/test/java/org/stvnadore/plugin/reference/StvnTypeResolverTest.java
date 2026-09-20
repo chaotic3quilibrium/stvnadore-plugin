@@ -588,4 +588,197 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertEquals(expectedSchema + " [#S] #R [#S] [#R]", StvnTypeResolver.resolveValueType(values.get(3)));
         assertEquals(expectedSchema + " [#S] [#R] [#S] [#R]", StvnTypeResolver.resolveValueType(values.get(4)));
     }
+
+    public void testPackageEnclaveUnqualifiedLeakFails() {
+        myFixture.addFileToProject("packaged_module.stvn_incl", """
+            {
+              :defs {
+                :package :Remote {
+                  :LocalPort :Uint16
+                }
+              }
+            }
+            """);
+
+        var psiFile = myFixture.configureByText("consumer.stvn", """
+            {
+              :defs {
+                :include [ "packaged_module.stvn_incl" ]
+              }
+              :type :LocalPort
+              :body 8080
+            }
+            """);
+
+        var typeKws = PsiTreeUtil.findChildrenOfType(psiFile, org.stvnadore.psi.TypeKeyword.class);
+        var targetKw = typeKws.stream()
+            .filter(kw -> kw.getText().equals(":LocalPort"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(targetKw);
+        var ref = targetKw.getReference();
+        assertNotNull(ref);
+        assertNull("Bare packaged symbol without #strip must not resolve", ref.resolve());
+    }
+
+    public void testPackageEnclaveWithStripResolves() {
+        myFixture.addFileToProject("packaged_module_strip.stvn_incl", """
+            {
+              :defs {
+                :package :Remote {
+                  :LocalPort :Uint16
+                }
+              }
+            }
+            """);
+
+        var psiFile = myFixture.configureByText("consumer_strip.stvn", """
+            {
+              :defs {
+                :include [ "packaged_module_strip.stvn_incl" { #strip } ]
+              }
+              :type :LocalPort
+              :body 8080
+            }
+            """);
+
+        var typeKws = PsiTreeUtil.findChildrenOfType(psiFile, org.stvnadore.psi.TypeKeyword.class);
+        var targetKw = typeKws.stream()
+            .filter(kw -> kw.getText().equals(":LocalPort"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(targetKw);
+        var ref = targetKw.getReference();
+        assertNotNull(ref);
+        assertNotNull("Packaged symbol included with #strip must resolve", ref.resolve());
+    }
+
+    public void testRecursiveSchemaJsonValueResolvesAcrossAllLevels() {
+        var psiFile = myFixture.configureByText("json_test.stvn", """
+            {
+              :defs {
+                :JsonNull :Enum [ #NULL ]
+                :JsonObject :Map( :String :JsonValue )
+                :JsonArray  :Seq( :JsonValue )
+                :JsonValue :Union(
+                  :JsonNull
+                  :String
+                  :Int64
+                  :JsonObject
+                  :JsonArray
+                )
+              }
+              :type :JsonValue
+              :body {
+                [ "name" "test" ]
+                [ "nested" {
+                    [ "inner_key" "inner_val" ]
+                  }
+                ]
+              }
+            }
+            """);
+
+        var mapLit = PsiTreeUtil.findChildOfType(psiFile, org.stvnadore.psi.MapLiteral.class);
+        assertNotNull("Root map literal must exist", mapLit);
+        var entries = mapLit.getValueList();
+        assertTrue(entries.size() >= 4);
+
+        // Verify root value type resolves
+        var rootVal = PsiTreeUtil.getParentOfType(mapLit, Value.class);
+        assertNotNull(rootVal);
+        assertNotNull("Root map value type must resolve", StvnTypeResolver.resolveValueType(rootVal));
+
+        // Find nested inner map literal
+        var innerMaps = PsiTreeUtil.findChildrenOfType(mapLit, org.stvnadore.psi.MapLiteral.class);
+        assertEquals(1, innerMaps.size());
+        for (var m : innerMaps) {
+            var val = PsiTreeUtil.getParentOfType(m, Value.class);
+            if (val != null) {
+                var resolved = StvnTypeResolver.resolveValueType(val);
+                assertNotNull("Nested map type must resolve", resolved);
+            }
+        }
+    }
+
+    public void testSumTypeDuplicateBranchesZeroDefsErrorsAndInlays() {
+        setUseLongFormSumTypes(true);
+        var psiFile = myFixture.configureByText(
+            "sum_type_duplicate_branches.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :RootPayload     :Tuple(
+                  :IdenticalEither
+                  :IdenticalEither
+                  :IdenticalUnion
+                  :IdenticalUnion
+                  :IdenticalUnion
+                )
+              }
+              :type :RootPayload
+              :body (
+                #Left 100
+                #Right 200
+                #1 300
+                #2 400
+                #3 500
+              )
+            }
+            """
+        );
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
+            .toList();
+        assertTrue("Sum types with duplicate branches must produce 0 compile errors on :defs and :body. Found: " + errors, errors.isEmpty());
+
+        var tuple = PsiTreeUtil.findChildOfType(psiFile, TupleLiteral.class);
+        assertNotNull("Expected tuple literal in body", tuple);
+        var values = tuple.getValueList();
+        assertEquals("Expected 5 tuple elements", 5, values.size());
+
+        assertEquals(":IdenticalEither #Left (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":IdenticalEither #Right (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(1)));
+        assertEquals(":IdenticalUnion #1 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(2)));
+        assertEquals(":IdenticalUnion #2 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(3)));
+        assertEquals(":IdenticalUnion #3 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(4)));
+    }
+
+    public void testNominalBranchPsiIndexResolutionWithoutCrossTalk() {
+        var psiFile = myFixture.configureByText(
+            "schema_check.stvn",
+            """
+            {
+              :defs {
+                :IdenticalEither :Either( :Uint32 :Uint32 )
+                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+              }
+              :type :Tuple( :IdenticalEither :IdenticalUnion )
+              :body (
+                #Left 1
+                #1 2
+              )
+            }
+            """
+        );
+
+        var leftBranch = StvnTypeResolver.getNominalEitherBranchPsi(psiFile, ":IdenticalEither", false);
+        var rightBranch = StvnTypeResolver.getNominalEitherBranchPsi(psiFile, ":IdenticalEither", true);
+        assertNotNull("Left branch PSI must resolve", leftBranch);
+        assertNotNull("Right branch PSI must resolve", rightBranch);
+        assertNotSame("Left and Right branch SchemaType elements must be distinct PSI nodes", leftBranch, rightBranch);
+
+        var unionBranch1 = StvnTypeResolver.getNominalUnionBranchPsi(psiFile, ":IdenticalUnion", 0);
+        var unionBranch2 = StvnTypeResolver.getNominalUnionBranchPsi(psiFile, ":IdenticalUnion", 1);
+        var unionBranch3 = StvnTypeResolver.getNominalUnionBranchPsi(psiFile, ":IdenticalUnion", 2);
+        assertNotNull("Union branch 1 PSI must resolve", unionBranch1);
+        assertNotNull("Union branch 2 PSI must resolve", unionBranch2);
+        assertNotNull("Union branch 3 PSI must resolve", unionBranch3);
+        assertNotSame("Union branch 1 and 2 must be distinct PSI nodes", unionBranch1, unionBranch2);
+        assertNotSame("Union branch 2 and 3 must be distinct PSI nodes", unionBranch2, unionBranch3);
+    }
 }

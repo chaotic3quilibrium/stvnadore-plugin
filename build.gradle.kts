@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.chaotic3quilibrium"
-version = "1.3.0"
+version = "1.3.1-SNAPSHOT"
 
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.0")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.1-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.0:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.1-SNAPSHOT:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -97,6 +97,18 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
+            <h3>1.3.1 - 2026.09.18</h3>
+            <ul>
+              <li>Integrated changes to <code>stvnadore-core:1.3.1-SNAPSHOT</code>:
+                <ul>
+                  <li>Tolerant grammar recovery for empty <code>{}</code> blocks in directives and metadata.</li>
+                  <li>Normalized token coordinate spans preventing off-by-one clipping on error squiggles.</li>
+                  <li>Enforced package enclave isolation across module boundaries.</li>
+                  <li>Restored recursive inlay hints via bounded depth traversal (<code>maxDepth = 16</code>).</li>
+                  <li>Added <code>StvnMetadataFacetInspection</code> with automated quick-fixes.</li>
+                </ul>
+              </li>
+            </ul>
             <h3>1.3.0 - 2026.09.17</h3>
             <ul>
               <li>Integrated changes to <code>stvnadore-core:1.3.0</code>:
@@ -241,10 +253,12 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnCompletionTest.class")
     exclude("**/StvnEnumSubsetCompletionTest.class")
     exclude("**/StvnEnumSubsetQuickFixTest.class")
+    exclude("**/StvnWrapSumVariantQuickFixTest.class")
     exclude("**/StvnFencedStringInspectionTest.class")
     exclude("**/StvnFencedStringTagRenameHandlerTest.class")
     exclude("**/StvnDefsOverhaulInspectionsTest.class")
     exclude("**/StvnStringCapacityInspectionTest.class")
+    exclude("**/StvnMetadataFacetInspectionTest.class")
     exclude("**/StvnFormatterTest.class")
     exclude("**/StvnDualProjectionActionsTest.class")
     exclude("**/StvnRenameRefactoringTest.class")
@@ -268,6 +282,7 @@ tasks.test {
     dependsOn(unitTest)
     enabled = true
     jvmArgs("-Xss16m")
+    maxHeapSize = "4g"
 }
 
 tasks.generateLexer {
