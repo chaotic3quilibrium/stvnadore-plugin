@@ -3,19 +3,23 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.psi.ListLiteral;
-import org.stvnadore.psi.SchemaType;
-import org.stvnadore.psi.Value;
-import org.stvnadore.psi.Visitor;
+import org.stvnadore.psi.*;
+
+import java.util.HashMap;
+import java.util.HashSet;
 
 /**
  * Real-time local inspection identifying flat ListLiterals supplied to Map collection slots,
- * attaching StvnMapAutoHealerQuickFix to restructure them into canonical MapLiterals.
+ * attaching StvnMapAutoHealerQuickFix to restructure them into canonical MapLiterals,
+ * and enforcing bidirectional uniqueness on #invertible map payloads.
  */
 @NullMarked
 public final class StvnMapStructuralInspection extends LocalInspectionTool {
@@ -44,6 +48,45 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                     );
                 }
             }
+
+            @Override
+            public void visitMapLiteral(@NotNull MapLiteral mapLiteral) {
+                super.visitMapLiteral(mapLiteral);
+                var valueParent = PsiTreeUtil.getParentOfType(mapLiteral, Value.class);
+                if (valueParent == null) return;
+                var typeInfo = StvnTypeResolver.resolveBaseTypeInfo(valueParent);
+                if (typeInfo != null && isInvertibleMapSchema(typeInfo.getSchema())) {
+                    var seenKeys = new HashMap<String, PsiElement>();
+                    var seenValues = new HashMap<String, PsiElement>();
+                    var values = mapLiteral.getValueList();
+                    for (int i = 0; i + 1 < values.size(); i += 2) {
+                        var keyElem = values.get(i);
+                        var valElem = values.get(i + 1);
+                        var keyText = keyElem.getText();
+                        var valText = valElem.getText();
+
+                        if (seenKeys.containsKey(keyText)) {
+                            holder.registerProblem(
+                                keyElem,
+                                "Duplicate map key '" + keyText + "' is forbidden in map collection",
+                                ProblemHighlightType.GENERIC_ERROR
+                            );
+                        } else {
+                            seenKeys.put(keyText, keyElem);
+                        }
+
+                        if (seenValues.containsKey(valText)) {
+                            holder.registerProblem(
+                                valElem,
+                                "Invertible map violates bidirectional uniqueness invariant: duplicate value '" + valText + "'",
+                                ProblemHighlightType.GENERIC_ERROR
+                            );
+                        } else {
+                            seenValues.put(valText, valElem);
+                        }
+                    }
+                }
+            }
         };
     }
 
@@ -53,7 +96,8 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
      * @param schema the schema type element
      * @return true if schema is a Map collection
      */
-    public static boolean isMapSchema(SchemaType schema) {
+    public static boolean isMapSchema(@Nullable SchemaType schema) {
+        if (schema == null) return false;
         var resolved = StvnTypeResolver.resolveNominalSchema(schema);
         if (resolved == null) {
             return false;
@@ -65,8 +109,41 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                 var firstChild = coll.getFirstChild();
                 if (firstChild != null) {
                     var text = firstChild.getText();
-                    return text.equals(":Map") || text.equals(":MapNonEmpty")
-                        || text.equals(":MapInv") || text.equals(":MapInvNonEmpty");
+                    return text.equals(":Map");
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if the given SchemaType resolves to an invertible Map collection type.
+     *
+     * @param schema the schema type element
+     * @return true if schema is an invertible Map collection
+     */
+    public static boolean isInvertibleMapSchema(@Nullable SchemaType schema) {
+        if (schema == null) return false;
+        var kw = schema.getTypeKeyword();
+        if (kw != null) {
+            var file = schema.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText(), new HashSet<>());
+                var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (typeDef != null && typeDef.getMetadataMap() != null) {
+                    for (var entry : typeDef.getMetadataMap().getMetadataEntryList()) {
+                        if (entry.getText().startsWith("#invertible") || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        var parentDef = PsiTreeUtil.getParentOfType(schema, TypeDefinition.class);
+        if (parentDef != null && parentDef.getMetadataMap() != null) {
+            for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                if (entry.getText().startsWith("#invertible") || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
+                    return true;
                 }
             }
         }

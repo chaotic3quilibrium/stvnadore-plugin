@@ -117,11 +117,11 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
     }
 
     public void testDestructionGuardDetectsDestructiveConstructs() {
-        var commented = "{ // comment\n :type :Int32 :body 10 }";
+        var commented = "{ // comment\n :type :Int :body 10 }";
         var fileComments = myFixture.configureByText("c.stvn", commented);
         assertTrue("Guard must trigger on comments", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileComments));
 
-        var packaged = "{ :defs { :package :pkg { :T :Int32 } } :type :pkg/T :body 10 }";
+        var packaged = "{ :defs { :package :pkg { :T :Int } } :type :pkg/T :body 10 }";
         var filePackaged = myFixture.configureByText("p.stvn", packaged);
         assertTrue("Guard must trigger on package enclaves", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(filePackaged));
 
@@ -129,11 +129,11 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var fileUsed = myFixture.configureByText("u.stvn", used);
         assertTrue("Guard must trigger on use aliases", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileUsed));
 
-        var unreferenced = "{ :defs { :Unused :Int32 } :type :String :body \"ok\" }";
+        var unreferenced = "{ :defs { :Unused :Int } :type :String :body \"ok\" }";
         var fileUnreferenced = myFixture.configureByText("unref.stvn", unreferenced);
         assertTrue("Guard must trigger on unreferenced definitions", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileUnreferenced));
 
-        var clean = "{ :defs { :T :Int32 } :type :T :body 10 }";
+        var clean = "{ :defs { :T :Int } :type :T :body 10 }";
         var fileClean = myFixture.configureByText("clean.stvn", clean);
         assertFalse("Guard must not trigger on clean documents", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileClean));
     }
@@ -145,7 +145,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var commented = """
             {
               // Comment here
-              :type :Int32
+              :type :Int
               :body 10
             }
             """;
@@ -162,7 +162,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         action.actionPerformed(event);
 
         var result = myFixture.getEditor().getDocument().getText();
-        assertEquals("{:type :Int32 :body 10}", result);
+        assertEquals("{:type :Int :body 10}", result);
     }
 
     public void testActionNamingAndBgtExecution() {
@@ -195,10 +195,10 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
             {
               :defs {
                 :package :org/stvnadore/finance {
-                  :Transaction :Tuple( :Int64 :Float64 )
+                  :Transaction :Tuple( :Int :Float )
                 }
                 :use [ :org/stvnadore/finance { :Transaction :LocalTx } ]
-                :A :String32
+                :A :String
                 :T :Tuple( :LocalTx :A )
               }
               :type :T

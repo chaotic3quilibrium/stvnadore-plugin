@@ -1,0 +1,13 @@
+<html>
+<body>
+<p>Reports invalid string cardinality facets on string type declarations to enforce STVN 2.0.0 governance (MCT § 3.1.3).</p>
+
+<p><b>String Cardinality Invariant (ERR_INVALID_METADATA_FACET):</b></p>
+<ul>
+    <li>The <code>#size</code> facet represents physical bit-width and is prohibited on <code>:String</code> declarations.</li>
+    <li>Character bounds for strings must be declared using <code>#minSize</code> and <code>#maxSize</code> (e.g. <code>{ #minSize 1 #maxSize 64 } :String</code>).</li>
+</ul>
+
+<p>Provides an automated intention quick-fix to convert <code>#size &lt;N&gt;</code> into <code>#minSize 1 #maxSize &lt;N&gt;</code>.</p>
+</body>
+</html>

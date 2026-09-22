@@ -29,7 +29,10 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnNestedPackageInspection.class, List.of("nested", "package")),
         Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use")),
         Map.entry(StvnStringCapacityInspection.class, List.of("capacity", "threshold", ":String", "governance")),
-        Map.entry(StvnMetadataFacetInspection.class, List.of("metadata", "facet", "empty", "governance", "#strip"))
+        Map.entry(StvnMetadataFacetInspection.class, List.of("metadata", "facet", "empty", "governance", "#strip")),
+        Map.entry(StvnStringCardinalityInspection.class, List.of("cardinality", "#size", "#minSize", "#maxSize")),
+        Map.entry(StvnDiscreteIntervalInspection.class, List.of("discrete", "interval", "#maxIncl", "#minExcl")),
+        Map.entry(StvnTemporalModeInspection.class, List.of("temporal", ":TimeEpoch", ":DateTime", "mode"))
     );
 
     public void testDirectInspectionToolDescriptionLoading() throws Exception {
@@ -71,7 +74,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 14 registered STVN local inspections in plugin.xml", 14, stvnInspections.size());
+        assertEquals("Expected exactly 17 registered STVN local inspections in plugin.xml", 17, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);

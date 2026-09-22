@@ -375,6 +375,36 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnMetadataFacetInspection"/>
 
+        <!-- 12m. Local Inspection for String Cardinality Governance -->
+        <localInspection language="STVN"
+                         shortName="StvnStringCardinality"
+                         displayName="String cardinality facet governance inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnStringCardinalityInspection"/>
+
+        <!-- 12n. Local Inspection for Discrete Numeric Interval Bounds -->
+        <localInspection language="STVN"
+                         shortName="StvnDiscreteInterval"
+                         displayName="Discrete interval bound governance inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnDiscreteIntervalInspection"/>
+
+        <!-- 12o. Local Inspection for Temporal Mode and Unit Facets -->
+        <localInspection language="STVN"
+                         shortName="StvnTemporalMode"
+                         displayName="Temporal mode and unit facet governance inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnTemporalModeInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 

@@ -276,5 +276,59 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertFalse("Must NOT leak tuple expression card on mismatched error parenthesis",
             doc != null && doc.contains("<b>Expression:</b>"));
     }
+
+    public void testStrictUpwardTraversalSuppression() {
+        var text = """
+            {
+              :defs {
+                :package :com/example {
+                  :MyType :String
+                }
+              }
+              :type :Tuple( :Int :String )
+              :body (
+                #
+                :
+                /
+              )
+            }
+            """;
+        myFixture.configureByText("upward_suppression.stvn", text);
+
+        var file = myFixture.getFile();
+        var editor = myFixture.getEditor();
+
+        // 1. Caret on bare '#'
+        var hashOffset = text.indexOf("#");
+        var hashElem = file.findElementAt(hashOffset);
+        assertNotNull(hashElem);
+        var hashDocElem = provider.getCustomDocumentationElement(editor, file, hashElem, hashOffset);
+        var hashDoc = hashDocElem != null ? provider.generateDoc(hashDocElem, hashElem) : null;
+        assertNull("Caret on bare '#' must return null documentation", hashDoc);
+
+        // 2. Caret on bare ':'
+        var colonOffset = text.indexOf(":", text.indexOf(":body"));
+        var colonElem = file.findElementAt(colonOffset);
+        assertNotNull(colonElem);
+        var colonDocElem = provider.getCustomDocumentationElement(editor, file, colonElem, colonOffset);
+        var colonDoc = colonDocElem != null ? provider.generateDoc(colonDocElem, colonElem) : null;
+        assertNull("Caret on bare ':' in body must return null documentation", colonDoc);
+
+        // 3. Caret on bare '/'
+        var slashOffset = text.indexOf("/", text.indexOf(":body"));
+        var slashElem = file.findElementAt(slashOffset);
+        assertNotNull(slashElem);
+        var slashDocElem = provider.getCustomDocumentationElement(editor, file, slashElem, slashOffset);
+        var slashDoc = slashDocElem != null ? provider.generateDoc(slashDocElem, slashElem) : null;
+        assertNull("Caret on bare '/' must return null documentation", slashDoc);
+
+        // 4. Caret on interior whitespace
+        var wsOffset = text.indexOf("/", text.indexOf(":body")) + 2;
+        var wsElem = file.findElementAt(wsOffset);
+        assertNotNull(wsElem);
+        var wsDocElem = provider.getCustomDocumentationElement(editor, file, wsElem, wsOffset);
+        var wsDoc = wsDocElem != null ? provider.generateDoc(wsDocElem, wsElem) : null;
+        assertNull("Caret on interior whitespace must return null documentation", wsDoc);
+    }
 }
 

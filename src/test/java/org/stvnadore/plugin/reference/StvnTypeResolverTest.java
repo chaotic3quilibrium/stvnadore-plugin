@@ -155,9 +155,9 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             {
               :defs {
                 :Mode :Enum [ #Left #Right ]
-                #Left :Uint7 99
+                #Left :Int 99
               }
-              :type :Tuple( :Mode :Uint7 )
+              :type :Tuple( :Mode :Int )
               :body (
                 #Left
                 #Left
@@ -182,7 +182,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertNotNull(secondVal);
 
         assertEquals(":Mode (-> :Enum)", StvnTypeResolver.resolveValueType(firstVal));
-        assertEquals(":Uint7", StvnTypeResolver.resolveValueType(secondVal));
+        assertEquals(":Int", StvnTypeResolver.resolveValueType(secondVal));
     }
 
     public void testUhohEightAryTupleTypeInlayResolutions() {
@@ -191,24 +191,24 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Some  :Uint5 1
-                #None  :Uint5 2
-                #Left  :Uint5 3
-                #Right :Uint5 4
-                #TRUE  :Uint5 5
-                #FALSE :Uint5 6
-                #True  :Uint5 7
-                #False :Uint5 8
+                #Some  :Int 1
+                #None  :Int 2
+                #Left  :Int 3
+                #Right :Int 4
+                #TRUE  :Int 5
+                #FALSE :Int 6
+                #True  :Int 7
+                #False :Int 8
               }
               :type :Tuple(
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
               )
               :body (
                 #Some
@@ -235,7 +235,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             var valAncestor = PsiTreeUtil.getParentOfType(elem, Value.class);
             assertNotNull("Value ancestor for " + kw + " not found", valAncestor);
             var resolvedType = StvnTypeResolver.resolveValueType(valAncestor);
-            assertEquals("Expected :Uint5 for keyword " + kw, ":Uint5", resolvedType);
+            assertEquals("Expected :Int for keyword " + kw, ":Int", resolvedType);
         }
     }
 
@@ -245,9 +245,9 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Some :Uint7 10
+                #Some :Int 10
               }
-              :type :Tuple( :Uint7 :Uint7 )
+              :type :Tuple( :Int :Int )
               :body (
                 #Some
                 42
@@ -263,14 +263,14 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertNotNull(someElem);
         var someVal = PsiTreeUtil.getParentOfType(someElem, Value.class);
         assertNotNull(someVal);
-        assertEquals(":Uint7", StvnTypeResolver.resolveValueType(someVal));
+        assertEquals(":Int", StvnTypeResolver.resolveValueType(someVal));
 
         var numIdx = text.indexOf("42", bodyIdx);
         var numElem = psiFile.findElementAt(numIdx);
         assertNotNull(numElem);
         var numVal = PsiTreeUtil.getParentOfType(numElem, Value.class);
         assertNotNull(numVal);
-        assertEquals(":Uint7", StvnTypeResolver.resolveValueType(numVal));
+        assertEquals(":Int", StvnTypeResolver.resolveValueType(numVal));
     }
 
     public void testNominalEnumMultiHopResolution() {
@@ -663,7 +663,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
                 :JsonValue :Union(
                   :JsonNull
                   :String
-                  :Int64
+                  :Int
                   :JsonObject
                   :JsonArray
                 )
@@ -708,8 +708,8 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :IdenticalEither :Either( :Uint32 :Uint32 )
-                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :IdenticalEither :Either( :Int :Int )
+                :IdenticalUnion  :Union( :Int :Int :Int )
                 :RootPayload     :Tuple(
                   :IdenticalEither
                   :IdenticalEither
@@ -741,11 +741,11 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var values = tuple.getValueList();
         assertEquals("Expected 5 tuple elements", 5, values.size());
 
-        assertEquals(":IdenticalEither #Left (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(0)));
-        assertEquals(":IdenticalEither #Right (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(1)));
-        assertEquals(":IdenticalUnion #1 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(2)));
-        assertEquals(":IdenticalUnion #2 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(3)));
-        assertEquals(":IdenticalUnion #3 (-> :Uint32)", StvnTypeResolver.resolveValueType(values.get(4)));
+        assertEquals(":IdenticalEither #Left (-> :Int)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":IdenticalEither #Right (-> :Int)", StvnTypeResolver.resolveValueType(values.get(1)));
+        assertEquals(":IdenticalUnion #1 (-> :Int)", StvnTypeResolver.resolveValueType(values.get(2)));
+        assertEquals(":IdenticalUnion #2 (-> :Int)", StvnTypeResolver.resolveValueType(values.get(3)));
+        assertEquals(":IdenticalUnion #3 (-> :Int)", StvnTypeResolver.resolveValueType(values.get(4)));
     }
 
     public void testNominalBranchPsiIndexResolutionWithoutCrossTalk() {
@@ -754,8 +754,8 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :IdenticalEither :Either( :Uint32 :Uint32 )
-                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :IdenticalEither :Either( :Int :Int )
+                :IdenticalUnion  :Union( :Int :Int :Int )
               }
               :type :Tuple( :IdenticalEither :IdenticalUnion )
               :body (
@@ -780,5 +780,29 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertNotNull("Union branch 3 PSI must resolve", unionBranch3);
         assertNotSame("Union branch 1 and 2 must be distinct PSI nodes", unionBranch1, unionBranch2);
         assertNotSame("Union branch 2 and 3 must be distinct PSI nodes", unionBranch2, unionBranch3);
+    }
+
+    public void testOpaqueNominalResolution() {
+        var psiFile = myFixture.configureByText(
+            "opaque_nominal.stvn",
+            """
+            {
+              :defs {
+                :UserId :String
+                :AccountId :UserId
+              }
+              :type :AccountId
+              :body "acc_12345"
+            }
+            """);
+
+        var typeEntry = PsiTreeUtil.findChildOfType(psiFile, org.stvnadore.psi.TypeEntry.class);
+        assertNotNull(typeEntry);
+
+        var resolvedSchema = StvnTypeResolver.resolveNominalSchema(typeEntry.getSchemaType());
+        assertNotNull(resolvedSchema);
+        // Opaque shallow resolution: :AccountId -> :UserId must resolve to :UserId's SchemaType and NOT recursively unwrap to :String
+        assertEquals(":UserId", resolvedSchema.getText().trim());
+        assertFalse(":String".equals(resolvedSchema.getText().trim()));
     }
 }

@@ -21,7 +21,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             "ambiguous_either.stvn",
             """
             {
-              :type :Either( :Int32 :Uint32 )
+              :type :Either( :Int :Int )
               :body 4<caret>2
             }
             """
@@ -33,8 +33,8 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         assertEquals("Expected exactly two wrapping intention actions for :Either", 2, intentions.size());
 
         // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
-        assertEquals("Wrap with #Right (-> :Uint32)", intentions.get(0).getText());
-        assertEquals("Wrap with #Left (-> :Int32)", intentions.get(1).getText());
+        assertEquals("Wrap with #Right (-> :Int)", intentions.get(0).getText());
+        assertEquals("Wrap with #Left (-> :Int)", intentions.get(1).getText());
 
         // Apply primary quick-fix (#Right)
         myFixture.launchAction(intentions.get(0));
@@ -42,7 +42,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Either( :Int32 :Uint32 )
+              :type :Either( :Int :Int )
               :body #Right 42
             }
             """
@@ -58,7 +58,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             "ambiguous_either_left.stvn",
             """
             {
-              :type :Either( :Int32 :Uint32 )
+              :type :Either( :Int :Int )
               :body 4<caret>2
             }
             """
@@ -74,7 +74,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Either( :Int32 :Uint32 )
+              :type :Either( :Int :Int )
               :body #Left 42
             }
             """
@@ -90,7 +90,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             "ambiguous_union.stvn",
             """
             {
-              :type :Union( :Int32 :Uint32 :String )
+              :type :Union( :Int :Int :String )
               :body 10<caret>0
             }
             """
@@ -99,17 +99,17 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         myFixture.doHighlighting();
 
         var intentions = myFixture.filterAvailableIntentions("Wrap with");
-        // Must match branch 1 (:Int32) and branch 2 (:Uint32), excluding branch 3 (:String)
+        // Must match branch 1 (:Int) and branch 2 (:Int), excluding branch 3 (:String)
         assertEquals("Expected exactly two compatible branch actions for integer literal", 2, intentions.size());
-        assertEquals("Wrap with #1 (-> :Int32)", intentions.get(0).getText());
-        assertEquals("Wrap with #2 (-> :Uint32)", intentions.get(1).getText());
+        assertEquals("Wrap with #1 (-> :Int)", intentions.get(0).getText());
+        assertEquals("Wrap with #2 (-> :Int)", intentions.get(1).getText());
 
         myFixture.launchAction(intentions.get(0));
 
         myFixture.checkResult(
             """
             {
-              :type :Union( :Int32 :Uint32 :String )
+              :type :Union( :Int :Int :String )
               :body #1 100
             }
             """
@@ -126,7 +126,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Pair :Tuple( :Int32 :Either( :Int32 :String ) )
+                :Pair :Tuple( :Int :Either( :Int :String ) )
               }
               :type :Pair
               :body (
@@ -144,7 +144,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
 
         // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
         assertEquals("Complete with #Right (-> :String)", intentions.get(0).getText());
-        assertEquals("Complete with #Left (-> :Int32)", intentions.get(1).getText());
+        assertEquals("Complete with #Left (-> :Int)", intentions.get(1).getText());
 
         // Apply primary quick-fix (#Right)
         myFixture.launchAction(intentions.get(0));
@@ -153,7 +153,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Pair :Tuple( :Int32 :Either( :Int32 :String ) )
+                :Pair :Tuple( :Int :Either( :Int :String ) )
               }
               :type :Pair
               :body (
@@ -170,7 +170,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
             "bare_hash_union.stvn",
             """
             {
-              :type :Union( :Int32 :Float64 :String )
+              :type :Union( :Int :Float :String )
               :body #<caret>
             }
             """
@@ -180,8 +180,8 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
 
         var intentions = myFixture.filterAvailableIntentions("Complete with");
         assertEquals("Expected three completion intention actions for 3-branch union on bare '#'", 3, intentions.size());
-        assertEquals("Complete with #1 (-> :Int32)", intentions.get(0).getText());
-        assertEquals("Complete with #2 (-> :Float64)", intentions.get(1).getText());
+        assertEquals("Complete with #1 (-> :Int)", intentions.get(0).getText());
+        assertEquals("Complete with #2 (-> :Float)", intentions.get(1).getText());
         assertEquals("Complete with #3 (-> :String)", intentions.get(2).getText());
 
         myFixture.launchAction(intentions.get(0));
@@ -189,7 +189,7 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Union( :Int32 :Float64 :String )
+              :type :Union( :Int :Float :String )
               :body #1
             }
             """

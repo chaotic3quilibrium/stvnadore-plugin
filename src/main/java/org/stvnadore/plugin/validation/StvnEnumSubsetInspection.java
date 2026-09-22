@@ -62,10 +62,11 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 }
 
                 // Attachment check 2: Non-enum primitives prohibited
+                var parentSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
                 var resolvedParent = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
-                boolean isEnum = resolvedParent != null && resolvedParent.getSchemaConstructor() != null &&
+                boolean isEnum = parentSubset != null || (resolvedParent != null && resolvedParent.getSchemaConstructor() != null &&
                     resolvedParent.getSchemaConstructor().getSumType() != null &&
-                    resolvedParent.getSchemaConstructor().getSumType().getEnumDef() != null;
+                    resolvedParent.getSchemaConstructor().getSumType().getEnumDef() != null);
                 if (!isEnum) {
                     var baseName = schemaType != null ? schemaType.getText() : "non-enum";
                     for (var filter : filterEntries) {
@@ -93,7 +94,9 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 }
 
                 // Retrieve immediate parent and root variants
-                var parentSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
+                if (parentSubset == null) {
+                    parentSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
+                }
                 List<String> parentAllowed;
                 String parentName;
                 String rootEnumName;

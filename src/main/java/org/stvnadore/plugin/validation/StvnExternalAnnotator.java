@@ -2,6 +2,7 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.ide.projectView.ProjectView;
+import com.intellij.lang.annotation.AnnotationBuilder;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
@@ -254,48 +255,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                     }
 
-                    // Intercept ERR_AMBIGUOUS_SUM_INFERENCE and attach WrapSumVariantQuickFix actions
-                    if ((diag.errorCode().isPresent() && "ERR_AMBIGUOUS_SUM_INFERENCE".equals(diag.errorCode().get()))
-                        || (message.contains("Ambiguous implicit resolution") || message.contains("Ambiguous implicit either") || message.contains("matches multiple candidate branches"))) {
-                        var elem = file.findElementAt(s);
-                        if (elem != null) {
-                            var valueElement = PsiTreeUtil.getParentOfType(elem, Value.class, false);
-                            if (valueElement == null) {
-                                valueElement = PsiTreeUtil.getNonStrictParentOfType(elem, Value.class);
-                            }
-                            var targetElement = (valueElement != null) ? valueElement : elem;
-                            var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(elem);
-                            if (expectedSchema != null) {
-                                var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
-                                var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
-                                var constructor = schemaToInspect.getSchemaConstructor();
-                                if (constructor != null && constructor.getSumType() != null) {
-                                    var sumType = constructor.getSumType();
-                                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                    if (sumType.getText().startsWith(":Either")) {
-                                        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
-                                        if (innerSchemas.size() >= 2) {
-                                            var rightBranch = innerSchemas.get(1);
-                                            var leftBranch = innerSchemas.get(0);
-                                            var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
-                                            var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
-                                            annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH));
-                                            annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
-                                        }
-                                    } else if (sumType.getText().startsWith(":Union")) {
-                                        for (int i = 0; i < innerSchemas.size(); i++) {
-                                            var branch = innerSchemas.get(i);
-                                            if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
-                                                var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
-                                                var tag = "#" + (i + 1);
-                                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, tag, branchLabel));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
 
                     annotationBuilder.create();
                     continue;
@@ -647,6 +607,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (listLit != null) {
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
                     }
+                    annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, targetRange, diag, message);
                     annotationBuilder.create();
                 } else if (bodyEntry != null) {
                     LOG.debug("Unlocated diagnostic anchored to bodyEntry range: " + message);
@@ -1064,5 +1025,56 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                kw.equals(":SeqNonEmpty") || kw.equals(":Set") || kw.equals(":SetNonEmpty") ||
                kw.equals(":Map") || kw.equals(":MapNonEmpty") || kw.equals(":MapInv") ||
                kw.equals(":MapInvNonEmpty");
+    }
+
+    private static AnnotationBuilder attachWrapSumVariantQuickFixes(
+        AnnotationBuilder annotationBuilder,
+        PsiFile file,
+        TextRange range,
+        StvnDiagnostic diag,
+        String message
+    ) {
+        if ((diag.errorCode().isPresent() && "ERR_AMBIGUOUS_SUM_INFERENCE".equals(diag.errorCode().get()))
+            || (message.contains("Ambiguous implicit resolution") || message.contains("Ambiguous implicit either") || message.contains("matches multiple candidate branches"))) {
+            var elem = file.findElementAt(range.getStartOffset());
+            if (elem != null) {
+                var valueElement = PsiTreeUtil.getParentOfType(elem, Value.class, false);
+                if (valueElement == null) {
+                    valueElement = PsiTreeUtil.getNonStrictParentOfType(elem, Value.class);
+                }
+                var targetElement = (valueElement != null) ? valueElement : elem;
+                var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(elem);
+                if (expectedSchema != null) {
+                    var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+                    var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
+                    var constructor = schemaToInspect.getSchemaConstructor();
+                    if (constructor != null && constructor.getSumType() != null) {
+                        var sumType = constructor.getSumType();
+                        var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                        if (sumType.getText().startsWith(":Either")) {
+                            // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
+                            if (innerSchemas.size() >= 2) {
+                                var rightBranch = innerSchemas.get(1);
+                                var leftBranch = innerSchemas.get(0);
+                                var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
+                                var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
+                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH));
+                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
+                            }
+                        } else if (sumType.getText().startsWith(":Union")) {
+                            for (int i = 0; i < innerSchemas.size(); i++) {
+                                var branch = innerSchemas.get(i);
+                                if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
+                                    var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
+                                    var tag = "#" + (i + 1);
+                                    annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, tag, branchLabel));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return annotationBuilder;
     }
 }

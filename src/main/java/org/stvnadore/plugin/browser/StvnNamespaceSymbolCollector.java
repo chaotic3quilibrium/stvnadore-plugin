@@ -577,7 +577,16 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        if (nominalName != null && !nominalName.isEmpty()) {
+        var expected = StvnTypeResolver.resolveExpectedSchemaAtCaret(currentVal);
+        boolean alreadyTyped = false;
+        if (expected != null && expected.getTypeKeyword() != null) {
+            var expectedName = expected.getTypeKeyword().getText();
+            if (processed.contains(expectedName) || processed.contains(":" + expectedName)) {
+                alreadyTyped = true;
+            }
+        }
+
+        if (nominalName != null && !nominalName.isEmpty() && !alreadyTyped) {
             if (nominalName.contains("/")) {
                 var pkgPath = nominalName.substring(0, nominalName.lastIndexOf('/'));
                 if (isPackageStripped(file, pkgPath)) {
@@ -597,7 +606,7 @@ public final class StvnNamespaceSymbolCollector {
                     StvnNamespaceScope.BODY
                 ));
             }
-        } else {
+        } else if (!alreadyTyped) {
             var inferred = org.stvnadore.plugin.hints.StvnTypeInferenceHelper.resolveValueTypeWithDepth(currentVal, 16);
             if (inferred != null && !inferred.isEmpty()) {
                 var matcher = java.util.regex.Pattern.compile(":[a-zA-Z0-9_/-]+").matcher(inferred);
@@ -800,7 +809,7 @@ public final class StvnNamespaceSymbolCollector {
             }
 
             var resolvedSchema = StvnTypeResolver.resolveNominalSchema(currentSchema);
-            if (resolvedSchema != null && resolvedSchema != currentSchema) {
+            if (resolvedSchema != null && resolvedSchema != currentSchema && resolvedSchema.getSchemaConstructor() != null) {
                 correlateShapeAndValue(resolvedSchema, currentValue, file, depth, results, processed, visitedNominals);
             }
             return;

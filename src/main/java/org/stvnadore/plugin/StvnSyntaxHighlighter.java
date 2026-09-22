@@ -74,20 +74,13 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
     private static boolean isPrimitiveTokenType(IElementType type) {
         return type.equals(StvnTypes.ATOM_BOOLEAN) ||
                type.equals(StvnTypes.ATOM_FLOAT) ||
-               type.equals(StvnTypes.ATOM_FLOAT_EXACT) ||
                type.equals(StvnTypes.ATOM_INT) ||
                type.equals(StvnTypes.ATOM_STRING) ||
-               type.equals(StvnTypes.ATOM_STRING_FIXED) ||
-               type.equals(StvnTypes.ATOM_STRING_NON_EMPTY) ||
-               type.equals(StvnTypes.ATOM_UINT) ||
+               type.equals(StvnTypes.ATOM_TIME_EPOCH) ||
+               type.equals(StvnTypes.ATOM_DATE_TIME) ||
                type.equals(StvnTypes.COLL_MAP) ||
-               type.equals(StvnTypes.COLL_MAP_INV) ||
-               type.equals(StvnTypes.COLL_MAP_INV_NON_EMPTY) ||
-               type.equals(StvnTypes.COLL_MAP_NON_EMPTY) ||
                type.equals(StvnTypes.COLL_SEQ) ||
-               type.equals(StvnTypes.COLL_SEQ_NON_EMPTY) ||
                type.equals(StvnTypes.COLL_SET) ||
-               type.equals(StvnTypes.COLL_SET_NON_EMPTY) ||
                type.equals(StvnTypes.KW_TUPLE) ||
                type.equals(StvnTypes.KW_MAP_ENTRY) ||
                type.equals(StvnTypes.KW_ENUM) ||
@@ -123,6 +116,16 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
         return type.equals(StvnTypes.KW_EQUATABLE) ||
                type.equals(StvnTypes.KW_COMPARABLE) ||
                type.equals(StvnTypes.KW_PRESERVE_INDENT) ||
+               type.equals(StvnTypes.KW_SIZE) ||
+               type.equals(StvnTypes.KW_UNSIGNED) ||
+               type.equals(StvnTypes.KW_EXACT) ||
+               type.equals(StvnTypes.KW_MIN_SIZE) ||
+               type.equals(StvnTypes.KW_MAX_SIZE) ||
+               type.equals(StvnTypes.KW_INVERTIBLE) ||
+               type.equals(StvnTypes.KW_UNIT) ||
+               type.equals(StvnTypes.KW_OFFSET) ||
+               type.equals(StvnTypes.KW_ZONED) ||
+               type.equals(StvnTypes.KW_AUDITED) ||
                type.equals(StvnTypes.KW_MIN_INCL) ||
                type.equals(StvnTypes.KW_MIN_EXCL) ||
                type.equals(StvnTypes.KW_MAX_INCL) ||

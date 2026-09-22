@@ -28,12 +28,6 @@ COMMENT="//".*
 LITERAL_STRING_BLOCK=\"\"\"[ \t]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"
 LITERAL_STRING_SIMPLE=\"([^\"]|\\\")*\"
 
-ATOM_UINT=:Uint[0-9]*
-ATOM_INT=:Int[0-9]*
-ATOM_FLOAT=:Float[0-9]*
-ATOM_STRING_FIXED=:StringFixed[0-9]*
-ATOM_STRING=:String[0-9]*
-ATOM_STRING_NON_EMPTY=:StringNonEmpty[0-9]*
 
 UNION_TAG_PREFIX=#[1-9][0-9]*
 TYPE_KEYWORD_BASE=:[a-zA-Z_][a-zA-Z0-9_]*
@@ -91,6 +85,16 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   "#equatable"                   { return KW_EQUATABLE; }
   "#comparable"                  { return KW_COMPARABLE; }
   "#preserveIndent"              { return KW_PRESERVE_INDENT; }
+  "#size"                        { return KW_SIZE; }
+  "#unsigned"                    { return KW_UNSIGNED; }
+  "#exact"                       { return KW_EXACT; }
+  "#minSize"                     { return KW_MIN_SIZE; }
+  "#maxSize"                     { return KW_MAX_SIZE; }
+  "#invertible"                  { return KW_INVERTIBLE; }
+  "#unit"                        { return KW_UNIT; }
+  "#offset"                      { return KW_OFFSET; }
+  "#zoned"                       { return KW_ZONED; }
+  "#audited"                     { return KW_AUDITED; }
   "#minIncl"                     { return KW_MIN_INCL; }
   "#minExcl"                     { return KW_MIN_EXCL; }
   "#maxIncl"                     { return KW_MAX_INCL; }
@@ -101,17 +105,16 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   
   // Atomic type descriptors (: namespace)
   ":Boolean"                     { return ATOM_BOOLEAN; }
-  ":FloatExact"                  { return ATOM_FLOAT_EXACT; }
+  ":Int"                         { return ATOM_INT; }
+  ":Float"                       { return ATOM_FLOAT; }
+  ":String"                      { return ATOM_STRING; }
+  ":TimeEpoch"                   { return ATOM_TIME_EPOCH; }
+  ":DateTime"                    { return ATOM_DATE_TIME; }
   
   // Collection type descriptors (: namespace)
   ":Seq"                         { return COLL_SEQ; }
-  ":SeqNonEmpty"                 { return COLL_SEQ_NON_EMPTY; }
   ":Set"                         { return COLL_SET; }
-  ":SetNonEmpty"                 { return COLL_SET_NON_EMPTY; }
   ":Map"                         { return COLL_MAP; }
-  ":MapNonEmpty"                 { return COLL_MAP_NON_EMPTY; }
-  ":MapInv"                      { return COLL_MAP_INV; }
-  ":MapInvNonEmpty"              { return COLL_MAP_INV_NON_EMPTY; }
 
   {COMMENT}                      { return COMMENT; }
   
@@ -119,8 +122,8 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   // outside fenced string bodies to prevent block-string fallback triggers
   \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
 
-  // Permissive Dynamic Fenced String: Matches standard [TAG] or legacy ->[TAG]
-  \"\"\"(->)?\[[^\r\n\]]*\][ \t\r]*\n {
+  // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG] and rejects """->[
+  \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
     String text = yytext().toString();
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);
@@ -149,12 +152,6 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
 
   {LITERAL_STRING_BLOCK}         { return LITERAL_STRING_BLOCK; }
   {LITERAL_STRING_SIMPLE}        { return LITERAL_STRING_SIMPLE; }
-  {ATOM_UINT}                    { return ATOM_UINT; }
-  {ATOM_INT}                     { return ATOM_INT; }
-  {ATOM_FLOAT}                   { return ATOM_FLOAT; }
-  {ATOM_STRING_FIXED}            { return ATOM_STRING_FIXED; }
-  {ATOM_STRING}                  { return ATOM_STRING; }
-  {ATOM_STRING_NON_EMPTY}        { return ATOM_STRING_NON_EMPTY; }
   {TYPE_KEYWORD_BASE}            { return TYPE_KEYWORD_BASE; }
   {UNION_TAG_PREFIX}             { return UNION_TAG_PREFIX; }
   {VALUE_KEYWORD_BASE}           { return VALUE_KEYWORD_BASE; }

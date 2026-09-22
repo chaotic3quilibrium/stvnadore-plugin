@@ -33,7 +33,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
     public void testRedundantUnionTagHighlightingAndQuickFixStringBranch() {
         var text = """
                 {
-                  :type :Union( :String :Int32 )
+                  :type :Union( :String :Int )
                   :body #1 "hello"
                 }
                 """;
@@ -47,7 +47,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.launchAction(actions.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Union( :String :Int32 )
+                  :type :Union( :String :Int )
                   :body "hello"
                 }
                 """);
@@ -56,7 +56,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
     public void testRedundantUnionTagHighlightingAndQuickFixIntBranch() {
         var text = """
                 {
-                  :type :Union( :String :Int32 )
+                  :type :Union( :String :Int )
                   :body #2 42
                 }
                 """;
@@ -70,7 +70,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.launchAction(actions.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Union( :String :Int32 )
+                  :type :Union( :String :Int )
                   :body 42
                 }
                 """);
@@ -81,8 +81,8 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
                 {
                   :type :Tuple(
                     :Option( :String )
-                    :Either( :String :Int32 )
-                    :Union( :String :Int32 )
+                    :Either( :String :Int )
+                    :Union( :String :Int )
                     :Boolean
                   )
                   :body (
@@ -114,7 +114,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
 
         var text = """
                 {
-                  :type :Union( :String :Int32 )
+                  :type :Union( :String :Int )
                   :body #1 "hello"
                 }
                 """;
@@ -176,7 +176,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :UnionRepeat :Union( :Int32 :String :Uint32 )
+                    :FirstId :Int
+                    :SecondId :Int
+                    :UnionRepeat :Union( :FirstId :String :SecondId )
                   }
                   :type :UnionRepeat
                   :body #1 1
@@ -188,7 +190,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
             .toList();
 
-        assertEquals("Expected 0 redundant tag warnings because 1 matches both :Int32 and :Uint32", 0, redundantWarnings.size());
+        assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, redundantWarnings.size());
         var actions = myFixture.filterAvailableIntentions("Remove redundant tag");
         assertTrue("Expected 'Remove redundant tag' quick-fix to NOT be offered when tag is mandatory", actions.isEmpty());
     }
@@ -197,7 +199,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :DisjointUnion :Union( :Int32 :String :Boolean )
+                    :DisjointUnion :Union( :Int :String :Boolean )
                   }
                   :type :DisjointUnion
                   :body #1 1
@@ -219,7 +221,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.checkResult("""
                 {
                   :defs {
-                    :DisjointUnion :Union( :Int32 :String :Boolean )
+                    :DisjointUnion :Union( :Int :String :Boolean )
                   }
                   :type :DisjointUnion
                   :body 1
@@ -238,7 +240,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :FloatUnion :Union( :Float32 :Float64 )
+                    :FloatA :Float
+                    :FloatB :Float
+                    :FloatUnion :Union( :FloatA :FloatB )
                   }
                   :type :FloatUnion
                   :body #1 1.234
@@ -250,7 +254,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
             .toList();
 
-        assertEquals("Expected 0 redundant tag warnings because 1.234 matches both :Float32 and :Float64", 0, redundantWarnings.size());
+        assertEquals("Expected 0 redundant tag warnings because 1.234 matches both :FloatA and :FloatB", 0, redundantWarnings.size());
         var actions = myFixture.filterAvailableIntentions("Remove redundant tag");
         assertTrue("Expected 'Remove redundant tag' quick-fix to NOT be offered when tag is mandatory for float union", actions.isEmpty());
     }
@@ -282,8 +286,10 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :Disjoint :Union( :Int32 :String )
-                    :Overlapping :Union( :Int32 :Uint32 )
+                    :FirstId :Int
+                    :SecondId :Int
+                    :Disjoint :Union( :Int :String )
+                    :Overlapping :Union( :FirstId :SecondId )
                   }
                   :type :Tuple( :Disjoint :Overlapping )
                   :body (
@@ -305,7 +311,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :EitherRepeat :Either( :Int32 :Uint32 )
+                    :FirstId :Int
+                    :SecondId :Int
+                    :EitherRepeat :Either( :FirstId :SecondId )
                   }
                   :type :EitherRepeat
                   :body #Left 1
@@ -317,14 +325,16 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
             .toList();
 
-        assertEquals("Expected 0 redundant tag warnings because 1 matches both :Int32 and :Uint32", 0, redundantWarnings.size());
+        assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, redundantWarnings.size());
         var actions = myFixture.filterAvailableIntentions("Remove redundant tag");
         assertTrue("Expected 'Remove redundant tag' quick-fix to NOT be offered when tag is mandatory for #Left", actions.isEmpty());
 
         var rightText = """
                 {
                   :defs {
-                    :EitherRepeat :Either( :Int32 :Uint32 )
+                    :FirstId :Int
+                    :SecondId :Int
+                    :EitherRepeat :Either( :FirstId :SecondId )
                   }
                   :type :EitherRepeat
                   :body #Right 1
@@ -335,7 +345,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var rightWarnings = rightHighlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
             .toList();
-        assertEquals("Expected 0 redundant tag warnings because 1 matches both :Int32 and :Uint32", 0, rightWarnings.size());
+        assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, rightWarnings.size());
         var rightActions = myFixture.filterAvailableIntentions("Remove redundant tag");
         assertTrue("Expected 'Remove redundant tag' quick-fix to NOT be offered when tag is mandatory for #Right", rightActions.isEmpty());
     }
@@ -344,7 +354,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :FloatEither :Either( :Float32 :Float64 )
+                    :FloatA :Float
+                    :FloatB :Float
+                    :FloatEither :Either( :FloatA :FloatB )
                   }
                   :type :FloatEither
                   :body #Left 1.2
@@ -363,7 +375,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var rightText = """
                 {
                   :defs {
-                    :FloatEither :Either( :Float32 :Float64 )
+                    :FloatA :Float
+                    :FloatB :Float
+                    :FloatEither :Either( :FloatA :FloatB )
                   }
                   :type :FloatEither
                   :body #Right 1.2
@@ -375,7 +389,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
             .toList();
 
-        assertEquals("Expected 0 redundant tag warnings because 1.2 matches both :Float32 and :Float64", 0, rightWarnings.size());
+        assertEquals("Expected 0 redundant tag warnings because 1.2 matches both :FloatA and :FloatB", 0, rightWarnings.size());
         var rightActions = myFixture.filterAvailableIntentions("Remove redundant tag");
         assertTrue("Expected 'Remove redundant tag' quick-fix to NOT be offered when tag is mandatory for float #Right", rightActions.isEmpty());
     }
@@ -384,7 +398,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :DisjointEither :Either( :Int32 :String )
+                    :DisjointEither :Either( :Int :String )
                   }
                   :type :DisjointEither
                   :body #Left 1
@@ -408,7 +422,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :DisjointEither :Either( :Int32 :String )
+                    :DisjointEither :Either( :Int :String )
                   }
                   :type :DisjointEither
                   :body #Right "text"
@@ -430,7 +444,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.checkResult("""
                 {
                   :defs {
-                    :DisjointEither :Either( :Int32 :String )
+                    :DisjointEither :Either( :Int :String )
                   }
                   :type :DisjointEither
                   :body "text"
@@ -446,8 +460,10 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :Disjoint :Either( :Int32 :String )
-                    :Overlapping :Either( :Int32 :Uint32 )
+                    :FirstId :Int
+                    :SecondId :Int
+                    :Disjoint :Either( :Int :String )
+                    :Overlapping :Either( :FirstId :SecondId )
                   }
                   :type :Tuple( :Disjoint :Overlapping )
                   :body (

@@ -22,10 +22,17 @@ import org.stvnadore.psi.*;
 public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
     private static final TokenSet NUMERIC_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL
+        StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL,
+        StvnTypes.KW_SIZE, StvnTypes.KW_UNSIGNED, StvnTypes.KW_EXACT
     );
     private static final TokenSet STRING_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_REGEX
+        StvnTypes.KW_REGEX, StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
+    );
+    private static final TokenSet TEMPORAL_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_UNIT, StvnTypes.KW_OFFSET, StvnTypes.KW_ZONED, StvnTypes.KW_AUDITED
+    );
+    private static final TokenSet MAP_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_INVERTIBLE
     );
 
     @Override
@@ -143,6 +150,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         var baseType = schemaType != null ? resolveBaseTypeString(schemaType) : "";
         boolean isNumeric = isNumericType(baseType);
         boolean isString = isStringType(baseType);
+        boolean isTemporal = isTemporalType(baseType);
+        boolean isMap = isMapType(baseType);
         boolean isEnum = ":Enum".equals(baseType) || baseType.startsWith(":Enum");
 
         for (var entry : metaMap.getMetadataEntryList()) {
@@ -153,17 +162,31 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(NUMERIC_FACET_TOKENS) != null && !isNumeric) {
+            } else if (entry.getNode().findChildByType(NUMERIC_FACET_TOKENS) != null && !isNumeric && !isString) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #minIncl, #maxIncl, #minExcl, #maxExcl]",
+                    "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact, #minIncl, #maxIncl, #minExcl, #maxExcl]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (entry.getNode().findChildByType(STRING_FACET_TOKENS) != null && !isString) {
                 holder.registerProblem(
                     entry,
-                    "Facet 'regex' is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #preserveIndent]",
+                    "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove invalid facet")
+                );
+            } else if (entry.getNode().findChildByType(TEMPORAL_FACET_TOKENS) != null && !isTemporal) {
+                holder.registerProblem(
+                    entry,
+                    "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#unit, #offset, #zoned, #audited]",
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove invalid facet")
+                );
+            } else if (entry.getNode().findChildByType(MAP_FACET_TOKENS) != null && !isMap) {
+                holder.registerProblem(
+                    entry,
+                    "Facet is not permitted on " + baseType + "; permitted facets for map types: [#invertible]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
@@ -213,6 +236,14 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
     private static boolean isStringType(String baseType) {
         return baseType.startsWith(":String");
+    }
+
+    private static boolean isTemporalType(String baseType) {
+        return baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime");
+    }
+
+    private static boolean isMapType(String baseType) {
+        return baseType.startsWith(":Map");
     }
 
     private static final class RemoveElementQuickFix implements LocalQuickFix {

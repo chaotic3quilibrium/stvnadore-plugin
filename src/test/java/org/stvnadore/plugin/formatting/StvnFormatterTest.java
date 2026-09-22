@@ -16,7 +16,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
     public void testNativeFormatterCanonical2SpaceIndentation() {
         var unformatted = """
-            {:defs{:UserID:Uint64
+            {:defs{:UserID:Int
             :Status:Enum[#ACTIVE #INACTIVE]}
             :type:Tuple(:UserID :Status):body(1001 #ACTIVE)}
             """;
@@ -28,7 +28,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Formatted text must enforce 2-space indentation hierarchy:\n" + text,
-                text.contains("  :defs {\n    :UserID :Uint64"));
+                text.contains("  :defs {\n    :UserID :Int"));
         assertTrue("Formatted text must separate body entries with 2 spaces:\n" + text,
                 text.contains("  :body"));
         assertFalse("Formatted text must obey Zero-Tab Invariant and contain no tabs:\n" + text,
@@ -46,7 +46,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
               // Leading schema comment
               :defs {
                 // User ID definition
-                :UserID :Uint64
+                :UserID :Int
               }
               // Target type definition
               :type :UserID
@@ -110,7 +110,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         var source = """
             {
             <selection>:defs {
-            :UserID :Uint64
+            :UserID :Int
             }</selection>
             :type :UserID
             :body 100
@@ -127,14 +127,14 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Selected section must be reformatted:\n" + text, text.contains("  :defs {\n    :UserID :Uint64\n  }"));
+        assertTrue("Selected section must be reformatted:\n" + text, text.contains("  :defs {\n    :UserID :Int\n  }"));
     }
 
     public void testCommentFollowingClosingBraceFormatsOnDedicatedLine() {
         var unformatted = """
             {
               :defs {
-                :UserID :Uint64
+                :UserID :Int
               }// comment
               :type :UserID
               :body 1001

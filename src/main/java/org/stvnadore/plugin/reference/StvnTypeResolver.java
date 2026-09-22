@@ -133,7 +133,33 @@ public final class StvnTypeResolver {
                         hasMaxExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
+                    } else if (entryText.startsWith("#size")) {
+                        var schemaType = typeDef.getSchemaType();
+                        var schemaText = schemaType != null ? schemaType.getText().trim() : "";
+                        if (":String".equals(schemaText) || schemaText.startsWith(":String")) {
+                            return true;
+                        }
                     }
+                }
+
+                var schemaType = typeDef.getSchemaType();
+                var schemaText = schemaType != null ? schemaType.getText().trim() : "";
+                if ((hasMaxIncl || hasMinExcl) && (":Int".equals(schemaText) || schemaText.startsWith(":Int"))) {
+                    return true;
+                }
+
+                var hasOffset = false;
+                var hasZoned = false;
+                var hasAudited = false;
+                for (var entry : entries) {
+                    var entryText = entry.getText();
+                    if (entryText.startsWith("#offset")) hasOffset = true;
+                    if (entryText.startsWith("#zoned")) hasZoned = true;
+                    if (entryText.startsWith("#audited")) hasAudited = true;
+                }
+                int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
+                if (modeCount > 1) {
+                    return true;
                 }
 
                 if ((hasMinIncl && hasMinExcl) || (hasMaxIncl && hasMaxExcl)) {
@@ -1338,53 +1364,41 @@ public final class StvnTypeResolver {
         if (schemaType == null) {
             return null;
         }
-        var curr = schemaType;
-        var visited = new HashSet<String>();
-        while (curr != null) {
-            var keyword = curr.getTypeKeyword();
-            if (keyword != null) {
-                var typeName = keyword.getText();
-                if (!visited.add(typeName)) {
-                    return null;
-                }
-                var resolved = StvnTypeReference.resolveTypeInFile(keyword.getContainingFile(), typeName, new HashSet<>());
-                while (resolved != null) {
-                    var parent = resolved.getParent();
-                    var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-                    if (typeDef != null) {
-                        var nextSchema = typeDef.getSchemaType();
-                        if (nextSchema != null && nextSchema != curr) {
-                            curr = nextSchema;
-                            break;
-                        }
-                        resolved = null;
-                    } else if (parent instanceof IncludeMapAlias) {
-                        var alias = (IncludeMapAlias) parent;
-                        var list = alias.getTypeKeywordList();
-                        if (list.size() >= 2) {
-                            var remoteKw = list.get(0);
-                            var includeElement = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
-                            if (includeElement != null) {
-                                var stringLit = includeElement.getStringLiteral();
-                                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                                if (targetFile != null && remoteKw != null) {
-                                    resolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>());
-                                    continue;
-                                }
+        // Enforce Opaque Nominal Resolution Governance (STVN_PLUGIN_SPEC.md § 2.1)
+        // Prohibition of recursive unwrapping: return immediate resolved SchemaType
+        // without collapsing nominal aliases into underlying primitives.
+        var keyword = schemaType.getTypeKeyword();
+        if (keyword == null) {
+            return schemaType; // Already a concrete constructor
+        }
+        var typeName = keyword.getText();
+        var resolved = StvnTypeReference.resolveTypeInFile(keyword.getContainingFile(), typeName, new HashSet<>());
+        if (resolved != null) {
+            var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+            if (typeDef != null) {
+                return typeDef.getSchemaType();
+            }
+            var parent = resolved.getParent();
+            if (parent instanceof IncludeMapAlias alias) {
+                var list = alias.getTypeKeywordList();
+                if (list.size() >= 2) {
+                    var remoteKw = list.get(0);
+                    var includeElement = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
+                    if (includeElement != null) {
+                        var stringLit = includeElement.getStringLiteral();
+                        var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                        if (targetFile != null && remoteKw != null) {
+                            var remoteResolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>());
+                            var remTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(remoteResolved);
+                            if (remTypeDef != null) {
+                                return remTypeDef.getSchemaType();
                             }
                         }
-                        resolved = null;
-                    } else {
-                        resolved = null;
                     }
                 }
-                if (resolved != null) {
-                    continue;
-                }
             }
-            break;
         }
-        return curr;
+        return schemaType;
     }
 
     /**

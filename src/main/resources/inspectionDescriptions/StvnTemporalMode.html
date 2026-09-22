@@ -1,0 +1,14 @@
+<html>
+<body>
+<p>Reports missing or conflicting mode and unit facets on temporal type declarations (<code>:TimeEpoch</code> and <code>:DateTime</code>) to enforce STVN 2.0.0 temporal governance.</p>
+
+<p><b>Temporal Mode &amp; Unit Invariants (ERR_MISSING_TEMPORAL_FACET / ERR_MUTUALLY_EXCLUSIVE):</b></p>
+<ul>
+    <li>The <code>:TimeEpoch</code> temporal type requires an explicit <code>#unit</code> facet (e.g. <code>{ #unit #ms } :TimeEpoch</code>).</li>
+    <li>The <code>:DateTime</code> temporal type requires an explicit mode facet (<code>#offset</code>, <code>#zoned</code>, or <code>#audited</code>).</li>
+    <li>Temporal mode facets <code>#offset</code>, <code>#zoned</code>, and <code>#audited</code> are mutually exclusive on a single type declaration.</li>
+</ul>
+
+<p>Provides automated intention quick-fixes to supply default temporal facets.</p>
+</body>
+</html>

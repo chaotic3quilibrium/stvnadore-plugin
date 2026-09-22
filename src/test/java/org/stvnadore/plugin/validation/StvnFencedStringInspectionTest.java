@@ -44,26 +44,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         assertFalse("Canonical fenced string without arrow must produce zero deprecation diagnostics", hasDeprecation);
     }
 
-    public void testValidFencedStringWithArrowPassesCompilationWithDeprecationWarning() {
-        String code = """
-            {
-              :type :String
-              :body \"\"\"->[SHA256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad]
-              nested content
-              [SHA256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad]\"\"\"
-            }
-            """;
-        myFixture.configureByText("valid_with_arrow.stvn", code);
-        List<HighlightInfo> highlights = myFixture.doHighlighting();
-        boolean hasSyntaxViolations = highlights.stream().anyMatch(h ->
-            h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation"));
-        assertFalse("Valid fenced string with arrow must produce zero delimiter violation errors", hasSyntaxViolations);
-        boolean hasDeprecation = highlights.stream().anyMatch(h ->
-            h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation"));
-        assertTrue("Legacy fenced string with arrow must emit Rule STR-04 deprecation diagnostic", hasDeprecation);
-    }
-
-    public void testDeprecatedArrowDelimiterHighlightsAndQuickFixRemoves() {
+    public void testFencedStringArrowFatalSyntaxRejectionUnderRuleSTR04() {
         String code = """
             {
               :type :String
@@ -72,110 +53,11 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
               [SQL]\"\"\"
             }
             """;
-        myFixture.configureByText("deprecated_arrow.stvn", code);
+        myFixture.configureByText("arrow_fatal.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
-        var deprecation = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated; use '\"\"\"[TAG]' instead."))
-            .findFirst()
-            .orElse(null);
-        assertNotNull("Expected Rule STR-04 deprecation highlight for '->'", deprecation);
-        assertTrue("Highlight message must match core deprecation contract",
-            deprecation.getDescription().contains("Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated"));
-
-        var action = myFixture.getAllQuickFixes().stream()
-            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
-            .findFirst()
-            .orElse(null);
-        assertNotNull("Expected 'Remove deprecated \\'->\\' arrow' quick-fix to be available", action);
-        myFixture.launchAction(action);
-
-        String expected = """
-            {
-              :type :String
-              :body \"\"\"[SQL]
-              SELECT 1;
-              [SQL]\"\"\"
-            }
-            """;
-        myFixture.checkResult(expected);
-
-        // Caret must be positioned on the body line between delimiters
-        int lineNum = myFixture.getEditor().getDocument().getLineNumber(myFixture.getEditor().getCaretModel().getOffset());
-        assertEquals("Caret must be positioned on body line 3", 3, lineNum);
-
-        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
-        boolean hasPostDiagnostics = postHighlights.stream().anyMatch(h ->
-            h.getDescription() != null && (h.getDescription().contains("STR-04") || h.getDescription().contains("deprecated")));
-        assertFalse("Post-fix highlighting must contain zero diagnostics", hasPostDiagnostics);
-    }
-
-    public void testDeprecatedArrowWithMismatchedClosingTagEmitsBothDiagnostics() {
-        String code = """
-            {
-              :type :String
-              :body \"\"\"->[SQL]
-              SELECT 1;
-              [JSON]\"\"\"
-            }
-            """;
-        myFixture.configureByText("mismatched_and_deprecated.stvn", code);
-        List<HighlightInfo> highlights = myFixture.doHighlighting();
-        boolean hasDeprecation = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 deprecation"));
-        boolean hasMismatch = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Mismatched closing fence tag"));
-        assertTrue("Must emit deprecation warning for '->'", hasDeprecation);
-        assertTrue("Must emit mismatch error for closing fence tag", hasMismatch);
-    }
-
-    public void testBatchCleanupRemovesAllDeprecatedArrowsInDocument() {
-        String code = """
-            {
-              :type :Tuple( :String :String )
-              :body (
-                \"\"\"->[FIRST]
-                First body
-                [FIRST]\"\"\"
-                \"\"\"->[SECOND]
-                Second body
-                [SECOND]\"\"\"
-              )
-            }
-            """;
-        myFixture.configureByText("batch_cleanup.stvn", code);
-        myFixture.doHighlighting();
-        var fixes = myFixture.getAllQuickFixes().stream()
-            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
-            .toList();
-        assertEquals("Expected 2 quick-fix actions available in document", 2, fixes.size());
-
-        // Execute quick-fix on the first occurrence
-        myFixture.launchAction(fixes.get(0));
-
-        // Execute quick-fix on the second occurrence
-        var remainingFixes = myFixture.getAllQuickFixes().stream()
-            .filter(f -> f.getText().contains("Remove deprecated '->' arrow"))
-            .toList();
-        assertEquals("Expected 1 remaining quick-fix action", 1, remainingFixes.size());
-        myFixture.launchAction(remainingFixes.get(0));
-
-        String expected = """
-            {
-              :type :Tuple( :String :String )
-              :body (
-                \"\"\"[FIRST]
-                First body
-                [FIRST]\"\"\"
-                \"\"\"[SECOND]
-                Second body
-                [SECOND]\"\"\"
-              )
-            }
-            """;
-        myFixture.checkResult(expected);
-
-        List<HighlightInfo> postHighlights = myFixture.doHighlighting();
-        boolean hasWarningsOrErrors = postHighlights.stream().anyMatch(h ->
-            h.getSeverity().equals(HighlightSeverity.ERROR) || h.getSeverity().equals(HighlightSeverity.WARNING));
-        assertFalse("Post-batch cleanup highlighting must contain 0 warnings and 0 errors", hasWarningsOrErrors);
+        boolean hasErrors = highlights.stream().anyMatch(h ->
+            h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertTrue("Encountering legacy '->' in fenced string must trigger fatal syntax rejection under Rule STR-04", hasErrors);
     }
 
     public void testRecursiveNestedFencedStringsPreserveInnerDelimiters() {
@@ -277,7 +159,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
     public void testAppendClosingFenceDoesNotSwallowDownstreamContent() {
         String code = """
             {
-              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :type :Tuple( :String :Tuple( :Int :Int ) )
               :body (
                 \"\"\"[SQL]
                 (10 20)
@@ -294,7 +176,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.launchAction(action);
         String expected = """
             {
-              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :type :Tuple( :String :Tuple( :Int :Int ) )
               :body (
                 \"\"\"[SQL]
                 [SQL]\"\"\"
@@ -311,7 +193,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
     public void testSupplyDefaultTagAtomicallyClosesUnclosedBlock() {
         String code = """
             {
-              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :type :Tuple( :String :Tuple( :Int :Int ) )
               :body (
                 \"\"\"[]
                 (10 20)
@@ -328,7 +210,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.launchAction(action);
         String expected = """
             {
-              :type :Tuple( :String :Tuple( :Int32 :Int32 ) )
+              :type :Tuple( :String :Tuple( :Int :Int ) )
               :body (
                 \"\"\"[FENCE]
                 [FENCE]\"\"\"

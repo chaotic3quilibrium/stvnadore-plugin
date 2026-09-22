@@ -1,0 +1,14 @@
+<html>
+<body>
+<p>Reports closed upper bounds (<code>#maxIncl</code>) and open lower bounds (<code>#minExcl</code>) on discrete numeric types to enforce half-open interval governance (STVN Spec § 3.2).</p>
+
+<p><b>Discrete Half-Open Interval Invariant (ERR_DISCRETE_BOUND_KIND_PROHIBITED):</b></p>
+<ul>
+    <li>Discrete numeric domains (<code>:Int</code> and <code>{ #exact } :Float</code>) require half-open intervals [minIncl, maxExcl).</li>
+    <li>Closed upper bound <code>#maxIncl &lt;N&gt;</code> is rejected; use half-open bound <code>#maxExcl &lt;N+1&gt;</code> instead.</li>
+    <li>Open lower bound <code>#minExcl &lt;N&gt;</code> is rejected; use half-open bound <code>#minIncl &lt;N+1&gt;</code> instead.</li>
+</ul>
+
+<p>Provides automated intention quick-fixes to convert bounds to canonical half-open form.</p>
+</body>
+</html>

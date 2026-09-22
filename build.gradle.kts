@@ -26,10 +26,10 @@ val stvnFixtures: Configuration by configurations.creating {
 
 dependencies {
     // 1. Ingest local Maven repository dependency
-    implementation("io.github.chaotic3quilibrium:stvnadore-core:1.3.1")
+    implementation("io.github.chaotic3quilibrium:stvnadore-core:2.0.0-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
-    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:1.3.1:fixtures@zip")
+    stvnFixtures("io.github.chaotic3quilibrium:stvnadore-core:2.0.0-SNAPSHOT:fixtures@zip")
 
     // 3. Modern IntelliJ Platform SDK (2025.3) and Testing Frameworks
     intellijPlatform {
@@ -259,6 +259,9 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnDefsOverhaulInspectionsTest.class")
     exclude("**/StvnStringCapacityInspectionTest.class")
     exclude("**/StvnMetadataFacetInspectionTest.class")
+    exclude("**/StvnStringCardinalityInspectionTest.class")
+    exclude("**/StvnDiscreteIntervalInspectionTest.class")
+    exclude("**/StvnTemporalModeInspectionTest.class")
     exclude("**/StvnFormatterTest.class")
     exclude("**/StvnDualProjectionActionsTest.class")
     exclude("**/StvnRenameRefactoringTest.class")

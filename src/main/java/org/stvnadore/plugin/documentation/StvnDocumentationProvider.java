@@ -1275,12 +1275,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (element instanceof PsiErrorElement) {
             return true;
         }
+        if (element instanceof com.intellij.psi.PsiWhiteSpace) {
+            return true;
+        }
         var node = element.getNode();
         if (node != null && node.getElementType() == TokenType.BAD_CHARACTER) {
             return true;
         }
         var text = element.getText().trim();
-        return text.equals("#");
+        return text.equals("#") || text.equals(":") || text.equals("/");
     }
 
     private static boolean isContainerLiteral(Value value) {

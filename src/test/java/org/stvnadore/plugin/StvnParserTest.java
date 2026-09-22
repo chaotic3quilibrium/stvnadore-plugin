@@ -30,4 +30,17 @@ public final class StvnParserTest {
             assertNotNull(val, "The compiled StvnValue object must not be null");
         }
     }
+
+    @Test
+    public void testDeprecatedFencedStringArrowRejected() {
+        String invalidSource = "{\n  :type :String\n  :body \"\"\"->[TAG]\nContent\n[TAG]\"\"\"\n}";
+        boolean rejected = false;
+        try {
+            var compiled = StvnCompiler.compile(invalidSource);
+            rejected = compiled.isEmpty();
+        } catch (RuntimeException e) {
+            rejected = true;
+        }
+        assertTrue(rejected, "Deprecated directional arrow '->' in fenced string delimiter must be permanently rejected under Rule STR-04");
+    }
 }

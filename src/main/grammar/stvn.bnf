@@ -12,7 +12,7 @@
     space      = 'regexp:\s+'
     comment    = 'regexp://.*'
 
-    LITERAL_STRING_FENCED  = 'regexp:"""(->)?\[[a-zA-Z0-9_-]{1,256}][^\n]*\n([^\]]|\]+[^"\]]|\]+"[^"\]]|\]+""[^"\]])*\]+"""'
+    LITERAL_STRING_FENCED  = 'regexp:"""\[[a-zA-Z0-9_-]{1,256}][^\n]*\n([^\]]|\]+[^"\]]|\]+"[^"\]]|\]+""[^"\]])*\]+"""'
     LITERAL_STRING_BLOCK   = 'regexp:"""[ \t]*\n([^"]|"[^"]|""[^"])*"""'
     LITERAL_STRING_SIMPLE  = 'regexp:"([^"\\\r\n]|\\.)*"'
 
@@ -56,6 +56,16 @@
     KW_EQUATABLE                  = '#equatable'
     KW_COMPARABLE                 = '#comparable'
     KW_PRESERVE_INDENT            = '#preserveIndent'
+    KW_SIZE                       = '#size'
+    KW_UNSIGNED                   = '#unsigned'
+    KW_EXACT                      = '#exact'
+    KW_MIN_SIZE                   = '#minSize'
+    KW_MAX_SIZE                   = '#maxSize'
+    KW_INVERTIBLE                 = '#invertible'
+    KW_UNIT                       = '#unit'
+    KW_OFFSET                     = '#offset'
+    KW_ZONED                      = '#zoned'
+    KW_AUDITED                    = '#audited'
     KW_MIN_INCL                   = '#minIncl'
     KW_MIN_EXCL                   = '#minExcl'
     KW_MAX_INCL                   = '#maxIncl'
@@ -65,22 +75,15 @@
     FILTER_EXCL                   = '#filterExcl'
 
     ATOM_BOOLEAN                  = ':Boolean'
-    ATOM_UINT                     = 'regexp::Uint[0-9]*'
-    ATOM_INT                      = 'regexp::Int[0-9]*'
-    ATOM_FLOAT                    = 'regexp::Float[0-9]*'
-    ATOM_FLOAT_EXACT              = ':FloatExact'
-    ATOM_STRING_FIXED             = 'regexp::StringFixed[0-9]*'
-    ATOM_STRING                   = 'regexp::String[0-9]*'
-    ATOM_STRING_NON_EMPTY         = 'regexp::StringNonEmpty[0-9]*'
+    ATOM_INT                      = ':Int'
+    ATOM_FLOAT                    = ':Float'
+    ATOM_STRING                   = ':String'
+    ATOM_TIME_EPOCH               = ':TimeEpoch'
+    ATOM_DATE_TIME                = ':DateTime'
 
     COLL_SEQ                      = ':Seq'
-    COLL_SEQ_NON_EMPTY            = ':SeqNonEmpty'
     COLL_SET                      = ':Set'
-    COLL_SET_NON_EMPTY            = ':SetNonEmpty'
     COLL_MAP                      = ':Map'
-    COLL_MAP_NON_EMPTY            = ':MapNonEmpty'
-    COLL_MAP_INV                  = ':MapInv'
-    COLL_MAP_INV_NON_EMPTY        = ':MapInvNonEmpty'
 
     UNION_TAG_PREFIX              = 'regexp:#[1-9][0-9]*'
     TYPE_KEYWORD_BASE             = 'regexp::[a-zA-Z_][a-zA-Z0-9_]*'
@@ -190,18 +193,14 @@ type_definition          ::= type_def_target metadata_map? schema_type {
   implements="org.stvnadore.plugin.psi.StvnTypeDefinitionNode"
 }
 type_def_target          ::= type_keyword | reserved_keyword | atomic_type | collection_type | structural_type
-reserved_keyword         ::= ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT
-                           | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
-                           | COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY
-                           | COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY
+reserved_keyword         ::= ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
+                           | COLL_SEQ | COLL_SET | COLL_MAP
                            | KW_DEFS | KW_TYPE | KW_BODY | KW_INCLUDE | KW_PACKAGE | KW_USE
                            | KW_TUPLE | KW_ENUM | KW_OPTION | KW_EITHER | KW_UNION
 
 private type_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_TYPE | KW_BODY | type_keyword | value_keyword
-                            | ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT
-                            | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
-                            | COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY
-                            | COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY
+                            | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
+                            | COLL_SEQ | COLL_SET | COLL_MAP
                             | LPAREN | LBRACK)
 
 constant_definition      ::= value_keyword metadata_map? schema_type value {
@@ -211,19 +210,18 @@ constant_definition      ::= value_keyword metadata_map? schema_type value {
   implements="com.intellij.psi.PsiNameIdentifierOwner"
 }
 private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_TYPE | KW_BODY | type_keyword | value_keyword
-                             | ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT
-                             | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
-                             | COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY
-                             | COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY
+                             | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
+                             | COLL_SEQ | COLL_SET | COLL_MAP
                              | LPAREN | LBRACK)
 
 metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
-metadata_entry            ::= metadata_bool | metadata_num | metadata_string | metadata_filter | metadata_directive { recoverWhile=metadata_entry_recover }
+metadata_entry            ::= metadata_bare_flag | metadata_bool | metadata_num | metadata_string | metadata_filter | metadata_directive { recoverWhile=metadata_entry_recover }
+metadata_bare_flag        ::= KW_PRESERVE_INDENT | KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED
 metadata_directive        ::= KW_STRIP
 
 private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT ) metadata_value { pin=1 }
-private metadata_num     ::= ( KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
-private metadata_string  ::= KW_REGEX metadata_value { pin=1 }
+private metadata_num     ::= ( KW_SIZE | KW_MIN_SIZE | KW_MAX_SIZE | KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
+private metadata_string  ::= ( KW_REGEX | KW_UNIT ) metadata_value { pin=1 }
 metadata_filter          ::= ( FILTER_INCL | FILTER_EXCL ) variant_list { pin=1 }
 variant_list             ::= LBRACK variant_list_body RBRACK { pin=1 }
 private variant_list_body ::= (value_keyword | id_token)* { recoverWhile=variant_list_recover }
@@ -231,19 +229,19 @@ private variant_list_recover ::= !(RBRACK | RBRACE)
 
 metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
 
-private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
+private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_UNIT | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
 
 // --- TYPE SYSTEM CORE ---
 schema_type             ::= schema_constructor | type_keyword
 schema_constructor      ::= atomic_type | collection_type | product_type | sum_type
-atomic_type             ::= ATOM_BOOLEAN | ATOM_UINT | ATOM_INT | ATOM_FLOAT | ATOM_FLOAT_EXACT | ATOM_STRING_FIXED | ATOM_STRING | ATOM_STRING_NON_EMPTY
+atomic_type             ::= ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
 structural_type         ::= product_type | sum_type
 
 // --- COLLECTIONS & ENVELOPE STRUCTURING ---
 collection_type         ::= sequence_or_set_type | map_collection_type
 
-private sequence_or_set_type ::= ( COLL_SEQ | COLL_SEQ_NON_EMPTY | COLL_SET | COLL_SET_NON_EMPTY ) LPAREN schema_type RPAREN {pin=2}
-private map_collection_type  ::= ( COLL_MAP | COLL_MAP_NON_EMPTY | COLL_MAP_INV | COLL_MAP_INV_NON_EMPTY ) LPAREN schema_type schema_type RPAREN {pin=2}
+private sequence_or_set_type ::= ( COLL_SEQ | COLL_SET ) LPAREN schema_type RPAREN {pin=2}
+private map_collection_type  ::= COLL_MAP LPAREN schema_type schema_type RPAREN {pin=2}
 
 product_type            ::= tuple_product_type
 private tuple_product_type     ::= KW_TUPLE LPAREN schema_type+ RPAREN {pin=2}

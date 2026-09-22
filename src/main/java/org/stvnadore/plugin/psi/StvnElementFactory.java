@@ -8,6 +8,8 @@ import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MapLiteral;
+import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
@@ -24,7 +26,7 @@ public final class StvnElementFactory {
             throw new IllegalArgumentException("Cannot create TypeKeyword with constant or malformed sigil: '" + name + "'");
         }
         var cleanName = name.startsWith(":") ? name : ":" + name;
-        var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int32\n  }\n}";
+        var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
                 .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
         var typeDef = PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
@@ -39,7 +41,7 @@ public final class StvnElementFactory {
             throw new IllegalArgumentException("Cannot create ValueKeyword with type or malformed sigil: '" + name + "'");
         }
         var cleanName = name.startsWith("#") ? name : "#" + name;
-        var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int32 0\n  }\n}";
+        var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int 0\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
                 .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
         var constDef = PsiTreeUtil.findChildOfType(file, ConstantDefinition.class);
@@ -95,5 +97,28 @@ public final class StvnElementFactory {
             return typeEntry.getSchemaType();
         }
         throw new IllegalStateException("Failed to create SchemaType element from text: " + schemaText);
+    }
+
+    public static MetadataEntry createMetadataEntry(Project project, String text) {
+        var dummyFileText = "{\n  :defs {\n    :Dummy { " + text + " } :Int\n  }\n}";
+        var file = PsiFileFactory.getInstance(project)
+                .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
+        var typeDef = PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
+        if (typeDef != null && typeDef.getMetadataMap() != null && !typeDef.getMetadataMap().getMetadataEntryList().isEmpty()) {
+            return typeDef.getMetadataMap().getMetadataEntryList().get(0);
+        }
+        throw new IllegalStateException("Failed to create MetadataEntry from text: " + text);
+    }
+
+    public static MetadataMap createMetadataMap(Project project, String text) {
+        var cleanText = text.trim().startsWith("{") ? text : "{ " + text + " }";
+        var dummyFileText = "{\n  :defs {\n    :Dummy " + cleanText + " :Int\n  }\n}";
+        var file = PsiFileFactory.getInstance(project)
+                .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
+        var typeDef = PsiTreeUtil.findChildOfType(file, TypeDefinition.class);
+        if (typeDef != null && typeDef.getMetadataMap() != null) {
+            return typeDef.getMetadataMap();
+        }
+        throw new IllegalStateException("Failed to create MetadataMap from text: " + text);
     }
 }

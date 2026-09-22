@@ -36,7 +36,7 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             """
             {
               :defs {
-                :Int32 :String
+                :Int :String
               }
               :type :String
               :body "hello"
@@ -49,7 +49,7 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             .filter(h -> h.getDescription() != null && h.getDescription().contains("cannot be aliased"))
             .toList();
         assertFalse("Expected LHS reserved type inspection error", errors.isEmpty());
-        assertTrue(errors.get(0).getDescription().contains("Fundamental type ':Int32' cannot be aliased"));
+        assertTrue(errors.get(0).getDescription().contains("Fundamental type ':Int' cannot be aliased"));
 
         myFixture.configureByText("test_lhs_valid.stvn",
             """
@@ -186,7 +186,7 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
         assertTrue(resolvedStripped instanceof TypeKeyword);
 
         // 3. Resolve canonical prelude type
-        var resolvedPrelude = StvnTypeReference.resolveTypeInFile(file, ":org/stvnadore/prelude/TimeEpochS", new HashSet<>());
+        var resolvedPrelude = StvnTypeReference.resolveTypeInFile(file, ":org/stvnadore/prelude/Port", new HashSet<>());
         assertNotNull("Expected canonical prelude type to resolve", resolvedPrelude);
         assertTrue(resolvedPrelude instanceof TypeKeyword);
     }

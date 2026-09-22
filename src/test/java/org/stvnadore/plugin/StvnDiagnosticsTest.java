@@ -173,6 +173,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             var stvnFiles = stream.filter(p -> p.toString().endsWith(".stvn")).toList();
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();
+                if ("fenced_string_deprecated_arrow.stvn".equals(baseName)) {
+                    continue; // Rule STR-04: """->[ is fatal syntax error in STVN 2.0.0
+                }
                 var relativePath = "valid-syntax/" + baseName;
                 myFixture.configureByFile(relativePath);
 
@@ -220,24 +223,24 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Some  :Uint5 1
-                #None  :Uint5 2
-                #Left  :Uint5 3
-                #Right :Uint5 4
-                #TRUE  :Uint5 5
-                #FALSE :Uint5 6
-                #True  :Uint5 7
-                #False :Uint5 8
+                #Some  :Int 1
+                #None  :Int 2
+                #Left  :Int 3
+                #Right :Int 4
+                #TRUE  :Int 5
+                #FALSE :Int 6
+                #True  :Int 7
+                #False :Int 8
               }
               :type :Tuple(
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
               )
               :body (
                 #Some
@@ -270,39 +273,42 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var someRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("Reference for #Some in body must exist", someRef);
         var resolvedSome = someRef.resolve();
-        assertNotNull("Could not resolve #Some constant reference", resolvedSome);
-        assertTrue("Resolved parent must be ConstantDefinition", resolvedSome.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+        assertNotNull("Could not resolve #Some reference", resolvedSome);
+        assertTrue("Resolved #Some is not a ValueKeyword", resolvedSome instanceof ValueKeyword);
         assertEquals("#Some", resolvedSome.getText());
+        assertTrue("Parent is not ConstantDefinition", resolvedSome.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
 
         var leftIdx = text.indexOf("#Left", bodyIdx);
         myFixture.getEditor().getCaretModel().moveToOffset(leftIdx);
         var leftRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("Reference for #Left in body must exist", leftRef);
         var resolvedLeft = leftRef.resolve();
-        assertNotNull("Could not resolve #Left constant reference", resolvedLeft);
-        assertTrue("Resolved parent must be ConstantDefinition", resolvedLeft.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+        assertNotNull("Could not resolve #Left reference", resolvedLeft);
+        assertTrue("Resolved #Left is not a ValueKeyword", resolvedLeft instanceof ValueKeyword);
         assertEquals("#Left", resolvedLeft.getText());
+        assertTrue("Parent is not ConstantDefinition", resolvedLeft.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
 
         var trueIdx = text.indexOf("#TRUE", bodyIdx);
         myFixture.getEditor().getCaretModel().moveToOffset(trueIdx);
         var trueRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("Reference for #TRUE in body must exist", trueRef);
         var resolvedTrue = trueRef.resolve();
-        assertNotNull("Could not resolve #TRUE constant reference", resolvedTrue);
-        assertTrue("Resolved parent must be ConstantDefinition", resolvedTrue.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+        assertNotNull("Could not resolve #TRUE reference", resolvedTrue);
+        assertTrue("Resolved #TRUE is not a ValueKeyword", resolvedTrue instanceof ValueKeyword);
         assertEquals("#TRUE", resolvedTrue.getText());
+        assertTrue("Parent is not ConstantDefinition", resolvedTrue.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
     }
 
-    public void testMixedEnumVsConstantNavigation() {
+    public void testMixedKeywordAndConstantNavigation() {
         var psiFile = myFixture.configureByText(
             "mixed_nav.stvn",
             """
             {
               :defs {
                 :Mode :Enum [ #Left #Right ]
-                #Left :Uint7 99
+                #Left :Int 99
               }
-              :type :Tuple( :Mode :Uint7 )
+              :type :Tuple( :Mode :Int )
               :body (
                 #Left
                 #Left
@@ -535,7 +541,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     ]
                   }
                   :type :Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )
-                  :body ( 42<hint text=":TypeA (-> :Int32)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int32)"/> "world"<hint text=":ConflictTypeB (-> :ConflictType -> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )"/>
+                  :body ( 42<hint text=":TypeA (-> :Int)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int)"/> "world"<hint text=":ConflictTypeB (-> :ConflictType -> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )"/>
                 }
                 """);
         myFixture.testInlays(
@@ -624,8 +630,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "either_hints_short.stvn",
             """
                 {
-                  :type :Tuple( :Either( :Int32 :String ) :Either( :Boolean :Float64 ) :Either( :String :Int32 ) )
-                  :body ( #Left -105<hint text=":Either( :Int32 :String ) #L"/> #R 3.14<hint text=":Either( :Boolean :Float64 ) #R"/> 42<hint text=":Either( :String :Int32 ) [#R]"/> )<hint text=":Tuple( :Either( :Int32 :String ) :Either( :Boolean :Float64 ) :Either( :String :Int32 ) )"/>
+                  :type :Tuple( :Either( :Int :String ) :Either( :Boolean :Float ) :Either( :String :Int ) )
+                  :body ( #Left -105<hint text=":Either( :Int :String ) #L"/> #R 3.14<hint text=":Either( :Boolean :Float ) #R"/> 42<hint text=":Either( :String :Int ) [#R]"/> )<hint text=":Tuple( :Either( :Int :String ) :Either( :Boolean :Float ) :Either( :String :Int ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -636,8 +642,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "either_hints_long.stvn",
             """
                 {
-                  :type :Tuple( :Either( :Int32 :String ) :Either( :Boolean :Float64 ) :Either( :String :Int32 ) )
-                  :body ( #Left -105<hint text=":Either( :Int32 :String ) #Left"/> #R 3.14<hint text=":Either( :Boolean :Float64 ) #Right"/> 42<hint text=":Either( :String :Int32 ) [#Right]"/> )<hint text=":Tuple( :Either( :Int32 :String ) :Either( :Boolean :Float64 ) :Either( :String :Int32 ) )"/>
+                  :type :Tuple( :Either( :Int :String ) :Either( :Boolean :Float ) :Either( :String :Int ) )
+                  :body ( #Left -105<hint text=":Either( :Int :String ) #Left"/> #R 3.14<hint text=":Either( :Boolean :Float ) #Right"/> 42<hint text=":Either( :String :Int ) [#Right]"/> )<hint text=":Tuple( :Either( :Int :String ) :Either( :Boolean :Float ) :Either( :String :Int ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -651,11 +657,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
-                    :TypeA :Int32
+                    :TypeA :Int
                     :TypeB :String
                   }
-                  :type :Tuple( :Option( :Int32 ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )
-                  :body ( 42<hint text=":Option( :Int32 ) [#S]"/> #None<hint text=":Option( :String ) #N"/> 100<hint text=":Union( :TypeA :TypeB ) [#1]"/> "world"<hint text=":Union( :TypeA :TypeB ) [#2]"/> )<hint text=":Tuple( :Option( :Int32 ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )"/>
+                  :type :Tuple( :Option( :Int ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )
+                  :body ( 42<hint text=":Option( :Int ) [#S]"/> #None<hint text=":Option( :String ) #N"/> 100<hint text=":Union( :TypeA :TypeB ) [#1]"/> "world"<hint text=":Union( :TypeA :TypeB ) [#2]"/> )<hint text=":Tuple( :Option( :Int ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -667,11 +673,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
-                    :TypeA :Int32
+                    :TypeA :Int
                     :TypeB :String
                   }
-                  :type :Tuple( :Option( :Int32 ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )
-                  :body ( 42<hint text=":Option( :Int32 ) [#Some]"/> #None<hint text=":Option( :String ) #None"/> 100<hint text=":Union( :TypeA :TypeB ) [#1]"/> "world"<hint text=":Union( :TypeA :TypeB ) [#2]"/> )<hint text=":Tuple( :Option( :Int32 ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )"/>
+                  :type :Tuple( :Option( :Int ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )
+                  :body ( 42<hint text=":Option( :Int ) [#Some]"/> #None<hint text=":Option( :String ) #None"/> 100<hint text=":Union( :TypeA :TypeB ) [#1]"/> "world"<hint text=":Union( :TypeA :TypeB ) [#2]"/> )<hint text=":Tuple( :Option( :Int ) :Option( :String ) :Union( :TypeA :TypeB ) :Union( :TypeA :TypeB ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -767,10 +773,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :TypeA :Int32
+                :TypeA :Int
                 :TypeB :String
               }
-              :type :Tuple( :Either( :Int32 :String ) :Union( :TypeA :TypeB ) )
+              :type :Tuple( :Either( :Int :String ) :Union( :TypeA :TypeB ) )
               :body ( #Left -105 100 )
             }
             """
@@ -792,7 +798,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var docUnionShort = provider.generateDoc(unionElement, unionElement);
 
         assertNotNull(docEitherShort);
-        assertTrue("Expected Either short suffix: " + docEitherShort, docEitherShort.contains("Value Type:</b> :Either( :Int32 :String ) #L"));
+        assertTrue("Expected Either short suffix: " + docEitherShort, docEitherShort.contains("Value Type:</b> :Either( :Int :String ) #L"));
         assertNotNull(docUnionShort);
         assertTrue("Expected Union branch suffix: " + docUnionShort, docUnionShort.contains("Value Type:</b> :Union( :TypeA :TypeB ) [#1]"));
 
@@ -802,7 +808,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var docUnionLong = provider.generateDoc(unionElement, unionElement);
 
         assertNotNull(docEitherLong);
-        assertTrue("Expected Either long suffix: " + docEitherLong, docEitherLong.contains("Value Type:</b> :Either( :Int32 :String ) #Left"));
+        assertTrue("Expected Either long suffix: " + docEitherLong, docEitherLong.contains("Value Type:</b> :Either( :Int :String ) #Left"));
         assertNotNull(docUnionLong);
         assertTrue("Expected Union branch suffix to remain identical: " + docUnionLong, docUnionLong.contains("Value Type:</b> :Union( :TypeA :TypeB ) [#1]"));
     }
@@ -819,11 +825,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "nonempty_torture.stvn",
             """
             {
+              :defs {
+                :NonEmptySeq    { #minSize 1 } :Seq( :Int )
+                :NonEmptySet    { #minSize 1 } :Set( :Int )
+                :NonEmptyMap    { #minSize 1 } :Map( :Int :String )
+                :NonEmptyInvMap { #invertible #minSize 1 } :Map( :Int :String )
+              }
               :type :Tuple(
-                :SeqNonEmpty( :Int32 )
-                :SetNonEmpty( :Int32 )
-                :MapNonEmpty( :Int32 :String )
-                :MapInvNonEmpty( :Int32 :String )
+                :NonEmptySeq
+                :NonEmptySet
+                :NonEmptyMap
+                :NonEmptyInvMap
               )
               :body ( [] [] {} {} )
             }
@@ -928,10 +940,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :NonEmptyMap    { #minSize 1 } :Map(:Uuid :String)
+                :NonEmptyInvMap { #invertible #minSize 1 } :Map(:String :Int)
               }
               :type :Tuple(
-                      :MapNonEmpty(:Uuid :String)
-                      :MapInvNonEmpty(:String :Uint))
+                      :NonEmptyMap
+                      :NonEmptyInvMap)
               :body (
                 {
                   ["12345678-1234-1234-1234-123456789012" "A"]
@@ -1088,7 +1102,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 1. Warning A (Redundant Tag Option #Some) and quick-fix
         var text1 = """
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body #Some 123
                 }
                 """;
@@ -1101,7 +1115,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.launchAction(actions1.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body 123
                 }
                 """);
@@ -1109,7 +1123,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 2. Warning A (Redundant Tag Either #Right) and quick-fix
         var text2 = """
                 {
-                  :type :Either(:Int32 :String)
+                  :type :Either(:Int :String)
                   :body #Right "hello"
                 }
                 """;
@@ -1122,7 +1136,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.launchAction(actions2.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Either(:Int32 :String)
+                  :type :Either(:Int :String)
                   :body "hello"
                 }
                 """);
@@ -1131,7 +1145,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         setUseLongFormSumTypes(true);
         var text3 = """
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body #S 123
                 }
                 """;
@@ -1144,7 +1158,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.launchAction(actions3.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body #Some 123
                 }
                 """);
@@ -1153,7 +1167,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         setUseLongFormSumTypes(false);
         var text4 = """
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body #Some 123
                 }
                 """;
@@ -1166,7 +1180,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.launchAction(actions4.get(0));
         myFixture.checkResult("""
                 {
-                  :type :Option(:Int32)
+                  :type :Option(:Int)
                   :body #S 123
                 }
                 """);
@@ -1174,7 +1188,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 5. Non-redundant nested option (avoiding ambiguity)
         var text5 = """
                 {
-                  :type :Option(:Option(:Int32))
+                  :type :Option(:Option(:Int))
                   :body #Some #None
                 }
                 """;
@@ -1188,7 +1202,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 6. Non-redundant ambiguous either (avoiding ambiguity)
         var text6 = """
                 {
-                  :type :Either(:Int32 :Int32)
+                  :type :Either(:Int :Int)
                   :body #Right 123
                 }
                 """;
@@ -1451,15 +1465,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text9 = """
                 {
                   :defs {
-                    :Payload :SeqNonEmpty(
+                    :NonEmptyString { #minSize 1 } :String
+                    :Pagoda :Either( :Int :NonEmptyString )
+                    :Payload { #minSize 1 } :Seq(
                       :Tuple(
                         :Option(:Boolean)
                         :Pagoda
-                        :Either(:Boolean :Float64)
-                        :Either(:Int32 :Float64)
+                        :Either(:Boolean :Float)
+                        :Either(:Int :Float)
                       )
                     )
-                    :Pagoda :Either( :Int32 :StringNonEmpty )
                   }
                   :type :Tuple( :String :Payload )
                   :body (
@@ -1670,7 +1685,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "nominal_constraints_invalid.stvn",
             "{\n" +
             "  :defs {\n" +
-            "    :MyInt { #minIncl 10 #minExcl 20 } :Int32\n" +
+            "    :MyInt { #minIncl 10 #minExcl 20 } :Int\n" +
             "  }\n" +
             "  :type :MyInt\n" +
             "  :body 15\n" +
@@ -1706,16 +1721,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         for (var info : highlights) {
             if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
                 var desc = info.getDescription();
-                if (desc != null && desc.contains("Constraint violation: Type suffix dimensions must be strictly positive (N >= 1)")) {
+                if (desc != null && desc.contains("Undefined type: :String0")) {
                     found = true;
                     var start = info.getStartOffset();
                     var end = info.getEndOffset();
                     var matchedText = myFixture.getEditor().getDocument().getText().substring(start, end);
-                    assertEquals("0", matchedText);
+                    assertEquals(":String0", matchedText);
                 }
             }
         }
-        assertTrue("Expected type suffix error highlighted on 0", found);
+        assertTrue("Expected undefined type error highlighted on :String0", found);
     }
 
     public void testTrack7SuffixSizingFallback() {
@@ -1724,16 +1739,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         
         var targetHighlight = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Constraint violation: Type suffix"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Undefined type: :String0"))
             .findFirst()
-            .orElseThrow(() -> new AssertionError("Expected Track 7 type suffix sizing error highlights missing"));
+            .orElseThrow(() -> new AssertionError("Expected undefined type error for :String0"));
             
-        var expectedStartIndex = fileText.indexOf(":String0") + ":String".length();
-        var expectedEndIndex = fileText.indexOf(":String0") + ":String0".length();
+        var expectedStartIndex = fileText.indexOf(":String0");
+        var expectedEndIndex = expectedStartIndex + ":String0".length();
         
-        assertEquals("Track 7 fallback must highlight only the invalid trailing suffix index", 
+        assertEquals("Fallback must highlight the undefined type token", 
             expectedStartIndex, targetHighlight.getStartOffset());
-        assertEquals("Track 7 fallback boundary mismatch", 
+        assertEquals("Fallback boundary mismatch", 
             expectedEndIndex, targetHighlight.getEndOffset());
     }
 
@@ -1877,8 +1892,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
-                    :CommentedAlias :Seq( :Int32 ) // comment on seq alias
-                    #CONST_VAL :Int32 // comment on constant type
+                    :CommentedAlias :Seq( :Int ) // comment on seq alias
+                    #CONST_VAL :Int // comment on constant type
                     42
                   }
                   :type :CommentedAlias
@@ -1904,7 +1919,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("HTML documentation is null", doc);
         assertTrue("HTML must contain Type Alias", doc.contains("Type Alias:</b> :CommentedAlias"));
         assertTrue("HTML must contain clean Underlying Structure without comments",
-                doc.contains("Underlying Structure:</b> :Seq( :Int32 )"));
+                doc.contains("Underlying Structure:</b> :Seq( :Int )"));
         assertFalse("HTML must not leak comment text", doc.contains("// comment on seq alias"));
 
         var quickInfo = provider.getQuickNavigateInfo(resolved, originalElement);
@@ -1916,7 +1931,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var code = """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion )
               :body (
@@ -1958,7 +1973,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testTupleElementTypeMismatchRangeTargeting() {
         var code = """
             {
-              :type :Tuple( :Int32 :String )
+              :type :Tuple( :Int :String )
               :body (
                 42
                 100
@@ -1985,7 +2000,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testCollectionElementTypeMismatchRangeTargeting() {
         var code = """
             {
-              :type :Seq( :Int32 )
+              :type :Seq( :Int )
               :body [
                 10
                 "invalid_string"
@@ -2010,7 +2025,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testMapEntryTypeMismatchRangeTargeting() {
         var code = """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body {
                 [ "key1" 100 ]
                 [ "key2" #TRUE ]
@@ -2035,7 +2050,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var code = """
             {
               :defs {
-                :TargetType :Int32
+                :TargetType :Int
               }
               :type :TargetType
               :body 99.99
@@ -2252,10 +2267,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :BitFlag        :Uint1
-                :UnixPermission :Uint3
-                :Port           { #minIncl 1 #maxIncl 65535 } :Uint16
-                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :BitFlag        :Int
+                :UnixPermission :Int
+                :Port           { #minIncl 1 #maxIncl 65535 } :Int
+                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
                 :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
               }
             }
@@ -2266,9 +2281,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :RouteTable { #invertible } :Map( :RemoteHost :IpAddress )
+                :IpAddress :Union( :IPv4 :String )
               }
 
               :type :Tuple(
@@ -2278,12 +2293,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               :body (
                 {
                   [
-                    "auth.internal"<hint text=":RemoteHost (-> :HostName -> :StringNonEmpty64)"/>
-                    #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :IPv4 -> :StringFixed15)"/>
+                    "auth.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
+                    #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :IPv4 -> :String)"/>
                   ]
                   [
-                    "db.internal"<hint text=":RemoteHost (-> :HostName -> :StringNonEmpty64)"/>
-                    #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :StringFixed15)"/>
+                    "db.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
+                    #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :String)"/>
                   ]
                 }<hint text=":RouteTable"/>
               )<hint text=":Tuple( :RouteTable )"/>
@@ -2366,11 +2381,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "anonymous_union_hints.stvn",
             """
                 {
-                  :type :Tuple( :Union( :Int32 :Boolean ) :Union( :Int32 :Boolean ) )
+                  :type :Tuple( :Union( :Int :Boolean ) :Union( :Int :Boolean ) )
                   :body (
                     #FALSE<hint text=":Boolean"/>
-                    #2 #FALSE<hint text=":Union( :Int32 :Boolean ) #2"/>
-                  )<hint text=":Tuple( :Union( :Int32 :Boolean ) :Union( :Int32 :Boolean ) )"/>
+                    #2 #FALSE<hint text=":Union( :Int :Boolean ) #2"/>
+                  )<hint text=":Tuple( :Union( :Int :Boolean ) :Union( :Int :Boolean ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -2381,7 +2396,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "flat_map.stvn",
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body [ "alpha" 100 "beta" 200 "gamma" 300 ]
             }
             """);
@@ -2398,7 +2413,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body { [ "alpha" 100 ] [ "beta" 200 ] [ "gamma" 300 ] }
             }
             """);
@@ -2413,7 +2428,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "odd_flat_map.stvn",
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body [ "alpha" 100 "danglingKey" ]
             }
             """);
@@ -2427,7 +2442,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body { [ "alpha" 100 ] } "danglingKey"
             }
             """);
@@ -2439,7 +2454,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Coordinate :Tuple( :Float64 :Float64 )
+                :Coordinate :Tuple( :Float :Float )
               }
               :type :Map( :String :Coordinate )
               :body [ "sf" ( 37.7749 -122.4194 ) "nyc" ( 40.7128 -74.0060 ) ]
@@ -2456,7 +2471,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Coordinate :Tuple( :Float64 :Float64 )
+                :Coordinate :Tuple( :Float :Float )
               }
               :type :Map( :String :Coordinate )
               :body { [ "sf" ( 37.7749 -122.4194 ) ] [ "nyc" ( 40.7128 -74.0060 ) ] }
@@ -2473,7 +2488,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "multiline_map.stvn",
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body [
                 "alpha" 1
                 "beta" 2
@@ -2490,7 +2505,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body {
                 [ "alpha" 1 ]
                 [ "beta" 2 ]
@@ -2504,7 +2519,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "map_inv.stvn",
             """
             {
-              :type :MapInv( :String :Int32 )
+              :defs {
+                :InvMap { #invertible } :Map( :String :Int )
+              }
+              :type :InvMap
               :body [ "a" 1 "b" 2 ]
             }
             """);
@@ -2518,7 +2536,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :MapInv( :String :Int32 )
+              :defs {
+                :InvMap { #invertible } :Map( :String :Int )
+              }
+              :type :InvMap
               :body { [ "a" 1 ] [ "b" 2 ] }
             }
             """);
@@ -2533,7 +2554,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "map_skeleton.stvn",
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body <caret>
             }
             """);
@@ -2549,7 +2570,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body {
                 [ "placeholder" 0 ]
               }
@@ -2566,7 +2587,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "tuple_skeleton.stvn",
             """
             {
-              :type :Tuple( :String :Float64 :Boolean )
+              :type :Tuple( :String :Float :Boolean )
               :body <caret>
             }
             """);
@@ -2581,7 +2602,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Tuple( :String :Float64 :Boolean )
+              :type :Tuple( :String :Float :Boolean )
               :body (
                 "placeholder"
                 0.0
@@ -2600,7 +2621,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "union_skeleton.stvn",
             """
             {
-              :type :Union( :Int32 :String )
+              :type :Union( :Int :String )
               :body <caret>
             }
             """);
@@ -2615,7 +2636,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Union( :Int32 :String )
+              :type :Union( :Int :String )
               :body #1 0
             }
             """);
@@ -2631,7 +2652,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Coord :Tuple( :Float64 :Float64 )
+                :Coord :Tuple( :Float :Float )
               }
               :type :Map( :String :Coord )
               :body <caret>
@@ -2649,7 +2670,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Coord :Tuple( :Float64 :Float64 )
+                :Coord :Tuple( :Float :Float )
               }
               :type :Map( :String :Coord )
               :body {
@@ -2671,7 +2692,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "sum_skeleton.stvn",
             """
             {
-              :type :Tuple( :Option( :Int32 ) :Either( :String :Boolean ) )
+              :type :Tuple( :Option( :Int ) :Either( :String :Boolean ) )
               :body <caret>
             }
             """);
@@ -2686,7 +2707,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.checkResult(
             """
             {
-              :type :Tuple( :Option( :Int32 ) :Either( :String :Boolean ) )
+              :type :Tuple( :Option( :Int ) :Either( :String :Boolean ) )
               :body (
                 #Some 0
                 #Right #FALSE
@@ -2750,6 +2771,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 1. Valid :DateTimeOffset with Inlay Hints
         var validCode = """
             {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeOffset { #offset } :DateTime
+              }
               :type :Seq( :DateTimeOffset )
               :body [ "2026-03-06T15:53:08Z"<hint text=":DateTimeOffset"/> "2026-03-06T15:53:08-06:00"<hint text=":DateTimeOffset"/> ]<hint text=":Seq( :DateTimeOffset )"/>
             }
@@ -2761,6 +2786,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeOffset { #offset } :DateTime
               }
               :type :Seq( :DateTimeOffset )
               :body [ "2026-03-15T08:00:00-05:00[America/Chicago]" ]
@@ -2773,7 +2799,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .toList();
         assertEquals(1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue(error.getDescription() != null && error.getDescription().contains("Constraint violation (:org/stvnadore/prelude/DateTimeOffset): String does not match required pattern"));
+        assertTrue(error.getDescription() != null && error.getDescription().contains("Time zone brackets [...] are prohibited"));
         
         var documentText = myFixture.getEditor().getDocument().getText();
         var targetText = documentText.substring(error.getStartOffset(), error.getEndOffset());
@@ -2784,6 +2810,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 1. Valid :DateTimeZoned with Inlay Hints
         var validCode = """
             {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeZoned { #zoned } :DateTime
+              }
               :type :Seq( :DateTimeZoned )
               :body [ "2026-03-15T08:00:00[America/Chicago]"<hint text=":DateTimeZoned"/> "2026-08-18T18:30:00[Europe/London]"<hint text=":DateTimeZoned"/> ]<hint text=":Seq( :DateTimeZoned )"/>
             }
@@ -2795,6 +2825,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeZoned { #zoned } :DateTime
               }
               :type :Seq( :DateTimeZoned )
               :body [ "2026-03-15T08:00:00-05:00[America/Chicago]" ]
@@ -2803,13 +2834,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_invalid_offset.stvn", invalidOffsetCode);
         var highlights = myFixture.doHighlighting();
         var error = highlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(error.getDescription() != null && error.getDescription().contains("Constraint violation (:org/stvnadore/prelude/DateTimeZoned): String does not match required pattern"));
+        assertTrue(error.getDescription() != null && error.getDescription().contains("Explicit offsets (±HH:mm or Z) are prohibited in :DateTimeZoned"));
 
         // 3. Missing Zone Brackets Rejection
         var missingZoneCode = """
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeZoned { #zoned } :DateTime
               }
               :type :Seq( :DateTimeZoned )
               :body [ "2026-03-08T02:30:00" ]
@@ -2818,13 +2850,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_gap.stvn", missingZoneCode);
         var gapHighlights = myFixture.doHighlighting();
         var gapError = gapHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(gapError.getDescription() != null && gapError.getDescription().contains("Constraint violation (:org/stvnadore/prelude/DateTimeZoned): String does not match required pattern"));
+        assertTrue(gapError.getDescription() != null && gapError.getDescription().contains("Invalid ZonedDateTime format"));
     }
 
     public void testDateTimeAuditedHighlightingAndInlays() {
         // 1. Valid :DateTimeAudited with Inlay Hints
         var validCode = """
             {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeAudited { #audited } :DateTime
+              }
               :type :Seq( :DateTimeAudited )
               :body [ "2026-03-15T08:00:00-05:00[America/Chicago]"<hint text=":DateTimeAudited"/> "2026-01-15T08:00:00-06:00[America/Chicago]"<hint text=":DateTimeAudited"/> ]<hint text=":Seq( :DateTimeAudited )"/>
             }
@@ -2836,6 +2872,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeAudited { #audited } :DateTime
               }
               :type :Seq( :DateTimeAudited )
               :body [ "2026-03-15T08:00:00-05:00" ]
@@ -2844,13 +2881,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_missing_zone.stvn", missingZoneCode);
         var missingZoneHighlights = myFixture.doHighlighting();
         var missingZoneError = missingZoneHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(missingZoneError.getDescription() != null && missingZoneError.getDescription().contains("Constraint violation (:org/stvnadore/prelude/DateTimeAudited): String does not match required pattern"));
+        assertTrue(missingZoneError.getDescription() != null && missingZoneError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID"));
 
         // 3. Missing Offset Rejection
         var missingOffsetCode = """
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeAudited { #audited } :DateTime
               }
               :type :Seq( :DateTimeAudited )
               :body [ "2026-03-15T08:00:00[America/Chicago]" ]
@@ -2859,7 +2897,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_contradictory.stvn", missingOffsetCode);
         var contradictoryHighlights = myFixture.doHighlighting();
         var contradictoryError = contradictoryHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(contradictoryError.getDescription() != null && contradictoryError.getDescription().contains("Constraint violation (:org/stvnadore/prelude/DateTimeAudited): String does not match required pattern"));
+        assertTrue(contradictoryError.getDescription() != null && (contradictoryError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID") || contradictoryError.getDescription().contains("Invalid :DateTimeAudited format")));
         
         var documentText = myFixture.getEditor().getDocument().getText();
         var targetText = documentText.substring(contradictoryError.getStartOffset(), contradictoryError.getEndOffset());
@@ -2873,6 +2911,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeOffset  { #offset } :DateTime
+                :DateTimeZoned   { #zoned } :DateTime
+                :DateTimeAudited { #audited } :DateTime
               }
               :type :Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited )
               :body <caret>
@@ -2891,6 +2932,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
+                :DateTimeOffset  { #offset } :DateTime
+                :DateTimeZoned   { #zoned } :DateTime
+                :DateTimeAudited { #audited } :DateTime
               }
               :type :Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited )
               :body (
@@ -2953,7 +2997,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testMultiErrorSequenceHighlightingAndInlayResilience() {
         var code = """
             {
-              :type :Seq( :Int32 )
+              :type :Seq( :Int )
               :body [
                 10
                 20.5
@@ -2986,14 +3030,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 4. Verify Inlay Hints render on valid sibling elements
         var annotatedCode = """
             {
-              :type :Seq( :Int32 )
+              :type :Seq( :Int )
               :body [
-                10<hint text=":Int32"/>
+                10<hint text=":Int"/>
                 20.5
-                30<hint text=":Int32"/>
+                30<hint text=":Int"/>
                 "invalid_string"
-                50<hint text=":Int32"/>
-              ]<hint text=":Seq( :Int32 )"/>
+                50<hint text=":Int"/>
+              ]<hint text=":Seq( :Int )"/>
             }
             """;
         myFixture.configureByText("multi_error_seq_hints.stvn", annotatedCode);
@@ -3003,7 +3047,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testMultiErrorTuplePositionalSlots() {
         var code = """
             {
-              :type :Tuple( :Int32 :String :Boolean :Float64 )
+              :type :Tuple( :Int :String :Boolean :Float )
               :body (
                 "not_an_int"
                 "valid_string"
@@ -3035,13 +3079,13 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // Verify Inlay Hints on valid slots 1 and 3
         var annotatedCode = """
             {
-              :type :Tuple( :Int32 :String :Boolean :Float64 )
+              :type :Tuple( :Int :String :Boolean :Float )
               :body (
                 "not_an_int"
                 "valid_string"<hint text=":String"/>
                 12345
-                3.14159<hint text=":Float64"/>
-              )<hint text=":Tuple( :Int32 :String :Boolean :Float64 )"/>
+                3.14159<hint text=":Float"/>
+              )<hint text=":Tuple( :Int :String :Boolean :Float )"/>
             }
             """;
         myFixture.configureByText("multi_error_tuple_hints.stvn", annotatedCode);
@@ -3051,7 +3095,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testMultiErrorMapDuplicateKeysAndInvalidValues() {
         var code = """
             {
-              :type :Map( :String :Int32 )
+              :type :Map( :String :Int )
               :body {
                 [ "alpha" 100 ]
                 [ "beta"  "not_an_int" ]
@@ -3080,7 +3124,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testMultiErrorDiagnosticThresholdLimiting() {
-        var sb = new StringBuilder("{\n  :type :Seq( :Int32 )\n  :body [\n");
+        var sb = new StringBuilder("{\n  :type :Seq( :Int )\n  :body [\n");
         for (int i = 0; i < 110; i++) {
             sb.append("    \"string_error_").append(i).append("\"\n");
         }
@@ -3102,10 +3146,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :BitFlag        :Uint1
-                :UnixPermission :Uint3
-                :Port           { #minIncl 1 #maxIncl 65535 } :Uint16
-                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :BitFlag        :Int
+                :UnixPermission :Int
+                :Port           { #minIncl 1 #maxIncl 65535 } :Int
+                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
                 :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
               }
             }
@@ -3116,9 +3160,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :RouteTable :Map( :RemoteHost :IpAddress )
+                :IpAddress :Union( :IPv4 :String )
               }
 
               :type :Tuple(
@@ -3135,34 +3179,34 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """);
 
         var text = myFixture.getEditor().getDocument().getText();
-        var routeTableDefIdx = text.indexOf(":RouteTable :MapInv(");
+        var routeTableDefIdx = text.indexOf(":RouteTable :Map(");
         assertTrue(routeTableDefIdx != -1);
 
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
 
-        // 1. Hover over :RemoteHost on line 5 (inside :RouteTable :MapInv( :RemoteHost :IpAddress ))
+        // 1. Hover over :RemoteHost on line 5 (inside :RouteTable :Map( :RemoteHost :IpAddress ))
         var remoteHostOffset = text.indexOf(":RemoteHost", routeTableDefIdx);
         var remoteHostElem = myFixture.getFile().findElementAt(remoteHostOffset);
         assertNotNull(remoteHostElem);
         var customDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), remoteHostElem, remoteHostOffset);
-        assertNotNull("Custom doc element for :RemoteHost in :MapInv is null", customDocElem);
+        assertNotNull("Custom doc element for :RemoteHost in :Map is null", customDocElem);
         var remoteHostDoc = provider.generateDoc(customDocElem, remoteHostElem);
-        assertNotNull("Hover documentation for :RemoteHost in :MapInv is null", remoteHostDoc);
+        assertNotNull("Hover documentation for :RemoteHost in :Map is null", remoteHostDoc);
         assertTrue("Doc must contain Type Alias", remoteHostDoc.contains("Type Alias:</b> :RemoteHost"));
         assertTrue("Doc must contain imported source", remoteHostDoc.contains("network_primitives.stvn_inclf"));
-        assertTrue("Doc must contain resolution trajectory", remoteHostDoc.contains(":RemoteHost &rarr; :HostName &rarr; :StringNonEmpty64"));
-        assertTrue("Doc must contain underlying structure", remoteHostDoc.contains("Underlying Structure:</b> :StringNonEmpty64"));
+        assertTrue("Doc must contain resolution trajectory", remoteHostDoc.contains(":RemoteHost &rarr; :HostName &rarr; :String"));
+        assertTrue("Doc must contain underlying structure", remoteHostDoc.contains("Underlying Structure:</b> :String"));
 
-        // 2. Hover over :IpAddress on line 5 (inside :RouteTable :MapInv( :RemoteHost :IpAddress ))
+        // 2. Hover over :IpAddress on line 5 (inside :RouteTable :Map( :RemoteHost :IpAddress ))
         var ipAddressOffset = text.indexOf(":IpAddress", routeTableDefIdx);
         var ipAddressElem = myFixture.getFile().findElementAt(ipAddressOffset);
         assertNotNull(ipAddressElem);
         var ipCustomDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), ipAddressElem, ipAddressOffset);
-        assertNotNull("Custom doc element for :IpAddress in :MapInv is null", ipCustomDocElem);
+        assertNotNull("Custom doc element for :IpAddress in :Map is null", ipCustomDocElem);
         var ipAddressDoc = provider.generateDoc(ipCustomDocElem, ipAddressElem);
-        assertNotNull("Hover documentation for :IpAddress in :MapInv is null", ipAddressDoc);
+        assertNotNull("Hover documentation for :IpAddress in :Map is null", ipAddressDoc);
         assertTrue("Doc must contain Type Alias", ipAddressDoc.contains("Type Alias:</b> :IpAddress"));
-        assertTrue("Doc must contain underlying structure", ipAddressDoc.contains("Underlying Structure:</b> :Union( :IPv4 :StringFixed15 )"));
+        assertTrue("Doc must contain underlying structure", ipAddressDoc.contains("Underlying Structure:</b> :Union( :IPv4 :String )"));
     }
 
     public void testHoverDocumentationForTypeReferencesInUnion() {
@@ -3171,7 +3215,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
               }
             }
             """);
@@ -3181,9 +3225,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :RouteTable :Map( :RemoteHost :IpAddress )
+                :IpAddress :Union( :IPv4 :String )
               }
 
               :type :Tuple(
@@ -3204,7 +3248,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
 
-        // Hover over :IPv4 on line 6 (inside :IpAddress :Union( :IPv4 :StringFixed15 ))
+        // Hover over :IPv4 on line 6 (inside :IpAddress :Union( :IPv4 :String ))
         var ipv4Offset = text.indexOf(":IPv4", unionDefIdx);
         var ipv4Elem = myFixture.getFile().findElementAt(ipv4Offset);
         assertNotNull(ipv4Elem);
@@ -3213,7 +3257,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var ipv4Doc = provider.generateDoc(customDocElem, ipv4Elem);
         assertNotNull("Hover documentation for :IPv4 in :Union is null", ipv4Doc);
         assertTrue("Doc must contain Type Alias", ipv4Doc.contains("Type Alias:</b> :IPv4"));
-        assertTrue("Doc must contain underlying structure", ipv4Doc.contains("Underlying Structure:</b> :StringFixed15"));
+        assertTrue("Doc must contain underlying structure", ipv4Doc.contains("Underlying Structure:</b> :String"));
     }
 
     public void testHoverDocumentationForTypeReferencesInTuple() {
@@ -3222,7 +3266,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
               }
             }
             """);
@@ -3232,9 +3276,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :RouteTable :Map( :RemoteHost :IpAddress )
+                :IpAddress :Union( :IPv4 :String )
               }
 
               :type :Tuple(
@@ -3264,7 +3308,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var routeTableDoc = provider.generateDoc(customDocElem, routeTableElem);
         assertNotNull("Hover documentation for :RouteTable in :Tuple is null", routeTableDoc);
         assertTrue("Doc must contain Type Alias", routeTableDoc.contains("Type Alias:</b> :RouteTable"));
-        assertTrue("Doc must contain underlying structure", routeTableDoc.contains("Underlying Structure:</b> :MapInv( :RemoteHost :IpAddress )"));
+        assertTrue("Doc must contain underlying structure", routeTableDoc.contains("Underlying Structure:</b> :Map( :RemoteHost :IpAddress )"));
     }
 
     public void testGoToDefinitionForCompositeSchemaArguments() {
@@ -3273,7 +3317,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
               }
             }
             """);
@@ -3283,9 +3327,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :RouteTable :Map( :RemoteHost :IpAddress )
+                :IpAddress :Union( :IPv4 :String )
               }
 
               :type :Tuple(
@@ -3302,14 +3346,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var text = myFixture.getEditor().getDocument().getText();
 
-        // 1. Navigation on :RemoteHost inside :MapInv(...) -> navigates to :include binding
-        var routeTableDefIdx = text.indexOf(":RouteTable :MapInv(");
+        // 1. Navigation on :RemoteHost inside :Map(...) -> navigates to :include binding
+        var routeTableDefIdx = text.indexOf(":RouteTable :Map(");
         var remoteHostOffset = text.indexOf(":RemoteHost", routeTableDefIdx);
         myFixture.getEditor().getCaretModel().moveToOffset(remoteHostOffset);
         var remoteRef = myFixture.getReferenceAtCaretPosition();
-        assertNotNull("PsiReference not found for :RemoteHost in :MapInv", remoteRef);
+        assertNotNull("PsiReference not found for :RemoteHost in :Map", remoteRef);
         var resolvedRemote = remoteRef.resolve();
-        assertNotNull("Could not resolve :RemoteHost in :MapInv", resolvedRemote);
+        assertNotNull("Could not resolve :RemoteHost in :Map", resolvedRemote);
         assertTrue("Resolved must be TypeKeyword", resolvedRemote instanceof org.stvnadore.psi.TypeKeyword);
         assertEquals(":RemoteHost", resolvedRemote.getText());
         assertTrue("Resolved parent must be IncludeMapAlias", resolvedRemote.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
@@ -3581,9 +3625,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :RemoteHost :StringFixed15
-                :IpAddress :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :IpAddress )
+                :RemoteHost :String
+                :IpAddress :String
+                :RouteTable :Map( :RemoteHost :IpAddress )
               }
 
               :type :Tuple(
@@ -3630,8 +3674,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :RemoteHost :StringFixed15
-                :RouteTable :MapInv( :RemoteHost :UndefinedTarget )
+                :RemoteHost :String
+                :RouteTable :Map( :RemoteHost :UndefinedTarget )
               }
 
               :type :Tuple( :RouteTable )
@@ -3772,37 +3816,37 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Some  :Uint5 1
-                #None  :Uint5 2
-                #Left  :Uint5 3
-                #Right :Uint5 4
-                #TRUE  :Uint5 5
-                #FALSE :Uint5 6
-                #True  :Uint5 7
-                #False :Uint5 8
+                #Some  :Int 1
+                #None  :Int 2
+                #Left  :Int 3
+                #Right :Int 4
+                #TRUE  :Int 5
+                #FALSE :Int 6
+                #True  :Int 7
+                #False :Int 8
               }
 
               :type :Tuple(
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
-                :Uint5
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
+                :Int
               )
 
               :body (
-                #Some<hint text=":Uint5"/>
-                #None<hint text=":Uint5"/>
-                #Left<hint text=":Uint5"/>
-                #Right<hint text=":Uint5"/>
-                #TRUE<hint text=":Uint5"/>
-                #FALSE<hint text=":Uint5"/>
-                #True<hint text=":Uint5"/>
-                #False<hint text=":Uint5"/>
-              )<hint text=":Tuple( :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 )"/>
+                #Some<hint text=":Int"/>
+                #None<hint text=":Int"/>
+                #Left<hint text=":Int"/>
+                #Right<hint text=":Int"/>
+                #TRUE<hint text=":Int"/>
+                #FALSE<hint text=":Int"/>
+                #True<hint text=":Int"/>
+                #False<hint text=":Int"/>
+              )<hint text=":Tuple( :Int :Int :Int :Int :Int :Int :Int :Int )"/>
             }
             """);
         runInlayVerification();
@@ -3835,14 +3879,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Some :Uint5 1
+                #Some :Int 1
                 :OptText :Option( :String )
               }
-              :type :Tuple( :Uint5 :OptText )
+              :type :Tuple( :Int :OptText )
               :body (
-                #Some<hint text=":Uint5"/>
+                #Some<hint text=":Int"/>
                 #Some "payload"<hint text=":OptText #Some (-> :String)"/>
-              )<hint text=":Tuple( :Uint5 :OptText )"/>
+              )<hint text=":Tuple( :Int :OptText )"/>
             }
             """);
         runInlayVerification();
@@ -3855,17 +3899,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #Left :Uint5 10
-                #Right :Uint5 20
+                #Left :Int 10
+                #Right :Int 20
               }
-              :type :Tuple( :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 )
+              :type :Tuple( :Int :Int :Int :Int :Int )
               :body (
-                #Left<hint text=":Uint5"/>
-                #Right<hint text=":Uint5"/>
-                #Left<hint text=":Uint5"/>
-                #Right<hint text=":Uint5"/>
-                30<hint text=":Uint5"/>
-              )<hint text=":Tuple( :Uint5 :Uint5 :Uint5 :Uint5 :Uint5 )"/>
+                #Left<hint text=":Int"/>
+                #Right<hint text=":Int"/>
+                #Left<hint text=":Int"/>
+                #Right<hint text=":Int"/>
+                30<hint text=":Int"/>
+              )<hint text=":Tuple( :Int :Int :Int :Int :Int )"/>
             }
             """);
         runInlayVerification();
@@ -3879,13 +3923,13 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :Mode :Enum [ #Left #Right ]
-                #Left :Uint7 99
+                #Left :Int 99
               }
-              :type :Tuple( :Mode :Uint7 )
+              :type :Tuple( :Mode :Int )
               :body (
                 #Left<hint text=":Mode (-> :Enum)"/>
-                #Left<hint text=":Uint7"/>
-              )<hint text=":Tuple( :Mode :Uint7 )"/>
+                #Left<hint text=":Int"/>
+              )<hint text=":Tuple( :Mode :Int )"/>
             }
             """);
         runInlayVerification();
@@ -4283,7 +4327,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               // uhoh.stvn
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
 
               :type :Tuple(
@@ -4319,7 +4363,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )
               :body (
@@ -4345,9 +4389,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var values = tuple.getValueList();
         assertEquals(4, values.size());
 
-        assertEquals(":DisjointUnion [#1] (-> :Int32)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":DisjointUnion [#1] (-> :Int)", StvnTypeResolver.resolveValueType(values.get(0)));
         assertEquals(":DisjointUnion [#2] (-> :Boolean)", StvnTypeResolver.resolveValueType(values.get(1)));
-        assertEquals(":DisjointUnion [#3] (-> :Float64)", StvnTypeResolver.resolveValueType(values.get(2)));
+        assertEquals(":DisjointUnion [#3] (-> :Float)", StvnTypeResolver.resolveValueType(values.get(2)));
         assertEquals(":DisjointUnion [#4] (-> :String)", StvnTypeResolver.resolveValueType(values.get(3)));
     }
 
@@ -4358,7 +4402,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion :DisjointUnion )
               :body (
@@ -4382,7 +4426,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var values = tuple.getValueList();
         assertEquals(2, values.size());
 
-        assertEquals(":DisjointUnion #1 (-> :Int32)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":DisjointUnion #1 (-> :Int)", StvnTypeResolver.resolveValueType(values.get(0)));
         assertEquals(":DisjointUnion [#2] (-> :Boolean)", StvnTypeResolver.resolveValueType(values.get(1)));
     }
 
@@ -4392,7 +4436,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :AmbiguousUnion :Union( :Int32 :Uint32 )
+                :UnsignedInt    { #unsigned } :Int
+                :AmbiguousUnion :Union( :Int :UnsignedInt )
               }
               :type :Tuple( :AmbiguousUnion )
               :body (
@@ -4423,10 +4468,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :BoundedText :String64
+                :BoundedText { #maxSize 64 } :String
               }
               :type :Tuple(
-                :String64
+                :BoundedText
                 :BoundedText
               )
               :body (
@@ -4450,7 +4495,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "bounded_string_overflow.stvn",
             """
             {
-              :type :Tuple( :String64 )
+              :defs {
+                :BoundedText { #maxSize 64 } :String
+              }
+              :type :Tuple( :BoundedText )
               :body (
                 "01234567890123456789012345678901234567890123456789012345678901234"
               )
@@ -4474,12 +4522,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testFixedStringLengthRejection() {
-        // 1. Under-length (37 characters) rejected by :StringFixed64
+        // 1. Under-length (37 characters) rejected by { #minSize 64 #maxSize 64 } :String
         myFixture.configureByText(
             "fixed_string_underlength.stvn",
             """
             {
-              :type :Tuple( :StringFixed64 )
+              :defs {
+                :FixedText { #minSize 64 #maxSize 64 } :String
+              }
+              :type :Tuple( :FixedText )
               :body (
                 "37-character-string-payload-sample-01"
               )
@@ -4494,12 +4545,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue(underErrors.get(0).getDescription() != null &&
             underErrors.get(0).getDescription().contains("Fixed string must be exactly 64 characters long, got 37"));
 
-        // 2. Over-length (65 characters) rejected by :StringFixed64
+        // 2. Over-length (65 characters) rejected by { #minSize 64 #maxSize 64 } :String
         myFixture.configureByText(
             "fixed_string_overlength.stvn",
             """
             {
-              :type :Tuple( :StringFixed64 )
+              :defs {
+                :FixedText { #minSize 64 #maxSize 64 } :String
+              }
+              :type :Tuple( :FixedText )
               :body (
                 "01234567890123456789012345678901234567890123456789012345678901234"
               )
@@ -4566,7 +4620,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :OptBool   :Option( :Boolean )
-                :Disjoint  :Either( :Int32 :Boolean )
+                :Disjoint  :Either( :Int :Boolean )
               }
               :type :Tuple(
                 :OptBool
@@ -4644,7 +4698,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "tuple_clamped_error.stvn",
             """
             {
-              :type :Tuple( :Int32 :Boolean :String )
+              :type :Tuple( :Int :Boolean :String )
               :body (
                 100
                 "invalid_boolean_string"
@@ -4728,10 +4782,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :BrokenRegex      { #regex "[" } :String
-                :InvertedRange    { #minIncl 100 #maxIncl 10 } :Int32
-                :CapacityOverflow { #minIncl 500 } :Int8
+                :InvertedRange    { #minIncl 100 #maxExcl 10 } :Int
+                :CapacityOverflow { #size 8 #minIncl 500 } :Int
               }
-              :type :Int32
+              :type :Int
               :body 42
             }
             """;
@@ -4741,7 +4795,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var errors = highlights.stream()
             .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
             .toList();
-        assertEquals("Expected exactly 3 concurrent errors across :defs entries", 3, errors.size());
+        assertEquals("Expected exactly 3 concurrent errors across :defs entries, got: " + errors.stream().map(HighlightInfo::getDescription).toList(), 3, errors.size());
 
         var docText = myFixture.getEditor().getDocument().getText();
 
@@ -4757,7 +4811,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var hasInvertedRangeError = errors.stream().anyMatch(e ->
             e.getDescription() != null &&
             e.getDescription().contains("effective range is invalid") &&
-            docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxIncl 10 }")
+            docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxExcl 10 }")
         );
         assertTrue("Must highlight inverted range metadata map", hasInvertedRangeError);
 
@@ -4775,8 +4829,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include [ "sub_module.stvn_inclf" ]
-                :MutuallyExclusive { #minIncl 10 #minExcl 10 } :Int32
-                :IncompatibleMeta  { #preserveIndent #TRUE } :Int32
+                :MutuallyExclusive { #minIncl 10 #minExcl 10 } :Int
+                :IncompatibleMeta  { #preserveIndent } :Int
               }
             }
             """;
@@ -4798,9 +4852,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             e.getDescription() != null && e.getDescription().contains("are mutually exclusive")
         ));
 
-        // 3. Incompatible Metadata on Int32
+        // 3. Incompatible Metadata on Int
         assertTrue("Must report incompatible metadata", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("preserveIndent") && e.getDescription().contains(":Int32")
+            e.getDescription() != null && e.getDescription().contains("preserveIndent") && e.getDescription().contains(":Int")
         ));
     }
 
@@ -5079,7 +5133,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             // Pass 3: Introduce duplicate map key error -> Wolf reports problem file again
             var reBrokenText = """
                 {
-                  :type :Map( :String :Int32 )
+                  :type :Map( :String :Int )
                   :body {
                     [ "key" 1 ]
                     [ "key" 2 ]
@@ -5103,7 +5157,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             // Pass 4: Fix duplicate map key -> Wolf clears problem file again
             var reFixedText = """
                 {
-                  :type :Map( :String :Int32 )
+                  :type :Map( :String :Int )
                   :body {
                     [ "key1" 1 ]
                     [ "key2" 2 ]
@@ -5152,7 +5206,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var fixtureText = """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple(
                 :DisjointUnion
@@ -5200,7 +5254,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var textWithRealError = """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple(
                 :DisjointUnion
@@ -5412,8 +5466,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text = """
                 {
                   :defs {
-                    :DisjointUnion :Union( :Int32 :String :Boolean )
-                    :OverlappingUnion :Union( :Int32 :Uint32 )
+                    :DisjointUnion    :Union( :Int :String :Boolean )
+                    :UnsignedInt      { #unsigned } :Int
+                    :OverlappingUnion :Union( :Int :UnsignedInt )
                   }
                   :type :Tuple( :DisjointUnion :OverlappingUnion )
                   :body (
@@ -5438,7 +5493,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var ambiguousText = """
                 {
                   :defs {
-                    :EitherRepeat :Either( :Int32 :Uint32 )
+                    :UnsignedInt  { #unsigned } :Int
+                    :EitherRepeat :Either( :Int :UnsignedInt )
                   }
                   :type :EitherRepeat
                   :body 1
@@ -5478,7 +5534,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var leftText = """
                 {
                   :defs {
-                    :EitherRepeat :Either( :Int32 :Uint32 )
+                    :UnsignedInt  { #unsigned } :Int
+                    :EitherRepeat :Either( :Int :UnsignedInt )
                   }
                   :type :EitherRepeat
                   :body #Left 1
@@ -5492,7 +5549,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var rightText = """
                 {
                   :defs {
-                    :EitherRepeat :Either( :Int32 :Uint32 )
+                    :UnsignedInt  { #unsigned } :Int
+                    :EitherRepeat :Either( :Int :UnsignedInt )
                   }
                   :type :EitherRepeat
                   :body #Right 1
@@ -5507,7 +5565,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testEitherRuleEViolationUntaggedLeftBranch() {
         var text = """
                 {
-                  :type :Either( :Int32 :String )
+                  :type :Either( :Int :String )
                   :body 42
                 }
                 """;
@@ -5647,7 +5705,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :MyInt { #minIncl 1 } :Int32
+                :MyInt { #minIncl 1 } :Int
                 :BadUnion :Union( :MyInt :MyInt )
               }
               :type :BadUnion
@@ -5682,7 +5740,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :IdenticalEither :Either( :Uint32 :Uint32 )
+                :IdenticalEither :Either( :Int :Int )
               }
               :type :IdenticalEither
               :body 42
@@ -5698,8 +5756,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertFalse("Expected ambiguity compilation error for untagged payload targeting duplicate either branches", errors.isEmpty());
         var errorDescriptions = errors.stream().map(HighlightInfo::getDescription).toList();
         assertTrue(
-            "Expected error containing 'Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required'. Found: " + errorDescriptions,
-            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit either: Both sides are identical (:Uint32), explicit #Left or #Right tag is required"))
+            "Expected error containing 'Ambiguous implicit either: Both sides are identical (:Int), explicit #Left or #Right tag is required'. Found: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d != null && d.contains("Ambiguous implicit either: Both sides are identical (:Int), explicit #Left or #Right tag is required"))
         );
 
         var text = psiFile.getText();
@@ -5724,8 +5782,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :IdenticalEither :Either( :Uint32 :Uint32 )
-                :IdenticalUnion  :Union( :Uint32 :Uint32 :Uint32 )
+                :IdenticalEither :Either( :Int :Int )
+                :IdenticalUnion  :Union( :Int :Int :Int )
                 :RootPayload     :Tuple(
                   :IdenticalEither
                   :IdenticalEither
@@ -5763,7 +5821,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "tuple_underflow.stvn",
             """
             {
-              :type :Tuple( :Int32 :Int32 )
+              :type :Tuple( :Int :Int )
               :body (
                 10
               )
@@ -5799,9 +5857,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :EitherA :Either( :Int32 :String )
-                :EitherB :Either( :Int32 :String )
-                :UnionLikeEitherC :Union( :Int32 :String )
+                :EitherA :Either( :Int :String )
+                :EitherB :Either( :Int :String )
+                :UnionLikeEitherC :Union( :Int :String )
               }
               :type :Tuple(
                 :EitherA
@@ -5840,9 +5898,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :EitherA :Either( :Int32 :String )
-                :EitherB :Either( :Int32 :String )
-                :UnionLikeEitherC :Union( :Int32 :String )
+                :EitherA :Either( :Int :String )
+                :EitherB :Either( :Int :String )
+                :UnionLikeEitherC :Union( :Int :String )
               }
               :type :Tuple(
                 :EitherA

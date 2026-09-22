@@ -126,13 +126,10 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
-            @Override
-            public void visitAtomicType(@NotNull AtomicType atomicType) {
-                super.visitAtomicType(atomicType);
-
+            private void inspectStringElement(@NotNull PsiElement typeElem) {
                 // 1. Enforce Schema Scope: inspect only elements inside :defs or :type
                 boolean inSchema = PsiTreeUtil.getParentOfType(
-                    atomicType,
+                    typeElem,
                     DefsEntry.class,
                     DefsInclEntry.class,
                     DefsInclfEntry.class,
@@ -142,7 +139,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                String typeName = atomicType.getText().trim();
+                String typeName = typeElem.getText().trim();
                 if (!StvnStringCapacityUtils.isNominalStringType(typeName)) {
                     return;
                 }
@@ -173,7 +170,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     if (isError) {
                         // Protocol Constraint: Suppress Secondary QuickFix under ERROR severity
                         holder.registerProblem(
-                            atomicType,
+                            typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                             new ApplyConfiguredCapacityQuickFix(thresholdCapacity)
@@ -181,7 +178,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     } else {
                         // Protocol Requirement: Offer Dual QuickFixes under WARNING / WEAK WARNING
                         holder.registerProblem(
-                            atomicType,
+                            typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                             new ApplyConfiguredCapacityQuickFix(thresholdCapacity),
@@ -189,6 +186,18 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                         );
                     }
                 }
+            }
+
+            @Override
+            public void visitAtomicType(@NotNull AtomicType atomicType) {
+                super.visitAtomicType(atomicType);
+                inspectStringElement(atomicType);
+            }
+
+            @Override
+            public void visitTypeKeyword(@NotNull org.stvnadore.psi.TypeKeyword typeKeyword) {
+                super.visitTypeKeyword(typeKeyword);
+                inspectStringElement(typeKeyword);
             }
 
             @Override
@@ -280,7 +289,16 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
-            var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+            String typeText = kw.getText().trim();
+            if (StvnStringCapacityUtils.isNominalStringType(typeText)) {
+                try {
+                    var opt = StvnStringCapacityUtils.parseCapacitySuffix(typeText);
+                    return opt.orElse(StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                } catch (Exception ignored) {
+                    return -1;
+                }
+            }
+            var resolved = StvnTypeReference.resolveTypeInFile(file, typeText, new HashSet<>());
             if (resolved != null) {
                 var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
                 if (parentDef != null && parentDef.getSchemaType() != null) {
@@ -524,11 +542,15 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             if (doc == null) return;
 
             var atomicType = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
-            if (atomicType != null) {
-                String current = atomicType.getText().trim();
+            PsiElement targetElem = atomicType;
+            if (targetElem == null) {
+                targetElem = schemaType.getTypeKeyword();
+            }
+            if (targetElem != null) {
+                String current = targetElem.getText().trim();
                 String base = getBaseNominalTypeName(current);
                 String widened = base + requiredCapacity;
-                var range = atomicType.getTextRange();
+                var range = targetElem.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), widened);
                 docManager.commitDocument(doc);
             }
