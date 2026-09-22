@@ -127,7 +127,7 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
             .toList();
         assertEquals("Expected 2 discrete bound errors on :TimeEpoch", 2, errors.size());
 
@@ -155,17 +155,46 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
             .toList();
         assertEquals("Expected 2 discrete bound errors on :DateTime", 2, errors.size());
+    }
 
-        int offset = text.indexOf("#maxIncl");
-        myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Convert '#maxIncl <N>' to '#maxExcl <N+1>'");
-        assertFalse("Expected #maxIncl conversion quick-fix to be available on :DateTime", actions.isEmpty());
-        myFixture.launchAction(actions.get(0));
+    public void testValidDiscreteBoundsAcceptedOnTimeEpoch() {
+        var text = """
+            {
+              :defs {
+                :ValidEpoch { #s #minIncl 0 #maxExcl 100 } :TimeEpoch
+              }
+              :type :ValidEpoch
+              :body 50
+            }
+            """;
+        myFixture.configureByText("valid_epoch.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
+            .toList();
+        assertTrue("{ #s #minIncl 0 #maxExcl 100 } on :TimeEpoch must produce zero discrete interval errors", errors.isEmpty());
+    }
 
-        var result = myFixture.getFile().getText();
-        assertTrue("Expected #maxExcl in converted text", result.contains("#maxExcl \"2026-12-31T23:59:59Z\""));
+    public void testValidDiscreteBoundsAcceptedOnDateTime() {
+        var text = """
+            {
+              :defs {
+                :ValidDateTime { #offset #minIncl "2026-01-01T00:00:00Z" #maxExcl "2027-01-01T00:00:00Z" } :DateTime
+              }
+              :type :ValidDateTime
+              :body "2026-06-01T12:00:00Z"
+            }
+            """;
+        myFixture.configureByText("valid_datetime.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
+            .toList();
+        assertTrue("{ #offset #minIncl ... #maxExcl ... } on :DateTime must produce zero discrete interval errors", errors.isEmpty());
     }
 }

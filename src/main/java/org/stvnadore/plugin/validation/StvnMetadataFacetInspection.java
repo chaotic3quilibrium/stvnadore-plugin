@@ -22,8 +22,10 @@ import org.stvnadore.psi.*;
 public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
     private static final TokenSet NUMERIC_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL,
         StvnTypes.KW_SIZE, StvnTypes.KW_UNSIGNED, StvnTypes.KW_EXACT
+    );
+    private static final TokenSet INTERVAL_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL
     );
     private static final TokenSet STRING_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_REGEX, StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
@@ -163,10 +165,17 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(NUMERIC_FACET_TOKENS) != null && !isNumeric && !isString) {
+            } else if (entry.getNode().findChildByType(INTERVAL_FACET_TOKENS) != null && !isNumeric && !isTemporal) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact, #minIncl, #maxIncl, #minExcl, #maxExcl]",
+                    "Facet is not permitted on " + baseType + "; permitted facets for numeric and temporal types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove invalid facet")
+                );
+            } else if (entry.getNode().findChildByType(NUMERIC_FACET_TOKENS) != null && !isNumeric) {
+                holder.registerProblem(
+                    entry,
+                    "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
@@ -232,7 +241,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isNumericType(String baseType) {
-        return baseType.startsWith(":Int") || baseType.startsWith(":Uint") || baseType.startsWith(":Float");
+        return baseType.startsWith(":Int") || baseType.startsWith(":Uint") || baseType.startsWith(":Float") || baseType.startsWith(":TimeEpoch");
     }
 
     private static boolean isStringType(String baseType) {

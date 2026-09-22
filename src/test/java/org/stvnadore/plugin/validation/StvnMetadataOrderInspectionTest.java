@@ -131,4 +131,52 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             .toList();
         assertTrue("Canonical ordering must produce 0 warnings", warnings.isEmpty());
     }
+
+    public void testCanonicalPortDeclarationOrder() {
+        var text = """
+            {
+              :defs {
+                :Port { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } :Int
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("canonical_port.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .toList();
+        assertTrue("Canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } must produce 0 warnings", warnings.isEmpty());
+    }
+
+    public void testDisorderedPortQuickFixReordersToCanonicalSevenTier() {
+        var text = """
+            {
+              :defs {
+                :DisorderedPort { #maxExcl 65536 #size 16 #unsigned #minIncl 1 } :Int
+              }
+              :type :DisorderedPort
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("disordered_port.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .toList();
+        assertFalse("Expected out-of-order warnings on disordered Port definition", warnings.isEmpty());
+
+        int offset = text.indexOf("#size");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 7-tier order");
+        assertFalse("Expected quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        assertTrue("Expected canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } in reordered text:\n" + result,
+            result.contains("{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }"));
+    }
 }

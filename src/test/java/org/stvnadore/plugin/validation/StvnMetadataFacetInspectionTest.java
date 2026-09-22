@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 
@@ -98,5 +99,24 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
               :body 42
             }
             """);
+    }
+
+    public void testTemporalIntervalFacetsPermitted() {
+        var text = """
+            {
+              :defs {
+                :Epoch { #s #minIncl 0 #maxExcl 100 } :TimeEpoch
+                :Date  { #offset #minIncl "2026-01-01T00:00:00Z" #maxExcl "2027-01-01T00:00:00Z" } :DateTime
+              }
+              :type :Epoch
+              :body 50
+            }
+            """;
+        myFixture.configureByText("temporal_intervals.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Interval facets on temporal types must not produce facet errors: " + errors, errors.isEmpty());
     }
 }

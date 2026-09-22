@@ -61,18 +61,24 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var entryText = entry.getText();
                     if (entryText.startsWith("#maxIncl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                        var quickFixes = canIncrementBound(entry)
+                            ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry)}
+                            : LocalQuickFix.EMPTY_ARRAY;
                         holder.registerProblem(
                             entry,
-                            "Discrete types reject closed upper bound '#maxIncl'. Use half-open bound '#maxExcl'.",
+                            "Discrete types reject closed upper bound '#maxIncl'; use half-open bound '#maxExcl' (ERR_DISCRETE_BOUND_KIND_PROHIBITED).",
                             ProblemHighlightType.GENERIC_ERROR,
-                            new ConvertMaxInclToMaxExclQuickFix(entry)
+                            quickFixes
                         );
                     } else if (entryText.startsWith("#minExcl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                        var quickFixes = canIncrementBound(entry)
+                            ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry)}
+                            : LocalQuickFix.EMPTY_ARRAY;
                         holder.registerProblem(
                             entry,
-                            "Discrete types reject open lower bound '#minExcl'. Use half-open bound '#minIncl'.",
+                            "Discrete types reject open lower bound '#minExcl'; use half-open bound '#minIncl' (ERR_DISCRETE_BOUND_KIND_PROHIBITED).",
                             ProblemHighlightType.GENERIC_ERROR,
-                            new ConvertMinExclToMinInclQuickFix(entry)
+                            quickFixes
                         );
                     }
                 }
@@ -84,7 +90,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
         var baseType = resolveBaseTypeString(schemaType);
-        if (baseType.startsWith(":Int") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
+        if (baseType.startsWith(":Int") || baseType.startsWith(":Uint") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
             return true;
         }
         if (baseType.startsWith(":Float")) {
@@ -124,6 +130,29 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             return text;
         }
         return schemaType.getText().trim();
+    }
+
+    private static boolean canIncrementBound(MetadataEntry entry) {
+        var val = entry.getMetadataValue();
+        if (val == null) return false;
+        var valText = val.getText().trim();
+        try {
+            if (valText.startsWith("0x") || valText.startsWith("0X")) {
+                new BigInteger(valText.substring(2), 16);
+                return true;
+            } else if (valText.startsWith("0b") || valText.startsWith("0B")) {
+                new BigInteger(valText.substring(2), 2);
+                return true;
+            } else if (valText.startsWith("0o") || valText.startsWith("0O")) {
+                new BigInteger(valText.substring(2), 8);
+                return true;
+            } else {
+                new BigInteger(valText);
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String incrementBound(String valText) {

@@ -179,4 +179,25 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertTrue("Reformatting must normalize metadata entries into 7-tier canonical order:\n" + text,
                 text.contains("#preserveIndent #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
     }
+
+    public void testReformatReordersPortMetadataToCanonicalSevenTierOrder() {
+        var unformatted = """
+            {
+              :defs {
+                :Port { #maxExcl 65536 #size 16 #unsigned #minIncl 1 } :Int
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_port_order.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Reformatting must normalize Port metadata to '{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }':\n" + text,
+            text.contains("{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }"));
+    }
 }
