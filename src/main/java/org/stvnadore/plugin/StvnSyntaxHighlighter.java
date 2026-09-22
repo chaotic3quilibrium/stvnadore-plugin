@@ -122,7 +122,10 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_MIN_SIZE) ||
                type.equals(StvnTypes.KW_MAX_SIZE) ||
                type.equals(StvnTypes.KW_INVERTIBLE) ||
-               type.equals(StvnTypes.KW_UNIT) ||
+               type.equals(StvnTypes.KW_SCALE_S) ||
+               type.equals(StvnTypes.KW_SCALE_MS) ||
+               type.equals(StvnTypes.KW_SCALE_US) ||
+               type.equals(StvnTypes.KW_SCALE_NS) ||
                type.equals(StvnTypes.KW_OFFSET) ||
                type.equals(StvnTypes.KW_ZONED) ||
                type.equals(StvnTypes.KW_AUDITED) ||

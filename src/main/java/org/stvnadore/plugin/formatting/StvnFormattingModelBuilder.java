@@ -82,6 +82,11 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .between(StvnTypes.VALUE_KEYWORD, StvnTypes.METADATA_MAP).spaces(1)
                 .between(StvnTypes.SCHEMA_TYPE, StvnTypes.VALUE).spaces(1)
 
+                // Metadata map internal spacing: { #unsigned #size 16 }
+                .afterInside(StvnTypes.LBRACE, StvnTypes.METADATA_MAP).spaces(1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.METADATA_MAP).spaces(1)
+                .betweenInside(StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_MAP).spaces(1)
+
                 // Enum brackets spacing: :Enum [ #A #B ]
                 .afterInside(StvnTypes.LBRACK, StvnTypes.ENUM_DEF).spaces(1)
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.ENUM_DEF).spaces(1)

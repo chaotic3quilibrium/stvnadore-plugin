@@ -112,4 +112,60 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
             .toList();
         assertTrue("Continuous float must permit #minExcl and #maxIncl", intervalErrors.isEmpty());
     }
+
+    public void testTimeEpochRejectsMaxInclAndMinExcl() {
+        var text = """
+            {
+              :defs {
+                :BadEpoch { #s #minExcl 0 #maxIncl 1000 } :TimeEpoch
+              }
+              :type :BadEpoch
+              :body 500
+            }
+            """;
+        myFixture.configureByText("epoch_bounds.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .toList();
+        assertEquals("Expected 2 discrete bound errors on :TimeEpoch", 2, errors.size());
+
+        int offset = text.indexOf("#maxIncl");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Convert '#maxIncl <N>' to '#maxExcl <N+1>'");
+        assertFalse("Expected #maxIncl conversion quick-fix to be available on :TimeEpoch", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        assertTrue("Expected #maxExcl 1001 in converted text", result.contains("#maxExcl 1001"));
+    }
+
+    public void testDateTimeRejectsMaxInclAndMinExcl() {
+        var text = """
+            {
+              :defs {
+                :BadDate { #offset #minExcl "2026-01-01T00:00:00Z" #maxIncl "2026-12-31T23:59:59Z" } :DateTime
+              }
+              :type :BadDate
+              :body "2026-06-01T12:00:00Z"
+            }
+            """;
+        myFixture.configureByText("datetime_bounds.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .toList();
+        assertEquals("Expected 2 discrete bound errors on :DateTime", 2, errors.size());
+
+        int offset = text.indexOf("#maxIncl");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Convert '#maxIncl <N>' to '#maxExcl <N+1>'");
+        assertFalse("Expected #maxIncl conversion quick-fix to be available on :DateTime", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        assertTrue("Expected #maxExcl in converted text", result.contains("#maxExcl \"2026-12-31T23:59:59Z\""));
+    }
 }

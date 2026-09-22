@@ -84,7 +84,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
         var baseType = resolveBaseTypeString(schemaType);
-        if (baseType.startsWith(":Int")) {
+        if (baseType.startsWith(":Int") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
             return true;
         }
         if (baseType.startsWith(":Float")) {

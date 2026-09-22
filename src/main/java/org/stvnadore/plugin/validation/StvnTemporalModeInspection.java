@@ -52,21 +52,45 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
 
                 if (":TimeEpoch".equals(typeText)) {
                     var metaMap = typeDef.getMetadataMap();
-                    boolean hasUnit = false;
+                    boolean hasScale = false;
+                    int scaleCount = 0;
+                    boolean hasLegacyUnit = false;
+                    MetadataEntry legacyUnitEntry = null;
                     if (metaMap != null) {
                         for (var e : metaMap.getMetadataEntryList()) {
-                            if (e.getText().startsWith("#unit") || e.getNode().findChildByType(StvnTypes.KW_UNIT) != null) {
-                                hasUnit = true;
-                                break;
+                            var text = e.getText().trim();
+                            if (e.getNode().findChildByType(StvnTypes.KW_SCALE_S) != null || "#s".equals(text)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_MS) != null || "#ms".equals(text)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_US) != null || "#us".equals(text)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_NS) != null || "#ns".equals(text)) {
+                                hasScale = true;
+                                scaleCount++;
+                            }
+                            if (text.startsWith("#unit")) {
+                                hasLegacyUnit = true;
+                                legacyUnitEntry = e;
                             }
                         }
                     }
-                    if (!hasUnit) {
+                    if (hasLegacyUnit && legacyUnitEntry != null) {
+                        holder.registerProblem(
+                            legacyUnitEntry,
+                            "Legacy temporal facet '#unit' is deprecated; use bare scale flag ('#s', '#ms', '#us', '#ns').",
+                            ProblemHighlightType.LIKE_DEPRECATED
+                        );
+                    }
+                    if (scaleCount > 1 && metaMap != null) {
+                        holder.registerProblem(
+                            metaMap,
+                            "Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive.",
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    } else if (!hasScale && !hasLegacyUnit) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':TimeEpoch' requires explicit mode or unit facet (e.g. '#unit #ms').",
+                            "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
                             ProblemHighlightType.GENERIC_ERROR,
-                            new AddDefaultTemporalFacetQuickFix(typeDef, "#unit #ms")
+                            new AddDefaultTemporalFacetQuickFix(typeDef, "#ms")
                         );
                     }
                 } else if (":DateTime".equals(typeText)) {
@@ -109,7 +133,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                 if (":TimeEpoch".equals(text)) {
                     holder.registerProblem(
                         schemaType,
-                        "Temporal type ':TimeEpoch' requires explicit mode or unit facet (e.g. '#unit #ms').",
+                        "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
                         ProblemHighlightType.GENERIC_ERROR
                     );
                 } else if (":DateTime".equals(text)) {

@@ -92,7 +92,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.checkResult("""
             {
               :defs {
-                :IllegalType {  } :Int32
+                :IllegalType { } :Int32
               }
               :type :IllegalType
               :body 42

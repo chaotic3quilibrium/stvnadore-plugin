@@ -29,7 +29,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         StvnTypes.KW_REGEX, StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
     );
     private static final TokenSet TEMPORAL_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_UNIT, StvnTypes.KW_OFFSET, StvnTypes.KW_ZONED, StvnTypes.KW_AUDITED
+        StvnTypes.KW_SCALE_S, StvnTypes.KW_SCALE_MS, StvnTypes.KW_SCALE_US, StvnTypes.KW_SCALE_NS,
+        StvnTypes.KW_OFFSET, StvnTypes.KW_ZONED, StvnTypes.KW_AUDITED
     );
     private static final TokenSet MAP_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_INVERTIBLE
@@ -179,7 +180,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             } else if (entry.getNode().findChildByType(TEMPORAL_FACET_TOKENS) != null && !isTemporal) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#unit, #offset, #zoned, #audited]",
+                    "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#s, #ms, #us, #ns, #offset, #zoned, #audited]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );

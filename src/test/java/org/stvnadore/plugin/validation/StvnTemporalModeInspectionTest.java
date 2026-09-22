@@ -7,7 +7,8 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Automated platform test suite validating {@link StvnTemporalModeInspection}.
- * Verifies temporal mode requirements, missing facet diagnostics, and mutual exclusivity governance.
+ * Verifies temporal mode requirements, missing facet diagnostics, bare scale flags,
+ * and mutual exclusivity governance.
  */
 @NullMarked
 public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
@@ -32,18 +33,18 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires explicit mode or unit facet"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires a scale facet"))
             .toList();
         assertFalse("Expected missing temporal facet error on bare :TimeEpoch", errors.isEmpty());
 
         int offset = text.indexOf(":TimeEpoch");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Add temporal facet '#unit #ms'");
-        assertFalse("Expected quick-fix to add '#unit #ms' to be available", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Add temporal facet '#ms'");
+        assertFalse("Expected quick-fix to add '#ms' to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
-        assertTrue("Expected #unit #ms in converted text", result.contains("#unit #ms"));
+        assertTrue("Expected #ms in converted text:\n" + result, result.contains("#ms"));
     }
 
     public void testBareDateTimeRequiresModeFacetAndQuickFixApplies() {
@@ -93,11 +94,32 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         assertFalse("Expected mutually exclusive temporal modes error", errors.isEmpty());
     }
 
+    public void testConflictingTemporalScalesTriggersError() {
+        var text = """
+            {
+              :defs {
+                :ConflictedEpoch { #s #ms } :TimeEpoch
+              }
+              :type :ConflictedEpoch
+              :body 1700000000
+            }
+            """;
+        myFixture.configureByText("conflicted_scales.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("mutually exclusive"))
+            .toList();
+        assertFalse("Expected mutually exclusive temporal scales error on #s #ms", errors.isEmpty());
+    }
+
     public void testCompliantTemporalDeclarationsProduceZeroErrors() {
         var text = """
             {
               :defs {
-                :CompliantEpoch { #unit #s } :TimeEpoch
+                :CompliantEpoch { #s } :TimeEpoch
+                :CompliantMillis { #ms } :TimeEpoch
+                :CompliantNanos { #ns } :TimeEpoch
                 :CompliantZoned { #zoned } :DateTime
                 :CompliantAudited { #audited } :DateTime
               }
@@ -109,7 +131,7 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && (h.getDescription().contains("requires explicit") || h.getDescription().contains("mutually exclusive")))
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("requires") || h.getDescription().contains("mutually exclusive")))
             .toList();
         assertTrue("Compliant temporal definitions must produce zero errors", errors.isEmpty());
     }

@@ -62,7 +62,10 @@
     KW_MIN_SIZE                   = '#minSize'
     KW_MAX_SIZE                   = '#maxSize'
     KW_INVERTIBLE                 = '#invertible'
-    KW_UNIT                       = '#unit'
+    KW_SCALE_S                   = '#s'
+    KW_SCALE_MS                  = '#ms'
+    KW_SCALE_US                  = '#us'
+    KW_SCALE_NS                  = '#ns'
     KW_OFFSET                     = '#offset'
     KW_ZONED                      = '#zoned'
     KW_AUDITED                    = '#audited'
@@ -216,12 +219,12 @@ private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_T
 
 metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
 metadata_entry            ::= metadata_bare_flag | metadata_bool | metadata_num | metadata_string | metadata_filter | metadata_directive { recoverWhile=metadata_entry_recover }
-metadata_bare_flag        ::= KW_PRESERVE_INDENT | KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED
+metadata_bare_flag        ::= KW_PRESERVE_INDENT | KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS
 metadata_directive        ::= KW_STRIP
 
 private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT ) metadata_value { pin=1 }
 private metadata_num     ::= ( KW_SIZE | KW_MIN_SIZE | KW_MAX_SIZE | KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
-private metadata_string  ::= ( KW_REGEX | KW_UNIT ) metadata_value { pin=1 }
+private metadata_string  ::= KW_REGEX metadata_value { pin=1 }
 metadata_filter          ::= ( FILTER_INCL | FILTER_EXCL ) variant_list { pin=1 }
 variant_list             ::= LBRACK variant_list_body RBRACK { pin=1 }
 private variant_list_body ::= (value_keyword | id_token)* { recoverWhile=variant_list_recover }
@@ -229,7 +232,7 @@ private variant_list_recover ::= !(RBRACK | RBRACE)
 
 metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
 
-private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_UNIT | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
+private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
 
 // --- TYPE SYSTEM CORE ---
 schema_type             ::= schema_constructor | type_keyword

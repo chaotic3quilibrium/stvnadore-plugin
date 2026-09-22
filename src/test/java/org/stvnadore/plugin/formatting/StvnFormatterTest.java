@@ -152,4 +152,31 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertTrue("Comment following closing brace must appear on dedicated indented line:\n" + text,
                 text.contains("  }\n  // comment\n"));
     }
+
+    public void testReformatNormalizesMetadataEntriesToSevenTierOrder() {
+        var unformatted = """
+            {
+              :defs {
+                :DisorderedType {
+                  #regex "^[A-Z]+$"
+                  #maxSize 16
+                  #minSize 4
+                  #preserveIndent
+                  #equatable #TRUE
+                } :String
+              }
+              :type :DisorderedType
+              :body "TEST"
+            }
+            """;
+        var psiFile = myFixture.configureByText("metadata_order.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Reformatting must normalize metadata entries into 7-tier canonical order:\n" + text,
+                text.contains("#preserveIndent #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
+    }
 }

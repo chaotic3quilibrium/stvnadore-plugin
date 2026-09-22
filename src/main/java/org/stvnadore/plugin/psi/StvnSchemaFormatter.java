@@ -226,4 +226,42 @@ public final class StvnSchemaFormatter {
         }
         return ":Enum [ " + String.join(" ", variants) + " ]";
     }
+
+    /**
+     * Sorts metadata entries into the canonical 7-tier Semantic Category Order.
+     *
+     * @param entries list of metadata entries
+     * @return a new list containing the entries sorted into 7-tier canonical order
+     */
+    public static @NotNull List<MetadataEntry> sortMetadataEntries(List<MetadataEntry> entries) {
+        var sorted = new ArrayList<>(entries);
+        sorted.sort(java.util.Comparator.comparingInt(e ->
+            org.stvnadore.plugin.validation.StvnMetadataOrderInspection.getFacetRank(
+                org.stvnadore.plugin.validation.StvnMetadataOrderInspection.extractFacetKeyword(e)
+            )
+        ));
+        return sorted;
+    }
+
+    /**
+     * Formats a metadata map into canonical 7-tier Semantic Category Order.
+     *
+     * @param metadataMap the metadata map PSI element
+     * @return the cleanly formatted canonical metadata map string (e.g. "{ #unsigned #size 16 }"), or empty string if null
+     */
+    public static @NotNull String formatCanonicalMetadataMap(@Nullable MetadataMap metadataMap) {
+        if (metadataMap == null) {
+            return "";
+        }
+        var entries = metadataMap.getMetadataEntryList();
+        if (entries.isEmpty()) {
+            return "{}";
+        }
+        var sorted = sortMetadataEntries(entries);
+        var list = new ArrayList<String>();
+        for (var e : sorted) {
+            list.add(e.getText().trim());
+        }
+        return "{ " + String.join(" ", list) + " }";
+    }
 }

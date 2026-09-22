@@ -1,0 +1,18 @@
+<html>
+<body>
+<p>Audits metadata facet sequence in nominal type definitions and compile-time constants to enforce the canonical 7-tier Semantic Category Order hierarchy.</p>
+
+<p><b>Canonical 7-Tier Semantic Category Order:</b></p>
+<ol>
+    <li><b>Tier 1 (Flags &amp; Intrinsic Modes):</b> <code>#unsigned</code> &rarr; <code>#exact</code> &rarr; <code>#invertible</code> &rarr; <code>#preserveIndent</code> &rarr; <code>#offset</code> &rarr; <code>#zoned</code> &rarr; <code>#audited</code> &rarr; <code>#equatable</code> &rarr; <code>#comparable</code></li>
+    <li><b>Tier 2 (Temporal Scale):</b> <code>#s</code> &rarr; <code>#ms</code> &rarr; <code>#us</code> &rarr; <code>#ns</code></li>
+    <li><b>Tier 3 (Dimensions &amp; Capacity):</b> <code>#size</code> &rarr; <code>#minSize</code> &rarr; <code>#maxSize</code></li>
+    <li><b>Tier 4 (Value Intervals):</b> <code>#minIncl</code> &rarr; <code>#minExcl</code> &rarr; <code>#maxExcl</code> &rarr; <code>#maxIncl</code></li>
+    <li><b>Tier 5 (Validation Patterns):</b> <code>#regex</code></li>
+    <li><b>Tier 6 (Domain Subsets):</b> <code>#filterIncl</code> &rarr; <code>#filterExcl</code></li>
+    <li><b>Tier 7 (Directives):</b> <code>#strip</code></li>
+</ol>
+
+<p>Facets declared out of tier order or out of relative order within their tier trigger a weak warning. An automated quick-fix is provided to restore canonical 7-tier order.</p>
+</body>
+</html>

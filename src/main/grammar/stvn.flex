@@ -91,7 +91,10 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   "#minSize"                     { return KW_MIN_SIZE; }
   "#maxSize"                     { return KW_MAX_SIZE; }
   "#invertible"                  { return KW_INVERTIBLE; }
-  "#unit"                        { return KW_UNIT; }
+  "#s"                           { return KW_SCALE_S; }
+  "#ms"                          { return KW_SCALE_MS; }
+  "#us"                          { return KW_SCALE_US; }
+  "#ns"                          { return KW_SCALE_NS; }
   "#offset"                      { return KW_OFFSET; }
   "#zoned"                       { return KW_ZONED; }
   "#audited"                     { return KW_AUDITED; }

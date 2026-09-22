@@ -175,6 +175,8 @@
         <lang.formatter language="STVN"
                         implementationClass="org.stvnadore.plugin.formatting.StvnFormattingModelBuilder"/>
 
+        <preFormatProcessor implementation="org.stvnadore.plugin.formatting.StvnMetadataOrderPreFormatProcessor"/>
+
         <codeStyleSettingsProvider
                 implementation="org.stvnadore.plugin.formatting.StvnCodeStyleSettingsProvider"/>
 
@@ -404,6 +406,16 @@
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnTemporalModeInspection"/>
+
+        <!-- 12p. Local Inspection for Metadata Facet Ordering (7-Tier Hierarchy) -->
+        <localInspection language="STVN"
+                         shortName="StvnMetadataOrder"
+                         displayName="Metadata facet canonical ordering inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WEAK WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnMetadataOrderInspection"/>
 
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
