@@ -31,11 +31,11 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("out_of_order.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertFalse("Expected weak warning on out-of-order facet '#unsigned'", warnings.isEmpty());
+        assertFalse("Expected error on out-of-order facet '#unsigned'", errors.isEmpty());
 
         int offset = text.indexOf("#unsigned");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -60,11 +60,11 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("interval_disorder.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertEquals("Expected 1 warning for interval lower bound after upper bound", 1, warnings.size());
+        assertEquals("Expected 1 error for interval lower bound after upper bound", 1, errors.size());
 
         int offset = text.indexOf("#minIncl");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -95,11 +95,11 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("multi_tier.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertFalse("Expected out-of-order warnings on multi-tier disorder", warnings.isEmpty());
+        assertFalse("Expected out-of-order errors on multi-tier disorder", errors.isEmpty());
 
         int offset = text.indexOf("#preserveIndent");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -125,11 +125,10 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("canonical_temporal.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertTrue("Canonical ordering must produce 0 warnings", warnings.isEmpty());
+        assertTrue("Canonical ordering must produce 0 order violations", errors.isEmpty());
     }
 
     public void testCanonicalPortDeclarationOrder() {
@@ -144,11 +143,10 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("canonical_port.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertTrue("Canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } must produce 0 warnings", warnings.isEmpty());
+        assertTrue("Canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } must produce 0 order violations", errors.isEmpty());
     }
 
     public void testDisorderedPortQuickFixReordersToCanonicalSevenTier() {
@@ -163,11 +161,11 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("disordered_port.stvn", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
             .toList();
-        assertFalse("Expected out-of-order warnings on disordered Port definition", warnings.isEmpty());
+        assertFalse("Expected out-of-order errors on disordered Port definition", errors.isEmpty());
 
         int offset = text.indexOf("#size");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);

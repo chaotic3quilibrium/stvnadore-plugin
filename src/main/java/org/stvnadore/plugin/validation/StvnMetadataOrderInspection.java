@@ -70,8 +70,8 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
                         holder.registerProblem(
                             target,
-                            "Metadata facet '" + keyword + "' is out of canonical 7-tier order.",
-                            ProblemHighlightType.WEAK_WARNING,
+                            "Metadata facet '" + keyword + "' is out of canonical 7-tier order (ERR_FACET_ORDER_VIOLATION).",
+                            ProblemHighlightType.GENERIC_ERROR,
                             new StvnReorderMetadataFacetsQuickFix(metadataMap)
                         );
                     } else {
