@@ -23,8 +23,6 @@ import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
-import org.stvnadore.psi.DefsInclEntry;
-import org.stvnadore.psi.DefsInclfEntry;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
@@ -131,8 +129,6 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 boolean inSchema = PsiTreeUtil.getParentOfType(
                     typeElem,
                     DefsEntry.class,
-                    DefsInclEntry.class,
-                    DefsInclfEntry.class,
                     TypeEntry.class
                 ) != null;
                 if (!inSchema) {

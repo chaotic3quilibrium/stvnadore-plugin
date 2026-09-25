@@ -22,7 +22,6 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
     private static final TextAttributesKey[] BRACKET_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.BRACKETS};
     private static final TextAttributesKey[] BRACE_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.BRACES};
     private static final TextAttributesKey[] PARENTHESE_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.PARENTHESES};
-    private static final TextAttributesKey[] COLON_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.OPERATION_SIGN};
     private static final TextAttributesKey[] PRIMITIVE_TYPE_KEYS = new TextAttributesKey[]{StvnSyntaxHighlighterColors.STVN_PRIMITIVE_TYPE};
     private static final TextAttributesKey[] VALUE_KEYWORD_KEYS = new TextAttributesKey[]{StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD};
     private static final TextAttributesKey[] METADATA_KEYS = new TextAttributesKey[]{StvnSyntaxHighlighterColors.STVN_METADATA_TARGET};
@@ -57,8 +56,6 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
         } else if (tokenType.equals(StvnTypes.LPAREN) ||
                    tokenType.equals(StvnTypes.RPAREN)) {
             return PARENTHESE_KEYS;
-        } else if (tokenType.equals(StvnTypes.COLON)) {
-            return COLON_KEYS;
         } else if (isPrimitiveTokenType(tokenType)) {
             return PRIMITIVE_TYPE_KEYS;
         } else if (isValueTokenType(tokenType)) {
@@ -135,7 +132,7 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_MAX_EXCL) ||
                type.equals(StvnTypes.KW_REGEX) ||
                type.equals(StvnTypes.KW_STRIP) ||
-               type.equals(StvnTypes.FILTER_INCL) ||
-               type.equals(StvnTypes.FILTER_EXCL);
+               type.equals(StvnTypes.KW_FILTER_INCL) ||
+               type.equals(StvnTypes.KW_FILTER_EXCL);
     }
 }

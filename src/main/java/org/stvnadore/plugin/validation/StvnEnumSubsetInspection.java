@@ -80,8 +80,8 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 }
 
                 // Mutual exclusivity check
-                boolean hasIncl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.FILTER_INCL) != null);
-                boolean hasExcl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.FILTER_EXCL) != null);
+                boolean hasIncl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null);
+                boolean hasExcl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null);
                 if (hasIncl && hasExcl) {
                     for (var filter : filterEntries) {
                         holder.registerProblem(
@@ -183,7 +183,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     }
 
                     // Complete exclusion check
-                    if (filter.getNode().findChildByType(StvnTypes.FILTER_EXCL) != null) {
+                    if (filter.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null) {
                         var facetList = valueKeywords.stream().map(ValueKeyword::getText).toList();
                         var remaining = parentAllowed.stream().filter(v -> !facetList.contains(v)).toList();
                         if (remaining.isEmpty()) {

@@ -22,7 +22,6 @@
     RPAREN                        = ')'
     LBRACE                        = '{'
     RBRACE                        = '}'
-    COLON                         = ':'
     FSLASH                        = '/'
 
     KW_TRUE                       = '#TRUE'
@@ -74,8 +73,8 @@
     KW_MAX_INCL                   = '#maxIncl'
     KW_MAX_EXCL                   = '#maxExcl'
     KW_REGEX                      = '#regex'
-    FILTER_INCL                   = '#filterIncl'
-    FILTER_EXCL                   = '#filterExcl'
+    KW_FILTER_INCL                = '#filterIncl'
+    KW_FILTER_EXCL                = '#filterExcl'
 
     ATOM_BOOLEAN                  = ':Boolean'
     ATOM_INT                      = ':Int'
@@ -99,19 +98,8 @@
 }
 
 // --- ROOT-LEVEL ENTRY POINTS ---
-stvn_file ::= stvn_payload_document | stvn_flat_payload_document | stvn_incl_document | stvn_inclf_document
-
-stvn_payload_document     ::= LBRACE payload_document_body RBRACE
-private payload_document_body ::= defs_entry? type_entry body_entry { recoverWhile = document_recover }
-
-stvn_flat_payload_document ::= LBRACE flat_payload_document_body RBRACE
-private flat_payload_document_body ::= defs_entry? type_entry body_entry { recoverWhile = document_recover }
-
-stvn_incl_document        ::= LBRACE incl_document_body RBRACE
-private incl_document_body ::= defs_incl_entry { recoverWhile = document_recover }
-
-stvn_inclf_document       ::= LBRACE inclf_document_body RBRACE
-private inclf_document_body ::= defs_inclf_entry { recoverWhile = document_recover }
+stvn_file ::= LBRACE document_body RBRACE <<eof>>
+private document_body ::= defs_entry? (type_entry body_entry)? { recoverWhile = document_recover }
 
 private document_recover  ::= !(RBRACE)
 
@@ -150,9 +138,6 @@ private type_entry_content ::= schema_type {recoverWhile=type_recover}
 private type_recover      ::= !(KW_BODY | RBRACE)
 body_entry                ::= KW_BODY value {pin=1}
 
-defs_incl_entry           ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1}
-defs_inclf_entry          ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1}
-
 // --- IDENTIFIERS & BASE NAMESPACES ---
 type_keyword              ::= type_keyword_start ( FSLASH id_token )* {
   mixin="org.stvnadore.plugin.psi.impl.StvnTypeKeywordMixin"
@@ -167,13 +152,18 @@ value_keyword             ::= value_keyword_start ( FSLASH id_token )* {
   implements="com.intellij.psi.PsiNameIdentifierOwner"
 }
 private value_keyword_start ::= VALUE_KEYWORD_BASE
+                              | UNION_TAG_PREFIX
                               | KW_TRUE | KW_TRUE_SHORT | KW_FALSE | KW_FALSE_SHORT
                               | KW_NONE | KW_NONE_SHORT | KW_SOME | KW_SOME_SHORT
                               | KW_LEFT | KW_LEFT_SHORT | KW_RIGHT | KW_RIGHT_SHORT
                               | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT
                               | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL
                               | KW_REGEX
-                              | FILTER_INCL | FILTER_EXCL
+                              | KW_FILTER_INCL | KW_FILTER_EXCL
+                              | KW_SIZE | KW_UNSIGNED | KW_EXACT
+                              | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE
+                              | KW_OFFSET | KW_ZONED | KW_AUDITED
+                              | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS
 
 // --- INCLUDES & DEFINITIONS ---
 include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}
@@ -219,20 +209,20 @@ private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_T
 
 metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
 metadata_entry            ::= metadata_bare_flag | metadata_bool | metadata_num | metadata_string | metadata_filter | metadata_directive { recoverWhile=metadata_entry_recover }
-metadata_bare_flag        ::= KW_PRESERVE_INDENT | KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS
+metadata_bare_flag        ::= ( KW_PRESERVE_INDENT | KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS ) boolean_value?
 metadata_directive        ::= KW_STRIP
 
-private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT ) metadata_value { pin=1 }
+private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE ) metadata_value { pin=1 }
 private metadata_num     ::= ( KW_SIZE | KW_MIN_SIZE | KW_MAX_SIZE | KW_MIN_INCL | KW_MAX_INCL | KW_MIN_EXCL | KW_MAX_EXCL ) metadata_value { pin=1 }
 private metadata_string  ::= KW_REGEX metadata_value { pin=1 }
-metadata_filter          ::= ( FILTER_INCL | FILTER_EXCL ) variant_list { pin=1 }
+metadata_filter          ::= ( KW_FILTER_INCL | KW_FILTER_EXCL ) variant_list { pin=1 }
 variant_list             ::= LBRACK variant_list_body RBRACK { pin=1 }
 private variant_list_body ::= (value_keyword | id_token)* { recoverWhile=variant_list_recover }
 private variant_list_recover ::= !(RBRACK | RBRACE)
 
 metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
 
-private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | FILTER_INCL | FILTER_EXCL)
+private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | KW_FILTER_INCL | KW_FILTER_EXCL)
 
 // --- TYPE SYSTEM CORE ---
 schema_type             ::= schema_constructor | type_keyword

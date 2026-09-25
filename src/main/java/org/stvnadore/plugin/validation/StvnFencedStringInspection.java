@@ -16,6 +16,7 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.TokenType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -55,7 +56,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool implem
             public void visitElement(@NotNull PsiElement element) {
                 super.visitElement(element);
                 var node = element.getNode();
-                if (node != null && node.getElementType() == StvnTypes.LITERAL_STRING_FENCED && !(element.getParent() instanceof StringLiteral)) {
+                if (node != null && (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED || (node.getElementType() == TokenType.BAD_CHARACTER && element.getText().startsWith("\"\"\"["))) && !(element.getParent() instanceof StringLiteral)) {
                     validateFencedString(element, holder);
                 }
             }

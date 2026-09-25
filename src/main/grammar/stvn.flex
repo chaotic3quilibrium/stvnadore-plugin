@@ -22,11 +22,12 @@ import static org.stvnadore.psi.StvnTypes.*;
 %type IElementType
 %unicode
 
-WHITE_SPACE=\s+
+WHITE_SPACE=[ \r\n]+
+TAB_CHARACTER=\t+
 COMMENT="//".*
 
-LITERAL_STRING_BLOCK=\"\"\"[ \t]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"
-LITERAL_STRING_SIMPLE=\"([^\"]|\\\")*\"
+LITERAL_STRING_BLOCK=\"\"\"[ \t\r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"
+LITERAL_STRING_SIMPLE=\"([^\"\\\r\n]|\\.)*\"
 
 
 UNION_TAG_PREFIX=#[1-9][0-9]*
@@ -40,6 +41,7 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
 
 <YYINITIAL> {
   {WHITE_SPACE}                  { return WHITE_SPACE; }
+  {TAB_CHARACTER}                { return BAD_CHARACTER; }
 
   "["                            { return LBRACK; }
   "]"                            { return RBRACK; }
@@ -47,7 +49,6 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   ")"                            { return RPAREN; }
   "{"                            { return LBRACE; }
   "}"                            { return RBRACE; }
-  ":"                            { return COLON; }
   "/"                            { return FSLASH; }
   
   // Value track keywords (# namespace)
@@ -103,8 +104,8 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   "#maxIncl"                     { return KW_MAX_INCL; }
   "#maxExcl"                     { return KW_MAX_EXCL; }
   "#regex"                       { return KW_REGEX; }
-  "#filterIncl"                  { return FILTER_INCL; }
-  "#filterExcl"                  { return FILTER_EXCL; }
+  "#filterIncl"                  { return KW_FILTER_INCL; }
+  "#filterExcl"                  { return KW_FILTER_EXCL; }
   
   // Atomic type descriptors (: namespace)
   ":Boolean"                     { return ATOM_BOOLEAN; }
@@ -139,7 +140,8 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
       if (c == closingFence.charAt(matchIdx)) {
         matchIdx++;
         if (matchIdx == closingFence.length()) {
-          break;
+          zzMarkedPos = zzCurrentPos;
+          return LITERAL_STRING_FENCED;
         }
       } else {
         if (c == closingFence.charAt(0)) {
@@ -150,7 +152,8 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
       }
     }
     zzMarkedPos = zzCurrentPos;
-    return LITERAL_STRING_FENCED;
+    // Fail closed on unclosed fence reaching EOF
+    return BAD_CHARACTER;
   }
 
   {LITERAL_STRING_BLOCK}         { return LITERAL_STRING_BLOCK; }

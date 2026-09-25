@@ -6,8 +6,6 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.DefsEntry;
-import org.stvnadore.psi.DefsInclEntry;
-import org.stvnadore.psi.DefsInclfEntry;
 import org.stvnadore.psi.TypeEntry;
 
 /**
@@ -67,7 +65,7 @@ public enum StvnNamespaceScope {
     public static StvnNamespaceScope resolveFromElement(@Nullable PsiElement element) {
         var current = element;
         while (current != null && !(current instanceof PsiFile)) {
-            if (current instanceof DefsEntry || current instanceof DefsInclEntry || current instanceof DefsInclfEntry) {
+            if (current instanceof DefsEntry) {
                 return DEFS;
             }
             if (current instanceof TypeEntry) {

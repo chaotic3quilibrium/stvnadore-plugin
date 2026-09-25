@@ -25,7 +25,7 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
         var elementType = node.getElementType();
         var parent = element.getParent();
 
-        if (elementType == StvnTypes.KW_DEFS && (parent instanceof DefsEntry || parent instanceof DefsInclEntry || parent instanceof DefsInclfEntry)) {
+        if (elementType == StvnTypes.KW_DEFS && parent instanceof DefsEntry) {
             return new LineMarkerInfo<>(
                 element,
                 element.getTextRange(),

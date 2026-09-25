@@ -1539,7 +1539,7 @@ public final class StvnTypeResolver {
             rootEnumName = parentName;
         }
 
-        var isIncl = filter.getNode().findChildByType(StvnTypes.FILTER_INCL) != null;
+        var isIncl = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null;
         var variantList = filter.getVariantList();
         var facetVariants = variantList != null
             ? variantList.getValueKeywordList().stream().map(ValueKeyword::getText).toList()

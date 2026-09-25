@@ -17,6 +17,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnLanguage;
+import org.stvnadore.plugin.StvnParserDefinition;
 import org.stvnadore.psi.StvnTypes;
 
 /**
@@ -98,14 +99,8 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .before(StvnTypes.RPAREN).spaces(0)
 
                 // Braces in document root and defs: line break after '{' and before '}'
-                .afterInside(StvnTypes.LBRACE, StvnTypes.STVN_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.STVN_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .afterInside(StvnTypes.LBRACE, StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .afterInside(StvnTypes.LBRACE, StvnTypes.STVN_INCL_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.STVN_INCL_DOCUMENT).lineBreakInCode()
-                .afterInside(StvnTypes.LBRACE, StvnTypes.STVN_INCLF_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.STVN_INCLF_DOCUMENT).lineBreakInCode()
+                .afterInside(StvnTypes.LBRACE, StvnParserDefinition.FILE).lineBreakInCode()
+                .beforeInside(StvnTypes.RBRACE, StvnParserDefinition.FILE).lineBreakInCode()
                 .afterInside(StvnTypes.LBRACE, StvnTypes.DEFS_ENTRY).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.DEFS_ENTRY).lineBreakInCode()
                 .afterInside(StvnTypes.LBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
@@ -118,14 +113,9 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
                 .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
-                .between(StvnTypes.DEFS_INCL_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
-                .between(StvnTypes.DEFS_INCLF_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
 
                 // Standalone comments inside document roots preceded by line break
-                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_INCL_DOCUMENT).lineBreakInCode()
-                .beforeInside(StvnTypes.COMMENT, StvnTypes.STVN_INCLF_DOCUMENT).lineBreakInCode()
+                .beforeInside(StvnTypes.COMMENT, StvnParserDefinition.FILE).lineBreakInCode()
 
                 // Entries inside documents separated by line breaks
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()

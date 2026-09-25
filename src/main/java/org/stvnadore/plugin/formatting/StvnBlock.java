@@ -14,6 +14,7 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.tree.IFileElementType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -128,17 +129,12 @@ public final class StvnBlock implements ASTBlock {
         }
 
         // Section entries inside documents indent by 2 spaces (normal indent)
-        if (parentType == StvnTypes.STVN_PAYLOAD_DOCUMENT
-                || parentType == StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT
-                || parentType == StvnTypes.STVN_INCL_DOCUMENT
-                || parentType == StvnTypes.STVN_INCLF_DOCUMENT) {
+        if (parentType instanceof IFileElementType) {
             return Indent.getNormalIndent();
         }
 
         // Definitions inside :defs { ... } indent by 2 spaces relative to :defs
-        if (parentType == StvnTypes.DEFS_ENTRY
-                || parentType == StvnTypes.DEFS_INCL_ENTRY
-                || parentType == StvnTypes.DEFS_INCLF_ENTRY) {
+        if (parentType == StvnTypes.DEFS_ENTRY) {
             if (childType == StvnTypes.DEFS_ELEMENT || childType == StvnTypes.COMMENT) {
                 return Indent.getNormalIndent();
             }
@@ -162,10 +158,7 @@ public final class StvnBlock implements ASTBlock {
 
         // Comments inherit normal indent if enclosed within a document or collection
         if (childType == StvnTypes.COMMENT) {
-            if (parentType == StvnTypes.STVN_PAYLOAD_DOCUMENT
-                    || parentType == StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT
-                    || parentType == StvnTypes.STVN_INCL_DOCUMENT
-                    || parentType == StvnTypes.STVN_INCLF_DOCUMENT
+            if (parentType instanceof IFileElementType
                     || parentType == StvnTypes.LIST_LITERAL
                     || parentType == StvnTypes.MAP_LITERAL
                     || parentType == StvnTypes.TUPLE_LITERAL) {
@@ -199,13 +192,8 @@ public final class StvnBlock implements ASTBlock {
     @Override
     public @NotNull ChildAttributes getChildAttributes(int newChildIndex) {
         IElementType type = node.getElementType();
-        if (type == StvnTypes.STVN_PAYLOAD_DOCUMENT
-                || type == StvnTypes.STVN_FLAT_PAYLOAD_DOCUMENT
-                || type == StvnTypes.STVN_INCL_DOCUMENT
-                || type == StvnTypes.STVN_INCLF_DOCUMENT
+        if (type instanceof IFileElementType
                 || type == StvnTypes.DEFS_ENTRY
-                || type == StvnTypes.DEFS_INCL_ENTRY
-                || type == StvnTypes.DEFS_INCLF_ENTRY
                 || type == StvnTypes.PACKAGE_ENCLOSURE
                 || type == StvnTypes.LIST_LITERAL
                 || type == StvnTypes.MAP_LITERAL
@@ -223,7 +211,7 @@ public final class StvnBlock implements ASTBlock {
         }
         return lastChild.getElementType() == TokenType.ERROR_ELEMENT
                 || (node.getElementType() == StvnTypes.DEFS_ENTRY && lastChild.getElementType() != StvnTypes.RBRACE)
-                || (node.getElementType() == StvnTypes.STVN_PAYLOAD_DOCUMENT && lastChild.getElementType() != StvnTypes.RBRACE);
+                || (node.getElementType() instanceof IFileElementType && lastChild.getElementType() != StvnTypes.RBRACE);
     }
 
     @Override

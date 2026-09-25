@@ -1239,7 +1239,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var filter = entry.getMetadataFilter();
                     if (filter != null) {
-                        var isIncl = filter.getNode().findChildByType(StvnTypes.FILTER_INCL) != null;
+                        var isIncl = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null;
                         var filterKw = isIncl ? "#filterIncl" : "#filterExcl";
                         var variants = filter.getVariantList() != null
                             ? filter.getVariantList().getValueKeywordList().stream().map(ValueKeyword::getText).toList()
