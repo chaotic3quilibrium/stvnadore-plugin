@@ -137,7 +137,7 @@ public final class StvnTypeResolver {
                     } else if (entryText.startsWith("#size")) {
                         var schemaType = typeDef.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText().trim() : "";
-                        if (":String".equals(schemaText) || schemaText.startsWith(":String")) {
+                        if (StvnVocabulary.TYPE_STRING.equals(schemaText)) {
                             return true;
                         }
                     }
@@ -145,7 +145,7 @@ public final class StvnTypeResolver {
 
                 var schemaType = typeDef.getSchemaType();
                 var schemaText = schemaType != null ? schemaType.getText().trim() : "";
-                if ((hasMaxIncl || hasMinExcl) && (":Int".equals(schemaText) || schemaText.startsWith(":Int"))) {
+                if ((hasMaxIncl || hasMinExcl) && StvnVocabulary.TYPE_INT.equals(schemaText)) {
                     return true;
                 }
 
@@ -1087,13 +1087,17 @@ public final class StvnTypeResolver {
         var resolved = resolveNominalSchema(schema);
         var schemaToInspect = (resolved != null) ? resolved : schema;
         var text = StvnSchemaFormatter.formatCleanSchema(schemaToInspect);
-        if (text.startsWith(StvnVocabulary.TYPE_INT) || text.startsWith(StvnVocabulary.TYPE_TIME_EPOCH)) {
+        if (text.equals(StvnVocabulary.TYPE_INT) || text.equals(StvnVocabulary.TYPE_TIME_EPOCH) ||
+            (text.startsWith(StvnVocabulary.TYPE_INT) && text.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+")) ||
+            (text.startsWith(":Uint") && text.substring(":Uint".length()).matches("\\d*"))) {
             return value.getIntegerLiteral() != null;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_FLOAT)) {
+        if (text.equals(StvnVocabulary.TYPE_FLOAT) ||
+            (text.startsWith(StvnVocabulary.TYPE_FLOAT) && text.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+"))) {
             return value.getFloatLiteral() != null;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_STRING) ||
+        if (text.equals(StvnVocabulary.TYPE_STRING) ||
+            (text.startsWith(StvnVocabulary.TYPE_STRING) && text.length() > StvnVocabulary.TYPE_STRING.length() && (Character.isDigit(text.charAt(StvnVocabulary.TYPE_STRING.length())) || text.startsWith(":StringFixed") || text.startsWith(":StringNonEmpty"))) ||
             text.equals(StvnVocabulary.TYPE_DATE_TIME) ||
             text.equals(":DateTimeOffset") ||
             text.equals(":DateTimeZoned") ||
@@ -1103,19 +1107,19 @@ public final class StvnTypeResolver {
         if (text.equals(StvnVocabulary.TYPE_BOOLEAN)) {
             return value.getBooleanValue() != null || StvnVocabulary.BOOLEAN_KEYWORDS.contains(value.getText());
         }
-        if (text.startsWith(StvnVocabulary.TYPE_TUPLE)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_TUPLE)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getTupleLiteral() != null;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_SEQ) || text.startsWith(StvnVocabulary.TYPE_SET)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(text, StvnVocabulary.TYPE_SET)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getListLiteral() != null;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_MAP)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_MAP)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getMapLiteral() != null;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_OPTION)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_OPTION)) {
             if (value.getExplicitOptionValue() != null || value.getText().equals(StvnVocabulary.VAL_NONE) || value.getText().equals(StvnVocabulary.VAL_NONE_SHORT)) {
                 return true;
             }
@@ -1128,7 +1132,7 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_EITHER)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_EITHER)) {
             if (value.getExplicitEitherValue() != null) {
                 return true;
             }
@@ -1141,7 +1145,7 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (text.startsWith(StvnVocabulary.TYPE_UNION)) {
+        if (isConstructorMatch(text, StvnVocabulary.TYPE_UNION)) {
             if (value.getExplicitUnionValue() != null) {
                 var expUnion = value.getExplicitUnionValue();
                 var tagElem = expUnion.getUnionTagPrefix();
@@ -2513,6 +2517,17 @@ public final class StvnTypeResolver {
             return rel.replace('/', java.io.File.separatorChar);
         }
         return target.getName();
+    }
+
+    private static boolean isConstructorMatch(String type, String constructor) {
+        if (type.equals(constructor)) {
+            return true;
+        }
+        if (type.startsWith(constructor)) {
+            char next = type.charAt(constructor.length());
+            return next == '(' || Character.isWhitespace(next);
+        }
+        return false;
     }
 }
 

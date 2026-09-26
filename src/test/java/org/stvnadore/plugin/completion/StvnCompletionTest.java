@@ -850,6 +850,32 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         assertTrue("Candidate tag #Right must be offered", lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
         assertTrue("Candidate tag #Left must be offered", lookupStrings.contains("#Left ") || lookupStrings.contains("#Left"));
     }
+
+    public void testSumTypeInferenceWithNominalPrefixDisjointBranches() {
+        myFixture.configureByText(
+            "nominal_disjoint_completion.stvn",
+            """
+            {
+              :defs {
+                :StringList :Seq( :String )
+              }
+              :type :Either( :String :StringList )
+              :body <caret>
+            }
+            """
+        );
+
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull(lookupStrings);
+
+        // Rule B: Right branch (:StringList) is inferable if disjoint from Left (:String)
+        // Now that :String and :StringList are disjoint, #Right and #Left must appear
+        assertTrue("Should offer #Right tag", lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
+        assertTrue("Should offer #Left tag", lookupStrings.contains("#Left ") || lookupStrings.contains("#Left"));
+    }
 }
 
 

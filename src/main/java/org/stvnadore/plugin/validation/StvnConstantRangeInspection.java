@@ -45,8 +45,11 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
 
                 var isUnsigned = baseType.startsWith(":Uint");
                 var suffix = isUnsigned ? baseType.substring(5) : baseType.substring(4);
+                if (!suffix.isEmpty() && !suffix.matches("\\d+")) {
+                    return; // Nominal user type like :IntCounter or :UintAccount, not a numeric primitive
+                }
                 var bitWidth = 32;
-                if (!suffix.isEmpty() && suffix.matches("\\d+")) {
+                if (!suffix.isEmpty()) {
                     try {
                         bitWidth = Integer.parseInt(suffix);
                     } catch (NumberFormatException ignored) {

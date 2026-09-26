@@ -276,10 +276,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             {
               :defs {
                 :package :org/stvnadore/finance {
-                  :LocalTx :Tuple( :Int64 :Float64 )
+                  :LocalTx :Tuple( :Int :Float )
                 }
                 :use [ :org/stvnadore/finance { #strip } ]
-                :A :String32
+                :A :String
                 :T :Tuple( :LocalTx :A )
               }
               :type :T
@@ -640,6 +640,30 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         // Assert variant keywords are captured
         assertNotNull("Variant keyword #NULL must exist", findEntryByName(entries, "#NULL"));
         assertNotNull("Variant keyword #TRUE must exist", findEntryByName(entries, "#TRUE"));
+    }
+
+    public void testNamespaceCollectorRetainsNominalTypesWithDigits() {
+        var file = myFixture.configureByText(
+            "nominal_digits.stvn",
+            """
+            {
+              :defs {
+                :Int32Custom :Int
+                :Float64Custom :Float
+                :String128Custom :String
+              }
+              :type :Int32Custom
+              :body 100
+            }
+            """
+        );
+
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+        assertFalse(entries.isEmpty());
+
+        assertNotNull("Must collect :Int32Custom", findEntryByName(entries, ":Int32Custom"));
+        assertNotNull("Must collect :Float64Custom", findEntryByName(entries, ":Float64Custom"));
+        assertNotNull("Must collect :String128Custom", findEntryByName(entries, ":String128Custom"));
     }
 
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {

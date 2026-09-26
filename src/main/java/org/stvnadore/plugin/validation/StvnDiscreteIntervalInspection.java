@@ -97,10 +97,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
         var baseType = resolveBaseTypeString(schemaType);
-        if (baseType.startsWith(StvnVocabulary.TYPE_INT) || baseType.startsWith(":Uint") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
+        if (baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return true;
         }
-        if (baseType.startsWith(StvnVocabulary.TYPE_FLOAT)) {
+        if (baseType.equals(StvnVocabulary.TYPE_FLOAT)) {
             var metaMap = typeDef.getMetadataMap();
             if (metaMap != null) {
                 for (var e : metaMap.getMetadataEntryList()) {

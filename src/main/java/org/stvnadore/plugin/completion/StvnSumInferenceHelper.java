@@ -119,13 +119,13 @@ public final class StvnSumInferenceHelper {
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
         var results = new ArrayList<InferableBranch>();
 
-        if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
+        if (isConstructorMatch(sumType.getText(), StvnVocabulary.TYPE_OPTION)) {
             // Rule A: Option payload is inferable as #Some
             if (!innerSchemas.isEmpty()) {
                 var payload = innerSchemas.get(0);
                 results.add(new InferableBranch(payload, StvnVocabulary.VAL_SOME, StvnSchemaFormatter.formatCleanSchema(payload)));
             }
-        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
+        } else if (isConstructorMatch(sumType.getText(), StvnVocabulary.TYPE_EITHER)) {
             // Rule B & Rule E: Right branch is inferable if disjoint; Left is NEVER inferable untagged
             if (innerSchemas.size() > 1) {
                 var left = innerSchemas.get(0);
@@ -134,7 +134,7 @@ public final class StvnSumInferenceHelper {
                     results.add(new InferableBranch(right, StvnVocabulary.VAL_RIGHT, StvnSchemaFormatter.formatCleanSchema(right)));
                 }
             }
-        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+        } else if (isConstructorMatch(sumType.getText(), StvnVocabulary.TYPE_UNION)) {
             // Rule C & Rule D: Branch Tk is inferable if pairwise disjoint from all other branches
             for (int i = 0; i < innerSchemas.size(); i++) {
                 var branch = innerSchemas.get(i);
@@ -206,22 +206,52 @@ public final class StvnSumInferenceHelper {
     }
 
     private static boolean isBoolean(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_BOOLEAN);
+        return type.equals(StvnVocabulary.TYPE_BOOLEAN);
     }
 
     private static boolean isNumeric(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_INT) || type.startsWith(StvnVocabulary.TYPE_FLOAT) || type.contains("Uint");
+        if (type.equals(StvnVocabulary.TYPE_INT) || type.equals(StvnVocabulary.TYPE_FLOAT)) {
+            return true;
+        }
+        if (type.startsWith(StvnVocabulary.TYPE_INT)) {
+            return type.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+");
+        }
+        if (type.startsWith(StvnVocabulary.TYPE_FLOAT)) {
+            return type.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+");
+        }
+        if (type.startsWith(":Uint")) {
+            return type.substring(":Uint".length()).matches("\\d*");
+        }
+        return false;
     }
 
     private static boolean isString(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_STRING);
+        if (type.equals(StvnVocabulary.TYPE_STRING)) {
+            return true;
+        }
+        if (type.startsWith(StvnVocabulary.TYPE_STRING) && type.length() > StvnVocabulary.TYPE_STRING.length()) {
+            char nextChar = type.charAt(StvnVocabulary.TYPE_STRING.length());
+            return Character.isDigit(nextChar) || type.startsWith(":StringFixed") || type.startsWith(":StringNonEmpty");
+        }
+        return false;
     }
 
     private static boolean isList(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_SEQ) || type.startsWith(StvnVocabulary.TYPE_SET);
+        return isConstructorMatch(type, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(type, StvnVocabulary.TYPE_SET);
     }
 
     private static boolean isMap(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_MAP);
+        return isConstructorMatch(type, StvnVocabulary.TYPE_MAP);
+    }
+
+    private static boolean isConstructorMatch(String type, String constructor) {
+        if (type.equals(constructor)) {
+            return true;
+        }
+        if (type.startsWith(constructor)) {
+            char next = type.charAt(constructor.length());
+            return next == '(' || Character.isWhitespace(next);
+        }
+        return false;
     }
 }

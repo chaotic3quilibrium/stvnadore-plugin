@@ -162,7 +162,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         boolean isString = isStringType(baseType);
         boolean isTemporal = isTemporalType(baseType);
         boolean isMap = isMapType(baseType);
-        boolean isEnum = ":Enum".equals(baseType) || baseType.startsWith(":Enum");
+        boolean isEnum = isEnumConstructor(baseType);
 
         for (var entry : metaMap.getMetadataEntryList()) {
             if (entry.getMetadataDirective() != null) {
@@ -248,19 +248,41 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isNumericType(String baseType) {
-        return baseType.startsWith(StvnVocabulary.TYPE_INT) || baseType.startsWith(":Uint") || baseType.startsWith(StvnVocabulary.TYPE_FLOAT) || baseType.startsWith(":TimeEpoch");
+        return baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH);
     }
 
     private static boolean isStringType(String baseType) {
-        return baseType.startsWith(StvnVocabulary.TYPE_STRING);
+        return baseType.equals(StvnVocabulary.TYPE_STRING);
     }
 
     private static boolean isTemporalType(String baseType) {
-        return baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime");
+        return baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME);
     }
 
     private static boolean isMapType(String baseType) {
-        return baseType.startsWith(StvnVocabulary.TYPE_MAP);
+        return isConstructorMatch(baseType, StvnVocabulary.TYPE_MAP);
+    }
+
+    private static boolean isEnumConstructor(String baseType) {
+        if (baseType.equals(StvnVocabulary.TYPE_ENUM)) {
+            return true;
+        }
+        if (baseType.startsWith(StvnVocabulary.TYPE_ENUM)) {
+            char next = baseType.charAt(StvnVocabulary.TYPE_ENUM.length());
+            return next == '[' || Character.isWhitespace(next);
+        }
+        return false;
+    }
+
+    private static boolean isConstructorMatch(String type, String constructor) {
+        if (type.equals(constructor)) {
+            return true;
+        }
+        if (type.startsWith(constructor)) {
+            char next = type.charAt(constructor.length());
+            return next == '(' || Character.isWhitespace(next);
+        }
+        return false;
     }
 
     private static final class RemoveElementQuickFix implements LocalQuickFix {

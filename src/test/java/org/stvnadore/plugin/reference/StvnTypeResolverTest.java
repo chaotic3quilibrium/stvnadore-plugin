@@ -3,9 +3,12 @@ package org.stvnadore.plugin.reference;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.completion.StvnSumInferenceHelper;
+import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.TupleLiteral;
+import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Value;
 
 /**
@@ -804,5 +807,74 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         // Opaque shallow resolution: :AccountId -> :UserId must resolve to :UserId's SchemaType and NOT recursively unwrap to :String
         assertEquals(":UserId", resolvedSchema.getText().trim());
         assertFalse(":String".equals(resolvedSchema.getText().trim()));
+    }
+
+    public void testNominalPrefixTypesNeverMisclassifiedAsPrimitives() {
+        var psiFile = myFixture.configureByText(
+            "nominal_prefix_test.stvn",
+            """
+            {
+              :defs {
+                :StringList  :Seq( :String )
+                :BooleanFlag :Enum [ #ENABLED #DISABLED ]
+                :IntCounter  :Seq( :Int )
+              }
+              :type :Tuple( :StringList :BooleanFlag :IntCounter )
+              :body (
+                [ "alpha" "beta" ]
+                #ENABLED
+                [ 42 ]
+              )
+            }
+            """
+        );
+
+        var typeEntry = PsiTreeUtil.findChildOfType(psiFile, TypeEntry.class);
+        assertNotNull(typeEntry);
+        var schema = typeEntry.getSchemaType();
+        assertNotNull(schema);
+
+        var ctor = schema.getSchemaConstructor();
+        assertNotNull(ctor);
+        var prod = ctor.getProductType();
+        assertNotNull(prod);
+        var tupleTypes = prod.getSchemaTypeList();
+        var stringListSchema = tupleTypes.get(0);
+        var booleanFlagSchema = tupleTypes.get(1);
+        var intCounterSchema = tupleTypes.get(2);
+
+        // Verify disjointness between base primitives and nominal types sharing prefix
+        var stringPrimitive = StvnElementFactory.createSchemaType(getProject(), ":String");
+        var booleanPrimitive = StvnElementFactory.createSchemaType(getProject(), ":Boolean");
+        var intPrimitive = StvnElementFactory.createSchemaType(getProject(), ":Int");
+
+        assertTrue(":String and :StringList must be disjoint",
+            StvnSumInferenceHelper.areDisjoint(stringPrimitive, stringListSchema));
+        assertFalse(":String and :String are identical",
+            StvnSumInferenceHelper.areDisjoint(stringPrimitive, stringPrimitive));
+
+        assertTrue(":Boolean and :BooleanFlag must be disjoint",
+            StvnSumInferenceHelper.areDisjoint(booleanPrimitive, booleanFlagSchema));
+
+        assertTrue(":Int and :IntCounter must be disjoint",
+            StvnSumInferenceHelper.areDisjoint(intPrimitive, intCounterSchema));
+    }
+
+    public void testWhitespaceSeparatedCompositeTypeDisjointness() {
+        var seqSpaced = StvnElementFactory.createSchemaType(getProject(), ":Seq ( :Option ( :Int ) )");
+        var mapSpaced = StvnElementFactory.createSchemaType(getProject(), ":Map ( :String :Int )");
+        var setSpaced = StvnElementFactory.createSchemaType(getProject(), ":Set ( :String )");
+
+        var stringPrimitive = StvnElementFactory.createSchemaType(getProject(), ":String");
+        var intPrimitive = StvnElementFactory.createSchemaType(getProject(), ":Int");
+
+        assertTrue(":Seq with whitespace must be disjoint from :String",
+            StvnSumInferenceHelper.areDisjoint(seqSpaced, stringPrimitive));
+        assertTrue(":Map with whitespace must be disjoint from :Int",
+            StvnSumInferenceHelper.areDisjoint(mapSpaced, intPrimitive));
+        assertTrue(":Seq and :Map must be disjoint",
+            StvnSumInferenceHelper.areDisjoint(seqSpaced, mapSpaced));
+        assertFalse(":Seq with whitespace must match another :Seq",
+            StvnSumInferenceHelper.areDisjoint(seqSpaced, seqSpaced));
     }
 }

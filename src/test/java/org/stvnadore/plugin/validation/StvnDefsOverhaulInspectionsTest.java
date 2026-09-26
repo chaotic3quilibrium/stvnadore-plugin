@@ -190,4 +190,28 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
         assertNotNull("Expected canonical prelude type to resolve", resolvedPrelude);
         assertTrue(resolvedPrelude instanceof TypeKeyword);
     }
+
+    public void testStringCardinalityPermitsSizeOnNominalStringList() {
+        myFixture.enableInspections(new StvnStringCardinalityInspection());
+        myFixture.configureByText(
+            "string_list_size.stvn",
+            """
+            {
+              :defs {
+                :StringList :Seq( :String )
+                :BoundedList { #size 10 } :StringList
+              }
+              :type :BoundedList
+              :body [ "one" "two" ]
+            }
+            """
+        );
+        myFixture.doHighlighting();
+
+        var errors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Facet '#size' is prohibited on ':String'"))
+            .toList();
+
+        assertTrue("Nominal :StringList must not be flagged by StvnStringCardinalityInspection", errors.isEmpty());
+    }
 }

@@ -59,7 +59,7 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
                     return;
                 }
                 var baseType = resolveBaseTypeString(schemaType);
-                if (!baseType.startsWith(StvnVocabulary.TYPE_STRING)) {
+                if (!baseType.equals(StvnVocabulary.TYPE_STRING)) {
                     return;
                 }
                 var metaMap = typeDef.getMetadataMap();
