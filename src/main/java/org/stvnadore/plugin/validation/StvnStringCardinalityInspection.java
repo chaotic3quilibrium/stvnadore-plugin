@@ -10,6 +10,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.*;
@@ -20,6 +21,12 @@ import org.stvnadore.psi.*;
  */
 @NullMarked
 public final class StvnStringCardinalityInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnStringCardinalityInspection instance.
+     */
+    public StvnStringCardinalityInspection() {
+    }
 
     @Override
     public @NotNull String getShortName() {
@@ -52,7 +59,7 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
                     return;
                 }
                 var baseType = resolveBaseTypeString(schemaType);
-                if (!baseType.startsWith(":String")) {
+                if (!baseType.startsWith(StvnVocabulary.TYPE_STRING)) {
                     return;
                 }
                 var metaMap = typeDef.getMetadataMap();
@@ -61,7 +68,7 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
                 }
 
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    if (entry.getText().startsWith("#size") || (entry.getNode().findChildByType(StvnTypes.KW_SIZE) != null)) {
+                    if (entry.getText().startsWith(StvnVocabulary.FACET_KW_SIZE) || (entry.getNode().findChildByType(StvnTypes.KW_SIZE) != null)) {
                         holder.registerProblem(
                             entry,
                             "Facet '#size' is prohibited on ':String' (MCT § 3.1.3). Use '#minSize' and '#maxSize' for character bounds.",

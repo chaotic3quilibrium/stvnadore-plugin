@@ -25,8 +25,15 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnFencedStringTagRenameListener extends TemplateEditingAdapter {
 
+    /**
+     * Error message displayed when a proposed tag collides with a delimiter sequence inside the string payload.
+     */
     public static final String COLLISION_ERROR_MSG =
         "Cannot rename tag: proposed tag collides with a delimiter sequence inside the string payload.";
+
+    /**
+     * Error message displayed when a proposed tag contains invalid characters or whitespace.
+     */
     public static final String INVALID_TAG_ERROR_MSG =
         "Cannot rename tag: tag must match ^[a-zA-Z0-9_-]{1,256}$ and cannot be empty or contain whitespace.";
 
@@ -48,6 +55,22 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
     private @Nullable String committedTag = null;
     private boolean reverted = false;
 
+    /**
+     * Constructs a new StvnFencedStringTagRenameListener instance.
+     *
+     * @param project the active IntelliJ project
+     * @param editor the current text editor
+     * @param file the containing PSI file
+     * @param elementStartOffset start offset of the fenced string element
+     * @param originalTag the original tag name before editing
+     * @param originalOpenTagRange document range of the opening tag
+     * @param originalCloseTagRange document range of the closing tag
+     * @param payloadRelativeStart relative start offset of the inner payload
+     * @param payloadRelativeEnd relative end offset of the inner payload
+     * @param initialCaretOffset caret offset before initiating rename
+     * @param inCloseTag whether the rename was initiated from the closing tag
+     * @param openBracketIdx relative index of the opening bracket
+     */
     public StvnFencedStringTagRenameListener(Project project,
                                             Editor editor,
                                             PsiFile file,

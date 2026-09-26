@@ -9,6 +9,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.StringLiteral;
@@ -169,14 +170,41 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         return StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, visited);
     }
 
+    /**
+     * Resolves a type name in the given file.
+     *
+     * @param file the PSI file to search
+     * @param targetName the target type name to resolve
+     * @param visited set of already visited files to prevent cycles
+     * @return the resolved target PSI element, or null if not found
+     */
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited) {
         return resolveTypeInFile(file, targetName, visited, null);
     }
 
+    /**
+     * Resolves a type name in the given file while recording resolution trace.
+     *
+     * @param file the PSI file to search
+     * @param targetName the target type name to resolve
+     * @param visited set of already visited files to prevent cycles
+     * @param trace list to accumulate resolution trace steps
+     * @return the resolved target PSI element, or null if not found
+     */
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace) {
         return resolveTypeInFile(file, targetName, visited, trace, false);
     }
 
+    /**
+     * Resolves a type name in the given file with qualification control.
+     *
+     * @param file the PSI file to search
+     * @param targetName the target type name to resolve
+     * @param visited set of already visited files to prevent cycles
+     * @param trace list to accumulate resolution trace steps
+     * @param allowUnqualifiedPackaged whether to match unqualified names in packages
+     * @return the resolved target PSI element, or null if not found
+     */
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace, boolean allowUnqualifiedPackaged) {
         if (!visited.add(file)) {
             return null;
@@ -405,6 +433,12 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         return null;
     }
 
+    /**
+     * Extracts the sequential type resolution trace starting from the given keyword.
+     *
+     * @param startKeyword the starting TypeKeyword element
+     * @return list of type names traversed during resolution
+     */
     public static java.util.List<String> extractResolutionTrace(TypeKeyword startKeyword) {
         var trace = new java.util.ArrayList<String>();
         trace.add(startKeyword.getText());
@@ -431,12 +465,12 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                         if (ctor.getAtomicType() != null) {
                             nextTypeName = org.stvnadore.plugin.psi.StvnSchemaFormatter.formatCleanSchema(schemaType);
                         } else if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
-                            nextTypeName = ":Enum";
+                            nextTypeName = StvnVocabulary.TYPE_ENUM;
                         }
                     }
 
                     if (!nextTypeName.isEmpty()) {
-                        if (isPrimitiveTypeName(nextTypeName) || nextTypeName.equals(":Enum")) {
+                        if (isPrimitiveTypeName(nextTypeName) || nextTypeName.equals(StvnVocabulary.TYPE_ENUM)) {
                             trace.add(nextTypeName);
                             break;
                         }
@@ -478,9 +512,24 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         return trace;
     }
 
+    /**
+     * Exact canonical and standard prelude terminal type names.
+     */
     public static final Set<String> EXACT_TERMINAL_TYPE_NAMES = Set.of(
-        ":Boolean",
-        ":Enum",
+        StvnVocabulary.TYPE_BOOLEAN,
+        StvnVocabulary.TYPE_ENUM,
+        StvnVocabulary.TYPE_INT,
+        StvnVocabulary.TYPE_FLOAT,
+        StvnVocabulary.TYPE_STRING,
+        StvnVocabulary.TYPE_TIME_EPOCH,
+        StvnVocabulary.TYPE_DATE_TIME,
+        StvnVocabulary.TYPE_SEQ,
+        StvnVocabulary.TYPE_SET,
+        StvnVocabulary.TYPE_MAP,
+        StvnVocabulary.TYPE_TUPLE,
+        StvnVocabulary.TYPE_OPTION,
+        StvnVocabulary.TYPE_EITHER,
+        StvnVocabulary.TYPE_UNION,
         ":TimeEpochS",
         ":TimeEpochMs",
         ":TimeEpochNs",
@@ -502,13 +551,19 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
     );
 
     private static final java.util.regex.Pattern PRIMITIVE_PATTERN = java.util.regex.Pattern.compile(
-        "^:(?:Uint[0-9]*|Int[0-9]*|Float[0-9]*|FloatExact|StringFixed[0-9]*|StringNonEmpty[0-9]*|String[0-9]*)$"
+        "^:(?:Int[0-9]*|Float[0-9]*|FloatExact|String[0-9]*)$"
     );
 
     private static boolean isPrimitiveTypeName(String name) {
         return EXACT_TERMINAL_TYPE_NAMES.contains(name) || PRIMITIVE_PATTERN.matcher(name).matches();
     }
 
+    /**
+     * Resolves the target PSI file referenced by an include string literal.
+     *
+     * @param stringLit the include StringLiteral element
+     * @return the resolved target PsiFile, or null if resolution fails
+     */
     public static @Nullable PsiFile resolveIncludeFile(StringLiteral stringLit) {
         var containingFile = stringLit.getContainingFile();
         if (containingFile == null) {

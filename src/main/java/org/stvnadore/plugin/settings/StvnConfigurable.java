@@ -18,6 +18,9 @@ import javax.swing.Icon;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 
+/**
+ * Project-level settings configurable page for STVN options and code formatting.
+ */
 @NullMarked
 public final class StvnConfigurable implements SearchableConfigurable {
 
@@ -31,6 +34,11 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
     private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
 
+    /**
+     * Constructs a new StvnConfigurable instance for the specified project.
+     *
+     * @param project the active IntelliJ project
+     */
     public StvnConfigurable(Project project) {
         this.project = project;
     }

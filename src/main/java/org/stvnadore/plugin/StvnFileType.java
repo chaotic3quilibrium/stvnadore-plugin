@@ -13,6 +13,9 @@ import org.stvnadore.plugin.icons.StvnIcons;
 @NullMarked
 public abstract class StvnFileType extends LanguageFileType {
 
+    /**
+     * Constructs a base STVN LanguageFileType instance.
+     */
     protected StvnFileType() {
         super(StvnLanguage.INSTANCE);
     }
@@ -22,6 +25,9 @@ public abstract class StvnFileType extends LanguageFileType {
      */
     @NullMarked
     public static final class Payload extends StvnFileType {
+        /**
+         * Singleton instance representing standard STVN payload documents.
+         */
         public static final Payload INSTANCE = new Payload();
 
         private Payload() {
@@ -59,6 +65,9 @@ public abstract class StvnFileType extends LanguageFileType {
      */
     @NullMarked
     public static final class Incl extends StvnFileType {
+        /**
+         * Singleton instance representing standard STVN include modules.
+         */
         public static final Incl INSTANCE = new Incl();
 
         private Incl() {
@@ -96,6 +105,9 @@ public abstract class StvnFileType extends LanguageFileType {
      */
     @NullMarked
     public static final class Inclf extends StvnFileType {
+        /**
+         * Singleton instance representing flat STVN include modules.
+         */
         public static final Inclf INSTANCE = new Inclf();
 
         private Inclf() {
@@ -133,6 +145,9 @@ public abstract class StvnFileType extends LanguageFileType {
      */
     @NullMarked
     public static final class FlatPayload extends StvnFileType {
+        /**
+         * Singleton instance representing flat STVN payload documents.
+         */
         public static final FlatPayload INSTANCE = new FlatPayload();
 
         private FlatPayload() {

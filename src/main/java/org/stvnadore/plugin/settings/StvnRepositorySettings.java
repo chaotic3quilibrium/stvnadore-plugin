@@ -18,9 +18,20 @@ import org.jspecify.annotations.Nullable;
 public final class StvnRepositorySettings implements PersistentStateComponent<StvnRepositorySettings.State> {
 
     /**
+     * Constructs a new StvnRepositorySettings instance.
+     */
+    public StvnRepositorySettings() {
+    }
+
+    /**
      * Serializable persistent state properties.
      */
     public static final class State {
+        /**
+         * Constructs a new State instance with default repository settings.
+         */
+        public State() {
+        }
         /** Remote repository base URL. */
         public String repoUrl = "http://localhost:8080";
         /** HTTP socket and connection timeout in milliseconds. */

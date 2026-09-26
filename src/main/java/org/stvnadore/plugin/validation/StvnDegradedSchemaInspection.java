@@ -17,9 +17,21 @@ import org.stvnadore.psi.Visitor;
 import javax.swing.*;
 import java.awt.*;
 
+/**
+ * Inspects body values bound to degraded schemas to highlight degraded nominal types.
+ */
 @NullMarked
 public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnDegradedSchemaInspection instance.
+     */
+    public StvnDegradedSchemaInspection() {
+    }
+
+    /**
+     * Configuration flag controlling whether body values bound to degraded schemas are highlighted.
+     */
     @SuppressWarnings("PublicField")
     public boolean highlightBodyValuesBoundToDegradedSchemas = false;
 

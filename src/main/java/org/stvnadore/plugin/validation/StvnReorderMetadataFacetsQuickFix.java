@@ -24,6 +24,11 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
 
     private final MetadataMap metadataMap;
 
+    /**
+     * Constructs a reordering quick-fix for the specified metadata map.
+     *
+     * @param metadataMap the metadata map containing unordered facets
+     */
     public StvnReorderMetadataFacetsQuickFix(MetadataMap metadataMap) {
         this.metadataMap = metadataMap;
     }

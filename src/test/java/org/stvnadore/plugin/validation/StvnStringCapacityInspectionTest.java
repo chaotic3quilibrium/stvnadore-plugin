@@ -48,7 +48,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             """
             {
               :defs {
-                :Oversized :String8192
+                :Oversized { #maxSize 8192 } :String
               }
             }
             """
@@ -67,8 +67,8 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             """
             {
               :defs {
-                :Small :String64
-                :ThresholdBoundary :String4096
+                :Small { #minSize 1 #maxSize 64 } :String
+                :ThresholdBoundary { #minSize 1 #maxSize 4096 } :String
               }
             }
             """
@@ -100,7 +100,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.checkResult("""
             {
               :defs {
-                :Target :String4096
+                :Target { #minSize 1 #maxSize 4096 } :String
               }
             }
             """);
@@ -126,7 +126,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.checkResult("""
             {
               :defs {
-                :Target :String16777216
+                :Target { #minSize 1 #maxSize 16777216 } :String
               }
             }
             """);
@@ -158,7 +158,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.configureByText("payload_default.stvn_f",
             """
             {
-              :type :String8
+              :defs {
+                :ShortStr { #maxSize 8 } :String
+              }
+              :type :ShortStr
               :body "123456789012"
             }
             """
@@ -175,7 +178,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
 
         var text = """
             {
-              :type :String8
+              :defs {
+                :ShortStr { #maxSize 8 } :String
+              }
+              :type :ShortStr
               :body "123456789012"
             }
             """;
@@ -190,7 +196,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
 
         myFixture.checkResult("""
             {
-              :type :String8
+              :defs {
+                :ShortStr { #maxSize 8 } :String
+              }
+              :type :ShortStr
               :body "12345678"
             }
             """);
@@ -201,7 +210,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
 
         var text = """
             {
-              :type :String8
+              :defs {
+                :ShortStr { #maxSize 8 } :String
+              }
+              :type :ShortStr
               :body "123456789012"
             }
             """;
@@ -216,8 +228,42 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
 
         myFixture.checkResult("""
             {
-              :type :String12
+              :defs {
+                :ShortStr { #maxSize 12 } :String
+              }
+              :type :ShortStr
               :body "123456789012"
+            }
+            """);
+    }
+
+    public void testObsoleteCompoundStringError() {
+        myFixture.configureByText("test_obsolete.stvn_inclf",
+            """
+            {
+              :defs {
+                :Target :String4096
+              }
+            }
+            """
+        );
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_COMPOUND_TYPE_OBSOLETE"))
+            .toList();
+        assertFalse("Expected obsolete compound string error", errors.isEmpty());
+
+        myFixture.getEditor().getCaretModel().moveToOffset(myFixture.getFile().getText().indexOf(":String4096"));
+        var actions = myFixture.filterAvailableIntentions("Convert obsolete string syntax ':String4096' to metadata facets");
+        assertFalse("Expected convert quick-fix", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                :Target { #minSize 1 #maxSize 4096 } :String
+              }
             }
             """);
     }

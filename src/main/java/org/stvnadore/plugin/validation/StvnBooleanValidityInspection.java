@@ -18,8 +18,17 @@ import org.stvnadore.psi.*;
 
 import java.util.Set;
 
+/**
+ * Inspects boolean value literals and keywords to ensure canonical representations.
+ */
 @NullMarked
 public final class StvnBooleanValidityInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnBooleanValidityInspection instance.
+     */
+    public StvnBooleanValidityInspection() {
+    }
 
     private static final Set<String> BOOLEAN_WHITELIST = Set.of("#TRUE", "#T", "#FALSE", "#F");
 

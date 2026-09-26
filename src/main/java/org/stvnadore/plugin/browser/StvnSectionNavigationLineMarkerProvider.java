@@ -15,6 +15,12 @@ import org.stvnadore.psi.*;
 @NullMarked
 public final class StvnSectionNavigationLineMarkerProvider implements LineMarkerProvider {
 
+    /**
+     * Constructs a new StvnSectionNavigationLineMarkerProvider instance.
+     */
+    public StvnSectionNavigationLineMarkerProvider() {
+    }
+
     @Override
     public @Nullable LineMarkerInfo<?> getLineMarkerInfo(PsiElement element) {
         var node = element.getNode();

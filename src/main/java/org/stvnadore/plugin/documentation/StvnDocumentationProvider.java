@@ -10,6 +10,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
@@ -36,8 +37,17 @@ import org.stvnadore.psi.ValueKeyword;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * Provides hover documentation and quick navigation info for STVN symbols.
+ */
 @NullMarked
 public final class StvnDocumentationProvider implements DocumentationProvider {
+
+    /**
+     * Constructs a new StvnDocumentationProvider.
+     */
+    public StvnDocumentationProvider() {
+    }
 
     @Override
     public @Nullable String generateDoc(PsiElement element, @Nullable PsiElement originalElement) {
@@ -629,55 +639,55 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         return switch (keyword) {
-            case ":Tuple" -> """
+            case StvnVocabulary.TYPE_TUPLE -> """
                 <b>Product Type Constructor:</b> :Tuple( :T1 :T2 ... )<br/>
                 <hr/>
                 Defines a fixed-length, heterogeneous positional product type.<br/>
                 <b>Payload Syntax:</b> Parenthesized values: <code>( val1 val2 ... )</code>.
                 """;
-            case ":Map", ":MapNonEmpty" -> """
+            case StvnVocabulary.TYPE_MAP -> """
                 <b>Collection Constructor:</b> :Map( :KeyType :ValType )<br/>
                 <hr/>
                 Defines a key-value mapping with strictly unique keys.<br/>
                 <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
                 """;
-            case ":MapInv", ":MapInvNonEmpty" -> """
+            case ":MapInv" -> """
                 <b>Collection Constructor:</b> :MapInv( :KeyType :ValType )<br/>
                 <hr/>
-                Defines an inverted key-value mapping enforcing bijective uniqueness (unique keys AND unique values).<br/>
+                Defines an invertible bidirectional key-value mapping with bijective uniqueness.<br/>
                 <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
                 """;
-            case ":Seq", ":SeqNonEmpty" -> """
+            case StvnVocabulary.TYPE_SEQ -> """
                 <b>Collection Constructor:</b> :Seq( :ElemType )<br/>
                 <hr/>
                 Defines an ordered homogeneous sequence of elements.<br/>
                 <b>Payload Syntax:</b> <code>[ elem1 elem2 ... ]</code>.
                 """;
-            case ":Set", ":SetNonEmpty" -> """
+            case StvnVocabulary.TYPE_SET -> """
                 <b>Collection Constructor:</b> :Set( :ElemType )<br/>
                 <hr/>
                 Defines an unordered homogeneous collection of unique elements.<br/>
                 <b>Payload Syntax:</b> <code>[ elem1 elem2 ... ]</code>.
                 """;
-            case ":Option" -> """
+            case StvnVocabulary.TYPE_OPTION -> """
                 <b>Sum Type Constructor:</b> :Option( :Type )<br/>
                 <hr/>
                 Defines an optional algebraic value representing presence or absence.<br/>
                 <b>Variants:</b> <code>#Some value</code> (or <code>#S value</code> / inferred) vs. <code>#None</code> (or <code>#N</code>).
                 """;
-            case ":Either" -> """
+            case StvnVocabulary.TYPE_EITHER -> """
                 <b>Sum Type Constructor:</b> :Either( :LeftType :RightType )<br/>
                 <hr/>
                 Defines a disjoint union of exactly two distinct types.<br/>
                 <b>Variants:</b> <code>#Left val</code> (or <code>#L val</code>) vs. <code>#Right val</code> (or <code>#R val</code>).
                 """;
-            case ":Union" -> """
+            case StvnVocabulary.TYPE_UNION -> """
                 <b>Algebraic Union Constructor:</b> :Union( :T1 :T2 ... :Tn )<br/>
                 <hr/>
                 Defines an n-ary tagged algebraic union.<br/>
                 <b>Variants:</b> Explicit tag prefix <code>#1 val</code>, <code>#2 val</code>, or compiler-inferred disambiguation.
                 """;
-            case ":Enum" -> """
+            case StvnVocabulary.TYPE_ENUM -> """
                 <b>Enumeration Constructor:</b> :Enum [ #val1 #val2 ... ]<br/>
                 <hr/>
                 Defines a closed set of symbolic value keywords.<br/>
@@ -726,19 +736,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         return switch (keyword) {
-            case ":Tuple" -> "Product Type Constructor: :Tuple( ... )";
-            case ":Map" -> "Collection Constructor: :Map( :Key :Val )";
-            case ":MapNonEmpty" -> "Collection Constructor: :MapNonEmpty( :Key :Val )";
+            case StvnVocabulary.TYPE_TUPLE -> "Product Type Constructor: :Tuple( ... )";
+            case StvnVocabulary.TYPE_MAP -> "Collection Constructor: :Map( :Key :Val )";
             case ":MapInv" -> "Collection Constructor: :MapInv( :Key :Val )";
-            case ":MapInvNonEmpty" -> "Collection Constructor: :MapInvNonEmpty( :Key :Val )";
-            case ":Seq" -> "Collection Constructor: :Seq( :Elem )";
-            case ":SeqNonEmpty" -> "Collection Constructor: :SeqNonEmpty( :Elem )";
-            case ":Set" -> "Collection Constructor: :Set( :Elem )";
-            case ":SetNonEmpty" -> "Collection Constructor: :SetNonEmpty( :Elem )";
-            case ":Option" -> "Sum Type Constructor: :Option( :Type )";
-            case ":Either" -> "Sum Type Constructor: :Either( :Left :Right )";
-            case ":Union" -> "Algebraic Union Constructor: :Union( ... )";
-            case ":Enum" -> "Enumeration Constructor: :Enum [ ... ]";
+            case StvnVocabulary.TYPE_SEQ -> "Collection Constructor: :Seq( :Elem )";
+            case StvnVocabulary.TYPE_SET -> "Collection Constructor: :Set( :Elem )";
+            case StvnVocabulary.TYPE_OPTION -> "Sum Type Constructor: :Option( :Type )";
+            case StvnVocabulary.TYPE_EITHER -> "Sum Type Constructor: :Either( :Left :Right )";
+            case StvnVocabulary.TYPE_UNION -> "Algebraic Union Constructor: :Union( ... )";
+            case StvnVocabulary.TYPE_ENUM -> "Enumeration Constructor: :Enum [ ... ]";
             default -> null;
         };
     }
@@ -1125,6 +1131,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return null;
     }
 
+    /**
+     * Resolves the terminal schema definition by following nominal type alias chains.
+     *
+     * @param element the PSI element (typically a TypeDefinition or TypeKeyword) to resolve
+     * @param visited set of already visited PSI elements to prevent circular resolution loops
+     * @return the terminal resolved {@link SchemaType}, or {@code null} if unresolvable
+     */
     public static @Nullable SchemaType resolveTerminalSchemaType(PsiElement element, Set<PsiElement> visited) {
         if (!visited.add(element)) {
             return null;
@@ -1265,7 +1278,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return true;
         }
         var firstChild = sumType.getFirstChild();
-        return firstChild != null && firstChild.getText().equals(":Union");
+        return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_UNION);
     }
 
     private static boolean isContainerDocumentationSuppressionTarget(@Nullable PsiElement element) {
@@ -1283,7 +1296,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return true;
         }
         var text = element.getText().trim();
-        return text.equals("#") || text.equals(":") || text.equals("/");
+        return text.equals(StvnVocabulary.SIGIL_VALUE) || text.equals(StvnVocabulary.SIGIL_TYPIC) || text.equals("/");
     }
 
     private static boolean isContainerLiteral(Value value) {

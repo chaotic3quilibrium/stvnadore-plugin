@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.Visitor;
@@ -18,7 +19,7 @@ import java.util.List;
  * <p>
  * Evaluates facet sequence in all metadata blocks:
  * <ul>
- *   <li><b>Tier 1 (Flags & Intrinsic Modes):</b> #unsigned &rarr; #exact &rarr; #invertible &rarr; #preserveIndent &rarr; #offset &rarr; #zoned &rarr; #audited &rarr; #equatable &rarr; #comparable</li>
+ *   <li><b>Tier 1 (Flags &amp; Intrinsic Modes):</b> #unsigned &rarr; #exact &rarr; #invertible &rarr; #preserveIndent &rarr; #offset &rarr; #zoned &rarr; #audited &rarr; #equatable &rarr; #comparable</li>
  *   <li><b>Tier 2 (Temporal Scale):</b> #s &rarr; #ms &rarr; #us &rarr; #ns</li>
  *   <li><b>Tier 3 (Dimensions):</b> #size &rarr; #minSize &rarr; #maxSize</li>
  *   <li><b>Tier 4 (Intervals):</b> #minIncl &rarr; #minExcl &rarr; #maxExcl &rarr; #maxIncl</li>
@@ -26,10 +27,15 @@ import java.util.List;
  *   <li><b>Tier 6 (Subsets):</b> #filterIncl &rarr; #filterExcl</li>
  *   <li><b>Tier 7 (Directives):</b> #strip</li>
  * </ul>
- * </p>
  */
 @NullMarked
 public final class StvnMetadataOrderInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnMetadataOrderInspection instance.
+     */
+    public StvnMetadataOrderInspection() {
+    }
 
     @Override
     public @NotNull String getShortName() {
@@ -133,42 +139,42 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
     public static int getFacetRank(String keyword) {
         return switch (keyword) {
             // Tier 1: Flags & Intrinsic Modes (101-109)
-            case "#unsigned" -> 101;
-            case "#exact" -> 102;
-            case "#invertible" -> 103;
-            case "#preserveIndent" -> 104;
-            case "#offset" -> 105;
-            case "#zoned" -> 106;
-            case "#audited" -> 107;
-            case "#equatable" -> 108;
-            case "#comparable" -> 109;
+            case StvnVocabulary.FACET_KW_UNSIGNED -> 101;
+            case StvnVocabulary.FACET_KW_EXACT -> 102;
+            case StvnVocabulary.FACET_KW_INVERTIBLE -> 103;
+            case StvnVocabulary.FACET_KW_PRESERVE_INDENT -> 104;
+            case StvnVocabulary.FACET_KW_OFFSET -> 105;
+            case StvnVocabulary.FACET_KW_ZONED -> 106;
+            case StvnVocabulary.FACET_KW_AUDITED -> 107;
+            case StvnVocabulary.FACET_KW_EQUATABLE -> 108;
+            case StvnVocabulary.FACET_KW_COMPARABLE -> 109;
 
             // Tier 2: Temporal Scale (201-204)
-            case "#s" -> 201;
-            case "#ms" -> 202;
-            case "#us" -> 203;
-            case "#ns" -> 204;
+            case StvnVocabulary.FACET_KW_SCALE_S -> 201;
+            case StvnVocabulary.FACET_KW_SCALE_MS -> 202;
+            case StvnVocabulary.FACET_KW_SCALE_US -> 203;
+            case StvnVocabulary.FACET_KW_SCALE_NS -> 204;
 
             // Tier 3: Dimensions (301-303)
-            case "#size" -> 301;
-            case "#minSize" -> 302;
-            case "#maxSize" -> 303;
+            case StvnVocabulary.FACET_KW_SIZE -> 301;
+            case StvnVocabulary.FACET_KW_MIN_SIZE -> 302;
+            case StvnVocabulary.FACET_KW_MAX_SIZE -> 303;
 
             // Tier 4: Intervals (401-404)
-            case "#minIncl" -> 401;
-            case "#minExcl" -> 402;
-            case "#maxExcl" -> 403;
-            case "#maxIncl" -> 404;
+            case StvnVocabulary.FACET_KW_MIN_INCL -> 401;
+            case StvnVocabulary.FACET_KW_MIN_EXCL -> 402;
+            case StvnVocabulary.FACET_KW_MAX_EXCL -> 403;
+            case StvnVocabulary.FACET_KW_MAX_INCL -> 404;
 
             // Tier 5: Patterns (501)
-            case "#regex" -> 501;
+            case StvnVocabulary.FACET_KW_REGEX -> 501;
 
             // Tier 6: Subsets (601-602)
-            case "#filterIncl" -> 601;
-            case "#filterExcl" -> 602;
+            case StvnVocabulary.FACET_KW_FILTER_INCL -> 601;
+            case StvnVocabulary.FACET_KW_FILTER_EXCL -> 602;
 
             // Tier 7: Directives (701)
-            case "#strip" -> 701;
+            case StvnVocabulary.FACET_KW_STRIP -> 701;
 
             default -> 999;
         };

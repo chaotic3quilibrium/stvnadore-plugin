@@ -30,12 +30,21 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnRenameInputValidator implements RenameInputValidatorEx {
 
+    /**
+     * Error message displayed when an input name includes an illegal sigil prefix.
+     */
     public static final String PREFIX_ERROR_MESSAGE =
         "Identifier must be a bare name without ':' or '#' prefix";
 
+    /**
+     * Error message prefix displayed when an input name matches a reserved keyword.
+     */
     public static final String KEYWORD_ERROR_MESSAGE =
         "Identifier cannot be a reserved section keyword: ";
 
+    /**
+     * Error message prefix displayed when an input name does not conform to bare identifier syntax.
+     */
     public static final String INVALID_IDENTIFIER_ERROR_MESSAGE =
         "Identifier is not a valid bare STVN identifier: ";
 

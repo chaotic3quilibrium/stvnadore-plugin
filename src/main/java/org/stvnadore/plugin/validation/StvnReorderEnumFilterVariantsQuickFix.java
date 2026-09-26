@@ -26,6 +26,11 @@ import java.util.stream.Collectors;
 @NullMarked
 public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
 
+    /**
+     * Constructs a reordering quick-fix for the specified variant list element.
+     *
+     * @param variantList the variant list element to reorder
+     */
     public StvnReorderEnumFilterVariantsQuickFix(VariantList variantList) {
         super(variantList);
     }

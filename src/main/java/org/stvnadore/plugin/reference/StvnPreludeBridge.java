@@ -28,6 +28,12 @@ public final class StvnPreludeBridge {
     private StvnPreludeBridge() {
     }
 
+    /**
+     * Retrieves the cached synthetic AST file representing the canonical standard library prelude.
+     *
+     * @param project the active IntelliJ project
+     * @return the synthetic prelude PSI file
+     */
     public static PsiFile getPreludeFile(Project project) {
         return CachedValuesManager.getManager(project).getCachedValue(project, PRELUDE_FILE_KEY, () -> {
             var file = PsiFileFactory.getInstance(project).createFileFromText(
@@ -39,6 +45,13 @@ public final class StvnPreludeBridge {
         }, false);
     }
 
+    /**
+     * Resolves a prelude type keyword by nominal name or fully qualified nominal identifier (FQNI).
+     *
+     * @param project the active IntelliJ project
+     * @param nameOrFqni the type identifier or FQNI to resolve
+     * @return the resolved TypeKeyword element, or {@code null} if not found in the prelude
+     */
     public static @Nullable TypeKeyword resolvePreludeType(Project project, String nameOrFqni) {
         var file = getPreludeFile(project);
         var targetFqni = nameOrFqni.startsWith(":org/stvnadore/prelude/")

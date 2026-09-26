@@ -22,10 +22,25 @@ public final class CompleteSumVariantQuickFix extends LocalQuickFixAndIntentionA
     private final String targetTypeName;
     private final Priority priority;
 
+    /**
+     * Constructs a quick-fix with normal priority.
+     *
+     * @param element the PSI element representing the incomplete sigil token
+     * @param tagText the completed variant tag text
+     * @param targetTypeName the target branch schema type name
+     */
     public CompleteSumVariantQuickFix(PsiElement element, String tagText, String targetTypeName) {
         this(element, tagText, targetTypeName, Priority.NORMAL);
     }
 
+    /**
+     * Constructs a quick-fix with the specified intention priority.
+     *
+     * @param element the PSI element representing the incomplete sigil token
+     * @param tagText the completed variant tag text
+     * @param targetTypeName the target branch schema type name
+     * @param priority the intention action display priority
+     */
     public CompleteSumVariantQuickFix(PsiElement element, String tagText, String targetTypeName, Priority priority) {
         super(element);
         this.tagText = tagText;

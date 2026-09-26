@@ -17,6 +17,12 @@ import org.stvnadore.psi.Visitor;
 @NullMarked
 public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnLhsReservedTypeInspection instance.
+     */
+    public StvnLhsReservedTypeInspection() {
+    }
+
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {

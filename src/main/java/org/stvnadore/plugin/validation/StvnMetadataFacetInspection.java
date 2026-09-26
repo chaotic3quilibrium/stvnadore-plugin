@@ -13,6 +13,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.*;
 
 /**
@@ -20,6 +21,12 @@ import org.stvnadore.psi.*;
  */
 @NullMarked
 public final class StvnMetadataFacetInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnMetadataFacetInspection instance.
+     */
+    public StvnMetadataFacetInspection() {
+    }
 
     private static final TokenSet NUMERIC_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_SIZE, StvnTypes.KW_UNSIGNED, StvnTypes.KW_EXACT
@@ -241,11 +248,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isNumericType(String baseType) {
-        return baseType.startsWith(":Int") || baseType.startsWith(":Uint") || baseType.startsWith(":Float") || baseType.startsWith(":TimeEpoch");
+        return baseType.startsWith(StvnVocabulary.TYPE_INT) || baseType.startsWith(":Uint") || baseType.startsWith(StvnVocabulary.TYPE_FLOAT) || baseType.startsWith(":TimeEpoch");
     }
 
     private static boolean isStringType(String baseType) {
-        return baseType.startsWith(":String");
+        return baseType.startsWith(StvnVocabulary.TYPE_STRING);
     }
 
     private static boolean isTemporalType(String baseType) {
@@ -253,7 +260,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isMapType(String baseType) {
-        return baseType.startsWith(":Map");
+        return baseType.startsWith(StvnVocabulary.TYPE_MAP);
     }
 
     private static final class RemoveElementQuickFix implements LocalQuickFix {

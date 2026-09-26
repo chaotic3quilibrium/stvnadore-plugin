@@ -25,6 +25,11 @@ import java.util.Set;
 @NullMarked
 public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement> {
 
+    /**
+     * Constructs a reference for a value keyword or variant element.
+     *
+     * @param element the PSI element containing the value keyword
+     */
     public StvnValueKeywordReference(PsiElement element) {
         super(element, extractHeadTokenRange(element));
     }
@@ -130,6 +135,14 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
         return findEnumDeclaration(file, tokenText, new HashSet<>());
     }
 
+    /**
+     * Finds an enum variant declaration matching the specified token text across files.
+     *
+     * @param file the starting PSI file
+     * @param tokenText the enum token text
+     * @param visited the set of visited files to prevent circular traversals
+     * @return the matching PSI element, or null if not found
+     */
     public static @Nullable PsiElement findEnumDeclaration(PsiFile file, String tokenText, Set<PsiFile> visited) {
         if (!visited.add(file)) {
             return null;

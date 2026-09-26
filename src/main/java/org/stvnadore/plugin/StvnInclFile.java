@@ -11,6 +11,11 @@ import org.jspecify.annotations.NullMarked;
 @NullMarked
 public final class StvnInclFile extends PsiFileBase implements StvnFile {
 
+    /**
+     * Constructs an StvnInclFile with backing view provider.
+     *
+     * @param viewProvider file view provider
+     */
     public StvnInclFile(FileViewProvider viewProvider) {
         super(viewProvider, StvnLanguage.INSTANCE);
     }

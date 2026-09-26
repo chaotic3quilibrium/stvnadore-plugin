@@ -34,6 +34,9 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
     private static final Pattern DELIMITER_BOUNDARY_PATTERN =
         Pattern.compile("(\"\"\"(?:->)?\\[([a-zA-Z0-9_-]{1,256})\\])|(\\[([a-zA-Z0-9_-]{1,256})\\]\"\"\")");
 
+    /**
+     * Constructs a new StvnFencedStringTagRenameHandler instance.
+     */
     public StvnFencedStringTagRenameHandler() {}
 
     @Override

@@ -19,6 +19,9 @@ import org.stvnadore.plugin.StvnFile;
 @NullMarked
 public final class StvnFencedStringTypedHandler extends TypedHandlerDelegate {
 
+    /**
+     * Constructs a new StvnFencedStringTypedHandler instance.
+     */
     public StvnFencedStringTypedHandler() {}
 
     @Override

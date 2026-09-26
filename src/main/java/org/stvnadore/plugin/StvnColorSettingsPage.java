@@ -19,6 +19,12 @@ import java.util.Map;
 @NullMarked
 public final class StvnColorSettingsPage implements ColorSettingsPage {
 
+    /**
+     * Constructs a new StvnColorSettingsPage instance.
+     */
+    public StvnColorSettingsPage() {
+    }
+
     private static final AttributesDescriptor[] DESCRIPTORS = new AttributesDescriptor[]{
             new AttributesDescriptor("Primitive types (e.g., :Int, :Seq, :Option)", StvnSyntaxHighlighterColors.STVN_PRIMITIVE_TYPE),
             new AttributesDescriptor("Nominal types (e.g., custom user schemas)", StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE),

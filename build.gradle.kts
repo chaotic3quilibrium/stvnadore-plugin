@@ -320,5 +320,6 @@ tasks.javadoc {
         encoding = "UTF-8"
         charSet = "UTF-8"
         addStringOption("Xdoclint:all", "-quiet")
+        addBooleanOption("Werror", true)
     }
 }

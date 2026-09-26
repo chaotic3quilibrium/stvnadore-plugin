@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnSyntaxHighlighterColors;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ExplicitUnionValue;
@@ -116,6 +117,6 @@ public final class StvnSemanticAnnotator implements Annotator {
             return true;
         }
         var firstChild = sumType.getFirstChild();
-        return firstChild != null && firstChild.getText().equals(":Union");
+        return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_UNION);
     }
 }

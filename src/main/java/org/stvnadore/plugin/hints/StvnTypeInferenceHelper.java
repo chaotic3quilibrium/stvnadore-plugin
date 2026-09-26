@@ -32,6 +32,13 @@ public final class StvnTypeInferenceHelper {
         return StvnTypeResolver.resolveValueType(value);
     }
 
+    /**
+     * Calculates the document offset for positioning an inlay badge relative to algebraic containers.
+     *
+     * @param valueElement the PSI value element being badged
+     * @param coreNode the resolved core value representation
+     * @return the document offset where the inlay badge should be anchored
+     */
     public static int calculateInlayBadgeOffset(Value valueElement, @Nullable StvnValue coreNode) {
         var optPsi = valueElement.getExplicitOptionValue();
         if (optPsi != null && coreNode != null && StvnTypeResolver.isUnspooledContainer(optPsi, coreNode)) {
@@ -64,6 +71,12 @@ public final class StvnTypeInferenceHelper {
         return valueElement.getTextRange().getEndOffset();
     }
 
+    /**
+     * Determines whether a PSI element is an inner child of an unspooled algebraic container.
+     *
+     * @param element the PSI element to test
+     * @return {@code true} if element is an inner child of an algebraic container, {@code false} otherwise
+     */
     public static boolean isInnerChildOfAlgebraicContainer(PsiElement element) {
         var curr = element.getParent();
         while (curr != null && !(curr instanceof PsiFile) && !(curr instanceof BodyEntry)) {

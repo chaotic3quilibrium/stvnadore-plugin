@@ -24,6 +24,9 @@ import java.util.List;
 @NullMarked
 public final class StvnEnumSubsetInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnEnumSubsetInspection instance.
+     */
     public StvnEnumSubsetInspection() {}
 
     @Override

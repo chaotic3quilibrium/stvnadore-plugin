@@ -18,6 +18,9 @@ import org.stvnadore.plugin.StvnFile;
 @NullMarked
 public final class StvnCreateFencedStringIntention extends PsiElementBaseIntentionAction {
 
+    /**
+     * Constructs a new StvnCreateFencedStringIntention instance.
+     */
     public StvnCreateFencedStringIntention() {}
 
     @Override

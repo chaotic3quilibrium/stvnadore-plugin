@@ -10,6 +10,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
@@ -38,6 +39,9 @@ import java.util.stream.Collectors;
 @NullMarked
 public final class StvnValueCompletionContributor extends CompletionContributor {
 
+    /**
+     * Constructs a new StvnValueCompletionContributor.
+     */
     public StvnValueCompletionContributor() {
         extend(
             CompletionType.BASIC,
@@ -140,7 +144,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
             return false;
         }
         char prevChar = text.charAt(offset - 1);
-        if (Character.isWhitespace(prevChar) || prevChar == '(' || prevChar == '[' || prevChar == '{' || prevChar == '#') {
+        if (Character.isWhitespace(prevChar) || prevChar == '(' || prevChar == '[' || prevChar == '{' || prevChar == StvnVocabulary.SIGIL_VALUE.charAt(0)) {
             return false;
         }
         if (isVariantTagPrefixAt(text, offset)) {
@@ -164,7 +168,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         while (idx >= 0 && Character.isLetterOrDigit(text.charAt(idx))) {
             idx--;
         }
-        return idx >= 0 && text.charAt(idx) == '#';
+        return idx >= 0 && text.charAt(idx) == StvnVocabulary.SIGIL_VALUE.charAt(0);
     }
 
     private static boolean populateFilterListCompletions(PsiElement position, CompletionResultSet result) {
@@ -221,8 +225,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var parentTypeName = StvnSchemaFormatter.formatCleanSchema(parentSchema);
         var prefix = result.getPrefixMatcher().getPrefix();
         var matcher = result.getPrefixMatcher();
-        if (!prefix.isEmpty() && !prefix.startsWith("#")) {
-            matcher = matcher.cloneWithPrefix("#" + prefix);
+        if (!prefix.isEmpty() && !prefix.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+            matcher = matcher.cloneWithPrefix(StvnVocabulary.SIGIL_VALUE + prefix);
         }
         var targetResult = result.withPrefixMatcher(matcher);
 
@@ -298,12 +302,12 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         CompletionResultSet result
     ) {
         var schemaText = StvnSchemaFormatter.formatCleanSchema(schema);
-        if (!schemaText.equals(":Boolean") && !schemaText.equals(":Bool")) {
+        if (!schemaText.equals(StvnVocabulary.TYPE_BOOLEAN) && !schemaText.equals(":Bool")) {
             return;
         }
 
         result.addElement(PrioritizedLookupElement.withPriority(
-            LookupElementBuilder.create("#TRUE")
+            LookupElementBuilder.create(StvnVocabulary.VAL_TRUE)
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (boolean true)", true)
                 .withTypeText(typeLabel, true)
@@ -313,7 +317,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         ));
 
         result.addElement(PrioritizedLookupElement.withPriority(
-            LookupElementBuilder.create("#FALSE")
+            LookupElementBuilder.create(StvnVocabulary.VAL_FALSE)
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (boolean false)", true)
                 .withTypeText(typeLabel, true)
@@ -323,7 +327,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         ));
 
         result.addElement(PrioritizedLookupElement.withPriority(
-            LookupElementBuilder.create("#T")
+            LookupElementBuilder.create(StvnVocabulary.VAL_TRUE_SHORT)
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (short-form true)", true)
                 .withTypeText(typeLabel, true)
@@ -332,7 +336,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         ));
 
         result.addElement(PrioritizedLookupElement.withPriority(
-            LookupElementBuilder.create("#F")
+            LookupElementBuilder.create(StvnVocabulary.VAL_FALSE_SHORT)
                 .withIcon(AllIcons.Nodes.Variable)
                 .withTailText(" (short-form false)", true)
                 .withTypeText(typeLabel, true)
@@ -353,11 +357,11 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var sumType = constructor.getSumType();
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
 
-        if (sumType.getText().startsWith(":Option")) {
+        if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
             var innerType = !innerSchemas.isEmpty() ? StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0)) : ":Value";
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#Some ")
-                    .withPresentableText("#Some")
+                LookupElementBuilder.create(StvnVocabulary.VAL_SOME + " ")
+                    .withPresentableText(StvnVocabulary.VAL_SOME)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + innerType + ")", true)
                     .withTypeText(typeLabel, true)
@@ -366,8 +370,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 90.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#S ")
-                    .withPresentableText("#S")
+                LookupElementBuilder.create(StvnVocabulary.VAL_SOME_SHORT + " ")
+                    .withPresentableText(StvnVocabulary.VAL_SOME_SHORT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + innerType + ")", true)
                     .withTypeText(typeLabel, true)
@@ -375,7 +379,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 80.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#None")
+                LookupElementBuilder.create(StvnVocabulary.VAL_NONE)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (empty option)", true)
                     .withTypeText(typeLabel, true)
@@ -384,20 +388,20 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 89.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#N")
+                LookupElementBuilder.create(StvnVocabulary.VAL_NONE_SHORT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (short empty option)", true)
                     .withTypeText(typeLabel, true)
                     .withInsertHandler(StvnVariantTagInsertionHandler.NULLARY),
                 79.0
             ));
-        } else if (sumType.getText().startsWith(":Either")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
             var leftType = !innerSchemas.isEmpty() ? StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0)) : ":Left";
             var rightType = innerSchemas.size() > 1 ? StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(1)) : ":Right";
 
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#Right ")
-                    .withPresentableText("#Right")
+                LookupElementBuilder.create(StvnVocabulary.VAL_RIGHT + " ")
+                    .withPresentableText(StvnVocabulary.VAL_RIGHT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + rightType + ")", true)
                     .withTypeText(typeLabel, true)
@@ -406,8 +410,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 90.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#R ")
-                    .withPresentableText("#R")
+                LookupElementBuilder.create(StvnVocabulary.VAL_RIGHT_SHORT + " ")
+                    .withPresentableText(StvnVocabulary.VAL_RIGHT_SHORT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + rightType + ")", true)
                     .withTypeText(typeLabel, true)
@@ -415,8 +419,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 80.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#Left ")
-                    .withPresentableText("#Left")
+                LookupElementBuilder.create(StvnVocabulary.VAL_LEFT + " ")
+                    .withPresentableText(StvnVocabulary.VAL_LEFT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + leftType + ")", true)
                     .withTypeText(typeLabel, true)
@@ -425,19 +429,19 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 89.0
             ));
             result.addElement(PrioritizedLookupElement.withPriority(
-                LookupElementBuilder.create("#L ")
-                    .withPresentableText("#L")
+                LookupElementBuilder.create(StvnVocabulary.VAL_LEFT_SHORT + " ")
+                    .withPresentableText(StvnVocabulary.VAL_LEFT_SHORT)
                     .withIcon(AllIcons.Nodes.Class)
                     .withTailText(" (-> " + leftType + ")", true)
                     .withTypeText(typeLabel, true)
                     .withInsertHandler(StvnSumConstructorInsertionHandler.INSTANCE),
                 79.0
             ));
-        } else if (sumType.getText().startsWith(":Union")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
             for (int i = 0; i < innerSchemas.size(); i++) {
                 var branchSchema = innerSchemas.get(i);
                 var branchType = StvnSchemaFormatter.formatCleanSchema(branchSchema);
-                var tag = "#" + (i + 1);
+                var tag = StvnVocabulary.SIGIL_VALUE + (i + 1);
                 result.addElement(PrioritizedLookupElement.withPriority(
                     LookupElementBuilder.create(tag + " ")
                         .withPresentableText(tag)

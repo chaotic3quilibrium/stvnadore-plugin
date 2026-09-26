@@ -6,6 +6,7 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnLiteralParser;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.ConstantDefinition;
@@ -20,6 +21,12 @@ import java.math.BigInteger;
 @NullMarked
 public final class StvnConstantRangeInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnConstantRangeInspection instance.
+     */
+    public StvnConstantRangeInspection() {
+    }
+
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
@@ -32,7 +39,7 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                 }
 
                 var baseType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
-                if (!baseType.startsWith(":Uint") && !baseType.startsWith(":Int")) {
+                if (!baseType.startsWith(":Uint") && !baseType.startsWith(StvnVocabulary.TYPE_INT)) {
                     return;
                 }
 

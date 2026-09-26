@@ -13,6 +13,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
@@ -23,6 +24,12 @@ import org.stvnadore.psi.*;
  */
 @NullMarked
 public final class StvnDegenerateCompositeInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnDegenerateCompositeInspection instance.
+     */
+    public StvnDegenerateCompositeInspection() {
+    }
 
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
@@ -90,7 +97,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             public void visitCollectionType(@NotNull CollectionType o) {
                 super.visitCollectionType(o);
                 var firstChild = o.getFirstChild();
-                if (firstChild != null && firstChild.getText().equals(":Tuple")) {
+                if (firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_TUPLE)) {
                     var types = o.getSchemaTypeList();
                     if (types.size() == 1) {
                         var innerType = types.get(0);
@@ -130,12 +137,20 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             return true;
         }
         var firstChild = sumType.getFirstChild();
-        return firstChild != null && firstChild.getText().equals(":Union");
+        return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_UNION);
     }
 
+    /**
+     * Quick-fix that unwraps a degenerate 1-element composite directly into its inner component schema.
+     */
     public static final class UnwrapDegenerateCompositeQuickFix implements LocalQuickFix {
         private final String targetTypeName;
 
+        /**
+         * Constructs an unwrapping quick-fix for the target inner schema type name.
+         *
+         * @param targetTypeName the formatted string representation of the target inner type
+         */
         public UnwrapDegenerateCompositeQuickFix(String targetTypeName) {
             this.targetTypeName = targetTypeName;
         }
@@ -175,7 +190,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             var collection = element instanceof CollectionType
                 ? (CollectionType) element
                 : PsiTreeUtil.getParentOfType(element, CollectionType.class, false);
-            if (collection != null && collection.getFirstChild() != null && collection.getFirstChild().getText().equals(":Tuple")
+            if (collection != null && collection.getFirstChild() != null && collection.getFirstChild().getText().equals(StvnVocabulary.TYPE_TUPLE)
                 && collection.getSchemaTypeList().size() == 1) {
                 var inner = collection.getSchemaTypeList().get(0);
                 var outerSchemaType = PsiTreeUtil.getParentOfType(collection, SchemaType.class, false);

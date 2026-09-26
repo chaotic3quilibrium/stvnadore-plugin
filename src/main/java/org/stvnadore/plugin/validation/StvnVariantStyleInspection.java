@@ -8,6 +8,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -15,8 +16,17 @@ import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.*;
 
+/**
+ * Inspection that detects and fixes inconsistent sum variant style (short-form vs long-form).
+ */
 @NullMarked
 public final class StvnVariantStyleInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new sum variant style inspection.
+     */
+    public StvnVariantStyleInspection() {
+    }
 
     @SuppressWarnings("unchecked")
     private static <T extends StvnValue.StvnSum> @Nullable T findMatchingSumNode(
@@ -128,7 +138,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                 var ctor = schemaToInspect.getSchemaConstructor();
                                 if (ctor != null && ctor.getSumType() != null) {
                                     var sumType = ctor.getSumType();
-                                    while (sumType != null && sumType.getText().startsWith(":Option")) {
+                                    while (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                                         var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                                         if (optBranches.isEmpty()) {
                                             break;
@@ -139,7 +149,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                         var c = schemaToInspect.getSchemaConstructor();
                                         sumType = (c != null) ? c.getSumType() : null;
                                     }
-                                    if (sumType != null && sumType.getText().startsWith(":Either")) {
+                                    if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                                         var innerBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                                         if (innerBranches.size() >= 2) {
                                             var leftBranch = innerBranches.get(0);
@@ -207,7 +217,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                     var ctor = schemaToInspect.getSchemaConstructor();
                                     if (ctor != null && ctor.getSumType() != null) {
                                         var sumType = ctor.getSumType();
-                                        while (sumType != null && sumType.getText().startsWith(":Option")) {
+                                        while (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                                             var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                                             if (optBranches.isEmpty()) {
                                                 break;
@@ -218,7 +228,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                             var c = schemaToInspect.getSchemaConstructor();
                                             sumType = (c != null) ? c.getSumType() : null;
                                         }
-                                        if (sumType != null && sumType.getText().startsWith(":Union")) {
+                                        if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                                             var innerBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                                             if (!innerBranches.isEmpty() && tagIndex >= 0 && tagIndex < innerBranches.size()) {
                                                 int matchCount = 0;

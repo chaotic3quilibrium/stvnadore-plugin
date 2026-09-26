@@ -11,6 +11,11 @@ import org.jspecify.annotations.NullMarked;
 @NullMarked
 public final class StvnFlatPayloadFile extends PsiFileBase implements StvnFile {
 
+    /**
+     * Constructs an StvnFlatPayloadFile with backing view provider.
+     *
+     * @param viewProvider file view provider
+     */
     public StvnFlatPayloadFile(FileViewProvider viewProvider) {
         super(viewProvider, StvnLanguage.INSTANCE);
     }

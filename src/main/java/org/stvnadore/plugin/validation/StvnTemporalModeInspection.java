@@ -20,6 +20,12 @@ import org.stvnadore.psi.*;
 @NullMarked
 public final class StvnTemporalModeInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnTemporalModeInspection instance.
+     */
+    public StvnTemporalModeInspection() {
+    }
+
     @Override
     public @NotNull String getShortName() {
         return "StvnTemporalMode";

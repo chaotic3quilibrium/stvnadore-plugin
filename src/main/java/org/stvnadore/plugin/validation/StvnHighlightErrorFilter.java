@@ -13,6 +13,12 @@ import org.stvnadore.plugin.StvnLanguage;
 @NullMarked
 public final class StvnHighlightErrorFilter extends HighlightErrorFilter {
 
+    /**
+     * Constructs a new StvnHighlightErrorFilter instance.
+     */
+    public StvnHighlightErrorFilter() {
+    }
+
     @Override
     public boolean shouldHighlightErrorElement(PsiErrorElement element) {
         var file = element.getContainingFile();

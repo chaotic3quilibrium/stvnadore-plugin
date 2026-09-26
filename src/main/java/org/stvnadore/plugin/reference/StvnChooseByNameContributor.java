@@ -20,8 +20,17 @@ import org.stvnadore.psi.TypeDefinition;
 
 import java.util.HashSet;
 
+/**
+ * Contributes STVN type aliases and constant definitions to the IntelliJ "Search Everywhere" index.
+ */
 @NullMarked
 public final class StvnChooseByNameContributor implements ChooseByNameContributorEx {
+
+    /**
+     * Constructs a new StvnChooseByNameContributor instance.
+     */
+    public StvnChooseByNameContributor() {
+    }
 
     @Override
     public void processNames(

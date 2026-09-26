@@ -11,6 +11,12 @@ import org.jspecify.annotations.Nullable;
 @NullMarked
 public final class StvnCommenter implements Commenter {
 
+    /**
+     * Constructs a new StvnCommenter instance.
+     */
+    public StvnCommenter() {
+    }
+
     @Override
     public @Nullable String getLineCommentPrefix() {
         return "//";

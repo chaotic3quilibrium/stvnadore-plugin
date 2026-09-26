@@ -10,6 +10,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.*;
@@ -23,6 +24,12 @@ import java.math.BigInteger;
  */
 @NullMarked
 public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
+
+    /**
+     * Constructs a new StvnDiscreteIntervalInspection instance.
+     */
+    public StvnDiscreteIntervalInspection() {
+    }
 
     @Override
     public @NotNull String getShortName() {
@@ -90,14 +97,14 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
         var baseType = resolveBaseTypeString(schemaType);
-        if (baseType.startsWith(":Int") || baseType.startsWith(":Uint") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
+        if (baseType.startsWith(StvnVocabulary.TYPE_INT) || baseType.startsWith(":Uint") || baseType.startsWith(":TimeEpoch") || baseType.startsWith(":DateTime")) {
             return true;
         }
-        if (baseType.startsWith(":Float")) {
+        if (baseType.startsWith(StvnVocabulary.TYPE_FLOAT)) {
             var metaMap = typeDef.getMetadataMap();
             if (metaMap != null) {
                 for (var e : metaMap.getMetadataEntryList()) {
-                    if (e.getText().startsWith("#exact") || e.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
+                    if (e.getText().startsWith(StvnVocabulary.FACET_KW_EXACT) || e.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
                         return true;
                     }
                 }

@@ -2,6 +2,7 @@ package org.stvnadore.plugin.completion;
 
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.SchemaType;
@@ -118,22 +119,22 @@ public final class StvnSumInferenceHelper {
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
         var results = new ArrayList<InferableBranch>();
 
-        if (sumType.getText().startsWith(":Option")) {
+        if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
             // Rule A: Option payload is inferable as #Some
             if (!innerSchemas.isEmpty()) {
                 var payload = innerSchemas.get(0);
-                results.add(new InferableBranch(payload, "#Some", StvnSchemaFormatter.formatCleanSchema(payload)));
+                results.add(new InferableBranch(payload, StvnVocabulary.VAL_SOME, StvnSchemaFormatter.formatCleanSchema(payload)));
             }
-        } else if (sumType.getText().startsWith(":Either")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
             // Rule B & Rule E: Right branch is inferable if disjoint; Left is NEVER inferable untagged
             if (innerSchemas.size() > 1) {
                 var left = innerSchemas.get(0);
                 var right = innerSchemas.get(1);
                 if (areDisjoint(left, right)) {
-                    results.add(new InferableBranch(right, "#Right", StvnSchemaFormatter.formatCleanSchema(right)));
+                    results.add(new InferableBranch(right, StvnVocabulary.VAL_RIGHT, StvnSchemaFormatter.formatCleanSchema(right)));
                 }
             }
-        } else if (sumType.getText().startsWith(":Union")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
             // Rule C & Rule D: Branch Tk is inferable if pairwise disjoint from all other branches
             for (int i = 0; i < innerSchemas.size(); i++) {
                 var branch = innerSchemas.get(i);
@@ -145,7 +146,7 @@ public final class StvnSumInferenceHelper {
                     }
                 }
                 if (disjointFromAll) {
-                    var branchTag = "#" + (i + 1);
+                    var branchTag = StvnVocabulary.SIGIL_VALUE + (i + 1);
                     results.add(new InferableBranch(branch, branchTag, StvnSchemaFormatter.formatCleanSchema(branch)));
                 }
             }
@@ -205,7 +206,7 @@ public final class StvnSumInferenceHelper {
     }
 
     private static boolean isBoolean(String type) {
-        return type.equals(":Boolean") || type.equals(":Bool");
+        return type.equals(StvnVocabulary.TYPE_BOOLEAN) || type.equals(":Bool");
     }
 
     private static boolean isNumeric(String type) {
@@ -214,14 +215,14 @@ public final class StvnSumInferenceHelper {
     }
 
     private static boolean isString(String type) {
-        return type.startsWith(":String") || type.startsWith(":Char") || type.startsWith(":Text");
+        return type.startsWith(StvnVocabulary.TYPE_STRING) || type.startsWith(":Char") || type.startsWith(":Text");
     }
 
     private static boolean isList(String type) {
-        return type.startsWith(":List") || type.startsWith(":Seq") || type.startsWith(":Set");
+        return type.startsWith(":List") || type.startsWith(StvnVocabulary.TYPE_SEQ) || type.startsWith(StvnVocabulary.TYPE_SET);
     }
 
     private static boolean isMap(String type) {
-        return type.startsWith(":Map");
+        return type.startsWith(StvnVocabulary.TYPE_MAP);
     }
 }

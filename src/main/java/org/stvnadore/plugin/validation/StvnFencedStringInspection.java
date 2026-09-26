@@ -41,12 +41,18 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnFencedStringInspection extends LocalInspectionTool implements CleanupLocalInspectionTool {
 
+    /**
+     * Warning message emitted when deprecated '->' arrow delimiter syntax is detected.
+     */
     public static final String RULE_STR_04_ARROW_DEPRECATION_MSG =
         "Rule STR-04 deprecation: The '->' arrow delimiter in fenced strings is deprecated; use '\"\"\"[TAG]' instead.";
 
     private static final Pattern VALID_TAG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,256}$");
     private static final Pattern DELIMITER_BOUNDARY_PATTERN = Pattern.compile("(\"\"\"(?:->)?\\[([a-zA-Z0-9_-]{1,256})\\])|(\\[([a-zA-Z0-9_-]{1,256})\\]\"\"\")");
 
+    /**
+     * Constructs a new StvnFencedStringInspection instance.
+     */
     public StvnFencedStringInspection() {}
 
     @Override
@@ -239,7 +245,15 @@ public final class StvnFencedStringInspection extends LocalInspectionTool implem
         );
     }
 
+    /**
+     * Quick-fix that removes the deprecated '->' arrow delimiter from fenced string blocks.
+     */
     public static final class RemoveDeprecatedArrowQuickFix implements LocalQuickFix, HighPriorityAction, BatchQuickFix {
+
+        /**
+         * Constructs a new RemoveDeprecatedArrowQuickFix instance.
+         */
+        public RemoveDeprecatedArrowQuickFix() {}
 
         @Override
         public @NotNull String getName() {

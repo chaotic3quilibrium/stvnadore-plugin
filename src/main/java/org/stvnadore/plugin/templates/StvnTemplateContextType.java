@@ -12,6 +12,9 @@ import org.stvnadore.plugin.StvnLanguage;
 @NullMarked
 public final class StvnTemplateContextType extends TemplateContextType {
 
+    /**
+     * Constructs a new StvnTemplateContextType instance.
+     */
     public StvnTemplateContextType() {
         super("STVN");
     }

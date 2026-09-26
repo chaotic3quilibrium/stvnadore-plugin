@@ -17,6 +17,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.utils.StvnStringCapacityUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.AtomicType;
@@ -136,20 +137,49 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
 
                 String typeName = typeElem.getText().trim();
+                // Check for obsolete 1.x compound string suffixes (e.g. :String4096, :StringFixed16)
+                if (typeName.startsWith(StvnVocabulary.TYPE_STRING) && typeName.length() > StvnVocabulary.TYPE_STRING.length()) {
+                    char nextChar = typeName.charAt(StvnVocabulary.TYPE_STRING.length());
+                    if (Character.isDigit(nextChar) || typeName.startsWith(":StringFixed") || typeName.startsWith(":StringNonEmpty")) {
+                        holder.registerProblem(
+                            typeElem,
+                            "Nominal string suffix syntax '" + typeName + "' is obsolete in 2.0.0 (ERR_COMPOUND_TYPE_OBSOLETE). Use metadata facets '{ #minSize ... #maxSize ... } :String'.",
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new ConvertObsoleteCompoundStringQuickFix(typeName)
+                        );
+                        return;
+                    }
+                }
                 if (!StvnStringCapacityUtils.isNominalStringType(typeName)) {
                     return;
                 }
 
-                OptionalInt capacityOpt;
-                try {
-                    capacityOpt = StvnStringCapacityUtils.parseCapacitySuffix(typeName);
-                } catch (Exception ignored) {
-                    // Syntax-level malformed capacity errors are handled by compiler diagnostics
-                    return;
+                // Check if enclosing type_definition has capacity facets (#maxSize, #minSize, or #size)
+                var typeDef = PsiTreeUtil.getParentOfType(typeElem, TypeDefinition.class);
+                boolean hasCapacityFacet = false;
+                int explicitCapacity = -1;
+                if (typeDef != null) {
+                    var metaMap = typeDef.getMetadataMap();
+                    if (metaMap != null) {
+                        for (var entry : metaMap.getMetadataEntryList()) {
+                            var text = entry.getText();
+                            if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                                hasCapacityFacet = true;
+                                var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                                if (intLit != null) {
+                                    try {
+                                        explicitCapacity = Integer.parseInt(intLit.getText());
+                                    } catch (Exception ignored) {}
+                                }
+                            } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                                hasCapacityFacet = true;
+                            }
+                        }
+                    }
                 }
 
-                boolean isUnadorned = capacityOpt.isEmpty();
-                boolean exceedsThreshold = capacityOpt.isPresent() && capacityOpt.getAsInt() > thresholdCapacity;
+                boolean isUnadorned = !hasCapacityFacet;
+                boolean exceedsThreshold = explicitCapacity > thresholdCapacity;
 
                 if (isUnadorned || exceedsThreshold) {
                     boolean isError = isErrorSeverity(holder);
@@ -157,9 +187,9 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     if (isUnadorned) {
                         msg = "Nominal string type '" + typeName + "' is unadorned; default capacity is "
                             + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY
-                            + " characters. Specify explicit capacity bound.";
+                            + " characters. Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
                     } else {
-                        msg = "Nominal string type '" + typeName + "' specifies capacity " + capacityOpt.getAsInt()
+                        msg = "Nominal string type '" + typeName + "' specifies capacity " + explicitCapacity
                             + ", exceeding configured threshold of " + thresholdCapacity + " characters.";
                     }
 
@@ -271,6 +301,20 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
      * @return the resolved capacity bound, or -1 if unresolvable
      */
     public static int resolveCapacityBound(SchemaType schemaType, PsiFile file) {
+        var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        if (parentDef != null && parentDef.getMetadataMap() != null) {
+            for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                var text = entry.getText();
+                if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                    var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                    if (intLit != null) {
+                        try {
+                            return Integer.parseInt(intLit.getText());
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
         var atomic = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
         if (atomic != null) {
             String typeText = atomic.getText().trim();
@@ -296,9 +340,24 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             }
             var resolved = StvnTypeReference.resolveTypeInFile(file, typeText, new HashSet<>());
             if (resolved != null) {
-                var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                if (parentDef != null && parentDef.getSchemaType() != null) {
-                    return resolveCapacityBound(parentDef.getSchemaType(), file);
+                var resolvedDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                if (resolvedDef != null) {
+                    if (resolvedDef.getMetadataMap() != null) {
+                        for (var entry : resolvedDef.getMetadataMap().getMetadataEntryList()) {
+                            var text = entry.getText();
+                            if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                                var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                                if (intLit != null) {
+                                    try {
+                                        return Integer.parseInt(intLit.getText());
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+                    }
+                    if (resolvedDef.getSchemaType() != null) {
+                        return resolveCapacityBound(resolvedDef.getSchemaType(), file);
+                    }
                 }
             }
         }
@@ -361,13 +420,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
      * @return the nominal base prefix
      */
     public static String getBaseNominalTypeName(String text) {
-        if (text.startsWith(":StringFixed")) {
-            return ":StringFixed";
-        }
-        if (text.startsWith(":StringNonEmpty")) {
-            return ":StringNonEmpty";
-        }
-        return ":String";
+        return StvnVocabulary.TYPE_STRING;
     }
 
     /**
@@ -405,9 +458,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             if (doc == null) return;
 
-            String currentText = element.getText().trim();
-            String baseName = getBaseNominalTypeName(currentText);
-            String updatedType = baseName + targetCapacity;
+            String updatedType = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + targetCapacity + " } " + StvnVocabulary.TYPE_STRING;
 
             var range = element.getTextRange();
             doc.replaceString(range.getStartOffset(), range.getEndOffset(), updatedType);
@@ -446,9 +497,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             if (doc == null) return;
 
-            String currentText = element.getText().trim();
-            String baseName = getBaseNominalTypeName(currentText);
-            String updatedType = baseName + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY;
+            String updatedType = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " } " + StvnVocabulary.TYPE_STRING;
 
             var range = element.getTextRange();
             doc.replaceString(range.getStartOffset(), range.getEndOffset(), updatedType);
@@ -537,19 +586,88 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             if (doc == null) return;
 
-            var atomicType = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
-            PsiElement targetElem = atomicType;
-            if (targetElem == null) {
-                targetElem = schemaType.getTypeKeyword();
+            var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+            if (parentDef == null && schemaType.getTypeKeyword() != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
+                if (resolved != null) {
+                    parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                }
             }
+            if (parentDef != null) {
+                var metaMap = parentDef.getMetadataMap();
+                if (metaMap != null) {
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        var text = entry.getText();
+                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                            if (intLit != null) {
+                                var range = intLit.getTextRange();
+                                doc.replaceString(range.getStartOffset(), range.getEndOffset(), String.valueOf(requiredCapacity));
+                                docManager.commitDocument(doc);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            var atomicType = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
+            PsiElement targetElem = atomicType != null ? atomicType : schemaType.getTypeKeyword();
             if (targetElem != null) {
-                String current = targetElem.getText().trim();
-                String base = getBaseNominalTypeName(current);
-                String widened = base + requiredCapacity;
+                String widened = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + requiredCapacity + " } " + StvnVocabulary.TYPE_STRING;
                 var range = targetElem.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), widened);
                 docManager.commitDocument(doc);
             }
+        }
+    }
+
+    /**
+     * QuickFix converting obsolete 1.x compound string types to 2.0.0 metadata facet syntax.
+     */
+    public static final class ConvertObsoleteCompoundStringQuickFix implements LocalQuickFix {
+        private final String obsoleteTypeName;
+
+        /**
+         * Constructs a new ConvertObsoleteCompoundStringQuickFix.
+         *
+         * @param obsoleteTypeName the obsolete nominal type name
+         */
+        public ConvertObsoleteCompoundStringQuickFix(String obsoleteTypeName) {
+            this.obsoleteTypeName = obsoleteTypeName;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            return "Convert obsolete string syntax '" + obsoleteTypeName + "' to metadata facets";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Convert obsolete compound string type to 2.0.0 metadata facets";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var docManager = PsiDocumentManager.getInstance(project);
+            var doc = file.getViewProvider().getDocument();
+            if (doc == null) return;
+
+            String digits = obsoleteTypeName.replaceAll("[^0-9]", "");
+            int cap = digits.isEmpty() ? 4096 : Integer.parseInt(digits);
+            String replacement;
+            if (obsoleteTypeName.startsWith(":StringFixed")) {
+                replacement = "{ " + StvnVocabulary.FACET_KW_SIZE + " " + cap + " } " + StvnVocabulary.TYPE_STRING;
+            } else {
+                replacement = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + cap + " } " + StvnVocabulary.TYPE_STRING;
+            }
+
+            var range = element.getTextRange();
+            doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacement);
+            docManager.commitDocument(doc);
         }
     }
 }

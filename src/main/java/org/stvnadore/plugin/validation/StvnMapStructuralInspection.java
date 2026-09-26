@@ -9,6 +9,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
@@ -109,7 +110,7 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                 var firstChild = coll.getFirstChild();
                 if (firstChild != null) {
                     var text = firstChild.getText();
-                    return text.equals(":Map");
+                    return text.equals(StvnVocabulary.TYPE_MAP);
                 }
             }
         }

@@ -18,6 +18,11 @@ import org.stvnadore.psi.Value;
 @NullMarked
 public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
 
+    /**
+     * Constructs a hints collector for the specified editor.
+     *
+     * @param editor the active text editor
+     */
     public StvnInlayHintsCollector(Editor editor) {
         super(editor);
     }

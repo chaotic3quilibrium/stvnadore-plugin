@@ -24,6 +24,12 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegate {
 
+    /**
+     * Constructs a new StvnEnterInFencedStringHandler instance.
+     */
+    public StvnEnterInFencedStringHandler() {
+    }
+
     private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"(->)?\\[([a-zA-Z0-9_-]{1,256})\\][ \t]*$");
     private static final Pattern BARE_BLOCK_PATTERN = Pattern.compile("^.*\"\"\"[ \t]*$");
 

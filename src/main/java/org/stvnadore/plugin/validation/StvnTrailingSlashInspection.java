@@ -15,6 +15,12 @@ import org.stvnadore.psi.Visitor;
 @NullMarked
 public final class StvnTrailingSlashInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnTrailingSlashInspection instance.
+     */
+    public StvnTrailingSlashInspection() {
+    }
+
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {

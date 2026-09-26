@@ -23,6 +23,7 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -40,12 +41,38 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
 
+    /**
+     * Constructs a new StvnExternalAnnotator instance.
+     */
+    public StvnExternalAnnotator() {
+    }
+
+    /**
+     * Document context information collected on the EDT for background annotation.
+     *
+     * @param text document text content
+     * @param path physical or virtual file path
+     * @param virtualFile underlying virtual file
+     * @param project active project context
+     */
     public record CollectedInfo(String text, String path, VirtualFile virtualFile, @Nullable Project project) {
+        /**
+         * Constructs a CollectedInfo instance without an explicit project context.
+         *
+         * @param text document text content
+         * @param path physical or virtual file path
+         * @param virtualFile underlying virtual file
+         */
         public CollectedInfo(String text, String path, VirtualFile virtualFile) {
             this(text, path, virtualFile, null);
         }
     }
 
+    /**
+     * Annotation result encapsulating compiler diagnostics.
+     *
+     * @param diagnostics list of compiler diagnostics
+     */
     public record AnnotationResult(List<StvnDiagnostic> diagnostics) {}
 
     @Override
@@ -106,10 +133,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 for (var diag : activeErrorDiagnostics) {
                     var line = Math.max(0, diag.line() - 1);
                     var col = Math.max(0, diag.column());
-                    var diagMsg = diag.message();
-                    if (diagMsg.contains("token recognition error at: '#'")) {
-                        diagMsg = "Incomplete variant tag '#'";
-                    }
+                    var diagMsg = sanitizeCompilerJargon(diag.message());
                     var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
                     if (problem != null) {
                         problems.add(problem);
@@ -144,14 +168,19 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         // 3. Render annotations in AnnotationHolder for all active diagnostics
         for (var diag : activeDiagnostics) {
-            var message = diag.message();
+            var message = sanitizeCompilerJargon(diag.message());
             var severity = mapSeverity(diag.severity());
             var start = diag.startOffset();
             var end = diag.endOffset();
 
-            // Intercept raw ANTLR lexer token recognition error on bare '#' and sanitize to domain terminology
-            if (message.contains("token recognition error at: '#'")) {
-                message = "Incomplete variant tag '#'";
+            boolean isBareSigil = (diag.errorCode().isPresent() && ("ERR_BARE_COLON_PROHIBITED".equals(diag.errorCode().get()) || "ERR_BARE_HASH_PROHIBITED".equals(diag.errorCode().get())))
+                    || message.contains("ERR_BARE_COLON_PROHIBITED") || message.contains("ERR_BARE_HASH_PROHIBITED")
+                    || message.contains("trap7") || message.contains("trap6");
+
+            if (isBareSigil) {
+                if (start >= 0 && start < textLength) {
+                    end = start + 1;
+                }
             }
 
             if (diag.errorCode().isPresent() && diag.errorCode().get().equals("DUPLICATE_MAP_KEY") && start >= 0 && end > start && end <= textLength) {
@@ -179,7 +208,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
 
             // 1. Direct Coordinate Range Highlighting with Defensive Clamping
-            // startOffset and endOffset from stvnadore-core:1.3.1 are 0-based half-open [start, end)
+            // startOffset and endOffset from stvnadore-core:2.0.0 are 0-based half-open [start, end)
             if (start >= 0 && end >= start) {
                 var s = Math.max(0, Math.min(start, textLength));
                 var e = Math.max(s, Math.min(end, textLength));
@@ -194,14 +223,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
                 if (s < e) {
                     var range = new TextRange(s, e);
-                    range = expandEmptyCompositeRange(file, range, message);
-                    var clamped = clampToOffendingChildIfContainer(file, range, message);
-                    if (clamped != null) {
-                        range = clamped;
-                    }
-                    var clampedTypeDef = clampToOffendingChildIfTypeDef(file, range, message);
-                    if (clampedTypeDef != null) {
-                        range = clampedTypeDef;
+                    if (!isBareSigil) {
+                        range = expandEmptyCompositeRange(file, range, message);
+                        var clampedTypeDef = clampToOffendingChildIfTypeDef(file, range, message);
+                        if (clampedTypeDef != null) {
+                            range = clampedTypeDef;
+                        }
                     }
                     var annotationBuilder = holder.newAnnotation(severity, message)
                           .range(range);
@@ -224,7 +251,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                                 if (constructor != null && constructor.getSumType() != null) {
                                     var sumType = constructor.getSumType();
                                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                    if (sumType.getText().startsWith(":Either")) {
+                                    if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                                         // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
                                         if (innerSchemas.size() >= 2) {
                                             var rightBranch = innerSchemas.get(1);
@@ -234,7 +261,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                                             annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH));
                                             annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
                                         }
-                                    } else if (sumType.getText().startsWith(":Union")) {
+                                    } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                                         for (int i = 0; i < innerSchemas.size(); i++) {
                                             var branch = innerSchemas.get(i);
                                             var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
@@ -416,10 +443,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var isMatch = false;
                     SchemaType targetSchema = null;
 
-                    if (message.contains("Set elements") && (tokenText.equals(":Set") || tokenText.equals(":SetNonEmpty"))) {
+                    if (message.contains("Set elements") && (tokenText.equals(StvnVocabulary.TYPE_SET) || tokenText.equals(":SetNonEmpty"))) {
                         targetSchema = innerSchemas.get(0);
                         isMatch = (targetSchema != null);
-                    } else if (message.contains("Map keys") && (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty"))) {
+                    } else if (message.contains("Map keys") && (tokenText.equals(StvnVocabulary.TYPE_MAP) || tokenText.equals(":MapNonEmpty"))) {
                         targetSchema = innerSchemas.get(0);
                         isMatch = (targetSchema != null);
                     } else if (message.contains("Inverted map values") && (tokenText.contains("MapInv"))) {
@@ -693,7 +720,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
             if (ctor != null && ctor.getSumType() != null) {
                 var sumType = ctor.getSumType();
-                if (sumType.getText().startsWith(":Union")) {
+                if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                     var inner = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     int matchCount = 0;
                     var expUnion = child.getExplicitUnionValue();
@@ -736,15 +763,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
-    /**
-     * Defanged container clamping heuristic.
-     * Diagnostic coordinates emitted by stvnadore-core:1.3.1 are authoritative.
-     * Container diagnostics must never divert or clamp onto earlier valid child elements.
-     */
-    private static @Nullable TextRange clampToOffendingChildIfContainer(PsiFile file, TextRange range, String message) {
-        return null;
-    }
-
     private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
         if (d.message().contains("mismatched input") && d.message().contains("expecting ')'")) {
             for (var other : allDiagnostics) {
@@ -755,79 +773,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
         return false;
-    }
-
-    private static @Nullable TextRange clampToOffendingChildIfTypeDef(PsiFile file, TextRange range, String message) {
-        if (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix")) {
-            var colonIdx = message.lastIndexOf(": ");
-            if (colonIdx >= 0) {
-                var baseTypeToken = message.substring(colonIdx + 2).trim();
-                var atomicTypes = PsiTreeUtil.findChildrenOfType(file, AtomicType.class);
-                for (var elem : atomicTypes) {
-                    var text = elem.getText();
-                    if (text.equals(baseTypeToken)) {
-                        var elemRange = elem.getTextRange();
-                        if (range.contains(elemRange) || elemRange.contains(range) || range.intersects(elemRange)) {
-                            var suffixOffset = getSuffixOffset(baseTypeToken);
-                            if (suffixOffset > 0 && suffixOffset < text.length()) {
-                                return new TextRange(elemRange.getStartOffset() + suffixOffset, elemRange.getEndOffset());
-                            }
-                            return elemRange;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (message.contains("require types to be #equatable #TRUE")) {
-            var collections = PsiTreeUtil.findChildrenOfType(file, CollectionType.class);
-            for (var coll : collections) {
-                var cr = coll.getTextRange();
-                if (range.contains(cr) || cr.contains(range) || range.intersects(cr)) {
-                    var firstChild = coll.getFirstChild();
-                    if (firstChild == null) continue;
-                    var tokenText = firstChild.getText();
-                    var innerSchemas = coll.getSchemaTypeList();
-                    if (innerSchemas.isEmpty()) continue;
-
-                    if (message.contains("Set elements") && (tokenText.equals(":Set") || tokenText.equals(":SetNonEmpty"))) {
-                        var targetSchema = innerSchemas.get(0);
-                        if (targetSchema != null) return targetSchema.getTextRange();
-                    } else if (message.contains("Map keys") && (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty"))) {
-                        var targetSchema = innerSchemas.get(0);
-                        if (targetSchema != null) return targetSchema.getTextRange();
-                    } else if (message.contains("Inverted map values") && tokenText.contains("MapInv")) {
-                        if (innerSchemas.size() >= 2) {
-                            var targetSchema = innerSchemas.get(1);
-                            if (targetSchema != null) return targetSchema.getTextRange();
-                        }
-                    }
-                }
-            }
-        }
-
-        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var typeDef : typeDefs) {
-            var tr = typeDef.getTextRange();
-            if (tr.contains(range) || range.contains(tr)) {
-                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
-                    var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
-                    var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                    var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
-                    if (!typeName.startsWith(":")) {
-                        typeName = ":" + typeName;
-                    }
-                    var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
-                    for (var typeKw : typeKeywords) {
-                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
-                        if (!isLhs && typeKw.getText().equals(typeName)) {
-                            return typeKw.getTextRange();
-                        }
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     private static HighlightSeverity mapSeverity(DiagnosticSeverity severity) {
@@ -871,16 +816,121 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     private static int getSuffixOffset(String baseTypeToken) {
         if (baseTypeToken.startsWith(":StringFixed")) return 12;
         if (baseTypeToken.startsWith(":StringNonEmpty")) return 15;
-        if (baseTypeToken.startsWith(":String")) return 7;
+        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_STRING)) return 7;
         if (baseTypeToken.startsWith(":Uint")) return 5;
-        if (baseTypeToken.startsWith(":Int")) return 4;
-        if (baseTypeToken.startsWith(":Float")) return 6;
+        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_INT)) return 4;
+        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_FLOAT)) return 6;
         return 0;
+    }
+
+    /**
+     * Translates raw ANTLR or compiler generator error strings into clean domain concepts.
+     *
+     * @param raw the raw compiler diagnostic message
+     * @return sanitized user-facing error message
+     */
+    public static String sanitizeCompilerJargon(String raw) {
+        if (raw.contains("token recognition error at: '#'")) {
+            return "Incomplete variant tag '#'";
+        }
+        if (raw.contains("token recognition error at: ':'")) {
+            return "Incomplete type sigil ':'";
+        }
+        if (raw.startsWith("no viable alternative at input")) {
+            return raw.replace("no viable alternative at input", "Syntax error at");
+        }
+        return raw;
+    }
+
+    /**
+     * Clamps a wide diagnostic range on a type definition down to the specific offending child element.
+     *
+     * @param file the containing PSI file
+     * @param range the original diagnostic range
+     * @param message the diagnostic message
+     * @return the clamped text range, or null if no clamping applies
+     */
+    private static @Nullable TextRange clampToOffendingChildIfTypeDef(PsiFile file, TextRange range, String message) {
+        if (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix")) {
+            var colonIdx = message.lastIndexOf(": ");
+            if (colonIdx >= 0) {
+                var baseTypeToken = message.substring(colonIdx + 2).trim();
+                var atomicTypes = PsiTreeUtil.findChildrenOfType(file, AtomicType.class);
+                for (var elem : atomicTypes) {
+                    var text = elem.getText();
+                    if (text.equals(baseTypeToken)) {
+                        var elemRange = elem.getTextRange();
+                        if (range.contains(elemRange) || elemRange.contains(range) || range.intersects(elemRange)) {
+                            var suffixOffset = getSuffixOffset(baseTypeToken);
+                            if (suffixOffset > 0 && suffixOffset < text.length()) {
+                                return new TextRange(elemRange.getStartOffset() + suffixOffset, elemRange.getEndOffset());
+                            }
+                            return elemRange;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (message.contains("require types to be #equatable #TRUE")) {
+            var collections = PsiTreeUtil.findChildrenOfType(file, CollectionType.class);
+            for (var coll : collections) {
+                var cr = coll.getTextRange();
+                if (range.contains(cr) || cr.contains(range) || range.intersects(cr)) {
+                    var firstChild = coll.getFirstChild();
+                    if (firstChild == null) continue;
+                    var tokenText = firstChild.getText();
+                    var innerSchemas = coll.getSchemaTypeList();
+                    if (innerSchemas.isEmpty()) continue;
+
+                    if (message.contains("Set elements") && (tokenText.equals(StvnVocabulary.TYPE_SET) || tokenText.equals(":SetNonEmpty"))) {
+                        var targetSchema = innerSchemas.get(0);
+                        if (targetSchema != null) return targetSchema.getTextRange();
+                    } else if (message.contains("Map keys") && (tokenText.equals(StvnVocabulary.TYPE_MAP) || tokenText.equals(":MapNonEmpty"))) {
+                        var targetSchema = innerSchemas.get(0);
+                        if (targetSchema != null) return targetSchema.getTextRange();
+                    } else if (message.contains("Inverted map values") && tokenText.contains("MapInv")) {
+                        if (innerSchemas.size() >= 2) {
+                            var targetSchema = innerSchemas.get(1);
+                            if (targetSchema != null) return targetSchema.getTextRange();
+                        }
+                    }
+                }
+            }
+        }
+
+        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var typeDef : typeDefs) {
+            var tr = typeDef.getTextRange();
+            if (tr.contains(range) || range.contains(tr)) {
+                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
+                    var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
+                    var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
+                    var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
+                    if (!typeName.startsWith(":")) {
+                        typeName = ":" + typeName;
+                    }
+                    var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
+                    for (var typeKw : typeKeywords) {
+                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
+                        if (!isLhs && typeKw.getText().equals(typeName)) {
+                            return typeKw.getTextRange();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
      * Expands a pinpoint diagnostic range anchored on empty parentheses '()' or brackets '[]'
      * backwards to encompass the enclosing composite keyword token (:Tuple, :Union, :Option, :Either, :Enum, etc.).
+     *
+     * @param file the containing PSI file
+     * @param range the original diagnostic range
+     * @param message the diagnostic message
+     * @return the expanded or original text range
      */
     private static TextRange expandEmptyCompositeRange(PsiFile file, TextRange range, String message) {
         var text = file.getText();
@@ -890,39 +940,35 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
 
         var start = Math.max(0, Math.min(range.getStartOffset(), textLength));
-        var end = Math.max(start, Math.min(range.getEndOffset(), textLength));
 
         // 1. PSI AST Node Context Inspection
         var element = file.findElementAt(start);
         if (element != null) {
-            // ProductType (:Tuple)
             var product = PsiTreeUtil.getParentOfType(element, ProductType.class);
             if (product != null) {
                 var productText = product.getText();
-                if (productText.startsWith(":Tuple") && product.getSchemaTypeList().isEmpty()) {
+                if (productText.startsWith(StvnVocabulary.TYPE_TUPLE) && product.getSchemaTypeList().isEmpty()) {
                     return product.getTextRange();
                 }
             }
 
-            // SumType (:Union, :Enum, :Option, :Either)
             var sum = PsiTreeUtil.getParentOfType(element, SumType.class);
             if (sum != null) {
                 var sumText = sum.getText();
                 if (sum.getEnumDef() != null && sum.getEnumDef().getValueKeywordList().isEmpty()) {
                     return sum.getTextRange();
                 }
-                if (sumText.startsWith(":Union") && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
+                if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
                     return sum.getTextRange();
                 }
-                if (sumText.startsWith(":Option") && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
+                if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
                     return sum.getTextRange();
                 }
-                if (sumText.startsWith(":Either") && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
+                if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
                     return sum.getTextRange();
                 }
             }
 
-            // CollectionType (:Seq, :Set, :Map, etc.)
             var coll = PsiTreeUtil.getParentOfType(element, CollectionType.class);
             if (coll != null && coll.getSchemaTypeList().isEmpty()) {
                 return coll.getTextRange();
@@ -1016,10 +1062,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     private static boolean isKnownCompositeKeyword(String kw) {
-        return kw.equals(":Tuple") || kw.equals(":Union") || kw.equals(":Enum") ||
-               kw.equals(":Option") || kw.equals(":Either") || kw.equals(":Seq") ||
-               kw.equals(":SeqNonEmpty") || kw.equals(":Set") || kw.equals(":SetNonEmpty") ||
-               kw.equals(":Map") || kw.equals(":MapNonEmpty") || kw.equals(":MapInv") ||
+        return kw.equals(StvnVocabulary.TYPE_TUPLE) || kw.equals(StvnVocabulary.TYPE_UNION) || kw.equals(StvnVocabulary.TYPE_ENUM) ||
+               kw.equals(StvnVocabulary.TYPE_OPTION) || kw.equals(StvnVocabulary.TYPE_EITHER) || kw.equals(StvnVocabulary.TYPE_SEQ) ||
+               kw.equals(":SeqNonEmpty") || kw.equals(StvnVocabulary.TYPE_SET) || kw.equals(":SetNonEmpty") ||
+               kw.equals(StvnVocabulary.TYPE_MAP) || kw.equals(":MapNonEmpty") || kw.equals(":MapInv") ||
                kw.equals(":MapInvNonEmpty");
     }
 
@@ -1047,7 +1093,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (constructor != null && constructor.getSumType() != null) {
                         var sumType = constructor.getSumType();
                         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                        if (sumType.getText().startsWith(":Either")) {
+                        if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                             // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
                             if (innerSchemas.size() >= 2) {
                                 var rightBranch = innerSchemas.get(1);
@@ -1057,7 +1103,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                                 annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH));
                                 annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
                             }
-                        } else if (sumType.getText().startsWith(":Union")) {
+                        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                             for (int i = 0; i < innerSchemas.size(); i++) {
                                 var branch = innerSchemas.get(i);
                                 if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {

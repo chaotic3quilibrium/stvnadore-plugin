@@ -23,10 +23,25 @@ public final class WrapSumVariantQuickFix extends LocalQuickFixAndIntentionActio
     private final String targetTypeName;
     private final Priority priority;
 
+    /**
+     * Constructs a quick fix to wrap an untagged literal with a variant tag.
+     *
+     * @param element the PSI element to wrap
+     * @param tagText the constructor tag text (e.g., #Right)
+     * @param targetTypeName the target type name
+     */
     public WrapSumVariantQuickFix(PsiElement element, String tagText, String targetTypeName) {
         this(element, tagText, targetTypeName, Priority.NORMAL);
     }
 
+    /**
+     * Constructs a quick fix to wrap an untagged literal with a variant tag and specific priority.
+     *
+     * @param element the PSI element to wrap
+     * @param tagText the constructor tag text
+     * @param targetTypeName the target type name
+     * @param priority the quick fix priority
+     */
     public WrapSumVariantQuickFix(PsiElement element, String tagText, String targetTypeName, Priority priority) {
         super(element);
         this.tagText = tagText;

@@ -21,6 +21,12 @@ import java.util.Collection;
 @NullMarked
 public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProcessor {
 
+    /**
+     * Constructs a new StvnMetadataOrderPreFormatProcessor instance.
+     */
+    public StvnMetadataOrderPreFormatProcessor() {
+    }
+
     @Override
     public @NotNull TextRange process(@NotNull ASTNode element, @NotNull TextRange range) {
         PsiElement psi = element.getPsi();

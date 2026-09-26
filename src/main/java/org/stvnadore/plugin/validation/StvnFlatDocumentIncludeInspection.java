@@ -18,6 +18,12 @@ import org.stvnadore.psi.Visitor;
 @NullMarked
 public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnFlatDocumentIncludeInspection instance.
+     */
+    public StvnFlatDocumentIncludeInspection() {
+    }
+
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {

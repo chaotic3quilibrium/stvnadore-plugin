@@ -20,8 +20,17 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Action that flattens modular STVN schemas into hermetic self-contained flat representations.
+ */
 @NullMarked
 public final class StvnFlattenWorkspaceAction extends AnAction {
+
+    /**
+     * Constructs a new StvnFlattenWorkspaceAction instance.
+     */
+    public StvnFlattenWorkspaceAction() {
+    }
 
     @Override
     public void actionPerformed(AnActionEvent e) {

@@ -30,6 +30,12 @@ import java.util.Map;
 @NullMarked
 public final class PublishSchemaAction extends AnAction {
 
+    /**
+     * Constructs a new PublishSchemaAction instance.
+     */
+    public PublishSchemaAction() {
+    }
+
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();

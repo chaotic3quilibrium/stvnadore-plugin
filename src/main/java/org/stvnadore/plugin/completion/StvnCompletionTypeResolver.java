@@ -4,6 +4,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -46,6 +47,10 @@ public final class StvnCompletionTypeResolver {
 
     /**
      * Narrow a sum type schema by a single discriminator tag.
+     *
+     * @param schema the sum type schema to inspect
+     * @param tagText the constructor tag literal (e.g., #Some, #Right, #1)
+     * @return the narrowed schema type for the branch, or {@code null} if unit or invalid
      */
     public static @Nullable SchemaType narrowTypeByTag(SchemaType schema, String tagText) {
         var resolvedNominal = StvnTypeResolver.resolveNominalSchema(schema);
@@ -58,7 +63,7 @@ public final class StvnCompletionTypeResolver {
         var sumType = constructor.getSumType();
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
 
-        if (sumType.getText().startsWith(":Option")) {
+        if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
             if ("#Some".equals(tagText) || "#S".equals(tagText)) {
                 return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
             }
@@ -71,14 +76,14 @@ public final class StvnCompletionTypeResolver {
                 return narrowTypeByTag(innerSchemas.get(0), tagText);
             }
             return null;
-        } else if (sumType.getText().startsWith(":Either")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
             if ("#Left".equals(tagText) || "#L".equals(tagText)) {
                 return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
             } else if ("#Right".equals(tagText) || "#R".equals(tagText)) {
                 return innerSchemas.size() > 1 ? innerSchemas.get(1) : null;
             }
             return null;
-        } else if (sumType.getText().startsWith(":Union")) {
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
             if (tagText.startsWith("#")) {
                 var branchSpec = tagText.substring(1);
                 if (branchSpec.matches("\\d+")) {

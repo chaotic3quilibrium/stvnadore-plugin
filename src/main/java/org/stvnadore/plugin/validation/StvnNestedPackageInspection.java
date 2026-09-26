@@ -15,6 +15,12 @@ import org.stvnadore.psi.Visitor;
 @NullMarked
 public final class StvnNestedPackageInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new StvnNestedPackageInspection instance.
+     */
+    public StvnNestedPackageInspection() {
+    }
+
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {

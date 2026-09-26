@@ -18,6 +18,12 @@ import org.jspecify.annotations.Nullable;
 public final class StvnSettings implements PersistentStateComponent<StvnSettings.State> {
 
     /**
+     * Constructs a new StvnSettings instance.
+     */
+    public StvnSettings() {
+    }
+
+    /**
      * Multiline string enter-key auto-closing delimiter placement options.
      */
     public enum BlockStringEnterStyle {
@@ -31,6 +37,11 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
      * Serializable persistent state properties.
      */
     public static final class State {
+        /**
+         * Constructs a new State instance with default editor settings.
+         */
+        public State() {
+        }
         /** If true, uses long-form sum type formatting. */
         public boolean useLongFormSumTypes = true;
         /** Multiline string auto-closing delimiter shape. */

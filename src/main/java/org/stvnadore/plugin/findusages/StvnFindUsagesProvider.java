@@ -15,8 +15,17 @@ import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.ValueKeyword;
 
+/**
+ * Provides Find Usages support for STVN type definitions, constants, and module aliases.
+ */
 @NullMarked
 public final class StvnFindUsagesProvider implements FindUsagesProvider {
+
+    /**
+     * Constructs a new StvnFindUsagesProvider instance.
+     */
+    public StvnFindUsagesProvider() {
+    }
 
     @Override
     public @Nullable WordsScanner getWordsScanner() {

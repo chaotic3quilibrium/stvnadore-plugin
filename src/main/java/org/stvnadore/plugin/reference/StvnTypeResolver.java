@@ -14,6 +14,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnAnalysisResult;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.ir.VariantStep;
 import org.stvnadore.core.validation.ResolvedType;
@@ -28,8 +29,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 
+/**
+ * Resolves static and semantic types, type aliases, sum type branches, and core values for STVN PSI elements.
+ */
 @NullMarked
 public final class StvnTypeResolver {
+
+    private StvnTypeResolver() {
+    }
 
     private static final Key<CachedValue<java.util.Map<Integer, StvnValue>>> CORE_VALUES_KEY =
         Key.create("org.stvnadore.plugin.CORE_VALUES");
@@ -43,6 +50,12 @@ public final class StvnTypeResolver {
     private static final java.util.regex.Pattern EXPLICIT_UNION_TAG_PATTERN =
         java.util.regex.Pattern.compile("^#[1-9][0-9]*(\\s+|$)");
 
+    /**
+     * Returns cached compiler diagnostics for the given STVN PSI file.
+     *
+     * @param file the PSI file to compile and inspect
+     * @return list of diagnostics, or {@code null} if file is null
+     */
     public static @Nullable List<org.stvnadore.core.StvnDiagnostic> getCompilationDiagnostics(@Nullable PsiFile file) {
         if (file == null) {
             return null;
@@ -65,6 +78,12 @@ public final class StvnTypeResolver {
         }, false);
     }
 
+    /**
+     * Determines whether the specified schema type represents a degraded nominal alias.
+     *
+     * @param schemaType the schema type to test
+     * @return {@code true} if degraded, {@code false} otherwise
+     */
     public static boolean isDegradedSchema(@Nullable SchemaType schemaType) {
         if (schemaType == null) return false;
         var kw = schemaType.getTypeKeyword();
@@ -74,6 +93,13 @@ public final class StvnTypeResolver {
         return false;
     }
 
+    /**
+     * Determines whether the specified nominal alias name refers to a degraded schema definition.
+     *
+     * @param file the containing PSI file
+     * @param aliasName the nominal alias identifier to test
+     * @return {@code true} if degraded, {@code false} otherwise
+     */
     public static boolean isDegradedNominalAlias(@Nullable PsiFile file, @Nullable String aliasName) {
         if (file == null || aliasName == null || aliasName.isEmpty()) {
             return false;
@@ -202,6 +228,12 @@ public final class StvnTypeResolver {
         return null;
     }
 
+    /**
+     * Resolves the corresponding core IR representation for the specified PSI element.
+     *
+     * @param value the PSI element to resolve
+     * @return the resolved StvnValue IR node, or {@code null} if unresolvable
+     */
     public static @Nullable StvnValue resolveCoreValue(PsiElement value) {
         var file = value.getContainingFile();
         if (file == null) {
@@ -256,25 +288,42 @@ public final class StvnTypeResolver {
         }
     }
 
+    /**
+     * Encapsulates a resolved schema type alongside its formatted human-readable label.
+     */
     public static final class ResolvedTypeInfo {
         private final SchemaType schema;
         private final String label;
 
+        /**
+         * Constructs a ResolvedTypeInfo instance.
+         *
+         * @param schema the underlying schema type PSI element
+         * @param label the formatted type label
+         */
         public ResolvedTypeInfo(SchemaType schema, String label) {
             this.schema = schema;
             this.label = label;
         }
 
+        /**
+         * Returns the underlying schema type PSI element.
+         *
+         * @return the schema type
+         */
         public SchemaType getSchema() {
             return schema;
         }
 
+        /**
+         * Returns the formatted human-readable label.
+         *
+         * @return the type label
+         */
         public String getLabel() {
             return label;
         }
     }
-
-    private StvnTypeResolver() {}
 
     private static String getLabelForSchema(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema schema, PsiFile containingFile) {
         if (schema.aliasName().isPresent()) {
@@ -296,6 +345,12 @@ public final class StvnTypeResolver {
         return "";
     }
 
+    /**
+     * Resolves the string type representation of a value element.
+     *
+     * @param value the PSI value element
+     * @return the resolved type representation, or null if resolution fails
+     */
     public static @Nullable String resolveValueType(Value value) {
         var resolvedNode = resolveCoreValue(value);
         if (resolvedNode != null && !(resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError)) {
@@ -471,10 +526,26 @@ public final class StvnTypeResolver {
         return getLabelForSchema(baseSchema, file);
     }
 
+    /**
+     * Categorizes algebraic sum type constructors.
+     */
     public enum SumKind {
-        OPTION, EITHER, UNION
+        /** Option type constructor (#Some / #None). */
+        OPTION,
+        /** Either type constructor (#Left / #Right). */
+        EITHER,
+        /** Indexed union constructor (#1, #2, etc.). */
+        UNION
     }
 
+    /**
+     * Describes an individual nesting level within an algebraic sum hierarchy.
+     *
+     * @param kind the algebraic sum kind
+     * @param canonicalTag the canonical tag string for the variant
+     * @param validExplicitTokens the set of accepted explicit tokens for this variant
+     * @param isTerminalNone whether this level represents a terminal none/empty branch
+     */
     public record SumLevelDescriptor(
         SumKind kind,
         String canonicalTag,
@@ -669,6 +740,14 @@ public final class StvnTypeResolver {
         return "";
     }
 
+    /**
+     * Resolves the PSI SchemaType for a specific tagged branch of a nominal union alias.
+     *
+     * @param file the containing PSI file
+     * @param alias the nominal union alias identifier
+     * @param tagIndex the 0-based index of the union branch
+     * @return the resolved branch SchemaType, or {@code null} if out of bounds or unresolvable
+     */
     public static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
         if (kw == null && alias.contains("/")) {
@@ -691,6 +770,13 @@ public final class StvnTypeResolver {
         return null;
     }
 
+    /**
+     * Resolves the inner value SchemaType for a nominal option alias.
+     *
+     * @param file the containing PSI file
+     * @param alias the nominal option alias identifier
+     * @return the resolved inner SchemaType, or {@code null} if unresolvable
+     */
     public static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
         if (kw == null && alias.contains("/")) {
@@ -713,6 +799,14 @@ public final class StvnTypeResolver {
         return null;
     }
 
+    /**
+     * Resolves the left or right branch SchemaType for a nominal either alias.
+     *
+     * @param file the containing PSI file
+     * @param alias the nominal either alias identifier
+     * @param isRight {@code true} for the right branch, {@code false} for the left branch
+     * @return the resolved branch SchemaType, or {@code null} if unresolvable
+     */
     public static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
         var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
         if (kw == null && alias.contains("/")) {
@@ -983,11 +1077,24 @@ public final class StvnTypeResolver {
         return StvnSchemaFormatter.formatCleanSchema(branchSchema);
     }
 
+    /**
+     * Checks whether long-form sum type syntax is enabled in the project settings.
+     *
+     * @param project the IntelliJ project
+     * @return true if long-form sum type formatting is enabled, false otherwise
+     */
     public static boolean useLongFormSumTypes(com.intellij.openapi.project.Project project) {
         var settings = StvnSettings.getInstance(project);
         return settings != null && settings.getState().useLongFormSumTypes;
     }
 
+    /**
+     * Determines whether a PSI value element conforms to the structure of the specified schema type.
+     *
+     * @param value the PSI value element to test
+     * @param schema the expected schema type
+     * @return {@code true} if the value matches the schema pattern, {@code false} otherwise
+     */
     public static boolean matchesSchemaPattern(@Nullable Value value, SchemaType schema) {
         if (value == null) {
             return false;
@@ -995,38 +1102,36 @@ public final class StvnTypeResolver {
         var resolved = resolveNominalSchema(schema);
         var schemaToInspect = (resolved != null) ? resolved : schema;
         var text = StvnSchemaFormatter.formatCleanSchema(schemaToInspect);
-        if (text.startsWith(":Int") || text.startsWith(":Uint") || text.startsWith(":TimeEpoch")) {
+        if (text.startsWith(StvnVocabulary.TYPE_INT) || text.startsWith(StvnVocabulary.TYPE_TIME_EPOCH)) {
             return value.getIntegerLiteral() != null;
         }
-        if (text.startsWith(":Float")) {
+        if (text.startsWith(StvnVocabulary.TYPE_FLOAT)) {
             return value.getFloatLiteral() != null;
         }
-        if (text.startsWith(":String") ||
-            text.equals(":DateTime") ||
+        if (text.startsWith(StvnVocabulary.TYPE_STRING) ||
+            text.equals(StvnVocabulary.TYPE_DATE_TIME) ||
             text.equals(":DateTimeOffset") ||
             text.equals(":DateTimeZoned") ||
             text.equals(":DateTimeAudited")) {
             return value.getStringLiteral() != null;
         }
-        if (text.equals(":Boolean")) {
-            return value.getBooleanValue() != null || 
-                   value.getText().equals("#TRUE") || value.getText().equals("#FALSE") ||
-                   value.getText().equals("#T") || value.getText().equals("#F");
+        if (text.equals(StvnVocabulary.TYPE_BOOLEAN)) {
+            return value.getBooleanValue() != null || StvnVocabulary.BOOLEAN_KEYWORDS.contains(value.getText());
         }
-        if (text.startsWith(":Tuple")) {
+        if (text.startsWith(StvnVocabulary.TYPE_TUPLE)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getTupleLiteral() != null;
         }
-        if (text.startsWith(":Seq") || text.startsWith(":Set")) {
+        if (text.startsWith(StvnVocabulary.TYPE_SEQ) || text.startsWith(StvnVocabulary.TYPE_SET)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getListLiteral() != null;
         }
-        if (text.startsWith(":Map")) {
+        if (text.startsWith(StvnVocabulary.TYPE_MAP)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getMapLiteral() != null;
         }
-        if (text.startsWith(":Option")) {
-            if (value.getExplicitOptionValue() != null || value.getText().equals("#None") || value.getText().equals("#N")) {
+        if (text.startsWith(StvnVocabulary.TYPE_OPTION)) {
+            if (value.getExplicitOptionValue() != null || value.getText().equals(StvnVocabulary.VAL_NONE) || value.getText().equals(StvnVocabulary.VAL_NONE_SHORT)) {
                 return true;
             }
             var constructor = schemaToInspect.getSchemaConstructor();
@@ -1038,7 +1143,7 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (text.startsWith(":Either")) {
+        if (text.startsWith(StvnVocabulary.TYPE_EITHER)) {
             if (value.getExplicitEitherValue() != null) {
                 return true;
             }
@@ -1051,12 +1156,12 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (text.startsWith(":Union")) {
+        if (text.startsWith(StvnVocabulary.TYPE_UNION)) {
             if (value.getExplicitUnionValue() != null) {
                 var expUnion = value.getExplicitUnionValue();
                 var tagElem = expUnion.getUnionTagPrefix();
                 var tagText = tagElem.getText().trim();
-                if (tagText.startsWith("#")) {
+                if (tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                     try {
                         int k = Integer.parseInt(tagText.substring(1));
                         var constructor = schemaToInspect.getSchemaConstructor();
@@ -1108,6 +1213,12 @@ public final class StvnTypeResolver {
         return "#" + text;
     }
 
+    /**
+     * Resolves the base schema type info and human-readable label for a value element inside a body entry.
+     *
+     * @param element the PSI value element to resolve
+     * @return the resolved type info, or {@code null} if unresolvable
+     */
     public static @Nullable ResolvedTypeInfo resolveBaseTypeInfo(Value element) {
         var bodyEntry = findBodyEntryParent(element);
         if (bodyEntry == null) {
@@ -1226,8 +1337,7 @@ public final class StvnTypeResolver {
                     var firstChild = collection.getFirstChild();
                     if (firstChild != null) {
                         var tokenText = firstChild.getText();
-                        if (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty") ||
-                            tokenText.equals(":MapInv") || tokenText.equals(":MapInvNonEmpty")) {
+                        if (tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                             // Exclusively validate, do not advance or mutate currentSchema pointer.
                         } else {
                             currentSchema = null;
@@ -1335,6 +1445,12 @@ public final class StvnTypeResolver {
         return null;
     }
 
+    /**
+     * Resolves the immediate nominal schema without recursively collapsing aliases into underlying primitives.
+     *
+     * @param schemaType the schema type to inspect
+     * @return the resolved nominal schema type, or null if schemaType is null
+     */
     public static @Nullable SchemaType resolveNominalSchema(@Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return null;
@@ -1392,6 +1508,12 @@ public final class StvnTypeResolver {
         return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
     }
 
+    /**
+     * Resolves the enum subset declaration from a type definition.
+     *
+     * @param typeDef the type definition element
+     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     */
     public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeDefinition typeDef) {
         if (typeDef == null) return null;
         var kw = typeDef.getTypeKeyword();
@@ -1401,6 +1523,12 @@ public final class StvnTypeResolver {
         return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
     }
 
+    /**
+     * Resolves the enum subset declaration from a type keyword.
+     *
+     * @param typeKeyword the type keyword element
+     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     */
     public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
         if (typeKeyword == null) return null;
 
@@ -1408,6 +1536,12 @@ public final class StvnTypeResolver {
         return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), visited);
     }
 
+    /**
+     * Resolves the enum subset declaration referenced by an include map alias.
+     *
+     * @param alias the include map alias element
+     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     */
     public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable IncludeMapAlias alias) {
         if (alias == null) return null;
         var list = alias.getTypeKeywordList();
@@ -1418,6 +1552,12 @@ public final class StvnTypeResolver {
         return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), visited);
     }
 
+    /**
+     * Resolves an enum subset model from an arbitrary supported PSI element.
+     *
+     * @param element the PSI element (SchemaType, TypeDefinition, TypeKeyword, or IncludeMapAlias)
+     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     */
     public static ResolvedType.@Nullable EnumSubset resolveEnumSubsetFromElement(@Nullable PsiElement element) {
         if (element == null) return null;
         if (element instanceof SchemaType st) return resolveEnumSubset(st);
@@ -1531,6 +1671,9 @@ public final class StvnTypeResolver {
     /**
      * Determines whether the target leaf type context of the given value slot resolves to a boolean primitive,
      * traversing any surrounding explicit or implicit sum-type envelopes.
+     *
+     * @param value the PSI value element to test
+     * @return {@code true} if the target type context resolves to a boolean, {@code false} otherwise
      */
     public static boolean resolvesToBoolean(Value value) {
         var info = resolveBaseTypeInfo(value);
@@ -1917,6 +2060,13 @@ public final class StvnTypeResolver {
         return false;
     }
 
+    /**
+     * Determines whether an explicit algebraic container is unspooled relative to its core IR node.
+     *
+     * @param container the container PSI element
+     * @param coreNode the resolved core value representation
+     * @return {@code true} if unspooled, {@code false} otherwise
+     */
     public static boolean isUnspooledContainer(PsiElement container, @Nullable StvnValue coreNode) {
         if (coreNode == null) {
             return false;
@@ -1955,6 +2105,12 @@ public final class StvnTypeResolver {
         return text.equals(":Boolean") || text.equals(":Bool");
     }
 
+    /**
+     * Resolves the element schema type of a collection schema (:Seq, :Set, etc.).
+     *
+     * @param collectionSchema the collection schema type
+     * @return the element schema type, or {@code null} if unresolvable
+     */
     public static @Nullable SchemaType resolveCollectionElementType(@Nullable SchemaType collectionSchema) {
         if (collectionSchema == null) {
             return null;
@@ -1969,6 +2125,12 @@ public final class StvnTypeResolver {
         return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
     }
 
+    /**
+     * Resolves the expected schema type at the specified caret position.
+     *
+     * @param position the PSI element at the caret position
+     * @return the expected schema type, or null if no schema context can be determined
+     */
     public static @Nullable SchemaType resolveExpectedSchemaAtCaret(@Nullable PsiElement position) {
         if (position == null) {
             return null;
@@ -2152,8 +2314,7 @@ public final class StvnTypeResolver {
                     var firstChild = collection.getFirstChild();
                     if (firstChild != null) {
                         var tokenText = firstChild.getText();
-                        if (tokenText.equals(":Map") || tokenText.equals(":MapNonEmpty") ||
-                            tokenText.equals(":MapInv") || tokenText.equals(":MapInvNonEmpty")) {
+                        if (tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                             // Valid map collection
                         } else {
                             currentSchema = null;
@@ -2233,6 +2394,13 @@ public final class StvnTypeResolver {
         return currentSchema;
     }
 
+    /**
+     * Determines whether a source schema type is assignable to a target schema type.
+     *
+     * @param targetSchema the expected destination schema type
+     * @param sourceSchema the candidate source schema type
+     * @return {@code true} if assignable, {@code false} otherwise
+     */
     public static boolean isSchemaAssignable(@Nullable SchemaType targetSchema, @Nullable SchemaType sourceSchema) {
         if (targetSchema == null || sourceSchema == null) {
             return false;
@@ -2254,6 +2422,13 @@ public final class StvnTypeResolver {
         return false;
     }
 
+    /**
+     * Finds all constants defined in the file or its includes that are assignable to the target schema type.
+     *
+     * @param file the PSI file to search within
+     * @param targetSchema the expected target schema type
+     * @return list of assignable constant definitions
+     */
     public static List<ConstantDefinition> findAssignableConstants(PsiFile file, SchemaType targetSchema) {
         var list = new ArrayList<ConstantDefinition>();
         var visitedFiles = new HashSet<PsiFile>();
@@ -2291,10 +2466,24 @@ public final class StvnTypeResolver {
         }
     }
 
+    /**
+     * Determines whether the given identifier matches a reserved fundamental type name.
+     *
+     * @param name the type name to check
+     * @return {@code true} if reserved fundamental type, {@code false} otherwise
+     */
     public static boolean isReservedFundamentalType(String name) {
         return org.stvnadore.core.validation.StvnTypeResolver.isReservedFundamentalType(name);
     }
 
+    /**
+     * Resolves a physical filesystem path for a virtual file, staging to a temp directory if in-memory.
+     *
+     * @param virtualFile the virtual file being compiled
+     * @param project the active IntelliJ project
+     * @param text the document content string
+     * @return the resolved physical path string
+     */
     public static String resolvePhysicalPath(
             @Nullable VirtualFile virtualFile,
             @Nullable Project project,

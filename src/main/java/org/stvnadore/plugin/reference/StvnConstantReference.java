@@ -17,9 +17,17 @@ import org.stvnadore.psi.ValueKeyword;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * Resolves references to declared constant definitions and enum variants from value keywords.
+ */
 @NullMarked
 public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> {
 
+    /**
+     * Constructs a reference for the specified value keyword element.
+     *
+     * @param element the value keyword element
+     */
     public StvnConstantReference(ValueKeyword element) {
         super(element, new TextRange(0, element.getTextLength()));
     }
@@ -103,6 +111,14 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         return StvnValueKeywordReference.findEnumDeclaration(file, tokenText, new HashSet<>());
     }
 
+    /**
+     * Recursively resolves a constant identifier within the file and its imported packages.
+     *
+     * @param file the root PSI file to search within
+     * @param constName the constant name or path to resolve
+     * @param visited set of already visited files to prevent infinite cycles
+     * @return the resolved constant definition element, or {@code null} if unresolved
+     */
     public static @Nullable PsiElement resolveConstantInFile(PsiFile file, String constName, Set<PsiFile> visited) {
         if (!visited.add(file)) {
             return null;

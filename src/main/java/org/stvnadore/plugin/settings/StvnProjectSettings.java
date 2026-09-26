@@ -18,9 +18,20 @@ import org.jspecify.annotations.Nullable;
 public final class StvnProjectSettings implements PersistentStateComponent<StvnProjectSettings.State> {
 
     /**
+     * Constructs a new StvnProjectSettings instance.
+     */
+    public StvnProjectSettings() {
+    }
+
+    /**
      * Serializable persistent state properties.
      */
     public static class State {
+        /**
+         * Constructs a new State instance with default settings.
+         */
+        public State() {
+        }
         /** If true, renders inlay type hints in editor. */
         public boolean showTypeHints = true;
         /** If true, renders documentation on hover. */

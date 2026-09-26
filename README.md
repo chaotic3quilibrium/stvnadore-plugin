@@ -1,6 +1,6 @@
 # STVN IntelliJ Platform Plugin (`stvnadore-plugin`)
 
-[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-1.3.1-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
+[![STVN IntelliJ Platform Plugin](https://img.shields.io/badge/STVN-2.0.0-blue.svg)](https://github.com/chaotic3quilibrium/stvnadore-plugin/blob/main/docs/STVN_IDE_AUTHORING_GUIDE.md)
 [![IntelliJ Platform](https://img.shields.io/badge/IntelliJ%20Platform-2025.3-blue.svg)](https://plugins.jetbrains.com/)
 [![Gradle IntelliJ Plugin](https://img.shields.io/badge/Gradle%20IntelliJ%20Plugin-2.16.0-green.svg)]()
 [![Grammar-Kit](https://img.shields.io/badge/Grammar--Kit-2023.3.0.3-orange.svg)]()
@@ -10,7 +10,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ---
 
-- Version: 1.3.1 - 2026.09.20
+- Version: 2.0.0 - 2026.09.26
 
 ---
 
@@ -48,6 +48,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [FYI, I'd prefer to move stvnadore-plugin to an Apache 2.0 license](#fyi-id-prefer-to-move-stvnadore-plugin-to-an-apache-20-license)
     * [I'm not looking to win the lottery, I just don't want to work for free](#im-not-looking-to-win-the-lottery-i-just-dont-want-to-work-for-free)
 * [Version History](#version-history)
+  * [v2.0.0](#v200)
   * [v1.3.1](#v131)
   * [v1.3.0](#v130)
   * [v1.2.0](#v120)
@@ -156,10 +157,10 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Detached Flat Payloads**: First-class support for `.stvn_f` files representing headerless, high-throughput flat payloads evaluated against detached or pre-negotiated schemas.
 * **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring `.stvn_f` files adhere strictly to single-payload root syntax while prohibiting `:include` statements.
 
-### 12. String Capacity Governance (STVN 1.3)
+### 12. String Capacity Governance (STVN 2.0)
 
-* **Schema Scope Governance**: Detects unadorned `:String` tokens and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
-* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to rewrite to threshold (`:String4096`) and secondary QuickFix to rewrite to default capacity (`:String16777216`).
+* **Pure Facet Governance**: Governs string capacities via canonical metadata facets (`{ #minSize 1 #maxSize N } :String`). Legacy numeric compound suffixes (`:String4096`, `:StringFixed16`) are flagged as obsolete (`ERR_COMPOUND_TYPE_OBSOLETE`) with automated migration quick-fixes.
+* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to apply configured threshold (`{ #minSize 1 #maxSize 4096 } :String`) and secondary QuickFix to apply default capacity (`{ #minSize 1 #maxSize 16777216 } :String`).
 * **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
 * **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
 
@@ -231,8 +232,13 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 | `StvnTrailingSlashInspection`       | `StvnTrailingSlash`       | Trailing slash in type target         | `STVN / Syntax`              |    `ERROR`     |
 | `StvnLhsReservedTypeInspection`     | `StvnLhsReservedType`     | Reserved keyword in LHS definition    | `STVN / Validity`            |    `ERROR`     |
 | `StvnFlatDocumentIncludeInspection` | `StvnFlatDocumentInclude` | Include directive in flat payload     | `STVN / Validity`            |    `ERROR`     |
-| `StvnConstantRangeInspection`       | `StvnConstantRange`       | Inverted numeric constant range       | `STVN / Semantics`           |    `ERROR`     |
-| `StvnStringCapacityInspection`      | `StvnStringCapacity`      | String capacity governance inspection | `STVN / Governance`          |   `WARNING`    |
+| `StvnConstantRangeInspection`       | `StvnConstantRange`       | Inverted numeric constant range             | `STVN / Semantics`           |    `ERROR`     |
+| `StvnStringCapacityInspection`      | `StvnStringCapacity`      | String capacity governance inspection       | `STVN / Governance`          |   `WARNING`    |
+| `StvnMetadataFacetInspection`       | `StvnMetadataFacet`       | Metadata facet and block governance         | `STVN / Governance`          |    `ERROR`     |
+| `StvnStringCardinalityInspection`   | `StvnStringCardinality`   | String cardinality facet governance         | `STVN / Governance`          |    `ERROR`     |
+| `StvnDiscreteIntervalInspection`    | `StvnDiscreteInterval`    | Discrete interval bound governance          | `STVN / Governance`          |    `ERROR`     |
+| `StvnTemporalModeInspection`        | `StvnTemporalMode`        | Temporal mode and unit facet governance     | `STVN / Governance`          |    `ERROR`     |
+| `StvnMetadataOrderInspection`       | `StvnMetadataOrder`       | Metadata facet canonical ordering (7 tiers) | `STVN / Governance`          | `WEAK WARNING` |
 
 ---
 
@@ -260,7 +266,7 @@ Settings
 ### Prerequisites
 
 * JDK 21 LTS
-* Local installation of `stvnadore-core:1.3.1` (`mvn clean install` in `ij_stvnadore_core`)
+* Local installation of `stvnadore-core:2.0.0` (`mvn clean install` in `ij_stvnadore_core`)
 
 ### Build Commands
 
@@ -320,6 +326,17 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ---
 
 # Version History
+
+## v2.0.0
+
+- 2026.09.26
+- Integrated changes to `stvnadore-core:2.0.0`:
+  - Upgraded compiler dependency baseline to `stvnadore-core:2.0.0`.
+  - Replaced hardcoded literal string tokens with centralized `StvnVocabulary` constants.
+  - Pure 2.0.0 facet-based string capacity governance (`{ #minSize 1 #maxSize N } :String`). Flagged obsolete 1.x compounds.
+  - Authoritative diagnostic coordinate pinning and single-character locus isolation for bare colons and hashes.
+  - Clean domain error presentation eliminating compiler generator jargon.
+  - Complete Java 21 strict Javadoc compliance under `failOnWarnings = true`.
 
 ## v1.3.1
 
