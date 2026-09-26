@@ -206,20 +206,19 @@ public final class StvnSumInferenceHelper {
     }
 
     private static boolean isBoolean(String type) {
-        return type.equals(StvnVocabulary.TYPE_BOOLEAN) || type.equals(":Bool");
+        return type.startsWith(StvnVocabulary.TYPE_BOOLEAN);
     }
 
     private static boolean isNumeric(String type) {
-        return type.contains("Int") || type.contains("Float") || type.contains("Decimal")
-            || type.contains("Byte") || type.contains("Uint") || type.contains("Number");
+        return type.startsWith(StvnVocabulary.TYPE_INT) || type.startsWith(StvnVocabulary.TYPE_FLOAT) || type.contains("Uint");
     }
 
     private static boolean isString(String type) {
-        return type.startsWith(StvnVocabulary.TYPE_STRING) || type.startsWith(":Char") || type.startsWith(":Text");
+        return type.startsWith(StvnVocabulary.TYPE_STRING);
     }
 
     private static boolean isList(String type) {
-        return type.startsWith(":List") || type.startsWith(StvnVocabulary.TYPE_SEQ) || type.startsWith(StvnVocabulary.TYPE_SET);
+        return type.startsWith(StvnVocabulary.TYPE_SEQ) || type.startsWith(StvnVocabulary.TYPE_SET);
     }
 
     private static boolean isMap(String type) {

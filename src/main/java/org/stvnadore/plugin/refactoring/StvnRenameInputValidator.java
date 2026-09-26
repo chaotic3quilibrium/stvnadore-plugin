@@ -18,8 +18,6 @@ import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.ValueKeyword;
 
-import java.util.regex.Pattern;
-
 /**
  * Validates identifier input in the IntelliJ rename refactoring dialog for STVN symbols.
  * <p>
@@ -47,10 +45,6 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
      */
     public static final String INVALID_IDENTIFIER_ERROR_MESSAGE =
         "Identifier is not a valid bare STVN identifier: ";
-
-    private static final Pattern BARE_IDENTIFIER_PATTERN = Pattern.compile(
-        "^[a-zA-Z_][a-zA-Z0-9_]*(/[a-zA-Z_][a-zA-Z0-9_]*)*$"
-    );
 
     private final ElementPattern<? extends PsiElement> pattern;
 
@@ -115,26 +109,5 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
         @NotNull Project project
     ) {
         return getErrorMessage(newName, project);
-    }
-
-    /**
-     * Validates whether a bare name without leading sigils conforms to STVN identifier grammar.
-     *
-     * @param name the un-prefixed name string
-     * @param project the project context, or {@code null}
-     * @return {@code true} if the bare name is valid for auto-prefixing, {@code false} otherwise
-     */
-    public static boolean isValidBareIdentifier(String name, @Nullable Project project) {
-        if (name.isEmpty()) {
-            return false;
-        }
-        if (Character.isDigit(name.charAt(0))) {
-            return false;
-        }
-        var namesValidator = new StvnNamesValidator();
-        if (namesValidator.isKeyword(name, project)) {
-            return false;
-        }
-        return BARE_IDENTIFIER_PATTERN.matcher(name).matches();
     }
 }

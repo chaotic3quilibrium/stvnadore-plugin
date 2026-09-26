@@ -414,16 +414,6 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * Determines the base nominal string type identifier prefix.
-     *
-     * @param text the existing type token text
-     * @return the nominal base prefix
-     */
-    public static String getBaseNominalTypeName(String text) {
-        return StvnVocabulary.TYPE_STRING;
-    }
-
-    /**
      * Primary QuickFix rewriting nominal string types to the configured threshold.
      */
     public static final class ApplyConfiguredCapacityQuickFix implements LocalQuickFix {

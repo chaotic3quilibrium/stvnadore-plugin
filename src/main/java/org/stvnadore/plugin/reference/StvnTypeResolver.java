@@ -79,21 +79,6 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Determines whether the specified schema type represents a degraded nominal alias.
-     *
-     * @param schemaType the schema type to test
-     * @return {@code true} if degraded, {@code false} otherwise
-     */
-    public static boolean isDegradedSchema(@Nullable SchemaType schemaType) {
-        if (schemaType == null) return false;
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            return isDegradedNominalAlias(schemaType.getContainingFile(), kw.getText());
-        }
-        return false;
-    }
-
-    /**
      * Determines whether the specified nominal alias name refers to a degraded schema definition.
      *
      * @param file the containing PSI file
@@ -1205,14 +1190,6 @@ public final class StvnTypeResolver {
         return false;
     }
 
-    private static String getVariantTagForUnionBranch(SchemaType branchSchema) {
-        var text = StvnSchemaFormatter.formatCleanSchema(branchSchema);
-        if (text.startsWith(":")) {
-            return "#" + text.substring(1);
-        }
-        return "#" + text;
-    }
-
     /**
      * Resolves the base schema type info and human-readable label for a value element inside a body entry.
      *
@@ -2103,26 +2080,6 @@ public final class StvnTypeResolver {
         var toInspect = (resolved != null) ? resolved : schema;
         var text = StvnSchemaFormatter.formatCleanSchema(toInspect);
         return text.equals(":Boolean") || text.equals(":Bool");
-    }
-
-    /**
-     * Resolves the element schema type of a collection schema (:Seq, :Set, etc.).
-     *
-     * @param collectionSchema the collection schema type
-     * @return the element schema type, or {@code null} if unresolvable
-     */
-    public static @Nullable SchemaType resolveCollectionElementType(@Nullable SchemaType collectionSchema) {
-        if (collectionSchema == null) {
-            return null;
-        }
-        var resolved = resolveNominalSchema(collectionSchema);
-        var toInspect = resolved != null ? resolved : collectionSchema;
-        var constructor = toInspect.getSchemaConstructor();
-        if (constructor == null) {
-            return null;
-        }
-        var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor, SchemaType.class);
-        return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
     }
 
     /**

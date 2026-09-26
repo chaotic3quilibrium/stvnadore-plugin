@@ -25,7 +25,7 @@ public final class StvnNamespaceSymbolCollector {
 
     private static final String PRELUDE_URI = "stvn://prelude/org_stvnadore_prelude.stvn_inclf";
     private static final java.util.regex.Pattern PRIMITIVE_TYPE_PATTERN = java.util.regex.Pattern.compile(
-        "^:(?:Boolean|Uint[0-9]*|Int[0-9]*|Float[0-9]*|FloatExact|StringFixed[0-9]*|StringNonEmpty[0-9]*|String[0-9]*)$"
+        "^:(?:Boolean|Int[0-9]*|Float[0-9]*|String[0-9]*|TimeEpoch|DateTime|Uint[0-9]*)$"
     );
 
     private static boolean isPrimitiveTypeName(String name) {

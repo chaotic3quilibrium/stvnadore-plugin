@@ -16,7 +16,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
 
     @Override
     protected String getTestDataPath() {
-        return "src/test/resources/shared-fixtures/refactoring";
+        return "src/test/resources/fixtures";
     }
 
     /**
