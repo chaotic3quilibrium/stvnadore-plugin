@@ -52,7 +52,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testInvalidSyntaxFixtures() throws Exception {
-        var invalidDir = Paths.get(getTestDataPath(), "invalid-syntax");
+        var invalidDir = Paths.get(getTestDataPath(), "syntax", "invalid");
         if (!Files.exists(invalidDir)) {
             fail("Invalid fixtures directory does not exist: " + invalidDir.toAbsolutePath());
         }
@@ -96,7 +96,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 }
 
                 // Load and configure the file in the IntelliJ test workspace
-                var relativePath = "invalid-syntax/" + fileName;
+                var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 
                 // Run highlighting pass
@@ -129,7 +129,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testInvalidBinaryFixtures() throws Exception {
-        var invalidDir = Paths.get(getTestDataPath(), "invalid-syntax");
+        var invalidDir = Paths.get(getTestDataPath(), "syntax", "invalid");
         if (!Files.exists(invalidDir)) {
             return;
         }
@@ -164,7 +164,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testValidSyntaxFixtures() throws Exception {
-        var validDir = Paths.get(getTestDataPath(), "valid-syntax");
+        var validDir = Paths.get(getTestDataPath(), "syntax", "valid");
         if (!Files.exists(validDir)) {
             return;
         }
@@ -176,7 +176,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 if ("fenced_string_deprecated_arrow.stvn".equals(baseName)) {
                     continue; // Rule STR-04: """->[ is fatal syntax error in STVN 2.0.0
                 }
-                var relativePath = "valid-syntax/" + baseName;
+                var relativePath = Paths.get(getTestDataPath()).relativize(stvnPath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 
                 var highlights = myFixture.doHighlighting();
@@ -200,7 +200,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testConstantReferenceNavigation() {
-        myFixture.configureByFile("valid-syntax/typed_constants.stvn");
+        myFixture.configureByFile("syntax/valid/scalars/typed_constants.stvn");
         myFixture.doHighlighting();
 
         var text = myFixture.getEditor().getDocument().getText();
@@ -340,7 +340,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testCrossModuleNavigation() {
         // Configure the main file in the test project
-        myFixture.configureByFile("valid-syntax/include_legal.stvn");
+        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn");
         myFixture.doHighlighting(); // Force initialization of reference contributors
 
         // 1. Verify include path resolution
@@ -395,7 +395,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNull("RHS keyword should not have a reference (declaration isolation)", aliasRhsRef);
 
         // 6. Verify asymmetric eviction navigation using include_asymmetric_eviction.stvn
-        myFixture.configureByFile("valid-syntax/include_asymmetric_eviction.stvn");
+        myFixture.configureByFile("syntax/valid/modules/include_asymmetric_eviction.stvn");
         myFixture.doHighlighting();
         var textAsym = myFixture.getEditor().getDocument().getText();
 
@@ -431,7 +431,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals(":ConflictType", resolvedAsymUsage.getText());
 
         // 7. Verify dual eviction null resolution outcome using include_dual_eviction_unresolved.stvn
-        myFixture.configureByFile("invalid-syntax/include_dual_eviction_unresolved.stvn");
+        myFixture.configureByFile("syntax/invalid/modules/include_dual_eviction_unresolved.stvn");
         myFixture.doHighlighting();
         var textDual = myFixture.getEditor().getDocument().getText();
 
@@ -446,7 +446,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testFindUsagesAcrossModules() {
-        myFixture.configureByFile("valid-syntax/include_legal.stvn");
+        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn");
         myFixture.doHighlighting();
 
         var text = myFixture.getEditor().getDocument().getText();
@@ -534,8 +534,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 {
                   :defs {
                     :include [
-                      "shared-fixtures/valid-syntax/module_a.stvn_incl"
-                      "shared-fixtures/valid-syntax/module_b.stvn_incl" {
+                      "syntax/valid/modules/module_a.stvn_incl"
+                      "syntax/valid/modules/module_b.stvn_incl" {
                         :ConflictType :ConflictTypeB
                       }
                     ]
@@ -1789,7 +1789,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testChooseByNameContributor() {
-        myFixture.configureByFile("valid-syntax/typed_constants.stvn");
+        myFixture.configureByFile("syntax/valid/scalars/typed_constants.stvn");
         myFixture.doHighlighting();
 
         var contributor = new org.stvnadore.plugin.reference.StvnChooseByNameContributor();
@@ -1808,7 +1808,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testFindUsagesConstants() {
-        myFixture.configureByFile("valid-syntax/typed_constants.stvn");
+        myFixture.configureByFile("syntax/valid/scalars/typed_constants.stvn");
         myFixture.doHighlighting();
 
         var text = myFixture.getEditor().getDocument().getText();
@@ -1820,7 +1820,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testConstantHoverDocumentationProvider() {
-        myFixture.configureByFile("valid-syntax/typed_constants.stvn");
+        myFixture.configureByFile("syntax/valid/scalars/typed_constants.stvn");
         myFixture.doHighlighting();
 
         var text = myFixture.getEditor().getDocument().getText();

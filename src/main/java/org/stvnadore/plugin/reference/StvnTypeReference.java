@@ -536,10 +536,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
             var projectDir = project != null ? com.intellij.openapi.project.ProjectUtil.guessProjectDir(project) : null;
             if (projectDir != null) {
                 targetVirtualFile = projectDir.findFileByRelativePath(relativePath);
-                if (targetVirtualFile == null && relativePath.startsWith("shared-fixtures/")) {
-                    var stripped = relativePath.substring("shared-fixtures/".length());
-                    targetVirtualFile = projectDir.findFileByRelativePath(stripped);
-                }
             }
         }
         if (targetVirtualFile == null) {

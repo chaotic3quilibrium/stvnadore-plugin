@@ -6,6 +6,5 @@ src/main/gen/
 *.log
 .intellijPlatform/
 src/test/resources/shared-fixtures/*
-!src/test/resources/shared-fixtures/browser/
 scratch/
 /temp

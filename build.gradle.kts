@@ -164,7 +164,7 @@ intellijPlatform {
                   <li>Scoped <code>:use</code> with atomic unary <code>#strip</code> terminal slicing</li>
                   <li>Hermetic flat payload tier (newly introduced <code>.stvn_f</code>) and flat schema tier (existing <code>.stvn_inclf</code>)</li>
                   <li>Arbitrary bit-width integer overflow enforcement (BigInteger)</li>
-                  <li>Updated shared-fixtures conformance suite</li>
+                  <li>Updated shared conformance test suite</li>
                 </ul>
               </li>
               <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>
@@ -224,6 +224,10 @@ val mirrorSharedFixtures by tasks.registering {
     doLast {
         if (siblingDir.exists() && siblingDir.isDirectory) {
             logger.lifecycle("Syncing shared-fixtures from sibling core repository: ${siblingDir.absolutePath}")
+            val syntaxTarget = targetDir.resolve("syntax")
+            if (syntaxTarget.exists()) {
+                syntaxTarget.deleteRecursively()
+            }
             siblingDir.copyRecursively(targetDir, overwrite = true)
         } else {
             logger.warn("WARNING: Sibling core repository fixtures directory not found at: ${siblingDir.absolutePath}. Test execution will proceed with standard classpath assets.")

@@ -1,6 +1,8 @@
 package org.stvnadore.plugin.reference;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.CachedValue;
@@ -35,6 +37,9 @@ public final class StvnTypeResolver {
     private static final Key<CachedValue<List<org.stvnadore.core.StvnDiagnostic>>> CORE_DIAGNOSTICS_KEY =
         Key.create("org.stvnadore.plugin.CORE_DIAGNOSTICS");
 
+    private static final Key<java.nio.file.Path> VFS_TEMP_DIR_KEY =
+        Key.create("org.stvnadore.plugin.VFS_TEMP_DIR");
+
     private static final java.util.regex.Pattern EXPLICIT_UNION_TAG_PATTERN =
         java.util.regex.Pattern.compile("^#[1-9][0-9]*(\\s+|$)");
 
@@ -49,22 +54,7 @@ public final class StvnTypeResolver {
                 var text = file.getText();
                 var virtualFile = file.getVirtualFile();
                 if (virtualFile != null) {
-                    var path = virtualFile.getPath();
-                    if (path.startsWith("/src/") || path.startsWith("temp://")) {
-                        var fileName = virtualFile.getName();
-                        if (new java.io.File("temp/examples/json/" + fileName).exists()) {
-                            path = new java.io.File("temp/examples/json/" + fileName).getAbsolutePath();
-                        } else if (new java.io.File("temp/examples/package_and_use/" + fileName).exists()) {
-                            path = new java.io.File("temp/examples/package_and_use/" + fileName).getAbsolutePath();
-                        } else if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
-                            path = new java.io.File("src/test/resources/shared-fixtures/invalid-syntax/dummy.stvn").getAbsolutePath();
-                        } else if (path.contains("valid-syntax") && !text.contains("shared-fixtures/")) {
-                            path = new java.io.File("src/test/resources/shared-fixtures/valid-syntax/dummy.stvn").getAbsolutePath();
-                        } else {
-                            path = new java.io.File("src/test/resources/dummy.stvn").getAbsolutePath();
-                        }
-                    }
-
+                    var path = resolvePhysicalPath(virtualFile, file.getProject(), text);
                     var result = StvnCompiler.compileToResult(text, path, StvnParserConfig.DEFAULT);
                     list.addAll(result.diagnostics());
                 }
@@ -225,22 +215,7 @@ public final class StvnTypeResolver {
                 var text = file.getText();
                 var virtualFile = file.getVirtualFile();
                 if (virtualFile != null) {
-                    var path = virtualFile.getPath();
-                    if (path.startsWith("/src/") || path.startsWith("temp://")) {
-                        var fileName = virtualFile.getName();
-                        if (new java.io.File("temp/examples/json/" + fileName).exists()) {
-                            path = new java.io.File("temp/examples/json/" + fileName).getAbsolutePath();
-                        } else if (new java.io.File("temp/examples/package_and_use/" + fileName).exists()) {
-                            path = new java.io.File("temp/examples/package_and_use/" + fileName).getAbsolutePath();
-                        } else if (path.contains("invalid-syntax") && !text.contains("shared-fixtures/")) {
-                            path = new java.io.File("src/test/resources/shared-fixtures/invalid-syntax/dummy.stvn").getAbsolutePath();
-                        } else if (path.contains("valid-syntax") && !text.contains("shared-fixtures/")) {
-                            path = new java.io.File("src/test/resources/shared-fixtures/valid-syntax/dummy.stvn").getAbsolutePath();
-                        } else {
-                            path = new java.io.File("src/test/resources/dummy.stvn").getAbsolutePath();
-                        }
-                    }
-
+                    var path = resolvePhysicalPath(virtualFile, file.getProject(), text);
                     var result = StvnCompiler.compileToResult(text, path, StvnParserConfig.DEFAULT);
                     var rootOpt = result.document();
                     if (rootOpt.isPresent()) {
@@ -2318,6 +2293,80 @@ public final class StvnTypeResolver {
 
     public static boolean isReservedFundamentalType(String name) {
         return org.stvnadore.core.validation.StvnTypeResolver.isReservedFundamentalType(name);
+    }
+
+    public static String resolvePhysicalPath(
+            @Nullable VirtualFile virtualFile,
+            @Nullable Project project,
+            String text) {
+        if (virtualFile == null) {
+            return "dummy.stvn";
+        }
+        if (virtualFile.isInLocalFileSystem() && new java.io.File(virtualFile.getPath()).exists()) {
+            return virtualFile.getPath();
+        }
+        if (!text.contains(":include")) {
+            return virtualFile.getPath();
+        }
+
+        try {
+            var tempDir = project != null ? project.getUserData(VFS_TEMP_DIR_KEY) : null;
+            if (tempDir == null || !java.nio.file.Files.exists(tempDir)) {
+                tempDir = java.nio.file.Files.createTempDirectory("stvn_vfs_");
+                if (project != null) {
+                    project.putUserData(VFS_TEMP_DIR_KEY, tempDir);
+                }
+            }
+
+            var root = virtualFile;
+            while (root.getParent() != null) {
+                root = root.getParent();
+            }
+
+            materializeVirtualTree(root, tempDir);
+
+            var relativePath = getRelativeVirtualPath(root, virtualFile);
+            var targetFile = tempDir.resolve(relativePath);
+            var parent = targetFile.getParent();
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
+            java.nio.file.Files.writeString(targetFile, text, java.nio.charset.StandardCharsets.UTF_8);
+
+            return targetFile.toAbsolutePath().toString();
+        } catch (Exception e) {
+            return virtualFile.getPath();
+        }
+    }
+
+    private static void materializeVirtualTree(VirtualFile dir, java.nio.file.Path targetDir) throws java.io.IOException {
+        for (var child : dir.getChildren()) {
+            if (child.isDirectory()) {
+                materializeVirtualTree(child, targetDir.resolve(child.getName()));
+            } else {
+                var targetFile = targetDir.resolve(child.getName());
+                if (!java.nio.file.Files.exists(targetFile) || targetFile.toFile().lastModified() < child.getTimeStamp()) {
+                    var parent = targetFile.getParent();
+                    if (parent != null) {
+                        java.nio.file.Files.createDirectories(parent);
+                    }
+                    java.nio.file.Files.write(targetFile, child.contentsToByteArray());
+                }
+            }
+        }
+    }
+
+    private static String getRelativeVirtualPath(VirtualFile root, VirtualFile target) {
+        var rootPath = root.getPath();
+        var targetPath = target.getPath();
+        if (targetPath.startsWith(rootPath)) {
+            var rel = targetPath.substring(rootPath.length());
+            while (rel.startsWith("/")) {
+                rel = rel.substring(1);
+            }
+            return rel.replace('/', java.io.File.separatorChar);
+        }
+        return target.getName();
     }
 }
 

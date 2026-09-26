@@ -9,6 +9,7 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -39,7 +40,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
 
-    public record CollectedInfo(String text, String path, VirtualFile virtualFile) {}
+    public record CollectedInfo(String text, String path, VirtualFile virtualFile, @Nullable Project project) {
+        public CollectedInfo(String text, String path, VirtualFile virtualFile) {
+            this(text, path, virtualFile, null);
+        }
+    }
 
     public record AnnotationResult(List<StvnDiagnostic> diagnostics) {}
 
@@ -49,7 +54,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (virtualFile == null) {
             return null;
         }
-        return new CollectedInfo(file.getText(), virtualFile.getPath(), virtualFile);
+        return new CollectedInfo(file.getText(), virtualFile.getPath(), virtualFile, file.getProject());
     }
 
     @Override
@@ -61,20 +66,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     public @Nullable AnnotationResult doAnnotate(CollectedInfo info) {
         // Concurrency Guard: Thread isolation per file path identifier
         synchronized (info.path().intern()) {
-            var resolvedPath = info.path();
-            if (resolvedPath.startsWith("/src/") || resolvedPath.startsWith("temp://")) {
-                var isInclF = resolvedPath.endsWith(".stvn_inclf");
-                var isIncl = resolvedPath.endsWith(".stvn_incl");
-                var dummyName = isInclF ? "dummy.stvn_inclf" : (isIncl ? "dummy.stvn_incl" : "dummy.stvn");
-
-                if (resolvedPath.contains("invalid-syntax") && !info.text().contains("shared-fixtures/")) {
-                    resolvedPath = new java.io.File("src/test/resources/shared-fixtures/invalid-syntax/" + dummyName).getAbsolutePath();
-                } else if (resolvedPath.contains("valid-syntax") && !info.text().contains("shared-fixtures/")) {
-                    resolvedPath = new java.io.File("src/test/resources/shared-fixtures/valid-syntax/" + dummyName).getAbsolutePath();
-                } else {
-                    resolvedPath = new java.io.File("src/test/resources/" + dummyName).getAbsolutePath();
-                }
-            }
+            var resolvedPath = StvnTypeResolver.resolvePhysicalPath(info.virtualFile(), info.project(), info.text());
 
             try {
                 var compilationResult = StvnCompiler.compileToResult(info.text(), resolvedPath, StvnParserConfig.DEFAULT);
@@ -655,6 +647,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return true;
         }
         if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
+            return true;
+        }
+        if ((file instanceof org.stvnadore.plugin.StvnFlatPayloadFile || (file != null && file.getName().endsWith(".stvn_f")))
+                && message.contains("cannot contain include statements")) {
             return true;
         }
         if (!message.contains("Unresolved schema for value context")) {

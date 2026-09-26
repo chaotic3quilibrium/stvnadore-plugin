@@ -71,7 +71,7 @@
             <li>Scoped <code>:use</code> with atomic unary <code>#strip</code> terminal slicing</li>
             <li>Hermetic flat payload tier (newly introduced <code>.stvn_f</code>) and flat schema tier (existing <code>.stvn_inclf</code>)</li>
             <li>Arbitrary bit-width integer overflow enforcement (BigInteger)</li>
-            <li>Updated shared-fixtures conformance suite</li>
+            <li>Updated shared conformance test suite</li>
           </ul>
         </li>
         <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>

@@ -18,11 +18,15 @@ public final class StvnParserTest {
     @Test
     public void testFixtureParsing() throws Exception {
         var loader = StvnParserTest.class.getClassLoader();
-        try (var stream = loader.getResourceAsStream("valid-syntax/basic_boolean.stvn")) {
-            if (stream == null) {
-                throw new FileNotFoundException("Fixture 'valid-syntax/basic_boolean.stvn' not found on test classpath");
-            }
-            var text = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        var primaryStream = loader.getResourceAsStream("syntax/valid/scalars/basic_boolean.stvn");
+        var finalStream = primaryStream != null
+                ? primaryStream
+                : loader.getResourceAsStream("shared-fixtures/syntax/valid/scalars/basic_boolean.stvn");
+        if (finalStream == null) {
+            throw new FileNotFoundException("Fixture 'syntax/valid/scalars/basic_boolean.stvn' not found on test classpath");
+        }
+        try (finalStream) {
+            var text = new String(finalStream.readAllBytes(), StandardCharsets.UTF_8);
             var compiled = StvnCompiler.compile(text);
             
             assertTrue(compiled.isPresent(), "Parsed STVN value should be present and valid");

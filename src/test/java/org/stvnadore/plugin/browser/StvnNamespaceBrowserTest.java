@@ -17,7 +17,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
     @Override
     protected String getTestDataPath() {
-        return "src/test/resources/shared-fixtures/browser";
+        return "src/test/resources/fixtures/browser";
     }
 
     /**
