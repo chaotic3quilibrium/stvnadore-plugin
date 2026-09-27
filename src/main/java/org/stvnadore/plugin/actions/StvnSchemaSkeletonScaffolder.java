@@ -180,7 +180,26 @@ public final class StvnSchemaSkeletonScaffolder {
         // 1. Atomic Primitive Types
         var atomic = ctor.getAtomicType();
         if (atomic != null) {
-            scaffoldFromKeywordText(atomic.getText().trim(), sb, placeholders);
+            var atomicText = atomic.getText().trim();
+            if (atomicText.equals(":DateTime")) {
+                var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                if (parentDef == null) {
+                    parentDef = PsiTreeUtil.getParentOfType(schema, TypeDefinition.class);
+                }
+                var metaMap = parentDef != null ? parentDef.getMetadataMap() : PsiTreeUtil.findChildOfType(schema.getParent(), MetadataMap.class);
+                var metaText = metaMap != null ? metaMap.getText() : "";
+                if (metaText.contains("#offset")) {
+                    appendPlaceholder("\"2026-08-18T18:00:00-05:00\"", sb, placeholders);
+                    return;
+                } else if (metaText.contains("#zoned")) {
+                    appendPlaceholder("\"2026-08-18T18:00:00[America/Chicago]\"", sb, placeholders);
+                    return;
+                } else if (metaText.contains("#audited")) {
+                    appendPlaceholder("\"2026-08-18T18:00:00-05:00[America/Chicago]\"", sb, placeholders);
+                    return;
+                }
+            }
+            scaffoldFromKeywordText(atomicText, sb, placeholders);
             return;
         }
 

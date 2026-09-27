@@ -58,7 +58,7 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
 
             @Override
             public @Nullable javax.swing.Icon getIcon(boolean unused) {
-                return StvnIcons.FILE;
+                return StvnIcons.STVN;
             }
         };
     }

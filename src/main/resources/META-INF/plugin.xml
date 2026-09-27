@@ -147,6 +147,23 @@
                   fieldName="INSTANCE"
                   extensions="stvn_inclf"/>
 
+        <fileType name="STVN_CAS"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$Cas"
+                  fieldName="INSTANCE"
+                  extensions="stvn_cas"/>
+
+        <fileType name="STVN_BIN"
+                  implementationClass="org.stvnadore.plugin.StvnBinaryFileType"
+                  fieldName="INSTANCE"
+                  extensions="stvn_bin"/>
+
+        <fileType name="STVN_IR"
+                  language="TEXT"
+                  implementationClass="org.stvnadore.plugin.StvnIrFileType"
+                  fieldName="INSTANCE"
+                  extensions="stvn_ir"/>
+
         <!-- 2. Core Parser Definition -->
         <lang.parserDefinition language="STVN"
                                implementationClass="org.stvnadore.plugin.StvnParserDefinition"/>
@@ -236,7 +253,7 @@
                              instance="org.stvnadore.plugin.settings.StvnConfigurable"
                              id="org.stvnadore.plugin.settings.StvnConfigurable"
                              displayName="STVN"
-                             icon="/icons/stvn_icon.svg"/>
+                             icon="/icons/stvn_file.svg"/>
 
         <projectConfigurable parentId="tools"
                              instance="org.stvnadore.plugin.settings.StvnRepositorySettingsConfigurable"
@@ -469,7 +486,7 @@
                 class="org.stvnadore.plugin.actions.PublishSchemaAction"
                 text="Publish Schema to STVN Repository"
                 description="Publishes flattened STVN schema to the configured remote STVN Schema Repository"
-                icon="/icons/stvn_icon.svg">
+                icon="/icons/stvn_file.svg">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
@@ -483,7 +500,7 @@
                     class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
                     text="Browse Namespace Dependencies"
                     description="Inspects and filters symbols across document sections in an interactive table popup"
-                    icon="/icons/stvn_icon.svg">
+                    icon="/icons/stvn_file.svg">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt N"/>
                 <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
                 <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>

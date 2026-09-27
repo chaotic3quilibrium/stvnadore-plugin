@@ -56,7 +56,7 @@ public abstract class StvnFileType extends LanguageFileType {
 
         @Override
         public Icon getIcon() {
-            return StvnIcons.FILE;
+            return StvnIcons.STVN;
         }
     }
 
@@ -96,7 +96,7 @@ public abstract class StvnFileType extends LanguageFileType {
 
         @Override
         public Icon getIcon() {
-            return StvnIcons.FILE;
+            return StvnIcons.STVN_INCL;
         }
     }
 
@@ -136,7 +136,7 @@ public abstract class StvnFileType extends LanguageFileType {
 
         @Override
         public Icon getIcon() {
-            return StvnIcons.FILE;
+            return StvnIcons.STVN_INCLF;
         }
     }
 
@@ -176,7 +176,47 @@ public abstract class StvnFileType extends LanguageFileType {
 
         @Override
         public Icon getIcon() {
-            return StvnIcons.FILE;
+            return StvnIcons.STVN_F;
+        }
+    }
+
+    /**
+     * File type representation for STVN Content-Addressed Storage documents (.stvn_cas).
+     */
+    @NullMarked
+    public static final class Cas extends StvnFileType {
+        /**
+         * Singleton instance representing STVN CAS documents.
+         */
+        public static final Cas INSTANCE = new Cas();
+
+        private Cas() {
+            super();
+        }
+
+        @Override
+        public String getName() {
+            return "STVN_CAS";
+        }
+
+        @Override
+        public String getDisplayName() {
+            return "STVN CAS Payload";
+        }
+
+        @Override
+        public String getDescription() {
+            return "STVN Content-Addressed Storage Document";
+        }
+
+        @Override
+        public String getDefaultExtension() {
+            return "stvn_cas";
+        }
+
+        @Override
+        public Icon getIcon() {
+            return StvnIcons.STVN_CAS;
         }
     }
 }

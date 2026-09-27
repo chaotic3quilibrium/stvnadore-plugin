@@ -814,10 +814,20 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testIconResourceLoading() {
-        var icon = org.stvnadore.plugin.icons.StvnIcons.FILE;
-        assertNotNull("STVN icon resource handle must not be null", icon);
-        assertTrue("STVN icon width must be greater than zero", icon.getIconWidth() > 0);
-        assertTrue("STVN icon height must be greater than zero", icon.getIconHeight() > 0);
+        var icons = java.util.List.of(
+            org.stvnadore.plugin.icons.StvnIcons.STVN,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_F,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_INCL,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_INCLF,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_BIN,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_CAS,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_IR
+        );
+        for (var icon : icons) {
+            assertNotNull("STVN icon resource handle must not be null", icon);
+            assertTrue("STVN icon width must be greater than zero", icon.getIconWidth() > 0);
+            assertTrue("STVN icon height must be greater than zero", icon.getIconHeight() > 0);
+        }
     }
 
     public void testNonEmptyConstraintTargeting() {
@@ -2768,15 +2778,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testDateTimeOffsetHighlightingAndInlays() {
-        // 1. Valid :DateTimeOffset with Inlay Hints
+        // 1. Valid :AppDateTimeOffset with Inlay Hints
         var validCode = """
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeOffset { #offset } :DateTime
+                :AppDateTimeOffset { #offset } :DateTime
               }
-              :type :Seq( :DateTimeOffset )
-              :body [ "2026-03-06T15:53:08Z"<hint text=":DateTimeOffset"/> "2026-03-06T15:53:08-06:00"<hint text=":DateTimeOffset"/> ]<hint text=":Seq( :DateTimeOffset )"/>
+              :type :Seq( :AppDateTimeOffset )
+              :body [ "2026-03-06T15:53:08Z"<hint text=":AppDateTimeOffset (-> :DateTime)"/> "2026-03-06T15:53:08-06:00"<hint text=":AppDateTimeOffset (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeOffset )"/>
             }
             """;
         assertRootInlayHints(validCode);
@@ -2786,9 +2796,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeOffset { #offset } :DateTime
+                :AppDateTimeOffset { #offset } :DateTime
               }
-              :type :Seq( :DateTimeOffset )
+              :type :Seq( :AppDateTimeOffset )
               :body [ "2026-03-15T08:00:00-05:00[America/Chicago]" ]
             }
             """;
@@ -2807,15 +2817,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testDateTimeZonedHighlightingAndInlays() {
-        // 1. Valid :DateTimeZoned with Inlay Hints
+        // 1. Valid :AppDateTimeZoned with Inlay Hints
         var validCode = """
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeZoned { #zoned } :DateTime
+                :AppDateTimeZoned { #zoned } :DateTime
               }
-              :type :Seq( :DateTimeZoned )
-              :body [ "2026-03-15T08:00:00[America/Chicago]"<hint text=":DateTimeZoned"/> "2026-08-18T18:30:00[Europe/London]"<hint text=":DateTimeZoned"/> ]<hint text=":Seq( :DateTimeZoned )"/>
+              :type :Seq( :AppDateTimeZoned )
+              :body [ "2026-03-15T08:00:00[America/Chicago]"<hint text=":AppDateTimeZoned (-> :DateTime)"/> "2026-08-18T18:30:00[Europe/London]"<hint text=":AppDateTimeZoned (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeZoned )"/>
             }
             """;
         assertRootInlayHints(validCode);
@@ -2825,9 +2835,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeZoned { #zoned } :DateTime
+                :AppDateTimeZoned { #zoned } :DateTime
               }
-              :type :Seq( :DateTimeZoned )
+              :type :Seq( :AppDateTimeZoned )
               :body [ "2026-03-15T08:00:00-05:00[America/Chicago]" ]
             }
             """;
@@ -2841,9 +2851,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeZoned { #zoned } :DateTime
+                :AppDateTimeZoned { #zoned } :DateTime
               }
-              :type :Seq( :DateTimeZoned )
+              :type :Seq( :AppDateTimeZoned )
               :body [ "2026-03-08T02:30:00" ]
             }
             """;
@@ -2854,15 +2864,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testDateTimeAuditedHighlightingAndInlays() {
-        // 1. Valid :DateTimeAudited with Inlay Hints
+        // 1. Valid :AppDateTimeAudited with Inlay Hints
         var validCode = """
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeAudited { #audited } :DateTime
+                :AppDateTimeAudited { #audited } :DateTime
               }
-              :type :Seq( :DateTimeAudited )
-              :body [ "2026-03-15T08:00:00-05:00[America/Chicago]"<hint text=":DateTimeAudited"/> "2026-01-15T08:00:00-06:00[America/Chicago]"<hint text=":DateTimeAudited"/> ]<hint text=":Seq( :DateTimeAudited )"/>
+              :type :Seq( :AppDateTimeAudited )
+              :body [ "2026-03-15T08:00:00-05:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> :DateTime)"/> "2026-01-15T08:00:00-06:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeAudited )"/>
             }
             """;
         assertRootInlayHints(validCode);
@@ -2872,9 +2882,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeAudited { #audited } :DateTime
+                :AppDateTimeAudited { #audited } :DateTime
               }
-              :type :Seq( :DateTimeAudited )
+              :type :Seq( :AppDateTimeAudited )
               :body [ "2026-03-15T08:00:00-05:00" ]
             }
             """;
@@ -2888,9 +2898,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeAudited { #audited } :DateTime
+                :AppDateTimeAudited { #audited } :DateTime
               }
-              :type :Seq( :DateTimeAudited )
+              :type :Seq( :AppDateTimeAudited )
               :body [ "2026-03-15T08:00:00[America/Chicago]" ]
             }
             """;
@@ -2911,11 +2921,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeOffset  { #offset } :DateTime
-                :DateTimeZoned   { #zoned } :DateTime
-                :DateTimeAudited { #audited } :DateTime
+                :AppDateTimeOffset  { #offset } :DateTime
+                :AppDateTimeZoned   { #zoned } :DateTime
+                :AppDateTimeAudited { #audited } :DateTime
               }
-              :type :Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited )
+              :type :Tuple( :AppDateTimeOffset :AppDateTimeZoned :AppDateTimeAudited )
               :body <caret>
             }
             """);
@@ -2932,11 +2942,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :DateTimeOffset  { #offset } :DateTime
-                :DateTimeZoned   { #zoned } :DateTime
-                :DateTimeAudited { #audited } :DateTime
+                :AppDateTimeOffset  { #offset } :DateTime
+                :AppDateTimeZoned   { #zoned } :DateTime
+                :AppDateTimeAudited { #audited } :DateTime
               }
-              :type :Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited )
+              :type :Tuple( :AppDateTimeOffset :AppDateTimeZoned :AppDateTimeAudited )
               :body (
                 "2026-08-18T18:00:00-05:00"
                 "2026-08-18T18:00:00[America/Chicago]"

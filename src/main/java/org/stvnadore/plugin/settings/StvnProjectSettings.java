@@ -34,6 +34,8 @@ public final class StvnProjectSettings implements PersistentStateComponent<StvnP
         }
         /** If true, renders inlay type hints in editor. */
         public boolean showTypeHints = true;
+        /** Presentation mode for nominal type alias inlay hints. */
+        public AliasExpansionMode aliasExpansionMode = AliasExpansionMode.FULL;
         /** If true, renders documentation on hover. */
         public boolean showHoverDocs = true;
         /** If true, inspects and warns on redundant tags. */

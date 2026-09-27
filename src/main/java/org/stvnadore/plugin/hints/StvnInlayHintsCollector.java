@@ -9,6 +9,9 @@ import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.settings.AliasExpansionMode;
+import org.stvnadore.plugin.settings.StvnProjectSettings;
+import org.stvnadore.plugin.util.StvnTypePresentationUtil;
 import org.stvnadore.psi.Value;
 
 /**
@@ -42,9 +45,14 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                         var coreNode = StvnTypeResolver.resolveCoreValue(valueElement);
                         var finalLabel = StvnTypeInferenceHelper.resolveValueTypeWithDepth(valueElement, 16);
                         if (finalLabel != null && !finalLabel.isEmpty()) {
-                            var offset = StvnTypeInferenceHelper.calculateInlayBadgeOffset(valueElement, coreNode);
-                            var presentation = getFactory().text(finalLabel);
-                            sink.addInlineElement(offset, true, presentation, false);
+                            var projSettings = StvnProjectSettings.getInstance(valueElement.getProject());
+                            var mode = projSettings != null ? projSettings.getState().aliasExpansionMode : AliasExpansionMode.FULL;
+                            var formatted = StvnTypePresentationUtil.formatAliasChain(finalLabel, mode);
+                            if (formatted.isPresent()) {
+                                var offset = StvnTypeInferenceHelper.calculateInlayBadgeOffset(valueElement, coreNode);
+                                var presentation = getFactory().text(formatted.get());
+                                sink.addInlineElement(offset, true, presentation, false);
+                            }
                         }
                     }
                 }

@@ -85,7 +85,7 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
 
             @Override
             public @Nullable javax.swing.Icon getIcon(boolean unused) {
-                return StvnIcons.FILE;
+                return StvnIcons.STVN;
             }
         };
     }

@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.settings;
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -7,7 +8,6 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
-import org.stvnadore.plugin.icons.StvnIcons;
 
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -33,6 +33,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox enableFormDiscrepancyInspectionCheckBox;
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
     private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
+    private @Nullable JComboBox<AliasExpansionMode> aliasExpansionModeComboBox;
 
     /**
      * Constructs a new StvnConfigurable instance for the specified project.
@@ -81,6 +82,16 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(cb6);
 
         panel.add(javax.swing.Box.createVerticalStrut(10));
+        var aliasModeLabel = new JLabel("Nominal type alias expansion display mode:");
+        aliasModeLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        panel.add(aliasModeLabel);
+
+        var aliasModeCombo = new JComboBox<>(AliasExpansionMode.values());
+        aliasModeCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        aliasModeCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, aliasModeCombo.getPreferredSize().height));
+        panel.add(aliasModeCombo);
+
+        panel.add(javax.swing.Box.createVerticalStrut(10));
         var styleLabel = new JLabel("Multiline string auto-closing style:");
         styleLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         panel.add(styleLabel);
@@ -111,6 +122,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableFormDiscrepancyInspectionCheckBox = cb5;
         preferImpliedSumTypesCheckBox = cb6;
         blockStringEnterStyleComboBox = styleCombo;
+        aliasExpansionModeComboBox = aliasModeCombo;
 
         reset();
         return panel;
@@ -125,8 +137,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
+        var aliasCombo = aliasExpansionModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
             return false;
         }
 
@@ -139,7 +152,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
                cb4.isSelected() != projSettings.getState().enableRedundantTagInspection ||
                cb5.isSelected() != projSettings.getState().enableFormDiscrepancyInspection ||
                cb6.isSelected() != projSettings.getState().preferImpliedSumTypes ||
-               combo.getSelectedItem() != settings.getState().blockStringEnterStyle;
+               combo.getSelectedItem() != settings.getState().blockStringEnterStyle ||
+               aliasCombo.getSelectedItem() != projSettings.getState().aliasExpansionMode;
     }
 
     @Override
@@ -151,8 +165,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
+        var aliasCombo = aliasExpansionModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
             return;
         }
 
@@ -166,6 +181,11 @@ public final class StvnConfigurable implements SearchableConfigurable {
         projSettings.getState().enableFormDiscrepancyInspection = cb5.isSelected();
         projSettings.getState().preferImpliedSumTypes = cb6.isSelected();
         settings.getState().blockStringEnterStyle = (StvnSettings.BlockStringEnterStyle) combo.getSelectedItem();
+        var selectedMode = (AliasExpansionMode) aliasCombo.getSelectedItem();
+        if (selectedMode != null) {
+            projSettings.getState().aliasExpansionMode = selectedMode;
+        }
+        DaemonCodeAnalyzer.getInstance(project).restart(this);
     }
 
     @Override
@@ -177,8 +197,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
+        var aliasCombo = aliasExpansionModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
             return;
         }
 
@@ -192,6 +213,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb5.setSelected(projSettings.getState().enableFormDiscrepancyInspection);
         cb6.setSelected(projSettings.getState().preferImpliedSumTypes);
         combo.setSelectedItem(settings.getState().blockStringEnterStyle);
+        aliasCombo.setSelectedItem(projSettings.getState().aliasExpansionMode);
     }
 
     @Override
@@ -204,6 +226,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableFormDiscrepancyInspectionCheckBox = null;
         preferImpliedSumTypesCheckBox = null;
         blockStringEnterStyleComboBox = null;
+        aliasExpansionModeComboBox = null;
     }
 
 }

@@ -35,7 +35,7 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
             return new LineMarkerInfo<>(
                 element,
                 element.getTextRange(),
-                StvnIcons.FILE,
+                StvnIcons.STVN_INCL,
                 elt -> "Browse :defs namespace dependencies",
                 (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.DEFS),
                 GutterIconRenderer.Alignment.RIGHT,
@@ -47,7 +47,7 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
             return new LineMarkerInfo<>(
                 element,
                 element.getTextRange(),
-                StvnIcons.FILE,
+                StvnIcons.STVN,
                 elt -> "Browse :type schema contract dependencies",
                 (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.TYPE),
                 GutterIconRenderer.Alignment.RIGHT,
@@ -59,7 +59,7 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
             return new LineMarkerInfo<>(
                 element,
                 element.getTextRange(),
-                StvnIcons.FILE,
+                StvnIcons.STVN,
                 elt -> "Browse :body payload dependencies",
                 (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.BODY),
                 GutterIconRenderer.Alignment.RIGHT,
