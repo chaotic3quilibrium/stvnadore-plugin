@@ -764,7 +764,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
-        if (d.message().contains("mismatched input") && d.message().contains("expecting ')'")) {
+        var msg = d.message();
+        if (msg.contains("mismatched input") && (msg.contains("expecting ')'") || msg.contains("expecting <schema type>"))) {
             for (var other : allDiagnostics) {
                 if (other != d && Math.abs(other.startOffset() - d.startOffset()) <= 15 &&
                     (other.message().contains("empty composite") || other.message().contains("insufficient composite"))) {

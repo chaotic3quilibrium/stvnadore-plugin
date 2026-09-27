@@ -54,16 +54,17 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
-                var schemaType = typeDef.getSchemaType();
-                if (schemaType == null) {
+            }
+
+            @Override
+            public void visitSchemaType(@NotNull SchemaType schemaType) {
+                super.visitSchemaType(schemaType);
+                var metaMap = schemaType.getMetadataMap();
+                if (metaMap == null) {
                     return;
                 }
                 var baseType = resolveBaseTypeString(schemaType);
                 if (!baseType.equals(StvnVocabulary.TYPE_STRING)) {
-                    return;
-                }
-                var metaMap = typeDef.getMetadataMap();
-                if (metaMap == null) {
                     return;
                 }
 

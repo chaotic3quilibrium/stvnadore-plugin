@@ -136,7 +136,7 @@ public final class StvnTypeResolver {
                         if (num != null) maxVal = num;
                     } else if (entryText.startsWith("#size")) {
                         var schemaType = typeDef.getSchemaType();
-                        var schemaText = schemaType != null ? schemaType.getText().trim() : "";
+                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType).trim() : "";
                         if (StvnVocabulary.TYPE_STRING.equals(schemaText)) {
                             return true;
                         }
@@ -144,7 +144,7 @@ public final class StvnTypeResolver {
                 }
 
                 var schemaType = typeDef.getSchemaType();
-                var schemaText = schemaType != null ? schemaType.getText().trim() : "";
+                var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType).trim() : "";
                 if ((hasMaxIncl || hasMinExcl) && StvnVocabulary.TYPE_INT.equals(schemaText)) {
                     return true;
                 }

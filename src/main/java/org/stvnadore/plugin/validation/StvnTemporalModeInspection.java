@@ -10,6 +10,7 @@ import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
 
 /**
@@ -54,10 +55,10 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                 super.visitTypeDefinition(typeDef);
                 var schemaType = typeDef.getSchemaType();
                 if (schemaType == null) return;
-                var typeText = schemaType.getText().trim();
+                var typeText = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
 
                 if (":TimeEpoch".equals(typeText)) {
-                    var metaMap = typeDef.getMetadataMap();
+                    var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
                     boolean hasScale = false;
                     int scaleCount = 0;
                     boolean hasLegacyUnit = false;
@@ -100,7 +101,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                         );
                     }
                 } else if (":DateTime".equals(typeText)) {
-                    var metaMap = typeDef.getMetadataMap();
+                    var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
                     boolean hasOffset = false;
                     boolean hasZoned = false;
                     boolean hasAudited = false;
@@ -133,21 +134,59 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
             @Override
             public void visitTypeEntry(@NotNull TypeEntry typeEntry) {
                 super.visitTypeEntry(typeEntry);
-                var schemaType = typeEntry.getSchemaType();
-                if (schemaType == null) return;
-                var text = schemaType.getText().trim();
+                // Handled via visitSchemaType
+            }
+
+            @Override
+            public void visitSchemaType(@NotNull SchemaType schemaType) {
+                super.visitSchemaType(schemaType);
+                if (schemaType.getParent() instanceof TypeDefinition) {
+                    return; // Handled by visitTypeDefinition with quick-fixes
+                }
+                var text = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
                 if (":TimeEpoch".equals(text)) {
-                    holder.registerProblem(
-                        schemaType,
-                        "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
-                        ProblemHighlightType.GENERIC_ERROR
-                    );
+                    var metaMap = schemaType.getMetadataMap();
+                    boolean hasScale = false;
+                    if (metaMap != null) {
+                        for (var e : metaMap.getMetadataEntryList()) {
+                            var t = e.getText().trim();
+                            if (e.getNode().findChildByType(StvnTypes.KW_SCALE_S) != null || "#s".equals(t)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_MS) != null || "#ms".equals(t)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_US) != null || "#us".equals(t)
+                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_NS) != null || "#ns".equals(t)) {
+                                hasScale = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasScale) {
+                        holder.registerProblem(
+                            schemaType,
+                            "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    }
                 } else if (":DateTime".equals(text)) {
-                    holder.registerProblem(
-                        schemaType,
-                        "Temporal type ':DateTime' requires explicit mode or unit facet (e.g. '#offset').",
-                        ProblemHighlightType.GENERIC_ERROR
-                    );
+                    var metaMap = schemaType.getMetadataMap();
+                    boolean hasMode = false;
+                    if (metaMap != null) {
+                        for (var e : metaMap.getMetadataEntryList()) {
+                            var t = e.getText();
+                            if (t.startsWith("#offset") || e.getNode().findChildByType(StvnTypes.KW_OFFSET) != null
+                                    || t.startsWith("#zoned") || e.getNode().findChildByType(StvnTypes.KW_ZONED) != null
+                                    || t.startsWith("#audited") || e.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) {
+                                hasMode = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasMode) {
+                        holder.registerProblem(
+                            schemaType,
+                            "Temporal type ':DateTime' requires explicit mode or unit facet (e.g. '#offset').",
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    }
                 }
             }
         };

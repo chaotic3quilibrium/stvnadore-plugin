@@ -20,6 +20,17 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
         super(node);
     }
 
+    /**
+     * Returns the metadata map attached to this constant definition via its schema type.
+     *
+     * @return the metadata map, or null if unadorned
+     */
+    @Override
+    public @Nullable org.stvnadore.psi.MetadataMap getMetadataMap() {
+        var schemaType = getSchemaType();
+        return schemaType != null ? schemaType.getMetadataMap() : null;
+    }
+
     @Override
     public @Nullable PsiElement getNameIdentifier() {
         return findChildByClass(ValueKeyword.class);

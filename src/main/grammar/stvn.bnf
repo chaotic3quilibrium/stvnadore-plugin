@@ -179,7 +179,7 @@ include_map_alias       ::= type_keyword type_keyword {
 }
 private include_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
 
-type_definition          ::= type_def_target metadata_map? schema_type {
+type_definition          ::= type_def_target schema_type {
   pin=1
   recoverWhile=type_def_recover
   mixin="org.stvnadore.plugin.psi.impl.StvnTypeDefinitionMixin"
@@ -196,11 +196,11 @@ private type_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_TY
                             | COLL_SEQ | COLL_SET | COLL_MAP
                             | LPAREN | LBRACK)
 
-constant_definition      ::= value_keyword metadata_map? schema_type value {
+constant_definition      ::= value_keyword schema_type value {
   pin=1
   recoverWhile=const_def_recover
   mixin="org.stvnadore.plugin.psi.impl.StvnConstantDefinitionMixin"
-  implements="com.intellij.psi.PsiNameIdentifierOwner"
+  implements="org.stvnadore.plugin.psi.StvnConstantDefinitionNode"
 }
 private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_TYPE | KW_BODY | type_keyword | value_keyword
                              | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
@@ -225,7 +225,7 @@ metadata_value           ::= boolean_value | integer_literal | float_literal | s
 private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | KW_FILTER_INCL | KW_FILTER_EXCL)
 
 // --- TYPE SYSTEM CORE ---
-schema_type             ::= schema_constructor | type_keyword
+schema_type             ::= metadata_map? (schema_constructor | type_keyword)
 schema_constructor      ::= atomic_type | collection_type | product_type | sum_type
 atomic_type             ::= ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
 structural_type         ::= product_type | sum_type

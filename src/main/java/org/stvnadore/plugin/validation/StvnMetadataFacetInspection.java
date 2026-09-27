@@ -70,7 +70,16 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         return new Visitor() {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
-                var metaMap = def.getMetadataMap();
+                // Top-level validation handled uniformly via visitSchemaType
+            }
+
+            @Override
+            public void visitSchemaType(@NotNull SchemaType schemaType) {
+                super.visitSchemaType(schemaType);
+                if (schemaType.getParent() instanceof ConstantDefinition) {
+                    return; // Handled by visitConstantDefinition
+                }
+                var metaMap = schemaType.getMetadataMap();
                 if (metaMap != null) {
                     if (metaMap.getMetadataEntryList().isEmpty()) {
                         holder.registerProblem(
@@ -80,7 +89,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             new RemoveElementQuickFix("Remove empty metadata block")
                         );
                     } else {
-                        validateMetadataEntries(metaMap, def, holder);
+                        validateMetadataEntries(metaMap, schemaType, holder);
                     }
                 }
             }
@@ -155,8 +164,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         };
     }
 
-    private void validateMetadataEntries(MetadataMap metaMap, TypeDefinition def, ProblemsHolder holder) {
-        var schemaType = def.getSchemaType();
+    private void validateMetadataEntries(MetadataMap metaMap, SchemaType schemaType, ProblemsHolder holder) {
         var baseType = schemaType != null ? resolveBaseTypeString(schemaType) : "";
         boolean isNumeric = isNumericType(baseType);
         boolean isString = isStringType(baseType);

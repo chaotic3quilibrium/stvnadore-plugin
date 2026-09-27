@@ -154,13 +154,15 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                // Check if enclosing type_definition has capacity facets (#maxSize, #minSize, or #size)
+                // Check if enclosing schema or type_definition has capacity facets (#maxSize, #minSize, or #size)
+                var enclosingSchema = PsiTreeUtil.getParentOfType(typeElem, SchemaType.class);
                 var typeDef = PsiTreeUtil.getParentOfType(typeElem, TypeDefinition.class);
                 boolean hasCapacityFacet = false;
                 int explicitCapacity = -1;
-                if (typeDef != null) {
-                    var metaMap = typeDef.getMetadataMap();
-                    if (metaMap != null) {
+                var metaMap = (enclosingSchema != null && enclosingSchema.getMetadataMap() != null)
+                    ? enclosingSchema.getMetadataMap()
+                    : (typeDef != null ? typeDef.getMetadataMap() : null);
+                if (metaMap != null) {
                         for (var entry : metaMap.getMetadataEntryList()) {
                             var text = entry.getText();
                             if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
@@ -175,7 +177,6 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                                 hasCapacityFacet = true;
                             }
                         }
-                    }
                 }
 
                 boolean isUnadorned = !hasCapacityFacet;
@@ -301,9 +302,11 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
      * @return the resolved capacity bound, or -1 if unresolvable
      */
     public static int resolveCapacityBound(SchemaType schemaType, PsiFile file) {
+        var directMeta = schemaType.getMetadataMap();
         var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
-        if (parentDef != null && parentDef.getMetadataMap() != null) {
-            for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+        var metaMap = directMeta != null ? directMeta : (parentDef != null ? parentDef.getMetadataMap() : null);
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
                 var text = entry.getText();
                 if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                     var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);

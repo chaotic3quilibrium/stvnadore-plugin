@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -57,11 +58,16 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
-                if (!isDiscreteType(typeDef)) {
+            }
+
+            @Override
+            public void visitSchemaType(@NotNull SchemaType schemaType) {
+                super.visitSchemaType(schemaType);
+                var metaMap = schemaType.getMetadataMap();
+                if (metaMap == null) {
                     return;
                 }
-                var metaMap = typeDef.getMetadataMap();
-                if (metaMap == null) {
+                if (!isDiscreteType(schemaType)) {
                     return;
                 }
 
@@ -93,15 +99,14 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         };
     }
 
-    private static boolean isDiscreteType(TypeDefinition typeDef) {
-        var schemaType = typeDef.getSchemaType();
+    private static boolean isDiscreteType(@Nullable SchemaType schemaType) {
         if (schemaType == null) return false;
         var baseType = resolveBaseTypeString(schemaType);
         if (baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return true;
         }
         if (baseType.equals(StvnVocabulary.TYPE_FLOAT)) {
-            var metaMap = typeDef.getMetadataMap();
+            var metaMap = schemaType.getMetadataMap();
             if (metaMap != null) {
                 for (var e : metaMap.getMetadataEntryList()) {
                     if (e.getText().startsWith(StvnVocabulary.FACET_KW_EXACT) || e.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {

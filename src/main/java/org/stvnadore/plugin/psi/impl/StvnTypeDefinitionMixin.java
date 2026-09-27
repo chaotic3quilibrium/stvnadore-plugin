@@ -20,6 +20,17 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
         super(node);
     }
 
+    /**
+     * Returns the metadata map attached to this type definition via its schema type.
+     *
+     * @return the metadata map, or null if unadorned
+     */
+    @Override
+    public @Nullable org.stvnadore.psi.MetadataMap getMetadataMap() {
+        var schemaType = getSchemaType();
+        return schemaType != null ? schemaType.getMetadataMap() : null;
+    }
+
     @Override
     public @Nullable TypeKeyword getTypeKeyword() {
         var target = getTypeDefTarget();
