@@ -979,6 +979,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (targetTypeDef != null) {
                     return targetTypeDef;
                 }
+                if (resolved instanceof IncludeMapAlias targetAlias) {
+                    return targetAlias;
+                }
                 if (resolved != null && resolved.getParent() instanceof IncludeMapAlias targetAlias) {
                     return targetAlias;
                 }
@@ -993,6 +996,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (targetTypeDef != null) {
                     return targetTypeDef;
                 }
+                if (resolved instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
+                    return targetAlias;
+                }
                 if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                     return targetAlias;
                 }
@@ -1001,6 +1007,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             // Usage site inside composite schema (e.g. :MapInv, :Tuple, :Union, :Seq, :Option, :Either):
             var ref = typeKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
+            if (resolved instanceof TypeDefinition targetDef) {
+                return targetDef;
+            }
+            if (resolved instanceof IncludeMapAlias targetAlias) {
+                return targetAlias;
+            }
+            if (resolved instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
+                return targetAlias;
+            }
             if (resolved instanceof TypeKeyword resolvedKw) {
                 var targetDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedKw);
                 if (targetDef != null) {

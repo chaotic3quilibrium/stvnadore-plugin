@@ -46,13 +46,13 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude type keyword by nominal name or fully qualified nominal identifier (FQNI).
+     * Resolves a prelude type definition AST node by nominal name or fully qualified nominal identifier (FQNI).
      *
      * @param project the active IntelliJ project
      * @param nameOrFqni the type identifier or FQNI to resolve
-     * @return the resolved TypeKeyword element, or {@code null} if not found in the prelude
+     * @return the resolved TypeDefinition element, or {@code null} if not found in the prelude
      */
-    public static @Nullable TypeKeyword resolvePreludeType(Project project, String nameOrFqni) {
+    public static @Nullable TypeDefinition resolvePreludeTypeDefinition(Project project, String nameOrFqni) {
         var file = getPreludeFile(project);
         var targetFqni = nameOrFqni.startsWith(":org/stvnadore/prelude/")
             ? nameOrFqni
@@ -61,9 +61,21 @@ public final class StvnPreludeBridge {
         for (var def : defs) {
             var kw = def.getTypeKeyword();
             if (kw != null && kw.getText().equals(targetFqni)) {
-                return kw;
+                return def;
             }
         }
         return null;
+    }
+
+    /**
+     * Resolves a prelude type keyword by nominal name or fully qualified nominal identifier (FQNI).
+     *
+     * @param project the active IntelliJ project
+     * @param nameOrFqni the type identifier or FQNI to resolve
+     * @return the resolved TypeKeyword element, or {@code null} if not found in the prelude
+     */
+    public static @Nullable TypeKeyword resolvePreludeType(Project project, String nameOrFqni) {
+        var def = resolvePreludeTypeDefinition(project, nameOrFqni);
+        return def != null ? def.getTypeKeyword() : null;
     }
 }

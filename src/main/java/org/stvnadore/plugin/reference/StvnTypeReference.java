@@ -2,8 +2,11 @@ package org.stvnadore.plugin.reference;
 
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementResolveResult;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiPolyVariantReference;
 import com.intellij.psi.PsiReferenceBase;
+import com.intellij.psi.ResolveResult;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
@@ -12,6 +15,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
@@ -25,7 +29,7 @@ import java.util.Set;
  * Resolves STVN TypeKeyword PSI elements to their target TypeDefinition declarations.
  */
 @NullMarked
-public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
+public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> implements PsiPolyVariantReference {
 
     private static final class Candidate {
         final PsiElement element;
@@ -90,6 +94,12 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
         if (manager.areElementsEquivalent(resolved, element)) {
             return true;
         }
+        if (resolved instanceof TypeDefinition typeDef) {
+            if (manager.areElementsEquivalent(typeDef.getTypeKeyword(), element)
+                || manager.areElementsEquivalent(typeDef.getNameIdentifier(), element)) {
+                return true;
+            }
+        }
         if (element instanceof TypeDefinition typeDef) {
             return manager.areElementsEquivalent(resolved, typeDef.getTypeKeyword())
                 || manager.areElementsEquivalent(resolved, typeDef.getNameIdentifier());
@@ -105,15 +115,21 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
 
     @Override
     public @Nullable PsiElement resolve() {
+        var results = multiResolve(false);
+        return results.length == 1 ? results[0].getElement() : null;
+    }
+
+    @Override
+    public ResolveResult @NotNull [] multiResolve(boolean incompleteCode) {
         var keyword = getElement();
         var parent = keyword.getParent();
 
         // 1. Declarations should not resolve to anything else
         if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(keyword)) {
-            return null;
+            return ResolveResult.EMPTY_ARRAY;
         }
         if (parent instanceof org.stvnadore.psi.PackagePath) {
-            return null;
+            return ResolveResult.EMPTY_ARRAY;
         }
 
         var isAliasFirstKeyword = false;
@@ -125,10 +141,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                     isAliasFirstKeyword = true;
                 } else {
                     // Second keyword (alias definition name) does not resolve
-                    return null;
+                    return ResolveResult.EMPTY_ARRAY;
                 }
             } else {
-                return null;
+                return ResolveResult.EMPTY_ARRAY;
             }
         } else if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
             var list = alias.getTypeKeywordList();
@@ -136,16 +152,16 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                 if (list.get(0) == keyword) {
                     isAliasFirstKeyword = true;
                 } else {
-                    return null;
+                    return ResolveResult.EMPTY_ARRAY;
                 }
             } else {
-                return null;
+                return ResolveResult.EMPTY_ARRAY;
             }
         }
 
         var containingFile = keyword.getContainingFile();
         if (containingFile == null) {
-            return null;
+            return ResolveResult.EMPTY_ARRAY;
         }
 
         var targetTypeName = keyword.getText();
@@ -159,15 +175,52 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                 if (stringLit != null) {
                     var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                     if (targetFile != null) {
-                        return StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited);
+                        var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited);
+                        return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
                     }
                 }
             }
-            return null;
+            return ResolveResult.EMPTY_ARRAY;
+        }
+
+        // 2. Lexical Package Scope Priority: check sibling definitions in enclosing package
+        var enclosingPkg = PsiTreeUtil.getParentOfType(keyword, PackageEnclosure.class);
+        if (enclosingPkg != null && (!targetTypeName.startsWith(":") || !targetTypeName.substring(1).contains("/"))) {
+            for (var elem : enclosingPkg.getPackageElementList()) {
+                var typeDef = elem.getTypeDefinition();
+                if (typeDef != null) {
+                    var defKw = typeDef.getTypeKeyword();
+                    if (defKw != null && defKw.getText().equals(targetTypeName)) {
+                        return new ResolveResult[]{new PsiElementResolveResult(defKw)};
+                    }
+                }
+                var useStmt = elem.getUseStmt();
+                if (useStmt != null) {
+                    var aliasBlock = useStmt.getUseAliasBlock();
+                    if (aliasBlock != null) {
+                        for (var alias : aliasBlock.getUseMapAliasList()) {
+                            var list = alias.getTypeKeywordList();
+                            if (list.size() >= 2 && list.get(1) != null && list.get(1).getText().equals(targetTypeName)) {
+                                return new ResolveResult[]{new PsiElementResolveResult(list.get(1))};
+                            }
+                        }
+                    }
+                }
+            }
+            var pkgPath = enclosingPkg.getPackagePath();
+            if (pkgPath != null) {
+                var bare = targetTypeName.startsWith(":") ? targetTypeName.substring(1) : targetTypeName;
+                var fqni = pkgPath.getText() + "/" + bare;
+                var resolvedFqni = StvnTypeReference.resolveTypeInFile(containingFile, fqni, visited);
+                if (resolvedFqni != null) {
+                    return new ResolveResult[]{new PsiElementResolveResult(resolvedFqni)};
+                }
+            }
         }
 
         // Regular type reference lookup: check local then remote
-        return StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, visited);
+        var resolved = StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, visited);
+        return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
     }
 
     /**
@@ -486,11 +539,12 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                         }
                     }
                 }
-            } else if (parent instanceof IncludeMapAlias alias) {
+            } else if (currentElement instanceof IncludeMapAlias || parent instanceof IncludeMapAlias) {
+                var alias = currentElement instanceof IncludeMapAlias a ? a : (IncludeMapAlias) parent;
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2) {
                     var remoteKw = list.get(0);
-                    var includeElement = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
+                    var includeElement = PsiTreeUtil.getParentOfType(alias, IncludeElement.class);
                     if (includeElement != null) {
                         var stringLit = includeElement.getStringLiteral();
                         if (stringLit != null) {
@@ -503,6 +557,20 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                                     continue;
                                 }
                             }
+                        }
+                    }
+                }
+            } else if (currentElement instanceof org.stvnadore.psi.UseMapAlias || parent instanceof org.stvnadore.psi.UseMapAlias) {
+                var useAlias = currentElement instanceof org.stvnadore.psi.UseMapAlias a ? a : (org.stvnadore.psi.UseMapAlias) parent;
+                var list = useAlias.getTypeKeywordList();
+                if (list.size() >= 2) {
+                    var remoteKw = list.get(0);
+                    if (remoteKw != null) {
+                        visitedFiles.clear();
+                        var resolved = resolveTypeInFile(startKeyword.getContainingFile(), remoteKw.getText(), visitedFiles, trace);
+                        if (resolved != null && visitedElements.add(resolved)) {
+                            currentElement = resolved;
+                            continue;
                         }
                     }
                 }

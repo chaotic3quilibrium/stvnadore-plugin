@@ -314,7 +314,9 @@ public final class StvnTypeResolver {
         if (schema.aliasName().isPresent()) {
             var alias = schema.aliasName().get();
             var keywordElement = StvnTypeReference.resolveTypeInFile(containingFile, alias, new HashSet<>());
-            if (keywordElement instanceof TypeKeyword kw) {
+            var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
+                   : keywordElement instanceof TypeKeyword k ? k : null;
+            if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
                 return formatTrace(trace);
             }
@@ -458,7 +460,9 @@ public final class StvnTypeResolver {
                     return prefix + shortAlias;
                 }
                 var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                if (kw instanceof TypeKeyword typeKw) {
+                var typeKw = kw instanceof TypeDefinition td ? td.getTypeKeyword()
+                           : kw instanceof TypeKeyword k ? k : null;
+                if (typeKw != null) {
                     var trace = StvnTypeReference.extractResolutionTrace(typeKw);
                     if (trace.size() > 1) {
                         return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
@@ -707,7 +711,9 @@ public final class StvnTypeResolver {
         if (branchSchema.aliasName().isPresent()) {
             var alias = branchSchema.aliasName().get();
             var keywordElement = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-            if (keywordElement instanceof TypeKeyword kw) {
+            var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
+                   : keywordElement instanceof TypeKeyword k ? k : null;
+            if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
                 if (!trace.isEmpty()) {
                     return String.join(" -> ", trace);
@@ -734,12 +740,11 @@ public final class StvnTypeResolver {
      * @return the resolved branch SchemaType, or {@code null} if out of bounds or unresolvable
      */
     public static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
-        var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-        if (kw == null && alias.contains("/")) {
+        var typeDef = findTypeDefinition(file, alias);
+        if (typeDef == null && alias.contains("/")) {
             var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
-            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+            typeDef = findTypeDefinition(file, bare);
         }
-        var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
             if (schema != null && schema.getSchemaConstructor() != null) {
@@ -763,12 +768,11 @@ public final class StvnTypeResolver {
      * @return the resolved inner SchemaType, or {@code null} if unresolvable
      */
     public static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
-        var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-        if (kw == null && alias.contains("/")) {
+        var typeDef = findTypeDefinition(file, alias);
+        if (typeDef == null && alias.contains("/")) {
             var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
-            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+            typeDef = findTypeDefinition(file, bare);
         }
-        var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
             if (schema != null && schema.getSchemaConstructor() != null) {
@@ -793,12 +797,11 @@ public final class StvnTypeResolver {
      * @return the resolved branch SchemaType, or {@code null} if unresolvable
      */
     public static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
-        var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-        if (kw == null && alias.contains("/")) {
+        var typeDef = findTypeDefinition(file, alias);
+        if (typeDef == null && alias.contains("/")) {
             var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
-            kw = StvnTypeReference.resolveTypeInFile(file, bare, new HashSet<>());
+            typeDef = findTypeDefinition(file, bare);
         }
-        var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(kw);
         if (typeDef != null) {
             var schema = typeDef.getSchemaType();
             if (schema != null && schema.getSchemaConstructor() != null) {
@@ -1447,24 +1450,24 @@ public final class StvnTypeResolver {
             return schemaType; // Already a concrete constructor
         }
         var typeName = keyword.getText();
+        var typeDef = findTypeDefinition(keyword.getContainingFile(), typeName, keyword);
+        if (typeDef != null) {
+            return typeDef.getSchemaType();
+        }
         var resolved = StvnTypeReference.resolveTypeInFile(keyword.getContainingFile(), typeName, new HashSet<>());
         if (resolved != null) {
-            var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-            if (typeDef != null) {
-                return typeDef.getSchemaType();
-            }
-            var parent = resolved.getParent();
-            if (parent instanceof IncludeMapAlias alias) {
+            var alias = resolved instanceof IncludeMapAlias ima ? ima
+                      : resolved.getParent() instanceof IncludeMapAlias ima ? ima : null;
+            if (alias != null) {
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2) {
                     var remoteKw = list.get(0);
-                    var includeElement = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
+                    var includeElement = PsiTreeUtil.getParentOfType(alias, IncludeElement.class);
                     if (includeElement != null) {
                         var stringLit = includeElement.getStringLiteral();
                         var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                         if (targetFile != null && remoteKw != null) {
-                            var remoteResolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>());
-                            var remTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(remoteResolved);
+                            var remTypeDef = findTypeDefinition(targetFile, remoteKw.getText(), null);
                             if (remTypeDef != null) {
                                 return remTypeDef.getSchemaType();
                             }
@@ -1562,15 +1565,19 @@ public final class StvnTypeResolver {
         if (targetDef == null) return null;
 
         TypeDefinition typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
-        if (typeDef == null && targetDef.getParent() instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
+        var inclAlias = targetDef instanceof IncludeMapAlias ima ? ima
+                      : targetDef.getParent() instanceof IncludeMapAlias ima ? ima : null;
+        var useAlias = targetDef instanceof org.stvnadore.psi.UseMapAlias uma ? uma
+                     : targetDef.getParent() instanceof org.stvnadore.psi.UseMapAlias uma ? uma : null;
+        if (typeDef == null && inclAlias != null) {
+            var list = inclAlias.getTypeKeywordList();
             var remoteKw = list.size() >= 1 ? list.get(0) : null;
             if (remoteKw != null) {
                 var resolved = new StvnTypeReference(remoteKw).resolve();
                 typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
             }
-        } else if (typeDef == null && targetDef.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
-            var list = alias.getTypeKeywordList();
+        } else if (typeDef == null && useAlias != null) {
+            var list = useAlias.getTypeKeywordList();
             var remoteKw = list.size() >= 1 ? list.get(0) : null;
             if (remoteKw != null) {
                 var resolved = new StvnTypeReference(remoteKw).resolve();
@@ -2431,6 +2438,52 @@ public final class StvnTypeResolver {
                 }
             }
         }
+    }
+
+    /**
+     * Resolves a TypeDefinition by name within a file or context scope,
+     * traversing nested package scopes, root definitions, and include hierarchies.
+     *
+     * @param file the containing PSI file
+     * @param typeName the type name or alias to locate
+     * @param context the optional context element determining the active lexical scope
+     * @return the resolved TypeDefinition, or null if unresolvable
+     */
+    public static @Nullable TypeDefinition findTypeDefinition(
+            @Nullable PsiFile file,
+            @Nullable String typeName,
+            @Nullable PsiElement context
+    ) {
+        if (file == null || typeName == null || typeName.isEmpty()) {
+            return null;
+        }
+        if (context != null) {
+            var enclosingPkg = PsiTreeUtil.getParentOfType(context, org.stvnadore.psi.PackageEnclosure.class);
+            if (enclosingPkg != null && (!typeName.startsWith(":") || !typeName.substring(1).contains("/"))) {
+                for (var elem : enclosingPkg.getPackageElementList()) {
+                    var typeDef = elem.getTypeDefinition();
+                    if (typeDef != null) {
+                        var kw = typeDef.getTypeKeyword();
+                        if (kw != null && kw.getText().equals(typeName)) {
+                            return typeDef;
+                        }
+                    }
+                }
+            }
+        }
+        var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+        return org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+    }
+
+    /**
+     * Resolves a TypeDefinition by name within a file without context element.
+     *
+     * @param file the containing PSI file
+     * @param typeName the type name or alias to locate
+     * @return the resolved TypeDefinition, or null if unresolvable
+     */
+    public static @Nullable TypeDefinition findTypeDefinition(@Nullable PsiFile file, @Nullable String typeName) {
+        return findTypeDefinition(file, typeName, null);
     }
 
     /**
