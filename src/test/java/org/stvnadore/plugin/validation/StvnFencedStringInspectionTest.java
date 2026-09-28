@@ -461,4 +461,91 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         boolean hasErrors = postHighlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
         assertFalse("Both fenced string blocks must be valid with zero errors after targeted replacement", hasErrors);
     }
+
+    public void testArbitraryRecursiveNestingThreeLevelsPassesCleanly() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[FENCE1]
+                {
+                  :type :String
+                  :body \"\"\"[FENCE2]
+                  {
+                    :type :String
+                    :body \"\"\"[FENCE3]
+                    {
+                      :type :String
+                      :body "The core"
+                    } [FENCE3]\"\"\"
+                  }
+                  [FENCE2]\"\"\"
+                }[FENCE1]\"\"\"
+            }
+            """;
+        myFixture.configureByText("nesting_three_levels.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Three-level recursively nested fenced strings must produce zero errors under Rule STR-04", hasErrors);
+    }
+
+    public void testArbitraryRecursiveNestingFourLevelsPassesCleanly() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[L1]
+                Level 1 Content
+                \"\"\"[L2]
+                  Level 2 Content
+                  \"\"\"[L3]
+                    Level 3 Content
+                    \"\"\"[L4]
+                      Level 4 Core Content
+                    [L4]\"\"\"
+                  [L3]\"\"\"
+                [L2]\"\"\"
+              [L1]\"\"\"
+            }
+            """;
+        myFixture.configureByText("nesting_four_levels.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Four-level recursively nested fenced strings must produce zero errors under Rule STR-04", hasErrors);
+    }
+
+    public void testNestedFencedStringTerminalClosingTagMismatchDetected() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[OUTER]
+                \"\"\"[INNER]
+                SELECT * FROM nested;
+                [INNER]\"\"\"
+              [MISMATCH]\"\"\"
+            }
+            """;
+        myFixture.configureByText("nested_terminal_mismatch.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var mismatchHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Mismatched closing fence tag '[MISMATCH]', expected '[OUTER]'"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected terminal closing tag mismatch error for [MISMATCH]", mismatchHighlight);
+    }
+
+    public void testArbitraryClosingFenceSyntaxInPayloadBodyDoesNotTriggerInspectionError() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[DOCS]
+              Documentation text explaining closing delimiters:
+              To close a block, type [SOME_TAG]\"\"\".
+              Another arbitrary delimiter pattern: [OTHER]\"\"\".
+              [DOCS]\"\"\"
+            }
+            """;
+        myFixture.configureByText("closing_delimiter_in_docs.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
+        assertFalse("Arbitrary closing fence patterns inside payload body must not trigger errors on valid outer block", hasErrors);
+    }
 }

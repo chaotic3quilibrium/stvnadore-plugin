@@ -31,8 +31,6 @@ import java.util.regex.Pattern;
 public final class StvnFencedStringTagRenameHandler implements RenameHandler {
 
     private static final Pattern VALID_TAG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,256}$");
-    private static final Pattern DELIMITER_BOUNDARY_PATTERN =
-        Pattern.compile("(\"\"\"\\[([a-zA-Z0-9_-]{1,256})\\])|(\\[([a-zA-Z0-9_-]{1,256})\\]\"\"\")");
 
     /**
      * Constructs a new StvnFencedStringTagRenameHandler instance.
@@ -198,41 +196,40 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
             openDelimiterEnd += 1;
         }
 
-        var matcher = DELIMITER_BOUNDARY_PATTERN.matcher(text);
-        int depth = 0;
-        int searchStart = openDelimiterEnd;
-        String candidateClosingTag = null;
-        int closingFenceStart = -1;
-        int closingTagStart = -1;
-        int closingTagEnd = -1;
-        boolean found = false;
-
-        while (matcher.find(searchStart)) {
-            if (matcher.group(1) != null) {
-                depth++;
-            } else if (matcher.group(3) != null) {
-                if (depth > 0) {
-                    depth--;
-                } else {
-                    String tag = matcher.group(4);
-                    if (tag.equals(openTag)) {
-                        candidateClosingTag = tag;
-                        closingFenceStart = matcher.start(3);
-                        closingTagStart = matcher.start(4);
-                        closingTagEnd = matcher.end(4);
-                        found = true;
-                        break;
-                    } else if (matcher.end(3) == text.length()) {
-                        return null; // Mismatched terminal delimiter
-                    }
-                }
-            }
-            searchStart = matcher.end();
-        }
-
-        if (!found || candidateClosingTag == null) {
+        if (!text.endsWith("\"\"\"")) {
             return null;
         }
+
+        int tripleQuotesIdx = text.length() - 3;
+        if (tripleQuotesIdx <= openDelimiterEnd || text.charAt(tripleQuotesIdx - 1) != ']') {
+            return null;
+        }
+
+        int closingCloseBracket = tripleQuotesIdx - 1;
+        int closingOpenBracket = -1;
+        for (int i = closingCloseBracket - 1; i >= openDelimiterEnd; i--) {
+            char c = text.charAt(i);
+            if (c == '[') {
+                closingOpenBracket = i;
+                break;
+            }
+            if (c == '\n' || c == '\r' || c == ']') {
+                break;
+            }
+        }
+
+        if (closingOpenBracket < 0) {
+            return null;
+        }
+
+        String closingTag = text.substring(closingOpenBracket + 1, closingCloseBracket);
+        if (!closingTag.equals(openTag)) {
+            return null; // Mismatched or unbalanced delimiters
+        }
+
+        int closingFenceStart = closingOpenBracket;
+        int closingTagStart = closingOpenBracket + 1;
+        int closingTagEnd = closingCloseBracket;
 
         return new FencedBlockData(
             openTag,

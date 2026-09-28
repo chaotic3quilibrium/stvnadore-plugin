@@ -159,30 +159,61 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             return;
         }
 
-        // 2. Validate Closing Delimiter via Sequential Depth-Counter Scan
-        var delimiterMatcher = DELIMITER_BOUNDARY_PATTERN.matcher(text);
-        int depth = 0;
-        int searchStart = openDelimiterEnd;
+        // 2. Validate Closing Delimiter Anchored to End of element.getText() (Rule STR-04)
         String candidateClosingTag = null;
         TextRange candidateClosingRange = null;
         int closingRelativeOffset = -1;
 
-        while (delimiterMatcher.find(searchStart)) {
-            if (delimiterMatcher.group(1) != null) {
-                // Opening delimiter: increment nesting depth
-                depth++;
-            } else if (delimiterMatcher.group(3) != null) {
-                // Closing delimiter: decrement if nested, evaluate if at depth 0
-                if (depth > 0) {
-                    depth--;
-                } else {
-                    candidateClosingTag = delimiterMatcher.group(4);
-                    candidateClosingRange = new TextRange(delimiterMatcher.start(3), delimiterMatcher.end(3));
-                    closingRelativeOffset = delimiterMatcher.start(3);
+        int tripleIdx = -1;
+        if (text.endsWith("\"\"\"")) {
+            tripleIdx = text.length() - 3;
+        } else {
+            String trimmed = text.stripTrailing();
+            if (trimmed.endsWith("\"\"\"")) {
+                tripleIdx = trimmed.length() - 3;
+            }
+        }
+
+        if (tripleIdx > openDelimiterEnd && text.charAt(tripleIdx - 1) == ']') {
+            int closingCloseBracket = tripleIdx - 1;
+            int closingOpenBracket = -1;
+            for (int i = closingCloseBracket - 1; i >= openDelimiterEnd; i--) {
+                char c = text.charAt(i);
+                if (c == '[') {
+                    closingOpenBracket = i;
+                    break;
+                }
+                if (c == '\n' || c == '\r' || c == ']') {
                     break;
                 }
             }
-            searchStart = delimiterMatcher.end();
+            if (closingOpenBracket >= 0) {
+                candidateClosingTag = text.substring(closingOpenBracket + 1, closingCloseBracket);
+                candidateClosingRange = new TextRange(closingOpenBracket, tripleIdx + 3);
+                closingRelativeOffset = closingOpenBracket;
+            }
+        }
+
+        // Fallback strictly for BAD_CHARACTER tokens swallowed to EOF: locate first depth-0 closing delimiter
+        if (candidateClosingTag == null && element.getNode() != null && element.getNode().getElementType() == TokenType.BAD_CHARACTER) {
+            var delimiterMatcher = DELIMITER_BOUNDARY_PATTERN.matcher(text);
+            int depth = 0;
+            int searchStart = openDelimiterEnd;
+            while (delimiterMatcher.find(searchStart)) {
+                if (delimiterMatcher.group(1) != null) {
+                    depth++;
+                } else if (delimiterMatcher.group(3) != null) {
+                    if (depth > 0) {
+                        depth--;
+                    } else {
+                        candidateClosingTag = delimiterMatcher.group(4);
+                        candidateClosingRange = new TextRange(delimiterMatcher.start(3), delimiterMatcher.end(3));
+                        closingRelativeOffset = delimiterMatcher.start(3);
+                        break;
+                    }
+                }
+                searchStart = delimiterMatcher.end();
+            }
         }
 
         if (candidateClosingTag != null) {

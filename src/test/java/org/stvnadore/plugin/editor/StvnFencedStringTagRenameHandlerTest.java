@@ -415,4 +415,46 @@ public final class StvnFencedStringTagRenameHandlerTest extends BasePlatformTest
         assertTrue("Caret must not advance past closing bracket",
             actualCaretOffset <= expected.indexOf(']', expected.lastIndexOf("[F]")));
     }
+
+    public void testShiftF6OnRecursivelyNestedFencedStringRenamesOuterDelimitersLeavingInnerDelimitersUntouched() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"[OUTER<caret>]
+                content
+                \"\"\"[INNER]
+                nested content
+                [INNER]\"\"\"
+              [OUTER]\"\"\"
+            }
+            """;
+        myFixture.configureByText("rename_nested_outer.stvn", code);
+
+        var handler = new StvnFencedStringTagRenameHandler();
+        DataContext dataContext = ((EditorEx) myFixture.getEditor()).getDataContext();
+        assertTrue("Handler must be available on outer opening tag of recursively nested block",
+            handler.isAvailableOnDataContext(dataContext));
+
+        handler.invoke(getProject(), myFixture.getEditor(), myFixture.getFile(), dataContext);
+
+        TemplateState state = TemplateManagerImpl.getTemplateState(myFixture.getEditor());
+        assertNotNull("Live template state must be active", state);
+
+        myFixture.type("ENCLOSING\n");
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[ENCLOSING]
+                content
+                \"\"\"[INNER]
+                nested content
+                [INNER]\"\"\"
+              [ENCLOSING]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+        assertTrue("Inner nested delimiters must remain completely untouched",
+            myFixture.getEditor().getDocument().getText().contains("\"\"\"[INNER]\n    nested content\n    [INNER]\"\"\""));
+    }
 }
