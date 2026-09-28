@@ -9,6 +9,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnLiteralParser;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
+import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.Visitor;
 
@@ -38,23 +39,44 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     return;
                 }
 
-                var baseType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
-                if (!baseType.startsWith(":Uint") && !baseType.startsWith(StvnVocabulary.TYPE_INT)) {
+                var baseType = StvnSchemaFormatter.formatSchema(schemaType).trim();
+                boolean isUnsigned = false;
+                Integer bitWidth = null;
+
+                var meta = schemaType.getMetadataMap();
+                var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
+                if (meta == null || !StvnVocabulary.TYPE_INT.equals(cleanType)) {
+                    var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
+                    if (resolved != null) {
+                        if (meta == null) {
+                            meta = resolved.getMetadataMap();
+                        }
+                        cleanType = StvnSchemaFormatter.formatCleanSchema(resolved).trim();
+                    }
+                }
+
+                if (meta != null) {
+                    for (var entry : meta.getMetadataEntryList()) {
+                        var txt = entry.getText().trim();
+                        if (txt.equals("#unsigned") || txt.startsWith("#unsigned ")) {
+                            isUnsigned = true;
+                        } else if (txt.startsWith("#size")) {
+                            var parts = txt.split("\\s+");
+                            if (parts.length >= 2) {
+                                try {
+                                    bitWidth = Integer.parseInt(parts[1]);
+                                } catch (NumberFormatException ignored) {}
+                            }
+                        }
+                    }
+                }
+
+                if (!StvnVocabulary.TYPE_INT.equals(cleanType)) {
                     return;
                 }
 
-                var isUnsigned = baseType.startsWith(":Uint");
-                var suffix = isUnsigned ? baseType.substring(5) : baseType.substring(4);
-                if (!suffix.isEmpty() && !suffix.matches("\\d+")) {
-                    return; // Nominal user type like :IntCounter or :UintAccount, not a numeric primitive
-                }
-                var bitWidth = 32;
-                if (!suffix.isEmpty()) {
-                    try {
-                        bitWidth = Integer.parseInt(suffix);
-                    } catch (NumberFormatException ignored) {
-                        return;
-                    }
+                if (bitWidth == null) {
+                    return;
                 }
 
                 var litText = value.getIntegerLiteral().getText();

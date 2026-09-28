@@ -46,10 +46,10 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
     public String getDemoText() {
         return "{\n" +
                 "  :defs {\n" +
-                "    <nominal>:Uuid</nominal> { <metadata>#equatable</metadata> <value>#TRUE</value> } <primitive>:StringFixed32</primitive>\n" +
+                "    <nominal>:Uuid</nominal> { <metadata>#equatable</metadata> <value>#TRUE</value> } <primitive>:String</primitive>\n" +
                 "    <nominal>:Status</nominal> <primitive>:Enum</primitive> [ <value>#Left</value> <value>#Right</value> <value>#Pending</value> ]\n" +
                 "  }\n" +
-                "  :type <primitive>:Option</primitive>(<primitive>:Either</primitive>(<nominal>:Status</nominal> <primitive>:Int32</primitive>))\n" +
+                "  :type <primitive>:Option</primitive>(<primitive>:Either</primitive>(<nominal>:Status</nominal> <primitive>:Int</primitive>))\n" +
                 "  :body <value>#Some</value> <value>#Right</value> 42\n" +
                 "}";
     }

@@ -7,8 +7,8 @@
     <li><b>Redundant Variant Tags:</b> When <i>"Prefer Implied Sum Types"</i> is enabled in project settings, explicit tags on unambiguous payload variants are flagged as redundant:
         <ul>
             <li><code>#Some "text"</code> in <code>:Option(:String)</code> (Rule A inference)</li>
-            <li><code>#Right 42</code> in <code>:Either(:String :Int32)</code> (Rule B inference)</li>
-            <li><code>#1 "payload"</code> in <code>:Union(:String :Int32)</code> (Rule C inference)</li>
+            <li><code>#Right 42</code> in <code>:Either(:String :Int)</code> (Rule B inference)</li>
+            <li><code>#1 "payload"</code> in <code>:Union(:String :Int)</code> (Rule C inference)</li>
         </ul>
     </li>
     <li><b>Form Discrepancies (Long vs. Short):</b> Flags sum-type tags and boolean literals that do not match the configured long-form or short-form style preference:
@@ -30,8 +30,8 @@
 <pre><code>{
   :type :Tuple(
     :Option( :String )
-    :Either( :String :Int32 )
-    :Union( :String :Int32 )
+    :Either( :String :Int )
+    :Union( :String :Int )
     :Boolean
   )
   :body (
@@ -47,8 +47,8 @@
 <pre><code>{
   :type :Tuple(
     :Option( :String )
-    :Either( :String :Int32 )
-    :Union( :String :Int32 )
+    :Either( :String :Int )
+    :Union( :String :Int )
     :Boolean
   )
   :body (

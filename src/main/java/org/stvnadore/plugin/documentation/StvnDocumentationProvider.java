@@ -93,7 +93,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), alias)) {
                     var schemaType = typeDef.getSchemaType();
                     var resolved = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
-                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
+                    var base = resolved != null ? StvnSchemaFormatter.formatSchema(resolved) : (schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType) : ":Value");
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -106,7 +106,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (td != null && td.getSchemaType() != null) {
                     var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                     if (resolved != null) {
-                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
+                        fallbackBase = StvnSchemaFormatter.formatSchema(resolved);
                     }
                 }
                 return new DegradedSchemaInfo(alias, fallbackBase);
@@ -119,7 +119,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var alias = kw != null ? kw.getText() : null;
                 if (alias != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), alias)) {
                     var resolved = StvnTypeResolver.resolveNominalSchema(schema);
-                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(schema);
+                    var base = resolved != null ? StvnSchemaFormatter.formatSchema(resolved) : StvnSchemaFormatter.formatSchema(schema);
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -136,7 +136,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
                 }
                 var specDoc = getBuiltInSpecificationDoc(kwText);
-                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.startsWith(":DateTime") || kwText.startsWith(":TimeEpoch"))) {
+                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.equals(":DateTime") || kwText.equals(":TimeEpoch"))) {
                     return specDoc;
                 }
             }
@@ -284,7 +284,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<b>Typed Constant:</b> ").append(keyword.getText()).append("<br/>");
             }
             if (schemaType != null) {
-                sb.append("<b>Type:</b> ").append(StvnSchemaFormatter.formatCleanSchema(schemaType)).append("<br/>");
+                sb.append("<b>Type:</b> ").append(StvnSchemaFormatter.formatSchema(schemaType)).append("<br/>");
             }
             if (value != null) {
                 sb.append("<hr/>");
@@ -455,7 +455,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
                 }
                 var specQuick = getBuiltInSpecificationQuickNavigateInfo(kwText);
-                if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.startsWith(":DateTime") || kwText.startsWith(":TimeEpoch"))) {
+                if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.equals(":DateTime") || kwText.equals(":TimeEpoch"))) {
                     return specQuick;
                 }
                 var trace = StvnTypeReference.extractResolutionTrace(keyword);
@@ -478,7 +478,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var keyword = constDef.getValueKeyword();
             var schemaType = constDef.getSchemaType();
             if (keyword != null && schemaType != null) {
-                return "Constant: " + keyword.getText() + " " + StvnSchemaFormatter.formatCleanSchema(schemaType);
+                return "Constant: " + keyword.getText() + " " + StvnSchemaFormatter.formatSchema(schemaType);
             }
         }
 
@@ -569,28 +569,34 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
         }
 
-        if (keyword.startsWith(":Int") || keyword.startsWith(":Uint")) {
-            var isUnsigned = keyword.startsWith(":Uint");
-            var widthStr = keyword.replaceAll("[^0-9]", "");
-            var width = widthStr.isEmpty()
-                ? (isUnsigned ? "Arbitrary-precision unsigned" : "Arbitrary-precision signed")
-                : widthStr + "-bit " + (isUnsigned ? "unsigned" : "signed");
-            return String.format("""
-                <b>Built-in Numeric:</b> %s<br/>
+        if (keyword.equals(":Int")) {
+            return """
+                <b>Built-in Numeric:</b> :Int<br/>
                 <hr/>
-                Represents a %s integer value.<br/>
-                <b>Lexical Forms:</b> Decimal (<code>42</code>), Hex (<code>0x2A</code>), Binary (<code>0b101010</code>), Octal (<code>0o52</code>).
-                """, keyword, width);
+                Represents an integer value.<br/>
+                <b>Lexical Forms:</b> Decimal (<code>42</code>), Hex (<code>0x2A</code>), Binary (<code>0b101010</code>), Octal (<code>0o52</code>).<br/>
+                <b>Supported Facets:</b> <code>#size</code>, <code>#unsigned</code>, <code>#minIncl</code>, <code>#maxExcl</code>, <code>#divisibleBy</code>.
+                """;
         }
 
-        if (keyword.startsWith(":Float")) {
-            var isExact = keyword.equals(":FloatExact");
-            return String.format("""
-                <b>Built-in Floating-Point:</b> %s<br/>
+        if (keyword.equals(":Float")) {
+            return """
+                <b>Built-in Floating-Point:</b> :Float<br/>
                 <hr/>
-                Represents %s floating-point numeric value.<br/>
-                <b>Lexical Form:</b> Standard decimal notation with decimal point (e.g. <code>3.14159</code>, <code>-0.5</code>).
-                """, keyword, isExact ? "an exact decimal" : "an IEEE 754");
+                Represents a floating-point numeric value.<br/>
+                <b>Lexical Form:</b> Standard decimal notation with decimal point (e.g. <code>3.14159</code>, <code>-0.5</code>).<br/>
+                <b>Supported Facets:</b> <code>#size</code>, <code>#exact</code>, <code>#minIncl</code>, <code>#maxIncl</code>, <code>#minExcl</code>, <code>#maxExcl</code>, <code>#nan</code>, <code>#inf</code>.
+                """;
+        }
+
+        if (keyword.equals(":String")) {
+            return """
+                <b>Built-in String Type:</b> :String<br/>
+                <hr/>
+                Represents an unbounded UTF-8 text string (up to maximum allocation size of 16,777,216 characters).<br/>
+                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"-&gt;[LANG]...[LANG]\"\"\"</code>).<br/>
+                <b>Supported Facets:</b> <code>#size</code>, <code>#minSize</code>, <code>#maxSize</code>, <code>#exact</code>, <code>#regex</code>, <code>#ascii</code>, <code>#casing</code>.
+                """;
         }
 
         if (keyword.startsWith(":StringFixed")) {
@@ -605,17 +611,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (keyword.startsWith(":StringNonEmpty")) {
-            var maxLen = keyword.substring(":StringNonEmpty".length());
+            var widthStr = keyword.substring(":StringNonEmpty".length());
             return String.format("""
                 <b>Built-in String Type:</b> %s<br/>
                 <hr/>
-                Represents a <b>non-empty UTF-8 string</b>%s.<br/>
-                <b>Constraint:</b> Prohibits empty string (<code>""</code>)%s.<br/>
-                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"-&gt;[LANG]...[LANG]\"\"\"</code>).
-                """,
-                keyword,
-                maxLen.isEmpty() ? "" : " with maximum length of " + maxLen + " characters",
-                maxLen.isEmpty() ? " (1 &le; len)" : " (1 &le; len &le; " + maxLen + ")");
+                Represents a <b>non-empty UTF-8 string</b> of at least 1 character%s.<br/>
+                <b>Forms:</b> Double-quoted string literals (<code>"..."</code>).
+                """, keyword, widthStr.isEmpty() ? "" : " and at most " + widthStr + " characters");
         }
 
         if (keyword.startsWith(":String") && keyword.length() > 7 && Character.isDigit(keyword.charAt(7))) {
@@ -629,16 +631,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """, keyword, maxLen, maxLen);
         }
 
-        if (keyword.equals(":String")) {
-            return String.format("""
-                <b>Built-in String Type:</b> %s<br/>
-                <hr/>
-                Represents an <b>unbounded UTF-8 text string</b> (up to maximum allocation size of 16,777,216 characters).<br/>
-                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"-&gt;[LANG]...[LANG]\"\"\"</code>).
-                """, keyword);
-        }
-
         return switch (keyword) {
+            case ":MapInv" -> """
+                <b>Collection Constructor:</b> :MapInv( :KeyType :ValType )<br/>
+                <hr/>
+                Defines an invertible bidirectional key-value mapping with strictly unique keys and values (bijective uniqueness).<br/>
+                <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
+                """;
             case StvnVocabulary.TYPE_TUPLE -> """
                 <b>Product Type Constructor:</b> :Tuple( :T1 :T2 ... )<br/>
                 <hr/>
@@ -649,12 +648,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Collection Constructor:</b> :Map( :KeyType :ValType )<br/>
                 <hr/>
                 Defines a key-value mapping with strictly unique keys.<br/>
-                <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
-                """;
-            case ":MapInv" -> """
-                <b>Collection Constructor:</b> :MapInv( :KeyType :ValType )<br/>
-                <hr/>
-                Defines an invertible bidirectional key-value mapping with bijective uniqueness.<br/>
                 <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
                 """;
             case StvnVocabulary.TYPE_SEQ -> """
@@ -713,15 +706,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (keyword.equals(":Boolean")) {
             return "Primitive Type: :Boolean";
         }
-        if (keyword.startsWith(":Int")) {
-            return "Primitive Type: " + keyword + " (Signed Integer)";
+        if (keyword.equals(":Int")) {
+            return "Primitive Type: :Int (Integer)";
         }
-        if (keyword.startsWith(":Uint")) {
-            return "Primitive Type: " + keyword + " (Unsigned Integer)";
+        if (keyword.equals(":Float")) {
+            return "Primitive Type: :Float (Floating-Point)";
         }
-        if (keyword.startsWith(":Float")) {
-            return "Primitive Type: " + keyword + " (Floating-Point)";
+        if (keyword.equals(":String")) {
+            return "Primitive Type: :String (UTF-8 String)";
         }
+
         if (keyword.startsWith(":StringFixed")) {
             return "Primitive Type: " + keyword + " (Fixed-Length String)";
         }
@@ -731,14 +725,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (keyword.startsWith(":String") && keyword.length() > 7 && Character.isDigit(keyword.charAt(7))) {
             return "Primitive Type: " + keyword + " (Max-Bounded String)";
         }
-        if (keyword.equals(":String")) {
-            return "Primitive Type: :String (UTF-8 String)";
-        }
 
         return switch (keyword) {
+            case ":MapInv" -> "Collection Constructor: :MapInv( :Key :Val )";
             case StvnVocabulary.TYPE_TUPLE -> "Product Type Constructor: :Tuple( ... )";
             case StvnVocabulary.TYPE_MAP -> "Collection Constructor: :Map( :Key :Val )";
-            case ":MapInv" -> "Collection Constructor: :MapInv( :Key :Val )";
             case StvnVocabulary.TYPE_SEQ -> "Collection Constructor: :Seq( :Elem )";
             case StvnVocabulary.TYPE_SET -> "Collection Constructor: :Set( :Elem )";
             case StvnVocabulary.TYPE_OPTION -> "Sum Type Constructor: :Option( :Type )";
@@ -807,8 +798,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Port" -> """
                 <b>Standard Library Prelude:</b> :Port<br/>
-                <b>Underlying Type:</b> <code>:Uint16</code><br/>
-                <b>Validation Constraint:</b> <code>#minIncl 1 #maxIncl 65535</code><br/>
+                <b>Underlying Type:</b> <code>{ #unsigned #size 16 } :Int</code><br/>
+                <b>Validation Constraint:</b> <code>#minIncl 1 #maxExcl 65536</code><br/>
                 <hr/>
                 Represents a valid <b>TCP/UDP network socket port number</b>.<br/>
                 <b>Allowed Range:</b> <code>1</code> through <code>65535</code> (inclusive). Prohibits port <code>0</code>.<br/>
@@ -882,6 +873,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInTemporalDoc(String keyword) {
         return switch (keyword) {
+            case ":TimeEpoch" -> """
+                <b>Built-in Temporal:</b> :TimeEpoch<br/>
+                <hr/>
+                Represents a Unix Epoch timestamp.<br/>
+                <b>Lexical Form:</b> Integer timestamp value (e.g. <code>1755532800</code>).<br/>
+                <b>Mandatory Scale Facet:</b> Exactly one bare scale flag: <code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>.<br/>
+                <b>Bounds:</b> Half-open intervals <code>[#minIncl, #maxExcl)</code>.
+                """;
+            case ":DateTime" -> """
+                <b>Built-in Temporal:</b> :DateTime<br/>
+                <hr/>
+                Represents a calendar date and time instant or schedule.<br/>
+                <b>Lexical Form:</b> ISO-8601 formatted string (e.g. <code>"2026-08-18T18:00:00-05:00"</code>).<br/>
+                <b>Mandatory Mode Facet:</b> Exactly one mode flag: <code>#offset</code> (physical instant), <code>#zoned</code> (civil wall-clock schedule with IANA zone), or <code>#audited</code> (both offset and IANA zone).<br/>
+                <b>Bounds:</b> Half-open intervals <code>[#minIncl, #maxExcl)</code>.
+                """;
             case ":DateTimeOffset" -> """
                 <b>Primitive Type:</b> :DateTimeOffset<br/>
                 <hr/>
@@ -930,6 +937,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInTemporalQuickNavigateInfo(String keyword) {
         return switch (keyword) {
+            case ":TimeEpoch" -> "Primitive Type: :TimeEpoch (Unix Epoch Timestamp)";
+            case ":DateTime" -> "Primitive Type: :DateTime (ISO-8601 Date and Time)";
             case ":DateTimeOffset" -> "Primitive Type: :DateTimeOffset (Physical Instant)";
             case ":DateTimeZoned" -> "Primitive Type: :DateTimeZoned (Civil Wall-Clock Schedule)";
             case ":DateTimeAudited" -> "Primitive Type: :DateTimeAudited (Audited Compliance Record)";

@@ -19,7 +19,7 @@
   :defs {
     :Status :Enum [ #Active ]       // Warning: 0 branching entropy
     :SingleBranch :Union( :String ) // Warning: Isomorphic to :String
-    :WrappedId :Tuple( :Int64 )      // Warning: Redundant container wrapping
+    :WrappedId :Tuple( :Int )      // Warning: Redundant container wrapping
   }
   :type :Tuple( :Status :SingleBranch :WrappedId )
   :body ...
@@ -30,7 +30,7 @@
 <pre><code>{
   :defs {
     :SingleBranch :String           // Unwrapped
-    :WrappedId :Int64               // Unwrapped
+    :WrappedId :Int               // Unwrapped
   }
   :type :Tuple( :Enum [ #Active #Inactive ] :SingleBranch :WrappedId )
   :body ...

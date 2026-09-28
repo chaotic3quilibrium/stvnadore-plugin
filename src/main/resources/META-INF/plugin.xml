@@ -265,6 +265,11 @@
         <lang.documentationProvider language="STVN"
                                     implementationClass="org.stvnadore.plugin.documentation.StvnDocumentationProvider"/>
 
+        <!-- Structure View and Breadcrumbs Navigation -->
+        <lang.psiStructureViewFactory language="STVN"
+                                      implementationClass="org.stvnadore.plugin.structure.StvnStructureViewFactory"/>
+        <breadcrumbsInfoProvider implementation="org.stvnadore.plugin.breadcrumbs.StvnBreadcrumbsInfoProvider"/>
+
         <!-- 10. Local Inspection for Variant tag style -->
         <localInspection language="STVN"
                          shortName="StvnVariantStyle"

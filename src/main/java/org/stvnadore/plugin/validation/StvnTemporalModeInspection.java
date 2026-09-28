@@ -14,9 +14,10 @@ import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
 
 /**
- * Validates STVN 2.0.0 temporal mode and unit facet requirements.
- * Enforces explicit '#unit' on ':TimeEpoch' and mode facets ('#offset', '#zoned', '#audited')
- * on ':DateTime', and flags mutually exclusive temporal mode declarations.
+ * Validates STVN 2.0.0 temporal mode and scale facet requirements.
+ * Enforces explicit bare scale flags ('#s', '#ms', '#us', '#ns') on ':TimeEpoch'
+ * and mode facets ('#offset', '#zoned', '#audited') on ':DateTime',
+ * and flags mutually exclusive temporal mode declarations.
  */
 @NullMarked
 public final class StvnTemporalModeInspection extends LocalInspectionTool {
@@ -34,7 +35,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
 
     @Override
     public @NotNull String getDisplayName() {
-        return "Temporal mode and unit facet governance inspection";
+        return "Temporal mode and scale facet governance inspection";
     }
 
     @Override

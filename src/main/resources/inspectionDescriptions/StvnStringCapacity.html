@@ -1,24 +1,24 @@
 <html>
 <body>
-<p>Validates that nominal string type declarations adhere to capacity governance policies by specifying explicit capacity bounds within configured allocation limits.</p>
+<p>Validates that nominal string type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec § 5.3).</p>
 <!-- tooltip end -->
 <p>
   STVN defines a default allocation capacity of 16 MiB (16,777,216 characters) for unadorned <code>:String</code> types.
-  This inspection identifies unadorned string tokens (such as <code>:String</code>, <code>:StringFixed</code>, and <code>:StringNonEmpty</code>)
-  and explicit capacity suffixes exceeding the configured threshold (default: 4,096 characters).
+  This inspection identifies unadorned <code>:String</code> tokens lacking capacity metadata facets
+  and explicit capacity bounds exceeding the configured threshold (default: 4,096 characters).
 </p>
 
 <p><b>QuickFix Resolution Protocol:</b></p>
 <ul>
   <li><b>Under WARNING / WEAK WARNING severity:</b>
     <ul>
-      <li><i>Primary QuickFix:</i> Rewrites the nominal type to the configured threshold (e.g. <code>:String</code> &rarr; <code>:String4096</code>).</li>
-      <li><i>Secondary QuickFix:</i> Rewrites the nominal type to the default capacity (e.g. <code>:String</code> &rarr; <code>:String16777216</code>).</li>
+      <li><i>Primary QuickFix:</i> Rewrites the nominal type with explicit threshold facets (e.g. <code>{ #minSize 1 #maxSize 4096 } :String</code>).</li>
+      <li><i>Secondary QuickFix:</i> Rewrites the nominal type to the default capacity (e.g. <code>{ #minSize 1 #maxSize 16777216 } :String</code>).</li>
     </ul>
   </li>
   <li><b>Under ERROR severity:</b>
     <ul>
-      <li>Presents <i>only</i> the Primary QuickFix (<code>:String4096</code>). Upgrading to 16,777,216 is suppressed because that value itself violates the error threshold.</li>
+      <li>Presents <i>only</i> the Primary QuickFix (<code>{ #minSize 1 #maxSize 4096 } :String</code>). Upgrading to 16,777,216 is suppressed because that value itself violates the error threshold.</li>
     </ul>
   </li>
 </ul>
@@ -33,16 +33,13 @@
 <pre><code>:defs {
   // Warning: Unadorned :String defaults to 16 MiB default capacity
   :Username :String
-
-  // Warning: Capacity 8192 exceeds configured threshold 4096
-  :PayloadBuffer :String8192
 }
 </code></pre>
 
 <p><b>Example (Compliant):</b></p>
 <pre><code>:defs {
-  :Username :String64
-  :PayloadBuffer :String4096
+  :Username { #minSize 1 #maxSize 64 } :String
+  :PayloadBuffer { #minSize 1 #maxSize 4096 } :String
 }
 </code></pre>
 </body>

@@ -205,43 +205,55 @@ public final class StvnSumInferenceHelper {
         return true;
     }
 
+    private static String stripMetadata(String type) {
+        if (type.startsWith("{") && type.contains("}")) {
+            return type.substring(type.lastIndexOf('}') + 1).trim();
+        }
+        return type;
+    }
+
     private static boolean isBoolean(String type) {
-        return type.equals(StvnVocabulary.TYPE_BOOLEAN);
+        var clean = stripMetadata(type);
+        return clean.equals(StvnVocabulary.TYPE_BOOLEAN);
     }
 
     private static boolean isNumeric(String type) {
-        if (type.equals(StvnVocabulary.TYPE_INT) || type.equals(StvnVocabulary.TYPE_FLOAT)) {
+        var clean = stripMetadata(type);
+        if (clean.equals(StvnVocabulary.TYPE_INT) || clean.equals(StvnVocabulary.TYPE_FLOAT) || clean.equals(StvnVocabulary.TYPE_TIME_EPOCH)) {
             return true;
         }
-        if (type.startsWith(StvnVocabulary.TYPE_INT)) {
-            return type.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+");
+        if (clean.startsWith(StvnVocabulary.TYPE_INT)) {
+            return clean.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d*");
         }
-        if (type.startsWith(StvnVocabulary.TYPE_FLOAT)) {
-            return type.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+");
+        if (clean.startsWith(StvnVocabulary.TYPE_FLOAT)) {
+            return clean.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d*");
         }
-        if (type.startsWith(":Uint")) {
-            return type.substring(":Uint".length()).matches("\\d*");
+        if (clean.startsWith(":Uint")) {
+            return clean.substring(":Uint".length()).matches("\\d*");
         }
         return false;
     }
 
     private static boolean isString(String type) {
-        if (type.equals(StvnVocabulary.TYPE_STRING)) {
+        var clean = stripMetadata(type);
+        if (clean.equals(StvnVocabulary.TYPE_STRING)) {
             return true;
         }
-        if (type.startsWith(StvnVocabulary.TYPE_STRING) && type.length() > StvnVocabulary.TYPE_STRING.length()) {
-            char nextChar = type.charAt(StvnVocabulary.TYPE_STRING.length());
-            return Character.isDigit(nextChar) || type.startsWith(":StringFixed") || type.startsWith(":StringNonEmpty");
+        if (clean.startsWith(StvnVocabulary.TYPE_STRING) && clean.length() > StvnVocabulary.TYPE_STRING.length()) {
+            char nextChar = clean.charAt(StvnVocabulary.TYPE_STRING.length());
+            return Character.isDigit(nextChar) || clean.startsWith(":StringFixed") || clean.startsWith(":StringNonEmpty");
         }
         return false;
     }
 
     private static boolean isList(String type) {
-        return isConstructorMatch(type, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(type, StvnVocabulary.TYPE_SET);
+        var clean = stripMetadata(type);
+        return isConstructorMatch(clean, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(clean, StvnVocabulary.TYPE_SET);
     }
 
     private static boolean isMap(String type) {
-        return isConstructorMatch(type, StvnVocabulary.TYPE_MAP);
+        var clean = stripMetadata(type);
+        return isConstructorMatch(clean, StvnVocabulary.TYPE_MAP);
     }
 
     private static boolean isConstructorMatch(String type, String constructor) {

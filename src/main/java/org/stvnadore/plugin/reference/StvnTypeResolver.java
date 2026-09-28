@@ -136,16 +136,16 @@ public final class StvnTypeResolver {
                         if (num != null) maxVal = num;
                     } else if (entryText.startsWith("#size")) {
                         var schemaType = typeDef.getSchemaType();
-                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType).trim() : "";
-                        if (StvnVocabulary.TYPE_STRING.equals(schemaText)) {
+                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
+                        if (schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
                             return true;
                         }
                     }
                 }
 
                 var schemaType = typeDef.getSchemaType();
-                var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType).trim() : "";
-                if ((hasMaxIncl || hasMinExcl) && StvnVocabulary.TYPE_INT.equals(schemaText)) {
+                var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
+                if ((hasMaxIncl || hasMinExcl) && schemaText.endsWith(StvnVocabulary.TYPE_INT)) {
                     return true;
                 }
 
@@ -1059,7 +1059,7 @@ public final class StvnTypeResolver {
             && branchSchema.getSchemaConstructor().getSumType().getEnumDef() != null) {
             return ":Enum";
         }
-        return StvnSchemaFormatter.formatCleanSchema(branchSchema);
+        return StvnSchemaFormatter.formatSchema(branchSchema);
     }
 
     /**
@@ -1086,40 +1086,43 @@ public final class StvnTypeResolver {
         }
         var resolved = resolveNominalSchema(schema);
         var schemaToInspect = (resolved != null) ? resolved : schema;
-        var text = StvnSchemaFormatter.formatCleanSchema(schemaToInspect);
-        if (text.equals(StvnVocabulary.TYPE_INT) || text.equals(StvnVocabulary.TYPE_TIME_EPOCH) ||
-            (text.startsWith(StvnVocabulary.TYPE_INT) && text.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+")) ||
-            (text.startsWith(":Uint") && text.substring(":Uint".length()).matches("\\d*"))) {
+        var text = StvnSchemaFormatter.formatSchema(schemaToInspect);
+        var stripped = (text.startsWith("{") && text.contains("}"))
+            ? text.substring(text.lastIndexOf('}') + 1).trim()
+            : text;
+        if (stripped.equals(StvnVocabulary.TYPE_INT) || stripped.equals(StvnVocabulary.TYPE_TIME_EPOCH) ||
+            (stripped.startsWith(StvnVocabulary.TYPE_INT) && stripped.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+")) ||
+            (stripped.startsWith(":Uint") && stripped.substring(":Uint".length()).matches("\\d*"))) {
             return value.getIntegerLiteral() != null;
         }
-        if (text.equals(StvnVocabulary.TYPE_FLOAT) ||
-            (text.startsWith(StvnVocabulary.TYPE_FLOAT) && text.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+"))) {
+        if (stripped.equals(StvnVocabulary.TYPE_FLOAT) ||
+            (stripped.startsWith(StvnVocabulary.TYPE_FLOAT) && stripped.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+"))) {
             return value.getFloatLiteral() != null;
         }
-        if (text.equals(StvnVocabulary.TYPE_STRING) ||
-            (text.startsWith(StvnVocabulary.TYPE_STRING) && text.length() > StvnVocabulary.TYPE_STRING.length() && (Character.isDigit(text.charAt(StvnVocabulary.TYPE_STRING.length())) || text.startsWith(":StringFixed") || text.startsWith(":StringNonEmpty"))) ||
-            text.equals(StvnVocabulary.TYPE_DATE_TIME) ||
-            text.equals(":DateTimeOffset") ||
-            text.equals(":DateTimeZoned") ||
-            text.equals(":DateTimeAudited")) {
+        if (stripped.equals(StvnVocabulary.TYPE_STRING) ||
+            (stripped.startsWith(StvnVocabulary.TYPE_STRING) && stripped.length() > StvnVocabulary.TYPE_STRING.length() && (Character.isDigit(stripped.charAt(StvnVocabulary.TYPE_STRING.length())) || stripped.startsWith(":StringFixed") || stripped.startsWith(":StringNonEmpty"))) ||
+            stripped.equals(StvnVocabulary.TYPE_DATE_TIME) ||
+            stripped.equals(":DateTimeOffset") ||
+            stripped.equals(":DateTimeZoned") ||
+            stripped.equals(":DateTimeAudited")) {
             return value.getStringLiteral() != null;
         }
-        if (text.equals(StvnVocabulary.TYPE_BOOLEAN)) {
+        if (stripped.equals(StvnVocabulary.TYPE_BOOLEAN)) {
             return value.getBooleanValue() != null || StvnVocabulary.BOOLEAN_KEYWORDS.contains(value.getText());
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_TUPLE)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_TUPLE)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getTupleLiteral() != null;
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(text, StvnVocabulary.TYPE_SET)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(stripped, StvnVocabulary.TYPE_SET)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getListLiteral() != null;
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_MAP)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_MAP)) {
             var collVal = value.getCollectionValue();
             return collVal != null && collVal.getMapLiteral() != null;
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_OPTION)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_OPTION)) {
             if (value.getExplicitOptionValue() != null || value.getText().equals(StvnVocabulary.VAL_NONE) || value.getText().equals(StvnVocabulary.VAL_NONE_SHORT)) {
                 return true;
             }
@@ -1132,7 +1135,7 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_EITHER)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_EITHER)) {
             if (value.getExplicitEitherValue() != null) {
                 return true;
             }
@@ -1145,7 +1148,7 @@ public final class StvnTypeResolver {
             }
             return false;
         }
-        if (isConstructorMatch(text, StvnVocabulary.TYPE_UNION)) {
+        if (isConstructorMatch(stripped, StvnVocabulary.TYPE_UNION)) {
             if (value.getExplicitUnionValue() != null) {
                 var expUnion = value.getExplicitUnionValue();
                 var tagElem = expUnion.getUnionTagPrefix();
@@ -1405,7 +1408,7 @@ public final class StvnTypeResolver {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
             finalLabel = formatTrace(trace);
         } else {
-            finalLabel = StvnSchemaFormatter.formatCleanSchema(currentSchema);
+            finalLabel = StvnSchemaFormatter.formatSchema(currentSchema);
         }
 
         if (finalLabel.isEmpty()) {
@@ -2082,8 +2085,11 @@ public final class StvnTypeResolver {
         }
         var resolved = resolveNominalSchema(schema);
         var toInspect = (resolved != null) ? resolved : schema;
-        var text = StvnSchemaFormatter.formatCleanSchema(toInspect);
-        return text.equals(":Boolean") || text.equals(":Bool");
+        var text = StvnSchemaFormatter.formatSchema(toInspect);
+        var stripped = (text.startsWith("{") && text.contains("}"))
+            ? text.substring(text.lastIndexOf('}') + 1).trim()
+            : text;
+        return stripped.equals(":Boolean") || stripped.equals(":Bool");
     }
 
     /**
@@ -2366,16 +2372,16 @@ public final class StvnTypeResolver {
         if (targetSchema == null || sourceSchema == null) {
             return false;
         }
-        var targetText = StvnSchemaFormatter.formatCleanSchema(targetSchema);
-        var sourceText = StvnSchemaFormatter.formatCleanSchema(sourceSchema);
+        var targetText = StvnSchemaFormatter.formatSchema(targetSchema);
+        var sourceText = StvnSchemaFormatter.formatSchema(sourceSchema);
         if (targetText.equals(sourceText)) {
             return true;
         }
 
         var resolvedTarget = resolveNominalSchema(targetSchema);
         var resolvedSource = resolveNominalSchema(sourceSchema);
-        var normTargetText = StvnSchemaFormatter.formatCleanSchema(resolvedTarget != null ? resolvedTarget : targetSchema);
-        var normSourceText = StvnSchemaFormatter.formatCleanSchema(resolvedSource != null ? resolvedSource : sourceSchema);
+        var normTargetText = StvnSchemaFormatter.formatSchema(resolvedTarget != null ? resolvedTarget : targetSchema);
+        var normSourceText = StvnSchemaFormatter.formatSchema(resolvedSource != null ? resolvedSource : sourceSchema);
         if (normTargetText.equals(normSourceText)) {
             return true;
         }

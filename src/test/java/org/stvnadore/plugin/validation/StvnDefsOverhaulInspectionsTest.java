@@ -75,10 +75,10 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             """
             {
               :defs {
-                #OVERFLOW :Int8 300
-                #VALID :Int8 100
+                #OVERFLOW { #size 8 } :Int 300
+                #VALID { #size 8 } :Int 100
               }
-              :type :Int8
+              :type { #size 8 } :Int
               :body 100
             }
             """
@@ -89,7 +89,7 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             .filter(h -> h.getDescription() != null && h.getDescription().contains("out of range"))
             .toList();
         assertTrue("Expected constant integer overflow error", errors.size() >= 1);
-        assertTrue(errors.stream().anyMatch(e -> e.getDescription().contains("Integer literal 300 out of range for :Int8 [-128, 127]")));
+        assertTrue(errors.stream().anyMatch(e -> e.getDescription().contains("Integer literal 300 out of range for { #size 8 } :Int [-128, 127]")));
     }
 
     public void testFlatDocumentIncludeInspection() {

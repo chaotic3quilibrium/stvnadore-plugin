@@ -74,6 +74,13 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
 
             @Override
             public @Nullable String getLocationString() {
+                var schema = getSchemaType();
+                if (schema != null) {
+                    var formatted = org.stvnadore.plugin.psi.StvnSchemaFormatter.formatSchema(schema);
+                    if (!formatted.isEmpty()) {
+                        return formatted;
+                    }
+                }
                 var file = getContainingFile();
                 return file != null ? file.getName() : null;
             }

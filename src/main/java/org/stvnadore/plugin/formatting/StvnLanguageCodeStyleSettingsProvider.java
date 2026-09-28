@@ -45,7 +45,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
         return """
             {
               :defs {
-                :UserID :Uint64
+                :UserID { #unsigned #size 64 } :Int
                 :Status :Enum [ #ACTIVE #SUSPENDED ]
               }
               :type :Tuple(:UserID :Status)

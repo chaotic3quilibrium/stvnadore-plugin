@@ -28,6 +28,35 @@ public final class StvnSchemaFormatter {
 
     /**
      * Extracts a clean, canonically formatted schema type string from a PSI element,
+     * preserving child metadata maps and enforcing standard delimiter padding.
+     *
+     * @param element the PSI element (SchemaType, SchemaConstructor, TypeDefinition, etc.)
+     * @return the cleanly formatted canonical schema signature, or an empty string if null
+     */
+    public static @NotNull String formatSchema(@Nullable PsiElement element) {
+        if (element == null) {
+            return "";
+        }
+        if (element instanceof TypeDefinition typeDef) {
+            return formatSchema(typeDef.getSchemaType());
+        }
+        if (element instanceof ConstantDefinition constDef) {
+            return formatSchema(constDef.getSchemaType());
+        }
+        if (element instanceof SchemaType schemaType) {
+            return formatPsiSchemaType(schemaType);
+        }
+        if (element instanceof SchemaConstructor ctor) {
+            return formatPsiSchemaConstructor(ctor);
+        }
+        if (element instanceof MetadataMap metaMap) {
+            return formatMetadataMap(metaMap);
+        }
+        return formatFallbackPsi(element);
+    }
+
+    /**
+     * Extracts a clean, canonically formatted schema type string from a PSI element,
      * enforcing standard whitespace padding around delimiters and stripping comments.
      *
      * @param element the PSI element (typically SchemaType, SchemaConstructor, etc.)
@@ -37,8 +66,22 @@ public final class StvnSchemaFormatter {
         if (element == null) {
             return "";
         }
+        if (element instanceof TypeDefinition typeDef) {
+            return formatCleanSchema(typeDef.getSchemaType());
+        }
+        if (element instanceof ConstantDefinition constDef) {
+            return formatCleanSchema(constDef.getSchemaType());
+        }
         if (element instanceof SchemaType schemaType) {
-            return formatPsiSchemaType(schemaType);
+            var keyword = schemaType.getTypeKeyword();
+            if (keyword != null) {
+                return keyword.getText().trim();
+            }
+            var ctor = schemaType.getSchemaConstructor();
+            if (ctor != null) {
+                return formatPsiSchemaConstructor(ctor);
+            }
+            return formatFallbackPsi(schemaType);
         }
         if (element instanceof SchemaConstructor ctor) {
             return formatPsiSchemaConstructor(ctor);
@@ -47,15 +90,22 @@ public final class StvnSchemaFormatter {
     }
 
     private static String formatPsiSchemaType(SchemaType schemaType) {
+        var meta = schemaType.getMetadataMap();
+        var metaPrefix = meta != null ? formatMetadataMap(meta) + " " : "";
+
+        String body = "";
         var keyword = schemaType.getTypeKeyword();
         if (keyword != null) {
-            return keyword.getText().trim();
+            body = keyword.getText().trim();
+        } else {
+            var ctor = schemaType.getSchemaConstructor();
+            if (ctor != null) {
+                body = formatPsiSchemaConstructor(ctor);
+            } else {
+                body = formatFallbackPsi(schemaType);
+            }
         }
-        var ctor = schemaType.getSchemaConstructor();
-        if (ctor != null) {
-            return formatPsiSchemaConstructor(ctor);
-        }
-        return formatFallbackPsi(schemaType);
+        return (metaPrefix + body).trim();
     }
 
     private static String formatPsiSchemaConstructor(SchemaConstructor ctor) {
@@ -114,12 +164,12 @@ public final class StvnSchemaFormatter {
 
     /**
      * Extracts a clean, canonically formatted schema type string from an ANTLR parse tree,
-     * enforcing standard whitespace padding around delimiters and stripping comments.
+     * preserving child metadata maps and enforcing standard delimiter padding.
      *
      * @param tree the ANTLR parse tree (typically SchemaTypeContext or ParserRuleContext)
      * @return the cleanly formatted canonical schema signature, or an empty string if null
      */
-    public static @NotNull String formatCleanAntlrSchema(@Nullable ParseTree tree) {
+    public static @NotNull String formatAntlrSchema(@Nullable ParseTree tree) {
         if (tree == null) {
             return "";
         }
@@ -132,14 +182,77 @@ public final class StvnSchemaFormatter {
         return formatFallbackAntlr(tree);
     }
 
+    /**
+     * Extracts a clean, canonically formatted schema type string from an ANTLR parse tree,
+     * enforcing standard whitespace padding around delimiters and stripping comments.
+     *
+     * @param tree the ANTLR parse tree (typically SchemaTypeContext or ParserRuleContext)
+     * @return the cleanly formatted canonical schema signature, or an empty string if null
+     */
+    public static @NotNull String formatCleanAntlrSchema(@Nullable ParseTree tree) {
+        if (tree == null) {
+            return "";
+        }
+        if (tree instanceof StvnParser.SchemaTypeContext schemaCtx) {
+            if (schemaCtx.typeKeyword() != null) {
+                return schemaCtx.typeKeyword().getText().trim();
+            } else if (schemaCtx.schemaConstructor() != null) {
+                return formatAntlrSchemaConstructor(schemaCtx.schemaConstructor());
+            } else {
+                return formatFallbackAntlr(schemaCtx);
+            }
+        }
+        if (tree instanceof StvnParser.SchemaConstructorContext ctorCtx) {
+            return formatAntlrSchemaConstructor(ctorCtx);
+        }
+        return formatFallbackAntlr(tree);
+    }
+
     private static String formatAntlrSchemaType(StvnParser.SchemaTypeContext ctx) {
+        var meta = ctx.metadataMap();
+        var metaPrefix = meta != null ? formatAntlrMetadataMap(meta) + " " : "";
+
+        String body = "";
         if (ctx.typeKeyword() != null) {
-            return ctx.typeKeyword().getText().trim();
+            body = ctx.typeKeyword().getText().trim();
+        } else if (ctx.schemaConstructor() != null) {
+            body = formatAntlrSchemaConstructor(ctx.schemaConstructor());
+        } else {
+            body = formatFallbackAntlr(ctx);
         }
-        if (ctx.schemaConstructor() != null) {
-            return formatAntlrSchemaConstructor(ctx.schemaConstructor());
+        return (metaPrefix + body).trim();
+    }
+
+    private static String formatMetadataMap(MetadataMap metaMap) {
+        var entries = metaMap.getMetadataEntryList();
+        if (entries.isEmpty()) {
+            return "{}";
         }
-        return formatFallbackAntlr(ctx);
+        var list = new ArrayList<String>();
+        for (var entry : entries) {
+            var raw = entry.getText();
+            var stripped = COMMENT_PATTERN.matcher(raw).replaceAll("");
+            var clean = WHITESPACE_PATTERN.matcher(stripped).replaceAll(" ").trim();
+            if (!clean.isEmpty()) {
+                list.add(clean);
+            }
+        }
+        return "{ " + String.join(" ", list) + " }";
+    }
+
+    private static String formatAntlrMetadataMap(StvnParser.MetadataMapContext ctx) {
+        var entries = ctx.metadataEntry();
+        if (entries == null || entries.isEmpty()) {
+            return "{}";
+        }
+        var list = new ArrayList<String>();
+        for (var entry : entries) {
+            var clean = formatFallbackAntlr(entry);
+            if (!clean.isEmpty()) {
+                list.add(clean);
+            }
+        }
+        return "{ " + String.join(" ", list) + " }";
     }
 
     private static String formatAntlrSchemaConstructor(StvnParser.SchemaConstructorContext ctx) {

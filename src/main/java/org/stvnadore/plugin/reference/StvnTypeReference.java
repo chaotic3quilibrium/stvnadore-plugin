@@ -463,7 +463,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
                     } else if (schemaType.getSchemaConstructor() != null) {
                         var ctor = schemaType.getSchemaConstructor();
                         if (ctor.getAtomicType() != null) {
-                            nextTypeName = org.stvnadore.plugin.psi.StvnSchemaFormatter.formatCleanSchema(schemaType);
+                            nextTypeName = ctor.getAtomicType().getText().trim();
                         } else if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
                             nextTypeName = StvnVocabulary.TYPE_ENUM;
                         }

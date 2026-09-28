@@ -37,7 +37,7 @@ public final class StvnTypeInlayHintsProvider implements InlayHintsProvider<NoSe
     @Override
     public @Nullable String getPreviewText() {
         return "{\n" +
-               "  :type :Tuple( :Either( :Int32 :String ) )\n" +
+               "  :type :Tuple( :Either( :Int :String ) )\n" +
                "  :body ( #Left -105 )\n" +
                "}";
     }
