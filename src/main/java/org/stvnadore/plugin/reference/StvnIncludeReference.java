@@ -25,7 +25,7 @@ public final class StvnIncludeReference extends PsiReferenceBase<StringLiteral> 
     private static TextRange getInnerRange(StringLiteral element) {
         var text = element.getText();
         if (text.startsWith("\"\"\"")) {
-            if (text.startsWith("\"\"\"->")) {
+            if (text.startsWith("\"\"\"[")) {
                 var closeIndex = text.indexOf(']');
                 if (closeIndex != -1 && text.endsWith("\"\"\"") && text.length() > closeIndex + 4) {
                     return new TextRange(closeIndex + 1, text.length() - 3);

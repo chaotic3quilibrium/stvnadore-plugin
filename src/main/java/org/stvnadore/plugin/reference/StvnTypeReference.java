@@ -606,7 +606,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> {
     private static String getUnquotedPath(StringLiteral element) {
         var text = element.getText();
         if (text.startsWith("\"\"\"")) {
-            if (text.startsWith("\"\"\"->")) {
+            if (text.startsWith("\"\"\"[")) {
                 var closeIndex = text.indexOf(']');
                 if (closeIndex != -1 && text.endsWith("\"\"\"") && text.length() > closeIndex + 4) {
                     return text.substring(closeIndex + 1, text.length() - 3);

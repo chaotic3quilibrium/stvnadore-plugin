@@ -6,6 +6,7 @@
     <change-notes><![CDATA[
       <h3>2.0.0-SNAPSHOT - 2026.09.26</h3>
       <ul>
+        <li><b>Rule STR-04 Invariant Harmonization:</b> Purged legacy <code>"""->[TAG]</code> delimiter syntax and removed obsolete arrow migration quick-fixes in accordance with STVN 2.0.0. Canonical fenced string opening delimiters strictly require <code>"""[TAG]</code>.</li>
         <li>Integrated changes to <code>stvnadore-core:2.0.0</code>:
           <ul>
             <li>Elevated compiler baseline to <code>stvnadore-core:2.0.0</code>.</li>
@@ -337,7 +338,6 @@
                          groupPath="STVN"
                          groupName="Syntax"
                          enabledByDefault="true"
-                         cleanupTool="true"
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnFencedStringInspection"/>
 

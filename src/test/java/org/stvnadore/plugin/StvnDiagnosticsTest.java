@@ -173,9 +173,6 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             var stvnFiles = stream.filter(p -> p.toString().endsWith(".stvn")).toList();
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();
-                if ("fenced_string_deprecated_arrow.stvn".equals(baseName)) {
-                    continue; // Rule STR-04: """->[ is fatal syntax error in STVN 2.0.0
-                }
                 var relativePath = Paths.get(getTestDataPath()).relativize(stvnPath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 

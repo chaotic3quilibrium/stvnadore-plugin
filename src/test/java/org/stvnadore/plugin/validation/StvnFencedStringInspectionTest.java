@@ -27,7 +27,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         super.tearDown();
     }
 
-    public void testValidFencedStringWithoutArrowPassesCleanly() {
+    public void testValidCanonicalFencedStringPassesCleanly() {
         String code = """
             {
               :type :String
@@ -36,12 +36,10 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
               [SQL]\"\"\"
             }
             """;
-        myFixture.configureByText("valid_no_arrow.stvn", code);
+        myFixture.configureByText("valid_canonical.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
         boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
-        assertFalse("Valid fenced string without arrow must produce zero errors", hasErrors);
-        boolean hasDeprecation = highlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("deprecated"));
-        assertFalse("Canonical fenced string without arrow must produce zero deprecation diagnostics", hasDeprecation);
+        assertFalse("Valid canonical fenced string must produce zero errors", hasErrors);
     }
 
     public void testFencedStringArrowFatalSyntaxRejectionUnderRuleSTR04() {
@@ -389,11 +387,11 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         myFixture.checkResult(expected);
     }
 
-    public void testEnterKeyAutoClosesWithArrowSyntax() {
+    public void testEnterKeyOnMalformedArrowDelimiterDoesNotAutoClose() {
         String code = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]<caret>\n}\n";
         myFixture.configureByText("enter_arrow_close.stvn", code);
         myFixture.type('\n');
-        String expected = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]\n    \n  [MARKDOWN]\"\"\"\n}\n";
+        String expected = "{\n  :type :String\n  :body \"\"\"->[MARKDOWN]\n  \n}\n";
         myFixture.checkResult(expected);
     }
 

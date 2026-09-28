@@ -246,14 +246,14 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
     }
 
     /**
-     * V12: Deprecated Fence Arrow Rejection
+     * V12: Malformed Fence Arrow Rejection
      * Assert '\"\"\"->[TAG]' emits BAD_CHARACTER.
      */
-    public void testV12_DeprecatedFenceArrowRejection() {
+    public void testV12_MalformedFenceArrowRejection() {
         var input = "\"\"\"->[TAG]\nContent\n[TAG]\"\"\"";
         var tokens = tokenize(input);
         var badChars = tokens.stream().filter(t -> t.type() == TokenType.BAD_CHARACTER).toList();
-        assertFalse("V12: Deprecated fence arrow '->' must emit BAD_CHARACTER", badChars.isEmpty());
+        assertFalse("V12: Malformed fence arrow '->' must emit BAD_CHARACTER", badChars.isEmpty());
     }
 
     // =========================================================================

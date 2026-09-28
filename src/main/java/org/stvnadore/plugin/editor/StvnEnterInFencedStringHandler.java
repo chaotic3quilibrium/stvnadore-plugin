@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 
 /**
  * Intercepts Enter keystrokes immediately following unclosed multiline string opening delimiters
- * (bare """ or fenced """[TAG] / """->[TAG]) and automatically inserts the newline, indentation,
+ * (bare """ or fenced """[TAG]) and automatically inserts the newline, indentation,
  * and symmetrical closing delimiter based on the configured BlockStringEnterStyle.
  */
 @NullMarked
@@ -30,7 +30,7 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
     public StvnEnterInFencedStringHandler() {
     }
 
-    private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"(->)?\\[([a-zA-Z0-9_-]{1,256})\\][ \t]*$");
+    private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"\\[([a-zA-Z0-9_-]{1,256})\\][ \t]*$");
     private static final Pattern BARE_BLOCK_PATTERN = Pattern.compile("^.*\"\"\"[ \t]*$");
 
     @Override
@@ -67,7 +67,7 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
                 return Result.Continue;
             }
 
-            String tag = fenceMatcher.group(2);
+            String tag = fenceMatcher.group(1);
             String closingFence = "[" + tag + "]\"\"\"";
 
             // Check whether this opening fence is already balanced downstream
@@ -76,15 +76,10 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
             int nextCloseIdx = forwardText.indexOf(closingFence);
             if (nextCloseIdx >= 0) {
                 int nextOpenIdx = forwardText.indexOf("\"\"\"[" + tag + "]");
-                int nextArrowOpenIdx = forwardText.indexOf("\"\"\"->[" + tag + "]");
-                int minNextOpen = -1;
-                if (nextOpenIdx >= 0 && nextArrowOpenIdx >= 0) minNextOpen = Math.min(nextOpenIdx, nextArrowOpenIdx);
-                else if (nextOpenIdx >= 0) minNextOpen = nextOpenIdx;
-                else if (nextArrowOpenIdx >= 0) minNextOpen = nextArrowOpenIdx;
 
                 // If a closing fence exists without an intervening opening fence of the same tag,
                 // the current block is already closed. Do not insert a duplicate closing delimiter.
-                if (minNextOpen < 0 || nextCloseIdx < minNextOpen) {
+                if (nextOpenIdx < 0 || nextCloseIdx < nextOpenIdx) {
                     return Result.Continue;
                 }
             }
@@ -125,8 +120,6 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
                 after++;
             }
             if (after < text.length() && text.charAt(after) == '[') {
-                isOpeningFence = true;
-            } else if (after + 2 < text.length() && text.startsWith("->[", after)) {
                 isOpeningFence = true;
             }
 

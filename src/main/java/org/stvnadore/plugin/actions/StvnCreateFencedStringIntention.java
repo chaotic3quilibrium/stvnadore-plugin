@@ -66,7 +66,7 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
         }
 
         String afterTriple = lineText.substring(tripleIdx + 3).trim();
-        if (afterTriple.startsWith("[") || afterTriple.startsWith("->[")) {
+        if (afterTriple.startsWith("[")) {
             return false;
         }
 

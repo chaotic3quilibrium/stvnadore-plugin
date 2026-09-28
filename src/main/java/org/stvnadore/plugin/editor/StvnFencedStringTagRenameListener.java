@@ -203,11 +203,9 @@ public final class StvnFencedStringTagRenameListener extends TemplateEditingAdap
 
         String closingCollision = "[" + newTag + "]\"\"\"";
         String openingCollision = "\"\"\"[" + newTag + "]";
-        String arrowCollision = "\"\"\"->[" + newTag + "]";
 
         return payload.contains(closingCollision) ||
-               payload.contains(openingCollision) ||
-               payload.contains(arrowCollision);
+               payload.contains(openingCollision);
     }
 
     private void revertToOriginalTag() {

@@ -121,12 +121,11 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
 
-* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]`. The legacy directional arrow `"""->[TAG]` is **deprecated as of 1.1.1** (scheduled for removal in 2.0.0) and generates an in-editor deprecation diagnostic.
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]` (Rule STR-04), followed by optional horizontal whitespace and a newline.
 * **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
 * **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
-  * Strips deprecated `->` opening delimiter arrow via `"Remove deprecated '->' arrow"` with full IntelliJ Code Cleanup batch support.
   * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
   * Repositions the editor caret directly onto the body line between delimiters following fix execution.
   * Pairs nested fenced strings via depth-aware sequential scanning.
@@ -138,7 +137,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
 * **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
 * **In-Editor `Shift+F6` Synchronized Tag Renaming**: Place caret on opening or closing tag brackets and press `Shift+F6` to launch live linked editing across both delimiters.
-* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`, `"""->[TAG]`) or violating character class `^[a-zA-Z0-9_-]{1,256}$`, preserving document integrity.
+* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`) or violating character class `^[a-zA-Z0-9_-]{1,256}$`, preserving document integrity.
 
 ### 9. Byte 4 Wire Framing Awareness
 
@@ -395,7 +394,7 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 
 - 2026.09.07
 - Formalized **Rule STR-04 (Fenced String Language Discriminator Invariant)** in Grammar-Kit lexer and parser
-- Deprecated `"""->[TAG]` in favor of canonical `"""[TAG]` (scheduled for removal in 2.0.0)
+- Purged legacy `"""->[TAG]` delimiter syntax in favor of canonical `"""[TAG]` under Rule STR-04
 - Enforced strict fence tag character class `^[a-zA-Z0-9_-]{1,256}$` with length bounding from 1 to 256 characters
 - Enhanced edit code-assists for automatic templating and Shift-F6 renaming
 

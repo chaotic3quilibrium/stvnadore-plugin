@@ -36,7 +36,7 @@ public final class StvnParserTest {
     }
 
     @Test
-    public void testDeprecatedFencedStringArrowRejected() {
+    public void testMalformedFencedStringArrowRejected() {
         String invalidSource = "{\n  :type :String\n  :body \"\"\"->[TAG]\nContent\n[TAG]\"\"\"\n}";
         boolean rejected = false;
         try {
@@ -45,6 +45,6 @@ public final class StvnParserTest {
         } catch (RuntimeException e) {
             rejected = true;
         }
-        assertTrue(rejected, "Deprecated directional arrow '->' in fenced string delimiter must be permanently rejected under Rule STR-04");
+        assertTrue(rejected, "Malformed directional arrow '->' in fenced string delimiter must be permanently rejected under Rule STR-04");
     }
 }
