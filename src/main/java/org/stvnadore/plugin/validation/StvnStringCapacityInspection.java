@@ -22,6 +22,7 @@ import org.stvnadore.core.utils.StvnStringCapacityUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.SchemaType;
@@ -125,7 +126,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
-            private void inspectStringElement(@NotNull PsiElement typeElem) {
+            private void inspectNominalElement(@NotNull PsiElement typeElem, @NotNull String typeName, boolean isCollection) {
                 // 1. Enforce Schema Scope: inspect only elements inside :defs or :type
                 boolean inSchema = PsiTreeUtil.getParentOfType(
                     typeElem,
@@ -136,7 +137,6 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                String typeName = typeElem.getText().trim();
                 // Check for obsolete 1.x compound string suffixes (e.g. :String4096, :StringFixed16)
                 if (typeName.startsWith(StvnVocabulary.TYPE_STRING) && typeName.length() > StvnVocabulary.TYPE_STRING.length()) {
                     char nextChar = typeName.charAt(StvnVocabulary.TYPE_STRING.length());
@@ -150,33 +150,42 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                         return;
                     }
                 }
-                if (!StvnStringCapacityUtils.isNominalStringType(typeName)) {
+
+                boolean isString = StvnStringCapacityUtils.isNominalStringType(typeName);
+                if (!isString && !isCollection) {
                     return;
                 }
 
                 // Check if enclosing schema or type_definition has capacity facets (#maxSize, #minSize, or #size)
                 var enclosingSchema = PsiTreeUtil.getParentOfType(typeElem, SchemaType.class);
                 var typeDef = PsiTreeUtil.getParentOfType(typeElem, TypeDefinition.class);
+                var typeEntry = PsiTreeUtil.getParentOfType(typeElem, TypeEntry.class);
+
+                // Enforce Direct Nominal Target Invariant: suppress inner collection arguments
+                if (enclosingSchema == null || (enclosingSchema.getParent() != typeDef && enclosingSchema.getParent() != typeEntry)) {
+                    return;
+                }
+
                 boolean hasCapacityFacet = false;
                 int explicitCapacity = -1;
-                var metaMap = (enclosingSchema != null && enclosingSchema.getMetadataMap() != null)
+                var metaMap = (enclosingSchema.getMetadataMap() != null)
                     ? enclosingSchema.getMetadataMap()
                     : (typeDef != null ? typeDef.getMetadataMap() : null);
                 if (metaMap != null) {
-                        for (var entry : metaMap.getMetadataEntryList()) {
-                            var text = entry.getText();
-                            if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                                hasCapacityFacet = true;
-                                var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                                if (intLit != null) {
-                                    try {
-                                        explicitCapacity = Integer.parseInt(intLit.getText());
-                                    } catch (Exception ignored) {}
-                                }
-                            } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                                hasCapacityFacet = true;
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        var text = entry.getText();
+                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                            hasCapacityFacet = true;
+                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                            if (intLit != null) {
+                                try {
+                                    explicitCapacity = Integer.parseInt(intLit.getText());
+                                } catch (Exception ignored) {}
                             }
+                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                            hasCapacityFacet = true;
                         }
+                    }
                 }
 
                 boolean isUnadorned = !hasCapacityFacet;
@@ -185,31 +194,39 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 if (isUnadorned || exceedsThreshold) {
                     boolean isError = isErrorSeverity(holder);
                     String msg;
+                    String category = isCollection ? "collection" : "string";
+                    String units = isCollection ? (typeName.equals(StvnVocabulary.TYPE_MAP) ? "entries" : "elements") : "characters";
                     if (isUnadorned) {
-                        msg = "Nominal string type '" + typeName + "' is unadorned; default capacity is "
+                        msg = "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is "
                             + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY
-                            + " characters. Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
+                            + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
                     } else {
-                        msg = "Nominal string type '" + typeName + "' specifies capacity " + explicitCapacity
-                            + ", exceeding configured threshold of " + thresholdCapacity + " characters.";
+                        msg = "Nominal " + category + " type '" + typeName + "' specifies capacity " + explicitCapacity
+                            + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
                     }
 
                     if (isError) {
-                        // Protocol Constraint: Suppress Secondary QuickFix under ERROR severity
+                        // Suppress Default Allocation Cap QuickFixes under ERROR severity
                         holder.registerProblem(
                             typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            new ApplyConfiguredCapacityQuickFix(thresholdCapacity)
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }")
                         );
                     } else {
-                        // Protocol Requirement: Offer Dual QuickFixes under WARNING / WEAK WARNING
+                        // Offer 6 Distinct Structural QuickFixes under WARNING / WEAK WARNING
                         holder.registerProblem(
                             typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            new ApplyConfiguredCapacityQuickFix(thresholdCapacity),
-                            new ApplyDefaultCapacityQuickFix()
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }"),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }")
                         );
                     }
                 }
@@ -218,13 +235,28 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             @Override
             public void visitAtomicType(@NotNull AtomicType atomicType) {
                 super.visitAtomicType(atomicType);
-                inspectStringElement(atomicType);
+                inspectNominalElement(atomicType, atomicType.getText().trim(), false);
+            }
+
+            @Override
+            public void visitCollectionType(@NotNull CollectionType collectionType) {
+                super.visitCollectionType(collectionType);
+                var firstChild = collectionType.getFirstChild();
+                if (firstChild != null) {
+                    String collName = firstChild.getText().trim();
+                    boolean isColl = collName.equals(StvnVocabulary.TYPE_SEQ)
+                        || collName.equals(StvnVocabulary.TYPE_SET)
+                        || collName.equals(StvnVocabulary.TYPE_MAP);
+                    if (isColl) {
+                        inspectNominalElement(collectionType, collName, true);
+                    }
+                }
             }
 
             @Override
             public void visitTypeKeyword(@NotNull org.stvnadore.psi.TypeKeyword typeKeyword) {
                 super.visitTypeKeyword(typeKeyword);
-                inspectStringElement(typeKeyword);
+                inspectNominalElement(typeKeyword, typeKeyword.getText().trim(), false);
             }
 
             @Override
@@ -417,28 +449,31 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * Primary QuickFix rewriting nominal string types to the configured threshold.
+     * Structural QuickFix injecting explicit capacity facets immediately before the type constructor.
      */
-    public static final class ApplyConfiguredCapacityQuickFix implements LocalQuickFix {
-        private final int targetCapacity;
+    public static final class ApplyNominalCapacityQuickFix implements LocalQuickFix {
+        private final String actionName;
+        private final String facetSnippet;
 
         /**
-         * Constructs a new ApplyConfiguredCapacityQuickFix.
+         * Constructs a new ApplyNominalCapacityQuickFix.
          *
-         * @param targetCapacity the target capacity bound to apply
+         * @param actionName the user-visible intention action name
+         * @param facetSnippet the metadata facet snippet (e.g. {@code { #maxSize 4096 }})
          */
-        public ApplyConfiguredCapacityQuickFix(int targetCapacity) {
-            this.targetCapacity = targetCapacity;
+        public ApplyNominalCapacityQuickFix(String actionName, String facetSnippet) {
+            this.actionName = actionName;
+            this.facetSnippet = facetSnippet;
         }
 
         @Override
         public @NotNull String getName() {
-            return "Set nominal string capacity to " + targetCapacity;
+            return actionName;
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Set nominal string capacity to configured threshold";
+            return "Set nominal capacity";
         }
 
         @Override
@@ -451,49 +486,24 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             if (doc == null) return;
 
-            String updatedType = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + targetCapacity + " } " + StvnVocabulary.TYPE_STRING;
+            var enclosingSchema = PsiTreeUtil.getParentOfType(element, SchemaType.class);
+            var typeDef = PsiTreeUtil.getParentOfType(element, TypeDefinition.class);
+            var metaMap = (enclosingSchema != null && enclosingSchema.getMetadataMap() != null)
+                ? enclosingSchema.getMetadataMap()
+                : (typeDef != null ? typeDef.getMetadataMap() : null);
 
-            var range = element.getTextRange();
-            doc.replaceString(range.getStartOffset(), range.getEndOffset(), updatedType);
-            docManager.commitDocument(doc);
-        }
-    }
-
-    /**
-     * Secondary QuickFix rewriting nominal string types to the default capacity.
-     */
-    public static final class ApplyDefaultCapacityQuickFix implements LocalQuickFix {
-
-        /**
-         * Constructs a new ApplyDefaultCapacityQuickFix.
-         */
-        public ApplyDefaultCapacityQuickFix() {
-        }
-
-        @Override
-        public @NotNull String getName() {
-            return "Set nominal string capacity to default capacity (" + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + ")";
-        }
-
-        @Override
-        public @NotNull String getFamilyName() {
-            return "Set nominal string capacity to default capacity";
-        }
-
-        @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element == null) return;
-            var file = element.getContainingFile();
-            if (file == null) return;
-            var docManager = PsiDocumentManager.getInstance(project);
-            var doc = file.getViewProvider().getDocument();
-            if (doc == null) return;
-
-            String updatedType = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " } " + StvnVocabulary.TYPE_STRING;
-
-            var range = element.getTextRange();
-            doc.replaceString(range.getStartOffset(), range.getEndOffset(), updatedType);
+            if (metaMap != null) {
+                // Insert facets inside existing metadata map before closing '}'
+                var entries = metaMap.getMetadataEntryList();
+                int insertOffset = metaMap.getTextRange().getEndOffset() - 1;
+                String innerFacets = facetSnippet.replace("{", "").replace("}", "").trim();
+                String insertion = entries.isEmpty() ? innerFacets + " " : " " + innerFacets + " ";
+                doc.insertString(insertOffset, insertion);
+            } else {
+                // Unadorned type constructor: insert metadata map immediately before constructor
+                int startOffset = element.getTextRange().getStartOffset();
+                doc.insertString(startOffset, facetSnippet + " ");
+            }
             docManager.commitDocument(doc);
         }
     }

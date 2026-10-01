@@ -93,14 +93,14 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        var actions = myFixture.filterAvailableIntentions("Set nominal string capacity to 4096");
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
         assertFalse("Expected primary quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         myFixture.checkResult("""
             {
               :defs {
-                :Target { #minSize 1 #maxSize 4096 } :String
+                :Target { #maxSize 4096 } :String
               }
             }
             """);
@@ -119,14 +119,14 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        var actions = myFixture.filterAvailableIntentions("Set nominal string capacity to default capacity (16777216)");
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 16777216 (default allocation cap)");
         assertFalse("Expected secondary quick-fix under warning", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         myFixture.checkResult("""
             {
               :defs {
-                :Target { #minSize 1 #maxSize 16777216 } :String
+                :Target { #maxSize 16777216 } :String
               }
             }
             """);
@@ -147,10 +147,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        var primaryActions = myFixture.filterAvailableIntentions("Set nominal string capacity to 4096");
+        var primaryActions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
         assertFalse("Primary quick-fix must remain available under ERROR severity", primaryActions.isEmpty());
 
-        var secondaryActions = myFixture.filterAvailableIntentions("Set nominal string capacity to default capacity (16777216)");
+        var secondaryActions = myFixture.filterAvailableIntentions("Set nominal capacity to 16777216 (default allocation cap)");
         assertTrue("Secondary quick-fix must be suppressed under ERROR severity", secondaryActions.isEmpty());
     }
 

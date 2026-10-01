@@ -1,24 +1,29 @@
 <html>
 <body>
-<p>Validates that nominal string type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec § 5.3).</p>
+<p>Validates that nominal string and collection type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec § 5.3).</p>
 <!-- tooltip end -->
 <p>
-  STVN defines a default allocation capacity of 16 MiB (16,777,216 characters) for unadorned <code>:String</code> types.
-  This inspection identifies unadorned <code>:String</code> tokens lacking capacity metadata facets
-  and explicit capacity bounds exceeding the configured threshold (default: 4,096 characters).
+  STVN defines a default allocation capacity of 16 MiB (16,777,216 characters or elements) for unadorned <code>:String</code>,
+  <code>:Seq</code>, <code>:Set</code>, and <code>:Map</code> types.
+  This inspection identifies unadorned tokens lacking capacity metadata facets
+  and explicit capacity bounds exceeding the configured threshold (default: 4,096 characters or elements).
 </p>
 
 <p><b>QuickFix Resolution Protocol:</b></p>
 <ul>
   <li><b>Under WARNING / WEAK WARNING severity:</b>
     <ul>
-      <li><i>Primary QuickFix:</i> Rewrites the nominal type with explicit threshold facets (e.g. <code>{ #minSize 1 #maxSize 4096 } :String</code>).</li>
-      <li><i>Secondary QuickFix:</i> Rewrites the nominal type to the default capacity (e.g. <code>{ #minSize 1 #maxSize 16777216 } :String</code>).</li>
+      <li><i>Fix 1:</i> <code>{ #maxSize 4096 }</code> ("Set nominal capacity to 4096")</li>
+      <li><i>Fix 2:</i> <code>{ #minSize 0 #maxSize 4096 }</code> ("Set nominal capacity to 0..4096 (allow empty)")</li>
+      <li><i>Fix 3:</i> <code>{ #minSize 1 #maxSize 4096 }</code> ("Set nominal capacity to 1..4096 (non-empty)")</li>
+      <li><i>Fix 4:</i> <code>{ #maxSize 16777216 }</code> ("Set nominal capacity to 16777216 (default allocation cap)")</li>
+      <li><i>Fix 5:</i> <code>{ #minSize 0 #maxSize 16777216 }</code> ("Set nominal capacity to 0..16777216 (allow empty)")</li>
+      <li><i>Fix 6:</i> <code>{ #minSize 1 #maxSize 16777216 }</code> ("Set nominal capacity to 1..16777216 (non-empty)")</li>
     </ul>
   </li>
   <li><b>Under ERROR severity:</b>
     <ul>
-      <li>Presents <i>only</i> the Primary QuickFix (<code>{ #minSize 1 #maxSize 4096 } :String</code>). Upgrading to 16,777,216 is suppressed because that value itself violates the error threshold.</li>
+      <li>Presents <i>only</i> threshold QuickFixes (Fixes 1, 2, and 3). Default allocation cap QuickFixes (Fixes 4, 5, and 6) are suppressed because 16,777,216 violates the error threshold.</li>
     </ul>
   </li>
 </ul>
@@ -31,15 +36,15 @@
 
 <p><b>Example (Violation):</b></p>
 <pre><code>:defs {
-  // Warning: Unadorned :String defaults to 16 MiB default capacity
   :Username :String
+  :Identifiers :Seq( :Int )
 }
 </code></pre>
 
 <p><b>Example (Compliant):</b></p>
 <pre><code>:defs {
   :Username { #minSize 1 #maxSize 64 } :String
-  :PayloadBuffer { #minSize 1 #maxSize 4096 } :String
+  :Identifiers { #maxSize 4096 } :Seq( :Int )
 }
 </code></pre>
 </body>
