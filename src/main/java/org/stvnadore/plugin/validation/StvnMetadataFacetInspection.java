@@ -34,8 +34,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     private static final TokenSet INTERVAL_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL
     );
-    private static final TokenSet STRING_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_REGEX, StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
+    private static final TokenSet STRING_ONLY_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_REGEX
+    );
+    private static final TokenSet DIMENSION_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
     );
     private static final TokenSet TEMPORAL_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_SCALE_S, StvnTypes.KW_SCALE_MS, StvnTypes.KW_SCALE_US, StvnTypes.KW_SCALE_NS,
@@ -170,6 +173,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         boolean isString = isStringType(baseType);
         boolean isTemporal = isTemporalType(baseType);
         boolean isMap = isMapType(baseType);
+        boolean isCollection = isCollectionType(baseType);
+        boolean isBoolean = isBooleanType(baseType);
         boolean isEnum = isEnumConstructor(baseType);
 
         for (var entry : metaMap.getMetadataEntryList()) {
@@ -180,10 +185,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(INTERVAL_FACET_TOKENS) != null && !isNumeric && !isTemporal) {
+            } else if (entry.getNode().findChildByType(INTERVAL_FACET_TOKENS) != null && !isNumeric && !isTemporal && !isString) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for numeric and temporal types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
+                    "Facet is not permitted on " + baseType + "; permitted facets for numeric, temporal, and string types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
@@ -194,10 +199,17 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(STRING_FACET_TOKENS) != null && !isString) {
+            } else if (entry.getNode().findChildByType(STRING_ONLY_FACET_TOKENS) != null && !isString) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove invalid facet")
+                );
+            } else if (entry.getNode().findChildByType(DIMENSION_FACET_TOKENS) != null && !isString && !isCollection) {
+                holder.registerProblem(
+                    entry,
+                    "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
@@ -261,6 +273,14 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
     private static boolean isStringType(String baseType) {
         return baseType.equals(StvnVocabulary.TYPE_STRING);
+    }
+
+    private static boolean isBooleanType(String baseType) {
+        return baseType.equals(StvnVocabulary.TYPE_BOOLEAN);
+    }
+
+    private static boolean isCollectionType(String baseType) {
+        return isConstructorMatch(baseType, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(baseType, StvnVocabulary.TYPE_SET) || isConstructorMatch(baseType, StvnVocabulary.TYPE_MAP);
     }
 
     private static boolean isTemporalType(String baseType) {

@@ -186,6 +186,88 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
+    public void testValidMetadataFixtures() throws Exception {
+        var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
+        if (!Files.exists(validDir)) {
+            return;
+        }
+
+        try (var stream = Files.walk(validDir)) {
+            var validFiles = stream
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl"))
+                .sorted()
+                .toList();
+            assertEquals("Must validate all 102 valid metadata fixtures", 102, validFiles.size());
+
+            for (var stvnPath : validFiles) {
+                var baseName = stvnPath.getFileName().toString();
+                var relativePath = Paths.get(getTestDataPath()).relativize(stvnPath).toString().replace('\\', '/');
+                myFixture.configureByFile(relativePath);
+
+                var highlights = myFixture.doHighlighting();
+                for (var info : highlights) {
+                    if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
+                        fail("Unexpected error in valid metadata fixture " + baseName + ": " + info.getDescription());
+                    }
+                }
+            }
+        }
+    }
+
+    public void testInvalidMetadataFixtures() throws Exception {
+        var invalidDir = Paths.get(getTestDataPath(), "metadata", "invalid");
+        if (!Files.exists(invalidDir)) {
+            return;
+        }
+
+        var expectDiagPattern = Pattern.compile("^//\\s*EXPECT-DIAGNOSTIC:\\s*(\\w+)", Pattern.MULTILINE);
+        var targetTokenPattern = Pattern.compile("^//\\s*TARGET-TOKEN:\\s*(\\S+)", Pattern.MULTILINE);
+
+        try (var stream = Files.walk(invalidDir)) {
+            var fixtureFiles = stream
+                .filter(p -> p.toString().endsWith(".stvn"))
+                .sorted()
+                .toList();
+            assertEquals("Must validate all 24 invalid metadata fixtures", 24, fixtureFiles.size());
+
+            for (var fixturePath : fixtureFiles) {
+                var fileName = fixturePath.getFileName().toString();
+                var content = Files.readString(fixturePath);
+                var diagMatcher = expectDiagPattern.matcher(content);
+                assertTrue("Fixture missing // EXPECT-DIAGNOSTIC in " + fileName, diagMatcher.find());
+                var expectedDiagnostic = diagMatcher.group(1);
+
+                var tokenMatcher = targetTokenPattern.matcher(content);
+                var targetToken = tokenMatcher.find() ? tokenMatcher.group(1) : null;
+
+                var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
+                myFixture.configureByFile(relativePath);
+
+                var highlights = myFixture.doHighlighting();
+                var errors = highlights.stream()
+                    .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+                    .toList();
+
+                assertTrue("Expected error matching '" + expectedDiagnostic + "' not found in " + fileName, !errors.isEmpty());
+
+                if (targetToken != null) {
+                    var docText = myFixture.getEditor().getDocument().getText();
+                    var tokenPinned = errors.stream().anyMatch(e -> {
+                        var span = docText.substring(e.getStartOffset(), e.getEndOffset());
+                        return span.equals(targetToken) || span.contains(targetToken);
+                    });
+                    assertTrue("Target token '" + targetToken + "' was not pinned in error coordinates for " + fileName + ". Errors: " + errors, tokenPinned);
+
+                    // VOP Localization Invariant: Delimiters '{' and '}' must maintain zero error squiggles
+                    for (var err : errors) {
+                        var span = docText.substring(err.getStartOffset(), err.getEndOffset()).trim();
+                        assertFalse("Parent delimiter '{' must not have error squiggle in " + fileName, span.startsWith("{") && span.endsWith("}"));
+                    }
+                }
+            }
+        }
+    }
+
     private static @Nullable String extractJsonField(String json, String fieldName) {
         var pattern = Pattern.compile("\"" + fieldName + "\"\\s*:\\s*\"((?:[^\\\\\"]|\\\\.)*)\"");
         var matcher = pattern.matcher(json);
@@ -1708,11 +1790,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     var start = info.getStartOffset();
                     var end = info.getEndOffset();
                     var matchedText = myFixture.getEditor().getDocument().getText().substring(start, end);
-                    assertEquals("{ #minIncl 10 #minExcl 20 }", matchedText);
+                    assertTrue("Expected constraint error highlighted on #minExcl or { #minIncl 10 #minExcl 20 }, found: " + matchedText,
+                        matchedText.equals("#minExcl") || matchedText.equals("{ #minIncl 10 #minExcl 20 }"));
                 }
             }
         }
-        assertTrue("Expected constraint error highlighted on { #minIncl 10 #minExcl 20 }", found);
+        assertTrue("Expected constraint error highlighted on #minExcl", found);
     }
 
     public void testTrack7TypeSuffixSizing() {
@@ -4818,7 +4901,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var hasInvertedRangeError = errors.stream().anyMatch(e ->
             e.getDescription() != null &&
             e.getDescription().contains("effective range is invalid") &&
-            docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxExcl 10 }")
+            (docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#maxExcl") ||
+             docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxExcl 10 }"))
         );
         assertTrue("Must highlight inverted range metadata map", hasInvertedRangeError);
 

@@ -228,6 +228,10 @@ val mirrorSharedFixtures by tasks.registering {
             if (syntaxTarget.exists()) {
                 syntaxTarget.deleteRecursively()
             }
+            val metadataTarget = targetDir.resolve("metadata")
+            if (metadataTarget.exists()) {
+                metadataTarget.deleteRecursively()
+            }
             siblingDir.copyRecursively(targetDir, overwrite = true)
         } else {
             logger.warn("WARNING: Sibling core repository fixtures directory not found at: ${siblingDir.absolutePath}. Test execution will proceed with standard classpath assets.")

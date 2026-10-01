@@ -565,7 +565,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <hr/>
                 Represents a strict mathematical boolean truth value.<br/>
                 <b>Allowed Literals:</b> <code>#TRUE</code>, <code>#FALSE</code>, <code>#T</code>, <code>#F</code>.<br/>
-                <b>Constraint:</b> Prohibits integer truthiness (<code>0</code> / <code>1</code>).
+                <b>Constraint:</b> Prohibits integer truthiness (<code>0</code> / <code>1</code>).<br/>
+                <b>Supported Facets:</b> <code>#equatable</code>, <code>#comparable</code>.
                 """;
         }
 
@@ -575,7 +576,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <hr/>
                 Represents an integer value.<br/>
                 <b>Lexical Forms:</b> Decimal (<code>42</code>), Hex (<code>0x2A</code>), Binary (<code>0b101010</code>), Octal (<code>0o52</code>).<br/>
-                <b>Supported Facets:</b> <code>#size</code>, <code>#unsigned</code>, <code>#minIncl</code>, <code>#maxExcl</code>, <code>#divisibleBy</code>.
+                <b>Supported Facets:</b> <code>#size</code>, <code>#unsigned</code>, <code>#minIncl</code>, <code>#maxExcl</code>, <code>#equatable</code>, <code>#comparable</code>.
                 """;
         }
 
@@ -585,7 +586,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <hr/>
                 Represents a floating-point numeric value.<br/>
                 <b>Lexical Form:</b> Standard decimal notation with decimal point (e.g. <code>3.14159</code>, <code>-0.5</code>).<br/>
-                <b>Supported Facets:</b> <code>#size</code>, <code>#exact</code>, <code>#minIncl</code>, <code>#maxIncl</code>, <code>#minExcl</code>, <code>#maxExcl</code>, <code>#nan</code>, <code>#inf</code>.
+                <b>Supported Facets:</b> <code>#size</code>, <code>#exact</code>, <code>#minIncl</code>, <code>#maxIncl</code>, <code>#minExcl</code>, <code>#maxExcl</code>, <code>#equatable</code>, <code>#comparable</code>.
                 """;
         }
 
@@ -594,8 +595,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Built-in String Type:</b> :String<br/>
                 <hr/>
                 Represents an unbounded UTF-8 text string (up to maximum allocation size of 16,777,216 characters).<br/>
-                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"-&gt;[LANG]...[LANG]\"\"\"</code>).<br/>
-                <b>Supported Facets:</b> <code>#size</code>, <code>#minSize</code>, <code>#maxSize</code>, <code>#exact</code>, <code>#regex</code>, <code>#ascii</code>, <code>#casing</code>.
+                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"[LANG]...[LANG]\"\"\"</code>).<br/>
+                <b>Supported Facets:</b> <code>#minSize</code>, <code>#maxSize</code>, <code>#minIncl</code>, <code>#minExcl</code>, <code>#maxIncl</code>, <code>#maxExcl</code>, <code>#regex</code>, <code>#preserveIndent</code>, <code>#equatable</code>, <code>#comparable</code>.
                 """;
         }
 

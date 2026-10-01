@@ -15,6 +15,7 @@ import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.problems.Problem;
 import com.intellij.problems.WolfTheProblemSolver;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
@@ -228,6 +229,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         var clampedTypeDef = clampToOffendingChildIfTypeDef(file, range, message);
                         if (clampedTypeDef != null) {
                             range = clampedTypeDef;
+                        }
+                        var clampedMeta = clampToOffendingMetadataFacet(file, range, message, diag.errorCode().orElse(null));
+                        if (clampedMeta != null) {
+                            range = clampedMeta;
                         }
                     }
                     var annotationBuilder = holder.newAnnotation(severity, message)
@@ -917,6 +922,86 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         if (!isLhs && typeKw.getText().equals(typeName)) {
                             return typeKw.getTextRange();
                         }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Clamps wide metadata diagnostic spans down to the exact offending facet token.
+     *
+     * @param file the containing PSI file
+     * @param range the original diagnostic range
+     * @param message the diagnostic message
+     * @param errorCode the optional diagnostic error code
+     * @return the pinned text range on the target token, or null if no clamping applies
+     */
+    private static @Nullable TextRange clampToOffendingMetadataFacet(PsiFile file, TextRange range, String message, @Nullable String errorCode) {
+        var maps = PsiTreeUtil.findChildrenOfType(file, MetadataMap.class);
+        for (var map : maps) {
+            var mapRange = map.getTextRange();
+            if (mapRange.equals(range) || range.contains(mapRange)) {
+                // Pass 1: Inverted range and empty domain faults anchor on the upper bound facet
+                if ("INVALID_NUMERIC_RANGE".equals(errorCode) || "ERR_INVERTED_RANGE".equals(errorCode)
+                    || "ERR_EMPTY_INTERVAL_DOMAIN".equals(errorCode) || message.contains("effective range is invalid")
+                    || message.contains("empty domain") || message.contains("cardinality range is invalid")
+                    || message.contains("inverted")) {
+                    for (var entry : map.getMetadataEntryList()) {
+                        PsiElement leaf = entry.getFirstChild();
+                        if (leaf == null) continue;
+                        while (leaf.getFirstChild() != null) {
+                            leaf = leaf.getFirstChild();
+                        }
+                        var tokenText = leaf.getText().trim();
+                        if (tokenText.equals("#maxExcl") || tokenText.equals("#maxSize") || tokenText.equals("#maxIncl")) {
+                            return leaf.getTextRange();
+                        }
+                    }
+                }
+
+                // Pass 2: Mutually exclusive bounds anchor on the conflicting secondary facet
+                if ("MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
+                    || message.contains("mutually exclusive")) {
+                    for (var entry : map.getMetadataEntryList()) {
+                        PsiElement leaf = entry.getFirstChild();
+                        if (leaf == null) continue;
+                        while (leaf.getFirstChild() != null) {
+                            leaf = leaf.getFirstChild();
+                        }
+                        var tokenText = leaf.getText().trim();
+                        if (tokenText.equals("#maxIncl") || tokenText.equals("#minExcl") || tokenText.equals("#filterExcl")
+                            || tokenText.equals("#zoned") || tokenText.equals("#ms") || tokenText.equals("#audited")
+                            || tokenText.equals("#us") || tokenText.equals("#ns")) {
+                            return leaf.getTextRange();
+                        }
+                    }
+                }
+
+                // Pass 3: Check for specifically quoted token in message: e.g. facet '#unsigned'
+                for (var entry : map.getMetadataEntryList()) {
+                    PsiElement leaf = entry.getFirstChild();
+                    if (leaf == null) continue;
+                    while (leaf.getFirstChild() != null) {
+                        leaf = leaf.getFirstChild();
+                    }
+                    var tokenText = leaf.getText().trim();
+                    if (tokenText.startsWith("#") && (message.contains("facet '" + tokenText + "'") || message.contains("'" + tokenText + "'"))) {
+                        return leaf.getTextRange();
+                    }
+                }
+
+                // Pass 4: Fallback substring match
+                for (var entry : map.getMetadataEntryList()) {
+                    PsiElement leaf = entry.getFirstChild();
+                    if (leaf == null) continue;
+                    while (leaf.getFirstChild() != null) {
+                        leaf = leaf.getFirstChild();
+                    }
+                    var tokenText = leaf.getText().trim();
+                    if (tokenText.startsWith("#") && message.contains(tokenText)) {
+                        return leaf.getTextRange();
                     }
                 }
             }

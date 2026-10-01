@@ -16,6 +16,7 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.MetadataFilter;
+import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.ValueKeyword;
@@ -70,6 +71,11 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
 
                     // Check if caret is inside a filter facet list (#filterIncl / #filterExcl [ <caret> ])
                     if (populateFilterListCompletions(position, targetResult)) {
+                        return;
+                    }
+
+                    // Suppress body value completions inside metadata map declarations
+                    if (PsiTreeUtil.getParentOfType(position, MetadataMap.class) != null) {
                         return;
                     }
 
