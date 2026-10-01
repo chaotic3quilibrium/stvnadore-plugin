@@ -2,7 +2,6 @@ package org.stvnadore.plugin;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.lang.annotation.HighlightSeverity;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
@@ -11,7 +10,6 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction;
 import org.stvnadore.plugin.validation.StvnMapAutoHealerQuickFix;
 import org.stvnadore.psi.ListLiteral;
-import org.stvnadore.psi.MapLiteral;
 import org.stvnadore.psi.TupleLiteral;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.ValueKeyword;
@@ -23,7 +21,6 @@ import org.stvnadore.plugin.settings.StvnProjectSettings;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -186,7 +183,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
-    private static final int VALID_METADATA_FIXTURES_COUNT = 108;
+    private static final int METADATA_FIXTURES_VALID_COUNT = 108;
 
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
@@ -199,7 +196,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl"))
                 .sorted()
                 .toList();
-            assertEquals("Must validate all %d valid metadata fixtures".formatted(VALID_METADATA_FIXTURES_COUNT), VALID_METADATA_FIXTURES_COUNT, validFiles.size());
+            assertEquals("Must validate all %d valid metadata fixtures".formatted(METADATA_FIXTURES_VALID_COUNT), METADATA_FIXTURES_VALID_COUNT, validFiles.size());
 
             for (var stvnPath : validFiles) {
                 var baseName = stvnPath.getFileName().toString();
@@ -216,6 +213,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
+    private static final int METADATA_FIXTURES_INVALID_COUNT = 26;
+
     public void testInvalidMetadataFixtures() throws Exception {
         var invalidDir = Paths.get(getTestDataPath(), "metadata", "invalid");
         if (!Files.exists(invalidDir)) {
@@ -230,7 +229,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 .filter(p -> p.toString().endsWith(".stvn"))
                 .sorted()
                 .toList();
-            assertEquals("Must validate all 24 invalid metadata fixtures", 24, fixtureFiles.size());
+            assertEquals("Must validate all %d invalid metadata fixtures".formatted(METADATA_FIXTURES_INVALID_COUNT), METADATA_FIXTURES_INVALID_COUNT, fixtureFiles.size());
 
             for (var fixturePath : fixtureFiles) {
                 var fileName = fixturePath.getFileName().toString();
