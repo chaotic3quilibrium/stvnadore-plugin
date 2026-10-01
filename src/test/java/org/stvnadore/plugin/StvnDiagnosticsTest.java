@@ -186,6 +186,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
+    private static final int VALID_METADATA_FIXTURES_COUNT = 108;
+
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
         if (!Files.exists(validDir)) {
@@ -197,7 +199,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl"))
                 .sorted()
                 .toList();
-            assertEquals("Must validate all 102 valid metadata fixtures", 102, validFiles.size());
+            assertEquals("Must validate all %d valid metadata fixtures".formatted(VALID_METADATA_FIXTURES_COUNT), VALID_METADATA_FIXTURES_COUNT, validFiles.size());
 
             for (var stvnPath : validFiles) {
                 var baseName = stvnPath.getFileName().toString();
