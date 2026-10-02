@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -211,9 +212,9 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                             typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }")
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL)
                         );
                     } else {
                         // Offer 6 Distinct Structural QuickFixes under WARNING / WEAK WARNING
@@ -221,12 +222,12 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                             typeElem,
                             msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }"),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }")
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.LOW),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM)
                         );
                     }
                 }
@@ -451,19 +452,37 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     /**
      * Structural QuickFix injecting explicit capacity facets immediately before the type constructor.
      */
-    public static final class ApplyNominalCapacityQuickFix implements LocalQuickFix {
+    public static final class ApplyNominalCapacityQuickFix implements LocalQuickFix, PriorityAction {
         private final String actionName;
         private final String facetSnippet;
+        private final Priority priority;
 
         /**
-         * Constructs a new ApplyNominalCapacityQuickFix.
+         * Constructs a new ApplyNominalCapacityQuickFix with explicit intention priority.
+         *
+         * @param actionName the user-visible intention action name
+         * @param facetSnippet the metadata facet snippet (e.g. {@code { #maxSize 4096 }})
+         * @param priority the intention display priority
+         */
+        public ApplyNominalCapacityQuickFix(String actionName, String facetSnippet, Priority priority) {
+            this.actionName = actionName;
+            this.facetSnippet = facetSnippet;
+            this.priority = priority;
+        }
+
+        /**
+         * Constructs a new ApplyNominalCapacityQuickFix with normal priority.
          *
          * @param actionName the user-visible intention action name
          * @param facetSnippet the metadata facet snippet (e.g. {@code { #maxSize 4096 }})
          */
         public ApplyNominalCapacityQuickFix(String actionName, String facetSnippet) {
-            this.actionName = actionName;
-            this.facetSnippet = facetSnippet;
+            this(actionName, facetSnippet, Priority.NORMAL);
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return priority;
         }
 
         @Override

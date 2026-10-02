@@ -71,9 +71,41 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        for (var fixName : EXPECTED_INTENTIONS) {
-            var actions = myFixture.filterAvailableIntentions(fixName);
-            assertFalse("Expected intention to be available: '" + fixName + "'", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity");
+        assertEquals("Expected exactly 6 capacity intentions on :Seq", 6, actions.size());
+        for (int i = 0; i < EXPECTED_INTENTIONS.size(); i++) {
+            assertEquals("Intention at index " + i + " must match canonical sequence",
+                EXPECTED_INTENTIONS.get(i), actions.get(i).getText());
+        }
+    }
+
+    public void testCanonicalIntentionOrderAcrossAllNominalTypes() {
+        String[] nominalTargets = {":String", ":Seq", ":Set", ":Map"};
+        String fileContent = """
+            {
+              :defs {
+                :T1 :String
+                :T2 :Seq( :Int )
+                :T3 :Set( :Int )
+                :T4 :Map( :String :Int )
+              }
+            }
+            """;
+        myFixture.configureByText("all_nominal_order.stvn_inclf", fileContent);
+        myFixture.doHighlighting();
+
+        for (String target : nominalTargets) {
+            int offset = fileContent.indexOf(target);
+            myFixture.getEditor().getCaretModel().moveToOffset(offset);
+
+            var actions = myFixture.filterAvailableIntentions("Set nominal capacity");
+            assertEquals("Expected 6 capacity intentions for target " + target, 6, actions.size());
+            assertEquals("Index 0 must strictly be primary action for target " + target,
+                "Set nominal capacity to 4096", actions.get(0).getText());
+            for (int i = 0; i < EXPECTED_INTENTIONS.size(); i++) {
+                assertEquals("Intention at index " + i + " must match canonical sequence for target " + target,
+                    EXPECTED_INTENTIONS.get(i), actions.get(i).getText());
+            }
         }
     }
 

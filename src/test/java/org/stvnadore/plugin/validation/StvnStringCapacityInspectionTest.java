@@ -93,8 +93,10 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
-        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
-        assertFalse("Expected primary quick-fix to be available", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity");
+        assertFalse("Expected capacity quick-fixes to be available", actions.isEmpty());
+        assertEquals("Index 0 must strictly be primary action (4096)",
+            "Set nominal capacity to 4096", actions.get(0).getText());
         myFixture.launchAction(actions.get(0));
 
         myFixture.checkResult("""
