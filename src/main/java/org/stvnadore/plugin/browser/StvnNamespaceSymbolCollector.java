@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.browser;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -79,6 +80,38 @@ public final class StvnNamespaceSymbolCollector {
             case TYPE -> collectTypeSymbols(file);
             case BODY -> collectBodySymbols(file);
         };
+    }
+
+    /**
+     * Collects all canonical standard library prelude symbols from stvnadore-core.
+     *
+     * @param project the active project
+     * @return unmodifiable list of prelude symbol entries
+     */
+    public static List<StvnNamespaceSymbolEntry> collectPreludeSymbols(Project project) {
+        var preludeFile = StvnPreludeBridge.getPreludeFile(project);
+        var results = new ArrayList<StvnNamespaceSymbolEntry>();
+        var defs = PsiTreeUtil.findChildrenOfType(preludeFile, TypeDefinition.class);
+        for (var def : defs) {
+            var kw = def.getTypeKeyword();
+            if (kw != null) {
+                var fullText = kw.getText();
+                var leafName = fullText.contains("/") ? ":" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
+                var schemaType = def.getSchemaType();
+                var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                results.add(new StvnNamespaceSymbolEntry(
+                    leafName,
+                    ":org/stvnadore/prelude",
+                    schemaText,
+                    0,
+                    kw,
+                    true,
+                    kw.getTextOffset(),
+                    StvnNamespaceScope.DEFS
+                ));
+            }
+        }
+        return List.copyOf(results);
     }
 
     private static List<StvnNamespaceSymbolEntry> collectDefsSymbols(PsiFile file) {

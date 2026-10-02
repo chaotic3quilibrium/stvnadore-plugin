@@ -666,6 +666,22 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull("Must collect :String128Custom", findEntryByName(entries, ":String128Custom"));
     }
 
+    /**
+     * Verifies that collectPreludeSymbols dynamically loads prelude symbols from stvnadore-core.
+     */
+    public void testCollectPreludeSymbols() {
+        var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(getProject());
+        assertFalse("Prelude entries must not be empty", preludeEntries.isEmpty());
+        assertTrue("Prelude must contain canonical types", preludeEntries.size() >= 10);
+        assertNotNull("Must contain :IPv4", findEntryByName(preludeEntries, ":IPv4"));
+        assertNotNull("Must contain :Port", findEntryByName(preludeEntries, ":Port"));
+        assertNotNull("Must contain :Uuid", findEntryByName(preludeEntries, ":Uuid"));
+        var ipv4Entry = findEntryByName(preludeEntries, ":IPv4");
+        assertNotNull(ipv4Entry);
+        assertTrue("Entry must be marked prelude", ipv4Entry.isPrelude());
+        assertEquals(":org/stvnadore/prelude", ipv4Entry.source());
+    }
+
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {
         var textRange = file.getText().indexOf(text);
         if (textRange >= 0) {

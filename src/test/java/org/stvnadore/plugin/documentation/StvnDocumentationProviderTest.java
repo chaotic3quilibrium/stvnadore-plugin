@@ -330,5 +330,37 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var wsDoc = wsDocElem != null ? provider.generateDoc(wsDocElem, wsElem) : null;
         assertNull("Caret on interior whitespace must return null documentation", wsDoc);
     }
+
+    /**
+     * Verifies that hover and quick navigate info emit an unqualified reference warning
+     * when a bare standard library prelude token is referenced without qualification or :use.
+     */
+    public void testUnqualifiedPreludeReferenceWarning() {
+        var text = """
+            {
+              :defs {
+                :IpAddress :Union( :IPv4 :StringFixed15 )
+              }
+              :type :IpAddress
+              :body "127.0.0.1"
+            }
+            """;
+        var file = myFixture.configureByText("net.stvn", text);
+        var offset = text.indexOf(":IPv4");
+        var elem = file.findElementAt(offset);
+        assertNotNull(elem);
+
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), file, elem, offset);
+        assertNotNull(docElem);
+
+        var doc = provider.generateDoc(docElem, elem);
+        assertNotNull(doc);
+        assertTrue("Doc must include unqualified reference warning",
+            doc.contains("Unqualified reference to Standard Library Prelude type '<code>:org/stvnadore/prelude/IPv4</code>'"));
+        assertTrue("Doc must include underlying structure", doc.contains("<b>Underlying Structure:</b>"));
+
+        var quickInfo = provider.getQuickNavigateInfo(docElem, elem);
+        assertEquals("Unqualified reference to Standard Library Prelude type ':org/stvnadore/prelude/IPv4'", quickInfo);
+    }
 }
 

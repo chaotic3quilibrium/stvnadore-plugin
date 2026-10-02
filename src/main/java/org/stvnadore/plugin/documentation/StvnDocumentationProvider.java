@@ -14,6 +14,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
@@ -61,6 +62,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var target = getDocumentationElement(element, originalElement);
         if (target == null) {
             return null;
+        }
+
+        var unqualifiedNotice = checkUnqualifiedPreludeReferenceNotice(target, element, originalElement);
+        if (unqualifiedNotice != null) {
+            var renderedPreludeDoc = buildPreludeTypeDocumentation(target, element, originalElement);
+            return unqualifiedNotice + (renderedPreludeDoc != null ? renderedPreludeDoc : "");
         }
 
         var baseDoc = buildTargetDocumentation(target, originalElement);
@@ -125,6 +132,123 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         return null;
+    }
+
+    private static @Nullable String checkUnqualifiedPreludeReferenceNotice(
+            @Nullable PsiElement target,
+            PsiElement element,
+            @Nullable PsiElement originalElement
+    ) {
+        TypeKeyword targetKw = null;
+        if (element instanceof TypeKeyword kw) {
+            targetKw = kw;
+        } else if (originalElement != null) {
+            targetKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class, false);
+        }
+        if (targetKw == null) {
+            return null;
+        }
+
+        var text = targetKw.getText().trim();
+        if (text.startsWith(":org/stvnadore/prelude/")) {
+            return null;
+        }
+        if (!text.startsWith(":") || text.substring(1).contains("/")) {
+            return null;
+        }
+
+        var project = targetKw.getProject();
+        var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(project, text);
+        if (preludeDef == null) {
+            return null;
+        }
+
+        var file = targetKw.getContainingFile();
+        if (file == null || file.getName().contains("prelude")) {
+            return null;
+        }
+
+        var localDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var def : localDefs) {
+            var kw = def.getTypeKeyword();
+            if (kw != null && text.equals(kw.getText()) && def != targetKw.getParent()) {
+                return null;
+            }
+        }
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
+        for (var use : useStmts) {
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (list.size() >= 2 && list.get(1) != null && text.equals(list.get(1).getText())) {
+                        return null;
+                    }
+                    if (list.size() == 1 && list.get(0) != null && text.equals(list.get(0).getText())) {
+                        return null;
+                    }
+                }
+            }
+            var opts = use.getUseOptionsBlock();
+            if (opts != null && opts.getText().contains("#strip")) {
+                var useTarget = use.getUseTarget();
+                if (useTarget != null && useTarget.getText().equals(":org/stvnadore/prelude")) {
+                    return null;
+                }
+            }
+        }
+
+        var fqni = ":org/stvnadore/prelude/" + text.substring(1);
+        return """
+            <div style="padding: 6px 10px; border-left: 4px solid #E57373; background-color: rgba(229, 115, 115, 0.12); color: #C62828; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
+                <b style="font-size: 1.05em;">&#9888; Unqualified Reference Warning</b><br/>
+                Unqualified reference to Standard Library Prelude type '<code>%s</code>'.<br/>
+                Use fully qualified identifier, import via <code>:use</code>, or brand locally in <code>:defs</code>.
+            </div>
+            """.formatted(fqni);
+    }
+
+    private static @Nullable String buildPreludeTypeDocumentation(
+            @Nullable PsiElement target,
+            PsiElement element,
+            @Nullable PsiElement originalElement
+    ) {
+        TypeKeyword targetKw = null;
+        if (element instanceof TypeKeyword kw) {
+            targetKw = kw;
+        } else if (originalElement != null) {
+            targetKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class, false);
+        }
+        var text = targetKw != null ? targetKw.getText().trim() : element.getText().trim();
+        var project = element.getProject();
+        var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(project, text);
+        if (preludeDef == null) {
+            return null;
+        }
+
+        var sb = new StringBuilder();
+        var kw = preludeDef.getTypeKeyword();
+        var fqni = kw != null ? kw.getText() : (text.startsWith(":org/stvnadore/prelude/") ? text : ":org/stvnadore/prelude/" + text.substring(1));
+        sb.append("<b>Standard Library Prelude:</b> ").append(fqni).append("<br/>");
+
+        var schemaType = preludeDef.getSchemaType();
+        if (schemaType != null) {
+            sb.append("<b>Underlying Type:</b> <code>").append(StvnSchemaFormatter.formatCleanSchema(schemaType)).append("</code><br/>");
+        }
+        var metaMap = preludeDef.getMetadataMap();
+        if (metaMap != null) {
+            sb.append("<b>Validation Constraint:</b> <code>").append(metaMap.getText()).append("</code><br/>");
+        }
+        sb.append("<hr/>");
+        sb.append("<b>Underlying Structure:</b> ").append(schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
+
+        var specDoc = getBuiltInPreludeDoc(text.startsWith(":org/stvnadore/prelude/") ? ":" + text.substring(":org/stvnadore/prelude/".length()) : text);
+        if (specDoc != null && specDoc.contains("<hr/>")) {
+            var descPart = specDoc.substring(specDoc.indexOf("<hr/>") + 5);
+            sb.append("<br/>").append(descPart);
+        }
+
+        return sb.toString();
     }
 
     private @Nullable String buildTargetDocumentation(PsiElement target, @Nullable PsiElement originalElement) {
@@ -445,6 +569,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var target = getDocumentationElement(element, originalElement);
         if (target == null) {
             return null;
+        }
+
+        var unqualifiedNotice = checkUnqualifiedPreludeReferenceNotice(target, element, originalElement);
+        if (unqualifiedNotice != null) {
+            TypeKeyword targetKw = (element instanceof TypeKeyword kw) ? kw : (originalElement != null ? PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class, false) : null);
+            var text = targetKw != null ? targetKw.getText().trim() : element.getText().trim();
+            var name = text.startsWith(":") ? text.substring(1) : text;
+            return "Unqualified reference to Standard Library Prelude type ':org/stvnadore/prelude/" + name + "'";
         }
 
         if (target instanceof TypeDefinition typeDef) {
