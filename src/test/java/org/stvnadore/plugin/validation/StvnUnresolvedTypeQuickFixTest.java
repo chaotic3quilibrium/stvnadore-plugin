@@ -95,6 +95,36 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
     }
 
     /**
+     * Verifies the canonical intention priority sequence (Qualify -> Import -> Brand).
+     */
+    public void testCanonicalOrderOfUnresolvedTypeIntentions() {
+        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var matchingIntentions = myFixture.getAvailableIntentions().stream()
+                .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+                .filter(text -> text.contains("IPv4"))
+                .toList();
+
+        assertFalse("Intentions matching IPv4 must not be empty", matchingIntentions.isEmpty());
+        assertEquals("Exactly 3 quick-fix intentions must be available for unresolved :IPv4", 3, matchingIntentions.size());
+
+        assertEquals("Index 0 must be Qualify fix",
+                "Qualify as ':org/stvnadore/prelude/IPv4'",
+                matchingIntentions.get(0));
+
+        assertEquals("Index 1 must be Import fix",
+                "Import ':IPv4' from Prelude via :use (preserves type identity)",
+                matchingIntentions.get(1));
+
+        assertEquals("Index 2 must be Brand fix",
+                "Brand new nominal type ':IPv4' from Prelude (creates distinct type)",
+                matchingIntentions.get(2));
+    }
+
+    /**
      * Verifies hover documentation displays unqualified reference warning and underlying structure.
      */
     public void testHoverDisplaysUnqualifiedReferenceWarning() {

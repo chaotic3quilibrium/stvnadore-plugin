@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -19,14 +20,15 @@ import org.stvnadore.psi.TypeKeyword;
  * Quick-fix injecting a scoped :use import statement into the nearest enclosing :defs or :package block.
  */
 @NullMarked
-public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
 
     private final String targetNamespace;
     private final String symbolName;
     private final String customLabel;
+    private final Priority priority;
 
     /**
-     * Constructs an import quick-fix with standard label.
+     * Constructs an import quick-fix with standard label and NORMAL priority.
      *
      * @param element the unresolved TypeKeyword element
      * @param targetNamespace the target namespace to import from
@@ -36,11 +38,12 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
         this(element, targetNamespace, symbolName,
             targetNamespace.equals(":org/stvnadore/prelude")
                 ? "Import '" + symbolName + "' from Prelude via :use (preserves type identity)"
-                : "Import '" + symbolName + "' from " + targetNamespace + " via :use (preserves type identity)");
+                : "Import '" + symbolName + "' from " + targetNamespace + " via :use (preserves type identity)",
+            Priority.NORMAL);
     }
 
     /**
-     * Constructs an import quick-fix with custom label.
+     * Constructs an import quick-fix with custom label and NORMAL priority.
      *
      * @param element the unresolved TypeKeyword element
      * @param targetNamespace the target namespace to import from
@@ -48,10 +51,29 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
      * @param customLabel user-facing intention action text
      */
     public StvnImportUseQuickFix(TypeKeyword element, String targetNamespace, String symbolName, String customLabel) {
+        this(element, targetNamespace, symbolName, customLabel, Priority.NORMAL);
+    }
+
+    /**
+     * Constructs an import quick-fix with custom label and explicit priority.
+     *
+     * @param element the unresolved TypeKeyword element
+     * @param targetNamespace the target namespace to import from
+     * @param symbolName the leaf type symbol name to import
+     * @param customLabel user-facing intention action text
+     * @param priority intention action display priority
+     */
+    public StvnImportUseQuickFix(TypeKeyword element, String targetNamespace, String symbolName, String customLabel, Priority priority) {
         super(element);
         this.targetNamespace = targetNamespace;
         this.symbolName = symbolName;
         this.customLabel = customLabel;
+        this.priority = priority;
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return priority;
     }
 
     @Override
