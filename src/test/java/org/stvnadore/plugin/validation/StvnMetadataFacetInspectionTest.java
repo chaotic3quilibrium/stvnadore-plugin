@@ -194,4 +194,45 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         assertTrue(errors.get(2).getDescription().contains("Facet is not permitted on :Map( :String :Int )"));
         assertTrue(errors.get(3).getDescription().contains("Facet is not permitted on :Seq( :Int )"));
     }
+
+    public void testDuplicateFacetsInMetadataBlockRejected() {
+        var text = """
+            {
+              :defs {
+                :BadInt    { #size 53 #size 1 } :Int
+                :BadString { #maxSize 4096 #maxSize 1024 } :String
+              }
+              :type :BadInt
+              :body 0
+            }
+            """;
+        myFixture.configureByText("duplicate_facets.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertEquals("Expected exactly 2 duplicate facet errors", 2, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Duplicate facet '#size' is prohibited"));
+        assertTrue(errors.get(1).getDescription().contains("Duplicate facet '#maxSize' is prohibited"));
+
+        // Verify Quick-Fix on first duplicate (#size 1)
+        int offset = text.indexOf("#size 1");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Remove duplicate facet");
+        assertFalse("Expected 'Remove duplicate facet' quick-fix", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                :BadInt    { #size 53 } :Int
+                :BadString { #maxSize 4096 #maxSize 1024 } :String
+              }
+              :type :BadInt
+              :body 0
+            }
+            """);
+    }
 }

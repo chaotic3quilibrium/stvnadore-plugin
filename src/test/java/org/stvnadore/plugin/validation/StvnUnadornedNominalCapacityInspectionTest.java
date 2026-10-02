@@ -431,4 +431,60 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
             }
         }
     }
+
+    public void testOverThresholdCapacityReplacementOnMap() {
+        var text = """
+            {
+              :defs {
+                :JsonObject { #maxSize 16777216 } :Map( :String :Int )
+              }
+            }
+            """;
+        myFixture.configureByText("over_threshold_map.stvn_inclf", text);
+        int offset = text.indexOf(":Map");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
+        assertFalse("Expected Fix 1 to be available for over-threshold :Map", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                :JsonObject { #maxSize 4096 } :Map( :String :Int )
+              }
+            }
+            """);
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+        assertTrue("Replacement must produce zero errors. Found: " + errors, errors.isEmpty());
+    }
+
+    public void testOverThresholdWithMixedFacetsPreserved() {
+        var text = """
+            {
+              :defs {
+                :BadDuplicateMap { #invertible #maxSize 16777216 } :Map( :String :Int )
+              }
+            }
+            """;
+        myFixture.configureByText("mixed_facets_map.stvn_inclf", text);
+        int offset = text.indexOf(":Map");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 0..4096 (allow empty)");
+        assertFalse("Expected Fix 2 to be available for mixed-facet :Map", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                :BadDuplicateMap { #invertible #minSize 0 #maxSize 4096 } :Map( :String :Int )
+              }
+            }
+            """);
+    }
 }

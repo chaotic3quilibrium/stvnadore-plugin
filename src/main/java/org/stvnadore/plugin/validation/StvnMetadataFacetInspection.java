@@ -12,9 +12,13 @@ import com.intellij.psi.tree.TokenSet;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.*;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Validates STVN metadata facet compatibility and detects empty blocks in directives and metadata.
@@ -71,6 +75,24 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
+            @Override
+            public void visitMetadataMap(@NotNull MetadataMap metaMap) {
+                super.visitMetadataMap(metaMap);
+                Set<String> seenFacets = new HashSet<>();
+                for (var entry : metaMap.getMetadataEntryList()) {
+                    String facetName = extractFacetName(entry);
+                    if (facetName == null || facetName.isEmpty()) continue;
+                    if (!seenFacets.add(facetName)) {
+                        holder.registerProblem(
+                            entry,
+                            "Duplicate facet '#" + facetName + "' is prohibited",
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove duplicate facet")
+                        );
+                    }
+                }
+            }
+
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
                 // Top-level validation handled uniformly via visitSchemaType
@@ -364,6 +386,21 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         return trimmed;
     }
 
+    public static @Nullable String extractFacetName(MetadataEntry entry) {
+        String text = entry.getText().trim();
+        if (text.isEmpty()) return null;
+        int end = text.length();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isWhitespace(c) || c == '[' || c == '{' || c == '(') {
+                end = i;
+                break;
+            }
+        }
+        String token = text.substring(0, end);
+        return token.startsWith("#") ? token.substring(1) : token;
+    }
+
     private static final class RemoveElementQuickFix implements LocalQuickFix {
         private final String familyName;
 
@@ -380,9 +417,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
             if (element != null && element.isValid()) {
-                if (!(element instanceof MetadataEntry)) {
-                    var prev = element.getPrevSibling();
-                    if (prev instanceof PsiWhiteSpace) {
+                var prev = element.getPrevSibling();
+                if (prev instanceof PsiWhiteSpace) {
+                    if (!(element instanceof MetadataEntry) || prev.getPrevSibling() instanceof MetadataEntry) {
                         prev.delete();
                     }
                 }

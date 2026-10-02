@@ -26,6 +26,7 @@ import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
+import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
@@ -480,6 +481,26 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             this(actionName, facetSnippet, Priority.NORMAL);
         }
 
+        private static boolean isCapacityFacet(MetadataEntry entry) {
+            String text = entry.getText().trim();
+            return text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)
+                || text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)
+                || text.startsWith(StvnVocabulary.FACET_KW_SIZE);
+        }
+
+        private static String extractFacetKeyword(MetadataEntry entry) {
+            String text = entry.getText().trim();
+            int end = text.length();
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (Character.isWhitespace(c) || c == '[' || c == '{' || c == '(') {
+                    end = i;
+                    break;
+                }
+            }
+            return text.substring(0, end);
+        }
+
         @Override
         public @NotNull Priority getPriority() {
             return priority;
@@ -512,12 +533,39 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 : (typeDef != null ? typeDef.getMetadataMap() : null);
 
             if (metaMap != null) {
-                // Insert facets inside existing metadata map before closing '}'
                 var entries = metaMap.getMetadataEntryList();
-                int insertOffset = metaMap.getTextRange().getEndOffset() - 1;
-                String innerFacets = facetSnippet.replace("{", "").replace("}", "").trim();
-                String insertion = entries.isEmpty() ? innerFacets + " " : " " + innerFacets + " ";
-                doc.insertString(insertOffset, insertion);
+                boolean allCapacity = entries.isEmpty() || entries.stream().allMatch(ApplyNominalCapacityQuickFix::isCapacityFacet);
+                if (allCapacity) {
+                    // Replace the entire metadata map text range with the new snippet
+                    var range = metaMap.getTextRange();
+                    doc.replaceString(range.getStartOffset(), range.getEndOffset(), facetSnippet);
+                } else {
+                    // Mixed facets: delete existing capacity entries and insert snippet before closing '}'
+                    var capacityEntries = entries.stream()
+                        .filter(ApplyNominalCapacityQuickFix::isCapacityFacet)
+                        .sorted((a, b) -> Integer.compare(b.getTextRange().getStartOffset(), a.getTextRange().getStartOffset()))
+                        .toList();
+
+                    for (var capEntry : capacityEntries) {
+                        int start = capEntry.getTextRange().getStartOffset();
+                        int end = capEntry.getTextRange().getEndOffset();
+                        if (start > 0 && doc.getCharsSequence().charAt(start - 1) == ' ') {
+                            start--;
+                        }
+                        doc.deleteString(start, end);
+                    }
+
+                    int openOffset = metaMap.getTextRange().getStartOffset();
+                    int closeOffset = doc.getText().indexOf('}', openOffset);
+                    if (closeOffset >= 0) {
+                        String innerFacets = facetSnippet.replace("{", "").replace("}", "").trim();
+                        if (closeOffset > 0 && doc.getCharsSequence().charAt(closeOffset - 1) == ' ') {
+                            doc.insertString(closeOffset - 1, " " + innerFacets);
+                        } else {
+                            doc.insertString(closeOffset, " " + innerFacets + " ");
+                        }
+                    }
+                }
             } else {
                 // Unadorned type constructor: insert metadata map immediately before constructor
                 int startOffset = element.getTextRange().getStartOffset();
