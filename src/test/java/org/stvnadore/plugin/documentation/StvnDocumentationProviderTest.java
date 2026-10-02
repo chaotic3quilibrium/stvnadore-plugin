@@ -362,5 +362,59 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var quickInfo = provider.getQuickNavigateInfo(docElem, elem);
         assertEquals("Unqualified reference to Standard Library Prelude type ':org/stvnadore/prelude/IPv4'", quickInfo);
     }
+
+    /**
+     * Verifies that hovering over :IPv4 in an identity :use import renders 'Scoped Import:' instead of 'Type Alias:'.
+     */
+    public void testScopedUseImportHoverRendersScopedImportNotTypeAlias() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]
+              }
+            }
+            """;
+        myFixture.configureByText("scoped_use.stvn_inclf", text);
+        var offset = text.indexOf(":IPv4");
+        var doc = getDocAtOffset(text, offset);
+        assertTrue("Doc must render 'Scoped Import:'", doc.contains("<b>Scoped Import:</b> :IPv4"));
+        assertFalse("Doc must NOT render 'Type Alias:'", doc.contains("<b>Type Alias:</b>"));
+        assertTrue("Doc must include namespace", doc.contains("<code>:org/stvnadore/prelude</code>"));
+
+        var elem = myFixture.getFile().findElementAt(offset);
+        assertNotNull(elem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem, offset);
+        assertNotNull(docElem);
+        var quickInfo = provider.getQuickNavigateInfo(docElem, elem);
+        assertNotNull(quickInfo);
+        assertTrue("Quick navigate info must start with 'Scoped Import:'", quickInfo.startsWith("Scoped Import: :IPv4"));
+    }
+
+    /**
+     * Verifies that hovering over a renamed reference in :use renders 'Renamed Reference:' with arrow and source namespace.
+     */
+    public void testRenamedUseHoverRendersRenamedReference() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :IPv4 :LocalIp } ]
+              }
+            }
+            """;
+        myFixture.configureByText("renamed_use.stvn_inclf", text);
+        var offset = text.indexOf(":LocalIp");
+        var doc = getDocAtOffset(text, offset);
+        assertTrue("Doc must render 'Renamed Reference:'", doc.contains("<b>Renamed Reference:</b> :LocalIp &rarr; :org/stvnadore/prelude/IPv4"));
+        assertTrue("Doc must render 'Source Namespace:'", doc.contains("<b>Source Namespace:</b> :org/stvnadore/prelude"));
+        assertFalse("Doc must NOT render 'Type Alias:'", doc.contains("Type Alias"));
+
+        var elem = myFixture.getFile().findElementAt(offset);
+        assertNotNull(elem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem, offset);
+        assertNotNull(docElem);
+        var quickInfo = provider.getQuickNavigateInfo(docElem, elem);
+        assertNotNull(quickInfo);
+        assertEquals("Renamed Reference: :LocalIp -> :org/stvnadore/prelude/IPv4", quickInfo);
+    }
 }
 

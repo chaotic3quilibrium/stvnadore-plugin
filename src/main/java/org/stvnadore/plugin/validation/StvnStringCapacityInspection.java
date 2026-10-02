@@ -31,6 +31,7 @@ import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
+import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Visitor;
 
 import javax.swing.JCheckBox;
@@ -173,6 +174,20 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 var metaMap = (enclosingSchema.getMetadataMap() != null)
                     ? enclosingSchema.getMetadataMap()
                     : (typeDef != null ? typeDef.getMetadataMap() : null);
+
+                // Resolve remote/prelude metadata when local nominal reference has no direct facets
+                if (metaMap == null && typeElem instanceof TypeKeyword typeKw) {
+                    var resolved = StvnTypeReference.resolveTypeInFile(typeElem.getContainingFile(), typeKw.getText(), new HashSet<>());
+                    if (resolved != null) {
+                        var targetDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                        if (targetDef != null) {
+                            metaMap = targetDef.getMetadataMap();
+                            if (metaMap == null && targetDef.getSchemaType() != null) {
+                                metaMap = targetDef.getSchemaType().getMetadataMap();
+                            }
+                        }
+                    }
+                }
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var text = entry.getText();

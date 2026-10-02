@@ -1,5 +1,8 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.psi.PsiErrorElement;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 
@@ -70,8 +73,32 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
         myFixture.launchAction(actions.get(0));
 
         var text = myFixture.getFile().getText();
-        assertTrue("Expected :use statement in :defs", text.contains(":use [ :org/stvnadore/prelude { :IPv4 } ]"));
+        assertTrue("Expected :use statement in :defs", text.contains(":use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]"));
         assertTrue("Expected original :IpAddress to remain unchanged", text.contains(":IpAddress") && text.contains(":Union(:IPv4 :StringFixed15)"));
+    }
+
+    /**
+     * Verifies that re-highlighting the document after applying Fix 2 produces zero syntax errors.
+     */
+    public void testFix2ProducesZeroSyntaxErrorsAfterExecution() {
+        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Import ':IPv4' from Prelude via :use (preserves type identity)");
+        assertFalse("Expected Fix 2 intention", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var errorElements = PsiTreeUtil.findChildrenOfType(myFixture.getFile(), PsiErrorElement.class);
+        assertTrue("AST must contain zero PsiErrorElement nodes after Fix 2. Found: " + errorElements, errorElements.isEmpty());
+
+        var highlights = myFixture.doHighlighting();
+        var syntaxErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("expected") || h.getDescription().contains("Syntax error") || h.getDescription().contains(":use")))
+            .toList();
+        assertTrue("Re-highlighting document after Fix 2 must produce zero syntax errors. Found: " + syntaxErrors, syntaxErrors.isEmpty());
     }
 
     /**
@@ -92,6 +119,29 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
 
         var text = myFixture.getFile().getText();
         assertTrue("Expected :IPv4 nominal branding definition in :defs", text.contains(":IPv4 :org/stvnadore/prelude/IPv4"));
+    }
+
+    /**
+     * Verifies that after applying Fix 3 (:IPv4 :org/stvnadore/prelude/IPv4), zero string capacity warnings are emitted.
+     */
+    public void testFix3ProducesZeroStringCapacityWarnings() {
+        myFixture.enableInspections(new StvnStringCapacityInspection());
+        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Brand new nominal type ':IPv4' from Prelude (creates distinct type)");
+        assertFalse("Expected Fix 3 intention", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var highlights = myFixture.doHighlighting();
+        var capacityWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+            .toList();
+        assertTrue("Applying Fix 3 must produce zero string capacity warnings because prelude IPv4 specifies #maxSize 15. Found: " + capacityWarnings,
+            capacityWarnings.isEmpty());
     }
 
     /**

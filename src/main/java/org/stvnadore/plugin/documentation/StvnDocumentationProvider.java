@@ -382,18 +382,36 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (typeList.size() >= 2) {
                 var remoteKw = typeList.get(0);
                 var localKw = typeList.get(1);
-                sb.append("<b>Type Alias:</b> ").append(localKw.getText()).append("<br/>");
-                sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
-                sb.append("<hr/>");
-                sb.append("<b>Target Type:</b> ").append(remoteKw.getText());
+                var remoteName = remoteKw.getText();
+                var localName = localKw.getText();
+                if (remoteName.equals(localName)) {
+                    sb.append("<b>Scoped Import:</b> ").append(localName).append("<br/>");
+                    sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
+                    sb.append("<hr/>");
+                    sb.append("<b>Target Type:</b> ").append(remoteName);
+                } else {
+                    var bareRemote = remoteName.startsWith(":") ? remoteName.substring(1) : remoteName;
+                    var fqni = targetText + "/" + bareRemote;
+                    sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
+                    sb.append("<b>Source Namespace:</b> ").append(targetText);
+                }
                 return sb.toString();
             } else if (valList.size() >= 2) {
                 var remoteKw = valList.get(0);
                 var localKw = valList.get(1);
-                sb.append("<b>Constant Alias:</b> ").append(localKw.getText()).append("<br/>");
-                sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
-                sb.append("<hr/>");
-                sb.append("<b>Target Constant:</b> ").append(remoteKw.getText());
+                var remoteName = remoteKw.getText();
+                var localName = localKw.getText();
+                if (remoteName.equals(localName)) {
+                    sb.append("<b>Scoped Import:</b> ").append(localName).append("<br/>");
+                    sb.append("<b>Imported From:</b> <code>").append(targetText).append("</code><br/>");
+                    sb.append("<hr/>");
+                    sb.append("<b>Target Constant:</b> ").append(remoteName);
+                } else {
+                    var bareRemote = remoteName.startsWith("#") ? remoteName.substring(1) : remoteName;
+                    var fqni = targetText + "/" + bareRemote;
+                    sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
+                    sb.append("<b>Source Namespace:</b> ").append(targetText);
+                }
                 return sb.toString();
             }
         }
@@ -603,6 +621,33 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var trace = StvnTypeReference.extractResolutionTrace(localKw);
                 var resolutionStr = String.join(" -> ", trace);
                 return "Type Alias: " + resolutionStr;
+            }
+        }
+
+        if (target instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var list = alias.getTypeKeywordList();
+            var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
+            var targetText = useStmt != null && useStmt.getUseTarget() != null ? useStmt.getUseTarget().getText() : "";
+            if (list.size() >= 2) {
+                var remote = list.get(0).getText();
+                var local = list.get(1).getText();
+                if (remote.equals(local)) {
+                    return "Scoped Import: " + local + " from " + targetText;
+                } else {
+                    var bare = remote.startsWith(":") ? remote.substring(1) : remote;
+                    return "Renamed Reference: " + local + " -> " + targetText + "/" + bare;
+                }
+            }
+            var valList = alias.getValueKeywordList();
+            if (valList.size() >= 2) {
+                var remote = valList.get(0).getText();
+                var local = valList.get(1).getText();
+                if (remote.equals(local)) {
+                    return "Scoped Import: " + local + " from " + targetText;
+                } else {
+                    var bare = remote.startsWith("#") ? remote.substring(1) : remote;
+                    return "Renamed Reference: " + local + " -> " + targetText + "/" + bare;
+                }
             }
         }
 
@@ -1121,7 +1166,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
                 var list = alias.getTypeKeywordList();
-                if (list.size() >= 2 && list.get(1) == typeKw) {
+                if (list.size() >= 2 && (list.get(1) == typeKw || list.get(0) == typeKw)) {
                     return alias;
                 }
                 var resolved = new StvnTypeReference(typeKw).resolve();
@@ -1169,6 +1214,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         if (element instanceof ValueKeyword valKw) {
             var parent = valKw.getParent();
+            if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+                var list = alias.getValueKeywordList();
+                if (list.size() >= 2 && (list.get(1) == valKw || list.get(0) == valKw)) {
+                    return alias;
+                }
+            }
             if (parent instanceof ConstantDefinition constDef && constDef.getValueKeyword() == valKw) {
                 return constDef;
             }

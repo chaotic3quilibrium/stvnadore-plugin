@@ -102,15 +102,29 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
         String importStatement;
 
         if (enclosingPkg != null) {
+            var existingUse = findExistingUse(enclosingPkg);
+            if (existingUse != null) {
+                appendSymbolToExistingUse(doc, existingUse);
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+                CodeStyleManager.getInstance(project).reformat(file);
+                return;
+            }
             var openBrace = enclosingPkg.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : enclosingPkg.getTextOffset();
-            importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " } ]";
+            importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " " + symbolName + " } ]";
         } else {
             var defsEntry = PsiTreeUtil.getParentOfType(startElement, DefsEntry.class);
             if (defsEntry != null) {
+                var existingUse = findExistingUse(defsEntry);
+                if (existingUse != null) {
+                    appendSymbolToExistingUse(doc, existingUse);
+                    PsiDocumentManager.getInstance(project).commitDocument(doc);
+                    CodeStyleManager.getInstance(project).reformat(file);
+                    return;
+                }
                 var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
                 insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
-                importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " } ]";
+                importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " " + symbolName + " } ]";
             } else {
                 return;
             }
@@ -119,5 +133,44 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
         CodeStyleManager.getInstance(project).reformat(file);
+    }
+
+    private @Nullable org.stvnadore.psi.UseStmt findExistingUse(PsiElement container) {
+        var useStmts = PsiTreeUtil.findChildrenOfType(container, org.stvnadore.psi.UseStmt.class);
+        for (var use : useStmts) {
+            if (container instanceof PackageEnclosure pkg) {
+                if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) {
+                    continue;
+                }
+            } else if (container instanceof DefsEntry defs) {
+                if (PsiTreeUtil.getParentOfType(use, DefsEntry.class) != defs || PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
+                    continue;
+                }
+            }
+            var target = use.getUseTarget();
+            if (target != null && target.getText().equals(targetNamespace)) {
+                return use;
+            }
+        }
+        return null;
+    }
+
+    private void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse) {
+        var aliasBlock = existingUse.getUseAliasBlock();
+        if (aliasBlock != null) {
+            for (var alias : aliasBlock.getUseMapAliasList()) {
+                var list = alias.getTypeKeywordList();
+                if (list.size() >= 2 && list.get(0) != null && list.get(0).getText().equals(symbolName)) {
+                    return; // Already present
+                }
+            }
+            var rbrace = aliasBlock.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACE);
+            int offset = rbrace != null ? rbrace.getStartOffset() : aliasBlock.getTextRange().getEndOffset() - 1;
+            doc.insertString(offset, " " + symbolName + " " + symbolName + " ");
+        } else {
+            var rbrack = existingUse.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACK);
+            int offset = rbrack != null ? rbrack.getStartOffset() : existingUse.getTextRange().getEndOffset() - 1;
+            doc.insertString(offset, " { " + symbolName + " " + symbolName + " } ");
+        }
     }
 }

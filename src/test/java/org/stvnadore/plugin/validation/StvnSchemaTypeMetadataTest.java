@@ -80,8 +80,10 @@ public final class StvnSchemaTypeMetadataTest extends BasePlatformTestCase {
                 .toList();
 
         assertFalse("Must flag '#size' facet on child :String", highlights.isEmpty());
-        assertTrue("Error message must cite Rule MCT § 3.1.3",
-                highlights.get(0).getDescription().contains("Facet '#size' is prohibited on ':String'"));
+        var hasSizeProhibitedError = highlights.stream()
+                .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Facet '#size' is prohibited on ':String'"));
+        assertTrue("Error message must cite Rule MCT § 3.1.3. Actual highlights: " + highlights.stream().map(com.intellij.codeInsight.daemon.impl.HighlightInfo::getDescription).toList(),
+                hasSizeProhibitedError);
     }
 
     public void testChildDiscreteIntervalClosedBoundInspection() throws Exception {
