@@ -185,42 +185,42 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(INTERVAL_FACET_TOKENS) != null && !isNumeric && !isTemporal && !isString) {
+            } else if (hasToken(entry, INTERVAL_FACET_TOKENS) && !isNumeric && !isTemporal && !isString) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for numeric, temporal, and string types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(NUMERIC_FACET_TOKENS) != null && !isNumeric) {
+            } else if (hasToken(entry, NUMERIC_FACET_TOKENS) && !isNumeric) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(STRING_ONLY_FACET_TOKENS) != null && !isString) {
+            } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(DIMENSION_FACET_TOKENS) != null && !isString && !isCollection) {
+            } else if (hasToken(entry, DIMENSION_FACET_TOKENS) && !isString && !isCollection) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(TEMPORAL_FACET_TOKENS) != null && !isTemporal) {
+            } else if (hasToken(entry, TEMPORAL_FACET_TOKENS) && !isTemporal) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#s, #ms, #us, #ns, #offset, #zoned, #audited]",
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (entry.getNode().findChildByType(MAP_FACET_TOKENS) != null && !isMap) {
+            } else if (hasToken(entry, MAP_FACET_TOKENS) && !isMap) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for map types: [#invertible]",
@@ -238,6 +238,14 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         }
     }
 
+    private static boolean hasToken(MetadataEntry entry, TokenSet tokenSet) {
+        if (entry.getNode().findChildByType(tokenSet) != null) {
+            return true;
+        }
+        var bare = entry.getMetadataBareFlag();
+        return bare != null && bare.getNode().findChildByType(tokenSet) != null;
+    }
+
     private static String resolveBaseTypeString(SchemaType schemaType) {
         var constructor = schemaType.getSchemaConstructor();
         if (constructor != null) {
@@ -245,12 +253,25 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             if (atomic != null) {
                 return atomic.getText().trim();
             }
+            var collection = constructor.getCollectionType();
+            if (collection != null) {
+                return collection.getText().trim();
+            }
+            var product = constructor.getProductType();
+            if (product != null) {
+                return product.getText().trim();
+            }
+            var sum = constructor.getSumType();
+            if (sum != null) {
+                return sum.getText().trim();
+            }
+            return constructor.getText().trim();
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
             var text = kw.getText().trim();
-            if (":Enum".equals(text)) {
-                return ":Enum";
+            if (StvnVocabulary.TYPE_ENUM.equals(text)) {
+                return StvnVocabulary.TYPE_ENUM;
             }
             var file = schemaType.getContainingFile();
             if (file != null) {
@@ -264,7 +285,21 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             }
             return text;
         }
-        return schemaType.getText().trim();
+        var rawText = schemaType.getText().trim();
+        var metaMap = schemaType.getMetadataMap();
+        if (metaMap != null) {
+            var metaText = metaMap.getText().trim();
+            if (rawText.startsWith(metaText)) {
+                return rawText.substring(metaText.length()).trim();
+            }
+        }
+        if (rawText.startsWith("{")) {
+            int closeIdx = rawText.indexOf('}');
+            if (closeIdx >= 0 && closeIdx + 1 < rawText.length()) {
+                return rawText.substring(closeIdx + 1).trim();
+            }
+        }
+        return rawText;
     }
 
     private static boolean isNumericType(String baseType) {
@@ -292,6 +327,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isEnumConstructor(String baseType) {
+        baseType = stripLeadingMetadata(baseType);
         if (baseType.equals(StvnVocabulary.TYPE_ENUM)) {
             return true;
         }
@@ -303,6 +339,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isConstructorMatch(String type, String constructor) {
+        type = stripLeadingMetadata(type);
         if (type.equals(constructor)) {
             return true;
         }
@@ -311,6 +348,20 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             return next == '(' || Character.isWhitespace(next);
         }
         return false;
+    }
+
+    private static String stripLeadingMetadata(String type) {
+        if (type == null || type.isEmpty()) {
+            return "";
+        }
+        String trimmed = type.trim();
+        if (trimmed.startsWith("{")) {
+            int closeIdx = trimmed.indexOf('}');
+            if (closeIdx >= 0 && closeIdx + 1 < trimmed.length()) {
+                return trimmed.substring(closeIdx + 1).trim();
+            }
+        }
+        return trimmed;
     }
 
     private static final class RemoveElementQuickFix implements LocalQuickFix {

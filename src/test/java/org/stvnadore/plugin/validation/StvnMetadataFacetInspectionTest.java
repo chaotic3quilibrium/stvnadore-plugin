@@ -119,4 +119,79 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
         assertTrue("Interval facets on temporal types must not produce facet errors: " + errors, errors.isEmpty());
     }
+
+    public void testAdornedCollectionFacetsPermitted() {
+        var text = """
+            {
+              :defs {
+                :SeqCapMax    { #maxSize 4096 } :Seq( :Int )
+                :SeqCapRange  { #minSize 0 #maxSize 4096 } :Seq( :Int )
+                :SetCapMax    { #maxSize 4096 } :Set( :Int )
+                :SetCapRange  { #minSize 1 #maxSize 4096 } :Set( :Int )
+                :MapCapMax    { #maxSize 4096 } :Map( :String :Int )
+                :MapCapRange  { #minSize 0 #maxSize 4096 } :Map( :String :Int )
+                :MapInvert    { #invertible } :Map( :String :Int )
+                :MapAllFacets { #invertible #minSize 1 #maxSize 4096 } :Map( :String :Int )
+              }
+              :type :SeqCapMax
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("adorned_collections.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Adorned collection types must produce zero facet errors: " + errors, errors.isEmpty());
+    }
+
+    public void testAdornedNominalCollectionAliasFacetsPermitted() {
+        var text = """
+            {
+              :defs {
+                :RawSeq :Seq( :Int )
+                :RawSet :Set( :String )
+                :RawMap :Map( :String :Int )
+                :AliasSeq { #maxSize 1024 } :RawSeq
+                :AliasSet { #minSize 1 #maxSize 512 } :RawSet
+                :AliasMap { #invertible #maxSize 256 } :RawMap
+              }
+              :type :AliasSeq
+              :body [ 42 ]
+            }
+            """;
+        myFixture.configureByText("adorned_collection_aliases.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Nominal collection aliases with valid facets must produce zero errors: " + errors, errors.isEmpty());
+    }
+
+    public void testIncompatibleFacetsOnCollectionsRejected() {
+        var text = """
+            {
+              :defs {
+                :BadSeq { #minIncl 0 } :Seq( :Int )
+                :BadSet { #unsigned } :Set( :Int )
+                :BadMap { #regex "[a-z]+" } :Map( :String :Int )
+                :BadInv { #invertible } :Seq( :Int )
+              }
+              :type :BadSeq
+              :body [ 1 ]
+            }
+            """;
+        myFixture.configureByText("incompatible_collection_facets.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().startsWith("Facet is not permitted on")))
+            .toList();
+        assertEquals("Expected exactly 4 facet errors on incompatible collections", 4, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Facet is not permitted on :Seq( :Int )"));
+        assertTrue(errors.get(1).getDescription().contains("Facet is not permitted on :Set( :Int )"));
+        assertTrue(errors.get(2).getDescription().contains("Facet is not permitted on :Map( :String :Int )"));
+        assertTrue(errors.get(3).getDescription().contains("Facet is not permitted on :Seq( :Int )"));
+    }
 }

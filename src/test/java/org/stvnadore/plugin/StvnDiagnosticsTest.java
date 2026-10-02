@@ -167,7 +167,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
 
         try (var stream = Files.walk(validDir)) {
-            var stvnFiles = stream.filter(p -> p.toString().endsWith(".stvn")).toList();
+            var stvnFiles = stream
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_inclf") || p.toString().endsWith(".stvn_incl"))
+                .toList();
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();
                 var relativePath = Paths.get(getTestDataPath()).relativize(stvnPath).toString().replace('\\', '/');
@@ -193,7 +195,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(validDir)) {
             var validFiles = stream
-                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl"))
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl") || p.toString().endsWith(".stvn_inclf"))
                 .sorted()
                 .toList();
             assertEquals("Must validate all %d valid metadata fixtures".formatted(METADATA_FIXTURES_VALID_COUNT), METADATA_FIXTURES_VALID_COUNT, validFiles.size());

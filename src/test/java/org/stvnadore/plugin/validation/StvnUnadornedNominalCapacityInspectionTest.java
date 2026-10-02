@@ -29,7 +29,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     protected void setUp() throws Exception {
         super.setUp();
         inspection = new StvnStringCapacityInspection();
-        myFixture.enableInspections(new InspectionProfileEntry[]{inspection});
+        myFixture.enableInspections(new InspectionProfileEntry[]{inspection, new StvnMetadataFacetInspection()});
     }
 
     public void testUnadornedNominalWarningsAcrossTypes() {
@@ -383,5 +383,52 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
 
         assertEquals("Only top-level :Map should produce warning, not inner :String parameter", 1, warnings.size());
         assertTrue(warnings.get(0).getDescription().contains("Nominal collection type ':Map'"));
+    }
+
+    public void testCompositeInspectionZeroErrorsAfterFixApplicationAcrossAllTypes() {
+        String[] targets = {":String", ":Seq", ":Set", ":Map"};
+        String fileTemplate = """
+            {
+              :defs {
+                :Target %s
+              }
+            }
+            """;
+
+        String[] typeConstructors = {
+            ":String",
+            ":Seq( :Int )",
+            ":Set( :Int )",
+            ":Map( :String :Int )"
+        };
+
+        for (int t = 0; t < targets.length; t++) {
+            String constructor = typeConstructors[t];
+            for (int fixIdx = 0; fixIdx < EXPECTED_INTENTIONS.size(); fixIdx++) {
+                String actionTitle = EXPECTED_INTENTIONS.get(fixIdx);
+                String fileContent = fileTemplate.formatted(constructor);
+                myFixture.configureByText("composite_" + t + "_" + fixIdx + ".stvn_inclf", fileContent);
+                myFixture.getEditor().getCaretModel().moveToOffset(fileContent.indexOf(targets[t]));
+                myFixture.doHighlighting();
+
+                var actions = myFixture.filterAvailableIntentions(actionTitle);
+                assertFalse("Action '" + actionTitle + "' must be available for " + constructor, actions.isEmpty());
+                myFixture.launchAction(actions.get(0));
+
+                var highlights = myFixture.doHighlighting();
+                var errors = highlights.stream()
+                    .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                    .toList();
+                assertTrue("Applying '" + actionTitle + "' to " + constructor + " must generate code passing StvnMetadataFacetInspection with zero errors. Found: " + errors,
+                    errors.isEmpty());
+
+                var warnings = highlights.stream()
+                    .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+                    .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+                    .toList();
+                assertTrue("Applying '" + actionTitle + "' to " + constructor + " must resolve capacity warning. Found: " + warnings,
+                    warnings.isEmpty());
+            }
+        }
     }
 }
