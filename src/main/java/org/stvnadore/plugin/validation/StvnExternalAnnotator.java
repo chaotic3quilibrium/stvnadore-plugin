@@ -235,10 +235,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         var clampedTypeDef = clampToOffendingChildIfTypeDef(file, range, message);
                         if (clampedTypeDef != null) {
                             range = clampedTypeDef;
-                        }
-                        var clampedMeta = clampToOffendingMetadataFacet(file, range, message, diag.errorCode().orElse(null));
-                        if (clampedMeta != null) {
-                            range = clampedMeta;
+                        } else {
+                            var clampedMeta = clampToOffendingMetadataFacet(file, range, message, diag.errorCode().orElse(null));
+                            if (clampedMeta != null) {
+                                range = clampedMeta;
+                            }
                         }
                     }
                     var annotationBuilder = holder.newAnnotation(severity, message)
@@ -467,13 +468,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var isMatch = false;
                     SchemaType targetSchema = null;
 
-                    if (message.contains("Set elements") && (tokenText.equals(StvnVocabulary.TYPE_SET) || tokenText.equals(":SetNonEmpty"))) {
+                    if (message.contains("Set elements") && tokenText.equals(StvnVocabulary.TYPE_SET)) {
                         targetSchema = innerSchemas.get(0);
                         isMatch = (targetSchema != null);
-                    } else if (message.contains("Map keys") && (tokenText.equals(StvnVocabulary.TYPE_MAP) || tokenText.equals(":MapNonEmpty"))) {
+                    } else if (message.contains("Map keys") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                         targetSchema = innerSchemas.get(0);
                         isMatch = (targetSchema != null);
-                    } else if (message.contains("Inverted map values") && (tokenText.contains("MapInv"))) {
+                    } else if (message.contains("Inverted map values") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                         if (innerSchemas.size() >= 2) {
                             targetSchema = innerSchemas.get(1);
                             isMatch = (targetSchema != null);
@@ -524,29 +525,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
             }
 
-            // 8. Track 7: Type Suffix Sizing Fallback
-            if (!registered && (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix"))) {
-                var colonIdx = message.lastIndexOf(": ");
-                if (colonIdx >= 0) {
-                    var baseTypeToken = message.substring(colonIdx + 2).trim();
-                    var atomicTypes = PsiTreeUtil.findChildrenOfType(file, AtomicType.class);
-                    for (var elem : atomicTypes) {
-                        var text = elem.getText();
-                        if (text.equals(baseTypeToken)) {
-                            var range = elem.getTextRange();
-                            var suffixOffset = getSuffixOffset(baseTypeToken);
-                            if (suffixOffset > 0 && suffixOffset < text.length()) {
-                                range = new TextRange(range.getStartOffset() + suffixOffset, range.getEndOffset());
-                            }
-                            holder.newAnnotation(severity, message)
-                                  .range(range)
-                                  .create();
-                            registered = true;
-                            break;
-                        }
-                    }
-                }
-            }
 
             // 9. Undefined / Unresolved Type Alias Fallback
             if (!registered && (message.contains("Undefined type: ") || message.contains("Unresolved type alias: "))) {
@@ -996,16 +974,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return null;
     }
 
-    private static int getSuffixOffset(String baseTypeToken) {
-        if (baseTypeToken.startsWith(":StringFixed")) return 12;
-        if (baseTypeToken.startsWith(":StringNonEmpty")) return 15;
-        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_STRING)) return 7;
-        if (baseTypeToken.startsWith(":Uint")) return 5;
-        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_INT)) return 4;
-        if (baseTypeToken.startsWith(StvnVocabulary.TYPE_FLOAT)) return 6;
-        return 0;
-    }
-
     /**
      * Translates raw ANTLR or compiler generator error strings into clean domain concepts.
      *
@@ -1034,26 +1002,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
      * @return the clamped text range, or null if no clamping applies
      */
     private static @Nullable TextRange clampToOffendingChildIfTypeDef(PsiFile file, TextRange range, String message) {
-        if (message.contains("Constraint violation: Type suffix") || message.contains("Constraint violation: Malformed numeric type suffix")) {
-            var colonIdx = message.lastIndexOf(": ");
-            if (colonIdx >= 0) {
-                var baseTypeToken = message.substring(colonIdx + 2).trim();
-                var atomicTypes = PsiTreeUtil.findChildrenOfType(file, AtomicType.class);
-                for (var elem : atomicTypes) {
-                    var text = elem.getText();
-                    if (text.equals(baseTypeToken)) {
-                        var elemRange = elem.getTextRange();
-                        if (range.contains(elemRange) || elemRange.contains(range) || range.intersects(elemRange)) {
-                            var suffixOffset = getSuffixOffset(baseTypeToken);
-                            if (suffixOffset > 0 && suffixOffset < text.length()) {
-                                return new TextRange(elemRange.getStartOffset() + suffixOffset, elemRange.getEndOffset());
-                            }
-                            return elemRange;
-                        }
-                    }
-                }
-            }
-        }
+        // Suppressed legacy 1.x type suffix clamping
 
         if (message.contains("require types to be #equatable #TRUE")) {
             var collections = PsiTreeUtil.findChildrenOfType(file, CollectionType.class);
@@ -1066,13 +1015,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var innerSchemas = coll.getSchemaTypeList();
                     if (innerSchemas.isEmpty()) continue;
 
-                    if (message.contains("Set elements") && (tokenText.equals(StvnVocabulary.TYPE_SET) || tokenText.equals(":SetNonEmpty"))) {
+                    if (message.contains("Set elements") && tokenText.equals(StvnVocabulary.TYPE_SET)) {
                         var targetSchema = innerSchemas.get(0);
                         if (targetSchema != null) return targetSchema.getTextRange();
-                    } else if (message.contains("Map keys") && (tokenText.equals(StvnVocabulary.TYPE_MAP) || tokenText.equals(":MapNonEmpty"))) {
+                    } else if (message.contains("Map keys") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                         var targetSchema = innerSchemas.get(0);
                         if (targetSchema != null) return targetSchema.getTextRange();
-                    } else if (message.contains("Inverted map values") && tokenText.contains("MapInv")) {
+                    } else if (message.contains("Inverted map values") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
                         if (innerSchemas.size() >= 2) {
                             var targetSchema = innerSchemas.get(1);
                             if (targetSchema != null) return targetSchema.getTextRange();
@@ -1086,18 +1035,32 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         for (var typeDef : typeDefs) {
             var tr = typeDef.getTextRange();
             if (tr.contains(range) || range.contains(tr)) {
-                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
-                    var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
-                    var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                    var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
-                    if (!typeName.startsWith(":")) {
-                        typeName = ":" + typeName;
+                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
+                    || message.contains("is deprecated") || message.contains("Compound ")) {
+                    String typeName = null;
+                    if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
+                        var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
+                        var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
+                        typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
+                    } else {
+                        var quoteStart = message.indexOf('\'');
+                        if (quoteStart >= 0) {
+                            var quoteEnd = message.indexOf('\'', quoteStart + 1);
+                            if (quoteEnd > quoteStart) {
+                                typeName = message.substring(quoteStart + 1, quoteEnd).trim();
+                            }
+                        }
                     }
-                    var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
-                    for (var typeKw : typeKeywords) {
-                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
-                        if (!isLhs && typeKw.getText().equals(typeName)) {
-                            return typeKw.getTextRange();
+                    if (typeName != null) {
+                        if (!typeName.startsWith(":")) {
+                            typeName = ":" + typeName;
+                        }
+                        var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
+                        for (var typeKw : typeKeywords) {
+                            var isLhs = (typeDef.getTypeKeyword() == typeKw);
+                            if (!isLhs && typeKw.getText().equals(typeName)) {
+                                return typeKw.getTextRange();
+                            }
                         }
                     }
                 }
@@ -1116,6 +1079,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
      * @return the pinned text range on the target token, or null if no clamping applies
      */
     private static @Nullable TextRange clampToOffendingMetadataFacet(PsiFile file, TextRange range, String message, @Nullable String errorCode) {
+        // Diagnostic Category Gate: Never clamp type-level or compound deprecation errors to metadata facets
+        if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
+            || message.contains("Compound ") || message.contains("is deprecated")
+            || "ERR_UNDEFINED_TYPE".equals(errorCode) || "UNDEFINED_TYPE".equals(errorCode)) {
+            return null;
+        }
         var maps = PsiTreeUtil.findChildrenOfType(file, MetadataMap.class);
         for (var map : maps) {
             var mapRange = map.getTextRange();
@@ -1165,19 +1134,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     }
                     var tokenText = leaf.getText().trim();
                     if (tokenText.startsWith("#") && (message.contains("facet '" + tokenText + "'") || message.contains("'" + tokenText + "'"))) {
-                        return leaf.getTextRange();
-                    }
-                }
-
-                // Pass 4: Fallback substring match
-                for (var entry : map.getMetadataEntryList()) {
-                    PsiElement leaf = entry.getFirstChild();
-                    if (leaf == null) continue;
-                    while (leaf.getFirstChild() != null) {
-                        leaf = leaf.getFirstChild();
-                    }
-                    var tokenText = leaf.getText().trim();
-                    if (tokenText.startsWith("#") && message.contains(tokenText)) {
                         return leaf.getTextRange();
                     }
                 }
@@ -1327,9 +1283,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     private static boolean isKnownCompositeKeyword(String kw) {
         return kw.equals(StvnVocabulary.TYPE_TUPLE) || kw.equals(StvnVocabulary.TYPE_UNION) || kw.equals(StvnVocabulary.TYPE_ENUM) ||
                kw.equals(StvnVocabulary.TYPE_OPTION) || kw.equals(StvnVocabulary.TYPE_EITHER) || kw.equals(StvnVocabulary.TYPE_SEQ) ||
-               kw.equals(":SeqNonEmpty") || kw.equals(StvnVocabulary.TYPE_SET) || kw.equals(":SetNonEmpty") ||
-               kw.equals(StvnVocabulary.TYPE_MAP) || kw.equals(":MapNonEmpty") || kw.equals(":MapInv") ||
-               kw.equals(":MapInvNonEmpty");
+               kw.equals(StvnVocabulary.TYPE_SET) ||
+               kw.equals(StvnVocabulary.TYPE_MAP);
     }
 
     private static AnnotationBuilder attachWrapSumVariantQuickFixes(

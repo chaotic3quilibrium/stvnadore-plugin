@@ -19,7 +19,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.utils.StvnStringCapacityUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
@@ -64,9 +63,19 @@ import java.util.OptionalInt;
 public final class StvnStringCapacityInspection extends LocalInspectionTool {
 
     /**
+     * Default capacity threshold in characters for schema and diagnostic analyzers (4,096 characters).
+     */
+    public static final int DEFAULT_INSPECTION_THRESHOLD = 4096;
+
+    /**
+     * Default allocation capacity limit in characters for unadorned :String instances (16,777,216 characters / 16 MiB).
+     */
+    public static final int DEFAULT_UNBOUNDED_STRING_CAPACITY = 16_777_216;
+
+    /**
      * Configured capacity threshold in characters (default: 4,096).
      */
-    public int thresholdCapacity = StvnStringCapacityUtils.DEFAULT_INSPECTION_THRESHOLD;
+    public int thresholdCapacity = DEFAULT_INSPECTION_THRESHOLD;
 
     /**
      * Toggle enabling literal content length verification against schema bounds.
@@ -140,21 +149,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                // Check for obsolete 1.x compound string suffixes (e.g. :String4096, :StringFixed16)
-                if (typeName.startsWith(StvnVocabulary.TYPE_STRING) && typeName.length() > StvnVocabulary.TYPE_STRING.length()) {
-                    char nextChar = typeName.charAt(StvnVocabulary.TYPE_STRING.length());
-                    if (Character.isDigit(nextChar) || typeName.startsWith(":StringFixed") || typeName.startsWith(":StringNonEmpty")) {
-                        holder.registerProblem(
-                            typeElem,
-                            "Nominal string suffix syntax '" + typeName + "' is obsolete in 2.0.0 (ERR_COMPOUND_TYPE_OBSOLETE). Use metadata facets '{ #minSize ... #maxSize ... } :String'.",
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new ConvertObsoleteCompoundStringQuickFix(typeName)
-                        );
-                        return;
-                    }
-                }
-
-                boolean isString = StvnStringCapacityUtils.isNominalStringType(typeName);
+                boolean isString = isNominalStringType(typeName);
                 if (!isString && !isCollection) {
                     return;
                 }
@@ -215,7 +210,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     String units = isCollection ? (typeName.equals(StvnVocabulary.TYPE_MAP) ? "entries" : "elements") : "characters";
                     if (isUnadorned) {
                         msg = "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is "
-                            + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY
+                            + DEFAULT_UNBOUNDED_STRING_CAPACITY
                             + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
                     } else {
                         msg = "Nominal " + category + " type '" + typeName + "' specifies capacity " + explicitCapacity
@@ -241,9 +236,9 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.LOW),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM),
-                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM)
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.LOW),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM),
+                            new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM)
                         );
                     }
                 }
@@ -370,25 +365,15 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
         var atomic = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
         if (atomic != null) {
             String typeText = atomic.getText().trim();
-            if (StvnStringCapacityUtils.isNominalStringType(typeText)) {
-                try {
-                    var opt = StvnStringCapacityUtils.parseCapacitySuffix(typeText);
-                    return opt.orElse(StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY);
-                } catch (Exception ignored) {
-                    return -1;
-                }
+            if (isNominalStringType(typeText)) {
+                return DEFAULT_UNBOUNDED_STRING_CAPACITY;
             }
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
             String typeText = kw.getText().trim();
-            if (StvnStringCapacityUtils.isNominalStringType(typeText)) {
-                try {
-                    var opt = StvnStringCapacityUtils.parseCapacitySuffix(typeText);
-                    return opt.orElse(StvnStringCapacityUtils.DEFAULT_UNBOUNDED_STRING_CAPACITY);
-                } catch (Exception ignored) {
-                    return -1;
-                }
+            if (isNominalStringType(typeText)) {
+                return DEFAULT_UNBOUNDED_STRING_CAPACITY;
             }
             var resolved = StvnTypeReference.resolveTypeInFile(file, typeText, new HashSet<>());
             if (resolved != null) {
@@ -707,52 +692,27 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * QuickFix converting obsolete 1.x compound string types to 2.0.0 metadata facet syntax.
+     * Inspects whether the specified type identifier represents an STVN nominal string type.
+     *
+     * @param typeName the type identifier to inspect (e.g. {@code :String})
+     * @return true if the type identifier belongs to the STVN string taxonomy, false otherwise
      */
-    public static final class ConvertObsoleteCompoundStringQuickFix implements LocalQuickFix {
-        private final String obsoleteTypeName;
-
-        /**
-         * Constructs a new ConvertObsoleteCompoundStringQuickFix.
-         *
-         * @param obsoleteTypeName the obsolete nominal type name
-         */
-        public ConvertObsoleteCompoundStringQuickFix(String obsoleteTypeName) {
-            this.obsoleteTypeName = obsoleteTypeName;
+    public static boolean isNominalStringType(@Nullable String typeName) {
+        if (typeName == null) {
+            return false;
         }
-
-        @Override
-        public @NotNull String getName() {
-            return "Convert obsolete string syntax '" + obsoleteTypeName + "' to metadata facets";
-        }
-
-        @Override
-        public @NotNull String getFamilyName() {
-            return "Convert obsolete compound string type to 2.0.0 metadata facets";
-        }
-
-        @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element == null) return;
-            var file = element.getContainingFile();
-            if (file == null) return;
-            var docManager = PsiDocumentManager.getInstance(project);
-            var doc = file.getViewProvider().getDocument();
-            if (doc == null) return;
-
-            String digits = obsoleteTypeName.replaceAll("[^0-9]", "");
-            int cap = digits.isEmpty() ? 4096 : Integer.parseInt(digits);
-            String replacement;
-            if (obsoleteTypeName.startsWith(":StringFixed")) {
-                replacement = "{ " + StvnVocabulary.FACET_KW_SIZE + " " + cap + " } " + StvnVocabulary.TYPE_STRING;
-            } else {
-                replacement = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + cap + " } " + StvnVocabulary.TYPE_STRING;
-            }
-
-            var range = element.getTextRange();
-            doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacement);
-            docManager.commitDocument(doc);
-        }
+        return typeName.equals(StvnVocabulary.TYPE_STRING)
+            || typeName.equals(":org/stvnadore/prelude/Uuid")
+            || typeName.equals(":org/stvnadore/prelude/Ulid")
+            || typeName.equals(":org/stvnadore/prelude/Sha256")
+            || typeName.equals(":org/stvnadore/prelude/SemVer")
+            || typeName.equals(":org/stvnadore/prelude/Email")
+            || typeName.equals(":org/stvnadore/prelude/IPv4")
+            || typeName.equals(":Uuid")
+            || typeName.equals(":Ulid")
+            || typeName.equals(":Sha256")
+            || typeName.equals(":SemVer")
+            || typeName.equals(":Email")
+            || typeName.equals(":IPv4");
     }
 }

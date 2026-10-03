@@ -239,8 +239,46 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             """);
     }
 
-    public void testObsoleteCompoundStringError() {
-        myFixture.configureByText("test_obsolete.stvn_inclf",
+    /**
+     * Verifies that idiomatic 2.0.0 nominal definitions compile cleanly with zero inspection errors,
+     * zero false facet rejections, and zero misplaced coordinate squigglies.
+     */
+    public void testIdiomaticNominalDefinitionsCompileCleanlyWithoutErrors() {
+        myFixture.configureByText("nominal_definitions.stvn",
+            """
+            {
+              :defs {
+                :Int64 { #size 64 } :Int
+                :Uint64 { #unsigned #size 64 } :Int
+                :StringFixed4 { #minSize 4 #maxSize 4 } :String
+              }
+              :type :Tuple( :Int64 :Uint64 :StringFixed4 )
+              :body ( 42 100 "TEST" )
+            }
+            """
+        );
+        var highlights = myFixture.doHighlighting();
+        var inspectionErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnStringCapacity".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().contains("ERR_COMPOUND_TYPE_OBSOLETE")))
+            .toList();
+        assertTrue("Idiomatic nominal definitions must produce zero inspection errors: " + inspectionErrors, inspectionErrors.isEmpty());
+
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> "StvnStringCapacity".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().contains("capacity")))
+            .toList();
+        assertTrue("Idiomatic nominal definitions must produce zero string capacity warnings: " + warnings, warnings.isEmpty());
+    }
+
+    /**
+     * Verifies that undeclared 1.x compound strings do not offer ConvertObsoleteCompoundStringQuickFix
+     * and fail closed under standard nominal type resolution.
+     */
+    public void testUndeclaredCompoundStringDoesNotOfferObsoleteQuickFix() {
+        myFixture.configureByText("test_undeclared.stvn_inclf",
             """
             {
               :defs {
@@ -250,23 +288,15 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             """
         );
         var highlights = myFixture.doHighlighting();
-        var errors = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_COMPOUND_TYPE_OBSOLETE"))
-            .toList();
-        assertFalse("Expected obsolete compound string error", errors.isEmpty());
+        for (var h : highlights) {
+            var desc = h.getDescription();
+            if (desc != null) {
+                assertFalse("ERR_COMPOUND_TYPE_OBSOLETE must be purged", desc.contains("ERR_COMPOUND_TYPE_OBSOLETE"));
+            }
+        }
 
         myFixture.getEditor().getCaretModel().moveToOffset(myFixture.getFile().getText().indexOf(":String4096"));
-        var actions = myFixture.filterAvailableIntentions("Convert obsolete string syntax ':String4096' to metadata facets");
-        assertFalse("Expected convert quick-fix", actions.isEmpty());
-        myFixture.launchAction(actions.get(0));
-
-        myFixture.checkResult("""
-            {
-              :defs {
-                :Target { #minSize 1 #maxSize 4096 } :String
-              }
-            }
-            """);
+        var actions = myFixture.filterAvailableIntentions("Convert obsolete string syntax");
+        assertTrue("Convert obsolete string quick-fix must not be offered", actions.isEmpty());
     }
 }

@@ -575,8 +575,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     :LId :UId
                     :UId :String
                   }
-                  :type :Tuple( :LId :Int32 )
-                  :body ( "user123"<hint text=":LId (-> :UId -> :String)"/> 42<hint text=":Int32"/> )<hint text=":Tuple( :LId :Int32 )"/>
+                  :type :Tuple( :LId :Int )
+                  :body ( "user123"<hint text=":LId (-> :UId -> :String)"/> 42<hint text=":Int"/> )<hint text=":Tuple( :LId :Int )"/>
                 }
                 """);
         myFixture.testInlays(
@@ -802,7 +802,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testHoverDocumentationForValueToken() {
         myFixture.configureByText("test.stvn",
             "{\n" +
-            "  :type :Seq( :Int32 )\n" +
+            "  :type :Seq( :Int )\n" +
             "  :body [ 42 ]\n" +
             "}"
         );
@@ -815,18 +815,18 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
         var doc = provider.generateDoc(element, element);
         assertNotNull("HTML documentation is null", doc);
-        assertTrue("HTML does not contain Value Type", doc.contains("Value Type:</b> :Int32"));
+        assertTrue("HTML does not contain Value Type", doc.contains("Value Type:</b> :Int"));
         assertTrue("HTML does not contain Expression", doc.contains("Expression:</b> 42"));
         
         var quickInfo = provider.getQuickNavigateInfo(element, element);
         assertNotNull("Quick navigate info is null", quickInfo);
-        assertEquals("Value Type: :Int32", quickInfo);
+        assertEquals("Value Type: :Int", quickInfo);
     }
 
     public void testCustomDocumentationElementForBodyValue() {
         myFixture.configureByText("test.stvn",
             "{\n" +
-            "  :type :Int32\n" +
+            "  :type :Int\n" +
             "  :body 42\n" +
             "}"
         );
@@ -992,24 +992,24 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 1. Root Tuple
         assertRootInlayHints("""
             {
-              :type :Tuple( :Int32 :String )
-              :body ( 42<hint text=":Int32"/> "hello"<hint text=":String"/> )<hint text=":Tuple( :Int32 :String )"/>
+              :type :Tuple( :Int :String )
+              :body ( 42<hint text=":Int"/> "hello"<hint text=":String"/> )<hint text=":Tuple( :Int :String )"/>
             }
             """);
 
         // 2. Root Primitive
         assertRootInlayHints("""
             {
-              :type :Int32
-              :body 100<hint text=":Int32"/>
+              :type :Int
+              :body 100<hint text=":Int"/>
             }
             """);
 
         // 3. Root Open Collection (Seq)
         assertRootInlayHints("""
             {
-              :type :Seq( :Int32 )
-              :body [ 1<hint text=":Int32"/> 2<hint text=":Int32"/> 3<hint text=":Int32"/> ]<hint text=":Seq( :Int32 )"/>
+              :type :Seq( :Int )
+              :body [ 1<hint text=":Int"/> 2<hint text=":Int"/> 3<hint text=":Int"/> ]<hint text=":Seq( :Int )"/>
             }
             """);
 
@@ -1017,10 +1017,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertRootInlayHints("""
             {
               :defs {
-                :MyAlias :Tuple( :Int32 :String )
+                :MyAlias :Tuple( :Int :String )
               }
               :type :MyAlias
-              :body ( 42<hint text=":Int32"/> "hello"<hint text=":String"/> )<hint text=":MyAlias"/>
+              :body ( 42<hint text=":Int"/> "hello"<hint text=":String"/> )<hint text=":MyAlias"/>
             }
             """);
     }
@@ -1505,11 +1505,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         // 6. Inlay Hints Verification when Boolean Error is present
         var text5 = """
                 {
-                  :type :Tuple(:Boolean :Int32)
+                  :type :Tuple(:Boolean :Int)
                   :body (
                     #False
-                    42<hint text=":Int32"/>
-                  )<hint text=":Tuple( :Boolean :Int32 )"/>
+                    42<hint text=":Int"/>
+                  )<hint text=":Tuple( :Boolean :Int )"/>
                 }
                 """;
         myFixture.configureByText("boolean_error_inlay.stvn", text5);
@@ -1937,11 +1937,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   :defs {
                     :OptText :Option( :String ) // trailing comment on defs alias
                   }
-                  :type :Tuple( :OptText :Int32 ) // trailing comment on root type
+                  :type :Tuple( :OptText :Int ) // trailing comment on root type
                   :body (
                     "hello"<hint text=":OptText [#Some] (-> :String)"/>
-                    42<hint text=":Int32"/>
-                  )<hint text=":Tuple( :OptText :Int32 )"/>
+                    42<hint text=":Int"/>
+                  )<hint text=":Tuple( :OptText :Int )"/>
                 }
                 """);
         runInlayVerification();
@@ -1959,22 +1959,22 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     ) // comment on closing paren
                     :Config :Tuple(
                       :OptText // first parameter
-                      :Int32   // second parameter
+                      :Int   // second parameter
                     )
                   }
                   :type :Tuple(
                     :Config // nested config tuple
-                    :Map( :String :Int32 ) // map parameter
+                    :Map( :String :Int ) // map parameter
                   )
                   :body (
                     (
                       #None<hint text=":OptText #None"/>
-                      100<hint text=":Int32"/>
+                      100<hint text=":Int"/>
                     )<hint text=":Config"/>
                     {
-                      [ "key"<hint text=":String"/> 200<hint text=":Int32"/> ]
-                    }<hint text=":Map( :String :Int32 )"/>
-                  )<hint text=":Tuple( :Config :Map( :String :Int32 ) )"/>
+                      [ "key"<hint text=":String"/> 200<hint text=":Int"/> ]
+                    }<hint text=":Map( :String :Int )"/>
+                  )<hint text=":Tuple( :Config :Map( :String :Int ) )"/>
                 }
                 """);
         runInlayVerification();
@@ -2177,11 +2177,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   :defs {
                     :OptText :Option( :String )
                   }
-                  :type :Tuple( :OptText :Int32 )
+                  :type :Tuple( :OptText :Int )
                   :body (
                     "hello"<hint text=":OptText [#Some] (-> :String)"/>
-                    42<hint text=":Int32"/>
-                  )<hint text=":Tuple( :OptText :Int32 )"/>
+                    42<hint text=":Int"/>
+                  )<hint text=":Tuple( :OptText :Int )"/>
                 }
                 """);
         runInlayVerification();
@@ -2337,15 +2337,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
-                    :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                    :DisjointUnion :Union( :Int :Boolean :Float :String )
                   }
                   :type :Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )
                   :body (
-                    1024<hint text=":DisjointUnion [#1] (-> :Int32)"/>
-                    #1 1024<hint text=":DisjointUnion #1 (-> :Int32)"/>
+                    1024<hint text=":DisjointUnion [#1] (-> :Int)"/>
+                    #1 1024<hint text=":DisjointUnion #1 (-> :Int)"/>
                     #FALSE<hint text=":DisjointUnion [#2] (-> :Boolean)"/>
                     #2 #FALSE<hint text=":DisjointUnion #2 (-> :Boolean)"/>
-                    3.1415<hint text=":DisjointUnion [#3] (-> :Float64)"/>
+                    3.1415<hint text=":DisjointUnion [#3] (-> :Float)"/>
                     #4 "hello"<hint text=":DisjointUnion #4 (-> :String)"/>
                   )<hint text=":Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )"/>
                 }
@@ -3480,10 +3480,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :IPv4 :StringFixed15
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :IPv4 :String
+                :IpAddress :Union( :IPv4 :String )
               }
-              :type :Tuple( :IpAddress :MapInv( :String :Int32 ) )
+              :type :Tuple( :IpAddress :Map( :String :Int ) )
               :body ( #1 "10.0.0.1" { [ "a" 1 ] } )
             }
             """);
@@ -3491,16 +3491,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text = myFixture.getEditor().getDocument().getText();
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
 
-        // 1. Hover on :StringFixed15 (primitive)
-        var strFixedOffset = text.indexOf(":StringFixed15");
-        var strFixedElem = myFixture.getFile().findElementAt(strFixedOffset);
-        assertNotNull(strFixedElem);
-        var strFixedDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), strFixedElem, strFixedOffset);
-        assertNotNull(strFixedDocElem);
-        var strFixedDoc = provider.generateDoc(strFixedDocElem, strFixedElem);
-        assertNotNull("Hover documentation for :StringFixed15 is null", strFixedDoc);
-        assertTrue(strFixedDoc.contains("Built-in String Type:</b> :StringFixed15"));
-        assertTrue(strFixedDoc.contains("15 characters"));
+        // 1. Hover on :String (primitive)
+        var strOffset = text.indexOf(":String");
+        var strElem = myFixture.getFile().findElementAt(strOffset);
+        assertNotNull(strElem);
+        var strDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), strElem, strOffset);
+        assertNotNull(strDocElem);
+        var strDoc = provider.generateDoc(strDocElem, strElem);
+        assertNotNull("Hover documentation for :String is null", strDoc);
+        assertTrue(strDoc.contains("Built-in String Type:</b> :String"));
 
         // 2. Hover on :Tuple (product constructor)
         var tupleOffset = text.indexOf(":Tuple(");
@@ -3512,15 +3511,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("Hover documentation for :Tuple is null", tupleDoc);
         assertTrue(tupleDoc.contains("Product Type Constructor:</b> :Tuple"));
 
-        // 3. Hover on :MapInv (collection constructor)
-        var mapInvOffset = text.indexOf(":MapInv(");
-        var mapInvElem = myFixture.getFile().findElementAt(mapInvOffset);
-        assertNotNull(mapInvElem);
-        var mapInvDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), mapInvElem, mapInvOffset);
-        assertNotNull(mapInvDocElem);
-        var mapInvDoc = provider.generateDoc(mapInvDocElem, mapInvElem);
-        assertNotNull("Hover documentation for :MapInv is null", mapInvDoc);
-        assertTrue(mapInvDoc.contains("Collection Constructor:</b> :MapInv"));
+        // 3. Hover on :Map (collection constructor)
+        var mapOffset = text.indexOf(":Map(");
+        var mapElem = myFixture.getFile().findElementAt(mapOffset);
+        assertNotNull(mapElem);
+        var mapDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), mapElem, mapOffset);
+        assertNotNull(mapDocElem);
+        var mapDoc = provider.generateDoc(mapDocElem, mapElem);
+        assertNotNull("Hover documentation for :Map is null", mapDoc);
+        assertTrue(mapDoc.contains("Collection Constructor:</b> :Map"));
     }
 
     public void testPreludeHoverDocumentation() {
@@ -3620,7 +3619,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("Hover doc for :Sha256 must not be null", sha256Doc);
         assertTrue(sha256Doc.contains("Standard Library Prelude:</b> :Sha256"));
         assertTrue(sha256Doc.contains("SHA-256 cryptographic hash (64 hex characters)"));
-        assertTrue(sha256Doc.contains(":StringFixed64"));
+        assertTrue(sha256Doc.contains("{ #size 64 } :String"));
         assertTrue(sha256Doc.contains("^[0-9a-fA-F]{64}$"));
 
         // 5. Assert :SemVer Hover
@@ -4660,49 +4659,6 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals(1, overErrors.size());
         assertTrue(overErrors.get(0).getDescription() != null &&
             overErrors.get(0).getDescription().contains("Fixed string must be exactly 64 characters long, got 65"));
-    }
-
-    public void testBoundedStringInlayHintsAndHoverDocumentation() {
-        myFixture.configureByText(
-            "bounded_string_inlays.stvn",
-            """
-            {
-              :defs {
-                :BoundedText :String64
-              }
-              :type :Tuple( :BoundedText )
-              :body (
-                "short text"
-              )
-            }
-            """);
-
-        var tuple = PsiTreeUtil.findChildOfType(myFixture.getFile(), TupleLiteral.class);
-        assertNotNull(tuple);
-        var values = tuple.getValueList();
-        assertEquals(1, values.size());
-
-        // Verify Inlay Hint Trajectory Label
-        var resolvedType = StvnTypeResolver.resolveValueType(values.get(0));
-        assertEquals(":BoundedText (-> :String64)", resolvedType);
-
-        // Verify Quick Documentation for :String64
-        var text = myFixture.getEditor().getDocument().getText();
-        var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
-        var str64Offset = text.indexOf(":String64");
-        var str64Elem = myFixture.getFile().findElementAt(str64Offset);
-        assertNotNull(str64Elem);
-        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), str64Elem, str64Offset);
-        assertNotNull(docElem);
-        var doc = provider.generateDoc(docElem, str64Elem);
-        assertNotNull("Hover doc for :String64 must not be null", doc);
-        assertTrue(doc.contains("max-bounded UTF-8 string"));
-        assertTrue(doc.contains("0 &le; len &le; 64"));
-
-        // Verify Quick Navigate Info for :String64
-        var quickInfo = provider.getQuickNavigateInfo(docElem, str64Elem);
-        assertNotNull(quickInfo);
-        assertTrue(quickInfo.contains("Max-Bounded String"));
     }
 
     public void testUhohAllSumCombinationsZeroErrorsAndInlays() {

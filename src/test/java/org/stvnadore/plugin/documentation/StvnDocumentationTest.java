@@ -167,9 +167,8 @@ public final class StvnDocumentationTest extends BasePlatformTestCase {
                 :Seq( :Int32 )
                 :Set( :String )
                 :Map( :String :Int32 )
-                :MapInv( :String :Int32 )
               )
-              :body ( [] [] {} {} )
+              :body ( [] [] {} )
             }
             """;
         myFixture.configureByText("collections_doc.stvn", text);
@@ -178,11 +177,6 @@ public final class StvnDocumentationTest extends BasePlatformTestCase {
         var mapDoc = getDocAtOffset(text, mapOffset);
         assertTrue(mapDoc.contains("<b>Collection Constructor:</b> :Map( :KeyType :ValType )"));
         assertTrue(mapDoc.contains("Defines a key-value mapping with strictly unique keys."));
-
-        var mapInvOffset = text.indexOf(":MapInv(");
-        var mapInvDoc = getDocAtOffset(text, mapInvOffset);
-        assertTrue(mapInvDoc.contains("<b>Collection Constructor:</b> :MapInv( :KeyType :ValType )"));
-        assertTrue(mapInvDoc.contains("bijective uniqueness"));
 
         var seqOffset = text.indexOf(":Seq(");
         var seqDoc = getDocAtOffset(text, seqOffset);

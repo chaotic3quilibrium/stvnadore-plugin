@@ -236,17 +236,18 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             """);
     }
 
-    public void testRegexPermittedOnLegacyCompoundStringWithoutContradictoryError() {
+    public void testRegexPermittedOnNominalStringDefinitionWithoutContradictoryError() {
         var text = """
             {
               :defs {
+                :StringFixed4 { #minSize 4 #maxSize 4 } :String
                 :MicCode { #regex "^[A-Z]{4}$" } :StringFixed4
               }
               :type :MicCode
               :body "XNYS"
             }
             """;
-        myFixture.configureByText("legacy_compound_facet.stvn", text);
+        myFixture.configureByText("nominal_facet.stvn", text);
         var highlights = myFixture.doHighlighting();
         var facetErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
@@ -254,7 +255,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
                 || (h.getDescription() != null && h.getDescription().contains("Facet is not permitted on :StringFixed4")))
             .toList();
 
-        assertTrue("Expected zero facet incompatibility errors on legacy compound string", facetErrors.isEmpty());
+        assertTrue("Expected zero facet incompatibility errors on nominal string", facetErrors.isEmpty());
 
         int offset = text.indexOf("#regex");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);

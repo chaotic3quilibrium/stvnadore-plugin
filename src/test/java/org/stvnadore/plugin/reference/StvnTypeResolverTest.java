@@ -34,7 +34,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
+                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
                 :RemoteHost :HostName
               }
               :type :RemoteHost
@@ -47,7 +47,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var bodyValue = values.iterator().next();
 
         var resolvedType = StvnTypeResolver.resolveValueType(bodyValue);
-        assertEquals(":RemoteHost (-> :HostName -> :StringNonEmpty64)", resolvedType);
+        assertEquals(":RemoteHost (-> :HostName -> :String)", resolvedType);
     }
 
     public void testNominalUnionMultiHopTrajectory() {
@@ -319,7 +319,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )
               :body (
@@ -339,7 +339,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var intInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(0));
         assertNotNull(intInfo);
         assertEquals(":DisjointUnion", intInfo.getLabel());
-        assertEquals(":DisjointUnion [#1] (-> :Int32)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":DisjointUnion [#1] (-> :Int)", StvnTypeResolver.resolveValueType(values.get(0)));
 
         var boolInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(1));
         assertNotNull(boolInfo);
@@ -349,7 +349,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var floatInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(2));
         assertNotNull(floatInfo);
         assertEquals(":DisjointUnion", floatInfo.getLabel());
-        assertEquals(":DisjointUnion [#3] (-> :Float64)", StvnTypeResolver.resolveValueType(values.get(2)));
+        assertEquals(":DisjointUnion [#3] (-> :Float)", StvnTypeResolver.resolveValueType(values.get(2)));
 
         var stringInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(3));
         assertNotNull(stringInfo);
@@ -363,7 +363,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion :DisjointUnion )
               :body (
@@ -384,7 +384,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertNotNull(innerIntVal);
         var intInfo = StvnTypeResolver.resolveBaseTypeInfo(innerIntVal);
         assertNotNull(intInfo);
-        assertEquals(":Int32", intInfo.getLabel());
+        assertEquals(":Int", intInfo.getLabel());
 
         var secondUnion = values.get(1).getExplicitUnionValue();
         assertNotNull(secondUnion);
@@ -401,7 +401,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+                :DisjointUnion :Union( :Int :Boolean :Float :String )
               }
               :type :Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )
               :body (
@@ -418,9 +418,9 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var values = tuple.getValueList();
         assertEquals(4, values.size());
 
-        assertFalse("Int32 must not resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(0)));
+        assertFalse("Int must not resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(0)));
         assertTrue("Boolean #TRUE must resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(1)));
-        assertFalse("Float64 must not resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(2)));
+        assertFalse("Float must not resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(2)));
         assertFalse("String must not resolve to boolean", StvnTypeResolver.resolvesToBoolean(values.get(3)));
     }
 
@@ -430,7 +430,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :OptInt    :Option( :Int32 )
+                :OptInt    :Option( :Int )
                 :Disjoint  :Either( :String :Boolean )
               }
               :type :Tuple( :OptInt :Disjoint )
@@ -450,7 +450,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var optInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(0));
         assertNotNull(optInfo);
         assertEquals(":OptInt", optInfo.getLabel());
-        assertEquals(":OptInt [#Some] (-> :Int32)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":OptInt [#Some] (-> :Int)", StvnTypeResolver.resolveValueType(values.get(0)));
 
         // Rule B: resolveBaseTypeInfo returns :Disjoint and resolveValueType unspools [#Right]
         var eitherInfo = StvnTypeResolver.resolveBaseTypeInfo(values.get(1));
@@ -465,7 +465,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :OptInt    :Option( :Int32 )
+                :OptInt    :Option( :Int )
                 :Disjoint  :Either( :String :Boolean )
               }
               :type :Tuple( :OptInt :Disjoint )
@@ -499,8 +499,8 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             {
               :defs {
                 :OptBool   :Option( :Boolean )
-                :Disjoint  :Either( :Int32 :Boolean )
-                :OptInt    :Option( :Int32 )
+                :Disjoint  :Either( :Int :Boolean )
+                :OptInt    :Option( :Int )
               }
               :type :Tuple( :OptBool :Disjoint :OptInt )
               :body (

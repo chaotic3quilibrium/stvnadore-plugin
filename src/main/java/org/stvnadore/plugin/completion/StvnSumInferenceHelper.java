@@ -219,31 +219,12 @@ public final class StvnSumInferenceHelper {
 
     private static boolean isNumeric(String type) {
         var clean = stripMetadata(type);
-        if (clean.equals(StvnVocabulary.TYPE_INT) || clean.equals(StvnVocabulary.TYPE_FLOAT) || clean.equals(StvnVocabulary.TYPE_TIME_EPOCH)) {
-            return true;
-        }
-        if (clean.startsWith(StvnVocabulary.TYPE_INT)) {
-            return clean.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d*");
-        }
-        if (clean.startsWith(StvnVocabulary.TYPE_FLOAT)) {
-            return clean.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d*");
-        }
-        if (clean.startsWith(":Uint")) {
-            return clean.substring(":Uint".length()).matches("\\d*");
-        }
-        return false;
+        return clean.equals(StvnVocabulary.TYPE_INT) || clean.equals(StvnVocabulary.TYPE_FLOAT) || clean.equals(StvnVocabulary.TYPE_TIME_EPOCH);
     }
 
     private static boolean isString(String type) {
         var clean = stripMetadata(type);
-        if (clean.equals(StvnVocabulary.TYPE_STRING)) {
-            return true;
-        }
-        if (clean.startsWith(StvnVocabulary.TYPE_STRING) && clean.length() > StvnVocabulary.TYPE_STRING.length()) {
-            char nextChar = clean.charAt(StvnVocabulary.TYPE_STRING.length());
-            return Character.isDigit(nextChar) || clean.startsWith(":StringFixed") || clean.startsWith(":StringNonEmpty");
-        }
-        return false;
+        return clean.equals(StvnVocabulary.TYPE_STRING);
     }
 
     private static boolean isList(String type) {

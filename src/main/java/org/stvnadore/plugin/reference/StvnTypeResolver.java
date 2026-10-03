@@ -1093,17 +1093,13 @@ public final class StvnTypeResolver {
         var stripped = (text.startsWith("{") && text.contains("}"))
             ? text.substring(text.lastIndexOf('}') + 1).trim()
             : text;
-        if (stripped.equals(StvnVocabulary.TYPE_INT) || stripped.equals(StvnVocabulary.TYPE_TIME_EPOCH) ||
-            (stripped.startsWith(StvnVocabulary.TYPE_INT) && stripped.substring(StvnVocabulary.TYPE_INT.length()).matches("\\d+")) ||
-            (stripped.startsWith(":Uint") && stripped.substring(":Uint".length()).matches("\\d*"))) {
+        if (stripped.equals(StvnVocabulary.TYPE_INT) || stripped.equals(StvnVocabulary.TYPE_TIME_EPOCH)) {
             return value.getIntegerLiteral() != null;
         }
-        if (stripped.equals(StvnVocabulary.TYPE_FLOAT) ||
-            (stripped.startsWith(StvnVocabulary.TYPE_FLOAT) && stripped.substring(StvnVocabulary.TYPE_FLOAT.length()).matches("\\d+"))) {
+        if (stripped.equals(StvnVocabulary.TYPE_FLOAT)) {
             return value.getFloatLiteral() != null;
         }
         if (stripped.equals(StvnVocabulary.TYPE_STRING) ||
-            (stripped.startsWith(StvnVocabulary.TYPE_STRING) && stripped.length() > StvnVocabulary.TYPE_STRING.length() && (Character.isDigit(stripped.charAt(StvnVocabulary.TYPE_STRING.length())) || stripped.startsWith(":StringFixed") || stripped.startsWith(":StringNonEmpty"))) ||
             stripped.equals(StvnVocabulary.TYPE_DATE_TIME) ||
             stripped.equals(":DateTimeOffset") ||
             stripped.equals(":DateTimeZoned") ||

@@ -852,45 +852,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
         }
 
-        if (keyword.startsWith(":StringFixed")) {
-            var widthStr = keyword.substring(":StringFixed".length());
-            return String.format("""
-                <b>Built-in String Type:</b> %s<br/>
-                <hr/>
-                Represents an <b>exact fixed-length UTF-8 string</b> of exactly %s characters.<br/>
-                <b>Constraint:</b> String length must satisfy <code>len == %s</code>.<br/>
-                <b>Forms:</b> Double-quoted string literals (<code>"..."</code>).
-                """, keyword, widthStr.isEmpty() ? "fixed" : widthStr, widthStr.isEmpty() ? "N" : widthStr);
-        }
-
-        if (keyword.startsWith(":StringNonEmpty")) {
-            var widthStr = keyword.substring(":StringNonEmpty".length());
-            return String.format("""
-                <b>Built-in String Type:</b> %s<br/>
-                <hr/>
-                Represents a <b>non-empty UTF-8 string</b> of at least 1 character%s.<br/>
-                <b>Forms:</b> Double-quoted string literals (<code>"..."</code>).
-                """, keyword, widthStr.isEmpty() ? "" : " and at most " + widthStr + " characters");
-        }
-
-        if (keyword.startsWith(":String") && keyword.length() > 7 && Character.isDigit(keyword.charAt(7))) {
-            var maxLen = keyword.substring(":String".length());
-            return String.format("""
-                <b>Built-in String Type:</b> %s<br/>
-                <hr/>
-                Represents a <b>max-bounded UTF-8 string</b> with a maximum length of %s characters.<br/>
-                <b>Constraint:</b> String length must satisfy <code>0 &le; len &le; %s</code>.<br/>
-                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"-&gt;[LANG]...[LANG]\"\"\"</code>).
-                """, keyword, maxLen, maxLen);
-        }
-
         return switch (keyword) {
-            case ":MapInv" -> """
-                <b>Collection Constructor:</b> :MapInv( :KeyType :ValType )<br/>
-                <hr/>
-                Defines an invertible bidirectional key-value mapping with strictly unique keys and values (bijective uniqueness).<br/>
-                <b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.
-                """;
             case StvnVocabulary.TYPE_TUPLE -> """
                 <b>Product Type Constructor:</b> :Tuple( :T1 :T2 ... )<br/>
                 <hr/>
@@ -969,18 +931,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return "Primitive Type: :String (UTF-8 String)";
         }
 
-        if (keyword.startsWith(":StringFixed")) {
-            return "Primitive Type: " + keyword + " (Fixed-Length String)";
-        }
-        if (keyword.startsWith(":StringNonEmpty")) {
-            return "Primitive Type: " + keyword + " (Non-Empty String)";
-        }
-        if (keyword.startsWith(":String") && keyword.length() > 7 && Character.isDigit(keyword.charAt(7))) {
-            return "Primitive Type: " + keyword + " (Max-Bounded String)";
-        }
-
         return switch (keyword) {
-            case ":MapInv" -> "Collection Constructor: :MapInv( :Key :Val )";
             case StvnVocabulary.TYPE_TUPLE -> "Product Type Constructor: :Tuple( ... )";
             case StvnVocabulary.TYPE_MAP -> "Collection Constructor: :Map( :Key :Val )";
             case StvnVocabulary.TYPE_SEQ -> "Collection Constructor: :Seq( :Elem )";
@@ -1006,7 +957,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Uuid" -> """
                 <b>Standard Library Prelude:</b> :Uuid<br/>
-                <b>Underlying Type:</b> <code>:StringFixed36</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 36 } :String</code><br/>
                 <b>Validation Constraint:</b> <code>#regex "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"</code><br/>
                 <hr/>
                 Represents an <b>RFC 4122 Universally Unique Identifier</b> (ITU-T X.667).<br/>
@@ -1015,7 +966,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Ulid" -> """
                 <b>Standard Library Prelude:</b> :Ulid<br/>
-                <b>Underlying Type:</b> <code>:StringFixed26</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 26 } :String</code><br/>
                 <b>Validation Constraint:</b> <code>#regex "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"</code><br/>
                 <hr/>
                 Represents a <b>Universally Unique Lexicographically Sortable Identifier</b> encoded in Crockford's Base32.<br/>
@@ -1024,7 +975,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Sha256" -> """
                 <b>Standard Library Prelude:</b> :Sha256<br/>
-                <b>Underlying Type:</b> <code>:StringFixed64</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 64 } :String</code><br/>
                 <b>Validation Constraint:</b> <code>#regex "^[0-9a-fA-F]{64}$"</code><br/>
                 <hr/>
                 Represents a <b>SHA-256 cryptographic hash (64 hex characters)</b>.<br/>
@@ -1060,7 +1011,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Percentage" -> """
                 <b>Standard Library Prelude:</b> :Percentage<br/>
-                <b>Underlying Type:</b> <code>:Float64</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 64 } :Float</code><br/>
                 <b>Validation Constraint:</b> <code>#minIncl 0.0 #maxIncl 100.0</code><br/>
                 <hr/>
                 Represents a <b>percentage ratio</b> bounded between 0% and 100%.<br/>
@@ -1069,7 +1020,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Probability" -> """
                 <b>Standard Library Prelude:</b> :Probability<br/>
-                <b>Underlying Type:</b> <code>:Float64</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 64 } :Float</code><br/>
                 <b>Validation Constraint:</b> <code>#minIncl 0.0 #maxIncl 1.0</code><br/>
                 <hr/>
                 Represents a <b>normalized statistical probability measure</b>.<br/>
@@ -1078,7 +1029,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Currency" -> """
                 <b>Standard Library Prelude:</b> :Currency<br/>
-                <b>Underlying Type:</b> <code>:FloatExact</code><br/>
+                <b>Underlying Type:</b> <code>{ #exact } :Float</code><br/>
                 <hr/>
                 Represents an <b>arbitrary-precision exact decimal currency amount</b>.<br/>
                 <b>Constraint:</b> Eliminates binary IEEE 754 floating-point rounding inaccuracies.<br/>
@@ -1086,7 +1037,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Latitude" -> """
                 <b>Standard Library Prelude:</b> :Latitude<br/>
-                <b>Underlying Type:</b> <code>:Float64</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 64 } :Float</code><br/>
                 <b>Validation Constraint:</b> <code>#minIncl -90.0 #maxIncl 90.0</code><br/>
                 <hr/>
                 Represents a <b>geographic latitude coordinate</b> (North-South angle).<br/>
@@ -1095,7 +1046,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
             case ":Longitude" -> """
                 <b>Standard Library Prelude:</b> :Longitude<br/>
-                <b>Underlying Type:</b> <code>:Float64</code><br/>
+                <b>Underlying Type:</b> <code>{ #size 64 } :Float</code><br/>
                 <b>Validation Constraint:</b> <code>#minIncl -180.0 #maxIncl 180.0</code><br/>
                 <hr/>
                 Represents a <b>geographic longitude coordinate</b> (East-West angle from Prime Meridian).<br/>
@@ -1115,11 +1066,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             case ":SemVer" -> "Standard Prelude Type: :SemVer (Semantic Version 2.0.0)";
             case ":Email" -> "Standard Prelude Type: :Email (RFC 5322 Email Address)";
             case ":Port" -> "Standard Prelude Type: :Port (TCP/UDP Port 1-65535)";
-            case ":Percentage" -> "Standard Prelude Type: :Percentage (Float64 0.0 - 100.0)";
-            case ":Probability" -> "Standard Prelude Type: :Probability (Float64 0.0 - 1.0)";
+            case ":Percentage" -> "Standard Prelude Type: :Percentage (Float 0.0 - 100.0)";
+            case ":Probability" -> "Standard Prelude Type: :Probability (Float 0.0 - 1.0)";
             case ":Currency" -> "Standard Prelude Type: :Currency (Arbitrary-Precision Decimal)";
-            case ":Latitude" -> "Standard Prelude Type: :Latitude (Float64 -90.0 to +90.0)";
-            case ":Longitude" -> "Standard Prelude Type: :Longitude (Float64 -180.0 to +180.0)";
+            case ":Latitude" -> "Standard Prelude Type: :Latitude (Float -90.0 to +90.0)";
+            case ":Longitude" -> "Standard Prelude Type: :Longitude (Float -180.0 to +180.0)";
             default -> null;
         };
     }
@@ -1257,7 +1208,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
 
-            // Usage site inside composite schema (e.g. :MapInv, :Tuple, :Union, :Seq, :Option, :Either):
+            // Usage site inside composite schema (e.g. :Map, :Tuple, :Union, :Seq, :Option, :Either):
             var ref = typeKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
             if (resolved instanceof TypeDefinition targetDef) {

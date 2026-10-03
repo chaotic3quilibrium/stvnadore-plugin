@@ -140,4 +140,27 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
         }
     }
+
+    /**
+     * Verifies that when an undefined or deprecated child type is referenced inside a type definition,
+     * error coordinates pin strictly to the child type keyword without annotating preceding valid metadata facets.
+     */
+    public void testOffendingChildPinningLeavesPrecedingMetadataFacetUnannotated() {
+        var content = """
+            {
+              :defs {
+                :MicCode { #minSize 4 } :StringFixed4
+              }
+            }
+            """;
+        var file = myFixture.configureByText("pinning_test.stvn_inclf", content);
+        var highlights = myFixture.doHighlighting();
+        var minSizeOffset = content.indexOf("#minSize 4");
+        var minSizeRange = new com.intellij.openapi.util.TextRange(minSizeOffset, minSizeOffset + "#minSize 4".length());
+        for (var h : highlights) {
+            var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+            assertFalse("Preceding valid metadata facet '#minSize 4' must not receive squiggly annotations: " + h.getDescription(),
+                hRange.intersects(minSizeRange));
+        }
+    }
 }
