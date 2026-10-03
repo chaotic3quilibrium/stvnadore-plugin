@@ -262,4 +262,73 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var actions = myFixture.filterAvailableIntentions("Remove invalid facet");
         assertTrue("Destructive 'Remove invalid facet' quick-fix must not be offered", actions.isEmpty());
     }
+
+    public void testUndeclaredNominalTypeBailsOutOfFacetValidationWithoutErrors() {
+        var text = """
+            {
+              :defs {
+                :MicCode { #minSize 4 #maxSize 4 #regex "^[A-Z]{4}$" } :StringFixed4
+              }
+              :type :MicCode
+              :body "XNYS"
+            }
+            """;
+        myFixture.configureByText("undeclared_nominal_facet.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var facetErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().contains("Facet is not permitted on :StringFixed4")))
+            .toList();
+
+        assertTrue("Undeclared nominal type must bail out of facet validation with zero errors: " + facetErrors, facetErrors.isEmpty());
+
+        int offset = text.indexOf("#regex");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Remove invalid facet");
+        assertTrue("Destructive 'Remove invalid facet' quick-fix must not be offered on undeclared type", actions.isEmpty());
+    }
+
+    public void testDeclaredNominalTypeEvaluatesFacetCompatibilityAgainstUnderlyingBaseType() {
+        var text = """
+            {
+              :defs {
+                :BaseStr :String
+                :Foo { #minSize 4 } :BaseStr
+              }
+              :type :Foo
+              :body "TEST"
+            }
+            """;
+        myFixture.configureByText("declared_nominal_facet.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var facetErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertTrue("Valid facet on declared nominal string alias must produce zero errors: " + facetErrors, facetErrors.isEmpty());
+    }
+
+    public void testIncompatibleFacetOnPrimitiveOrDeclaredNominalTypeRejected() {
+        var text = """
+            {
+              :defs {
+                :Bar { #regex "^[0-9]+$" } :Int
+              }
+              :type :Bar
+              :body 42
+            }
+            """;
+        myFixture.configureByText("incompatible_int_regex.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var facetErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().contains("Facet is not permitted on :Int")))
+            .toList();
+
+        assertEquals("Expected exactly 1 facet error on incompatible primitive type", 1, facetErrors.size());
+        assertTrue(facetErrors.get(0).getDescription().contains("permitted facets for string types: [#equatable, #comparable, #regex"));
+    }
 }

@@ -13,6 +13,12 @@
     <li>Each facet keyword may appear at most once per metadata block. Duplicate declarations (e.g. <code>{ #size 53 #size 1 }</code>) are prohibited.</li>
 </ul>
 
+<p><b>Nominal Type Resolution and Undeclared Type Bailout:</b></p>
+<ul>
+    <li>Facet compatibility evaluates against the canonical underlying primitive or constructor of declared nominal types.</li>
+    <li>If a nominal base type is undeclared or unresolved, facet validation bails out immediately without emitting facet rejection errors. Type resolution errors are reported exclusively by compiler diagnostic <code>ERR_UNDEFINED_TYPE</code> on the type token.</li>
+</ul>
+
 <p><b>Permitted Facet Matrix (STVN Spec § 3 &amp; § 5):</b></p>
 <ul>
     <li><b>Discrete Integer (<code>:Int</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#size</code>, <code>#unsigned</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Closed upper bounds (<code>#maxIncl</code>) and open lower bounds (<code>#minExcl</code>) are strictly prohibited (<code>ERR_DISCRETE_BOUND_KIND_PROHIBITED</code>).</li>
