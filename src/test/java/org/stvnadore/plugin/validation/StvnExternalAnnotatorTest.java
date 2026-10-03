@@ -60,4 +60,84 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
         }
     }
+
+    /**
+     * Verifies that compiler deprecation and keyword diagnostics emitted for an included module
+     * (such as obsolete compound string and integer keywords) do not leak into the parent document,
+     * do not register on the parent buffer, and never project annotations onto indented comments or whitespace.
+     */
+    public void testDeprecatedCompoundKeywordsInIncludedModuleDoNotLeakToParentComments() {
+        var primitivesContent = """
+            {
+              // primitives.stvn_inclf
+              :defs {
+                :package :com/nyse/primitives {
+                  // Legacy compound string keyword
+                  :MicCode { #regex "^[A-Z]{4}$" } :StringFixed4
+
+                  // Legacy compound integer keyword
+                  :OrderId :Uint64
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              // events.stvn_incl
+              :defs {
+                // 1. Ingest primitives module directly
+                :include [ "primitives.stvn_inclf" ]
+
+                // 2. Scoped Package Enclosure: entries expand to :com/nyse/events/*
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+
+                  // Regulated financial execution tuple
+                  :ExecutionReport :Tuple(
+                    :MicCode
+                    :OrderId
+                  )
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("events.stvn_incl", eventsContent);
+
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(eventsFile);
+        assertNotNull("Collected information must not be null", collected);
+
+        var result = annotator.doAnnotate(collected);
+        assertNotNull("Annotation result must not be null", result);
+
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Assert zero squiggles appear over any comment lines or whitespace across all severities
+        for (var highlight : highlights) {
+            for (int offset = highlight.getStartOffset(); offset < highlight.getEndOffset(); offset++) {
+                var leaf = eventsFile.findElementAt(offset);
+                assertFalse("No annotation must ever intersect a comment leaf element: " + highlight.getDescription(),
+                    leaf instanceof com.intellij.psi.PsiComment);
+            }
+            var textSlice = eventsContent.substring(
+                Math.min(highlight.getStartOffset(), eventsContent.length()),
+                Math.min(highlight.getEndOffset(), eventsContent.length())
+            );
+            assertFalse("No annotation must ever cover only whitespace: " + highlight.getDescription(),
+                textSlice.isBlank());
+        }
+
+        // 2. Assert no annotations containing :StringFixed4 or :Uint64 are registered on the parent buffer
+        for (var highlight : highlights) {
+            var desc = highlight.getDescription();
+            if (desc != null) {
+                assertFalse("Parent buffer must not receive :StringFixed4 deprecation warning",
+                    desc.contains(":StringFixed4"));
+                assertFalse("Parent buffer must not receive :Uint64 deprecation warning",
+                    desc.contains(":Uint64"));
+            }
+        }
+    }
 }

@@ -32,6 +32,8 @@ import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvid
 import org.stvnadore.psi.*;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Executes full ANTLR parsing and semantic schema check stages on a background thread,
@@ -42,6 +44,9 @@ import java.util.List;
 public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalAnnotator.CollectedInfo, StvnExternalAnnotator.AnnotationResult> {
 
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
+
+    private static final Pattern QUOTED_TOKEN_PATTERN =
+        Pattern.compile("':?([A-Za-z0-9_/#]+)'");
 
     /**
      * Constructs a new StvnExternalAnnotator instance.
@@ -691,18 +696,89 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     private static boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
         var message = diag.message();
 
-        // Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
+        // 1. Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
         if (isDiagnosticFromIncludedFile(file, diag)) {
             return true;
         }
 
-        // Comment Locus Protection Invariant: compiler semantic errors must never land on comments
+        // 2. Buffer Token Existence Verification:
+        // Extract quoted tokens from compiler messages (':?([A-Za-z0-9_/#]+)').
+        // If a diagnostic message contains a quoted token that does not exist in file.getText(), suppress it immediately.
+        // If quoted tokens exist in the buffer, confirm that the diagnostic coordinates actually contain at least one of them.
+        var text = file.getText();
         var textLength = file.getTextLength();
+        var matcher = QUOTED_TOKEN_PATTERN.matcher(message);
+
         var start = diag.startOffset();
-        if (start >= 0 && start < textLength) {
-            var leaf = file.findElementAt(start);
-            if (leaf instanceof com.intellij.psi.PsiComment) {
+        var end = diag.endOffset();
+        var s = Math.max(0, Math.min(start, textLength));
+        var e = Math.max(s, Math.min(end, textLength));
+        var slice = (s < e) ? text.substring(s, e) : "";
+
+        var quotedTokens = new java.util.ArrayList<String>();
+        while (matcher.find()) {
+            var rawMatch = matcher.group(0);
+            var token = rawMatch.substring(1, rawMatch.length() - 1);
+            quotedTokens.add(token);
+        }
+
+        boolean isAntlrSyntaxError = (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
+            || message.contains("mismatched input")
+            || message.contains("no viable alternative")
+            || message.contains("extraneous input")
+            || message.startsWith("STVN Syntax Error");
+
+        if (!isAntlrSyntaxError && !quotedTokens.isEmpty()) {
+            // Check if the primary offending token (the first quoted token) exists in active buffer
+            var primaryToken = quotedTokens.get(0);
+            if (!text.contains(primaryToken)) {
                 return true;
+            }
+
+            // If the message cites quoted tokens, and a slice exists, verify that
+            // at least one quoted token appears in the target range slice (preventing offset drift onto comments)
+            if (!slice.isEmpty()) {
+                boolean anyTokenInSlice = false;
+                for (var t : quotedTokens) {
+                    if (slice.contains(t)) {
+                        anyTokenInSlice = true;
+                        break;
+                    }
+                }
+                if (!anyTokenInSlice) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. Universal Comment & Whitespace Locus Protection:
+        // Compiler diagnostics across all severities must never land on comments or blank spans,
+        // unless reporting forbidden tab characters.
+        boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
+            || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
+            || message.contains("Tab character");
+
+        if (start >= 0 && start <= textLength) {
+            if (!isTabError && s < e && text.substring(s, e).isBlank()) {
+                return true;
+            }
+
+            int checkOffset = s;
+            int limitOffset = Math.max(s + 1, e);
+            while (checkOffset < limitOffset && checkOffset < textLength) {
+                var leaf = file.findElementAt(checkOffset);
+                if (leaf == null) {
+                    break;
+                }
+                if (leaf instanceof com.intellij.psi.PsiComment
+                    || PsiTreeUtil.getParentOfType(leaf, com.intellij.psi.PsiComment.class, false) != null) {
+                    return true;
+                }
+                var nextOffset = leaf.getTextRange().getEndOffset();
+                if (nextOffset <= checkOffset) {
+                    break;
+                }
+                checkOffset = nextOffset;
             }
         }
 
@@ -827,12 +903,46 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             if (openParen >= 0 && closeParen > openParen) {
                 var typeName = msg.substring(openParen + 1, closeParen).trim();
                 var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
-                if (resolved != null && resolved.getContainingFile() != file) {
+                if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
                     return true;
                 }
             }
         }
+
+        // 3. Broadened included symbol check: verify whether diagnostic cites a symbol declared in an external user file
+        var matcher = QUOTED_TOKEN_PATTERN.matcher(msg);
+        if (matcher.find()) {
+            var rawMatch = matcher.group(0);
+            var candidateSymbol = rawMatch.substring(1, rawMatch.length() - 1);
+            if (candidateSymbol.startsWith(":") || candidateSymbol.startsWith("#")) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, candidateSymbol, new java.util.HashSet<>());
+                if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
+                    var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
+                    var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
+                    if (s < e) {
+                        var slice = file.getText().substring(s, e);
+                        if (!slice.contains(candidateSymbol)) {
+                            return true;
+                        }
+                    } else {
+                        return true;
+                    }
+                }
+            }
+        }
+
         return false;
+    }
+
+    private static boolean isUserIncludedFile(PsiFile activeFile, @Nullable PsiFile targetFile) {
+        if (targetFile == null || targetFile == activeFile) {
+            return false;
+        }
+        var name = targetFile.getName();
+        if (name.contains("prelude") || targetFile.getVirtualFile() == null) {
+            return false;
+        }
+        return true;
     }
 
     private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
