@@ -1,6 +1,14 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver;
+import com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl;
 import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.vcs.FileStatus;
+import com.intellij.openapi.vcs.FileStatusManager;
+import com.intellij.problems.WolfTheProblemSolver;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnDiagnostic;
@@ -423,6 +431,152 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         for (var highlight : highlights) {
             assertFalse("Clean multi-file inclusion must produce zero ERROR highlights: " + highlight.getDescription(),
                 highlight.getSeverity() == HighlightSeverity.ERROR);
+        }
+    }
+
+    /**
+     * Verifies that when a document contains only an include error originating from an invalid
+     * child module, WolfTheProblemSolver positively identifies the parent file as a problem file.
+     */
+    public void testPinnedIncludeErrorMarksParentFileInWolfTheProblemSolver() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :SequenceNumber :Uint49
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("wolf_primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "wolf_primitives.stvn_inclf" ]
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("wolf_events.stvn_incl", eventsContent);
+        var virtualFile = eventsFile.getVirtualFile();
+        assertNotNull("VirtualFile must not be null", virtualFile);
+
+        var wolf = WolfTheProblemSolver.getInstance(getProject());
+        if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+            mockWolf.setDelegate(WolfTheProblemSolverImpl.createTestInstance(getProject()));
+        }
+
+        try {
+            var highlights = myFixture.doHighlighting();
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+
+            boolean hasPinnedError = highlights.stream().anyMatch(h ->
+                h.getSeverity() == HighlightSeverity.ERROR &&
+                h.getDescription() != null &&
+                h.getDescription().contains("wolf_primitives.stvn_inclf"));
+            assertTrue("Parent file must display pinned error highlight on include statement", hasPinnedError);
+
+            assertTrue("WolfTheProblemSolver must report wolf_events.stvn_incl as problem file for pinned include error",
+                wolf.isProblemFile(virtualFile));
+        } finally {
+            if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+                mockWolf.resetDelegate();
+            }
+        }
+    }
+
+    /**
+     * Verifies that when an invalid included child module is fixed, re-annotating the parent document
+     * cleanly removes all pinned include errors and clears the problem status in WolfTheProblemSolver.
+     */
+    public void testFixingChildModuleClearsParentProblemFileInWolfTheProblemSolver() throws Exception {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :SequenceNumber :Uint49
+                }
+              }
+            }
+            """;
+        var primitivesFile = myFixture.addFileToProject("fixable_primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "fixable_primitives.stvn_inclf" ]
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("fixable_events.stvn_incl", eventsContent);
+        var eventsVf = eventsFile.getVirtualFile();
+        assertNotNull("VirtualFile must not be null", eventsVf);
+
+        var wolf = WolfTheProblemSolver.getInstance(getProject());
+        if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+            mockWolf.setDelegate(WolfTheProblemSolverImpl.createTestInstance(getProject()));
+        }
+
+        try {
+            // 1. Initial invalid state
+            myFixture.doHighlighting();
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+            assertTrue("Parent file must initially be marked as problem file", wolf.isProblemFile(eventsVf));
+
+            // 2. Fix the child module
+            var validPrimitivesContent = """
+                {
+                  :defs {
+                    :package :com/nyse/primitives {
+                      :SequenceNumber {#unsigned #size 49} :Int
+                    }
+                  }
+                }
+                """;
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                try {
+                    primitivesFile.getVirtualFile().setBinaryContent(validPrimitivesContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } catch (java.io.IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            var physicalPath = org.stvnadore.plugin.reference.StvnTypeResolver.resolvePhysicalPath(eventsVf, getProject(), eventsFile.getText());
+            var tempParent = java.nio.file.Path.of(physicalPath).getParent();
+            if (tempParent != null) {
+                var childDiskFile = tempParent.resolve("fixable_primitives.stvn_inclf");
+                java.nio.file.Files.writeString(childDiskFile, validPrimitivesContent, java.nio.charset.StandardCharsets.UTF_8);
+            }
+
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                myFixture.getEditor().getDocument().setText(eventsContent);
+            });
+            PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+
+            // 3. Re-highlight parent file
+            myFixture.openFileInEditor(eventsVf);
+            var cleanHighlights = myFixture.doHighlighting();
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+
+            boolean hasErrors = cleanHighlights.stream().anyMatch(h -> h.getSeverity() == HighlightSeverity.ERROR);
+            assertFalse("Parent file must contain zero ERROR highlights after child module is fixed", hasErrors);
+
+            assertFalse("WolfTheProblemSolver must clear problem status for events.stvn_incl after child fix",
+                wolf.isProblemFile(eventsVf));
+
+            var fileStatus = FileStatusManager.getInstance(getProject()).getStatus(eventsVf);
+            assertEquals("FileStatus must be NOT_CHANGED after fix",
+                FileStatus.NOT_CHANGED, fileStatus);
+        } finally {
+            if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+                mockWolf.resetDelegate();
+            }
         }
     }
 }

@@ -170,26 +170,37 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             .filter(d -> d.severity() == DiagnosticSeverity.ERROR)
             .toList();
 
-        // 2. Synchronize WolfTheProblemSolver strictly with active error diagnostics
-        if (virtualFile != null && virtualFile.isValid() && !project.isDisposed()) {
-            var wolf = WolfTheProblemSolver.getInstance(project);
+        var textLength = file.getTextLength();
+        if (textLength == 0) {
+            if (virtualFile != null && virtualFile.isValid() && !project.isDisposed()) {
+                WolfTheProblemSolver.getInstance(project).clearProblems(virtualFile);
+            }
+            return;
+        }
 
-            if (!activeErrorDiagnostics.isEmpty()) {
-                var problems = new java.util.ArrayList<Problem>();
-                for (var diag : activeErrorDiagnostics) {
-                    var line = Math.max(0, diag.line() - 1);
-                    var col = Math.max(0, diag.column());
-                    var diagMsg = sanitizeCompilerJargon(diag.message());
-                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
-                    if (problem != null) {
-                        problems.add(problem);
-                    }
+        // 2. Aggregate all problems (active local errors + pinned include errors)
+        var problems = new java.util.ArrayList<Problem>();
+        WolfTheProblemSolver wolf = null;
+        if (virtualFile != null && virtualFile.isValid() && !project.isDisposed()) {
+            wolf = WolfTheProblemSolver.getInstance(project);
+        }
+
+        // Render pinned annotations for included file errors and register in problems list
+        renderPinnedIncludeDiagnostics(file, rawDiagnostics, holder, problems, wolf, virtualFile);
+
+        if (wolf != null && virtualFile != null) {
+            for (var diag : activeErrorDiagnostics) {
+                var line = Math.max(0, diag.line() - 1);
+                var col = Math.max(0, diag.column());
+                var diagMsg = sanitizeCompilerJargon(diag.message());
+                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
+                if (problem != null) {
+                    problems.add(problem);
                 }
-                if (!problems.isEmpty()) {
-                    wolf.reportProblems(virtualFile, problems);
-                } else {
-                    wolf.clearProblems(virtualFile);
-                }
+            }
+
+            if (!problems.isEmpty()) {
+                wolf.reportProblems(virtualFile, problems);
             } else {
                 wolf.clearProblems(virtualFile);
             }
@@ -208,12 +219,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
             }, ModalityState.defaultModalityState());
         }
-
-        var textLength = file.getTextLength();
-        if (textLength == 0) return;
-
-        // Render pinned annotations for included file errors
-        renderPinnedIncludeDiagnostics(file, rawDiagnostics, holder);
 
         // 3. Render annotations in AnnotationHolder for all active diagnostics
         for (var diag : activeDiagnostics) {
@@ -989,11 +994,19 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return false;
     }
 
-    private static void renderPinnedIncludeDiagnostics(PsiFile file, List<StvnDiagnostic> diagnostics, AnnotationHolder holder) {
+    private static void renderPinnedIncludeDiagnostics(
+            PsiFile file,
+            List<StvnDiagnostic> diagnostics,
+            AnnotationHolder holder,
+            @Nullable List<Problem> problems,
+            @Nullable WolfTheProblemSolver wolf,
+            @Nullable VirtualFile virtualFile
+    ) {
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         if (includes.isEmpty()) return;
 
         var pinnedKeys = new java.util.HashSet<String>();
+        var document = file.getViewProvider().getDocument();
 
         for (var diag : diagnostics) {
             if (diag.severity() != DiagnosticSeverity.ERROR) continue;
@@ -1057,6 +1070,19 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
 
                 builder.create();
+
+                if (problems != null && wolf != null && virtualFile != null) {
+                    int line = 0;
+                    int col = 0;
+                    if (document != null && targetRange.getStartOffset() >= 0 && targetRange.getStartOffset() <= document.getTextLength()) {
+                        line = document.getLineNumber(targetRange.getStartOffset());
+                        col = targetRange.getStartOffset() - document.getLineStartOffset(line);
+                    }
+                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ pinnedMessage });
+                    if (problem != null) {
+                        problems.add(problem);
+                    }
+                }
             }
         }
     }
