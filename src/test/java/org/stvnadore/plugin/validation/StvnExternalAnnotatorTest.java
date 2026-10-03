@@ -163,4 +163,156 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 hRange.intersects(minSizeRange));
         }
     }
+
+    /**
+     * Verifies that when an included child module contains an undefined nominal type error,
+     * the child coordinates do not project onto parent constant alias tokens (#DEFAULT_MIC #PRIMARY_EXCHANGE),
+     * and the diagnostic pins strictly to the parent :include statement.
+     */
+    public void testChildUndefinedTypeDoesNotProjectOffsetsOntoParentTokens() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :MicCode { #minSize 4 #maxSize 4 } :String
+                  :SequenceNumber :Uint49
+                  #DEFAULT_MIC :MicCode "XNYS"
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("undef_primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "undef_primitives.stvn_inclf" ]
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+                  :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("undef_events.stvn_incl", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Assert #DEFAULT_MIC and #PRIMARY_EXCHANGE receive ZERO error squiggles
+        int useLineOffset = eventsContent.indexOf("#DEFAULT_MIC #PRIMARY_EXCHANGE");
+        var useLineRange = new com.intellij.openapi.util.TextRange(useLineOffset, useLineOffset + "#DEFAULT_MIC #PRIMARY_EXCHANGE".length());
+
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(highlight.getStartOffset(), highlight.getEndOffset());
+                assertFalse("Parent constant alias line must not receive child error squiggly: " + highlight.getDescription(),
+                    hRange.intersects(useLineRange));
+            }
+        }
+
+        // 2. Assert error pins strictly to the :include statement
+        int includeOffset = eventsContent.indexOf(":include");
+        boolean foundPinnedError = false;
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                if (highlight.getStartOffset() <= includeOffset && highlight.getEndOffset() >= includeOffset) {
+                    foundPinnedError = true;
+                    assertTrue("Pinned annotation must identify child error: " + highlight.getDescription(),
+                        highlight.getDescription().contains("Undefined type: :Uint49"));
+                }
+            }
+        }
+        assertTrue("Parent :include statement must receive pinned child error annotation", foundPinnedError);
+    }
+
+    /**
+     * Verifies that when a child module at depth 2 contains a compilation error,
+     * the error does not project onto root envelope definitions (:TradeBatch) at depth 0.
+     */
+    public void testTransitiveChildErrorDoesNotProjectOntoRootBatchEnvelope() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :SequenceNumber :Uint49
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("trans_primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "trans_primitives.stvn_inclf" ]
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("trans_events.stvn_incl", eventsContent);
+
+        var orderBatchContent = """
+            {
+              :defs {
+                :include [ "trans_events.stvn_incl" ]
+                :BatchId {#unsigned #size 32} :Int
+                :ExecutionReport {#unsigned #size 64} :Int
+                :TradeBatch :Tuple( :BatchId :ExecutionReport )
+              }
+            }
+            """;
+        var orderBatchFile = myFixture.configureByText("trans_order_batch.stvn", orderBatchContent);
+        var highlights = myFixture.doHighlighting();
+
+        // Assert :TradeBatch receives zero error annotations
+        int tradeBatchOffset = orderBatchContent.indexOf(":TradeBatch");
+        var tradeBatchRange = new com.intellij.openapi.util.TextRange(tradeBatchOffset, tradeBatchOffset + ":TradeBatch".length());
+
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(highlight.getStartOffset(), highlight.getEndOffset());
+                assertFalse("Root :TradeBatch token must not receive transitive child error: " + highlight.getDescription(),
+                    hRange.intersects(tradeBatchRange));
+            }
+        }
+    }
+
+    /**
+     * Verifies that clean multi-file inclusions produce zero false-positive error annotations.
+     */
+    public void testCleanMultiFileInclusionProducesZeroAnnotations() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :MicCode { #minSize 4 #maxSize 4 #regex "^[A-Z]{4}$" } :String
+                  :OrderId {#unsigned #size 64} :Int
+                  :SequenceNumber {#unsigned #size 49} :Int
+                  #DEFAULT_MIC :MicCode "XNYS"
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("clean_primitives.stvn_inclf", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "clean_primitives.stvn_inclf" ]
+                :package :com/nyse/events {
+                  :use [ :com/nyse/primitives { #strip } ]
+                  :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("clean_events.stvn_incl", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        for (var highlight : highlights) {
+            assertFalse("Clean multi-file inclusion must produce zero ERROR highlights: " + highlight.getDescription(),
+                highlight.getSeverity() == HighlightSeverity.ERROR);
+        }
+    }
 }

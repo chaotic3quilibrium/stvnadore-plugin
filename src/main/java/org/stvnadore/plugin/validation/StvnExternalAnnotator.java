@@ -28,6 +28,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.*;
 
@@ -45,8 +46,40 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
 
-    private static final Pattern QUOTED_TOKEN_PATTERN =
-        Pattern.compile("':?([A-Za-z0-9_/#]+)'");
+    private static final Pattern QUOTED_TOKEN_PATTERN = Pattern.compile(
+        "':?([A-Za-z0-9_/#]+)'|" +
+        "(?<=Undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
+        "(?<=Unknown or undefined type:\\s)(:[A-Za-z0-9_/#]+)"
+    );
+
+    private static List<String> extractCitedTokens(String message) {
+        var tokens = new java.util.ArrayList<String>();
+        var matcher = QUOTED_TOKEN_PATTERN.matcher(message);
+        while (matcher.find()) {
+            for (int i = 1; i <= matcher.groupCount(); i++) {
+                var g = matcher.group(i);
+                if (g != null && !g.isEmpty()) {
+                    tokens.add(g);
+                    break;
+                }
+            }
+        }
+        return tokens;
+    }
+
+    private static String extractPrimaryToken(String msg) {
+        var tokens = extractCitedTokens(msg);
+        if (!tokens.isEmpty()) {
+            return tokens.get(0);
+        }
+        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
+            int colon = msg.indexOf(':');
+            if (colon >= 0) {
+                return msg.substring(colon).trim();
+            }
+        }
+        return "";
+    }
 
     /**
      * Constructs a new StvnExternalAnnotator instance.
@@ -172,6 +205,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         var textLength = file.getTextLength();
         if (textLength == 0) return;
+
+        // Render pinned annotations for included file errors
+        renderPinnedIncludeDiagnostics(file, rawDiagnostics, holder);
 
         // 3. Render annotations in AnnotationHolder for all active diagnostics
         for (var diag : activeDiagnostics) {
@@ -679,13 +715,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return true;
         }
 
+        // 1b. Coordinate Mismatch Verification: active buffer slice at coordinates must match cited symbol
+        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
+            return true;
+        }
+
         // 2. Buffer Token Existence Verification:
-        // Extract quoted tokens from compiler messages (':?([A-Za-z0-9_/#]+)').
-        // If a diagnostic message contains a quoted token that does not exist in file.getText(), suppress it immediately.
-        // If quoted tokens exist in the buffer, confirm that the diagnostic coordinates actually contain at least one of them.
+        // Extract quoted and cited tokens from compiler messages.
+        // If a diagnostic message contains a cited token that does not exist in file.getText(), suppress it immediately.
+        // If cited tokens exist in the buffer, confirm that the diagnostic coordinates actually contain at least one of them.
         var text = file.getText();
         var textLength = file.getTextLength();
-        var matcher = QUOTED_TOKEN_PATTERN.matcher(message);
 
         var start = diag.startOffset();
         var end = diag.endOffset();
@@ -693,12 +733,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var e = Math.max(s, Math.min(end, textLength));
         var slice = (s < e) ? text.substring(s, e) : "";
 
-        var quotedTokens = new java.util.ArrayList<String>();
-        while (matcher.find()) {
-            var rawMatch = matcher.group(0);
-            var token = rawMatch.substring(1, rawMatch.length() - 1);
-            quotedTokens.add(token);
-        }
+        var quotedTokens = extractCitedTokens(message);
 
         boolean isAntlrSyntaxError = (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
             || message.contains("mismatched input")
@@ -718,7 +753,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             if (!slice.isEmpty()) {
                 boolean anyTokenInSlice = false;
                 for (var t : quotedTokens) {
-                    if (slice.contains(t)) {
+                    if (slice.contains(t) || t.contains(slice)) {
                         anyTokenInSlice = true;
                         break;
                     }
@@ -873,8 +908,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             // sourcePath method not present in current core record; fallback to semantic checks
         }
 
-        // 2. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
         var msg = diag.message();
+
+        // 2. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
         if (msg.startsWith("Constraint violation (") || msg.startsWith("Zero-Shadowing constraint violated: ")) {
             var openParen = msg.indexOf('(');
             var closeParen = msg.indexOf(')', openParen);
@@ -887,29 +923,140 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
-        // 3. Broadened included symbol check: verify whether diagnostic cites a symbol declared in an external user file
-        var matcher = QUOTED_TOKEN_PATTERN.matcher(msg);
-        if (matcher.find()) {
-            var rawMatch = matcher.group(0);
-            var candidateSymbol = rawMatch.substring(1, rawMatch.length() - 1);
-            if (candidateSymbol.startsWith(":") || candidateSymbol.startsWith("#")) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, candidateSymbol, new java.util.HashSet<>());
-                if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
-                    var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
-                    var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
-                    if (s < e) {
-                        var slice = file.getText().substring(s, e);
-                        if (!slice.contains(candidateSymbol)) {
+        // 3. Child module detection for files containing includes:
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        if (!includes.isEmpty()) {
+            if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
+                var colonIdx = msg.indexOf(':');
+                if (colonIdx >= 0) {
+                    var typeName = msg.substring(colonIdx).trim();
+                    if (!file.getText().contains(typeName)) {
+                        return true;
+                    }
+                }
+            }
+
+            var citedTokens = extractCitedTokens(msg);
+            for (var candidateSymbol : citedTokens) {
+                if (candidateSymbol.startsWith(":") || candidateSymbol.startsWith("#")) {
+                    if (!file.getText().contains(candidateSymbol)) {
+                        return true;
+                    }
+                    var resolved = StvnTypeReference.resolveTypeInFile(file, candidateSymbol, new java.util.HashSet<>());
+                    if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
+                        var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
+                        var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
+                        if (s < e) {
+                            var slice = file.getText().substring(s, e);
+                            if (!slice.contains(candidateSymbol)) {
+                                return true;
+                            }
+                        } else {
                             return true;
                         }
-                    } else {
-                        return true;
                     }
                 }
             }
         }
 
         return false;
+    }
+
+    private static boolean isCoordinateMismatchInActiveBuffer(PsiFile file, StvnDiagnostic diag) {
+        var start = diag.startOffset();
+        var end = diag.endOffset();
+        var textLength = file.getTextLength();
+        if (start < 0 || end > textLength || start >= end) {
+            return false;
+        }
+        var msg = diag.message();
+        var text = file.getText();
+        var slice = text.substring(start, end).trim();
+
+        // 1. Undefined or unknown type diagnostics: slice must match cited type
+        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
+            var colonIdx = msg.indexOf(':');
+            if (colonIdx >= 0) {
+                var typeName = msg.substring(colonIdx).trim();
+                if (!slice.equals(typeName) && !typeName.endsWith(slice) && !slice.endsWith(typeName)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void renderPinnedIncludeDiagnostics(PsiFile file, List<StvnDiagnostic> diagnostics, AnnotationHolder holder) {
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        if (includes.isEmpty()) return;
+
+        var pinnedKeys = new java.util.HashSet<String>();
+
+        for (var diag : diagnostics) {
+            if (diag.severity() != DiagnosticSeverity.ERROR) continue;
+            if (!isDiagnosticFromIncludedFile(file, diag)) continue;
+
+            var msg = sanitizeCompilerJargon(diag.message());
+            var primaryToken = extractPrimaryToken(msg);
+
+            // Find matching IncludeElement
+            IncludeElement targetInclude = null;
+            PsiFile targetFile = null;
+            String targetIncludePath = null;
+
+            for (var incl : includes) {
+                var stringLit = incl.getStringLiteral();
+                if (stringLit != null) {
+                    var resolvedFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                    var pathText = stringLit.getText().replace("\"", "");
+
+                    if (resolvedFile != null && !primaryToken.isEmpty() && resolvedFile.getText().contains(primaryToken)) {
+                        targetInclude = incl;
+                        targetFile = resolvedFile;
+                        targetIncludePath = pathText;
+                        break;
+                    }
+                }
+            }
+
+            if (targetInclude == null && !includes.isEmpty()) {
+                targetInclude = includes.iterator().next();
+                var stringLit = targetInclude.getStringLiteral();
+                if (stringLit != null) {
+                    targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                    targetIncludePath = stringLit.getText().replace("\"", "");
+                }
+            }
+
+            if (targetInclude != null && targetIncludePath != null) {
+                var pinKey = targetIncludePath + ":" + msg;
+                if (!pinnedKeys.add(pinKey)) {
+                    continue;
+                }
+
+                var parentStmt = PsiTreeUtil.getParentOfType(targetInclude, IncludeStmt.class, false);
+                var targetRange = parentStmt != null ? parentStmt.getTextRange() : targetInclude.getTextRange();
+
+                var pinnedMessage = "Included file '" + targetIncludePath + "' contains compilation errors: " + msg;
+                var builder = holder.newAnnotation(HighlightSeverity.ERROR, pinnedMessage)
+                                    .range(targetRange);
+
+                var targetVirtualFile = targetFile != null ? targetFile.getVirtualFile() : null;
+                if (targetVirtualFile == null) {
+                    var activeVf = file.getVirtualFile();
+                    if (activeVf != null && activeVf.getParent() != null) {
+                        targetVirtualFile = activeVf.getParent().findFileByRelativePath(targetIncludePath);
+                    }
+                }
+
+                if (targetVirtualFile != null && targetVirtualFile.isValid()) {
+                    builder = builder.withFix(new OpenIncludedFileQuickFix(targetIncludePath, targetVirtualFile));
+                }
+
+                builder.create();
+            }
+        }
     }
 
     private static boolean isUserIncludedFile(PsiFile activeFile, @Nullable PsiFile targetFile) {
