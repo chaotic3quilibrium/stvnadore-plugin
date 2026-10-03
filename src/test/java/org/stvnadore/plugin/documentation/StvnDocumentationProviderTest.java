@@ -416,5 +416,44 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertNotNull(quickInfo);
         assertEquals("Renamed Reference: :LocalIp -> :org/stvnadore/prelude/IPv4", quickInfo);
     }
+
+    public void testHoverOnScopedUseImportAppendsFullTargetDocumentation() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]
+              }
+            }
+            """;
+        myFixture.configureByText("scoped_use_chain.stvn_inclf", text);
+        var offset = text.indexOf(":IPv4");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must render 'Scoped Import:' header", doc.contains("<b>Scoped Import:</b> :IPv4"));
+        assertTrue("Doc must chain Prelude card containing 'Underlying Type: <code>:String</code>'",
+            doc.contains("<b>Underlying Type:</b> <code>:String</code>"));
+        assertTrue("Doc must chain Prelude prose description",
+            doc.contains("Represents a standard <b>dotted-quad IPv4"));
+    }
+
+    public void testHoverOnRenamedUseAppendsFullTargetDocumentation() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :IPv4 :LocalIp } ]
+              }
+            }
+            """;
+        myFixture.configureByText("renamed_use_chain.stvn_inclf", text);
+        var offset = text.indexOf(":LocalIp");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must render 'Renamed Reference:' header",
+            doc.contains("<b>Renamed Reference:</b> :LocalIp &rarr; :org/stvnadore/prelude/IPv4"));
+        assertTrue("Doc must chain Prelude card containing 'Underlying Type: <code>:String</code>'",
+            doc.contains("<b>Underlying Type:</b> <code>:String</code>"));
+        assertTrue("Doc must chain Prelude prose description",
+            doc.contains("Represents a standard <b>dotted-quad IPv4"));
+    }
 }
 

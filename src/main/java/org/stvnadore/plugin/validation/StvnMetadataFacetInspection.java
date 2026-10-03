@@ -193,6 +193,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         var baseType = schemaType != null ? resolveBaseTypeString(schemaType) : "";
         boolean isNumeric = isNumericType(baseType);
         boolean isString = isStringType(baseType);
+        boolean isObsoleteCompound = isObsoleteCompoundStringType(baseType);
         boolean isTemporal = isTemporalType(baseType);
         boolean isMap = isMapType(baseType);
         boolean isCollection = isCollectionType(baseType);
@@ -221,7 +222,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
+            } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString && !isObsoleteCompound) {
                 holder.registerProblem(
                     entry,
                     "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
@@ -329,7 +330,20 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isStringType(String baseType) {
-        return baseType.equals(StvnVocabulary.TYPE_STRING);
+        return baseType.equals(StvnVocabulary.TYPE_STRING)
+            || isObsoleteCompoundStringType(baseType)
+            || org.stvnadore.core.utils.StvnStringCapacityUtils.isNominalStringType(baseType);
+    }
+
+    private static boolean isObsoleteCompoundStringType(String baseType) {
+        if (baseType == null) {
+            return false;
+        }
+        return baseType.startsWith(StvnVocabulary.TYPE_STRING + "Fixed")
+            || baseType.startsWith(StvnVocabulary.TYPE_STRING + "NonEmpty")
+            || (baseType.startsWith(StvnVocabulary.TYPE_STRING)
+                && baseType.length() > StvnVocabulary.TYPE_STRING.length()
+                && Character.isDigit(baseType.charAt(StvnVocabulary.TYPE_STRING.length())));
     }
 
     private static boolean isBooleanType(String baseType) {

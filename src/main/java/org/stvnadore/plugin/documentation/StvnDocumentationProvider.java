@@ -395,6 +395,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
                     sb.append("<b>Source Namespace:</b> ").append(targetText);
                 }
+
+                var chainedDoc = resolveChainedTypeDocumentation(alias, remoteName, targetText, originalElement);
+                if (chainedDoc != null) {
+                    sb.append("<hr/>").append(chainedDoc);
+                }
                 return sb.toString();
             } else if (valList.size() >= 2) {
                 var remoteKw = valList.get(0);
@@ -411,6 +416,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var fqni = targetText + "/" + bareRemote;
                     sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
                     sb.append("<b>Source Namespace:</b> ").append(targetText);
+                }
+
+                var chainedConstDoc = resolveChainedConstantDocumentation(alias, remoteName, targetText, originalElement);
+                if (chainedConstDoc != null) {
+                    sb.append("<hr/>").append(chainedConstDoc);
                 }
                 return sb.toString();
             }
@@ -572,6 +582,71 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        return null;
+    }
+
+    private @Nullable String resolveChainedTypeDocumentation(
+            org.stvnadore.psi.UseMapAlias alias,
+            String remoteName,
+            String targetNamespace,
+            @Nullable PsiElement originalElement
+    ) {
+        boolean isPrelude = ":org/stvnadore/prelude".equals(targetNamespace)
+            || targetNamespace.startsWith(":org/stvnadore/prelude/")
+            || remoteName.startsWith(":org/stvnadore/prelude/");
+
+        if (isPrelude) {
+            var specDoc = getBuiltInSpecificationDoc(remoteName);
+            if (specDoc != null) {
+                return specDoc;
+            }
+            var preludeDoc = getBuiltInPreludeDoc(remoteName);
+            if (preludeDoc != null) {
+                return preludeDoc;
+            }
+            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(alias.getProject(), remoteName);
+            if (preludeDef != null) {
+                return buildTargetDocumentation(preludeDef, originalElement);
+            }
+            return null;
+        }
+
+        var file = alias.getContainingFile();
+        if (file != null) {
+            var bareRemote = remoteName.startsWith(":") ? remoteName.substring(1) : remoteName;
+            var fqni = targetNamespace + "/" + bareRemote;
+            var resolved = StvnTypeReference.resolveTypeInFile(file, fqni, new HashSet<>());
+            if (resolved == null) {
+                resolved = StvnTypeReference.resolveTypeInFile(file, remoteName, new HashSet<>());
+            }
+            var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+            if (targetTypeDef != null) {
+                return buildTargetDocumentation(targetTypeDef, originalElement);
+            }
+        }
+        return null;
+    }
+
+    private @Nullable String resolveChainedConstantDocumentation(
+            org.stvnadore.psi.UseMapAlias alias,
+            String remoteName,
+            String targetNamespace,
+            @Nullable PsiElement originalElement
+    ) {
+        var file = alias.getContainingFile();
+        if (file != null) {
+            var bareRemote = remoteName.startsWith("#") ? remoteName.substring(1) : remoteName;
+            var fqni = targetNamespace + "/" + bareRemote;
+            var resolved = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
+            if (resolved == null) {
+                resolved = StvnConstantReference.resolveConstantInFile(file, remoteName, new HashSet<>());
+            }
+            if (resolved != null && resolved.getParent() instanceof ConstantDefinition constDef) {
+                return buildTargetDocumentation(constDef, originalElement);
+            } else if (resolved instanceof ConstantDefinition constDef) {
+                return buildTargetDocumentation(constDef, originalElement);
+            }
+        }
         return null;
     }
 

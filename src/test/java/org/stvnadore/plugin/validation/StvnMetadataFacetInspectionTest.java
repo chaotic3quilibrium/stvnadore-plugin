@@ -235,4 +235,30 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             }
             """);
     }
+
+    public void testRegexPermittedOnLegacyCompoundStringWithoutContradictoryError() {
+        var text = """
+            {
+              :defs {
+                :MicCode { #regex "^[A-Z]{4}$" } :StringFixed4
+              }
+              :type :MicCode
+              :body "XNYS"
+            }
+            """;
+        myFixture.configureByText("legacy_compound_facet.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var facetErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId())
+                || (h.getDescription() != null && h.getDescription().contains("Facet is not permitted on :StringFixed4")))
+            .toList();
+
+        assertTrue("Expected zero facet incompatibility errors on legacy compound string", facetErrors.isEmpty());
+
+        int offset = text.indexOf("#regex");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Remove invalid facet");
+        assertTrue("Destructive 'Remove invalid facet' quick-fix must not be offered", actions.isEmpty());
+    }
 }

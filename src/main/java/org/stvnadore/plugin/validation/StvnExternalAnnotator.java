@@ -690,6 +690,22 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
         var message = diag.message();
+
+        // Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
+        if (isDiagnosticFromIncludedFile(file, diag)) {
+            return true;
+        }
+
+        // Comment Locus Protection Invariant: compiler semantic errors must never land on comments
+        var textLength = file.getTextLength();
+        var start = diag.startOffset();
+        if (start >= 0 && start < textLength) {
+            var leaf = file.findElementAt(start);
+            if (leaf instanceof com.intellij.psi.PsiComment) {
+                return true;
+            }
+        }
+
         // Suppress external compiler Rule G diagnostics; StvnSemanticAnnotator handles Rule G in-flight and at commit
         if (diag.errorCode().isPresent() && "UNION_BRANCH_OVERFLOW".equals(diag.errorCode().get())) {
             return true;
@@ -782,6 +798,41 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
 
         return true;
+    }
+
+    private static boolean isDiagnosticFromIncludedFile(PsiFile file, StvnDiagnostic diag) {
+        // 1. Forward-compatible reflection lookup for diagnostic.sourcePath()
+        try {
+            var method = diag.getClass().getMethod("sourcePath");
+            var pathObj = method.invoke(diag);
+            if (pathObj instanceof String sourcePath && !sourcePath.isEmpty()) {
+                var virtualFile = file.getVirtualFile();
+                if (virtualFile != null) {
+                    var activePath = virtualFile.getPath().replace('\\', '/');
+                    var normalizedSource = sourcePath.replace('\\', '/');
+                    if (!activePath.endsWith(normalizedSource) && !normalizedSource.endsWith(virtualFile.getName())) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // sourcePath method not present in current core record; fallback to semantic checks
+        }
+
+        // 2. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
+        var msg = diag.message();
+        if (msg.startsWith("Constraint violation (") || msg.startsWith("Zero-Shadowing constraint violated: ")) {
+            var openParen = msg.indexOf('(');
+            var closeParen = msg.indexOf(')', openParen);
+            if (openParen >= 0 && closeParen > openParen) {
+                var typeName = msg.substring(openParen + 1, closeParen).trim();
+                var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
+                if (resolved != null && resolved.getContainingFile() != file) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
