@@ -144,6 +144,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     /**
      * Verifies that when an undefined or deprecated child type is referenced inside a type definition,
      * error coordinates pin strictly to the child type keyword without annotating preceding valid metadata facets.
+     * Enforces the anti-tautological dual-assertion pattern.
      */
     public void testOffendingChildPinningLeavesPrecedingMetadataFacetUnannotated() {
         var content = """
@@ -155,12 +156,121 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             """;
         var file = myFixture.configureByText("pinning_test.stvn_inclf", content);
         var highlights = myFixture.doHighlighting();
+
+        // 1. Positive Assertion: Assert error exists and pins strictly to :StringFixed4
+        int typeOffset = content.indexOf(":StringFixed4");
+        var typeRange = new com.intellij.openapi.util.TextRange(typeOffset, typeOffset + ":StringFixed4".length());
+        boolean foundOffendingHighlight = false;
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains(":StringFixed4")) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertEquals("Error squiggly must pin exactly to the offending type keyword", typeRange, hRange);
+                foundOffendingHighlight = true;
+            }
+        }
+        assertTrue("Annotator must positively highlight the undefined type ':StringFixed4'", foundOffendingHighlight);
+
+        // 2. Negative Assertion: Assert zero highlights intersect preceding metadata facet '#minSize 4'
         var minSizeOffset = content.indexOf("#minSize 4");
         var minSizeRange = new com.intellij.openapi.util.TextRange(minSizeOffset, minSizeOffset + "#minSize 4".length());
         for (var h : highlights) {
-            var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
-            assertFalse("Preceding valid metadata facet '#minSize 4' must not receive squiggly annotations: " + h.getDescription(),
-                hRange.intersects(minSizeRange));
+            if (h.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertFalse("Preceding valid metadata facet '#minSize 4' must not receive squiggly annotations: " + h.getDescription(),
+                    hRange.intersects(minSizeRange));
+            }
+        }
+    }
+
+    /**
+     * Verifies that an adorned definition with an undeclared type inside a package block
+     * pins the error squiggly strictly to the undeclared type token while leaving metadata facets clean.
+     */
+    public void testAdornedDefinitionWithUndeclaredTypeInPackageBlockPinsExactToken() {
+        var content = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :MicCode { #minSize 4 #maxSize 4 #regex "^[A-Z]{4}$" } :StringFixed4
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("pkg_pinning_test.stvn_inclf", content);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Positive assertion on :StringFixed4
+        int typeOffset = content.indexOf(":StringFixed4");
+        var typeRange = new com.intellij.openapi.util.TextRange(typeOffset, typeOffset + ":StringFixed4".length());
+        boolean foundError = false;
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains(":StringFixed4")) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertEquals("Package-enclosed error squiggly must pin exactly to :StringFixed4", typeRange, hRange);
+                foundError = true;
+            }
+        }
+        assertTrue("Package-enclosed undefined type must receive error annotation", foundError);
+
+        // 2. Negative assertion on entire metadata block
+        int metaStart = content.indexOf("{ #minSize 4");
+        int metaEnd = content.indexOf("}", metaStart) + 1;
+        var metaRange = new com.intellij.openapi.util.TextRange(metaStart, metaEnd);
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertFalse("Metadata facet block must remain clean: " + h.getDescription(),
+                    hRange.intersects(metaRange));
+            }
+        }
+    }
+
+    /**
+     * Verifies that a local undefined type in a file containing an :include statement
+     * highlights the local type keyword and does NOT falsely pin to the :include statement.
+     */
+    public void testLocalUndefinedTypeInFileWithIncludesPinsLocalTokenNotInclude() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :MicCode :String
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("local_prim.stvn_inclf", primitivesContent);
+
+        var activeContent = """
+            {
+              :defs {
+                :include [ "local_prim.stvn_inclf" ]
+                :OrderId :Uint64
+              }
+            }
+            """;
+        myFixture.configureByText("local_active.stvn", activeContent);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Assert :Uint64 receives error highlight
+        int uintOffset = activeContent.indexOf(":Uint64");
+        var uintRange = new com.intellij.openapi.util.TextRange(uintOffset, uintOffset + ":Uint64".length());
+        boolean foundUintError = false;
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains(":Uint64")) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertEquals("Local undefined type must pin to :Uint64", uintRange, hRange);
+                foundUintError = true;
+            }
+        }
+        assertTrue("Local undefined type ':Uint64' must be highlighted", foundUintError);
+
+        // 2. Assert :include does NOT receive a pinned error for :Uint64
+        int inclOffset = activeContent.indexOf(":include");
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains("local_prim.stvn_inclf")) {
+                fail("Local error must not pin to clean include statement: " + h.getDescription());
+            }
         }
     }
 

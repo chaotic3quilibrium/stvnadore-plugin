@@ -67,18 +67,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return tokens;
     }
 
-    private static String extractPrimaryToken(String msg) {
+    private static String extractCitedTypeToken(String msg) {
         var tokens = extractCitedTokens(msg);
         if (!tokens.isEmpty()) {
             return tokens.get(0);
         }
-        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
-            int colon = msg.indexOf(':');
-            if (colon >= 0) {
-                return msg.substring(colon).trim();
-            }
+        var prefix = msg.startsWith("Undefined type: ") ? "Undefined type: "
+            : (msg.startsWith("Unknown or undefined type: ") ? "Unknown or undefined type: "
+            : (msg.startsWith("Unresolved type alias: ") ? "Unresolved type alias: " : null));
+        if (prefix != null && msg.length() > prefix.length()) {
+            var raw = msg.substring(prefix.length()).trim();
+            var candidate = raw.split("[\\s,;\\)\\}\\]]")[0].trim();
+            return candidate.startsWith(":") ? candidate : (":" + candidate);
         }
         return "";
+    }
+
+    private static String extractPrimaryToken(String msg) {
+        return extractCitedTypeToken(msg);
     }
 
     /**
@@ -926,13 +932,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         // 3. Child module detection for files containing includes:
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         if (!includes.isEmpty()) {
-            if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
-                var colonIdx = msg.indexOf(':');
-                if (colonIdx >= 0) {
-                    var typeName = msg.substring(colonIdx).trim();
-                    if (!file.getText().contains(typeName)) {
-                        return true;
-                    }
+            if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ") || msg.startsWith("Unresolved type alias: ")) {
+                var typeName = extractCitedTypeToken(msg);
+                if (!typeName.isEmpty() && !file.getText().contains(typeName)) {
+                    return true;
                 }
             }
 
@@ -974,11 +977,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var slice = text.substring(start, end).trim();
 
         // 1. Undefined or unknown type diagnostics: slice must match cited type
-        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ")) {
-            var colonIdx = msg.indexOf(':');
-            if (colonIdx >= 0) {
-                var typeName = msg.substring(colonIdx).trim();
-                if (!slice.equals(typeName) && !typeName.endsWith(slice) && !slice.endsWith(typeName)) {
+        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ") || msg.startsWith("Unresolved type alias: ")) {
+            var typeName = extractCitedTypeToken(msg);
+            if (!typeName.isEmpty()) {
+                if (!slice.equals(typeName) && !slice.contains(typeName) && !slice.endsWith(typeName)) {
                     return true;
                 }
             }
