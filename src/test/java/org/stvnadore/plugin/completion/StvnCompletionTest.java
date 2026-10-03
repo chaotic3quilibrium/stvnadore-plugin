@@ -193,7 +193,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "audited_completion.stvn",
             """
             {
-              :type :DateTimeAudited
+              :type { #audited } :DateTime
               :body <caret>
             }
             """
@@ -214,7 +214,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "offset_completion.stvn",
             """
             {
-              :type :DateTimeOffset
+              :type { #offset } :DateTime
               :body <caret>
             }
             """
@@ -233,7 +233,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "zoned_completion.stvn",
             """
             {
-              :type :DateTimeZoned
+              :type { #zoned } :DateTime
               :body <caret>
             }
             """
@@ -306,7 +306,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.configureByText("test.stvn", """
             {
               :defs {
-                :EitherTest :Either(:Uint32 :DateTimeAudited)
+                :EitherTest :Either(:Int { #audited } :DateTime)
               }
               :type :EitherTest
               :body #Right <caret>
@@ -324,8 +324,8 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.configureByText("test.stvn", """
             {
               :defs {
-                :EitherTest :Either(:Uint32 :DateTimeAudited)
-                #DEFAULT_PORT :Uint32 8080
+                :EitherTest :Either(:Int { #audited } :DateTime)
+                #DEFAULT_PORT :Int 8080
               }
               :type :EitherTest
               :body #Left <caret>
@@ -342,7 +342,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
     public void testTaggedOptionSomeDateTime() {
         myFixture.configureByText("test.stvn", """
             {
-              :type :Option(:DateTimeZoned)
+              :type :Option({ #zoned } :DateTime)
               :body #Some <caret>
             }
             """);
@@ -357,7 +357,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
     public void testTaggedUnionBranchIndexed() {
         myFixture.configureByText("test.stvn", """
             {
-              :type :Union(:Bool :DateTimeAudited :String)
+              :type :Union(:Bool { #audited } :DateTime :String)
               :body #2 <caret>
             }
             """);
@@ -374,7 +374,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
     public void testNestedSumConstructorNarrowing() {
         myFixture.configureByText("test.stvn", """
             {
-              :type :Option(:Either(:String :DateTimeAudited))
+              :type :Option(:Either(:String { #audited } :DateTime))
               :body #Some #Right <caret>
             }
             """);
@@ -391,7 +391,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
     public void testNestedSumConstructorIntermediate() {
         myFixture.configureByText("test.stvn", """
             {
-              :type :Option(:Either(:String :DateTimeAudited))
+              :type :Option(:Either(:String { #audited } :DateTime))
               :body #Some <caret>
             }
             """);
@@ -410,7 +410,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :EitherTest :Either(:Uint32 :DateTimeAudited)
+                :EitherTest :Either(:Int { #audited } :DateTime)
               }
               :type :EitherTest
               :body <caret>
@@ -432,8 +432,8 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :EitherTest :Either(:Uint32 :DateTimeAudited)
-                #PORT :Uint32 8080
+                :EitherTest :Either(:Int { #audited } :DateTime)
+                #PORT :Int 8080
               }
               :type :EitherTest
               :body <caret>
@@ -455,7 +455,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_untagged_option.stvn",
             """
             {
-              :type :Option(:DateTimeZoned)
+              :type :Option({ #zoned } :DateTime)
               :body <caret>
             }
             """
@@ -474,7 +474,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_untagged_union.stvn",
             """
             {
-              :type :Union(:Bool :DateTimeAudited)
+              :type :Union(:Bool { #audited } :DateTime)
               :body <caret>
             }
             """
@@ -496,10 +496,10 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #CONST_A :Int32 10
-                #CONST_B :Uint32 20
+                #CONST_A :Int 10
+                #CONST_B :Float 20.0
               }
-              :type :Union(:Int32 :Uint32)
+              :type :Union(:Int :Float)
               :body <caret>
             }
             """
@@ -520,8 +520,8 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :EitherTest :Either(:Uint32 :DateTimeAudited)
-                #START_TIME :DateTimeAudited "2026-08-25T07:48:57+00:00[UTC]"
+                :EitherTest :Either(:Int { #audited } :DateTime)
+                #START_TIME { #audited } :DateTime "2026-08-25T07:48:57+00:00[UTC]"
               }
               :type :EitherTest
               :body <caret>
@@ -543,8 +543,8 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :EitherTest :Option(:Either(:Uint32 :DateTimeAudited))
-                #PORT :Uint32 8080
+                :EitherTest :Option(:Either(:Int { #audited } :DateTime))
+                #PORT :Int 8080
               }
               :type :EitherTest
               :body <caret>
@@ -568,7 +568,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_recursive_option_option_either.stvn",
             """
             {
-              :type :Option(:Option(:Either(:String :DateTimeAudited)))
+              :type :Option(:Option(:Either(:String { #audited } :DateTime)))
               :body <caret>
             }
             """
@@ -589,7 +589,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_recursive_option_union.stvn",
             """
             {
-              :type :Option(:Union(:Bool :DateTimeAudited))
+              :type :Option(:Union(:Bool { #audited } :DateTime))
               :body <caret>
             }
             """
@@ -613,10 +613,10 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                #CONST_A :Int32 10
-                #CONST_B :Uint32 20
+                #CONST_A :Int 10
+                #CONST_B :Float 20.0
               }
-              :type :Option(:Union(:Int32 :Uint32))
+              :type :Option(:Union(:Int :Float))
               :body <caret>
             }
             """
@@ -638,7 +638,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_implicit_option_skip.stvn",
             """
             {
-              :type :Seq(:Option(:Option(:Either(:Enum[#A #B] :DateTimeAudited))))
+              :type :Seq(:Option(:Option(:Either(:Enum[#A #B] { #audited } :DateTime))))
               :body [
                 #Some #Some #Left #A
                 #Some #Left <caret>
@@ -687,7 +687,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             "test_implicit_option_union.stvn",
             """
             {
-              :type :Option(:Union(:Enum[#RED #GREEN] :DateTimeAudited))
+              :type :Option(:Union(:Enum[#RED #GREEN] { #audited } :DateTime))
               :body #1 <caret>
             }
             """

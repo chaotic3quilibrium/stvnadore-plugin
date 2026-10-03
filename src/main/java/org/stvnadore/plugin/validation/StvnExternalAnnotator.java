@@ -1210,32 +1210,18 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         for (var typeDef : typeDefs) {
             var tr = typeDef.getTextRange();
             if (tr.contains(range) || range.contains(tr)) {
-                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
-                    || message.contains("is deprecated") || message.contains("Compound ")) {
-                    String typeName = null;
-                    if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
-                        var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
-                        var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                        typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
-                    } else {
-                        var quoteStart = message.indexOf('\'');
-                        if (quoteStart >= 0) {
-                            var quoteEnd = message.indexOf('\'', quoteStart + 1);
-                            if (quoteEnd > quoteStart) {
-                                typeName = message.substring(quoteStart + 1, quoteEnd).trim();
-                            }
-                        }
+                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
+                    var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
+                    var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
+                    var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
+                    if (!typeName.startsWith(":")) {
+                        typeName = ":" + typeName;
                     }
-                    if (typeName != null) {
-                        if (!typeName.startsWith(":")) {
-                            typeName = ":" + typeName;
-                        }
-                        var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
-                        for (var typeKw : typeKeywords) {
-                            var isLhs = (typeDef.getTypeKeyword() == typeKw);
-                            if (!isLhs && typeKw.getText().equals(typeName)) {
-                                return typeKw.getTextRange();
-                            }
+                    var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
+                    for (var typeKw : typeKeywords) {
+                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
+                        if (!isLhs && typeKw.getText().equals(typeName)) {
+                            return typeKw.getTextRange();
                         }
                     }
                 }
@@ -1254,9 +1240,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
      * @return the pinned text range on the target token, or null if no clamping applies
      */
     private static @Nullable TextRange clampToOffendingMetadataFacet(PsiFile file, TextRange range, String message, @Nullable String errorCode) {
-        // Diagnostic Category Gate: Never clamp type-level or compound deprecation errors to metadata facets
+        // Diagnostic Category Gate: Never clamp type-level errors to metadata facets
         if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
-            || message.contains("Compound ") || message.contains("is deprecated")
             || "ERR_UNDEFINED_TYPE".equals(errorCode) || "UNDEFINED_TYPE".equals(errorCode)) {
             return null;
         }

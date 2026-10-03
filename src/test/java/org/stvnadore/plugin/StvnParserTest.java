@@ -37,7 +37,7 @@ public final class StvnParserTest {
 
     @Test
     public void testMalformedFencedStringArrowRejected() {
-        String invalidSource = "{\n  :type :String\n  :body \"\"\"->[TAG]\nContent\n[TAG]\"\"\"\n}";
+        String invalidSource = "{\n  :type :String\n  :body \"\"\"->[TAG]\nContent\n\"\"\"[TAG]\n}";
         boolean rejected = false;
         try {
             var compiled = StvnCompiler.compile(invalidSource);

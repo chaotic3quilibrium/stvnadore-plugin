@@ -1093,48 +1093,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Mandatory Mode Facet:</b> Exactly one mode flag: <code>#offset</code> (physical instant), <code>#zoned</code> (civil wall-clock schedule with IANA zone), or <code>#audited</code> (both offset and IANA zone).<br/>
                 <b>Bounds:</b> Half-open intervals <code>[#minIncl, #maxExcl)</code>.
                 """;
-            case ":DateTimeOffset" -> """
-                <b>Primitive Type:</b> :DateTimeOffset<br/>
-                <hr/>
-                Represents an <b>unambiguous physical instant</b> on the universal timeline.<br/>
-                <b>Lexical Form:</b> ISO-8601 timestamp with explicit UTC offset (<code>±HH:mm</code> or <code>Z</code>).<br/>
-                <b>Constraint:</b> Prohibits IANA zone brackets (<code>[...]</code>).<br/>
-                <b>Example:</b> <code>"2026-08-18T18:00:00-05:00"</code>
-                """;
-            case ":DateTimeZoned" -> """
-                <b>Primitive Type:</b> :DateTimeZoned<br/>
-                <hr/>
-                Represents a <b>civil wall-clock schedule</b> bound to an IANA time zone jurisdiction.<br/>
-                <b>Lexical Form:</b> ISO-8601 local timestamp with bracketed IANA zone ID (<code>[Region/City]</code>).<br/>
-                <b>Constraint:</b> Prohibits explicit numerical offsets (<code>±HH:mm</code>) or <code>Z</code>. Validates DST transition gaps.<br/>
-                <b>Example:</b> <code>"2026-08-18T18:00:00[America/Chicago]"</code>
-                """;
-            case ":DateTimeAudited" -> """
-                <b>Primitive Type:</b> :DateTimeAudited<br/>
-                <hr/>
-                Represents an <b>audited compliance record</b> capturing both observed UTC offset and regulatory IANA jurisdiction.<br/>
-                <b>Lexical Form:</b> ISO-8601 timestamp with explicit UTC offset AND bracketed IANA zone ID.<br/>
-                <b>Constraint:</b> Mandates both offset and zone. Validates offset consistency against IANA zone rules for that date-time.<br/>
-                <b>Example:</b> <code>"2026-08-18T18:00:00-05:00[America/Chicago]"</code>
-                """;
-            case ":TimeEpochS" -> """
-                <b>Primitive Type:</b> :TimeEpochS<br/>
-                <hr/>
-                Represents Unix Epoch timestamp measured in seconds.<br/>
-                <b>Lexical Form:</b> Integer timestamp value (e.g. <code>1755532800</code>).
-                """;
-            case ":TimeEpochMs" -> """
-                <b>Primitive Type:</b> :TimeEpochMs<br/>
-                <hr/>
-                Represents Unix Epoch timestamp measured in milliseconds.<br/>
-                <b>Lexical Form:</b> Integer timestamp value (e.g. <code>1755532800000</code>).
-                """;
-            case ":TimeEpochNs" -> """
-                <b>Primitive Type:</b> :TimeEpochNs<br/>
-                <hr/>
-                Represents Unix Epoch timestamp measured in nanoseconds.<br/>
-                <b>Lexical Form:</b> Integer timestamp value.
-                """;
             default -> null;
         };
     }
@@ -1143,12 +1101,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return switch (keyword) {
             case ":TimeEpoch" -> "Primitive Type: :TimeEpoch (Unix Epoch Timestamp)";
             case ":DateTime" -> "Primitive Type: :DateTime (ISO-8601 Date and Time)";
-            case ":DateTimeOffset" -> "Primitive Type: :DateTimeOffset (Physical Instant)";
-            case ":DateTimeZoned" -> "Primitive Type: :DateTimeZoned (Civil Wall-Clock Schedule)";
-            case ":DateTimeAudited" -> "Primitive Type: :DateTimeAudited (Audited Compliance Record)";
-            case ":TimeEpochS" -> "Primitive Type: :TimeEpochS (Unix Epoch Seconds)";
-            case ":TimeEpochMs" -> "Primitive Type: :TimeEpochMs (Unix Epoch Milliseconds)";
-            case ":TimeEpochNs" -> "Primitive Type: :TimeEpochNs (Unix Epoch Nanoseconds)";
             default -> null;
         };
     }

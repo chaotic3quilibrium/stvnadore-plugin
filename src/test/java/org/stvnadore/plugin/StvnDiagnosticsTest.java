@@ -3047,11 +3047,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("temporal_hover.stvn",
             """
             {
-              :type :Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited )
+              :defs {
+                :AppOffset  { #offset } :DateTime
+                :AppZoned   { #zoned } :DateTime
+                :AppAudited { #audited } :DateTime
+              }
+              :type :Tuple( :DateTime :TimeEpoch :DateTimeOffset )
               :body (
                 "2026-08-18T18:00:00-05:00"
-                "2026-08-18T18:00:00[America/Chicago]"
-                "2026-08-18T18:00:00-05:00[America/Chicago]"
+                1755532800
+                "2026-08-18T18:00:00-05:00"
               )
             }
             """
@@ -3059,32 +3064,33 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
         var text = myFixture.getEditor().getDocument().getText();
 
-        // 1. :DateTimeOffset
-        var offset1 = text.indexOf(":DateTimeOffset");
+        // 1. Built-in canonical :DateTime
+        var offset1 = text.indexOf(":DateTime ");
         var elem1 = myFixture.getFile().findElementAt(offset1);
         assertNotNull(elem1);
         var doc1 = provider.generateDoc(elem1, elem1);
         assertNotNull(doc1);
-        assertTrue(doc1.contains("Primitive Type:</b> :DateTimeOffset"));
+        assertTrue(doc1.contains("Built-in Temporal:</b> :DateTime"));
+        assertTrue(doc1.contains("#offset"));
         var quick1 = provider.getQuickNavigateInfo(elem1, elem1);
         assertNotNull(quick1);
-        assertTrue(quick1.contains(":DateTimeOffset"));
+        assertTrue(quick1.contains(":DateTime"));
 
-        // 2. :DateTimeZoned
-        var offset2 = text.indexOf(":DateTimeZoned");
+        // 2. Built-in canonical :TimeEpoch
+        var offset2 = text.indexOf(":TimeEpoch");
         var elem2 = myFixture.getFile().findElementAt(offset2);
         assertNotNull(elem2);
         var doc2 = provider.generateDoc(elem2, elem2);
         assertNotNull(doc2);
-        assertTrue(doc2.contains("Primitive Type:</b> :DateTimeZoned"));
+        assertTrue(doc2.contains("Built-in Temporal:</b> :TimeEpoch"));
+        assertTrue(doc2.contains("#s"));
 
-        // 3. :DateTimeAudited
-        var offset3 = text.indexOf(":DateTimeAudited");
+        // 3. Undeclared legacy :DateTimeOffset must NOT produce primitive doc card
+        var offset3 = text.indexOf(":DateTimeOffset");
         var elem3 = myFixture.getFile().findElementAt(offset3);
         assertNotNull(elem3);
         var doc3 = provider.generateDoc(elem3, elem3);
-        assertNotNull(doc3);
-        assertTrue(doc3.contains("Primitive Type:</b> :DateTimeAudited"));
+        assertNull("Undeclared legacy temporal keyword must not have primitive doc card", doc3);
     }
 
     public void testMultiErrorSequenceHighlightingAndInlayResilience() {
@@ -4326,7 +4332,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   :Float64
                   :StringFixed15
                   :Boolean
-                  :TimeEpochMs
+                  { #ms } :TimeEpoch
                   :Uuid
                 )
               }

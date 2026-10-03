@@ -96,8 +96,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
 
                     var resolvedNominal = StvnTypeResolver.resolveNominalSchema(targetSchema);
                     var schemaToInspect = resolvedNominal != null ? resolvedNominal : targetSchema;
-                    var schemaText = StvnSchemaFormatter.formatCleanSchema(schemaToInspect);
-                    var typeLabel = StvnSchemaFormatter.formatCleanSchema(targetSchema);
+                    var schemaText = StvnSchemaFormatter.formatSchema(schemaToInspect);
+                    var typeLabel = StvnSchemaFormatter.formatSchema(targetSchema);
 
                     // 2. Enum Variant Suggestions (:Enum [ #A #B ... ])
                     populateEnumVariants(targetSchema, schemaToInspect, typeLabel, targetResult);
@@ -115,7 +115,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                             var pathTargetSchema = pathway.targetSchema();
                             var pathResolved = StvnTypeResolver.resolveNominalSchema(pathTargetSchema);
                             var schemaToPopulate = pathResolved != null ? pathResolved : pathTargetSchema;
-                            var cleanSchemaText = StvnSchemaFormatter.formatCleanSchema(schemaToPopulate);
+                            var cleanSchemaText = StvnSchemaFormatter.formatSchema(schemaToPopulate);
                             var label = pathway.displayLabel();
 
                             if (pathway.isSumType()) {
@@ -500,7 +500,10 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var nowLocal = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         var zoneId = zone.getId();
 
-        if (schemaText.contains("DateTimeAudited") || typeLabel.contains("DateTimeAudited")) {
+        boolean isDateTime = schemaText.contains(StvnVocabulary.TYPE_DATE_TIME) || typeLabel.contains(StvnVocabulary.TYPE_DATE_TIME);
+        boolean isTimeEpoch = schemaText.contains(StvnVocabulary.TYPE_TIME_EPOCH) || typeLabel.contains(StvnVocabulary.TYPE_TIME_EPOCH);
+
+        if (isDateTime && (schemaText.contains("#audited") || typeLabel.contains("#audited"))) {
             var offsetStr = nowZoned.getOffset().getId();
             if (offsetStr.equals("Z")) offsetStr = "+00:00";
             var timestamp = nowLocal.toString() + offsetStr + "[" + zoneId + "]";
@@ -513,7 +516,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.contains("DateTimeOffset") || typeLabel.contains("DateTimeOffset")) {
+        } else if (isDateTime && (schemaText.contains("#offset") || typeLabel.contains("#offset"))) {
             var timestamp = nowOffset.toString();
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -524,7 +527,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.contains("DateTimeZoned") || typeLabel.contains("DateTimeZoned")) {
+        } else if (isDateTime && (schemaText.contains("#zoned") || typeLabel.contains("#zoned"))) {
             var timestamp = nowLocal.toString() + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -535,7 +538,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (schemaText.contains("TimeEpochMs") || typeLabel.contains("TimeEpochMs")) {
+        } else if (isTimeEpoch && (schemaText.contains("#ms") || typeLabel.contains("#ms"))) {
             var epochMs = String.valueOf(System.currentTimeMillis());
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochMs)
@@ -544,7 +547,16 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (schemaText.contains("TimeEpochNs") || typeLabel.contains("TimeEpochNs")) {
+        } else if (isTimeEpoch && (schemaText.contains("#us") || typeLabel.contains("#us"))) {
+            var epochUs = String.valueOf(System.currentTimeMillis() * 1000L);
+            result.addElement(PrioritizedLookupElement.withPriority(
+                LookupElementBuilder.create(epochUs)
+                    .withIcon(AllIcons.Nodes.Function)
+                    .withTailText(" (current epoch us)", true)
+                    .withTypeText(typeLabel, true),
+                95.0
+            ));
+        } else if (isTimeEpoch && (schemaText.contains("#ns") || typeLabel.contains("#ns"))) {
             var epochNs = String.valueOf(System.currentTimeMillis()) + "000000";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochNs)
@@ -553,7 +565,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (schemaText.contains("TimeEpochS") || typeLabel.contains("TimeEpochS")) {
+        } else if (isTimeEpoch && (schemaText.contains("#s") || typeLabel.contains("#s"))) {
             var epochS = String.valueOf(System.currentTimeMillis() / 1000L);
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochS)

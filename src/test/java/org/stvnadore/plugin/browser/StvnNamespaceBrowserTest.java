@@ -378,8 +378,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that calcified_audit.stvn_f under :defs scope produces exactly 10 symbols
-     * (8 canonical declarations at Depth 0 and 2 root-level stripped aliases at Depth 1),
+     * Verifies that calcified_audit.stvn_f under :defs scope produces exactly 12 symbols
+     * (9 canonical declarations at Depth 0 and 3 root-level stripped aliases at Depth 1),
      * completely isolating package-local :use directives and generating zero bare phantom duplicates.
      */
     public void testCalcifiedAuditDefsScopeProducesExactTenSymbolsWithoutPackageLocalLeakage() throws Exception {
@@ -388,7 +388,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var file = myFixture.configureByText("calcified_audit.stvn_f", content);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
 
-        assertEquals("Must contain exactly 10 symbols (8 canonical declarations + 2 stripped aliases)", 10, entries.size());
+        assertEquals("Must contain exactly 12 symbols (9 canonical declarations + 3 stripped aliases)", 12, entries.size());
 
         // Canonical package declarations at Depth 0
         var micFqni = findEntryByName(entries, ":com/nyse/primitives/MicCode");
@@ -421,6 +421,11 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals(0, agencyFqni.useDepth());
         assertEquals(":com/nyse/events", agencyFqni.source());
 
+        var auditTsFqni = findEntryByName(entries, ":com/nyse/events/AuditTimestamp");
+        assertNotNull(auditTsFqni);
+        assertEquals(0, auditTsFqni.useDepth());
+        assertEquals(":com/nyse/events", auditTsFqni.source());
+
         var auditFqni = findEntryByName(entries, ":com/nyse/events/AuditRecord");
         assertNotNull(auditFqni);
         assertEquals(0, auditFqni.useDepth());
@@ -431,6 +436,11 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull("Root-level stripped alias :AgencySide must exist", agencyBare);
         assertEquals(1, agencyBare.useDepth());
         assertEquals(":com/nyse/events", agencyBare.source());
+
+        var auditTsBare = findEntryByName(entries, ":AuditTimestamp");
+        assertNotNull("Root-level stripped alias :AuditTimestamp must exist", auditTsBare);
+        assertEquals(1, auditTsBare.useDepth());
+        assertEquals(":com/nyse/events", auditTsBare.source());
 
         var auditBare = findEntryByName(entries, ":AuditRecord");
         assertNotNull("Root-level stripped alias :AuditRecord must exist", auditBare);
@@ -489,8 +499,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull(":ExecutionPrice must exist at Depth 1", price);
         assertEquals(1, price.useDepth());
 
-        var dt = findEntryByName(entries, ":org/stvnadore/prelude/DateTimeAudited");
-        assertNotNull(":DateTimeAudited must exist at Depth 1", dt);
+        var dt = findEntryByName(entries, ":AuditTimestamp");
+        assertNotNull(":AuditTimestamp must exist at Depth 1", dt);
         assertEquals(1, dt.useDepth());
 
         // Depth 2: 2 transitive types
@@ -548,8 +558,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull(":ExecutionPrice must exist at Depth 1", price);
         assertEquals(1, price.useDepth());
 
-        var dt = findEntryByName(entries, ":org/stvnadore/prelude/DateTimeAudited");
-        assertNotNull(":DateTimeAudited must exist at Depth 1", dt);
+        var dt = findEntryByName(entries, ":AuditTimestamp");
+        assertNotNull(":AuditTimestamp must exist at Depth 1", dt);
         assertEquals(1, dt.useDepth());
 
         var buy = findEntryByName(entries, "#BUY");

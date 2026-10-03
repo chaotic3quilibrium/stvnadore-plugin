@@ -800,7 +800,6 @@ Every fenced string literal must comply with **Rule STR-04**:
 
 ### IDE Inspection & Quick-Fixes (`StvnFencedString`)
 The IDE validates Rule STR-04 in real time:
-* **Deprecated Delimiter Arrow (`->`):** Highlights `->` with deprecation strikethrough styling. Press `Alt+Enter` to invoke **Remove deprecated '->' arrow**. Supports IntelliJ `Code | Code Cleanup...` for single-pass project-wide migration.
 * **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
   * Press `Alt+Enter` to sanitize tags or supply default tag `[FENCE]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[FENCE]` and inserts `[FENCE]"""` directly on the next line.
 * **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).

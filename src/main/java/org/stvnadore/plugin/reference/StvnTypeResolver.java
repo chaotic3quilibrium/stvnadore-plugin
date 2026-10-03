@@ -1100,10 +1100,7 @@ public final class StvnTypeResolver {
             return value.getFloatLiteral() != null;
         }
         if (stripped.equals(StvnVocabulary.TYPE_STRING) ||
-            stripped.equals(StvnVocabulary.TYPE_DATE_TIME) ||
-            stripped.equals(":DateTimeOffset") ||
-            stripped.equals(":DateTimeZoned") ||
-            stripped.equals(":DateTimeAudited")) {
+            stripped.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return value.getStringLiteral() != null;
         }
         if (stripped.equals(StvnVocabulary.TYPE_BOOLEAN)) {

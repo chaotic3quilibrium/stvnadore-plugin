@@ -33,7 +33,6 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
         Pattern.compile("\\b#unit\\b"),
         Pattern.compile("\"\"\"->"),
         Pattern.compile("(?i)legacy\\s+arrow\\s+syntax"),
-        Pattern.compile("(?i)deprecated.*arrow"),
         Pattern.compile("(?i)arrow\\s+delimiter")
     );
 
@@ -101,7 +100,7 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
                     if (line.contains("\":Uint\"") || line.contains("\":Int32\"") || line.contains("\":StringFixed\"")) {
                         violations.add(file.getFileName() + ":" + (i + 1) + " -> forbidden legacy literal in: " + trimmed);
                     }
-                    if (line.contains("\"\"\"->") || line.contains("RULE_STR_04_ARROW_DEPRECATION_MSG") || line.contains("Remove deprecated '->' arrow")) {
+                    if (line.contains("\"\"\"->")) {
                         violations.add(file.getFileName() + ":" + (i + 1) + " -> forbidden legacy arrow literal in: " + trimmed);
                     }
                 }

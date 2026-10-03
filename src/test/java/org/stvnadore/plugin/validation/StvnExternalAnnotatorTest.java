@@ -141,9 +141,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         for (var highlight : highlights) {
             var desc = highlight.getDescription();
             if (desc != null) {
-                assertFalse("Parent buffer must not receive :StringFixed4 deprecation warning",
+                assertFalse("Parent buffer must not receive :StringFixed4 undefined type error",
                     desc.contains(":StringFixed4"));
-                assertFalse("Parent buffer must not receive :Uint64 deprecation warning",
+                assertFalse("Parent buffer must not receive :Uint64 undefined type error",
                     desc.contains(":Uint64"));
             }
         }
@@ -578,5 +578,71 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 mockWolf.resetDelegate();
             }
         }
+    }
+
+    /**
+     * Verifies that undeclared legacy temporal keywords (:DateTimeOffset, :DateTimeZoned, :DateTimeAudited)
+     * produce ERR_UNDEFINED_TYPE error annotations pinned directly to the offending token coordinates.
+     */
+    public void testUndeclaredLegacyTemporalKeywordsProduceUndefinedTypeErrorAnnotations() {
+        for (String legacyType : List.of(":DateTimeOffset", ":DateTimeZoned", ":DateTimeAudited")) {
+            var content = """
+                {
+                  :type %s
+                  :body "2026-03-15T08:00:00Z"
+                }
+                """.formatted(legacyType);
+            myFixture.configureByText("legacy_temporal_error_" + legacyType.substring(1) + ".stvn", content);
+
+            var highlights = myFixture.doHighlighting();
+            var errorHighlights = highlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+
+            assertFalse("Document containing legacy temporal keyword " + legacyType + " must produce error highlights", errorHighlights.isEmpty());
+            assertTrue("Must contain undefined type error for " + legacyType,
+                errorHighlights.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Undefined type: " + legacyType)));
+
+            // Verify precise token range pinning
+            var offsetError = errorHighlights.stream()
+                .filter(h -> h.getDescription() != null && h.getDescription().contains("Undefined type: " + legacyType))
+                .findFirst()
+                .orElseThrow();
+            var targetText = content.substring(offsetError.getStartOffset(), offsetError.getEndOffset());
+            assertEquals(legacyType, targetText);
+        }
+    }
+
+    /**
+     * Verifies that canonical STVN 2.0.0 :DateTime with mode facet produces zero errors.
+     */
+    public void testCanonicalDateTimeWithFacetProducesZeroErrors() {
+        var content = """
+            {
+              :type { #offset } :DateTime
+              :body "2026-03-15T08:00:00Z"
+            }
+            """;
+        myFixture.configureByText("canonical_datetime_valid.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity() == HighlightSeverity.ERROR);
+        assertFalse("Valid canonical :DateTime declaration must produce zero errors", hasErrors);
+    }
+
+    /**
+     * Verifies that pseudo-prelude path :org/stvnadore/prelude/DateTimeOffset fails closed as an
+     * unresolved nominal reference without causing exceptions in the external annotator or doc provider.
+     */
+    public void testPseudoPreludeTemporalPathProducesUnresolvedTypeAnnotationWithoutCrashing() {
+        var content = """
+            {
+              :type :org/stvnadore/prelude/DateTimeOffset
+              :body "2026-03-15T08:00:00Z"
+            }
+            """;
+        myFixture.configureByText("pseudo_prelude_temporal.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        var error = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).findFirst().orElseThrow();
+        assertTrue(error.getDescription() != null && error.getDescription().contains("Undefined type: :org/stvnadore/prelude/DateTimeOffset"));
     }
 }

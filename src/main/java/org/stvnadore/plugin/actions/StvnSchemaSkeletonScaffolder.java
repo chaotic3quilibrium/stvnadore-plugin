@@ -146,10 +146,6 @@ public final class StvnSchemaSkeletonScaffolder {
             if (rawText.startsWith(":org/stvnadore/prelude/")) {
                 rawText = ":" + rawText.substring(":org/stvnadore/prelude/".length());
             }
-            if (rawText.equals(":DateTimeOffset") || rawText.equals(":DateTimeZoned") || rawText.equals(":DateTimeAudited")) {
-                scaffoldFromKeywordText(rawText, sb, placeholders);
-                return;
-            }
         }
 
         var resolved = StvnTypeResolver.resolveNominalSchema(schema);
@@ -324,12 +320,6 @@ public final class StvnSchemaSkeletonScaffolder {
             appendPlaceholder("\"placeholder\"", sb, placeholders);
         } else if (text.equals(":Boolean")) {
             appendPlaceholder("#FALSE", sb, placeholders);
-        } else if (text.equals(":DateTimeOffset")) {
-            appendPlaceholder("\"2026-08-18T18:00:00-05:00\"", sb, placeholders);
-        } else if (text.equals(":DateTimeZoned")) {
-            appendPlaceholder("\"2026-08-18T18:00:00[America/Chicago]\"", sb, placeholders);
-        } else if (text.equals(":DateTimeAudited")) {
-            appendPlaceholder("\"2026-08-18T18:00:00-05:00[America/Chicago]\"", sb, placeholders);
         } else {
             appendPlaceholder("0", sb, placeholders);
         }

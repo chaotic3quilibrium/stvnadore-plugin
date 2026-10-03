@@ -62,8 +62,6 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
                     boolean hasScale = false;
                     int scaleCount = 0;
-                    boolean hasLegacyUnit = false;
-                    MetadataEntry legacyUnitEntry = null;
                     if (metaMap != null) {
                         for (var e : metaMap.getMetadataEntryList()) {
                             var text = e.getText().trim();
@@ -74,18 +72,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                 hasScale = true;
                                 scaleCount++;
                             }
-                            if (text.startsWith("#unit")) {
-                                hasLegacyUnit = true;
-                                legacyUnitEntry = e;
-                            }
                         }
-                    }
-                    if (hasLegacyUnit && legacyUnitEntry != null) {
-                        holder.registerProblem(
-                            legacyUnitEntry,
-                            "Legacy temporal facet '#unit' is deprecated; use bare scale flag ('#s', '#ms', '#us', '#ns').",
-                            ProblemHighlightType.LIKE_DEPRECATED
-                        );
                     }
                     if (scaleCount > 1 && metaMap != null) {
                         holder.registerProblem(
@@ -93,7 +80,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                             "Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive.",
                             ProblemHighlightType.GENERIC_ERROR
                         );
-                    } else if (!hasScale && !hasLegacyUnit) {
+                    } else if (!hasScale) {
                         holder.registerProblem(
                             schemaType,
                             "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
@@ -124,7 +111,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     } else if (modeCount == 0) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':DateTime' requires explicit mode or unit facet (e.g. '#offset').",
+                            "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'.",
                             ProblemHighlightType.GENERIC_ERROR,
                             new AddDefaultTemporalFacetQuickFix(typeDef, "#offset")
                         );
@@ -184,7 +171,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     if (!hasMode) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':DateTime' requires explicit mode or unit facet (e.g. '#offset').",
+                            "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'.",
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
