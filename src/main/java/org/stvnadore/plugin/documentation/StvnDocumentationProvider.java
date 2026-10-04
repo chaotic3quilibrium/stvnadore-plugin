@@ -260,7 +260,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
                 }
                 var specDoc = getBuiltInSpecificationDoc(kwText);
-                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.equals(":DateTime") || kwText.equals(":TimeEpoch"))) {
+                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
                     return specDoc;
                 }
             }
@@ -680,7 +680,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
                 }
                 var specQuick = getBuiltInSpecificationQuickNavigateInfo(kwText);
-                if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude") || kwText.equals(":DateTime") || kwText.equals(":TimeEpoch"))) {
+                if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
                     return specQuick;
                 }
                 var trace = StvnTypeReference.extractResolutionTrace(keyword);
@@ -796,11 +796,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private static @Nullable String getBuiltInSpecificationDoc(String keyword) {
         if (keyword.startsWith(":org/stvnadore/prelude/")) {
             var shortName = ":" + keyword.substring(":org/stvnadore/prelude/".length());
-            var doc = getBuiltInSpecificationDoc(shortName);
-            if (doc != null) {
-                return doc.replace("<b>Standard Library Prelude:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword)
-                          .replace("<b>Built-in Temporal Type:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword);
+            var preludeDoc = getBuiltInPreludeDoc(shortName);
+            if (preludeDoc != null) {
+                return preludeDoc.replace("<b>Standard Library Prelude:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword);
             }
+            return null;
         }
         var temporalDoc = getBuiltInTemporalDoc(keyword);
         if (temporalDoc != null) {
@@ -907,7 +907,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInSpecificationQuickNavigateInfo(String keyword) {
         if (keyword.startsWith(":org/stvnadore/prelude/")) {
-            return "Standard Library Prelude: " + keyword;
+            var shortName = ":" + keyword.substring(":org/stvnadore/prelude/".length());
+            var preludeQuick = getBuiltInPreludeQuickNavigateInfo(shortName);
+            if (preludeQuick != null) {
+                return "Standard Library Prelude: " + keyword;
+            }
+            return null;
         }
         var temporalQuick = getBuiltInTemporalQuickNavigateInfo(keyword);
         if (temporalQuick != null) {

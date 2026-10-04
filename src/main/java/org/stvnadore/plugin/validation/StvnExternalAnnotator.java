@@ -1218,6 +1218,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         typeName = ":" + typeName;
                     }
                     var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
+                    // Pass 1: Spatial Intersection - prioritize matching child intersecting the diagnostic range
+                    for (var typeKw : typeKeywords) {
+                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
+                        if (!isLhs && typeKw.getText().equals(typeName)) {
+                            var kwRange = typeKw.getTextRange();
+                            if (kwRange.equals(range) || kwRange.contains(range) || range.contains(kwRange) || range.intersects(kwRange)) {
+                                return kwRange;
+                            }
+                        }
+                    }
+                    // Pass 2: Fallback for wide enclosing ranges
                     for (var typeKw : typeKeywords) {
                         var isLhs = (typeDef.getTypeKeyword() == typeKw);
                         if (!isLhs && typeKw.getText().equals(typeName)) {

@@ -645,4 +645,61 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var error = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).findFirst().orElseThrow();
         assertTrue(error.getDescription() != null && error.getDescription().contains("Undefined type: :org/stvnadore/prelude/DateTimeOffset"));
     }
+
+    /**
+     * Verifies that a composite :Tuple containing 16 invalid types receives all 16 error squigglies
+     * simultaneously with distinct non-clobbered coordinate ranges.
+     */
+    public void testCompositeTupleWithSixteenInvalidTypesReceivesSixteenSimultaneousErrorSquigglies() {
+        var content = """
+            {
+              :defs {
+                :Values :Tuple (
+                  :TimeEpochNs
+                  :TimeEpochUs
+                  :TimeEpochMs
+                  :TimeEpochS
+
+                  :DateTimeOffset
+                  :DateTimeZoned
+                  :DateTimeAudited
+
+                  :org/stvnadore/prelude/TimeEpochNs
+                  :org/stvnadore/prelude/TimeEpochUs
+                  :org/stvnadore/prelude/TimeEpochMs
+                  :org/stvnadore/prelude/TimeEpochS
+
+                  :org/stvnadore/prelude/DateTimeOffset
+                  :org/stvnadore/prelude/DateTimeZoned
+                  :org/stvnadore/prelude/DateTimeAudited
+
+                  {#offset} :org/stvnadore/prelude/DateTime
+                  {#ns} :org/stvnadore/prelude/TimeEpoch
+                )
+              }
+              :type :Values
+              :body (
+                1 2 3 4
+                "2026-03-15T08:00:00Z" "2026-03-15T08:00:00Z" "2026-03-15T08:00:00Z"
+                5 6 7 8
+                "2026-03-15T08:00:00Z" "2026-03-15T08:00:00Z" "2026-03-15T08:00:00Z"
+                "2026-03-15T08:00:00Z" 1789241400
+              )
+            }
+            """;
+        myFixture.configureByText("sixteen_errors.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Undefined type: "))
+            .toList();
+
+        assertEquals("Must produce exactly 16 undefined type error highlights simultaneously", 16, errorHighlights.size());
+
+        var distinctRanges = errorHighlights.stream()
+            .map(h -> new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset()))
+            .distinct()
+            .toList();
+        assertEquals("All 16 error squigglies must possess distinct coordinate ranges", 16, distinctRanges.size());
+    }
 }

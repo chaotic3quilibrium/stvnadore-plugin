@@ -708,4 +708,37 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         }
         return null;
     }
+
+    /**
+     * Verifies that unresolvable, broken, or undefined type references inside composite schemas
+     * produce zero phantom entries in the Namespace Browser table.
+     */
+    public void testDocumentWithUndefinedTypeReferencesProducesZeroPhantomEntries() {
+        var content = """
+            {
+              :defs {
+                :Values :Tuple (
+                  :TimeEpochNs
+                  :TimeEpochUs
+                  :org/stvnadore/prelude/TimeEpochNs
+                  :org/stvnadore/prelude/DateTime
+                  {#offset} :org/stvnadore/prelude/DateTime
+                  {#ns} :org/stvnadore/prelude/TimeEpoch
+                )
+              }
+              :type :Values
+              :body ( 1 2 3 "2026-10-03" "2026-10-03" 1789241400 )
+            }
+            """;
+        var file = myFixture.configureByText("undefined_references.stvn", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
+
+        assertNotNull("Resolved root symbol (:Values) must be present", findEntryByName(entries, ":Values"));
+        assertNull("Undefined :TimeEpochNs must not produce phantom entry", findEntryByName(entries, ":TimeEpochNs"));
+        assertNull("Undefined :TimeEpochUs must not produce phantom entry", findEntryByName(entries, ":TimeEpochUs"));
+        assertNull("Undefined :org/stvnadore/prelude/TimeEpochNs must not produce phantom entry", findEntryByName(entries, ":org/stvnadore/prelude/TimeEpochNs"));
+        assertNull("Undefined :org/stvnadore/prelude/DateTime must not produce phantom entry", findEntryByName(entries, ":org/stvnadore/prelude/DateTime"));
+        assertNull("Undefined :org/stvnadore/prelude/TimeEpoch must not produce phantom entry", findEntryByName(entries, ":org/stvnadore/prelude/TimeEpoch"));
+        assertEquals("Only legitimate resolved symbols must be collected", 1, entries.size());
+    }
 }

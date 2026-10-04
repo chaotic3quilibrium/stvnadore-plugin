@@ -3717,6 +3717,41 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue(lonDoc.contains("-180.0"));
     }
 
+    /**
+     * Verifies that qualified prelude temporal paths (:org/stvnadore/prelude/DateTime and
+     * :org/stvnadore/prelude/TimeEpoch) return null for both hover docs and quick navigate info.
+     */
+    public void testPseudoPreludeHoverReturnsNull() {
+        var text = """
+            {
+              :defs {
+                :MyDate {#offset} :org/stvnadore/prelude/DateTime
+                :MyTime {#ns} :org/stvnadore/prelude/TimeEpoch
+              }
+              :type :Tuple ( :MyDate :MyTime )
+              :body ( "2026-10-03T12:00:00Z" 1789241400000000000 )
+            }
+            """;
+        myFixture.configureByText("pseudo_prelude_hover.stvn", text);
+        var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+
+        var dtOffset = text.indexOf(":org/stvnadore/prelude/DateTime");
+        var dtElem = myFixture.getFile().findElementAt(dtOffset);
+        assertNotNull(dtElem);
+        var dtDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), dtElem, dtOffset);
+        assertNotNull(dtDocElem);
+        assertNull("Hover doc for :org/stvnadore/prelude/DateTime must be null", provider.generateDoc(dtDocElem, dtElem));
+        assertNull("Quick navigate info for :org/stvnadore/prelude/DateTime must be null", provider.getQuickNavigateInfo(dtDocElem, dtElem));
+
+        var teOffset = text.indexOf(":org/stvnadore/prelude/TimeEpoch");
+        var teElem = myFixture.getFile().findElementAt(teOffset);
+        assertNotNull(teElem);
+        var teDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), teElem, teOffset);
+        assertNotNull(teDocElem);
+        assertNull("Hover doc for :org/stvnadore/prelude/TimeEpoch must be null", provider.generateDoc(teDocElem, teElem));
+        assertNull("Quick navigate info for :org/stvnadore/prelude/TimeEpoch must be null", provider.getQuickNavigateInfo(teDocElem, teElem));
+    }
+
     public void testUndefinedTypeInSchemaHighlightsTypeSection() {
         myFixture.configureByText(
             "undefined_type_in_type_section.stvn",

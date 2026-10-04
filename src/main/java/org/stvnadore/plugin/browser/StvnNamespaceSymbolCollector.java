@@ -389,8 +389,11 @@ public final class StvnNamespaceSymbolCollector {
                 if (isPrimitiveTypeName(name)) {
                     continue;
                 }
+                var info = resolveNominalShapeInfo(currentFile, name);
+                if (info == null || info.targetElement() == null) {
+                    continue;
+                }
                 if (visitedNominals.add(name)) {
-                    var info = resolveNominalShapeInfo(currentFile, name);
                     if (processed.add(name)) {
                         results.add(new StvnNamespaceSymbolEntry(
                             name,
@@ -507,18 +510,20 @@ public final class StvnNamespaceSymbolCollector {
         var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
         if (typeEntry != null && typeEntry.getSchemaType() != null) {
             var rootKw = typeEntry.getSchemaType().getTypeKeyword();
-            if (rootKw != null && !isPrimitiveTypeName(rootKw.getText()) && processed.add(rootKw.getText())) {
+            if (rootKw != null && !isPrimitiveTypeName(rootKw.getText())) {
                 var info = resolveNominalShapeInfo(file, rootKw.getText());
-                results.add(new StvnNamespaceSymbolEntry(
-                    rootKw.getText(),
-                    info.source(),
-                    info.typeStructure(),
-                    0,
-                    info.targetElement(),
-                    info.isPrelude(),
-                    info.targetElement() != null ? info.targetElement().getTextOffset() : rootKw.getTextOffset(),
-                    StvnNamespaceScope.BODY
-                ));
+                if (info != null && info.targetElement() != null && processed.add(rootKw.getText())) {
+                    results.add(new StvnNamespaceSymbolEntry(
+                        rootKw.getText(),
+                        info.source(),
+                        info.typeStructure(),
+                        0,
+                        info.targetElement(),
+                        info.isPrelude(),
+                        info.targetElement() != null ? info.targetElement().getTextOffset() : rootKw.getTextOffset(),
+                        StvnNamespaceScope.BODY
+                    ));
+                }
             }
             correlateShapeAndValue(typeEntry.getSchemaType(), bodyEntry.getValue(), file, 0, results, processed, new HashSet<>());
         }
@@ -628,16 +633,18 @@ public final class StvnNamespaceSymbolCollector {
             }
             if (processed.add(nominalName)) {
                 var info = resolveNominalShapeInfo(file, nominalName);
-                results.add(new StvnNamespaceSymbolEntry(
-                    nominalName,
-                    info.source(),
-                    info.typeStructure(),
-                    depth,
-                    info.targetElement(),
-                    info.isPrelude(),
-                    info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
-                    StvnNamespaceScope.BODY
-                ));
+                if (info != null && info.targetElement() != null) {
+                    results.add(new StvnNamespaceSymbolEntry(
+                        nominalName,
+                        info.source(),
+                        info.typeStructure(),
+                        depth,
+                        info.targetElement(),
+                        info.isPrelude(),
+                        info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
+                        StvnNamespaceScope.BODY
+                    ));
+                }
             }
         } else if (!alreadyTyped) {
             var inferred = org.stvnadore.plugin.hints.StvnTypeInferenceHelper.resolveValueTypeWithDepth(currentVal, 16);
@@ -656,16 +663,18 @@ public final class StvnNamespaceSymbolCollector {
                         }
                         if (processed.add(candidate)) {
                             var info = resolveNominalShapeInfo(file, candidate);
-                            results.add(new StvnNamespaceSymbolEntry(
-                                candidate,
-                                info.source(),
-                                info.typeStructure(),
-                                depth,
-                                info.targetElement(),
-                                info.isPrelude(),
-                                info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
-                                StvnNamespaceScope.BODY
-                            ));
+                            if (info != null && info.targetElement() != null) {
+                                results.add(new StvnNamespaceSymbolEntry(
+                                    candidate,
+                                    info.source(),
+                                    info.typeStructure(),
+                                    depth,
+                                    info.targetElement(),
+                                    info.isPrelude(),
+                                    info.targetElement() != null ? info.targetElement().getTextOffset() : currentVal.getTextOffset(),
+                                    StvnNamespaceScope.BODY
+                                ));
+                            }
                         }
                     }
                 }
@@ -827,8 +836,12 @@ public final class StvnNamespaceSymbolCollector {
                 return;
             }
 
+            var info = resolveNominalShapeInfo(file, name);
+            if (info == null || info.targetElement() == null) {
+                return;
+            }
+
             if (processed.add(name)) {
-                var info = resolveNominalShapeInfo(file, name);
                 results.add(new StvnNamespaceSymbolEntry(
                         name,
                         info.source(),
@@ -937,7 +950,7 @@ public final class StvnNamespaceSymbolCollector {
             boolean isPrelude
     ) {}
 
-    private static NominalResolutionInfo resolveNominalShapeInfo(PsiFile file, String name) {
+    private static @Nullable NominalResolutionInfo resolveNominalShapeInfo(PsiFile file, String name) {
         var preludeKw = StvnPreludeBridge.resolvePreludeType(file.getProject(), name);
         if (preludeKw != null) {
             return new NominalResolutionInfo(PRELUDE_URI, preludeKw.getText(), preludeKw, true);
@@ -1040,7 +1053,10 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         var resolved = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
-        var source = resolved != null && resolved.getContainingFile() != null ? resolved.getContainingFile().getName() : file.getName();
+        if (resolved == null) {
+            return null;
+        }
+        var source = resolved.getContainingFile() != null ? resolved.getContainingFile().getName() : file.getName();
         return new NominalResolutionInfo(source, name, resolved, false);
     }
 
@@ -1070,7 +1086,7 @@ public final class StvnNamespaceSymbolCollector {
         var nextKw = schemaType.getTypeKeyword();
         if (nextKw != null) {
             var nextResolved = resolveNominalShapeInfo(def.getContainingFile(), nextKw.getText());
-            return nextResolved.typeStructure();
+            return nextResolved != null ? nextResolved.typeStructure() : nextKw.getText();
         }
         return schemaType.getText();
     }
