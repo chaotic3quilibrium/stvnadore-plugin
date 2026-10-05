@@ -44,6 +44,9 @@ public final class StvnTypeResolver {
     private static final Key<CachedValue<List<org.stvnadore.core.StvnDiagnostic>>> CORE_DIAGNOSTICS_KEY =
         Key.create("org.stvnadore.plugin.CORE_DIAGNOSTICS");
 
+    private static final Key<CachedValue<java.util.Map<String, org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema>>> RESOLVED_SCHEMAS_KEY =
+        Key.create("org.stvnadore.plugin.RESOLVED_SCHEMAS");
+
     private static final Key<java.nio.file.Path> VFS_TEMP_DIR_KEY =
         Key.create("org.stvnadore.plugin.VFS_TEMP_DIR");
 
@@ -76,6 +79,50 @@ public final class StvnTypeResolver {
             }
             return CachedValueProvider.Result.create(list, file);
         }, false);
+    }
+
+    /**
+     * Resolves the authoritative {@link org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema} record
+     * for the given type definition, including folded constraints across its nominal alias chain.
+     *
+     * @param typeDef the type definition PSI element
+     * @return the resolved schema record, or {@code null} if unresolvable
+     */
+    public static org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema resolveNominalResolvedSchema(@Nullable TypeDefinition typeDef) {
+        if (typeDef == null) return null;
+        var file = typeDef.getContainingFile();
+        if (file == null) return null;
+        var keyword = typeDef.getTypeKeyword();
+        if (keyword == null) return null;
+        var typeName = keyword.getText().trim();
+
+        var manager = CachedValuesManager.getManager(file.getProject());
+        var map = manager.getCachedValue(file, RESOLVED_SCHEMAS_KEY, () -> {
+            java.util.Map<String, org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema> resolvedMap = new java.util.HashMap<>();
+            try {
+                var text = file.getText();
+                var virtualFile = file.getVirtualFile();
+                var path = (virtualFile != null) ? resolvePhysicalPath(virtualFile, file.getProject(), text) : null;
+                var lexer = new org.stvnadore.core.parser.StvnLexer(org.antlr.v4.runtime.CharStreams.fromString(text));
+                lexer.removeErrorListeners();
+                var parser = new org.stvnadore.core.parser.StvnParser(new org.antlr.v4.runtime.CommonTokenStream(lexer));
+                parser.removeErrorListeners();
+                var docCtx = parser.stvnDocument();
+                if (path != null) {
+                    org.stvnadore.core.validation.StvnTypeResolver.documentPaths.put(docCtx, path);
+                }
+                var defs = org.stvnadore.core.validation.StvnTypeResolver.getDocumentDefinitions(docCtx);
+                for (var entry : defs.entrySet()) {
+                    var schemaNode = entry.getValue().defNode().schemaType();
+                    var rsOpt = org.stvnadore.core.validation.StvnTypeResolver.resolvePrimitiveSchema(docCtx, schemaNode, new HashSet<>());
+                    rsOpt.ifPresent(rs -> resolvedMap.put(entry.getKey(), rs));
+                }
+            } catch (Exception ignored) {
+            }
+            return CachedValueProvider.Result.create(resolvedMap, file);
+        }, false);
+
+        return map != null ? map.get(typeName) : null;
     }
 
     /**

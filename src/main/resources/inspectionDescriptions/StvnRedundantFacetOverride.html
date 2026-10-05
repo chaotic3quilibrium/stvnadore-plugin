@@ -1,0 +1,13 @@
+<html>
+<body>
+<p>Detects redundant metadata facet overrides in nominal type definitions within <code>:defs</code> blocks.</p>
+<p>A metadata facet declaration is redundant when the parent type's resolved schema already possesses an identical effective value. Redeclaring the same constraint adds noise and obscures intentional overrides.</p>
+<p><b>Examples:</b></p>
+<ul>
+    <li>Declaring <code>{ #preserveIndent #FALSE }</code> on a type derived from <code>:String</code> (which already defaults to <code>#FALSE</code>).</li>
+    <li>Declaring <code>{ #preserveIndent #TRUE }</code> on a type whose parent already declared or inherited <code>#preserveIndent #TRUE</code>.</li>
+    <li>Declaring <code>{ #maxSize 16777216 }</code> or <code>{ #minSize 0 }</code> on unconstrained string aliases.</li>
+</ul>
+<p><b>Quick-Fix:</b> Removes the redundant facet declaration. If the metadata map contains only the redundant facet, the enclosing braces <code>{}</code> are removed automatically.</p>
+</body>
+</html>

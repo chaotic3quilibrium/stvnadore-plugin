@@ -161,7 +161,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
                   #regex "^[A-Z]+$"
                   #maxSize 16
                   #minSize 4
-                  #preserveIndent
+                  #preserveIndent #TRUE
                   #equatable #TRUE
                 } :String
               }
@@ -177,7 +177,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Reformatting must normalize metadata entries into 7-tier canonical order:\n" + text,
-                text.contains("#preserveIndent #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
+                text.contains("#preserveIndent #TRUE #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
     }
 
     public void testReformatReordersPortMetadataToCanonicalSevenTierOrder() {

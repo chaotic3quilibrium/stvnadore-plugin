@@ -272,6 +272,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnDiscreteIntervalInspectionTest.class")
     exclude("**/StvnTemporalModeInspectionTest.class")
     exclude("**/StvnMetadataOrderInspectionTest.class")
+    exclude("**/StvnRedundantFacetOverrideInspectionTest.class")
     exclude("**/StvnSchemaTypeMetadataTest.class")
     exclude("**/StvnSchemaFormatterTest.class")
     exclude("**/StvnStructureViewTest.class")

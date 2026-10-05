@@ -452,6 +452,17 @@
                          level="WEAK WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnMetadataOrderInspection"/>
 
+        <!-- 12q. Local Inspection for Redundant Metadata Facet Overrides -->
+        <localInspection language="STVN"
+                         shortName="StvnRedundantFacetOverride"
+                         displayName="Redundant metadata facet override inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         cleanupTool="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnRedundantFacetOverrideInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 

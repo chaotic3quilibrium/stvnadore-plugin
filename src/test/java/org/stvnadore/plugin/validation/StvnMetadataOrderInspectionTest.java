@@ -85,7 +85,7 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
                   #regex "^[A-Z]+$"
                   #maxSize 16
                   #minSize 4
-                  #preserveIndent
+                  #preserveIndent #TRUE
                   #equatable #TRUE
                 } :String
               }
@@ -108,9 +108,9 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
-        // Tier 1 (#preserveIndent #equatable #TRUE) < Tier 3 (#minSize 4 #maxSize 16) < Tier 5 (#regex "^[A-Z]+$")
+        // Tier 1 (#preserveIndent #TRUE #equatable #TRUE) < Tier 3 (#minSize 4 #maxSize 16) < Tier 5 (#regex "^[A-Z]+$")
         assertTrue("Expected canonical 7-tier ordering in result:\n" + result,
-            result.contains("#preserveIndent #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
+            result.contains("#preserveIndent #TRUE #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
     }
 
     public void testCompliantOrderProducesZeroWarnings() {

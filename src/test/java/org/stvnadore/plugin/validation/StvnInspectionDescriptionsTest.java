@@ -33,7 +33,8 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnStringCardinalityInspection.class, List.of("cardinality", "#size", "#minSize", "#maxSize")),
         Map.entry(StvnDiscreteIntervalInspection.class, List.of("discrete", "interval", "#maxIncl", "#minExcl")),
         Map.entry(StvnTemporalModeInspection.class, List.of("temporal", ":TimeEpoch", ":DateTime", "mode")),
-        Map.entry(StvnMetadataOrderInspection.class, List.of("metadata", "order", "canonical", "7-tier"))
+        Map.entry(StvnMetadataOrderInspection.class, List.of("metadata", "order", "canonical", "7-tier")),
+        Map.entry(StvnRedundantFacetOverrideInspection.class, List.of("redundant", "facet", "override", "quick-fix"))
     );
 
     public void testDirectInspectionToolDescriptionLoading() throws Exception {
@@ -75,7 +76,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 18 registered STVN local inspections in plugin.xml", 18, stvnInspections.size());
+        assertEquals("Expected exactly 19 registered STVN local inspections in plugin.xml", 19, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);

@@ -4921,7 +4921,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               :defs {
                 :include [ "sub_module.stvn_inclf" ]
                 :MutuallyExclusive { #minIncl 10 #minExcl 10 } :Int
-                :IncompatibleMeta  { #preserveIndent } :Int
+                :IncompatibleMeta  { #preserveIndent #TRUE } :Int
               }
             }
             """;

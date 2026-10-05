@@ -270,7 +270,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             return true;
         }
         var bare = entry.getMetadataBareFlag();
-        return bare != null && bare.getNode().findChildByType(tokenSet) != null;
+        if (bare != null && bare.getNode().findChildByType(tokenSet) != null) {
+            return true;
+        }
+        var trait = entry.getMetadataTrait();
+        return trait != null && trait.getNode().findChildByType(tokenSet) != null;
     }
 
     private static @Nullable String resolveBaseTypeString(SchemaType schemaType, Set<String> visitedTypeNames) {

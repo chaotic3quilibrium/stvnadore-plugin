@@ -309,6 +309,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             sb.append("<hr/>");
+            var facetsTable = buildEffectiveFacetsTable(typeDef);
+            if (facetsTable != null) {
+                sb.append(facetsTable).append("<br/>");
+            }
             sb.append("<b>Underlying Structure:</b> ").append(underlying);
             return sb.toString();
         }
@@ -366,6 +370,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 underlying = StvnSchemaFormatter.formatCleanSchema(remTypeDef.getSchemaType());
             }
             sb.append("<hr/>");
+            if (remTypeDef != null) {
+                var facetsTable = buildEffectiveFacetsTable(remTypeDef);
+                if (facetsTable != null) {
+                    sb.append(facetsTable).append("<br/>");
+                }
+            }
             sb.append("<b>Underlying Structure:</b> ").append(underlying);
             return sb.toString();
         }
@@ -648,6 +658,124 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         return null;
+    }
+
+    private static @Nullable String buildEffectiveFacetsTable(TypeDefinition typeDef) {
+        var rs = StvnTypeResolver.resolveNominalResolvedSchema(typeDef);
+        if (rs == null) return null;
+        var keyword = typeDef.getTypeKeyword();
+        var currentAlias = (keyword != null) ? keyword.getText().trim() : ":Type";
+        var baseType = getResolvedBaseTypeString(rs);
+
+        record FacetRow(String tag, String effectiveValue, String origin, String status) {}
+        var rows = new java.util.ArrayList<FacetRow>();
+
+        var constraints = rs.constraints();
+        var local = rs.localConstraints().orElse(null);
+        var parentRs = rs.underlyingSchema().orElse(null);
+        var parentConstraints = parentRs != null ? parentRs.constraints() : null;
+        var parentAlias = rs.aliasName().orElseGet(() -> {
+            var schema = typeDef.getSchemaType();
+            if (schema != null && schema.getTypeKeyword() != null) {
+                return schema.getTypeKeyword().getText().trim();
+            }
+            return null;
+        });
+
+        // 1. #preserveIndent (for String types)
+        if (":String".equals(baseType)) {
+            boolean eff = constraints.preserveIndent();
+            boolean isDeclared = local != null && local.explicitOverrides().contains(StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
+            boolean parentEff = parentConstraints != null && parentConstraints.preserveIndent();
+            String origin = isDeclared ? "Declared on " + currentAlias
+                          : (parentAlias != null && parentEff ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
+            String status = isDeclared ? "Active Override"
+                          : (parentAlias != null && parentEff ? "Inherited" : "Default");
+            rows.add(new FacetRow("#preserveIndent", eff ? "#TRUE" : "#FALSE", origin, status));
+        }
+
+        // 2. #minSize
+        if (constraints.minSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+            int eff = constraints.minSize().orElse(0);
+            boolean isDeclared = local != null && local.minSize().isPresent();
+            boolean isParentDeclared = parentConstraints != null && parentConstraints.minSize().isPresent();
+            String origin = isDeclared ? "Declared on " + currentAlias
+                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
+            String status = isDeclared ? "Active Override"
+                          : (isParentDeclared ? "Inherited" : "Default");
+            rows.add(new FacetRow("#minSize", String.valueOf(eff), origin, status));
+        }
+
+        // 3. #maxSize
+        if (constraints.maxSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+            int eff = constraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
+            boolean isDeclared = local != null && local.maxSize().isPresent();
+            boolean isParentDeclared = parentConstraints != null && parentConstraints.maxSize().isPresent();
+            String origin = isDeclared ? "Declared on " + currentAlias
+                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
+            String status = isDeclared ? "Active Override"
+                          : (isParentDeclared ? "Inherited" : "Default");
+            rows.add(new FacetRow("#maxSize", String.valueOf(eff), origin, status));
+        }
+
+        // 4. #regex
+        if (constraints.regex().isPresent()) {
+            String eff = "\"" + constraints.regex().get() + "\"";
+            boolean isDeclared = local != null && local.regex().isPresent();
+            String origin = isDeclared ? "Declared on " + currentAlias : "Inherited from " + (parentAlias != null ? parentAlias : "Parent");
+            String status = isDeclared ? "Active Override" : "Inherited";
+            rows.add(new FacetRow("#regex", eff, origin, status));
+        }
+
+        // 5. #equatable
+        if (constraints.equatable().isPresent()) {
+            boolean eff = constraints.equatable().get();
+            boolean isDeclared = local != null && local.equatable().isPresent();
+            boolean isParentDeclared = parentConstraints != null && parentConstraints.equatable().isPresent();
+            String origin = isDeclared ? "Declared on " + currentAlias
+                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
+            String status = isDeclared ? "Active Override" : (isParentDeclared ? "Inherited" : "Default");
+            rows.add(new FacetRow("#equatable", eff ? "#TRUE" : "#FALSE", origin, status));
+        }
+
+        // 6. #comparable
+        if (constraints.comparable().isPresent()) {
+            boolean eff = constraints.comparable().get();
+            boolean isDeclared = local != null && local.comparable().isPresent();
+            boolean isParentDeclared = parentConstraints != null && parentConstraints.comparable().isPresent();
+            String origin = isDeclared ? "Declared on " + currentAlias
+                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
+            String status = isDeclared ? "Active Override" : (isParentDeclared ? "Inherited" : "Default");
+            rows.add(new FacetRow("#comparable", eff ? "#TRUE" : "#FALSE", origin, status));
+        }
+
+        if (rows.isEmpty()) return null;
+
+        var html = new StringBuilder();
+        html.append("<b>Effective Facets &amp; Traits:</b><br/>");
+        html.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+        html.append("<thead><tr style=\"border-bottom: 1px solid #555; text-align: left;\">");
+        html.append("<th style=\"padding: 2px 4px;\">Facet Tag</th>");
+        html.append("<th style=\"padding: 2px 4px;\">Effective Value</th>");
+        html.append("<th style=\"padding: 2px 4px;\">Origin</th>");
+        html.append("<th style=\"padding: 2px 4px;\">Status</th>");
+        html.append("</tr></thead><tbody>");
+
+        for (var row : rows) {
+            String statusColor = "Active Override".equals(row.status()) ? "#4CAF50" : ("Inherited".equals(row.status()) ? "#2196F3" : "#9E9E9E");
+            html.append("<tr>");
+            html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.tag()).append("</code></td>");
+            html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.effectiveValue()).append("</code></td>");
+            html.append("<td style=\"padding: 2px 4px;\">").append(row.origin()).append("</td>");
+            html.append("<td style=\"padding: 2px 4px;\"><b style=\"color: ").append(statusColor).append(";\">").append(row.status()).append("</b></td>");
+            html.append("</tr>");
+        }
+        html.append("</tbody></table>");
+        return html.toString();
+    }
+
+    private static String getResolvedBaseTypeString(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
+        return StvnSchemaFormatter.formatCleanAntlrSchema(rs.node());
     }
 
     @Override

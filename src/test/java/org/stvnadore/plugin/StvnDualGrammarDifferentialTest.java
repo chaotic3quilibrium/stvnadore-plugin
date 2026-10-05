@@ -503,11 +503,11 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         var file = myFixture.configureByText("v31.stvn", input);
         assertNoSyntaxErrors(file);
 
-        var bareFlags = PsiTreeUtil.findChildrenOfType(file, MetadataBareFlag.class);
-        assertFalse("V31: MetadataBareFlag element must exist", bareFlags.isEmpty());
-        var flag = bareFlags.iterator().next();
-        assertNotNull("V31: PreserveIndent flag must retain its boolean value", flag.getBooleanValue());
-        assertEquals("#TRUE", flag.getBooleanValue().getText());
+        var traits = PsiTreeUtil.findChildrenOfType(file, MetadataTrait.class);
+        assertFalse("V31: MetadataTrait element must exist", traits.isEmpty());
+        var trait = traits.iterator().next();
+        assertNotNull("V31: PreserveIndent trait must retain its boolean value", trait.getBooleanValue());
+        assertEquals("#TRUE", trait.getBooleanValue().getText());
     }
 
     /**

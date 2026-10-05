@@ -455,5 +455,31 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must chain Prelude prose description",
             doc.contains("Represents a standard <b>dotted-quad IPv4"));
     }
+
+    public void testNominalAliasEffectiveFacetsTable() {
+        var text = """
+            {
+              :defs {
+                :BlockStringB { #minSize 4 #preserveIndent #TRUE } :String
+                :BlockStringF { #preserveIndent #FALSE #maxSize 1024 } :BlockStringB
+              }
+              :type :BlockStringF
+              :body "sample"
+            }
+            """;
+        myFixture.configureByText("alias_facets.stvn", text);
+        var offset = text.indexOf(":BlockStringF");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must contain 'Effective Facets & Traits:' header", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must contain '#preserveIndent' facet row", doc.contains("<code>#preserveIndent</code>"));
+        assertTrue("Doc must display '#FALSE' as effective value for preserveIndent", doc.contains("<code>#FALSE</code>"));
+        assertTrue("Doc must display 'Active Override' for preserveIndent", doc.contains("Active Override"));
+        assertTrue("Doc must contain '#minSize' facet row", doc.contains("<code>#minSize</code>"));
+        assertTrue("Doc must display '4' as effective value for minSize", doc.contains("<code>4</code>"));
+        assertTrue("Doc must display 'Inherited from :BlockStringB' for minSize", doc.contains("Inherited from :BlockStringB"));
+        assertTrue("Doc must contain '#maxSize' facet row", doc.contains("<code>#maxSize</code>"));
+        assertTrue("Doc must display '1024' as effective value for maxSize", doc.contains("<code>1024</code>"));
+    }
 }
 
