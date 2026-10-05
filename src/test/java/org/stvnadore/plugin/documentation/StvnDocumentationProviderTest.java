@@ -481,5 +481,74 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must contain '#maxSize' facet row", doc.contains("<code>#maxSize</code>"));
         assertTrue("Doc must display '1024' as effective value for maxSize", doc.contains("<code>1024</code>"));
     }
+
+    public void testMultiTierLineageOriginEquatableAndComparableDefaultToString() {
+        var text = """
+            {
+              :defs {
+                :BlockStringA :String
+                :BlockStringB :BlockStringA
+                :BlockStringC :BlockStringB
+                :BlockStringD :BlockStringC
+                :BlockStringE :BlockStringD
+                :BlockStringF :BlockStringE
+              }
+              :type :BlockStringF
+              :body "multi-tier sample"
+            }
+            """;
+        myFixture.configureByText("multi_tier_defaults.stvn", text);
+        var offset = text.indexOf(":BlockStringF");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Equatable must report Default (:String)", doc.contains("<code>#equatable</code></td><td style=\"padding: 2px 4px;\"><code>#TRUE</code></td><td style=\"padding: 2px 4px;\">Default (:String)"));
+        assertTrue("Comparable must report Default (:String)", doc.contains("<code>#comparable</code></td><td style=\"padding: 2px 4px;\"><code>#TRUE</code></td><td style=\"padding: 2px 4px;\">Default (:String)"));
+        assertFalse("Must NOT attribute equatable to intermediate parent :BlockStringE", doc.contains("Inherited from :BlockStringE"));
+    }
+
+    public void testMultiTierLineagePreserveIndentInheritedFromAncestor() {
+        var text = """
+            {
+              :defs {
+                :BlockStringA { #preserveIndent #FALSE } :String
+                :BlockStringB :BlockStringA
+                :BlockStringC :BlockStringB
+                :BlockStringD :BlockStringC
+              }
+              :type :BlockStringD
+              :body "sample"
+            }
+            """;
+        myFixture.configureByText("multi_tier_inherit.stvn", text);
+        var offset = text.indexOf(":BlockStringD");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must display effective value #FALSE", doc.contains("<code>#FALSE</code>"));
+        assertTrue("PreserveIndent origin must trace back to :BlockStringA", doc.contains("Inherited from :BlockStringA"));
+        assertFalse("Must NOT misattribute origin to immediate parent :BlockStringC", doc.contains("Inherited from :BlockStringC"));
+    }
+
+    public void testMultiTierLineagePreserveIndentStopsAtIntermediatePinningAncestor() {
+        var text = """
+            {
+              :defs {
+                :BlockStringA { #preserveIndent #FALSE } :String
+                :BlockStringB :BlockStringA
+                :BlockStringC { #preserveIndent #TRUE } :BlockStringB
+                :BlockStringD :BlockStringC
+              }
+              :type :BlockStringD
+              :body "sample"
+            }
+            """;
+        myFixture.configureByText("multi_tier_pin.stvn", text);
+        var offset = text.indexOf(":BlockStringD");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must display effective value #TRUE", doc.contains("<code>#TRUE</code>"));
+        assertTrue("PreserveIndent origin must stop at pinning ancestor :BlockStringC", doc.contains("Inherited from :BlockStringC"));
+        assertFalse("Must NOT report root ancestor :BlockStringA", doc.contains("Inherited from :BlockStringA"));
+    }
 }
 

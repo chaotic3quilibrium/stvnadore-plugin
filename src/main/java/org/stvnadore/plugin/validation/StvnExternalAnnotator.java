@@ -346,6 +346,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                     }
 
+                    // Intercept bare #preserveIndent trait syntax errors and attach predictive quick-fixes
+                    if (message.contains("Metadata facet #preserveIndent requires an explicit boolean value")
+                        || (diag.errorCode().isPresent() && "ERR_INVALID_METADATA_FACET".equals(diag.errorCode().get()) && message.contains("#preserveIndent"))) {
+                        var targetElem = file.findElementAt(range.getStartOffset());
+                        if (targetElem != null) {
+                            for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
+                                annotationBuilder = annotationBuilder.withFix(fix);
+                            }
+                        }
+                    }
+
                     annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
 
                     annotationBuilder.create();
@@ -1306,6 +1317,16 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var tokenText = leaf.getText().trim();
                     if (tokenText.startsWith("#") && (message.contains("facet '" + tokenText + "'") || message.contains("'" + tokenText + "'"))) {
                         return leaf.getTextRange();
+                    }
+                }
+
+                // Pass 4: Incomplete trait facets anchor on the trait keyword token
+                if (message.contains("Metadata facet #preserveIndent requires an explicit boolean value")
+                    || message.contains("#preserveIndent")) {
+                    for (var entry : map.getMetadataEntryList()) {
+                        if (entry.getMetadataTrait() != null) {
+                            return entry.getMetadataTrait().getTextRange();
+                        }
                     }
                 }
             }

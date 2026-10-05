@@ -25,6 +25,8 @@ import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
@@ -667,86 +669,52 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var currentAlias = (keyword != null) ? keyword.getText().trim() : ":Type";
         var baseType = getResolvedBaseTypeString(rs);
 
+        var trace = (keyword != null) ? StvnTypeReference.extractResolutionTrace(keyword) : java.util.List.<String>of();
+
         record FacetRow(String tag, String effectiveValue, String origin, String status) {}
         var rows = new java.util.ArrayList<FacetRow>();
 
         var constraints = rs.constraints();
-        var local = rs.localConstraints().orElse(null);
-        var parentRs = rs.underlyingSchema().orElse(null);
-        var parentConstraints = parentRs != null ? parentRs.constraints() : null;
-        var parentAlias = rs.aliasName().orElseGet(() -> {
-            var schema = typeDef.getSchemaType();
-            if (schema != null && schema.getTypeKeyword() != null) {
-                return schema.getTypeKeyword().getText().trim();
-            }
-            return null;
-        });
-
         // 1. #preserveIndent (for String types)
         if (":String".equals(baseType)) {
             boolean eff = constraints.preserveIndent();
-            boolean isDeclared = local != null && local.explicitOverrides().contains(StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
-            boolean parentEff = parentConstraints != null && parentConstraints.preserveIndent();
-            String origin = isDeclared ? "Declared on " + currentAlias
-                          : (parentAlias != null && parentEff ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
-            String status = isDeclared ? "Active Override"
-                          : (parentAlias != null && parentEff ? "Inherited" : "Default");
-            rows.add(new FacetRow("#preserveIndent", eff ? "#TRUE" : "#FALSE", origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
+            rows.add(new FacetRow("#preserveIndent", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
         }
 
         // 2. #minSize
         if (constraints.minSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
             int eff = constraints.minSize().orElse(0);
-            boolean isDeclared = local != null && local.minSize().isPresent();
-            boolean isParentDeclared = parentConstraints != null && parentConstraints.minSize().isPresent();
-            String origin = isDeclared ? "Declared on " + currentAlias
-                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
-            String status = isDeclared ? "Active Override"
-                          : (isParentDeclared ? "Inherited" : "Default");
-            rows.add(new FacetRow("#minSize", String.valueOf(eff), origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
+            rows.add(new FacetRow("#minSize", String.valueOf(eff), originInfo.origin(), originInfo.status()));
         }
 
         // 3. #maxSize
         if (constraints.maxSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
             int eff = constraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
-            boolean isDeclared = local != null && local.maxSize().isPresent();
-            boolean isParentDeclared = parentConstraints != null && parentConstraints.maxSize().isPresent();
-            String origin = isDeclared ? "Declared on " + currentAlias
-                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
-            String status = isDeclared ? "Active Override"
-                          : (isParentDeclared ? "Inherited" : "Default");
-            rows.add(new FacetRow("#maxSize", String.valueOf(eff), origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
+            rows.add(new FacetRow("#maxSize", String.valueOf(eff), originInfo.origin(), originInfo.status()));
         }
 
         // 4. #regex
         if (constraints.regex().isPresent()) {
             String eff = "\"" + constraints.regex().get() + "\"";
-            boolean isDeclared = local != null && local.regex().isPresent();
-            String origin = isDeclared ? "Declared on " + currentAlias : "Inherited from " + (parentAlias != null ? parentAlias : "Parent");
-            String status = isDeclared ? "Active Override" : "Inherited";
-            rows.add(new FacetRow("#regex", eff, origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_REGEX);
+            rows.add(new FacetRow("#regex", eff, originInfo.origin(), originInfo.status()));
         }
 
         // 5. #equatable
         if (constraints.equatable().isPresent()) {
             boolean eff = constraints.equatable().get();
-            boolean isDeclared = local != null && local.equatable().isPresent();
-            boolean isParentDeclared = parentConstraints != null && parentConstraints.equatable().isPresent();
-            String origin = isDeclared ? "Declared on " + currentAlias
-                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
-            String status = isDeclared ? "Active Override" : (isParentDeclared ? "Inherited" : "Default");
-            rows.add(new FacetRow("#equatable", eff ? "#TRUE" : "#FALSE", origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE);
+            rows.add(new FacetRow("#equatable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
         }
 
         // 6. #comparable
         if (constraints.comparable().isPresent()) {
             boolean eff = constraints.comparable().get();
-            boolean isDeclared = local != null && local.comparable().isPresent();
-            boolean isParentDeclared = parentConstraints != null && parentConstraints.comparable().isPresent();
-            String origin = isDeclared ? "Declared on " + currentAlias
-                          : (isParentDeclared && parentAlias != null ? "Inherited from " + parentAlias : "Default (" + baseType + ")");
-            String status = isDeclared ? "Active Override" : (isParentDeclared ? "Inherited" : "Default");
-            rows.add(new FacetRow("#comparable", eff ? "#TRUE" : "#FALSE", origin, status));
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE);
+            rows.add(new FacetRow("#comparable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
         }
 
         if (rows.isEmpty()) return null;
@@ -776,6 +744,98 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static String getResolvedBaseTypeString(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
         return StvnSchemaFormatter.formatCleanAntlrSchema(rs.node());
+    }
+
+    private record OriginInfo(String origin, String status) {}
+
+    private static OriginInfo resolveFacetOrigin(
+            TypeDefinition rootTypeDef,
+            java.util.List<String> trace,
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema currentSchema,
+            String currentAlias,
+            String baseType,
+            String facetKey
+    ) {
+        if (hasExplicitFacetInPsi(rootTypeDef, facetKey) || isFacetExplicitlyOverridden(currentSchema.localConstraints().orElse(null), facetKey)) {
+            return new OriginInfo("Declared on " + currentAlias, "Active Override");
+        }
+
+        var file = rootTypeDef.getContainingFile();
+        for (int i = 1; i < trace.size(); i++) {
+            var alias = trace.get(i);
+            if (file != null && alias.startsWith(":")) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new java.util.HashSet<>());
+                var ancestorTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
+                    return new OriginInfo("Inherited from " + alias, "Inherited");
+                }
+            }
+        }
+
+        var curr = currentSchema;
+        while (curr.underlyingSchema().isPresent()) {
+            String parentAlias = curr.aliasName().orElse(null);
+            curr = curr.underlyingSchema().get();
+            var parentLocal = curr.localConstraints().orElse(null);
+            if (isFacetExplicitlyOverridden(parentLocal, facetKey)) {
+                String source = (parentAlias != null) ? parentAlias : "Parent";
+                return new OriginInfo("Inherited from " + source, "Inherited");
+            }
+        }
+
+        return new OriginInfo("Default (" + baseType + ")", "Default");
+    }
+
+    private static boolean hasExplicitFacetInPsi(TypeDefinition typeDef, String facetKey) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType != null && hasFacetInMap(schemaType.getMetadataMap(), facetKey)) {
+            return true;
+        }
+        return hasFacetInMap(typeDef.getMetadataMap(), facetKey);
+    }
+
+    private static boolean hasFacetInMap(@Nullable MetadataMap metaMap, String facetKey) {
+        if (metaMap == null) return false;
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (matchesFacetEntry(entry, facetKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean matchesFacetEntry(MetadataEntry entry, String facetKey) {
+        var text = entry.getText().trim();
+        return switch (facetKey) {
+            case StvnVocabulary.FACET_NAME_PRESERVE_INDENT ->
+                entry.getMetadataTrait() != null || text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
+            case StvnVocabulary.FACET_NAME_MIN_SIZE ->
+                text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE);
+            case StvnVocabulary.FACET_NAME_MAX_SIZE ->
+                text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE);
+            case StvnVocabulary.FACET_NAME_REGEX ->
+                text.startsWith(StvnVocabulary.FACET_KW_REGEX);
+            case StvnVocabulary.FACET_NAME_EQUATABLE ->
+                text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
+            case StvnVocabulary.FACET_NAME_COMPARABLE ->
+                text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE);
+            default ->
+                text.startsWith("#" + facetKey);
+        };
+    }
+
+    private static boolean isFacetExplicitlyOverridden(
+            org.stvnadore.core.validation.StvnTypeResolver.@Nullable StvnConstraints local,
+            String facetKey
+    ) {
+        if (local == null) return false;
+        if (local.explicitOverrides().contains(facetKey)) return true;
+        return switch (facetKey) {
+            case StvnVocabulary.FACET_NAME_REGEX -> local.regex().isPresent();
+            case StvnVocabulary.FACET_NAME_MIN_SIZE -> local.minSize().isPresent();
+            case StvnVocabulary.FACET_NAME_MAX_SIZE -> local.maxSize().isPresent();
+            default -> false;
+        };
     }
 
     @Override

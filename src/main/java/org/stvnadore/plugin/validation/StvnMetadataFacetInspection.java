@@ -95,7 +95,22 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
-                // Top-level validation handled uniformly via visitSchemaType
+                super.visitTypeDefinition(def);
+                var metaMap = def.getMetadataMap();
+                if (metaMap != null) {
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        var trait = entry.getMetadataTrait();
+                        if (trait != null && trait.getBooleanValue() == null) {
+                            var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
+                            holder.registerProblem(
+                                trait,
+                                "Metadata facet #preserveIndent requires an explicit boolean value (#TRUE or #FALSE)",
+                                ProblemHighlightType.GENERIC_ERROR,
+                                fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                            );
+                        }
+                    }
+                }
             }
 
             @Override

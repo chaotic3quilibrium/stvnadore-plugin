@@ -286,6 +286,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnIconsTest.class")
     exclude("**/StvnTypeReferenceTest.class")
     exclude("**/StvnUnresolvedTypeQuickFixTest.class")
+    exclude("**/StvnBareTraitCompletionQuickFixTest.class")
     exclude("**/StvnExternalAnnotatorTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
