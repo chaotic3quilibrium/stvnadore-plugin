@@ -253,7 +253,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :Uuid :StringFixed36
+                :Uuid { #minSize 36 #maxSize 36 } :String
               }
               :type :Uuid
               :body <caret>

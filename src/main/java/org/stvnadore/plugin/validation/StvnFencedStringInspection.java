@@ -3,6 +3,7 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -48,7 +49,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             public void visitElement(@NotNull PsiElement element) {
                 super.visitElement(element);
                 var node = element.getNode();
-                if (node != null && (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED || (node.getElementType() == TokenType.BAD_CHARACTER && element.getText().startsWith("\"\"\"["))) && !(element.getParent() instanceof StringLiteral)) {
+                if (node != null && (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED || (node.getElementType() == TokenType.BAD_CHARACTER && (element.getText().startsWith("\"\"\"[") || element.getText().startsWith("\"\"\"->")))) && !(element.getParent() instanceof StringLiteral)) {
                     validateFencedString(element, holder);
                 }
             }
@@ -99,6 +100,15 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     private static void validateFencedString(PsiElement element, ProblemsHolder holder) {
         String text = element.getText();
         if (!text.startsWith("\"\"\"")) {
+            return;
+        }
+
+        if (text.startsWith("\"\"\"->")) {
+            holder.registerProblem(
+                element,
+                "Rule STR-04 violation: Deprecated fenced string delimiter arrow '->' is prohibited",
+                ProblemHighlightType.GENERIC_ERROR
+            );
             return;
         }
 

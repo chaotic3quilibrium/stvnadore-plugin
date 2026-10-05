@@ -43,6 +43,17 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                         }
 
                         var coreNode = StvnTypeResolver.resolveCoreValue(valueElement);
+                        if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnError err) {
+                            if (!StvnTypeResolver.isRecoverableCoreError(err, valueElement)) {
+                                return;
+                            }
+                        }
+
+                        var baseInfo = StvnTypeResolver.resolveBaseTypeInfo(valueElement);
+                        if (baseInfo != null && !StvnTypeInferenceHelper.isStructurallyCompatible(valueElement, baseInfo.getSchema())) {
+                            return;
+                        }
+
                         var finalLabel = StvnTypeInferenceHelper.resolveValueTypeWithDepth(valueElement, 16);
                         if (finalLabel != null && !finalLabel.isEmpty()) {
                             var projSettings = StvnProjectSettings.getInstance(valueElement.getProject());

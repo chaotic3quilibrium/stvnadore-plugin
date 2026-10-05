@@ -1749,7 +1749,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "identity_collections_invalid.stvn",
             "{\n" +
             "  :defs {\n" +
-            "    :MyFloatSet :Set( :Float32 )\n" +
+            "    :MyFloatSet :Set( :Float )\n" +
             "  }\n" +
             "  :type :MyFloatSet\n" +
             "  :body []\n" +
@@ -1765,11 +1765,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     var start = info.getStartOffset();
                     var end = info.getEndOffset();
                     var matchedText = myFixture.getEditor().getDocument().getText().substring(start, end);
-                    assertEquals(":Float32", matchedText);
+                    assertEquals(":Float", matchedText);
                 }
             }
         }
-        assertTrue("Expected equatability error highlighted on :Float32", found);
+        assertTrue("Expected equatability error highlighted on :Float", found);
     }
 
     public void testTrack6NominalConstraints() {
@@ -1863,7 +1863,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testTrack5IdentityDependentCollectionsFallback() {
-        var fileText = "{\n  :type :Set(:Float32)\n  :body [ 1.1 2.2 ]\n}";
+        var fileText = "{\n  :type :Set(:Float)\n  :body [ 1.1 2.2 ]\n}";
         var psiFile = myFixture.configureByText("collection_identity_error.stvn", fileText);
         var highlights = myFixture.doHighlighting();
         
@@ -1872,8 +1872,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .findFirst()
             .orElseThrow(() -> new AssertionError("Expected Track 5 identity-dependent collection error highlights missing"));
             
-        var expectedStartIndex = fileText.indexOf(":Float32");
-        var expectedEndIndex = expectedStartIndex + ":Float32".length();
+        var expectedStartIndex = fileText.indexOf(":Float");
+        var expectedEndIndex = expectedStartIndex + ":Float".length();
         
         assertEquals("Track 5 fallback must target the precise non-equatable component schema layout within the type parameter",
             expectedStartIndex, targetHighlight.getStartOffset());
@@ -6155,6 +6155,25 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var hasComplete2 = quickFixes.stream().anyMatch(f -> f.getText().contains("Complete with #2"));
         assertTrue("Must offer quick-fix 'Complete with #1'", hasComplete1);
         assertTrue("Must offer quick-fix 'Complete with #2'", hasComplete2);
+    }
+
+    /**
+     * Verifies that inlay type hints are completely suppressed for structurally mismatched AST literals.
+     */
+    public void testInlayHintsSuppressedOnStructuralKindMismatch() {
+        var text = """
+            {
+              :defs {
+                :String0 { #minSize 0 #maxSize 0 } :String
+              }
+              :type :Map( :String0 :Set( :String0 ) )
+              :body {
+                [ ""<hint text=":String0 (-> :String)"/> "" ]
+              }<hint text=":Map( :String0 :Set( :String0 ) )"/>
+            }
+            """;
+        myFixture.configureByText("suppressed_inlay_mismatch.stvn", text);
+        runInlayVerification();
     }
 }
 

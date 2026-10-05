@@ -61,7 +61,7 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires explicit mode or unit facet"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires explicit mode facet"))
             .toList();
         assertFalse("Expected missing temporal facet error on bare :DateTime", errors.isEmpty());
 

@@ -340,6 +340,11 @@ public final class StvnTypeResolver {
      */
     public static @Nullable String resolveValueType(Value value) {
         var resolvedNode = resolveCoreValue(value);
+        if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError err) {
+            if (!isRecoverableCoreError(err, value)) {
+                return null;
+            }
+        }
         if (resolvedNode != null && !(resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError)) {
             var file = value.getContainingFile();
             if (file != null) {
@@ -822,6 +827,10 @@ public final class StvnTypeResolver {
     private static @Nullable String resolvePsiFallbackValueType(Value value) {
         var info = resolveBaseTypeInfo(value);
         if (info == null) {
+            return null;
+        }
+
+        if (!org.stvnadore.plugin.hints.StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
             return null;
         }
 
@@ -2569,6 +2578,71 @@ public final class StvnTypeResolver {
             return rel.replace('/', java.io.File.separatorChar);
         }
         return target.getName();
+    }
+
+    /**
+     * Resolves a named constant definition within the specified PSI file.
+     *
+     * @param file the PSI file containing definitions
+     * @param name the constant name including leading sigil '#'
+     * @return the ConstantDefinition PSI node, or null if not found
+     */
+    public static @Nullable ConstantDefinition findConstantDefinition(@Nullable PsiFile file, String name) {
+        if (file == null) {
+            return null;
+        }
+        var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
+        for (var def : constDefs) {
+            var kw = def.getValueKeyword();
+            if (kw != null && name.equals(kw.getText())) {
+                return def;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Determines whether a core IR StvnError can be recovered via PSI fallback,
+     * specifically for untagged union discrimination (Rule C) and keyword constant references.
+     *
+     * @param err the core IR StvnError
+     * @param value the PSI value element
+     * @return true if recoverable via PSI fallback, false otherwise
+     */
+    public static boolean isRecoverableCoreError(org.stvnadore.core.ir.StvnValue.StvnError err, Value value) {
+        var file = value.getContainingFile();
+        if (file == null) {
+            return false;
+        }
+        var text = value.getText().trim();
+        if (text.startsWith("#")) {
+            var constDef = findConstantDefinition(file, text);
+            if (constDef != null) {
+                return true;
+            }
+        }
+        var info = resolveBaseTypeInfo(value);
+        if (info != null) {
+            var resolved = resolveNominalSchema(info.getSchema());
+            var toInspect = resolved != null ? resolved : info.getSchema();
+            var ctor = toInspect.getSchemaConstructor();
+            if (ctor != null && ctor.getSumType() != null) {
+                var sumType = ctor.getSumType();
+                if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+                    var inner = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                    int matchCount = 0;
+                    for (var branch : inner) {
+                        if (matchesSchemaPattern(value, branch)) {
+                            matchCount++;
+                        }
+                    }
+                    if (matchCount == 1) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean isConstructorMatch(String type, String constructor) {

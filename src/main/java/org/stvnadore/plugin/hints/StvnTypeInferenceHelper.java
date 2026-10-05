@@ -33,6 +33,71 @@ public final class StvnTypeInferenceHelper {
     }
 
     /**
+     * Asserts whether a PSI value element matches the structural category of an expected schema.
+     *
+     * @param valueElement the AST value element
+     * @param expectedSchema the expected schema type
+     * @return true if structurally compatible, false otherwise
+     */
+    public static boolean isStructurallyCompatible(@Nullable Value valueElement, @Nullable SchemaType expectedSchema) {
+        if (valueElement == null || expectedSchema == null) {
+            return false;
+        }
+        var resolved = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+        var toInspect = (resolved != null) ? resolved : expectedSchema;
+        var constructor = toInspect.getSchemaConstructor();
+        if (constructor == null) {
+            return true;
+        }
+
+        var collection = constructor.getCollectionType();
+        if (collection != null) {
+            var collVal = valueElement.getCollectionValue();
+            if (collVal == null) {
+                return false;
+            }
+            var firstChild = collection.getFirstChild();
+            var tokenText = (firstChild != null) ? firstChild.getText() : "";
+            if (org.stvnadore.core.StvnVocabulary.TYPE_MAP.equals(tokenText)) {
+                return collVal.getMapLiteral() != null;
+            } else if (org.stvnadore.core.StvnVocabulary.TYPE_SET.equals(tokenText) || org.stvnadore.core.StvnVocabulary.TYPE_SEQ.equals(tokenText)) {
+                return collVal.getListLiteral() != null;
+            }
+            return true;
+        }
+
+        var product = constructor.getProductType();
+        if (product != null) {
+            var collVal = valueElement.getCollectionValue();
+            return collVal != null && collVal.getTupleLiteral() != null;
+        }
+
+        var sum = constructor.getSumType();
+        if (sum != null) {
+            if (sum.getEnumDef() != null) {
+                return valueElement.getValueKeyword() != null || (valueElement.getText() != null && valueElement.getText().startsWith("#"));
+            }
+            if (valueElement.getExplicitOptionValue() != null || valueElement.getExplicitEitherValue() != null || valueElement.getExplicitUnionValue() != null) {
+                return true;
+            }
+            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            for (var branch : innerSchemas) {
+                if (isStructurallyCompatible(valueElement, branch)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        var atomic = constructor.getAtomicType();
+        if (atomic != null) {
+            return valueElement.getCollectionValue() == null;
+        }
+
+        return true;
+    }
+
+    /**
      * Calculates the document offset for positioning an inlay badge relative to algebraic containers.
      *
      * @param valueElement the PSI value element being badged

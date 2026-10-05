@@ -702,4 +702,35 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .toList();
         assertEquals("All 16 error squigglies must possess distinct coordinate ranges", 16, distinctRanges.size());
     }
+
+    /**
+     * Verifies that placing a scalar literal in a map entry collection value slot
+     * produces an ERR_TYPE_MISMATCH highlight pinned strictly to the offending scalar literal.
+     */
+    public void testMapEntryValueScalarForCollectionHighlightPinnedStrictly() {
+        var content = """
+            {
+              :defs {
+                :String0 { #minSize 0 #maxSize 0 } :String
+              }
+              :type :Map( :String0 :Set( :String0 ) )
+              :body {
+                [ "" "" ]
+              }
+            }
+            """;
+        myFixture.configureByText("map_scalar_mismatch.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        var mismatchErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Type mismatch: expected collection constructor :Set, found scalar :String"))
+            .toList();
+
+        assertEquals("Must produce exactly 1 type mismatch error highlight", 1, mismatchErrors.size());
+        var error = mismatchErrors.getFirst();
+        int expectedStart = content.lastIndexOf("\"\"");
+        int expectedEnd = expectedStart + 2;
+        assertEquals("Highlight start offset must pin strictly to second string literal", expectedStart, error.getStartOffset());
+        assertEquals("Highlight end offset must pin strictly to second string literal", expectedEnd, error.getEndOffset());
+    }
 }

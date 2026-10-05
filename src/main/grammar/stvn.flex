@@ -126,6 +126,9 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   // outside fenced string bodies to prevent block-string fallback triggers
   \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
 
+  // Intercept deprecated Rule STR-04 fenced string arrow delimiter
+  \"\"\"->\[[^\r\n\]]*\][ \t\r]*\n { return BAD_CHARACTER; }
+
   // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG]
   \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
     String text = yytext().toString();
