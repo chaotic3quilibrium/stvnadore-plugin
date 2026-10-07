@@ -15,10 +15,14 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.BooleanValue;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.ProductType;
+import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Visitor;
 
@@ -59,7 +63,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                     : org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints.empty();
 
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    checkRedundantFacet(entry, rs, parentRs, parentConstraints, holder);
+                    checkRedundantFacet(entry, typeDef, metaMap, rs, parentRs, parentConstraints, holder);
                 }
             }
         };
@@ -67,6 +71,8 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
     private static void checkRedundantFacet(
             MetadataEntry entry,
+            TypeDefinition typeDef,
+            MetadataMap metaMap,
             org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
             org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
             org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints,
@@ -115,14 +121,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
-                boolean parentVal = resolveParentDefaultEquatable(rs, parentRs, parentConstraints);
+                boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, rs, parentRs, parentConstraints);
                 if (val == parentVal) {
                     registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
-                boolean parentVal = parentConstraints.comparable().orElse(true);
+                boolean parentVal = resolveParentDefaultComparable(typeDef, metaMap, rs, parentRs, parentConstraints);
                 if (val == parentVal) {
                     registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
                 }
@@ -131,20 +137,323 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
     }
 
     private static boolean resolveParentDefaultEquatable(
+            TypeDefinition typeDef,
+            MetadataMap metaMap,
             org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
             org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
             org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints
     ) {
-        if (parentConstraints.equatable().isPresent()) {
-            return parentConstraints.equatable().get();
-        }
         var ultimateBase = getUltimateBaseType(rs);
         if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
-            // Continuous :Float defaults to false; {#exact} :Float defaults to true
+            // Local co-declared #exact establishes natural equatable baseline as true (§ 6.2).
+            if (hasLocalExactFacet(metaMap)) {
+                return true;
+            }
+            if (parentConstraints.equatable().isPresent()) {
+                return parentConstraints.equatable().get();
+            }
             return parentRs != null && parentRs.constraints().exact();
         }
         if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase) || (ultimateBase != null && ultimateBase.startsWith(StvnVocabulary.TYPE_TUPLE))) {
-            // Inductive product types default to false unless explicitly satisfied
+            if (parentConstraints.equatable().isPresent()) {
+                return parentConstraints.equatable().get();
+            }
+            return resolveInductiveTupleEquatable(typeDef, new java.util.HashSet<>());
+        }
+        if (parentConstraints.equatable().isPresent()) {
+            return parentConstraints.equatable().get();
+        }
+        return true;
+    }
+
+    private static boolean resolveParentDefaultComparable(
+            TypeDefinition typeDef,
+            MetadataMap metaMap,
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
+            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
+            org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints
+    ) {
+        var ultimateBase = getUltimateBaseType(rs);
+        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase) || (ultimateBase != null && ultimateBase.startsWith(StvnVocabulary.TYPE_TUPLE))) {
+            if (parentConstraints.comparable().isPresent()) {
+                return parentConstraints.comparable().get();
+            }
+            return resolveInductiveTupleComparable(typeDef, new java.util.HashSet<>());
+        }
+        if (parentConstraints.comparable().isPresent()) {
+            return parentConstraints.comparable().get();
+        }
+        if (StvnVocabulary.TYPE_SET.equals(ultimateBase) || StvnVocabulary.TYPE_MAP.equals(ultimateBase)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasLocalExactFacet(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) {
+            return false;
+        }
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var bareFlag = entry.getMetadataBareFlag();
+            if (bareFlag != null) {
+                var text = bareFlag.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_EXACT)) {
+                    var bVal = bareFlag.getBooleanValue();
+                    return bVal == null || isBooleanTrue(bVal);
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean resolveInductiveTupleEquatable(@NotNull TypeDefinition typeDef, java.util.Set<String> visited) {
+        var product = findProductType(typeDef);
+        if (product == null) {
+            return false;
+        }
+        var fields = product.getSchemaTypeList();
+        if (fields.isEmpty()) {
+            return true;
+        }
+        for (var field : fields) {
+            if (!isFieldEquatable(field, visited)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean resolveInductiveTupleComparable(@NotNull TypeDefinition typeDef, java.util.Set<String> visited) {
+        var product = findProductType(typeDef);
+        if (product == null) {
+            return false;
+        }
+        var fields = product.getSchemaTypeList();
+        if (fields.isEmpty()) {
+            return true;
+        }
+        for (var field : fields) {
+            if (!isFieldComparable(field, visited)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static @Nullable ProductType findProductType(@NotNull TypeDefinition typeDef) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null) {
+            return null;
+        }
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor != null && ctor.getProductType() != null) {
+            return ctor.getProductType();
+        }
+        var resolvedNominal = StvnTypeResolver.resolveNominalSchema(schemaType);
+        if (resolvedNominal != null) {
+            var nomCtor = resolvedNominal.getSchemaConstructor();
+            if (nomCtor != null && nomCtor.getProductType() != null) {
+                return nomCtor.getProductType();
+            }
+            var prod = PsiTreeUtil.findChildOfType(resolvedNominal, ProductType.class);
+            if (prod != null) {
+                return prod;
+            }
+        }
+        return PsiTreeUtil.findChildOfType(schemaType, ProductType.class);
+    }
+
+    private static boolean isFieldEquatable(@NotNull SchemaType field, java.util.Set<String> visited) {
+        var metaMap = field.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
+                    var boolOpt = extractBooleanLiteral(text);
+                    if (boolOpt.isPresent()) {
+                        return boolOpt.get();
+                    }
+                }
+            }
+        }
+
+        var kw = field.getTypeKeyword();
+        if (kw != null) {
+            var typeName = kw.getText().trim();
+            if (!visited.add(typeName)) {
+                return false;
+            }
+            try {
+                var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
+                if (targetDef == null) {
+                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new java.util.HashSet<>());
+                    targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                }
+                if (targetDef != null) {
+                    var targetRs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
+                    if (targetRs != null && !targetRs.isPoisonedSentinel() && targetRs.constraints().equatable().isPresent()) {
+                        return targetRs.constraints().equatable().get();
+                    }
+                    return resolveFallbackTypeDefEquatable(targetDef, visited);
+                }
+                return resolvePrimitiveKeywordEquatable(typeName, metaMap);
+            } finally {
+                visited.remove(typeName);
+            }
+        }
+
+        var ctor = field.getSchemaConstructor();
+        if (ctor != null) {
+            var atomic = ctor.getAtomicType();
+            if (atomic != null) {
+                var text = atomic.getText().trim();
+                if (StvnVocabulary.TYPE_FLOAT.equals(text)) {
+                    return hasLocalExactFacet(metaMap);
+                }
+                return true;
+            }
+            var prod = ctor.getProductType();
+            if (prod != null) {
+                var innerFields = prod.getSchemaTypeList();
+                return innerFields.stream().allMatch(f -> isFieldEquatable(f, visited));
+            }
+            var coll = ctor.getCollectionType();
+            if (coll != null) {
+                var inners = PsiTreeUtil.getChildrenOfTypeAsList(coll, SchemaType.class);
+                if (!inners.isEmpty()) {
+                    return isFieldEquatable(inners.get(0), visited);
+                }
+                return true;
+            }
+            var sum = ctor.getSumType();
+            if (sum != null) {
+                if (sum.getEnumDef() != null) {
+                    return true;
+                }
+                var inners = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                return inners.stream().allMatch(f -> isFieldEquatable(f, visited));
+            }
+        }
+        return true;
+    }
+
+    private static boolean isFieldComparable(@NotNull SchemaType field, java.util.Set<String> visited) {
+        var metaMap = field.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+                    var boolOpt = extractBooleanLiteral(text);
+                    if (boolOpt.isPresent()) {
+                        return boolOpt.get();
+                    }
+                }
+            }
+        }
+
+        var kw = field.getTypeKeyword();
+        if (kw != null) {
+            var typeName = kw.getText().trim();
+            if (!visited.add(typeName)) {
+                return false;
+            }
+            try {
+                var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
+                if (targetDef == null) {
+                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new java.util.HashSet<>());
+                    targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                }
+                if (targetDef != null) {
+                    var targetRs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
+                    if (targetRs != null && !targetRs.isPoisonedSentinel() && targetRs.constraints().comparable().isPresent()) {
+                        return targetRs.constraints().comparable().get();
+                    }
+                    return resolveFallbackTypeDefComparable(targetDef, visited);
+                }
+                return resolvePrimitiveKeywordComparable(typeName);
+            } finally {
+                visited.remove(typeName);
+            }
+        }
+
+        var ctor = field.getSchemaConstructor();
+        if (ctor != null) {
+            var atomic = ctor.getAtomicType();
+            if (atomic != null) {
+                return true;
+            }
+            var prod = ctor.getProductType();
+            if (prod != null) {
+                var innerFields = prod.getSchemaTypeList();
+                return innerFields.stream().allMatch(f -> isFieldComparable(f, visited));
+            }
+            var coll = ctor.getCollectionType();
+            if (coll != null) {
+                var text = coll.getText().trim();
+                if (text.startsWith(StvnVocabulary.TYPE_SET) || text.startsWith(StvnVocabulary.TYPE_MAP)) {
+                    return false;
+                }
+                var inners = PsiTreeUtil.getChildrenOfTypeAsList(coll, SchemaType.class);
+                if (!inners.isEmpty()) {
+                    return isFieldComparable(inners.get(0), visited);
+                }
+                return true;
+            }
+            var sum = ctor.getSumType();
+            if (sum != null) {
+                if (sum.getEnumDef() != null) {
+                    return true;
+                }
+                var inners = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                return inners.stream().allMatch(f -> isFieldComparable(f, visited));
+            }
+        }
+        return true;
+    }
+
+    private static boolean resolveFallbackTypeDefEquatable(@NotNull TypeDefinition targetDef, java.util.Set<String> visited) {
+        var metaMap = targetDef.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
+                    var boolOpt = extractBooleanLiteral(text);
+                    if (boolOpt.isPresent()) {
+                        return boolOpt.get();
+                    }
+                }
+            }
+        }
+        var targetSchema = targetDef.getSchemaType();
+        return targetSchema == null || isFieldEquatable(targetSchema, visited);
+    }
+
+    private static boolean resolveFallbackTypeDefComparable(@NotNull TypeDefinition targetDef, java.util.Set<String> visited) {
+        var metaMap = targetDef.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+                    var boolOpt = extractBooleanLiteral(text);
+                    if (boolOpt.isPresent()) {
+                        return boolOpt.get();
+                    }
+                }
+            }
+        }
+        var targetSchema = targetDef.getSchemaType();
+        return targetSchema == null || isFieldComparable(targetSchema, visited);
+    }
+
+    private static boolean resolvePrimitiveKeywordEquatable(String typeName, @Nullable MetadataMap metaMap) {
+        if (StvnVocabulary.TYPE_FLOAT.equals(typeName)) {
+            return hasLocalExactFacet(metaMap);
+        }
+        return true;
+    }
+
+    private static boolean resolvePrimitiveKeywordComparable(String typeName) {
+        if (StvnVocabulary.TYPE_SET.equals(typeName) || StvnVocabulary.TYPE_MAP.equals(typeName)) {
             return false;
         }
         return true;
