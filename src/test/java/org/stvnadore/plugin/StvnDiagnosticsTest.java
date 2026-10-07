@@ -5042,6 +5042,27 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         runInlayVerification();
     }
 
+    public void testUhohPayloadInlayHintsDegradedAttribution() {
+        var annotatedCode = """
+            {
+              :defs {
+                :FloatExactA { #exact } :Float
+                :Float32A { #size 32 } :Float
+                :FloatExactAToExact { #exact } :FloatExactA
+                :FloatExactATo32 { #size 32 } :FloatExactA
+              }
+              :type :Tuple( :FloatExactA :FloatExactAToExact :FloatExactATo32 )
+              :body (
+                0.1<hint text=":FloatExactA (-> :Float)"/>
+                1.23<hint text="⚠ :FloatExactAToExact (-> :FloatExactA -> :Float)"/>
+                -4.56<hint text="⚠ :FloatExactATo32 (-> :FloatExactA -> :Float)"/>
+              )<hint text=":Tuple( :FloatExactA :FloatExactAToExact :FloatExactATo32 )"/>
+            }
+            """;
+        myFixture.configureByText("uhoh_inlays.stvn", annotatedCode);
+        runInlayVerification();
+    }
+
     public void testQuickDocDegradedWarningBanner() {
         var code = """
             {

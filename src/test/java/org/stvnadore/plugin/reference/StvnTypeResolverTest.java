@@ -877,4 +877,32 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         assertFalse(":Seq with whitespace must match another :Seq",
             StvnSumInferenceHelper.areDisjoint(seqSpaced, seqSpaced));
     }
+
+    public void testStrictTargetAttributionNominalAncestorNotPoisoned() {
+        var content = """
+            {
+              :defs {
+                :FloatExactA { #exact } :Float
+                :Float32A { #size 32 } :Float
+                :FloatExactAToExact { #exact } :FloatExactA
+                :FloatExactATo32 { #size 32 } :FloatExactA
+              }
+              :type :Int
+              :body 0
+            }
+            """;
+        var psiFile = myFixture.configureByText("strict_attr.stvn", content);
+
+        // Positive assertions: child types are degraded
+        assertTrue("Child :FloatExactAToExact must be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(psiFile, ":FloatExactAToExact"));
+        assertTrue("Child :FloatExactATo32 must be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(psiFile, ":FloatExactATo32"));
+
+        // Negative assertions: cited ancestor types are clean
+        assertFalse("Clean ancestor :FloatExactA must NEVER be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(psiFile, ":FloatExactA"));
+        assertFalse("Clean ancestor :Float32A must NEVER be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(psiFile, ":Float32A"));
+    }
 }

@@ -158,7 +158,7 @@ public final class StvnDegenerateCompositeInspectionTest extends BasePlatformTes
             """
             {
               :defs {
-                :NestedMap :Map( :String :Tuple( :Int32 ) )
+                :NestedMap :Map( :String :Tuple( :Int ) )
                 :NestedSeq :Seq( :Union( :Boolean ) )
               }
               :type :Tuple( :NestedMap :NestedSeq )

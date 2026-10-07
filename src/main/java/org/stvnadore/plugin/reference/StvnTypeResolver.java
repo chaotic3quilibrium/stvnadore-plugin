@@ -17,6 +17,7 @@ import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.ir.VariantStep;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
@@ -52,6 +53,23 @@ public final class StvnTypeResolver {
 
     private static final java.util.regex.Pattern EXPLICIT_UNION_TAG_PATTERN =
         java.util.regex.Pattern.compile("^#[1-9][0-9]*(\\s+|$)");
+
+    private static final java.util.regex.Pattern CONSTRAINT_VIOLATION_TARGET_PATTERN =
+        java.util.regex.Pattern.compile("^Constraint violation \\(([^)]+)\\):");
+
+    private static final Set<String> FATAL_SCHEMA_DIAGNOSTIC_CODES = Set.of(
+        DiagnosticBag.ERR_INVALID_REGEX,                 // "INVALID_REGEX_PATTERN"
+        DiagnosticBag.ERR_INVERTED_RANGE,                // "INVALID_NUMERIC_RANGE"
+        DiagnosticBag.ERR_CAPACITY_OVERFLOW,             // "CAPACITY_OVERFLOW"
+        DiagnosticBag.ERR_INCOMPATIBLE_TYPE,             // "INCOMPATIBLE_METADATA_TYPE"
+        DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE,            // "MUTUALLY_EXCLUSIVE_BOUNDS"
+        DiagnosticBag.ERR_NON_OVERRIDABLE_FACET,         // "ERR_NON_OVERRIDABLE_FACET"
+        DiagnosticBag.ERR_INVALID_METADATA_FACET,        // "ERR_INVALID_METADATA_FACET"
+        DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED, // "ERR_STRING_CARDINALITY_PROHIBITED"
+        DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED,// "ERR_DISCRETE_BOUND_KIND_PROHIBITED"
+        DiagnosticBag.ERR_UNDEFINED_TYPE,                // "UNDEFINED_TYPE"
+        DiagnosticBag.ERR_CIRCULAR_TYPE                  // "CIRCULAR_TYPE_DEFINITION"
+    );
 
     /**
      * Returns cached compiler diagnostics for the given STVN PSI file.
@@ -224,13 +242,18 @@ public final class StvnTypeResolver {
         if (diagnostics != null) {
             for (var diag : diagnostics) {
                 var code = diag.errorCode().orElse("");
-                if (code.equals("INVALID_REGEX_PATTERN") || code.equals("INVALID_NUMERIC_RANGE") 
-                    || code.equals("CAPACITY_OVERFLOW") || code.equals("INCOMPATIBLE_METADATA_TYPE")
-                    || code.equals("MUTUALLY_EXCLUSIVE_BOUNDS")) {
+                if (FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(code)) {
                     var msg = diag.message();
-                    if (msg.contains("(" + aliasName + ")") || msg.contains(aliasName)) {
-                        return true;
+                    var matcher = CONSTRAINT_VIOLATION_TARGET_PATTERN.matcher(msg);
+                    if (matcher.find()) {
+                        var target = matcher.group(1).trim();
+                        if (matchesTargetTypeName(target, aliasName)) {
+                            return true;
+                        }
+                        // Diagnostic explicitly targets another type; never poison current aliasName
+                        continue;
                     }
+
                     if (typeDef != null) {
                         var range = typeDef.getTextRange();
                         if (diag.startOffset() >= range.getStartOffset() && diag.endOffset() <= range.getEndOffset()) {
@@ -241,6 +264,19 @@ public final class StvnTypeResolver {
             }
         }
 
+        return false;
+    }
+
+    private static boolean matchesTargetTypeName(String target, String aliasName) {
+        if (target.equals(aliasName)) {
+            return true;
+        }
+        if (target.endsWith("/" + (aliasName.startsWith(":") ? aliasName.substring(1) : aliasName))) {
+            return true;
+        }
+        if (aliasName.endsWith("/" + (target.startsWith(":") ? target.substring(1) : target))) {
+            return true;
+        }
         return false;
     }
 
