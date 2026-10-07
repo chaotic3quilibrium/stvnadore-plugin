@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -499,6 +500,8 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var nowOffset = OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         var nowLocal = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         var zoneId = zone.getId();
+        var localFormatted = nowLocal.format(DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss"));
+        var offsetFormatted = nowOffset.format(DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX"));
 
         boolean isDateTime = schemaText.contains(StvnVocabulary.TYPE_DATE_TIME) || typeLabel.contains(StvnVocabulary.TYPE_DATE_TIME);
         boolean isTimeEpoch = schemaText.contains(StvnVocabulary.TYPE_TIME_EPOCH) || typeLabel.contains(StvnVocabulary.TYPE_TIME_EPOCH);
@@ -506,7 +509,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         if (isDateTime && (schemaText.contains("#audited") || typeLabel.contains("#audited"))) {
             var offsetStr = nowZoned.getOffset().getId();
             if (offsetStr.equals("Z")) offsetStr = "+00:00";
-            var timestamp = nowLocal.toString() + offsetStr + "[" + zoneId + "]";
+            var timestamp = localFormatted + offsetStr + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
                     .withPresentableText("\"" + timestamp + "\"")
@@ -517,7 +520,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 98.0
             ));
         } else if (isDateTime && (schemaText.contains("#offset") || typeLabel.contains("#offset"))) {
-            var timestamp = nowOffset.toString();
+            var timestamp = offsetFormatted;
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
                     .withPresentableText("\"" + timestamp + "\"")
@@ -528,7 +531,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                 98.0
             ));
         } else if (isDateTime && (schemaText.contains("#zoned") || typeLabel.contains("#zoned"))) {
-            var timestamp = nowLocal.toString() + "[" + zoneId + "]";
+            var timestamp = localFormatted + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
                     .withPresentableText("\"" + timestamp + "\"")

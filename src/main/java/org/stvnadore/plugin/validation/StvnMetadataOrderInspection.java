@@ -15,17 +15,15 @@ import org.stvnadore.psi.Visitor;
 import java.util.List;
 
 /**
- * Validates the canonical 7-tier Semantic Category Order of metadata facets.
+ * Validates the canonical 5-Tier Decimal Hierarchy of metadata facets (§ 6.1).
  * <p>
  * Evaluates facet sequence in all metadata blocks:
  * <ul>
- *   <li><b>Tier 1 (Flags &amp; Intrinsic Modes):</b> #unsigned &rarr; #exact &rarr; #invertible &rarr; #preserveIndent &rarr; #offset &rarr; #zoned &rarr; #audited &rarr; #equatable &rarr; #comparable</li>
- *   <li><b>Tier 2 (Temporal Scale):</b> #s &rarr; #ms &rarr; #us &rarr; #ns</li>
- *   <li><b>Tier 3 (Dimensions):</b> #size &rarr; #minSize &rarr; #maxSize</li>
- *   <li><b>Tier 4 (Intervals):</b> #minIncl &rarr; #minExcl &rarr; #maxExcl &rarr; #maxIncl</li>
- *   <li><b>Tier 5 (Patterns):</b> #regex</li>
- *   <li><b>Tier 6 (Subsets):</b> #filterIncl &rarr; #filterExcl</li>
- *   <li><b>Tier 7 (Directives):</b> #strip</li>
+ *   <li><b>Tier 1 (Definition):</b> #unsigned (1.1.1) &rarr; #exact (1.1.2) &rarr; #invertible (1.1.3) &rarr; #ns..#s (1.2.1..1.2.4) &rarr; #offset..#audited (1.2.5..1.2.7) &rarr; #size (1.3.1) &rarr; #minSize (1.5.1) &rarr; #maxSize (1.5.2)</li>
+ *   <li><b>Tier 2 (Trait):</b> #equatable (2.1) &rarr; #comparable (2.2)</li>
+ *   <li><b>Tier 3 (Bounds):</b> #minIncl (3.1) &rarr; #minExcl (3.2) &rarr; #maxIncl (3.3) &rarr; #maxExcl (3.4)</li>
+ *   <li><b>Tier 4 (Constraint):</b> #filterIncl (4.1) &rarr; #filterExcl (4.2) &rarr; #preserveIndent (4.3) &rarr; #regex (4.4)</li>
+ *   <li><b>Tier 5 (Directive):</b> #strip (5.0)</li>
  * </ul>
  */
 @NullMarked
@@ -76,7 +74,7 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
                         holder.registerProblem(
                             target,
-                            "Metadata facet '" + keyword + "' is out of canonical 7-tier order (ERR_FACET_ORDER_VIOLATION).",
+                            "Metadata facet '" + keyword + "' violates canonical 5-tier order (ERR_FACET_ORDER_VIOLATION).",
                             ProblemHighlightType.GENERIC_ERROR,
                             new StvnReorderMetadataFacetsQuickFix(metadataMap)
                         );
@@ -89,7 +87,7 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
     }
 
     /**
-     * Determines whether the entries in a metadata map violate the canonical 7-tier order.
+     * Determines whether the entries in a metadata map violate the canonical 5-tier order.
      *
      * @param map the metadata map PSI node
      * @return true if any facet is out of order, false otherwise
@@ -130,53 +128,49 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
     }
 
     /**
-     * Computes the numerical sorting rank of a facet keyword according to the
-     * canonical 7-tier Semantic Category Order hierarchy.
+     * Computes the numerical sorting rank of a facet keyword according to
+     * the canonical 5-Tier Decimal Hierarchy (§ 6.1).
      *
      * @param keyword the facet keyword string
-     * @return an integer representing the relative canonical position
+     * @return a scaled integer representing the relative canonical decimal position
      */
     public static int getFacetRank(String keyword) {
         return switch (keyword) {
-            // Tier 1: Flags & Intrinsic Modes (101-109)
-            case StvnVocabulary.FACET_KW_UNSIGNED -> 101;
-            case StvnVocabulary.FACET_KW_EXACT -> 102;
-            case StvnVocabulary.FACET_KW_INVERTIBLE -> 103;
-            case StvnVocabulary.FACET_KW_PRESERVE_INDENT -> 104;
-            case StvnVocabulary.FACET_KW_OFFSET -> 105;
-            case StvnVocabulary.FACET_KW_ZONED -> 106;
-            case StvnVocabulary.FACET_KW_AUDITED -> 107;
-            case StvnVocabulary.FACET_KW_EQUATABLE -> 108;
-            case StvnVocabulary.FACET_KW_COMPARABLE -> 109;
+            // Tier 1: Definition (1.1.1 - 1.5.2)
+            case StvnVocabulary.FACET_KW_UNSIGNED -> 1110;       // 1.1.1
+            case StvnVocabulary.FACET_KW_EXACT -> 1120;          // 1.1.2
+            case StvnVocabulary.FACET_KW_INVERTIBLE -> 1130;     // 1.1.3
+            case StvnVocabulary.FACET_KW_SCALE_NS -> 1210;       // 1.2.1
+            case StvnVocabulary.FACET_KW_SCALE_US -> 1220;       // 1.2.2
+            case StvnVocabulary.FACET_KW_SCALE_MS -> 1230;       // 1.2.3
+            case StvnVocabulary.FACET_KW_SCALE_S -> 1240;        // 1.2.4
+            case StvnVocabulary.FACET_KW_OFFSET -> 1250;         // 1.2.5
+            case StvnVocabulary.FACET_KW_ZONED -> 1260;          // 1.2.6
+            case StvnVocabulary.FACET_KW_AUDITED -> 1270;        // 1.2.7
+            case StvnVocabulary.FACET_KW_SIZE -> 1310;           // 1.3.1
+            case StvnVocabulary.FACET_KW_MIN_SIZE -> 1510;       // 1.5.1
+            case StvnVocabulary.FACET_KW_MAX_SIZE -> 1520;       // 1.5.2
 
-            // Tier 2: Temporal Scale (201-204)
-            case StvnVocabulary.FACET_KW_SCALE_S -> 201;
-            case StvnVocabulary.FACET_KW_SCALE_MS -> 202;
-            case StvnVocabulary.FACET_KW_SCALE_US -> 203;
-            case StvnVocabulary.FACET_KW_SCALE_NS -> 204;
+            // Tier 2: Trait (2.1 - 2.2)
+            case StvnVocabulary.FACET_KW_EQUATABLE -> 2100;      // 2.1
+            case StvnVocabulary.FACET_KW_COMPARABLE -> 2200;     // 2.2
 
-            // Tier 3: Dimensions (301-303)
-            case StvnVocabulary.FACET_KW_SIZE -> 301;
-            case StvnVocabulary.FACET_KW_MIN_SIZE -> 302;
-            case StvnVocabulary.FACET_KW_MAX_SIZE -> 303;
+            // Tier 3: Bounds (3.1 - 3.4)
+            case StvnVocabulary.FACET_KW_MIN_INCL -> 3100;       // 3.1
+            case StvnVocabulary.FACET_KW_MIN_EXCL -> 3200;       // 3.2
+            case StvnVocabulary.FACET_KW_MAX_INCL -> 3300;       // 3.3
+            case StvnVocabulary.FACET_KW_MAX_EXCL -> 3400;       // 3.4
 
-            // Tier 4: Intervals (401-404)
-            case StvnVocabulary.FACET_KW_MIN_INCL -> 401;
-            case StvnVocabulary.FACET_KW_MIN_EXCL -> 402;
-            case StvnVocabulary.FACET_KW_MAX_EXCL -> 403;
-            case StvnVocabulary.FACET_KW_MAX_INCL -> 404;
+            // Tier 4: Constraint (4.1 - 4.4)
+            case StvnVocabulary.FACET_KW_FILTER_INCL -> 4100;    // 4.1
+            case StvnVocabulary.FACET_KW_FILTER_EXCL -> 4200;    // 4.2
+            case StvnVocabulary.FACET_KW_PRESERVE_INDENT -> 4300;// 4.3
+            case StvnVocabulary.FACET_KW_REGEX -> 4400;          // 4.4
 
-            // Tier 5: Patterns (501)
-            case StvnVocabulary.FACET_KW_REGEX -> 501;
+            // Tier 5: Directive (5.0)
+            case StvnVocabulary.FACET_KW_STRIP -> 5000;          // 5.0
 
-            // Tier 6: Subsets (601-602)
-            case StvnVocabulary.FACET_KW_FILTER_INCL -> 601;
-            case StvnVocabulary.FACET_KW_FILTER_EXCL -> 602;
-
-            // Tier 7: Directives (701)
-            case StvnVocabulary.FACET_KW_STRIP -> 701;
-
-            default -> 999;
+            default -> 99999;
         };
     }
 }

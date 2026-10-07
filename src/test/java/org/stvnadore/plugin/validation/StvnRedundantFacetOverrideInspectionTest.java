@@ -123,4 +123,61 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
         assertTrue("Warning message must mention effective value '16777216'",
             warnings.get(0).getDescription().contains("'16777216'"));
     }
+
+    public void testFloatExactAndEquatableTrueProducesZeroWarnings() {
+        var text = """
+            {
+              :defs {
+                :FloatExactACorrect { #exact #equatable #TRUE } :Float
+              }
+              :type :FloatExactACorrect
+              :body 1.0
+            }
+            """;
+        myFixture.configureByText("float_exact_equatable.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
+            .toList();
+        assertTrue("Declaring {#exact #equatable #TRUE} on :Float must produce zero redundant warnings", warnings.isEmpty());
+    }
+
+    public void testFloatPlainEquatableTrueProducesZeroWarnings() {
+        var text = """
+            {
+              :defs {
+                :FloatPlain { #equatable #TRUE } :Float
+              }
+              :type :FloatPlain
+              :body 1.0
+            }
+            """;
+        myFixture.configureByText("float_plain_equatable.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
+            .toList();
+        assertTrue("Declaring {#equatable #TRUE} on unadorned :Float is an active override and must produce zero warnings", warnings.isEmpty());
+    }
+
+    public void testTupleEquatableTrueProducesZeroWarnings() {
+        var text = """
+            {
+              :defs {
+                :MyTuple { #equatable #TRUE } :Tuple(:Int :Float)
+              }
+              :type :MyTuple
+              :body (42 1.0)
+            }
+            """;
+        myFixture.configureByText("tuple_equatable.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
+            .toList();
+        assertTrue("Declaring {#equatable #TRUE} on :Tuple must produce zero redundant warnings", warnings.isEmpty());
+    }
 }

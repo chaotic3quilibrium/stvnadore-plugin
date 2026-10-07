@@ -8,7 +8,7 @@ import org.jspecify.annotations.NullMarked;
 /**
  * Platform integration test suite validating {@link StvnMetadataOrderInspection}
  * and {@link StvnReorderMetadataFacetsQuickFix}.
- * Verifies strict enforcement of the canonical 7-tier Semantic Category Order.
+ * Verifies strict enforcement of the canonical 5-Tier Decimal Hierarchy (§ 6.1).
  */
 @NullMarked
 public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase {
@@ -33,13 +33,13 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertFalse("Expected error on out-of-order facet '#unsigned'", errors.isEmpty());
 
         int offset = text.indexOf("#unsigned");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 7-tier order");
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
         assertFalse("Expected quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
@@ -62,13 +62,13 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertEquals("Expected 1 error for interval lower bound after upper bound", 1, errors.size());
 
         int offset = text.indexOf("#minIncl");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 7-tier order");
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
         assertFalse("Expected quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
@@ -97,20 +97,20 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertFalse("Expected out-of-order errors on multi-tier disorder", errors.isEmpty());
 
         int offset = text.indexOf("#preserveIndent");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 7-tier order");
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
         assertFalse("Expected quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
-        // Tier 1 (#preserveIndent #TRUE #equatable #TRUE) < Tier 3 (#minSize 4 #maxSize 16) < Tier 5 (#regex "^[A-Z]+$")
-        assertTrue("Expected canonical 7-tier ordering in result:\n" + result,
-            result.contains("#preserveIndent #TRUE #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
+        // 5-Tier: Tier 1 (#minSize 4 #maxSize 16) < Tier 2 (#equatable #TRUE) < Tier 4 (#preserveIndent #TRUE #regex "^[A-Z]+$")
+        assertTrue("Expected canonical 5-tier ordering in result:\n" + result,
+            result.contains("#minSize 4 #maxSize 16 #equatable #TRUE #preserveIndent #TRUE #regex \"^[A-Z]+$\""));
     }
 
     public void testCompliantOrderProducesZeroWarnings() {
@@ -126,7 +126,7 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         myFixture.configureByText("canonical_temporal.stvn", text);
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertTrue("Canonical ordering must produce 0 order violations", errors.isEmpty());
     }
@@ -144,7 +144,7 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         myFixture.configureByText("canonical_port.stvn", text);
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertTrue("Canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } must produce 0 order violations", errors.isEmpty());
     }
@@ -163,18 +163,37 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of canonical 7-tier order"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates canonical 5-tier order"))
             .toList();
         assertFalse("Expected out-of-order errors on disordered Port definition", errors.isEmpty());
 
         int offset = text.indexOf("#size");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 7-tier order");
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
         assertFalse("Expected quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
         assertTrue("Expected canonical order { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } in reordered text:\n" + result,
             result.contains("{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }"));
+    }
+
+    public void testSizeBeforeEquatableIsValidFiveTierOrder() {
+        var text = """
+            {
+              :defs {
+                :ValidOrderFloat { #size 32 #equatable #TRUE } :Float
+              }
+              :type :ValidOrderFloat
+              :body 1.0
+            }
+            """;
+        myFixture.configureByText("valid_size_equatable.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("canonical 5-tier order"))
+            .toList();
+        assertTrue("Canonical 5-tier order { #size 32 #equatable #TRUE } must produce zero errors", errors.isEmpty());
     }
 }

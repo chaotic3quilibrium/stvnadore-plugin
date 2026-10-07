@@ -733,4 +733,31 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals("Highlight start offset must pin strictly to second string literal", expectedStart, error.getStartOffset());
         assertEquals("Highlight end offset must pin strictly to second string literal", expectedEnd, error.getEndOffset());
     }
+
+    public void testOrderViolationDeduplicatedWhenInspectionActive() {
+        var disorderedContent = """
+            {
+              :defs {
+                :BadOrder { #size 16 #unsigned } :Int
+              }
+              :type :BadOrder
+              :body 42
+            }
+            """;
+        var file = myFixture.configureByText("disordered.stvn", disorderedContent);
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(file);
+        assertNotNull(collected);
+        var result = annotator.doAnnotate(collected);
+        assertNotNull(result);
+
+        // Annotator should suppress ERR_FACET_ORDER_VIOLATION when inspection is registered
+        boolean hasSuppressedOrderDiag = result.diagnostics().stream()
+            .anyMatch(d -> d.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(d.errorCode().get()));
+        assertTrue("Compiler must have produced ERR_FACET_ORDER_VIOLATION", hasSuppressedOrderDiag);
+
+        // Verifies isDiagnosticSuppressed returns true
+        var orderDiag = result.diagnostics().stream().filter(d -> d.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(d.errorCode().get())).findFirst().orElseThrow();
+        assertTrue("External annotator must suppress order diagnostic when inspection active", annotator.isDiagnosticSuppressed(file, orderDiag));
+    }
 }

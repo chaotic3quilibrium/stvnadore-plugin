@@ -13,6 +13,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.BooleanValue;
@@ -58,7 +59,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                     : org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints.empty();
 
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    checkRedundantFacet(entry, parentConstraints, holder);
+                    checkRedundantFacet(entry, rs, parentRs, parentConstraints, holder);
                 }
             }
         };
@@ -66,6 +67,8 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
     private static void checkRedundantFacet(
             MetadataEntry entry,
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
+            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
             org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints,
             ProblemsHolder holder
     ) {
@@ -112,7 +115,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
-                boolean parentVal = parentConstraints.equatable().orElse(true);
+                boolean parentVal = resolveParentDefaultEquatable(rs, parentRs, parentConstraints);
                 if (val == parentVal) {
                     registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
                 }
@@ -125,6 +128,34 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 }
             });
         }
+    }
+
+    private static boolean resolveParentDefaultEquatable(
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
+            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
+            org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints
+    ) {
+        if (parentConstraints.equatable().isPresent()) {
+            return parentConstraints.equatable().get();
+        }
+        var ultimateBase = getUltimateBaseType(rs);
+        if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
+            // Continuous :Float defaults to false; {#exact} :Float defaults to true
+            return parentRs != null && parentRs.constraints().exact();
+        }
+        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase) || (ultimateBase != null && ultimateBase.startsWith(StvnVocabulary.TYPE_TUPLE))) {
+            // Inductive product types default to false unless explicitly satisfied
+            return false;
+        }
+        return true;
+    }
+
+    private static @Nullable String getUltimateBaseType(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
+        var curr = rs;
+        while (curr.underlyingSchema().isPresent()) {
+            curr = curr.underlyingSchema().get();
+        }
+        return org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(curr.node());
     }
 
     private static void registerRedundantProblem(MetadataEntry entry, String effectiveValue, ProblemsHolder holder) {

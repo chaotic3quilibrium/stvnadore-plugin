@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * Intention quick-fix that sorts metadata facets in a metadata map according to
- * the canonical 7-tier Semantic Category Order.
+ * the canonical 5-Tier Decimal Hierarchy (§ 6.1).
  */
 @NullMarked
 public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
@@ -26,7 +26,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
 
     /**
      * Constructs a reordering quick-fix for the specified metadata map.
-     *
+      *
      * @param metadataMap the metadata map containing unordered facets
      */
     public StvnReorderMetadataFacetsQuickFix(MetadataMap metadataMap) {
@@ -35,7 +35,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
 
     @Override
     public @NotNull String getFamilyName() {
-        return "Reorder metadata facets to canonical 7-tier order";
+        return "Reorder metadata facets to canonical 5-tier order";
     }
 
     @Override
@@ -51,7 +51,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
     }
 
     /**
-     * Sorts the entries of the given metadata map in-place into the canonical 7-tier order.
+     * Sorts the entries of the given metadata map in-place into the canonical 5-tier order.
      *
      * @param project the active project
      * @param map the metadata map to reorder

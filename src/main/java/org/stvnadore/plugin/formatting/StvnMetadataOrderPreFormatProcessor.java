@@ -16,7 +16,7 @@ import java.util.Collection;
 
 /**
  * Pre-format processor executing ahead of code reformatting (Ctrl+Alt+L)
- * to automatically normalize all metadata maps into the canonical 7-tier Semantic Category Order.
+ * to automatically normalize all metadata maps into the canonical 5-Tier Decimal Hierarchy (§ 6.1).
  */
 @NullMarked
 public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProcessor {

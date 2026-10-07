@@ -442,7 +442,7 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnTemporalModeInspection"/>
 
-        <!-- 12p. Local Inspection for Metadata Facet Ordering (7-Tier Hierarchy) -->
+        <!-- 12p. Local Inspection for Metadata Facet Ordering (5-Tier Decimal Hierarchy) -->
         <localInspection language="STVN"
                          shortName="StvnMetadataOrder"
                          displayName="Metadata facet canonical ordering inspection"

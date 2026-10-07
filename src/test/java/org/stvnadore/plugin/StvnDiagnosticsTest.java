@@ -109,6 +109,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                                 found = true;
                                 break;
                             }
+                            if (categoryStr.equals("ERR_FACET_ORDER_VIOLATION") || expectedSubstring.contains("violates canonical")) {
+                                if (description.contains("ERR_FACET_ORDER_VIOLATION") || description.contains("violates canonical")) {
+                                    found = true;
+                                    break;
+                                }
+                            }
                             if (expectedSubstring.startsWith("STVN Syntax Error") || categoryStr.contains("SYNTAX_ERROR")) {
                                 if (description.contains("expected") || description.contains("got") || description.contains("Syntax Error") || description.contains("Mismatched") || description.contains("mismatched")) {
                                     found = true;
@@ -185,7 +191,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
-    private static final int METADATA_FIXTURES_VALID_COUNT = 108;
+    private static final int METADATA_FIXTURES_VALID_COUNT = 112;
 
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");

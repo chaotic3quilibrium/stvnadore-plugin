@@ -153,7 +153,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
                 text.contains("  }\n  // comment\n"));
     }
 
-    public void testReformatNormalizesMetadataEntriesToSevenTierOrder() {
+    public void testReformatNormalizesMetadataEntriesToFiveTierOrder() {
         var unformatted = """
             {
               :defs {
@@ -176,8 +176,8 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Reformatting must normalize metadata entries into 7-tier canonical order:\n" + text,
-                text.contains("#preserveIndent #TRUE #equatable #TRUE #minSize 4 #maxSize 16 #regex \"^[A-Z]+$\""));
+        assertTrue("Reformatting must normalize metadata entries into 5-tier canonical order:\n" + text,
+                text.contains("#minSize 4 #maxSize 16 #equatable #TRUE #preserveIndent #TRUE #regex \"^[A-Z]+$\""));
     }
 
     public void testReformatReordersPortMetadataToCanonicalSevenTierOrder() {

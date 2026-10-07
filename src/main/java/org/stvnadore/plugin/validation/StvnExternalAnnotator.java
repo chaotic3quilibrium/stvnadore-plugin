@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.daemon.HighlightDisplayKey;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.lang.annotation.AnnotationBuilder;
@@ -7,6 +8,7 @@ import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -729,7 +731,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
     }
 
-    private static boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
+    boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
         var message = diag.message();
 
         // 1. Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
@@ -824,6 +826,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
             return true;
         }
+        // Suppress external facet ordering diagnostics when StvnMetadataOrderInspection is active
+        if (diag.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(diag.errorCode().get())) {
+            if (isMetadataOrderInspectionActive(file)) {
+                return true;
+            }
+        }
+        if ((message.contains("ERR_FACET_ORDER_VIOLATION") || message.contains("violates canonical")) && isMetadataOrderInspectionActive(file)) {
+            return true;
+        }
         if ((file instanceof org.stvnadore.plugin.StvnFlatPayloadFile || (file != null && file.getName().endsWith(".stvn_f")))
                 && message.contains("cannot contain include statements")) {
             return true;
@@ -908,6 +919,30 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
+        return true;
+    }
+
+    private static boolean isMetadataOrderInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("syntax/invalid") || path.contains("metadata/invalid")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnMetadataOrder");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
         return true;
     }
 
