@@ -760,4 +760,53 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var orderDiag = result.diagnostics().stream().filter(d -> d.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(d.errorCode().get())).findFirst().orElseThrow();
         assertTrue("External annotator must suppress order diagnostic when inspection active", annotator.isDiagnosticSuppressed(file, orderDiag));
     }
+
+    public void testUhohNineCasesNominalOverrideAndMutualExclusivityDiagnostics() {
+        var content = """
+            {
+              :defs {
+                :FloatExactA { #exact } :Float
+                :Float32A { #size 32 } :Float
+                :FloatExactAToExact { #exact } :Float32A
+                :FloatExactATo32 { #size 32 } :FloatExactA
+                :FloatExactATo64 { #size 64 } :FloatExactA
+                :Float64A { #size 64 } :Float
+                :Float32AToExact { #exact } :Float32A
+                :Float32ATo32 { #size 32 } :Float32A
+                :Float32ATo64 { #size 64 } :Float32A
+                :Float64B { #size 64 } :Float
+                :Float64AToExact { #exact } :Float64B
+                :Float64ATo32 { #size 32 } :Float64B
+                :Float64ATo64 { #size 64 } :Float64B
+              }
+              :type :Int
+              :body 0
+            }
+            """;
+        myFixture.configureByText("uhoh_nine.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Must produce exactly 9 error highlights for the 9 uhoh cases", 9, errorHighlights.size());
+
+        // Verify lines 4, 8, 12 report mutual exclusivity for #exact
+        long exactMutexCount = errorHighlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("mutually exclusive") && h.getText().contains("#exact"))
+            .count();
+        assertEquals("Lines 4, 8, 12 must report ERR_MUTUALLY_EXCLUSIVE on #exact", 3, exactMutexCount);
+
+        // Verify lines 5, 6, 10, 13 report mutual exclusivity on conflicting #size
+        long sizeMutexCount = errorHighlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("mutually exclusive") && h.getText().contains("#size"))
+            .count();
+        assertEquals("Lines 5, 6, 10, 13 must report ERR_MUTUALLY_EXCLUSIVE on conflicting #size", 4, sizeMutexCount);
+
+        // Verify lines 9, 14 report non-overridable facet on re-declared #size
+        long nonOverridableCount = errorHighlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("non-overridable") && h.getText().contains("#size"))
+            .count();
+        assertEquals("Lines 9, 14 must report ERR_NON_OVERRIDABLE_FACET on re-declared #size", 2, nonOverridableCount);
+    }
 }

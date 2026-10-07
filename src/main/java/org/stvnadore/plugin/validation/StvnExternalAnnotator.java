@@ -49,7 +49,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
 
     private static final Pattern QUOTED_TOKEN_PATTERN = Pattern.compile(
-        "':?([A-Za-z0-9_/#]+)'|" +
+        "':?([A-Za-z0-9_/#]+(?:\\s+[A-Za-z0-9_]+)?)'|" +
         "(?<=Undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
         "(?<=Unknown or undefined type:\\s)(:[A-Za-z0-9_/#]+)"
     );
@@ -1325,8 +1325,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
 
                 // Pass 2: Mutually exclusive bounds anchor on the conflicting secondary facet
-                if ("MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
-                    || message.contains("mutually exclusive")) {
+                if ("MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode)
+                    || (message.contains("mutually exclusive") && !message.contains("ancestor") && !"ERR_MUTUALLY_EXCLUSIVE".equals(errorCode))) {
                     for (var entry : map.getMetadataEntryList()) {
                         PsiElement leaf = entry.getFirstChild();
                         if (leaf == null) continue;
@@ -1338,6 +1338,22 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             || tokenText.equals("#zoned") || tokenText.equals("#ms") || tokenText.equals("#audited")
                             || tokenText.equals("#us") || tokenText.equals("#ns")) {
                             return leaf.getTextRange();
+                        }
+                    }
+                }
+
+                // Pass 2b: Non-overridable and transitive mutually exclusive facets anchor on the child facet entry
+                if ("ERR_NON_OVERRIDABLE_FACET".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
+                    || message.contains("non-overridable") || (message.contains("mutually exclusive") && message.contains("ancestor"))) {
+                    for (var entry : map.getMetadataEntryList()) {
+                        PsiElement leaf = entry.getFirstChild();
+                        if (leaf == null) continue;
+                        while (leaf.getFirstChild() != null) {
+                            leaf = leaf.getFirstChild();
+                        }
+                        var tokenText = leaf.getText().trim();
+                        if (message.contains("facet '" + tokenText) || message.contains("'" + tokenText + "'") || message.contains("'" + tokenText + " ")) {
+                            return entry.getTextRange();
                         }
                     }
                 }

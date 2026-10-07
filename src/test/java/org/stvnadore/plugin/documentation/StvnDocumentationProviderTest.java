@@ -550,5 +550,55 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("PreserveIndent origin must stop at pinning ancestor :BlockStringC", doc.contains("Inherited from :BlockStringC"));
         assertFalse("Must NOT report root ancestor :BlockStringA", doc.contains("Inherited from :BlockStringA"));
     }
+
+    public void testCompositeTupleDerivedNonEquatableOriginDisplaysOffendingFields() {
+        var text = """
+            {
+              :defs {
+                :FloatExactA :Float
+                :FloatExactATo32 :Float
+                :Values :Tuple( :FloatExactA :FloatExactATo32 )
+              }
+              :type :Values
+              :body ( 1.0 2.0 )
+            }
+            """;
+        myFixture.configureByText("composite_tuple_traits.stvn", text);
+        var offset = text.indexOf(":Values");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Status column must display Derived for equatable",
+            doc.contains("<b style=\"color: #9E9E9E;\">Derived</b>"));
+        assertTrue("Origin column must itemize non-equatable constituent fields",
+            doc.contains("Derived (non-equatable: :FloatExactA, :FloatExactATo32)"));
+        assertFalse("Must NOT display raw tuple constructor in origin",
+            doc.contains("Default (:Tuple("));
+        assertTrue("Comparable must display Derived (all constituent fields conform)",
+            doc.contains("Derived (all constituent fields conform)"));
+    }
+
+    public void testCompositeTupleAllFieldsConformingDisplaysDerivedConform() {
+        var text = """
+            {
+              :defs {
+                :IntField :Int
+                :StringField :String
+                :Values :Tuple( :IntField :StringField )
+              }
+              :type :Values
+              :body ( 42 "valid" )
+            }
+            """;
+        myFixture.configureByText("conforming_tuple.stvn", text);
+        var offset = text.indexOf(":Values");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Equatable must display all constituent fields conform",
+            doc.contains("Derived (all constituent fields conform)"));
+        assertTrue("Comparable must display all constituent fields conform",
+            doc.contains("Derived (all constituent fields conform)"));
+    }
 }
 

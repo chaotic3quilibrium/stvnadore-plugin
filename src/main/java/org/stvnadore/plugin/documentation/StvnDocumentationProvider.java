@@ -703,17 +703,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             rows.add(new FacetRow("#regex", eff, originInfo.origin(), originInfo.status()));
         }
 
+        boolean isComposite = isCompositeOrCollectionType(baseType);
+
         // 5. #equatable
         if (constraints.equatable().isPresent()) {
             boolean eff = constraints.equatable().get();
-            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE);
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, eff, isComposite);
             rows.add(new FacetRow("#equatable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
         }
 
         // 6. #comparable
         if (constraints.comparable().isPresent()) {
             boolean eff = constraints.comparable().get();
-            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE);
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, eff, isComposite);
             rows.add(new FacetRow("#comparable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
         }
 
@@ -742,6 +744,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return html.toString();
     }
 
+    private static boolean isCompositeOrCollectionType(String baseType) {
+        return baseType.startsWith(":Tuple") || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map");
+    }
+
     private static String getResolvedBaseTypeString(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
         return StvnSchemaFormatter.formatCleanAntlrSchema(rs.node());
     }
@@ -755,6 +761,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             String currentAlias,
             String baseType,
             String facetKey
+    ) {
+        return resolveFacetOrigin(rootTypeDef, trace, currentSchema, currentAlias, baseType, facetKey, false, false);
+    }
+
+    private static OriginInfo resolveFacetOrigin(
+            TypeDefinition rootTypeDef,
+            java.util.List<String> trace,
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema currentSchema,
+            String currentAlias,
+            String baseType,
+            String facetKey,
+            boolean effectiveValue,
+            boolean isComposite
     ) {
         if (hasExplicitFacetInPsi(rootTypeDef, facetKey) || isFacetExplicitlyOverridden(currentSchema.localConstraints().orElse(null), facetKey)) {
             return new OriginInfo("Declared on " + currentAlias, "Active Override");
@@ -783,7 +802,98 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (isComposite && (StvnVocabulary.FACET_NAME_EQUATABLE.equals(facetKey) || StvnVocabulary.FACET_NAME_COMPARABLE.equals(facetKey))) {
+            return resolveDerivedTraitOrigin(rootTypeDef, baseType, facetKey, effectiveValue);
+        }
+
         return new OriginInfo("Default (" + baseType + ")", "Default");
+    }
+
+    private static OriginInfo resolveDerivedTraitOrigin(
+            TypeDefinition rootTypeDef,
+            String baseType,
+            String facetKey,
+            boolean effectiveValue
+    ) {
+        if (effectiveValue) {
+            return new OriginInfo("Derived (all constituent fields conform)", "Derived");
+        }
+
+        boolean isComparable = StvnVocabulary.FACET_NAME_COMPARABLE.equals(facetKey);
+        if (isComparable && (baseType.startsWith(":Set") || baseType.startsWith(":Map"))) {
+            return new OriginInfo("Derived (unordered collection)", "Derived");
+        }
+
+        var nonConforming = extractNonConformingConstituents(rootTypeDef, isComparable);
+        if (nonConforming.isEmpty()) {
+            if (isComparable && (baseType.startsWith(":Set") || baseType.startsWith(":Map"))) {
+                return new OriginInfo("Derived (unordered collection)", "Derived");
+            }
+            return new OriginInfo("Derived (all constituent fields conform)", "Derived");
+        }
+
+        String label = isComparable ? "non-comparable: " : "non-equatable: ";
+        return new OriginInfo("Derived (" + label + String.join(", ", nonConforming) + ")", "Derived");
+    }
+
+    private static java.util.List<String> extractNonConformingConstituents(TypeDefinition typeDef, boolean checkComparable) {
+        var nonConforming = new java.util.ArrayList<String>();
+        var terminal = resolveTerminalSchemaType(typeDef, new java.util.HashSet<>());
+        var schemaType = (terminal != null) ? terminal : typeDef.getSchemaType();
+        if (schemaType == null || schemaType.getSchemaConstructor() == null) {
+            return nonConforming;
+        }
+
+        var ctor = schemaType.getSchemaConstructor();
+        java.util.List<SchemaType> constituents = java.util.List.of();
+        if (ctor.getProductType() != null) {
+            constituents = ctor.getProductType().getSchemaTypeList();
+        } else if (ctor.getCollectionType() != null) {
+            constituents = ctor.getCollectionType().getSchemaTypeList();
+        }
+
+        var file = typeDef.getContainingFile();
+        for (var constituent : constituents) {
+            var kw = constituent.getTypeKeyword();
+            String fieldName = (constituent.getMetadataMap() != null)
+                ? constituent.getText().trim()
+                : (kw != null ? kw.getText().trim() : constituent.getText().trim());
+
+            if (kw != null) {
+                var typeName = kw.getText().trim();
+                if (typeName.equals(":Float")) {
+                    boolean exact = hasFacetInMap(constituent.getMetadataMap(), "exact");
+                    if (!checkComparable && !exact) {
+                        nonConforming.add(fieldName);
+                    }
+                    continue;
+                } else if (typeName.equals(":Int") || typeName.equals(":String") || typeName.equals(":Boolean") || typeName.equals(":TimeEpoch") || typeName.equals(":DateTime")) {
+                    continue;
+                }
+                if (file != null) {
+                    var resolvedDef = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
+                    var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedDef);
+                    if (targetTypeDef != null) {
+                        var targetRs = StvnTypeResolver.resolveNominalResolvedSchema(targetTypeDef);
+                        if (targetRs != null) {
+                            boolean conforms = checkComparable
+                                ? targetRs.constraints().comparable().orElse(true)
+                                : targetRs.constraints().equatable().orElse(false);
+                            if (!conforms) {
+                                nonConforming.add(fieldName);
+                            }
+                            continue;
+                        }
+                    }
+                }
+            } else if (constituent.getSchemaConstructor() != null) {
+                var inlineText = constituent.getText();
+                if (!checkComparable && inlineText.contains(":Float") && !inlineText.contains("#exact")) {
+                    nonConforming.add(fieldName);
+                }
+            }
+        }
+        return nonConforming;
     }
 
     private static boolean hasExplicitFacetInPsi(TypeDefinition typeDef, String facetKey) {
