@@ -809,4 +809,44 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .count();
         assertEquals("Lines 9, 14 must report ERR_NON_OVERRIDABLE_FACET on re-declared #size", 2, nonOverridableCount);
     }
+
+    /**
+     * Verifies Single Diagnostic Highlight Invariant (Rule STR-04):
+     * When StvnFencedStringInspection is active, the external annotator suppresses
+     * the raw compiler syntax diagnostic for prohibited fence arrow delimiter,
+     * ensuring exactly one error highlight with the in-place quick-fix appears.
+     */
+    public void testProhibitedFencedStringArrowSuppressedWhenInspectionActive() {
+        myFixture.enableInspections(new StvnFencedStringInspection());
+        var content = """
+            {
+              :defs {
+                :NestedDocumentStore :String
+              }
+              :type :Tuple( :NestedDocumentStore )
+              :body (
+                \"\"\"->[EMBEDDED_STVN]
+                {
+                  :type :Seq( :Boolean )
+                  :body [ #TRUE #FALSE ]
+                }
+                [EMBEDDED_STVN]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("syntax_torture_snippet.stvn", content);
+        var highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Exactly one error highlight must exist on opening delimiter line", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited", error.getDescription());
+        assertFalse("Raw compiler syntax error duplicate must be suppressed", error.getDescription().contains("STVN Syntax Error:"));
+
+        var quickFixes = myFixture.getAllQuickFixes();
+        boolean hasRemoveArrowFix = quickFixes.stream()
+            .anyMatch(f -> f.getText().contains("Remove prohibited '->' arrow"));
+        assertTrue("Remove prohibited '->' arrow quick-fix must be available", hasRemoveArrowFix);
+    }
 }

@@ -27,6 +27,7 @@ import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -886,6 +887,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if ((message.contains("ERR_FACET_ORDER_VIOLATION") || message.contains("violates canonical")) && isMetadataOrderInspectionActive(file)) {
             return true;
         }
+        // Suppress external fenced string delimiter arrow diagnostics when StvnFencedStringInspection is active
+        if (diag.errorCode().isPresent() && DiagnosticBag.ERR_PROHIBITED_FENCE_ARROW.equals(diag.errorCode().get())) {
+            if (isFencedStringInspectionActive(file)) {
+                return true;
+            }
+        }
+        if (message.contains("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited") && isFencedStringInspectionActive(file)) {
+            return true;
+        }
+        // Suppress external temporal mode & scale diagnostics when StvnTemporalModeInspection is active
+        if (diag.errorCode().isPresent() && (DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING.equals(diag.errorCode().get())
+                || DiagnosticBag.ERR_DATETIME_MODE_INVALID.equals(diag.errorCode().get())
+                || DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diag.errorCode().get())
+                || DiagnosticBag.ERR_LEGACY_UNIT_FACET_PURGED.equals(diag.errorCode().get()))) {
+            if (isTemporalModeInspectionActive(file)) {
+                return true;
+            }
+        }
         if ((file instanceof org.stvnadore.plugin.StvnFlatPayloadFile || (file != null && file.getName().endsWith(".stvn_f")))
                 && message.contains("cannot contain include statements")) {
             return true;
@@ -989,6 +1008,54 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var profileManager = InspectionProjectProfileManager.getInstance(project);
             var profile = profileManager.getCurrentProfile();
             var key = HighlightDisplayKey.find("StvnMetadataOrder");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private static boolean isFencedStringInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnFencedString");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private static boolean isTemporalModeInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnTemporalMode");
             if (key != null) {
                 return profile.isToolEnabled(key, file);
             }

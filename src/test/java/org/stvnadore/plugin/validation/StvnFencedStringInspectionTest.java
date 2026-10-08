@@ -53,11 +53,13 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             """;
         myFixture.configureByText("arrow_fatal.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
-        boolean hasErrors = highlights.stream().anyMatch(h ->
-            h.getSeverity().equals(HighlightSeverity.ERROR));
-        assertTrue("Encountering legacy '->' in fenced string must trigger fatal syntax rejection under Rule STR-04", hasErrors);
-        assertTrue("Error message must cite prohibited arrow invariant", highlights.stream().anyMatch(h ->
-            h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited")));
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Single Diagnostic Highlight Invariant: exactly one error highlight must exist", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited", error.getDescription());
+        assertFalse("Raw background annotator duplicate must be suppressed", error.getDescription().contains("STVN Syntax Error:"));
     }
 
     public void testRemoveProhibitedArrowQuickFixRepairsDelimiters() {
