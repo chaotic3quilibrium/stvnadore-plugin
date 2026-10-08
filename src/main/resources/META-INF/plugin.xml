@@ -463,6 +463,16 @@
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnRedundantFacetOverrideInspection"/>
 
+        <!-- 12r. Local Inspection for Unresolved Type References -->
+        <localInspection language="STVN"
+                         shortName="StvnUnresolvedType"
+                         displayName="Unresolved type reference inspection"
+                         groupPath="STVN"
+                         groupName="Semantics"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnUnresolvedTypeInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 

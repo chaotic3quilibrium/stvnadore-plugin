@@ -25,6 +25,12 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
         }
         """;
 
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        myFixture.enableInspections(new StvnUnresolvedTypeInspection());
+    }
+
     /**
      * Verifies Fix 1 in-place qualification replacing bare :IPv4 with :org/stvnadore/prelude/IPv4.
      */
@@ -125,7 +131,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies that after applying Fix 3 (:IPv4 :org/stvnadore/prelude/IPv4), zero string capacity warnings are emitted.
      */
     public void testFix3ProducesZeroStringCapacityWarnings() {
-        myFixture.enableInspections(new StvnStringCapacityInspection());
+        myFixture.enableInspections(new StvnUnresolvedTypeInspection(), new StvnStringCapacityInspection());
         myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);

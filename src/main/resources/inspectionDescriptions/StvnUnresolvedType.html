@@ -1,0 +1,12 @@
+<html>
+<body>
+<p>Detects unresolved type references in Strongly Typed Value Notation (STVN) documents.</p>
+<p>When an unadorned nominal type matches a known definition in the Standard Library Prelude (<code>:org/stvnadore/prelude/*</code>), this inspection flags the bare symbol and offers quick-fixes to:</p>
+<ul>
+  <li>Qualify the symbol in-place with its canonical fully qualified nominal identifier (FQNI).</li>
+  <li>Import the symbol into the document scope via a <code>:use</code> statement in <code>:defs</code>.</li>
+  <li>Brand a local nominal type in <code>:defs</code> that aliases the Prelude type.</li>
+</ul>
+<p>This inspection supports batch execution across the entire active file.</p>
+</body>
+</html>
