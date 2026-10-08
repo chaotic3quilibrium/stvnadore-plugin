@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 
 /**
  * Automated hygiene test suite asserting that zero references to obsolete 1.x types,
- * compound wildcards, deprecated temporal facets, or ungrounded discrete bounds exist
+ * compound wildcards, prohibited temporal facets, or ungrounded discrete bounds exist
  * across all inspection HTML descriptions and plugin Java classes.
  */
 @NullMarked
@@ -33,7 +33,8 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
         Pattern.compile("\\b#unit\\b"),
         Pattern.compile("\"\"\"->"),
         Pattern.compile("(?i)legacy\\s+arrow\\s+syntax"),
-        Pattern.compile("(?i)arrow\\s+delimiter")
+        Pattern.compile("(?i)arrow\\s+delimiter"),
+        Pattern.compile("(?i)\\bdeprecat[a-z]*\\b")
     );
 
     public void testInspectionHtmlDescriptionsHygiene() throws IOException {
@@ -102,6 +103,9 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
                     }
                     if (line.contains("\"\"\"->")) {
                         violations.add(file.getFileName() + ":" + (i + 1) + " -> forbidden legacy arrow literal in: " + trimmed);
+                    }
+                    if (line.toLowerCase().contains("deprecated") && !line.contains("@SuppressWarnings")) {
+                        violations.add(file.getFileName() + ":" + (i + 1) + " -> forbidden deprecation reference in: " + trimmed);
                     }
                 }
             }

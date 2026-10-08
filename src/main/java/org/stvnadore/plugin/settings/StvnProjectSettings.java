@@ -46,13 +46,6 @@ public final class StvnProjectSettings implements PersistentStateComponent<StvnP
         public boolean preferImpliedSumTypes = true;
         /** If true, suppresses the confirmation dialog when canonicalizing projections destroy authoring constructs. */
         public boolean suppressCanonicalizationWarning = false;
-        /**
-         * Legacy preference field retained for backward compatibility.
-         *
-         * @deprecated Replaced by {@link #suppressCanonicalizationWarning}.
-         */
-        @Deprecated
-        public boolean suppressCompactCommentWarning = false;
     }
 
     private State myState = new State();
@@ -75,9 +68,6 @@ public final class StvnProjectSettings implements PersistentStateComponent<StvnP
 
     @Override
     public void loadState(State state) {
-        if (state.suppressCompactCommentWarning && !state.suppressCanonicalizationWarning) {
-            state.suppressCanonicalizationWarning = true;
-        }
         myState = state;
     }
 }

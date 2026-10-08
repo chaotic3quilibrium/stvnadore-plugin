@@ -175,8 +175,8 @@ intellijPlatform {
             </ul>
             <h3>1.1.1 - 2026.09.07</h3>
             <ul>
-              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>&quot;&quot;&quot;[TAG]</code> opening delimiter; deprecated legacy <code>&quot;&quot;&quot;-&gt;[TAG]</code> with a <code>LIKE_DEPRECATED</code> strikeout diagnostic and inspection warning.</li>
-              <li><b>Automated Code Cleanup:</b> Added <code>Remove deprecated '-&gt;' arrow</code> intention quick-fix with full IntelliJ batch <b>Code | Code Cleanup</b> support across files and projects.</li>
+              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>&quot;&quot;&quot;[TAG]</code> opening delimiter; enforced rejection of legacy <code>&quot;&quot;&quot;-&gt;[TAG]</code> delimiter arrow under Rule STR-04.</li>
+              <li><b>Automated Code Cleanup:</b> Added <code>Remove prohibited '-&gt;' arrow</code> intention quick-fix supporting rapid delimiter repair across files.</li>
               <li><b>Interactive Tag Renaming (Shift+F6):</b> Implemented live linked editing for opening and closing delimiter tags with bidirectional caret focus retention and delta-aware cursor anchoring.</li>
               <li><b>AST Fracture & Collision Guard:</b> Intercepts tag renames that collide with delimiter sequences inside the string payload, preventing AST breakage and rolling back invalid commits.</li>
               <li><b>Core Dependency Alignment:</b> Upgraded compiler and runtime engine to <code>stvnadore-core:1.1.1</code>.</li>

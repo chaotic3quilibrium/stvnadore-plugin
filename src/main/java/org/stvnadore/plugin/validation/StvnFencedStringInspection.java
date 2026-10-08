@@ -106,8 +106,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         if (text.startsWith("\"\"\"->")) {
             holder.registerProblem(
                 element,
-                "Rule STR-04 violation: Deprecated fenced string delimiter arrow '->' is prohibited",
-                ProblemHighlightType.GENERIC_ERROR
+                "Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited",
+                ProblemHighlightType.GENERIC_ERROR,
+                new RemoveProhibitedArrowQuickFix()
             );
             return;
         }
@@ -598,6 +599,42 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     element.replace(newLiteral != null ? newLiteral : dummy);
                 } else {
                     String updated = text + "\n  [" + tag + "]\"\"\"";
+                    var dummy = StvnElementFactory.createValue(project, updated);
+                    var newLiteral = dummy.getStringLiteral();
+                    element.replace(newLiteral != null ? newLiteral : dummy);
+                }
+            }
+        }
+    }
+
+    private static final class RemoveProhibitedArrowQuickFix implements LocalQuickFix {
+        @Override
+        public @NotNull String getName() {
+            return "Remove prohibited '->' arrow";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Remove prohibited '->' arrow";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var docManager = PsiDocumentManager.getInstance(project);
+            var doc = file.getViewProvider().getDocument();
+            String text = element.getText();
+            int arrowIdx = text.indexOf("->");
+            if (arrowIdx >= 0) {
+                if (doc != null) {
+                    int startOffset = element.getTextRange().getStartOffset();
+                    doc.deleteString(startOffset + arrowIdx, startOffset + arrowIdx + 2);
+                    docManager.commitDocument(doc);
+                } else {
+                    String updated = text.substring(0, arrowIdx) + text.substring(arrowIdx + 2);
                     var dummy = StvnElementFactory.createValue(project, updated);
                     var newLiteral = dummy.getStringLiteral();
                     element.replace(newLiteral != null ? newLiteral : dummy);

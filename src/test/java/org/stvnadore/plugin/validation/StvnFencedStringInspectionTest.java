@@ -56,6 +56,36 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         boolean hasErrors = highlights.stream().anyMatch(h ->
             h.getSeverity().equals(HighlightSeverity.ERROR));
         assertTrue("Encountering legacy '->' in fenced string must trigger fatal syntax rejection under Rule STR-04", hasErrors);
+        assertTrue("Error message must cite prohibited arrow invariant", highlights.stream().anyMatch(h ->
+            h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited")));
+    }
+
+    public void testRemoveProhibitedArrowQuickFixRepairsDelimiters() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"->[SQL]
+              SELECT 1;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.configureByText("arrow_quickfix.stvn", code);
+        myFixture.doHighlighting();
+        var action = myFixture.getAllQuickFixes().stream()
+            .filter(f -> f.getText().contains("Remove prohibited '->' arrow"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected 'Remove prohibited '->' arrow' quick-fix to be available", action);
+        myFixture.launchAction(action);
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+              SELECT 1;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
     }
 
     public void testRecursiveNestedFencedStringsPreserveInnerDelimiters() {

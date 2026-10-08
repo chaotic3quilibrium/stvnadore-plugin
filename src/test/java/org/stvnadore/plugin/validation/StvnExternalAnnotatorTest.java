@@ -70,11 +70,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that compiler deprecation and keyword diagnostics emitted for an included module
+     * Verifies that compiler prohibition and keyword diagnostics emitted for an included module
      * (such as obsolete compound string and integer keywords) do not leak into the parent document,
      * do not register on the parent buffer, and never project annotations onto indented comments or whitespace.
      */
-    public void testDeprecatedCompoundKeywordsInIncludedModuleDoNotLeakToParentComments() {
+    public void testProhibitedCompoundKeywordsInIncludedModuleDoNotLeakToParentComments() {
         var primitivesContent = """
             {
               // primitives.stvn_inclf
@@ -150,7 +150,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that when an undefined or deprecated child type is referenced inside a type definition,
+     * Verifies that when an undefined or prohibited child type is referenced inside a type definition,
      * error coordinates pin strictly to the child type keyword without annotating preceding valid metadata facets.
      * Enforces the anti-tautological dual-assertion pattern.
      */

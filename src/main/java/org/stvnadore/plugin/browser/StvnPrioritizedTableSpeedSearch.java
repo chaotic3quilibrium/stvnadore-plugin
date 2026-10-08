@@ -26,23 +26,13 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
     }
 
     /**
-     * Internal constructor calling the non-deprecated platform constructor.
+     * Internal constructor delegating to the primary platform TableSpeedSearch constructor.
      *
      * @param table the target table component
      * @param sig signature disambiguator
      */
     protected StvnPrioritizedTableSpeedSearch(JTable table, @Nullable Void sig) {
         super(table, null, (val, cell) -> val == null || val instanceof Boolean ? "" : val.toString());
-    }
-
-    /**
-     * Constructs an StvnPrioritizedTableSpeedSearch instance for the given table.
-     *
-     * @param table the target table component
-     */
-    @SuppressWarnings("deprecation")
-    public StvnPrioritizedTableSpeedSearch(JTable table) {
-        super(table);
     }
 
     /**

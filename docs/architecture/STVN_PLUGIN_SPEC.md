@@ -29,7 +29,7 @@ The plugin provides six primary capabilities:
 2. **Program Structure Interface (PSI) Tree Construction:** Builds an incremental PSI representation enabling code folding, navigation, and structural search.
 3. **Opaque Nominal Reference Resolution:** Resolves cross-file and intra-file type references while strictly preserving opaque nominal type wrappers.
 4. **Context-Aware In-Flight Auto-Completion:** Contributes schema-directed value templates, enum variants, and sum constructors without leaking parent container scopes.
-5. **Real-Time Inspections & Automated Quick-Fixes:** Flags grammar deprecations, invalid facets, discrete bound errors, and structural layout mistakes directly in the editor buffer.
+5. **Real-Time Inspections & Automated Quick-Fixes:** Flags syntax violations, invalid facets, discrete bound errors, and structural layout mistakes directly in the editor buffer.
 6. **Value-Oriented Rename Refactoring:** Executes atomic symbol renaming across schema declarations, usage sites, and standard library namespaces.
 
 ```mermaid
@@ -59,7 +59,7 @@ For every source document $s \in \Sigma^*$:
 1. **Token Taxonomy Identity:** Every terminal token recognized by `StvnLexer.g4` must have an exact equivalent token in `stvn.flex` with identical boundary rules.
 2. **Parse Tree Homomorphism:** The hierarchical structure of the ANTLR4 parse tree must map homomorphically to the Grammar-Kit generated PSI tree.
 3. **Compound Token Elimination:** All legacy compound tokens removed from ANTLR4 in STVN 2.0.0 (`:Uint4`, `:Int16`, `:String8`, `:StringFixed36`, `:SeqNonEmpty`, `:MapInv`) must be removed from `stvn.bnf` and `stvn.flex`. Both grammars parse base types qualified by metadata facet blocks.
-4. **Strict Fenced String Delimiter Invariant (Rule STR-04):** Both ANTLR4 (`StvnLexer.g4`) and JFlex (`stvn.flex`) strictly enforce delimiter pattern `"""[TAG]` without directional arrow syntax. The deprecated prefix `"""->[` is permanently prohibited in both ANTLR4 and JFlex; encountering `"""->[` must trigger immediate fatal syntax rejection at the lexical boundary.
+4. **Strict Fenced String Delimiter Invariant (Rule STR-04):** Both ANTLR4 (`StvnLexer.g4`) and JFlex (`stvn.flex`) strictly enforce delimiter pattern `"""[TAG]` without directional arrow syntax. The prohibited prefix `"""->[` is permanently rejected in both ANTLR4 and JFlex; encountering `"""->[` must trigger immediate fatal syntax rejection at the lexical boundary.
 
 ```mermaid
 flowchart LR
