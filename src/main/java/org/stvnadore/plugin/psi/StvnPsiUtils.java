@@ -1,7 +1,9 @@
 package org.stvnadore.plugin.psi;
 
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
@@ -117,5 +119,74 @@ public final class StvnPsiUtils {
             return td.getTypeKeyword() == element;
         }
         return false;
+    }
+
+    /**
+     * Resolves the existing {@link DefsEntry} block or synthesizes a canonical
+     * {@code :defs { ... }} block inside the document's root object.
+     *
+     * @param context any PSI element within the target file
+     * @return the resolved or synthesized DefsEntry, or null if file is invalid or flat
+     */
+    public static @Nullable DefsEntry getOrCreateDefsBlock(@Nullable PsiElement context) {
+        if (context == null) return null;
+        var file = context.getContainingFile();
+        if (file == null) return null;
+        return getOrCreateDefsBlock(file);
+    }
+
+    /**
+     * Resolves the existing {@link DefsEntry} block or synthesizes a canonical
+     * {@code :defs { ... }} block inside the document's root object.
+     *
+     * @param file target STVN PSI file
+     * @return the resolved or synthesized DefsEntry, or null if file is invalid or flat
+     */
+    public static @Nullable DefsEntry getOrCreateDefsBlock(PsiFile file) {
+        if (file instanceof org.stvnadore.plugin.StvnFlatPayloadFile) {
+            return null;
+        }
+
+        var existingDefs = PsiTreeUtil.findChildOfType(file, DefsEntry.class);
+        if (existingDefs != null) {
+            return existingDefs;
+        }
+
+        var project = file.getProject();
+        var doc = PsiDocumentManager.getInstance(project).getDocument(file);
+        if (doc == null) {
+            return null;
+        }
+
+        // Determine canonical insertion anchor in root object
+        var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
+        var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+
+        int insertOffset;
+        String defsSnippet;
+
+        if (typeEntry != null) {
+            int lineNum = doc.getLineNumber(typeEntry.getTextRange().getStartOffset());
+            insertOffset = doc.getLineStartOffset(lineNum);
+            defsSnippet = "  :defs {\n  }\n";
+        } else if (bodyEntry != null) {
+            int lineNum = doc.getLineNumber(bodyEntry.getTextRange().getStartOffset());
+            insertOffset = doc.getLineStartOffset(lineNum);
+            defsSnippet = "  :defs {\n  }\n";
+        } else {
+            var rootLBrace = file.getNode().findChildByType(StvnTypes.LBRACE);
+            if (rootLBrace != null) {
+                insertOffset = rootLBrace.getStartOffset() + 1;
+                defsSnippet = "\n  :defs {\n  }\n";
+            } else {
+                insertOffset = 0;
+                defsSnippet = "{\n  :defs {\n  }\n}\n";
+            }
+        }
+
+        doc.insertString(insertOffset, defsSnippet);
+        PsiDocumentManager.getInstance(project).commitDocument(doc);
+
+        return PsiTreeUtil.findChildOfType(file, DefsEntry.class);
     }
 }

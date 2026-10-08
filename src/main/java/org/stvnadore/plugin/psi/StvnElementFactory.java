@@ -7,6 +7,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
@@ -93,5 +94,16 @@ public final class StvnElementFactory {
             return typeDef.getMetadataMap();
         }
         throw new IllegalStateException("Failed to create MetadataMap from text: " + text);
+    }
+
+    public static DefsEntry createDefsBlock(Project project, String content) {
+        var dummyFileText = "{\n  :defs {\n" + content + "\n  }\n}";
+        var file = PsiFileFactory.getInstance(project)
+                .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
+        var defs = PsiTreeUtil.findChildOfType(file, DefsEntry.class);
+        if (defs != null) {
+            return defs;
+        }
+        throw new IllegalStateException("Failed to create DefsEntry from content: " + content);
     }
 }

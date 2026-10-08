@@ -31,6 +31,7 @@ import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.*;
 
@@ -298,7 +299,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
                     }
 
-                    if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
+                    if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
+                        || message.contains("Undefined constant: ") || message.contains("Unresolved constant: ")
+                        || message.contains("Undeclared value keyword or constant: ")) {
                         var offendingTypeKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeKeyword.class);
                         if (offendingTypeKw == null) {
                             var elemAtRange = file.findElementAt(s);
@@ -308,6 +311,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                         if (offendingTypeKw != null) {
                             annotationBuilder = StvnUnresolvedTypeQuickFixProvider.registerFixes(annotationBuilder, offendingTypeKw);
+                        } else {
+                            var offendingValKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, ValueKeyword.class);
+                            if (offendingValKw == null) {
+                                var elemAtRange = file.findElementAt(s);
+                                if (elemAtRange != null) {
+                                    offendingValKw = PsiTreeUtil.getParentOfType(elemAtRange, ValueKeyword.class, false);
+                                }
+                            }
+                            if (offendingValKw != null && offendingValKw.getText().startsWith("#")) {
+                                annotationBuilder = annotationBuilder.withFix(new StvnDeclareConstantQuickFix(offendingValKw, StvnVocabulary.TYPE_INT, "0"));
+                            }
                         }
                     }
 
@@ -627,6 +641,32 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         holder.newAnnotation(severity, message)
                               .range(typeEntry.getTextRange())
                               .create();
+                        registered = true;
+                    }
+                }
+            }
+
+            // 9b. Undefined / Unresolved Constant Fallback
+            if (!registered && (message.contains("Undefined constant: ") || message.contains("Unresolved constant: ")
+                || message.contains("Undefined type: #") || message.contains("Undeclared value keyword or constant: "))) {
+                var prefix = message.contains("Undefined constant: ") ? "Undefined constant: "
+                    : (message.contains("Unresolved constant: ") ? "Unresolved constant: "
+                    : (message.contains("Undeclared value keyword or constant: ") ? "Undeclared value keyword or constant: " : "Undefined type: "));
+                var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
+                if (rawName.startsWith("'")) {
+                    rawName = rawName.substring(1);
+                }
+                var constName = rawName.split("['\\s,;\\)\\}\\]]")[0].trim();
+                if (!constName.startsWith("#")) {
+                    constName = "#" + constName;
+                }
+                var valKeywords = PsiTreeUtil.findChildrenOfType(file, ValueKeyword.class);
+                for (var valKw : valKeywords) {
+                    if (valKw.getText().equals(constName)) {
+                        var ab = holder.newAnnotation(severity, message)
+                              .range(valKw.getTextRange());
+                        ab = ab.withFix(new StvnDeclareConstantQuickFix(valKw, StvnVocabulary.TYPE_INT, "0"));
+                        ab.create();
                         registered = true;
                     }
                 }

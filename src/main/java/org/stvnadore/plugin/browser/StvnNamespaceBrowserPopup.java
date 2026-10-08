@@ -202,7 +202,7 @@ public final class StvnNamespaceBrowserPopup {
             var openBrace = enclosingPkg.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : enclosingPkg.getTextOffset();
         } else {
-            var defsEntry = PsiTreeUtil.findChildOfType(sourceFile, DefsEntry.class);
+            var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
             if (defsEntry != null) {
                 var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
                 insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
@@ -233,7 +233,7 @@ public final class StvnNamespaceBrowserPopup {
         var doc = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
         if (doc == null) return;
 
-        var defsEntry = PsiTreeUtil.findChildOfType(sourceFile, DefsEntry.class);
+        var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
         if (defsEntry != null) {
             var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             if (openBrace != null) {

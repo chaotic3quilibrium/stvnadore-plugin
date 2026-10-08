@@ -2,6 +2,7 @@ package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.lang.annotation.AnnotationBuilder;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnNamespaceIndexHelper;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.TypeKeyword;
@@ -55,6 +56,10 @@ public final class StvnUnresolvedTypeQuickFixProvider {
                 builder = builder.withFix(new StvnQualifyTypeQuickFix(typeKw, fqni, "Qualify as '" + fqni + "'"));
                 builder = builder.withFix(new StvnImportUseQuickFix(typeKw, targetNs, bareName, "Import '" + bareName + "' from " + targetNs + " via :use"));
             }
+        } else {
+            // Case C: Unresolved Brand-New Type (Not in Prelude or Sibling Modules)
+            builder = builder.withFix(new StvnCreateNominalTypeQuickFix(typeKw, StvnVocabulary.TYPE_STRING));
+            builder = builder.withFix(new StvnAddIncludeQuickFix(typeKw, "common_types.stvn_incl"));
         }
 
         return builder;

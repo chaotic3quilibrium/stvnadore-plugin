@@ -92,7 +92,7 @@ public final class StvnBrandNominalTypeQuickFix extends LocalQuickFixAndIntentio
         if (doc == null) return;
 
         var tokenText = startElement.getText();
-        var defsEntry = PsiTreeUtil.getParentOfType(startElement, DefsEntry.class);
+        var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(file);
         if (defsEntry == null) return;
 
         var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);

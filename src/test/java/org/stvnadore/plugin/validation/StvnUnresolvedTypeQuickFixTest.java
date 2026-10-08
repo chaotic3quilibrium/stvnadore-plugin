@@ -193,4 +193,200 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
             doc.contains("Unqualified reference to Standard Library Prelude type '<code>:org/stvnadore/prelude/IPv4</code>'"));
         assertTrue("Doc must include underlying prelude structure", doc.contains("<b>Underlying Structure:</b>"));
     }
+
+    /**
+     * Verifies Fix 2 on a document completely lacking :defs (e.g. nonempty_torture.stvn pattern).
+     * Proves that :defs is synthesized before :type and the :use statement is inserted.
+     */
+    public void testFix2SynthesizesDefsBlockWhenDefsIsAbsent() {
+        var content = """
+            {
+              :type :IPv4
+              :body "127.0.0.1"
+            }
+            """;
+        myFixture.configureByText("no_defs_fix2.stvn", content);
+        var caretOffset = content.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Import ':IPv4' from Prelude via :use (preserves type identity)");
+        assertFalse("Fix 2 intention must be available on document lacking :defs", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must synthesize :defs block", resultText.contains(":defs {"));
+        assertTrue("Must insert :use statement into synthesized :defs",
+            resultText.contains(":use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]"));
+
+        // Verify spatial ordering: :defs must precede :type
+        int defsPos = resultText.indexOf(":defs");
+        int typePos = resultText.indexOf(":type");
+        assertTrue("Synthesized :defs block must be positioned before :type", defsPos < typePos);
+
+        // Verify 0 syntax errors
+        var errors = PsiTreeUtil.findChildrenOfType(myFixture.getFile(), PsiErrorElement.class);
+        assertTrue("Must produce zero PsiErrorElement nodes. Found: " + errors, errors.isEmpty());
+    }
+
+    /**
+     * Verifies Fix 3 on a document completely lacking :defs.
+     * Proves that :defs is synthesized before :type and the nominal brand is inserted.
+     */
+    public void testFix3SynthesizesDefsBlockWhenDefsIsAbsent() {
+        var content = """
+            {
+              :type :IPv4
+              :body "127.0.0.1"
+            }
+            """;
+        myFixture.configureByText("no_defs_fix3.stvn", content);
+        var caretOffset = content.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Brand new nominal type ':IPv4' from Prelude (creates distinct type)");
+        assertFalse("Fix 3 intention must be available on document lacking :defs", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must synthesize :defs block", resultText.contains(":defs {"));
+        assertTrue("Must insert nominal brand into synthesized :defs",
+            resultText.contains(":IPv4 :org/stvnadore/prelude/IPv4"));
+
+        int defsPos = resultText.indexOf(":defs");
+        int typePos = resultText.indexOf(":type");
+        assertTrue("Synthesized :defs block must precede :type", defsPos < typePos);
+
+        var errors = PsiTreeUtil.findChildrenOfType(myFixture.getFile(), PsiErrorElement.class);
+        assertTrue("Must produce zero PsiErrorElement nodes. Found: " + errors, errors.isEmpty());
+    }
+
+    /**
+     * Verifies that Fix 2 does NOT duplicate :defs when :defs already exists.
+     */
+    public void testFix2DoesNotDuplicateExistingDefsBlock() {
+        var content = """
+            {
+              :defs {
+                :ExistingType :Int
+              }
+              :type :IPv4
+              :body "127.0.0.1"
+            }
+            """;
+        myFixture.configureByText("existing_defs_fix2.stvn", content);
+        var caretOffset = content.indexOf(":IPv4");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Import ':IPv4' from Prelude via :use (preserves type identity)");
+        assertFalse("Fix 2 must be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var resultText = myFixture.getFile().getText();
+        int firstDefs = resultText.indexOf(":defs");
+        int secondDefs = resultText.indexOf(":defs", firstDefs + 1);
+        assertEquals("Must contain exactly ONE :defs block; duplicate was synthesized", -1, secondDefs);
+        assertTrue("Existing definition must remain intact", resultText.contains(":ExistingType :Int"));
+        assertTrue("Import must be present", resultText.contains(":use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]"));
+    }
+
+    /**
+     * Verifies creating a fresh nominal type for an unknown domain type on a document without :defs.
+     */
+    public void testCreateNominalTypeQuickFixSynthesizesDefs() {
+        var content = """
+            {
+              :type :Customer
+              :body "Acme Corp"
+            }
+            """;
+        myFixture.configureByText("customer_no_defs.stvn", content);
+        var caretOffset = content.indexOf(":Customer");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Create nominal type ':Customer' in :defs");
+        assertFalse("Create nominal type intention must be available for unknown symbol", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must synthesize :defs block", resultText.contains(":defs {"));
+        assertTrue("Must insert ':Customer :String' into :defs", resultText.contains(":Customer :String"));
+
+        int defsPos = resultText.indexOf(":defs");
+        int typePos = resultText.indexOf(":type");
+        assertTrue("Synthesized :defs block must precede :type", defsPos < typePos);
+    }
+
+    /**
+     * Verifies Fix 2 on nonempty_torture.stvn referencing :Uuid in :type.
+     */
+    public void testNonemptyTortureQuickFixDefsSynthesis() {
+        var content = """
+            {
+              :type :Tuple(
+                      { #minSize 1 } :Seq(:Int)
+                      { #minSize 1 } :Set(:String)
+                      { #minSize 1 } :Map(:Uuid :String)
+                      { #minSize 1 } :Map(:String :Int))
+              :body (
+                [1]
+                ["A" "B" "C"]
+                {
+                  ["12345678-1234-1234-1234-123456789012" "A"]
+                  ["12345678-1234-1234-1234-123456789013" "A"]
+                }
+                {
+                  ["1" 2]
+                  ["2" 3]
+                }
+              )
+            }
+            """;
+        myFixture.configureByText("nonempty_torture_test.stvn", content);
+        var caretOffset = content.indexOf(":Uuid");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Import ':Uuid' from Prelude via :use (preserves type identity)");
+        assertFalse("Fix 2 must be available for :Uuid in nonempty_torture.stvn", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var text = myFixture.getFile().getText();
+        assertTrue("Must synthesize :defs block before :type", text.indexOf(":defs") < text.indexOf(":type"));
+        assertTrue("Must contain :use statement for :Uuid", text.contains(":use [ :org/stvnadore/prelude { :Uuid :Uuid } ]"));
+
+        var errors = PsiTreeUtil.findChildrenOfType(myFixture.getFile(), PsiErrorElement.class);
+        assertTrue("Must contain zero PsiErrorElement nodes. Found: " + errors, errors.isEmpty());
+    }
+
+    /**
+     * Verifies declaring a constant for an unresolved value keyword on a document without :defs.
+     */
+    public void testDeclareConstantQuickFixSynthesizesDefs() {
+        var content = """
+            {
+              :type :Int
+              :body #DEFAULT_PORT
+            }
+            """;
+        myFixture.configureByText("const_no_defs.stvn", content);
+        var caretOffset = content.indexOf("#DEFAULT_PORT");
+        myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Declare constant '#DEFAULT_PORT' in :defs");
+        assertFalse("Declare constant intention must be available for unresolved constant", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must synthesize :defs block", resultText.contains(":defs {"));
+        assertTrue("Must insert '#DEFAULT_PORT :Int 0' into :defs", resultText.contains("#DEFAULT_PORT :Int 0"));
+
+        int defsPos = resultText.indexOf(":defs");
+        int typePos = resultText.indexOf(":type");
+        assertTrue("Synthesized :defs block must precede :type", defsPos < typePos);
+    }
 }

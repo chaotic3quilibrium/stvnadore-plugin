@@ -113,21 +113,20 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
             insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : enclosingPkg.getTextOffset();
             importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " " + symbolName + " } ]";
         } else {
-            var defsEntry = PsiTreeUtil.getParentOfType(startElement, DefsEntry.class);
-            if (defsEntry != null) {
-                var existingUse = findExistingUse(defsEntry);
-                if (existingUse != null) {
-                    appendSymbolToExistingUse(doc, existingUse);
-                    PsiDocumentManager.getInstance(project).commitDocument(doc);
-                    CodeStyleManager.getInstance(project).reformat(file);
-                    return;
-                }
-                var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
-                insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
-                importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " " + symbolName + " } ]";
-            } else {
+            var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(file);
+            if (defsEntry == null) {
                 return;
             }
+            var existingUse = findExistingUse(defsEntry);
+            if (existingUse != null) {
+                appendSymbolToExistingUse(doc, existingUse);
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+                CodeStyleManager.getInstance(project).reformat(file);
+                return;
+            }
+            var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
+            insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
+            importStatement = "\n    :use [ " + targetNamespace + " { " + symbolName + " " + symbolName + " } ]";
         }
 
         doc.insertString(insertOffset, importStatement);
