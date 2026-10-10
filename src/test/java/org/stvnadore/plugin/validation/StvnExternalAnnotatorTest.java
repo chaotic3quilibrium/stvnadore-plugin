@@ -402,6 +402,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testCleanMultiFileInclusionProducesZeroAnnotations() {
         var primitivesContent = """
             {
+              :meta {
+                #name "clean_primitives"
+                #domain "events"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
                 :package :com/nyse/primitives {
                   :MicCode { #minSize 4 #maxSize 4 #regex "^[A-Z]{4}$" } :String
@@ -412,12 +417,17 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("clean_primitives.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("clean_primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
+              :meta {
+                #name "clean_events"
+                #domain "events"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :include [ "clean_primitives.stvn_inclf" ]
+                :include [ "clean_primitives.stvn_di" ]
                 :package :com/nyse/events {
                   :use [ :com/nyse/primitives { #strip } ]
                   :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
@@ -425,7 +435,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("clean_events.stvn_incl", eventsContent);
+        myFixture.configureByText("clean_events.stvn_di", eventsContent);
         var highlights = myFixture.doHighlighting();
 
         for (var highlight : highlights) {
@@ -495,6 +505,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testFixingChildModuleClearsParentProblemFileInWolfTheProblemSolver() throws Exception {
         var primitivesContent = """
             {
+              :meta {
+                #name "fixable_primitives"
+                #domain "events"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
                 :package :com/nyse/primitives {
                   :SequenceNumber :Uint49
@@ -502,19 +517,24 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        var primitivesFile = myFixture.addFileToProject("fixable_primitives.stvn_inclf", primitivesContent);
+        var primitivesFile = myFixture.addFileToProject("fixable_primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
+              :meta {
+                #name "fixable_events"
+                #domain "events"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :include [ "fixable_primitives.stvn_inclf" ]
+                :include [ "fixable_primitives.stvn_di" ]
                 :package :com/nyse/events {
                   :use [ :com/nyse/primitives { #strip } ]
                 }
               }
             }
             """;
-        var eventsFile = myFixture.configureByText("fixable_events.stvn_incl", eventsContent);
+        var eventsFile = myFixture.configureByText("fixable_events.stvn_di", eventsContent);
         var eventsVf = eventsFile.getVirtualFile();
         assertNotNull("VirtualFile must not be null", eventsVf);
 
@@ -532,6 +552,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             // 2. Fix the child module
             var validPrimitivesContent = """
                 {
+                  :meta {
+                    #name "fixable_primitives"
+                    #domain "events"
+                    #kind #DEFS_INCLUDE
+                  }
                   :defs {
                     :package :com/nyse/primitives {
                       :SequenceNumber {#unsigned #size 49} :Int
@@ -550,7 +575,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             var physicalPath = org.stvnadore.plugin.reference.StvnTypeResolver.resolvePhysicalPath(eventsVf, getProject(), eventsFile.getText());
             var tempParent = java.nio.file.Path.of(physicalPath).getParent();
             if (tempParent != null) {
-                var childDiskFile = tempParent.resolve("fixable_primitives.stvn_inclf");
+                var childDiskFile = tempParent.resolve("fixable_primitives.stvn_di");
                 java.nio.file.Files.writeString(childDiskFile, validPrimitivesContent, java.nio.charset.StandardCharsets.UTF_8);
             }
 
@@ -567,7 +592,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             boolean hasErrors = cleanHighlights.stream().anyMatch(h -> h.getSeverity() == HighlightSeverity.ERROR);
             assertFalse("Parent file must contain zero ERROR highlights after child module is fixed", hasErrors);
 
-            assertFalse("WolfTheProblemSolver must clear problem status for events.stvn_incl after child fix",
+            assertFalse("WolfTheProblemSolver must clear problem status for events.stvn_di after child fix",
                 wolf.isProblemFile(eventsVf));
 
             var fileStatus = FileStatusManager.getInstance(getProject()).getStatus(eventsVf);

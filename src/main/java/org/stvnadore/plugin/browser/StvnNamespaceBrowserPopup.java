@@ -251,9 +251,9 @@ public final class StvnNamespaceBrowserPopup {
     private static void navigateToSymbol(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         if (entry.isPrelude()) {
             var lightFile = new LightVirtualFile(
-                "org_stvnadore_prelude.stvn_inclf",
-                StvnFileType.Inclf.INSTANCE,
-                StvnPrelude.PRELUDE_STVN_INCLF
+                "org_stvnadore_prelude.stvn_d",
+                StvnFileType.Defs.INSTANCE,
+                StvnPrelude.PRELUDE_STVN_D
             );
             lightFile.setWritable(false);
             FileEditorManager.getInstance(project).openTextEditor(

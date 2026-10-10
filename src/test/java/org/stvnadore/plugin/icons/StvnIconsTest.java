@@ -19,6 +19,10 @@ public final class StvnIconsTest extends TestCase {
         assertNotNull("STVN_BIN icon must not be null", StvnIcons.STVN_BIN);
         assertNotNull("STVN_CAS icon must not be null", StvnIcons.STVN_CAS);
         assertNotNull("STVN_IR icon must not be null", StvnIcons.STVN_IR);
+        assertNotNull("STVN_DEFS icon must not be null", StvnIcons.STVN_DEFS);
+        assertNotNull("STVN_DEFS_INCL icon must not be null", StvnIcons.STVN_DEFS_INCL);
+        assertNotNull("STVN_PAYLOAD_INCL icon must not be null", StvnIcons.STVN_PAYLOAD_INCL);
+        assertNotNull("STVN_BD icon must not be null", StvnIcons.STVN_BD);
 
         assertTrue(StvnIcons.STVN.getIconWidth() > 0);
         assertTrue(StvnIcons.STVN_F.getIconWidth() > 0);
@@ -27,6 +31,10 @@ public final class StvnIconsTest extends TestCase {
         assertTrue(StvnIcons.STVN_BIN.getIconWidth() > 0);
         assertTrue(StvnIcons.STVN_CAS.getIconWidth() > 0);
         assertTrue(StvnIcons.STVN_IR.getIconWidth() > 0);
+        assertTrue(StvnIcons.STVN_DEFS.getIconWidth() > 0);
+        assertTrue(StvnIcons.STVN_DEFS_INCL.getIconWidth() > 0);
+        assertTrue(StvnIcons.STVN_PAYLOAD_INCL.getIconWidth() > 0);
+        assertTrue(StvnIcons.STVN_BD.getIconWidth() > 0);
     }
 
     public void testLegacyFileFieldPurged() {

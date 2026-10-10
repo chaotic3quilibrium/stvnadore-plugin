@@ -185,6 +185,27 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
 
     private static void processAllFiles(Project project, GlobalSearchScope scope, Processor<PsiFile> fileProcessor) {
         var psiManager = PsiManager.getInstance(project);
+        var defsFiles = FileTypeIndex.getFiles(StvnFileType.Defs.INSTANCE, scope);
+        for (var vf : defsFiles) {
+            var psiFile = psiManager.findFile(vf);
+            if (psiFile != null && !fileProcessor.process(psiFile)) {
+                return;
+            }
+        }
+        var defsInclFiles = FileTypeIndex.getFiles(StvnFileType.DefsInclude.INSTANCE, scope);
+        for (var vf : defsInclFiles) {
+            var psiFile = psiManager.findFile(vf);
+            if (psiFile != null && !fileProcessor.process(psiFile)) {
+                return;
+            }
+        }
+        var payloadInclFiles = FileTypeIndex.getFiles(StvnFileType.PayloadInclude.INSTANCE, scope);
+        for (var vf : payloadInclFiles) {
+            var psiFile = psiManager.findFile(vf);
+            if (psiFile != null && !fileProcessor.process(psiFile)) {
+                return;
+            }
+        }
         var files = FileTypeIndex.getFiles(StvnFileType.Payload.INSTANCE, scope);
         for (var vf : files) {
             var psiFile = psiManager.findFile(vf);

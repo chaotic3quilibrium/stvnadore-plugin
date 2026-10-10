@@ -495,6 +495,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     public static java.util.List<String> extractResolutionTrace(TypeKeyword startKeyword) {
         var trace = new java.util.ArrayList<String>();
         trace.add(startKeyword.getText());
+        if (EXACT_TERMINAL_TYPE_NAMES.contains(startKeyword.getText())) {
+            return trace;
+        }
         var visitedFiles = new java.util.HashSet<PsiFile>();
         var currentElement = resolveTypeInFile(startKeyword.getContainingFile(), startKeyword.getText(), visitedFiles, trace);
         
@@ -598,7 +601,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         StvnVocabulary.TYPE_OPTION,
         StvnVocabulary.TYPE_EITHER,
         StvnVocabulary.TYPE_UNION,
-        ":IPv4",
         ":Uuid",
         ":Ulid",
         ":Sha256",
@@ -609,7 +611,17 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         ":Probability",
         ":Currency",
         ":Latitude",
-        ":Longitude"
+        ":Longitude",
+        ":PosixId",
+        ":PolyglotCodeId",
+        ":StvnPosixId64",
+        ":StvnDocumentKind",
+        ":StvnDocumentMeta",
+        ":StvnCatalogMeta",
+        ":Int32",
+        ":Float64",
+        ":StringNonEmpty64",
+        ":StringFixed15"
     );
 
     private static final java.util.regex.Pattern PRIMITIVE_PATTERN = java.util.regex.Pattern.compile(

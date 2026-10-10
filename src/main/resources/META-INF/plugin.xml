@@ -130,6 +130,35 @@
                   fieldName="INSTANCE"
                   extensions="stvn"/>
 
+        <fileType name="STVN_DEFS"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$Defs"
+                  fieldName="INSTANCE"
+                  extensions="stvn_d"/>
+
+        <fileType name="STVN_DEFS_INCLUDE"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$DefsInclude"
+                  fieldName="INSTANCE"
+                  extensions="stvn_di"/>
+
+        <fileType name="STVN_PAYLOAD_INCLUDE"
+                  language="STVN"
+                  implementationClass="org.stvnadore.plugin.StvnFileType$PayloadInclude"
+                  fieldName="INSTANCE"
+                  extensions="stvn_i"/>
+
+        <fileType name="STVN_BIN"
+                  implementationClass="org.stvnadore.plugin.StvnBinaryFileType"
+                  fieldName="INSTANCE"
+                  extensions="stvn_b"/>
+
+        <fileType name="STVN_BINARY_DEFS"
+                  implementationClass="org.stvnadore.plugin.StvnBinaryDefsFileType"
+                  fieldName="INSTANCE"
+                  extensions="stvn_bd"/>
+
+        <!-- 1c. Transitional Legacy File Types (Excised in Matrix v2026.10.09a, retained for migration diagnostics) -->
         <fileType name="STVN_FLAT_PAYLOAD"
                   language="STVN"
                   implementationClass="org.stvnadore.plugin.StvnFileType$FlatPayload"
@@ -154,16 +183,17 @@
                   fieldName="INSTANCE"
                   extensions="stvn_cas"/>
 
-        <fileType name="STVN_BIN"
-                  implementationClass="org.stvnadore.plugin.StvnBinaryFileType"
-                  fieldName="INSTANCE"
-                  extensions="stvn_bin"/>
-
         <fileType name="STVN_IR"
                   language="TEXT"
                   implementationClass="org.stvnadore.plugin.StvnIrFileType"
                   fieldName="INSTANCE"
                   extensions="stvn_ir"/>
+
+        <!-- 1b. Brace Matcher and Folding Builder -->
+        <lang.braceMatcher language="STVN"
+                           implementationClass="org.stvnadore.plugin.editor.StvnBraceMatcher"/>
+        <lang.foldingBuilder language="STVN"
+                             implementationClass="org.stvnadore.plugin.editor.StvnFoldingBuilder"/>
 
         <!-- 2. Core Parser Definition -->
         <lang.parserDefinition language="STVN"
@@ -472,6 +502,36 @@
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnUnresolvedTypeInspection"/>
+
+        <!-- 12s. Local Inspection for Zero-Tab Invariant -->
+        <localInspection language="STVN"
+                         shortName="StvnTabCharacter"
+                         displayName="Tab character forbidden inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnTabCharacterInspection"/>
+
+        <!-- 12t. Local Inspection for Missing Root Meta Block -->
+        <localInspection language="STVN"
+                         shortName="StvnMissingMeta"
+                         displayName="Missing root metadata block inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="org.stvnadore.plugin.validation.StvnMissingMetaInspection"/>
+
+        <!-- 12u. Local Inspection for Document Stem Mismatch -->
+        <localInspection language="STVN"
+                         shortName="StvnStemMismatch"
+                         displayName="Document stem mismatch inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnStemMismatchInspection"/>
 
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>

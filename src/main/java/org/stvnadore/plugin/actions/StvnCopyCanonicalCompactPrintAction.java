@@ -10,17 +10,18 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ir.StvnValue;
-import org.stvnadore.core.printer.AstCompactPrinter;
+import org.stvnadore.core.ast.StvnDocument;
+import org.stvnadore.core.io.CanonicalStvnWriter;
 import org.stvnadore.plugin.StvnFile;
 
 import java.awt.datatransfer.StringSelection;
-import java.util.Optional;
 
 /**
  * Editor context action that compiles active document text and copies canonical compact single-line layout
  * directly to the system clipboard without mutating the editor document buffer.
+ * Emits zero-bracket canonical text using CanonicalStvnWriter.
  *
  * @since 1.3.0
  */
@@ -44,19 +45,20 @@ public final class StvnCopyCanonicalCompactPrintAction extends AnAction {
         }
 
         String text = editor.getDocument().getText();
-        Optional<StvnValue> astOptional;
+        StvnCompilationResult<StvnDocument> result;
         try {
-            astOptional = StvnCompiler.compile(text);
+            result = StvnCompiler.compile(text);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
         }
 
-        if (astOptional.isEmpty()) {
+        if (result.hasErrors() || result.document().isEmpty()) {
             return;
         }
 
-        String compact = AstCompactPrinter.print(astOptional.get());
+        CanonicalStvnWriter writer = new CanonicalStvnWriter();
+        String compact = writer.printToString(result.document().get());
         CopyPasteManager.getInstance().setContents(new StringSelection(compact));
     }
 

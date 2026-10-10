@@ -11,19 +11,15 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ir.StvnValue;
+import org.stvnadore.core.ast.StvnDocument;
+import org.stvnadore.core.io.CanonicalStvnWriter;
 import org.stvnadore.core.printer.AstPrettyPrinter;
 import org.stvnadore.plugin.StvnFile;
 
-import java.util.Optional;
-
 /**
  * Editor context action converting active STVN document text into canonical pretty-printed format.
- * <p>
- * This action parses the document text, lowers the syntax into an AST {@link StvnValue},
- * and serializes it using {@link AstPrettyPrinter} with 2-space indentation and long-form keywords.
- * </p>
  *
  * @since 1.3.0
  */
@@ -54,19 +50,26 @@ public final class StvnConvertToPrettyPrintAction extends AnAction {
         Document document = editor.getDocument();
         String text = document.getText();
 
-        Optional<StvnValue> astOptional;
+        StvnCompilationResult<StvnDocument> result;
         try {
-            astOptional = StvnCompiler.compile(text);
+            result = StvnCompiler.compile(text);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
         }
 
-        if (astOptional.isEmpty()) {
+        if (result.hasErrors() || result.document().isEmpty()) {
             return;
         }
 
-        String formatted = AstPrettyPrinter.print(astOptional.get());
+        StvnDocument doc = result.document().get();
+        String formatted;
+        if (doc.payload().isPresent()) {
+            formatted = AstPrettyPrinter.print(doc.payload().get());
+        } else {
+            formatted = new CanonicalStvnWriter().printToString(doc);
+        }
+
         WriteCommandAction.runWriteCommandAction(project, "STVN: Canonicalize & Pretty Print", null, () -> {
             document.replaceString(0, document.getTextLength(), formatted);
         });

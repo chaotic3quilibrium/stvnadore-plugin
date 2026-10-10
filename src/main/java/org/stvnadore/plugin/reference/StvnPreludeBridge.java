@@ -37,9 +37,9 @@ public final class StvnPreludeBridge {
     public static PsiFile getPreludeFile(Project project) {
         return CachedValuesManager.getManager(project).getCachedValue(project, PRELUDE_FILE_KEY, () -> {
             var file = PsiFileFactory.getInstance(project).createFileFromText(
-                "prelude.stvn_inclf",
-                StvnFileType.Inclf.INSTANCE,
-                StvnPrelude.PRELUDE_STVN_INCLF
+                "prelude.stvn_d",
+                StvnFileType.Defs.INSTANCE,
+                StvnPrelude.PRELUDE_STVN_D
             );
             return CachedValueProvider.Result.create(file, ModificationTracker.NEVER_CHANGED);
         }, false);
@@ -54,13 +54,28 @@ public final class StvnPreludeBridge {
      */
     public static @Nullable TypeDefinition resolvePreludeTypeDefinition(Project project, String nameOrFqni) {
         var file = getPreludeFile(project);
-        var targetFqni = nameOrFqni.startsWith(":org/stvnadore/prelude/")
-            ? nameOrFqni
-            : ":org/stvnadore/prelude/" + (nameOrFqni.startsWith(":") ? nameOrFqni.substring(1) : nameOrFqni);
-        var defs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var def : defs) {
+        var normName = nameOrFqni.startsWith(":") ? nameOrFqni : ":" + nameOrFqni;
+
+        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+        for (var pkg : packages) {
+            var pkgPath = pkg.getPackagePath();
+            var pkgPrefix = pkgPath != null ? pkgPath.getText() : "";
+            var defs = PsiTreeUtil.findChildrenOfType(pkg, TypeDefinition.class);
+            for (var def : defs) {
+                var kw = def.getTypeKeyword();
+                if (kw == null) continue;
+                var localName = kw.getText();
+                var fqni = pkgPrefix + "/" + (localName.startsWith(":") ? localName.substring(1) : localName);
+                if (localName.equals(normName) || fqni.equals(normName)) {
+                    return def;
+                }
+            }
+        }
+
+        var rootDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var def : rootDefs) {
             var kw = def.getTypeKeyword();
-            if (kw != null && kw.getText().equals(targetFqni)) {
+            if (kw != null && kw.getText().equals(normName)) {
                 return def;
             }
         }

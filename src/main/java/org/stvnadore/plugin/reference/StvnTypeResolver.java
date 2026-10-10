@@ -318,10 +318,10 @@ public final class StvnTypeResolver {
                     var path = resolvePhysicalPath(virtualFile, file.getProject(), text);
                     var result = StvnCompiler.compileToResult(text, path, StvnParserConfig.DEFAULT);
                     var rootOpt = result.document();
-                    if (rootOpt.isPresent()) {
+                    if (rootOpt.isPresent() && rootOpt.get().payload().isPresent()) {
                         var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
                         if (bodyEntry != null && bodyEntry.getValue() != null) {
-                            mapValues(bodyEntry.getValue(), rootOpt.get(), map);
+                            mapValues(bodyEntry.getValue(), rootOpt.get().payload().get(), map);
                         }
                     }
                 }
@@ -798,6 +798,12 @@ public final class StvnTypeResolver {
 
         if (branchSchema.aliasName().isPresent()) {
             var alias = branchSchema.aliasName().get();
+            var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
+                ? ":" + alias.substring(":org/stvnadore/prelude/".length())
+                : alias;
+            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
+                return shortAlias;
+            }
             var keywordElement = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
             var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
                    : keywordElement instanceof TypeKeyword k ? k : null;
@@ -1065,6 +1071,12 @@ public final class StvnTypeResolver {
     ) {
         var keyword = branchSchema.getTypeKeyword();
         if (keyword != null) {
+            var shortKw = keyword.getText().startsWith(":org/stvnadore/prelude/")
+                ? ":" + keyword.getText().substring(":org/stvnadore/prelude/".length())
+                : keyword.getText();
+            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortKw)) {
+                return shortKw;
+            }
             var file = keyword.getContainingFile();
             var resolvedTarget = StvnTypeReference.resolveTypeInFile(file, keyword.getText(), new HashSet<>());
             var targetDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedTarget);
@@ -2466,19 +2478,7 @@ public final class StvnTypeResolver {
         }
         var targetText = StvnSchemaFormatter.formatSchema(targetSchema);
         var sourceText = StvnSchemaFormatter.formatSchema(sourceSchema);
-        if (targetText.equals(sourceText)) {
-            return true;
-        }
-
-        var resolvedTarget = resolveNominalSchema(targetSchema);
-        var resolvedSource = resolveNominalSchema(sourceSchema);
-        var normTargetText = StvnSchemaFormatter.formatSchema(resolvedTarget != null ? resolvedTarget : targetSchema);
-        var normSourceText = StvnSchemaFormatter.formatSchema(resolvedSource != null ? resolvedSource : sourceSchema);
-        if (normTargetText.equals(normSourceText)) {
-            return true;
-        }
-
-        return false;
+        return targetText.equals(sourceText);
     }
 
     /**

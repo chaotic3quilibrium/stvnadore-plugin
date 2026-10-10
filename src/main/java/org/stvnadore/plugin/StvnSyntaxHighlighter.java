@@ -85,6 +85,7 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_EITHER) ||
                type.equals(StvnTypes.KW_UNION) ||
                type.equals(StvnTypes.KW_DEFS) ||
+               type.equals(StvnTypes.KW_META) ||
                type.equals(StvnTypes.KW_TYPE) ||
                type.equals(StvnTypes.KW_BODY) ||
                type.equals(StvnTypes.KW_INCLUDE) ||
@@ -105,12 +106,19 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_LEFT_SHORT) ||
                type.equals(StvnTypes.KW_RIGHT) ||
                type.equals(StvnTypes.KW_RIGHT_SHORT) ||
+               type.equals(StvnTypes.KW_KIND_BODY) ||
+               type.equals(StvnTypes.KW_KIND_DEFS) ||
+               type.equals(StvnTypes.KW_KIND_BODY_INCLUDE) ||
+               type.equals(StvnTypes.KW_KIND_DEFS_INCLUDE) ||
                type.equals(StvnTypes.UNION_TAG_PREFIX) ||
                type.equals(StvnTypes.VALUE_KEYWORD_BASE);
     }
 
     private static boolean isMetadataTokenType(IElementType type) {
-        return type.equals(StvnTypes.KW_EQUATABLE) ||
+        return type.equals(StvnTypes.KW_META_NAME) ||
+               type.equals(StvnTypes.KW_META_DOMAIN) ||
+               type.equals(StvnTypes.KW_META_KIND) ||
+               type.equals(StvnTypes.KW_EQUATABLE) ||
                type.equals(StvnTypes.KW_COMPARABLE) ||
                type.equals(StvnTypes.KW_PRESERVE_INDENT) ||
                type.equals(StvnTypes.KW_SIZE) ||

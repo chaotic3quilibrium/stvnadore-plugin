@@ -75,13 +75,21 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   
   // Root & Control keywords (: namespace)
   ":defs"                        { return KW_DEFS; }
+  ":meta"                        { return KW_META; }
   ":type"                        { return KW_TYPE; }
   ":body"                        { return KW_BODY; }
   ":include"                     { return KW_INCLUDE; }
   ":package"                     { return KW_PACKAGE; }
   ":use"                         { return KW_USE; }
   
-  // Metadata constraints (# namespace)
+  // Metadata constraints & Root facets (# namespace)
+  "#name"                        { return KW_META_NAME; }
+  "#domain"                      { return KW_META_DOMAIN; }
+  "#kind"                        { return KW_META_KIND; }
+  "#BODY"                        { return KW_KIND_BODY; }
+  "#DEFS"                        { return KW_KIND_DEFS; }
+  "#BODY_INCLUDE"                { return KW_KIND_BODY_INCLUDE; }
+  "#DEFS_INCLUDE"                { return KW_KIND_DEFS_INCLUDE; }
   "#strip"                       { return KW_STRIP; }
   "#equatable"                   { return KW_EQUATABLE; }
   "#comparable"                  { return KW_COMPARABLE; }

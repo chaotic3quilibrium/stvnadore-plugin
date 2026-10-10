@@ -45,12 +45,13 @@ public final class StvnFencedStringTypedHandler extends TypedHandlerDelegate {
             return Result.CONTINUE;
         }
 
+        int endOffset = offset;
         if (offset < doc.getTextLength() && doc.getCharsSequence().charAt(offset) == ']') {
-            return Result.CONTINUE;
+            endOffset = offset + 1;
         }
 
-        // Delete the delimiter prefix '"""[' (including the typed '[') to prepare insertion boundary
-        doc.deleteString(offset - 4, offset);
+        // Delete the delimiter prefix '"""[' (including the typed '[' and auto-paired ']') to prepare insertion boundary
+        doc.deleteString(offset - 4, endOffset);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
 
         Template template = TemplateSettings.getInstance().getTemplate("fence", "STVN");

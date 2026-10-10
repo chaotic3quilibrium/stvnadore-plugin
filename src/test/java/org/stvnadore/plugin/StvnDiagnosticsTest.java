@@ -71,8 +71,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 if (Files.exists(contractPath)) {
                     var contractContent = Files.readString(contractPath);
                     var compileOpt = org.stvnadore.core.StvnCompiler.compile(contractContent, contractPath.toAbsolutePath().toString(), org.stvnadore.core.StvnParserConfig.DEFAULT);
-                    assertTrue("Contract failed to compile for " + fileName, compileOpt.isPresent());
-                    var contractVal = compileOpt.get();
+                    assertTrue("Contract failed to compile for " + fileName, compileOpt.document().isPresent());
+                    var contractVal = compileOpt.document().get().requirePayload();
                     assertTrue("Contract must be a Tuple for " + fileName, contractVal instanceof org.stvnadore.core.ir.StvnValue.StvnTuple);
                     var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) contractVal;
                     assertTrue("Contract tuple must have at least 2 elements for " + fileName, tuple.elements().size() >= 2);
@@ -138,7 +138,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
 
         try (var stream = Files.walk(invalidDir)) {
-            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_bin")).toList();
+            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_b") || p.toString().endsWith(".stvn_bin")).toList();
             for (var binPath : binaryFixtures) {
                 var fileName = binPath.getFileName().toString();
                 var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
@@ -147,8 +147,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
                 var contractContent = Files.readString(contractPath);
                 var compileOpt = org.stvnadore.core.StvnCompiler.compile(contractContent, contractPath.toAbsolutePath().toString(), org.stvnadore.core.StvnParserConfig.DEFAULT);
-                assertTrue("Contract failed to compile for " + fileName, compileOpt.isPresent());
-                var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) compileOpt.get();
+                assertTrue("Contract failed to compile for " + fileName, compileOpt.document().isPresent());
+                var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) compileOpt.document().get().requirePayload();
                 var expectedSubstring = ((org.stvnadore.core.ir.StvnValue.StvnString) tuple.elements().get(1)).value();
 
                 var binBytes = Files.readAllBytes(binPath);
@@ -201,7 +201,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(validDir)) {
             var validFiles = stream
-                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_incl") || p.toString().endsWith(".stvn_inclf"))
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i") || p.toString().endsWith(".stvn_incl") || p.toString().endsWith(".stvn_inclf"))
                 .sorted()
                 .toList();
             assertEquals("Must validate all %d valid metadata fixtures".formatted(METADATA_FIXTURES_VALID_COUNT), METADATA_FIXTURES_VALID_COUNT, validFiles.size());
@@ -428,18 +428,18 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testCrossModuleNavigation() {
         // Configure the main file in the test project
-        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn");
+        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn_i");
         myFixture.doHighlighting(); // Force initialization of reference contributors
 
         // 1. Verify include path resolution
-        var includeOffset = myFixture.getEditor().getDocument().getText().indexOf("module_a.stvn_incl");
+        var includeOffset = myFixture.getEditor().getDocument().getText().indexOf("module_a.stvn_di");
         myFixture.getEditor().getCaretModel().moveToOffset(includeOffset);
         var includeRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("Include reference not found", includeRef);
         var resolvedInclude = includeRef.resolve();
         assertNotNull("Could not resolve include reference", resolvedInclude);
         assertTrue("Resolved element is not a PsiFile", resolvedInclude instanceof com.intellij.psi.PsiFile);
-        assertEquals("module_a.stvn_incl", ((com.intellij.psi.PsiFile) resolvedInclude).getName());
+        assertEquals("module_a.stvn_di", ((com.intellij.psi.PsiFile) resolvedInclude).getName());
 
         // 2. Verify type reference resolution (:TypeA)
         var typeAOffset = myFixture.getEditor().getDocument().getText().indexOf(":TypeA");
@@ -449,7 +449,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var resolvedTypeA = typeARef.resolve();
         assertNotNull("Could not resolve type reference for :TypeA", resolvedTypeA);
         assertTrue("Resolved type is not a TypeKeyword", resolvedTypeA instanceof TypeKeyword);
-        assertEquals("module_a.stvn_incl", resolvedTypeA.getContainingFile().getName());
+        assertEquals("module_a.stvn_di", resolvedTypeA.getContainingFile().getName());
 
         // 3. Verify aliased type reference resolution (:ConflictTypeB resolves locally first)
         var text = myFixture.getEditor().getDocument().getText();
@@ -461,8 +461,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var resolvedConflictB = conflictBRef.resolve();
         assertNotNull("Could not resolve type reference for :ConflictTypeB", resolvedConflictB);
         assertTrue("Resolved type is not a TypeKeyword", resolvedConflictB instanceof TypeKeyword);
-        // :ConflictTypeB (usage) must resolve to the local RHS keyword definition point in include_legal.stvn
-        assertEquals("include_legal.stvn", resolvedConflictB.getContainingFile().getName());
+        // :ConflictTypeB (usage) must resolve to the local RHS keyword definition point in include_legal.stvn_i
+        assertEquals("include_legal.stvn_i", resolvedConflictB.getContainingFile().getName());
         assertTrue("Resolved type's parent is not IncludeMapAlias", resolvedConflictB.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
 
         // 4. Verify alias first keyword reference resolution (:ConflictType inside mapping resolves remotely)
@@ -473,7 +473,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var resolvedMapping = mappingRef.resolve();
         assertNotNull("Could not resolve mapping reference", resolvedMapping);
         assertTrue("Resolved mapping is not a TypeKeyword", resolvedMapping instanceof TypeKeyword);
-        assertEquals("module_b.stvn_incl", resolvedMapping.getContainingFile().getName());
+        assertEquals("module_b.stvn_di", resolvedMapping.getContainingFile().getName());
         assertEquals(":ConflictType", resolvedMapping.getText());
 
         // 5. Verify declaration isolation: RHS keyword of an include_map_alias should not return any references
@@ -482,8 +482,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var aliasRhsRef = myFixture.getReferenceAtCaretPosition();
         assertNull("RHS keyword should not have a reference (declaration isolation)", aliasRhsRef);
 
-        // 6. Verify asymmetric eviction navigation using include_asymmetric_eviction.stvn
-        myFixture.configureByFile("syntax/valid/modules/include_asymmetric_eviction.stvn");
+        // 6. Verify asymmetric eviction navigation using include_asymmetric_eviction.stvn_i
+        myFixture.configureByFile("syntax/valid/modules/include_asymmetric_eviction.stvn_i");
         myFixture.doHighlighting();
         var textAsym = myFixture.getEditor().getDocument().getText();
 
@@ -495,31 +495,31 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("Type reference for :AliasedType not found", aliasedTypeRef);
         var resolvedAliasedType = aliasedTypeRef.resolve();
         assertNotNull("Could not resolve :AliasedType", resolvedAliasedType);
-        assertEquals("include_asymmetric_eviction.stvn", resolvedAliasedType.getContainingFile().getName());
+        assertEquals("include_asymmetric_eviction.stvn_i", resolvedAliasedType.getContainingFile().getName());
         assertTrue("Parent should be IncludeMapAlias", resolvedAliasedType.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
 
-        // 6b. LHS keyword `:ConflictType` in mapping resolves to remote definition in module_asym_a.stvn_incl
+        // 6b. LHS keyword `:ConflictType` in mapping resolves to remote definition in module_asym_a.stvn_di
         var asymLhsOffset = textAsym.indexOf(":ConflictType ");
         myFixture.getEditor().getCaretModel().moveToOffset(asymLhsOffset);
         var asymLhsRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("LHS mapping reference not found", asymLhsRef);
         var resolvedAsymLhs = asymLhsRef.resolve();
         assertNotNull("Could not resolve LHS mapping reference", resolvedAsymLhs);
-        assertEquals("module_asym_a.stvn_incl", resolvedAsymLhs.getContainingFile().getName());
+        assertEquals("module_asym_a.stvn_di", resolvedAsymLhs.getContainingFile().getName());
         assertEquals(":ConflictType", resolvedAsymLhs.getText());
 
-        // 6c. :ConflictType (usage in :Tuple) resolves to remote definition in module_asym_b.stvn_incl (eviction wins)
+        // 6c. :ConflictType (usage in :Tuple) resolves to remote definition in module_asym_b.stvn_di (eviction wins)
         var asymUsageOffset = textAsym.indexOf(":ConflictType", asymTupleOffset);
         myFixture.getEditor().getCaretModel().moveToOffset(asymUsageOffset);
         var asymUsageRef = myFixture.getReferenceAtCaretPosition();
         assertNotNull("Type reference for :ConflictType usage not found", asymUsageRef);
         var resolvedAsymUsage = asymUsageRef.resolve();
         assertNotNull("Could not resolve :ConflictType usage", resolvedAsymUsage);
-        assertEquals("module_asym_b.stvn_incl", resolvedAsymUsage.getContainingFile().getName());
+        assertEquals("module_asym_b.stvn_di", resolvedAsymUsage.getContainingFile().getName());
         assertEquals(":ConflictType", resolvedAsymUsage.getText());
 
-        // 7. Verify dual eviction null resolution outcome using include_dual_eviction_unresolved.stvn
-        myFixture.configureByFile("syntax/invalid/modules/include_dual_eviction_unresolved.stvn");
+        // 7. Verify dual eviction null resolution outcome using include_dual_eviction_unresolved.stvn_i
+        myFixture.configureByFile("syntax/invalid/modules/include_dual_eviction_unresolved.stvn_i");
         myFixture.doHighlighting();
         var textDual = myFixture.getEditor().getDocument().getText();
 
@@ -534,12 +534,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testFindUsagesAcrossModules() {
-        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn");
+        myFixture.configureByFile("syntax/valid/modules/include_legal.stvn_i");
         myFixture.doHighlighting();
 
         var text = myFixture.getEditor().getDocument().getText();
 
-        // 1. Verify usage search for ':TypeA' defined in module_a.stvn_incl
+        // 1. Verify usage search for ':TypeA' defined in module_a.stvn_di
         var typeAOffset = text.indexOf(":TypeA");
         myFixture.getEditor().getCaretModel().moveToOffset(typeAOffset);
         var typeARef = myFixture.getReferenceAtCaretPosition();
@@ -550,7 +550,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var typeAUsages = myFixture.findUsages(resolvedTypeA);
         assertEquals("Expected exactly 1 usage for :TypeA", 1, typeAUsages.size());
 
-        // 2. Verify usage search for ':TypeB' defined in module_b.stvn_incl
+        // 2. Verify usage search for ':TypeB' defined in module_b.stvn_di
         var typeBOffset = text.indexOf(":TypeB");
         myFixture.getEditor().getCaretModel().moveToOffset(typeBOffset);
         var typeBRef = myFixture.getReferenceAtCaretPosition();
@@ -617,13 +617,13 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testCrossModuleTypeInlayHints() {
         myFixture.configureByText(
-            "include_legal_hints.stvn",
+            "include_legal_hints.stvn_i",
             """
                 {
                   :defs {
                     :include [
-                      "syntax/valid/modules/module_a.stvn_incl"
-                      "syntax/valid/modules/module_b.stvn_incl" {
+                      "syntax/valid/modules/module_a.stvn_di"
+                      "syntax/valid/modules/module_b.stvn_di" {
                         :ConflictType :ConflictTypeB
                       }
                     ]
@@ -1711,22 +1711,22 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testWorkspaceCycleDetection() {
-        var fileA = myFixture.addFileToProject("fileA.stvn", """
+        var fileA = myFixture.addFileToProject("fileA.stvn_i", """
                 {
                   :defs {
                     :include [
-                      "fileB.stvn_incl"
+                      "fileB.stvn_di"
                     ]
                   }
                   :type :Int32
                   :body 42
                 }
                 """);
-        var fileB = myFixture.addFileToProject("fileB.stvn_incl", """
+        var fileB = myFixture.addFileToProject("fileB.stvn_di", """
                 {
                   :defs {
                     :include [
-                      "fileA.stvn"
+                      "fileA.stvn_i"
                     ]
                   }
                 }
@@ -1744,9 +1744,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         } catch (org.stvnadore.core.validation.CyclicDependencyException ex) {
             java.util.List<String> canonicalPaths = ex.getOffendingIncludePathsCanonical();
             assertTrue("Expected canonical paths in cycle to contain fileA",
-                    canonicalPaths.stream().anyMatch(p -> p.endsWith("fileA.stvn")));
+                    canonicalPaths.stream().anyMatch(p -> p.endsWith("fileA.stvn_i")));
             assertTrue("Expected canonical paths in cycle to contain fileB",
-                    canonicalPaths.stream().anyMatch(p -> p.endsWith("fileB.stvn_incl")));
+                    canonicalPaths.stream().anyMatch(p -> p.endsWith("fileB.stvn_di")));
         }
     }
 
@@ -2220,6 +2220,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
+                    :Int32 :Int
                     :Disjoint :Either( :Int32 :String )
                   }
                   :type :Tuple( :Disjoint :Disjoint )
@@ -2239,6 +2240,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
+                    :Int32 :Int
                     :MultiBranch :Union( :Int32 :String :Boolean )
                   }
                   :type :Tuple( :MultiBranch :MultiBranch :MultiBranch :MultiBranch )
@@ -2280,6 +2282,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
+                    :Int32 :Int
                     :OptText :Option( :String )
                     :Disjoint :Either( :Int32 :String )
                   }
@@ -2301,6 +2304,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
+                    :Int32 :Int
+                    :Float64 :Float
                     :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
                   }
                   :type :Tuple( :DisjointUnion :DisjointUnion :DisjointUnion :DisjointUnion )
@@ -2322,6 +2327,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
                 {
                   :defs {
+                    :Int32 :Int
                     :DocStatus :Enum [ #Draft #Active #Archived ]
                     :ContentUnion :Union( :Int32 :DocStatus :String )
                   }
@@ -2413,6 +2419,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
+                :StringNonEmpty64 :String
                 :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
                 :RemoteHost :HostName
                 :HostOption :Option( :RemoteHost )
@@ -2435,6 +2442,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
+                :StringNonEmpty64 :String
+                :StringFixed15 :String
                 :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
                 :RemoteHost :HostName
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
@@ -2459,6 +2468,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
+                :StringNonEmpty64 :String
+                :StringFixed15 :String
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
                 :IpAddress :Union( :IPv4 :StringFixed15 )
                 :RouteSeq :Seq( :IpAddress )
@@ -3998,6 +4009,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
+                :Int32 :Int
                 :OptInt :Option( :Int32 )
                 :Disjoint :Either( :String :Int32 )
               }

@@ -29,8 +29,8 @@ public final class StvnParserTest {
             var text = new String(finalStream.readAllBytes(), StandardCharsets.UTF_8);
             var compiled = StvnCompiler.compile(text);
             
-            assertTrue(compiled.isPresent(), "Parsed STVN value should be present and valid");
-            var val = compiled.get();
+            assertTrue(compiled.document().isPresent(), "Parsed STVN value should be present and valid");
+            var val = compiled.document().get().requirePayload();
             assertNotNull(val, "The compiled StvnValue object must not be null");
         }
     }
@@ -41,7 +41,7 @@ public final class StvnParserTest {
         boolean rejected = false;
         try {
             var compiled = StvnCompiler.compile(invalidSource);
-            rejected = compiled.isEmpty();
+            rejected = compiled.document().isEmpty() || compiled.hasErrors();
         } catch (RuntimeException e) {
             rejected = true;
         }

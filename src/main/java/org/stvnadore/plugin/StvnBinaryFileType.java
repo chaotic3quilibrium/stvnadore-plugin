@@ -33,7 +33,7 @@ public final class StvnBinaryFileType implements FileType {
 
     @Override
     public @NotNull String getDefaultExtension() {
-        return "stvn_bin";
+        return "stvn_b";
     }
 
     @Override

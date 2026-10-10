@@ -33,6 +33,9 @@ public final class StvnNamespaceIndexHelper {
         var psiManager = PsiManager.getInstance(project);
 
         var virtualFiles = new ArrayList<com.intellij.openapi.vfs.VirtualFile>();
+        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Defs.INSTANCE, scope));
+        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.DefsInclude.INSTANCE, scope));
+        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.PayloadInclude.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Payload.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.FlatPayload.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Incl.INSTANCE, scope));

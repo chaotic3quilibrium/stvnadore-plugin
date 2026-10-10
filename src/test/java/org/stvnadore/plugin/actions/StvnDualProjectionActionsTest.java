@@ -61,7 +61,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
 
         var result = myFixture.getEditor().getDocument().getText();
         assertEquals("Compact printed output must match canonical single-line syntax",
-                "{:type :Tuple(:Boolean :Option(:Boolean)) :body (#T #N)}", result);
+                "{:type :Tuple(:Boolean :Option(:Boolean)):body(#T #N)}", result);
     }
 
     public void testCopyCanonicalPrettyPrintAction() {
@@ -113,7 +113,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         assertEquals("Document buffer must remain unchanged during clipboard projection", pretty, docText);
 
         var clipboardContent = (String) CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
-        assertEquals("{:type :Tuple(:Boolean :Option(:Boolean)) :body (#T #N)}", clipboardContent);
+        assertEquals("{:type :Tuple(:Boolean :Option(:Boolean)):body(#T #N)}", clipboardContent);
     }
 
     public void testDestructionGuardDetectsDestructiveConstructs() {
@@ -162,7 +162,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         action.actionPerformed(event);
 
         var result = myFixture.getEditor().getDocument().getText();
-        assertEquals("{:type :Int :body 10}", result);
+        assertEquals("{:type :Int:body 10}", result);
     }
 
     public void testActionNamingAndBgtExecution() {

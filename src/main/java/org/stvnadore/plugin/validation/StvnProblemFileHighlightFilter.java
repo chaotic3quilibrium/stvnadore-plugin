@@ -16,7 +16,8 @@ public final class StvnProblemFileHighlightFilter implements Condition<VirtualFi
     @Override
     public boolean value(VirtualFile virtualFile) {
         var ext = virtualFile.getExtension();
-        return "stvn".equals(ext) || "stvn_incl".equals(ext) || "stvn_inclf".equals(ext)
+        return "stvn".equals(ext) || "stvn_d".equals(ext) || "stvn_di".equals(ext)
+            || "stvn_i".equals(ext) || "stvn_incl".equals(ext) || "stvn_inclf".equals(ext)
             || "stvn_f".equals(ext) || "stvn_cas".equals(ext);
     }
 }

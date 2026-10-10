@@ -11,19 +11,14 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ir.StvnValue;
+import org.stvnadore.core.ast.StvnDocument;
 import org.stvnadore.core.printer.AstCompactPrinter;
 import org.stvnadore.plugin.StvnFile;
 
-import java.util.Optional;
-
 /**
  * Editor context action converting active STVN document text into canonical compact single-line layout.
- * <p>
- * This action parses the document text, lowers the syntax into an AST {@link StvnValue},
- * and serializes it using {@link AstCompactPrinter} with short-form keywords.
- * </p>
  *
  * @since 1.3.0
  */
@@ -54,19 +49,19 @@ public final class StvnConvertToCompactPrintAction extends AnAction {
         Document document = editor.getDocument();
         String text = document.getText();
 
-        Optional<StvnValue> astOptional;
+        StvnCompilationResult<StvnDocument> result;
         try {
-            astOptional = StvnCompiler.compile(text);
+            result = StvnCompiler.compile(text);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
         }
 
-        if (astOptional.isEmpty()) {
+        if (result.hasErrors() || result.document().isEmpty()) {
             return;
         }
 
-        String compact = AstCompactPrinter.print(astOptional.get());
+        String compact = AstCompactPrinter.print(result.document().get());
         WriteCommandAction.runWriteCommandAction(project, "STVN: Canonicalize & Compact Print", null, () -> {
             document.replaceString(0, document.getTextLength(), compact);
         });

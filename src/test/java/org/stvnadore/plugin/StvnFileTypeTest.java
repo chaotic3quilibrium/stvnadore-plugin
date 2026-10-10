@@ -6,7 +6,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
 
 /**
- * Verifies explicit file type associations and icon bindings across all seven ecosystem extensions.
+ * Verifies explicit file type associations and icon bindings across all canonical ecosystem extensions.
  */
 @NullMarked
 public final class StvnFileTypeTest extends BasePlatformTestCase {
@@ -17,41 +17,35 @@ public final class StvnFileTypeTest extends BasePlatformTestCase {
         assertEquals(StvnIcons.STVN, fileType.getIcon());
     }
 
-    public void testFlatPayloadFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_f");
-        assertEquals("STVN_FLAT_PAYLOAD", fileType.getName());
-        assertEquals(StvnIcons.STVN_F, fileType.getIcon());
+    public void testDefsFileTypeAssociation() {
+        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_d");
+        assertEquals("STVN_DEFS", fileType.getName());
+        assertEquals(StvnIcons.STVN_DEFS, fileType.getIcon());
     }
 
-    public void testIncludeFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_incl");
-        assertEquals("STVN_INCL", fileType.getName());
-        assertEquals(StvnIcons.STVN_INCL, fileType.getIcon());
+    public void testDefsIncludeFileTypeAssociation() {
+        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_di");
+        assertEquals("STVN_DEFS_INCLUDE", fileType.getName());
+        assertEquals(StvnIcons.STVN_DEFS_INCL, fileType.getIcon());
     }
 
-    public void testFlatIncludeFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_inclf");
-        assertEquals("STVN_INCLF", fileType.getName());
-        assertEquals(StvnIcons.STVN_INCLF, fileType.getIcon());
-    }
-
-    public void testCasFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_cas");
-        assertEquals("STVN_CAS", fileType.getName());
-        assertEquals(StvnIcons.STVN_CAS, fileType.getIcon());
+    public void testPayloadIncludeFileTypeAssociation() {
+        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_i");
+        assertEquals("STVN_PAYLOAD_INCLUDE", fileType.getName());
+        assertEquals(StvnIcons.STVN_PAYLOAD_INCL, fileType.getIcon());
     }
 
     public void testBinaryFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_bin");
+        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_b");
         assertEquals("STVN_BIN", fileType.getName());
         assertEquals(StvnIcons.STVN_BIN, fileType.getIcon());
         assertTrue(fileType.isBinary());
     }
 
-    public void testIrFileTypeAssociation() {
-        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_ir");
-        assertEquals("STVN_IR", fileType.getName());
-        assertEquals(StvnIcons.STVN_IR, fileType.getIcon());
-        assertFalse(fileType.isBinary());
+    public void testBinaryDefsFileTypeAssociation() {
+        var fileType = FileTypeManager.getInstance().getFileTypeByExtension("stvn_bd");
+        assertEquals("STVN_BINARY_DEFS", fileType.getName());
+        assertEquals(StvnIcons.STVN_BD, fileType.getIcon());
+        assertTrue(fileType.isBinary());
     }
 }

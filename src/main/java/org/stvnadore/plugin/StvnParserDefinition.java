@@ -64,7 +64,13 @@ public final class StvnParserDefinition implements ParserDefinition {
     @Override
     public PsiFile createFile(FileViewProvider viewProvider) {
         var ext = viewProvider.getVirtualFile().getExtension();
-        if ("stvn_f".equalsIgnoreCase(ext)) {
+        if ("stvn_d".equalsIgnoreCase(ext)) {
+            return new StvnDefinitionsFile(viewProvider);
+        } else if ("stvn_di".equalsIgnoreCase(ext)) {
+            return new StvnDefsIncludeFile(viewProvider);
+        } else if ("stvn_i".equalsIgnoreCase(ext)) {
+            return new StvnPayloadIncludeFile(viewProvider);
+        } else if ("stvn_f".equalsIgnoreCase(ext)) {
             return new StvnFlatPayloadFile(viewProvider);
         } else if ("stvn_incl".equalsIgnoreCase(ext)) {
             return new StvnInclFile(viewProvider);

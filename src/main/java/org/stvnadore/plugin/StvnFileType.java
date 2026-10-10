@@ -61,7 +61,127 @@ public abstract class StvnFileType extends LanguageFileType {
     }
 
     /**
-     * File type representation for standard STVN includes modules (.stvn_incl).
+     * File type representation for canonical STVN definitions schemas (.stvn_d).
+     */
+    @NullMarked
+    public static final class Defs extends StvnFileType {
+        /**
+         * Singleton instance representing STVN definitions schemas.
+         */
+        public static final Defs INSTANCE = new Defs();
+
+        private Defs() {
+            super();
+        }
+
+        @Override
+        public String getName() {
+            return "STVN_DEFS";
+        }
+
+        @Override
+        public String getDisplayName() {
+            return "STVN Definitions Schema";
+        }
+
+        @Override
+        public String getDescription() {
+            return "STVN Canonical Definitions Schema";
+        }
+
+        @Override
+        public String getDefaultExtension() {
+            return "stvn_d";
+        }
+
+        @Override
+        public Icon getIcon() {
+            return StvnIcons.STVN_DEFS;
+        }
+    }
+
+    /**
+     * File type representation for modular STVN definitions schemas (.stvn_di).
+     */
+    @NullMarked
+    public static final class DefsInclude extends StvnFileType {
+        /**
+         * Singleton instance representing modular STVN definitions schemas.
+         */
+        public static final DefsInclude INSTANCE = new DefsInclude();
+
+        private DefsInclude() {
+            super();
+        }
+
+        @Override
+        public String getName() {
+            return "STVN_DEFS_INCLUDE";
+        }
+
+        @Override
+        public String getDisplayName() {
+            return "STVN Modular Definitions Schema";
+        }
+
+        @Override
+        public String getDescription() {
+            return "STVN Modular Definitions Schema Module";
+        }
+
+        @Override
+        public String getDefaultExtension() {
+            return "stvn_di";
+        }
+
+        @Override
+        public Icon getIcon() {
+            return StvnIcons.STVN_DEFS_INCL;
+        }
+    }
+
+    /**
+     * File type representation for modular STVN payload documents (.stvn_i).
+     */
+    @NullMarked
+    public static final class PayloadInclude extends StvnFileType {
+        /**
+         * Singleton instance representing modular STVN payload documents.
+         */
+        public static final PayloadInclude INSTANCE = new PayloadInclude();
+
+        private PayloadInclude() {
+            super();
+        }
+
+        @Override
+        public String getName() {
+            return "STVN_PAYLOAD_INCLUDE";
+        }
+
+        @Override
+        public String getDisplayName() {
+            return "STVN Modular Payload";
+        }
+
+        @Override
+        public String getDescription() {
+            return "STVN Modular Payload Document";
+        }
+
+        @Override
+        public String getDefaultExtension() {
+            return "stvn_i";
+        }
+
+        @Override
+        public Icon getIcon() {
+            return StvnIcons.STVN_PAYLOAD_INCL;
+        }
+    }
+
+    /**
+     * File type representation for transitional STVN includes modules (.stvn_incl).
      */
     @NullMarked
     public static final class Incl extends StvnFileType {

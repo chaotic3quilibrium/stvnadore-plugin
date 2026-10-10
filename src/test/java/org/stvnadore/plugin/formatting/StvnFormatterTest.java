@@ -35,9 +35,9 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
                 text.contains("\t"));
 
         // Mathematical round-trip AST equivalence
-        StvnValue astOriginal = StvnCompiler.compile(unformatted).orElseThrow();
-        StvnValue astFormatted = StvnCompiler.compile(text).orElseThrow();
-        assertEquals("Round-trip AST must be mathematically equivalent", astOriginal, astFormatted);
+        var docOriginal = StvnCompiler.compile(unformatted).document().orElseThrow();
+        var docFormatted = StvnCompiler.compile(text).document().orElseThrow();
+        assertEquals("Round-trip AST must be mathematically equivalent", docOriginal.requirePayload(), docFormatted.requirePayload());
     }
 
     public void testPreserveCommentsAndAlignments() {

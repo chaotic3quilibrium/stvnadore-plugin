@@ -33,7 +33,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     }
 
     public void testUnadornedNominalWarningsAcrossTypes() {
-        myFixture.configureByText("unadorned_all.stvn_inclf",
+        myFixture.configureByText("unadorned_all.stvn",
             """
             {
               :defs {
@@ -66,7 +66,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("seq_intentions.stvn_inclf", text);
+        myFixture.configureByText("seq_intentions.stvn", text);
         int offset = text.indexOf(":Seq");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
@@ -91,7 +91,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("all_nominal_order.stvn_inclf", fileContent);
+        myFixture.configureByText("all_nominal_order.stvn", fileContent);
         myFixture.doHighlighting();
 
         for (String target : nominalTargets) {
@@ -117,7 +117,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix1_string.stvn_inclf", text);
+        myFixture.configureByText("fix1_string.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":String"));
         myFixture.doHighlighting();
 
@@ -142,7 +142,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix1_seq.stvn_inclf", text);
+        myFixture.configureByText("fix1_seq.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Seq"));
         myFixture.doHighlighting();
 
@@ -167,7 +167,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix2_set.stvn_inclf", text);
+        myFixture.configureByText("fix2_set.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Set"));
         myFixture.doHighlighting();
 
@@ -192,7 +192,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix3_map.stvn_inclf", text);
+        myFixture.configureByText("fix3_map.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Map"));
         myFixture.doHighlighting();
 
@@ -217,7 +217,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix4_seq.stvn_inclf", text);
+        myFixture.configureByText("fix4_seq.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Seq"));
         myFixture.doHighlighting();
 
@@ -242,7 +242,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix5_set.stvn_inclf", text);
+        myFixture.configureByText("fix5_set.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Set"));
         myFixture.doHighlighting();
 
@@ -267,7 +267,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("fix6_map.stvn_inclf", text);
+        myFixture.configureByText("fix6_map.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Map"));
         myFixture.doHighlighting();
 
@@ -294,7 +294,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("comment_preserve.stvn_inclf", text);
+        myFixture.configureByText("comment_preserve.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Seq"));
         myFixture.doHighlighting();
 
@@ -323,7 +323,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("error_suppress_seq.stvn_inclf", text);
+        myFixture.configureByText("error_suppress_seq.stvn", text);
         myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf(":Seq"));
         myFixture.doHighlighting();
 
@@ -347,7 +347,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     }
 
     public void testCompliantTypesProduceZeroWarnings() {
-        myFixture.configureByText("compliant_all.stvn_inclf",
+        myFixture.configureByText("compliant_all.stvn",
             """
             {
               :defs {
@@ -367,7 +367,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     }
 
     public void testNestedTypeArgumentsDoNotProduceDuplicateWarnings() {
-        myFixture.configureByText("nested_args.stvn_inclf",
+        myFixture.configureByText("nested_args.stvn",
             """
             {
               :defs {
@@ -407,7 +407,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
             for (int fixIdx = 0; fixIdx < EXPECTED_INTENTIONS.size(); fixIdx++) {
                 String actionTitle = EXPECTED_INTENTIONS.get(fixIdx);
                 String fileContent = fileTemplate.formatted(constructor);
-                myFixture.configureByText("composite_" + t + "_" + fixIdx + ".stvn_inclf", fileContent);
+                myFixture.configureByText("composite_" + t + "_" + fixIdx + ".stvn", fileContent);
                 myFixture.getEditor().getCaretModel().moveToOffset(fileContent.indexOf(targets[t]));
                 myFixture.doHighlighting();
 
@@ -440,7 +440,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("over_threshold_map.stvn_inclf", text);
+        myFixture.configureByText("over_threshold_map.stvn", text);
         int offset = text.indexOf(":Map");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
@@ -470,7 +470,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
               }
             }
             """;
-        myFixture.configureByText("mixed_facets_map.stvn_inclf", text);
+        myFixture.configureByText("mixed_facets_map.stvn", text);
         int offset = text.indexOf(":Map");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();

@@ -31,6 +31,18 @@ public final class StvnIcons {
   /** Icon for STVN intermediate representation documents (.stvn_ir). */
   public static final Icon STVN_IR = IconLoader.getIcon("/icons/stvn_ir_file.svg", StvnIcons.class);
 
+  /** Icon for STVN definitions schemas (.stvn_d). */
+  public static final Icon STVN_DEFS = IconLoader.getIcon("/icons/stvn_inclf_file.svg", StvnIcons.class);
+
+  /** Icon for modular STVN definitions schemas (.stvn_di). */
+  public static final Icon STVN_DEFS_INCL = IconLoader.getIcon("/icons/stvn_incl_file.svg", StvnIcons.class);
+
+  /** Icon for modular STVN payload documents (.stvn_i). */
+  public static final Icon STVN_PAYLOAD_INCL = IconLoader.getIcon("/icons/stvn_file.svg", StvnIcons.class);
+
+  /** Icon for binary STVN definitions schemas (.stvn_bd). */
+  public static final Icon STVN_BD = IconLoader.getIcon("/icons/stvn_bin_file.svg", StvnIcons.class);
+
   private StvnIcons() {
     // Prevent instantiation
   }

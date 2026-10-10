@@ -10,13 +10,14 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ir.StvnValue;
+import org.stvnadore.core.ast.StvnDocument;
+import org.stvnadore.core.io.CanonicalStvnWriter;
 import org.stvnadore.core.printer.AstPrettyPrinter;
 import org.stvnadore.plugin.StvnFile;
 
 import java.awt.datatransfer.StringSelection;
-import java.util.Optional;
 
 /**
  * Editor context action that compiles active document text and copies canonical pretty-printed format
@@ -44,19 +45,26 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
         }
 
         String text = editor.getDocument().getText();
-        Optional<StvnValue> astOptional;
+        StvnCompilationResult<StvnDocument> result;
         try {
-            astOptional = StvnCompiler.compile(text);
+            result = StvnCompiler.compile(text);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
         }
 
-        if (astOptional.isEmpty()) {
+        if (result.hasErrors() || result.document().isEmpty()) {
             return;
         }
 
-        String formatted = AstPrettyPrinter.print(astOptional.get());
+        StvnDocument doc = result.document().get();
+        String formatted;
+        if (doc.payload().isPresent()) {
+            formatted = AstPrettyPrinter.print(doc.payload().get());
+        } else {
+            formatted = new CanonicalStvnWriter().printToString(doc);
+        }
+
         CopyPasteManager.getInstance().setContents(new StringSelection(formatted));
     }
 

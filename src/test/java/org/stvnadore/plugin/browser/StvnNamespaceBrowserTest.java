@@ -80,9 +80,9 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * its declared canonical FQNIs, producing zero bare phantom duplicates.
      */
     public void testPackagedModuleWithoutRootDefinitionsReturnsExactCanonicalFqnis() throws Exception {
-        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var content = java.nio.file.Files.readString(rfcPath);
-        var file = myFixture.configureByText("rfc8259_json_substrate.stvn_inclf", content);
+        var file = myFixture.configureByText("rfc8259_json_substrate.stvn_d", content);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
 
         assertEquals("Must contain exactly 8 declared symbols", 8, entries.size());
@@ -571,13 +571,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies that json_example.stvn under :defs scope collects exactly 8 stripped symbols at Use Depth = 1.
      */
     public void testJsonExampleDefsScopeCollectsEightStrippedSymbolsAtDepthOne() throws Exception {
-        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
 
-        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);
-        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var file = myFixture.configureByText("json_example.json.stvn_i", jsonContent);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
 
         assertEquals("Must collect exactly 8 stripped symbols in :defs scope", 8, entries.size());
@@ -598,13 +598,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * (1 root union at Depth 0 + 7 constituent branches at Depth 1).
      */
     public void testJsonExampleTypeScopeMaintainsEightSymbols() throws Exception {
-        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
 
-        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);
-        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var file = myFixture.configureByText("json_example.json.stvn_i", jsonContent);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
 
         assertEquals("Must contain exactly 8 symbols (1 root at Depth 0 + 7 branches at Depth 1)", 8, entries.size());
@@ -628,13 +628,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * and variants across the JSON map payload.
      */
     public void testJsonExampleBodyScopeCapturesAllInferredNominalTypesAndVariants() throws Exception {
-        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.stvn_inclf");
+        var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_inclf", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
 
-        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.stvn");
+        var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);
-        var file = myFixture.configureByText("json_example.stvn", jsonContent);
+        var file = myFixture.configureByText("json_example.json.stvn_i", jsonContent);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
 
         // Assert all instantiated nominal types are captured

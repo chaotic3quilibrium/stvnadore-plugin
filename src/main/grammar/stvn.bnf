@@ -45,6 +45,14 @@
     KW_UNION                      = ':Union'
 
     KW_DEFS                       = ':defs'
+    KW_META                       = ':meta'
+    KW_META_NAME                  = '#name'
+    KW_META_DOMAIN                = '#domain'
+    KW_META_KIND                  = '#kind'
+    KW_KIND_BODY                  = '#BODY'
+    KW_KIND_DEFS                  = '#DEFS'
+    KW_KIND_BODY_INCLUDE          = '#BODY_INCLUDE'
+    KW_KIND_DEFS_INCLUDE          = '#DEFS_INCLUDE'
     KW_TYPE                       = ':type'
     KW_BODY                       = ':body'
     KW_INCLUDE                    = ':include'
@@ -99,9 +107,28 @@
 
 // --- ROOT-LEVEL ENTRY POINTS ---
 stvn_file ::= LBRACE document_body RBRACE <<eof>>
-private document_body ::= defs_entry? (type_entry body_entry)? { recoverWhile = document_recover }
+private document_body ::= meta_entry? defs_entry? (type_entry body_entry)? { recoverWhile = document_recover }
 
 private document_recover  ::= !(RBRACE)
+
+// --- METADATA SECTION ---
+meta_entry                ::= KW_META meta_block {pin=1}
+meta_block                ::= LBRACE meta_element* RBRACE {pin=1}
+meta_element              ::= meta_name_facet
+                            | meta_domain_facet
+                            | meta_kind_facet
+                            | meta_unknown_facet
+
+meta_name_facet           ::= KW_META_NAME string_literal {pin=1}
+meta_domain_facet         ::= KW_META_DOMAIN string_literal {pin=1}
+meta_kind_facet           ::= KW_META_KIND meta_kind_value {pin=1}
+meta_kind_value           ::= KW_KIND_BODY
+                            | KW_KIND_DEFS
+                            | KW_KIND_BODY_INCLUDE
+                            | KW_KIND_DEFS_INCLUDE
+
+meta_unknown_facet        ::= value_keyword (value | schema_type)?
+
 
 // --- DEFINITIONS SECTION ---
 defs_entry                ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1}
