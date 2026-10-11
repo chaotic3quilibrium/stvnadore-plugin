@@ -189,6 +189,9 @@
                   fieldName="INSTANCE"
                   extensions="stvn_ir"/>
 
+        <!-- 1d. Dynamic Substrate Enclave Icon Provider (*.stvn_ir.* and *.stvn_cas.*) -->
+        <iconProvider implementation="org.stvnadore.plugin.icons.StvnIconProvider"/>
+
         <!-- 1b. Brace Matcher and Folding Builder -->
         <lang.braceMatcher language="STVN"
                            implementationClass="org.stvnadore.plugin.editor.StvnBraceMatcher"/>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Top Blueprint Wash -->
+  <polygon points="8,1.5 14,5 8,8.2 2,5" fill="#E5A93C" fill-opacity="0.18"/>
+  <!-- Outer Wireframe Boundary -->
+  <polygon points="8,1.5 14,5 14,11.2 8,14.5 2,11.2 2,5" fill="none" stroke="#D49024" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- Interior Isometric Creases -->
+  <path d="M2 5l6 3.2 6-3.2m-6 3.2v6.3" stroke="#D49024" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Include Badge Background -->
+  <circle cx="12" cy="12" r="3.5" fill="#2B2D30" stroke="#D49024" stroke-width="0.8"/>
+  <!-- Inward Arrow Glyph -->
+  <path d="M13.5 10.5l-3 3m0 0h2.5m-2.5 0v-2.5" stroke="#FAF5ED" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

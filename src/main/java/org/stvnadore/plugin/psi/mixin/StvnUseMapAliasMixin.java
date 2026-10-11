@@ -115,7 +115,7 @@ public abstract class StvnUseMapAliasMixin extends ASTWrapperPsiElement implemen
 
             @Override
             public @Nullable javax.swing.Icon getIcon(boolean unused) {
-                return StvnIcons.STVN_INCL;
+                return StvnIcons.STVN_DEFS_INCL;
             }
         };
     }

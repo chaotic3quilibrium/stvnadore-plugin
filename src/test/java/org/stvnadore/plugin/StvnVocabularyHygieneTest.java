@@ -54,6 +54,13 @@ public final class StvnVocabularyHygieneTest extends TestCase {
         assertFalse(StvnVocabulary.TYPE_MAP.isEmpty());
         assertFalse(StvnVocabulary.SIGIL_VALUE.isEmpty());
         assertFalse(StvnVocabulary.SIGIL_TYPIC.isEmpty());
+
+        // Section 13 Compiler IR Substrate Identifiers
+        assertEquals(":org/stvnadore/ir/IrTraitConstraints", StvnVocabulary.IR_TYPE_TRAIT_CONSTRAINTS);
+        assertEquals(":org/stvnadore/ir/IrRegisteredSchema", StvnVocabulary.IR_TYPE_REGISTERED_SCHEMA);
+        assertEquals(":org/stvnadore/ir/IrTypeRegistry", StvnVocabulary.IR_TYPE_TYPE_REGISTRY);
+        assertEquals(":org/stvnadore/ir/IrSnapshotDocument", StvnVocabulary.IR_TYPE_SNAPSHOT_DOCUMENT);
+        assertEquals(":org/stvnadore/ir/IrValue", StvnVocabulary.IR_TYPE_VALUE);
     }
 
     /**

@@ -215,6 +215,7 @@ public abstract class StvnFileType extends LanguageFileType {
         }
 
         @Override
+        @SuppressWarnings("removal")
         public Icon getIcon() {
             return StvnIcons.STVN_INCL;
         }
@@ -255,6 +256,7 @@ public abstract class StvnFileType extends LanguageFileType {
         }
 
         @Override
+        @SuppressWarnings("removal")
         public Icon getIcon() {
             return StvnIcons.STVN_INCLF;
         }
@@ -295,6 +297,7 @@ public abstract class StvnFileType extends LanguageFileType {
         }
 
         @Override
+        @SuppressWarnings("removal")
         public Icon getIcon() {
             return StvnIcons.STVN_F;
         }

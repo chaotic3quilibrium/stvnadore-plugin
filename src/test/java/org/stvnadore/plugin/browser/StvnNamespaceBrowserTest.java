@@ -759,4 +759,39 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNull("Undefined :org/stvnadore/prelude/TimeEpoch must not produce phantom entry", findEntryByName(entries, ":org/stvnadore/prelude/TimeEpoch"));
         assertEquals("Only legitimate resolved symbols must be collected", 1, entries.size());
     }
+
+    /**
+     * Verifies that documents including stvn_ir_substrate.stvn_ir.stvn_d collect normalized
+     * :Ir prefixed type names with zero un-prefixed duplicates.
+     */
+    public void testIrSubstrateNormalizedPrefixSymbolCollection() throws Exception {
+        var substratePath = java.nio.file.Path.of("src/test/resources/shared-fixtures/syntax/valid/modules/stvn_ir_substrate.stvn_ir.stvn_d");
+        var substrateContent = java.nio.file.Files.readString(substratePath);
+        myFixture.addFileToProject("stvn_ir_substrate.stvn_ir.stvn_d", substrateContent);
+
+        var content = """
+            {
+              :meta {
+                #name "ir_test"
+                #domain "stvn_ir"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :include [ "stvn_ir_substrate.stvn_ir.stvn_d" { #strip } ]
+              }
+              :type :IrSnapshotDocument
+              :body ( {} #1 #TRUE )
+            }
+            """;
+        var file = myFixture.configureByText("ir_test.stvn_ir.stvn_i", content);
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+
+        assertNotNull("Normalized :IrTraitConstraints must exist", findEntryByName(entries, ":IrTraitConstraints"));
+        assertNotNull("Normalized :IrRegisteredSchema must exist", findEntryByName(entries, ":IrRegisteredSchema"));
+        assertNotNull("Normalized :IrTypeRegistry must exist", findEntryByName(entries, ":IrTypeRegistry"));
+        assertNotNull("Normalized :IrSnapshotDocument must exist", findEntryByName(entries, ":IrSnapshotDocument"));
+        assertNull("Un-prefixed :TraitConstraints must not exist", findEntryByName(entries, ":TraitConstraints"));
+        assertNull("Un-prefixed :RegisteredSchema must not exist", findEntryByName(entries, ":RegisteredSchema"));
+        assertNull("Un-prefixed :TypeRegistry must not exist", findEntryByName(entries, ":TypeRegistry"));
+    }
 }

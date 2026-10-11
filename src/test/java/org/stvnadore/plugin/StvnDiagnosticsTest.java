@@ -903,15 +903,20 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Expected Union branch suffix to remain identical: " + docUnionLong, docUnionLong.contains("Value Type:</b> :Union( :TypeA :TypeB ) [#1]"));
     }
 
+    @SuppressWarnings("removal")
     public void testIconResourceLoading() {
         var icons = java.util.List.of(
             org.stvnadore.plugin.icons.StvnIcons.STVN,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_DEFS,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_PAYLOAD_INCL,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_DEFS_INCL,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_BIN,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_BD,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_CAS,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_IR,
             org.stvnadore.plugin.icons.StvnIcons.STVN_F,
             org.stvnadore.plugin.icons.StvnIcons.STVN_INCL,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_INCLF,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_BIN,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_CAS,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_IR
+            org.stvnadore.plugin.icons.StvnIcons.STVN_INCLF
         );
         for (var icon : icons) {
             assertNotNull("STVN icon resource handle must not be null", icon);

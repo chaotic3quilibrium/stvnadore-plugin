@@ -25,7 +25,11 @@ val stvnFixtures: Configuration by configurations.creating {
 }
 
 dependencies {
-    // 1. Ingest local Maven repository dependency
+    // 1. Ingest local Maven repository dependency with sibling core classes priority
+    val siblingCoreClasses = file("../ij_stvnadore_core/target/classes")
+    if (siblingCoreClasses.exists() && siblingCoreClasses.isDirectory) {
+        implementation(files(siblingCoreClasses))
+    }
     implementation("io.github.chaotic3quilibrium:stvnadore-core:2.0.0-SNAPSHOT")
     
     // 2. Local Maven dependency for zip classifier fixtures
@@ -284,6 +288,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnDualGrammarDifferentialTest*.class")
     exclude("**/StvnFileTypeTest.class")
     exclude("**/StvnIconsTest.class")
+    exclude("**/StvnIconProviderTest.class")
     exclude("**/StvnTypeReferenceTest.class")
     exclude("**/StvnUnresolvedTypeQuickFixTest.class")
     exclude("**/StvnBareTraitCompletionQuickFixTest.class")

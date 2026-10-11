@@ -114,8 +114,11 @@ public final class StvnStructureViewElement implements StructureViewTreeElement,
                 if (element instanceof TypeDefinition || element instanceof ConstantDefinition) {
                     return StvnIcons.STVN;
                 }
-                if (element instanceof DefsEntry || element instanceof TypeEntry || element instanceof BodyEntry) {
-                    return StvnIcons.STVN_INCL;
+                if (element instanceof DefsEntry) {
+                    return StvnIcons.STVN_DEFS;
+                }
+                if (element instanceof TypeEntry || element instanceof BodyEntry) {
+                    return StvnIcons.STVN;
                 }
                 return StvnIcons.STVN;
             }

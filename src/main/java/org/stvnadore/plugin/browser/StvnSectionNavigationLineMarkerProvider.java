@@ -35,7 +35,7 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
             return new LineMarkerInfo<>(
                 element,
                 element.getTextRange(),
-                StvnIcons.STVN_INCL,
+                StvnIcons.STVN_DEFS,
                 elt -> "Browse :defs namespace dependencies",
                 (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.DEFS),
                 GutterIconRenderer.Alignment.RIGHT,

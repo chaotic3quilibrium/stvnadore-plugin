@@ -31,7 +31,7 @@ public final class StvnPreludeBridge {
      * Obtains the single canonical in-memory VirtualFile for the standard library prelude.
      *
      * @param project the active IntelliJ project
-     * @return the shared LightVirtualFile representing prelude.stvn_d
+     * @return the shared LightVirtualFile representing prelude.stvn_core.stvn_d
      */
     public static LightVirtualFile getPreludeVirtualFile(Project project) {
         var file = getPreludeFile(project);
@@ -42,7 +42,7 @@ public final class StvnPreludeBridge {
         }
         var customVFile = project.getUserData(PRELUDE_VIRTUAL_FILE_KEY);
         if (customVFile == null || !customVFile.isValid()) {
-            customVFile = new LightVirtualFile("prelude.stvn_d", StvnFileType.Defs.INSTANCE, StvnPrelude.PRELUDE_STVN_D);
+            customVFile = new LightVirtualFile("prelude.stvn_core.stvn_d", StvnFileType.Defs.INSTANCE, StvnPrelude.PRELUDE_STVN_D);
             customVFile.setWritable(false);
             project.putUserData(PRELUDE_VIRTUAL_FILE_KEY, customVFile);
         }
@@ -59,7 +59,7 @@ public final class StvnPreludeBridge {
         var file = project.getUserData(PRELUDE_PSI_FILE_KEY);
         if (file == null || !file.isValid()) {
             file = PsiFileFactory.getInstance(project).createFileFromText(
-                "prelude.stvn_d",
+                "prelude.stvn_core.stvn_d",
                 StvnFileType.Defs.INSTANCE,
                 StvnPrelude.PRELUDE_STVN_D
             );
@@ -95,7 +95,8 @@ public final class StvnPreludeBridge {
     public static boolean isPreludeFile(@Nullable PsiFile file) {
         if (file == null) return false;
         var name = file.getName();
-        return "prelude.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name)
+        return "prelude.stvn_core.stvn_d".equals(name) || "prelude.stvn_d".equals(name)
+            || "org_stvnadore_prelude.stvn_core.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name)
             || "prelude.stvn_inclf".equals(name) || "org_stvnadore_prelude.stvn_inclf".equals(name);
     }
 
