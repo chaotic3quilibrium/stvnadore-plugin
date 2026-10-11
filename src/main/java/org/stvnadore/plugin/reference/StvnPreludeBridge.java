@@ -46,6 +46,32 @@ public final class StvnPreludeBridge {
     }
 
     /**
+     * Resolves the canonical package namespace path of a prelude type definition.
+     *
+     * @param def the TypeDefinition AST node from the prelude
+     * @return the package namespace path (for example, {@code ":org/stvnadore/prelude/meta"})
+     */
+    public static String getPreludePackagePath(TypeDefinition def) {
+        var pkg = PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class);
+        if (pkg != null && pkg.getPackagePath() != null) {
+            return pkg.getPackagePath().getText();
+        }
+        return ":org/stvnadore/prelude";
+    }
+
+    /**
+     * Resolves the canonical package namespace path for a prelude type by nominal name or FQNI.
+     *
+     * @param project the active IntelliJ project
+     * @param nameOrFqni the type identifier or FQNI to resolve
+     * @return the package namespace path, or {@code null} if not found in the prelude
+     */
+    public static @Nullable String resolvePreludePackagePath(Project project, String nameOrFqni) {
+        var def = resolvePreludeTypeDefinition(project, nameOrFqni);
+        return def != null ? getPreludePackagePath(def) : null;
+    }
+
+    /**
      * Resolves a prelude type definition AST node by nominal name or fully qualified nominal identifier (FQNI).
      *
      * @param project the active IntelliJ project

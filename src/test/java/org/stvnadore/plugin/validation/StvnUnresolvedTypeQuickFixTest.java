@@ -395,4 +395,27 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
         int typePos = resultText.indexOf(":type");
         assertTrue("Synthesized :defs block must precede :type", defsPos < typePos);
     }
+
+    /**
+     * Verifies that unresolved prelude meta enclave symbols qualify to :org/stvnadore/prelude/meta.
+     */
+    public void testUnresolvedPreludeMetaTypeQualifiesToMetaEnclave() {
+        var content = """
+            {
+              :defs {
+                :MyDoc :Tuple( :StvnPosixId64 )
+              }
+            }
+            """;
+        myFixture.configureByText("test_meta_unresolved.stvn", content);
+        var offset = content.indexOf(":StvnPosixId64");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Qualify as ':org/stvnadore/prelude/meta/StvnPosixId64'");
+        assertFalse("Expected qualification intention to :org/stvnadore/prelude/meta/StvnPosixId64", actions.isEmpty());
+
+        var importActions = myFixture.filterAvailableIntentions("Import ':StvnPosixId64' from :org/stvnadore/prelude/meta via :use");
+        assertFalse("Expected import intention from :org/stvnadore/prelude/meta", importActions.isEmpty());
+    }
 }

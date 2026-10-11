@@ -95,14 +95,16 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
             var opts = use.getUseOptionsBlock();
             if (opts != null && opts.getText().contains("#strip")) {
                 var useTarget = use.getUseTarget();
-                if (useTarget != null && useTarget.getText().equals(":org/stvnadore/prelude")) {
+                var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+                if (useTarget != null && (useTarget.getText().equals(":org/stvnadore/prelude") || useTarget.getText().equals(pkgPath))) {
                     return;
                 }
             }
         }
 
         var bareName = text;
-        var fqni = ":org/stvnadore/prelude/" + text.substring(1);
+        var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+        var fqni = pkgPath + "/" + text.substring(1);
         var message = "Unresolved Prelude type reference '" + text + "'. Available as '" + fqni + "'.";
 
         holder.registerProblem(
@@ -110,7 +112,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
             message,
             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
             new StvnQualifyTypeQuickFix(typeKw, fqni),
-            new StvnImportUseQuickFix(typeKw, ":org/stvnadore/prelude", bareName),
+            new StvnImportUseQuickFix(typeKw, pkgPath, bareName),
             new StvnBrandNominalTypeQuickFix(typeKw, fqni)
         );
     }

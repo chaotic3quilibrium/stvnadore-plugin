@@ -35,9 +35,10 @@ public final class StvnUnresolvedTypeQuickFixProvider {
         // Case A: Standard Library Prelude Symbols
         var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(project, bareName);
         if (preludeDef != null) {
-            var fqni = ":org/stvnadore/prelude/" + bareName.substring(1);
+            var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+            var fqni = pkgPath + "/" + bareName.substring(1);
             builder = builder.withFix(new StvnQualifyTypeQuickFix(typeKw, fqni));
-            builder = builder.withFix(new StvnImportUseQuickFix(typeKw, ":org/stvnadore/prelude", bareName));
+            builder = builder.withFix(new StvnImportUseQuickFix(typeKw, pkgPath, bareName));
             builder = builder.withFix(new StvnBrandNominalTypeQuickFix(typeKw, fqni));
             return builder;
         }

@@ -690,6 +690,23 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull(ipv4Entry);
         assertTrue("Entry must be marked prelude", ipv4Entry.isPrelude());
         assertEquals(":org/stvnadore/prelude", ipv4Entry.source());
+
+        var posixId64 = findEntryByName(preludeEntries, ":StvnPosixId64");
+        assertNotNull("Must contain :StvnPosixId64", posixId64);
+        assertTrue("Entry must be marked prelude", posixId64.isPrelude());
+        assertEquals(":org/stvnadore/prelude/meta", posixId64.source());
+
+        var docKind = findEntryByName(preludeEntries, ":StvnDocumentKind");
+        assertNotNull("Must contain :StvnDocumentKind", docKind);
+        assertEquals(":org/stvnadore/prelude/meta", docKind.source());
+
+        var docMeta = findEntryByName(preludeEntries, ":StvnDocumentMeta");
+        assertNotNull("Must contain :StvnDocumentMeta", docMeta);
+        assertEquals(":org/stvnadore/prelude/meta", docMeta.source());
+
+        var catMeta = findEntryByName(preludeEntries, ":StvnCatalogMeta");
+        assertNotNull("Must contain :StvnCatalogMeta", catMeta);
+        assertEquals(":org/stvnadore/prelude/meta", catMeta.source());
     }
 
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {

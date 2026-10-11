@@ -1,8 +1,8 @@
 <html>
 <body>
-<p>Audits definitions schema documents (<code>.stvn_d</code> and <code>.stvn_di</code>) for a mandatory root metadata (<code>:meta</code>) block.</p>
+<p>Audits definitions schema documents (<code>.stvn_d</code> and <code>.stvn_di</code>) and modular payload documents (<code>.stvn_i</code>) for a mandatory root metadata (<code>:meta</code>) block.</p>
 
-<p>Every definitions schema must declare a root <code>:meta</code> block preceding its <code>:defs</code> block, specifying canonical metadata facets including <code>#name</code>, <code>#domain</code>, and <code>#kind</code>.</p>
+<p>Every definitions schema and modular payload document must declare a root <code>:meta</code> block preceding its definitions or body block, specifying canonical metadata facets including <code>#name</code>, <code>#domain</code>, and <code>#kind</code>.</p>
 
 <p><b>Quick-Fix:</b></p>
 <p>Inserts a canonical root <code>:meta</code> block with defaulted schema name, domain, and document kind matching the file extension.</p>

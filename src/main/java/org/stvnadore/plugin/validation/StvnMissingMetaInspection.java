@@ -18,6 +18,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnDefinitionsFile;
 import org.stvnadore.plugin.StvnDefsIncludeFile;
 import org.stvnadore.plugin.StvnFile;
+import org.stvnadore.plugin.StvnPayloadIncludeFile;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
@@ -25,7 +26,8 @@ import org.stvnadore.psi.Visitor;
 
 /**
  * Validates presence of root :meta blocks on definitions schemas (.stvn_d, .stvn_di)
- * and verifies that #kind matches the document file extension (ERR_DOCUMENT_KIND_MISMATCH).
+ * and modular payload documents (.stvn_i), verifying that #kind matches the document
+ * file extension (ERR_DOCUMENT_KIND_MISMATCH).
  */
 @NullMarked
 public final class StvnMissingMetaInspection extends LocalInspectionTool {
@@ -67,14 +69,26 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 var fileName = file.getName();
                 boolean isDefs = file instanceof StvnDefinitionsFile || fileName.endsWith(".stvn_d");
                 boolean isDefsIncl = file instanceof StvnDefsIncludeFile || fileName.endsWith(".stvn_di");
+                boolean isPayloadIncl = file instanceof StvnPayloadIncludeFile || fileName.endsWith(".stvn_i");
 
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
-                if ((isDefs || isDefsIncl) && metaEntry == null) {
-                    var expectedKind = isDefs ? "#DEFS" : "#DEFS_INCLUDE";
+                if ((isDefs || isDefsIncl || isPayloadIncl) && metaEntry == null) {
+                    String expectedKind;
+                    String message;
+                    if (isDefs) {
+                        expectedKind = "#DEFS";
+                        message = "Definitions schema requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                    } else if (isDefsIncl) {
+                        expectedKind = "#DEFS_INCLUDE";
+                        message = "Definitions schema requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                    } else {
+                        expectedKind = "#BODY_INCLUDE";
+                        message = "Payload include document requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                    }
                     var targetElement = file.getFirstChild() != null ? file.getFirstChild() : file;
                     holder.registerProblem(
                         targetElement,
-                        "Definitions schema requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).",
+                        message,
                         ProblemHighlightType.GENERIC_ERROR,
                         new InsertMissingMetaBlockQuickFix(expectedKind)
                     );
@@ -141,7 +155,8 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             String fileName = file.getName();
             String[] parts = fileName.split("\\.");
             String stem = parts.length > 0 ? parts[0] : "schema";
-            String metaBlock = "\n  :meta {\n    #name \"" + stem + "\"\n    #domain \"default\"\n    #kind " + kind + "\n  }\n";
+            String domain = parts.length > 2 ? parts[1] : "default";
+            String metaBlock = "\n  :meta {\n    #name \"" + stem + "\"\n    #domain \"" + domain + "\"\n    #kind " + kind + "\n  }\n";
 
             String text = doc.getText();
             int lbraceIdx = text.indexOf('{');

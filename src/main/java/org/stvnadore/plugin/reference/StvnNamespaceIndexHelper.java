@@ -41,6 +41,27 @@ public final class StvnNamespaceIndexHelper {
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Incl.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Inclf.INSTANCE, scope));
 
+        var preludeFile = StvnPreludeBridge.getPreludeFile(project);
+        if (preludeFile != null) {
+            var packages = PsiTreeUtil.findChildrenOfType(preludeFile, PackageEnclosure.class);
+            for (var pkg : packages) {
+                var path = pkg.getPackagePath();
+                if (path == null) continue;
+                for (var elem : pkg.getPackageElementList()) {
+                    var def = elem.getTypeDefinition();
+                    if (def != null && def.getTypeKeyword() != null) {
+                        var kwText = def.getTypeKeyword().getText();
+                        if (kwText.equals(cleanLeaf)) {
+                            var pkgText = path.getText();
+                            if (!results.contains(pkgText)) {
+                                results.add(pkgText);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         for (var vf : virtualFiles) {
             var psiFile = psiManager.findFile(vf);
             if (psiFile == null) continue;

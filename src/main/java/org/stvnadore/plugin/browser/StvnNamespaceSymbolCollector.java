@@ -99,9 +99,10 @@ public final class StvnNamespaceSymbolCollector {
                 var leafName = fullText.contains("/") ? ":" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
                 var schemaType = def.getSchemaType();
                 var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                var source = StvnPreludeBridge.getPreludePackagePath(def);
                 results.add(new StvnNamespaceSymbolEntry(
                     leafName,
-                    ":org/stvnadore/prelude",
+                    source,
                     schemaText,
                     0,
                     kw,
@@ -951,9 +952,11 @@ public final class StvnNamespaceSymbolCollector {
     ) {}
 
     private static @Nullable NominalResolutionInfo resolveNominalShapeInfo(PsiFile file, String name) {
-        var preludeKw = StvnPreludeBridge.resolvePreludeType(file.getProject(), name);
-        if (preludeKw != null) {
-            return new NominalResolutionInfo(PRELUDE_URI, preludeKw.getText(), preludeKw, true);
+        var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), name);
+        if (preludeDef != null && preludeDef.getTypeKeyword() != null) {
+            var kw = preludeDef.getTypeKeyword();
+            var source = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+            return new NominalResolutionInfo(source, kw.getText(), kw, true);
         }
 
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
@@ -1122,6 +1125,15 @@ public final class StvnNamespaceSymbolCollector {
                         collectStrippedElements(pkg, targetPackagePath, processedNames, results);
                     }
                 }
+            }
+        }
+
+        var preludeFile = StvnPreludeBridge.getPreludeFile(file.getProject());
+        var preludePackages = PsiTreeUtil.findChildrenOfType(preludeFile, PackageEnclosure.class);
+        for (var pkg : preludePackages) {
+            var path = pkg.getPackagePath();
+            if (path != null && path.getText().equals(targetPackagePath)) {
+                collectStrippedElements(pkg, targetPackagePath, processedNames, results);
             }
         }
     }
