@@ -3,18 +3,20 @@ package org.stvnadore.plugin.psi.impl;
 import com.intellij.extapi.psi.ASTWrapperPsiElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
+import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
+import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ValueKeyword;
 
 @NullMarked
-public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement implements ConstantDefinition {
+public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement implements ConstantDefinition, Navigatable {
 
     protected StvnConstantDefinitionMixin(ASTNode node) {
         super(node);
@@ -90,6 +92,21 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
                 return StvnIcons.STVN;
             }
         };
+    }
+
+    @Override
+    public boolean canNavigate() {
+        return StvnNavigationUtil.canNavigate(this);
+    }
+
+    @Override
+    public boolean canNavigateToSource() {
+        return StvnNavigationUtil.canNavigateToSource(this);
+    }
+
+    @Override
+    public void navigate(boolean requestFocus) {
+        StvnNavigationUtil.navigate(this, requestFocus);
     }
 
     /**

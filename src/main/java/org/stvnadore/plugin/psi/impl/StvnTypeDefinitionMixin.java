@@ -3,8 +3,7 @@ package org.stvnadore.plugin.psi.impl;
 import com.intellij.extapi.psi.ASTWrapperPsiElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.SearchScope;
@@ -13,12 +12,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
+import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 
 @NullMarked
-public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement implements TypeDefinition {
+public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement implements TypeDefinition, Navigatable {
 
     protected StvnTypeDefinitionMixin(ASTNode node) {
         super(node);
@@ -114,23 +114,17 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
 
     @Override
     public boolean canNavigate() {
-        return true;
+        return StvnNavigationUtil.canNavigate(this);
     }
 
     @Override
     public boolean canNavigateToSource() {
-        return true;
+        return StvnNavigationUtil.canNavigateToSource(this);
     }
 
     @Override
     public void navigate(boolean requestFocus) {
-        var file = getContainingFile();
-        if (file == null) return;
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var descriptor = new OpenFileDescriptor(getProject(), vFile, getTextOffset());
-            FileEditorManager.getInstance(getProject()).openTextEditor(descriptor, requestFocus);
-        }
+        StvnNavigationUtil.navigate(this, requestFocus);
     }
 
     @Override

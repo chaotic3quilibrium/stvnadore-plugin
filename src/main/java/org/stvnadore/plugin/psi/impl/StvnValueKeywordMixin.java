@@ -3,18 +3,20 @@ package org.stvnadore.plugin.psi.impl;
 import com.intellij.extapi.psi.ASTWrapperPsiElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
+import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
+import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ValueKeyword;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 
 @NullMarked
-public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement implements ValueKeyword, com.intellij.psi.PsiNameIdentifierOwner {
+public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement implements ValueKeyword, com.intellij.psi.PsiNameIdentifierOwner, Navigatable {
 
     protected StvnValueKeywordMixin(ASTNode node) {
         super(node);
@@ -60,6 +62,21 @@ public abstract class StvnValueKeywordMixin extends ASTWrapperPsiElement impleme
                 return StvnIcons.STVN;
             }
         };
+    }
+
+    @Override
+    public boolean canNavigate() {
+        return StvnNavigationUtil.canNavigate(this);
+    }
+
+    @Override
+    public boolean canNavigateToSource() {
+        return StvnNavigationUtil.canNavigateToSource(this);
+    }
+
+    @Override
+    public void navigate(boolean requestFocus) {
+        StvnNavigationUtil.navigate(this, requestFocus);
     }
 
     @Override

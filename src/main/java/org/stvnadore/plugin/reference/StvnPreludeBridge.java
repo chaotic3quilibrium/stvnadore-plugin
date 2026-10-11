@@ -37,6 +37,7 @@ public final class StvnPreludeBridge {
         var file = getPreludeFile(project);
         var vFile = file.getViewProvider().getVirtualFile();
         if (vFile instanceof LightVirtualFile lvf) {
+            lvf.setWritable(false);
             return lvf;
         }
         var customVFile = project.getUserData(PRELUDE_VIRTUAL_FILE_KEY);
@@ -62,6 +63,10 @@ public final class StvnPreludeBridge {
                 StvnFileType.Defs.INSTANCE,
                 StvnPrelude.PRELUDE_STVN_D
             );
+            var vFile = file.getViewProvider().getVirtualFile();
+            if (vFile instanceof LightVirtualFile lvf) {
+                lvf.setWritable(false);
+            }
             project.putUserData(PRELUDE_PSI_FILE_KEY, file);
         }
         return file;

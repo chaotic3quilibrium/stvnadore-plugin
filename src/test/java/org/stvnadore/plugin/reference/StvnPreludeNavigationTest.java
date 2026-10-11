@@ -1,10 +1,12 @@
 package org.stvnadore.plugin.reference;
 
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.stdlib.StvnPrelude;
+import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.psi.TypeDefinition;
 
 /**
@@ -102,6 +104,18 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertNotNull("Reference at #name must resolve to prelude", resolved);
         assertEquals(":StvnPosixId64", resolved.getText());
         assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+        assertTrue("Resolved target must be Navigatable", resolved instanceof Navigatable);
+        var navigatable = (Navigatable) resolved;
+        assertTrue("canNavigate() must return true", navigatable.canNavigate());
+        assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
+        var descriptor = StvnNavigationUtil.getDescriptor(resolved);
+        assertNotNull("Navigation descriptor must not be null", descriptor);
+        assertEquals("prelude.stvn_d", descriptor.getFile().getName());
+        assertEquals(resolved.getTextOffset(), descriptor.getOffset());
+        navigatable.navigate(true);
+        var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Active editor must not be null after navigation dispatch", activeEditor);
+        assertEquals("prelude.stvn_d", activeEditor.getVirtualFile().getName());
     }
 
     /**
@@ -127,6 +141,18 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertNotNull("Reference at #domain must resolve to prelude", resolved);
         assertEquals(":StvnPosixId64", resolved.getText());
         assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+        assertTrue("Resolved target must be Navigatable", resolved instanceof Navigatable);
+        var navigatable = (Navigatable) resolved;
+        assertTrue("canNavigate() must return true", navigatable.canNavigate());
+        assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
+        var descriptor = StvnNavigationUtil.getDescriptor(resolved);
+        assertNotNull("Navigation descriptor must not be null", descriptor);
+        assertEquals("prelude.stvn_d", descriptor.getFile().getName());
+        assertEquals(resolved.getTextOffset(), descriptor.getOffset());
+        navigatable.navigate(true);
+        var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Active editor must not be null after navigation dispatch", activeEditor);
+        assertEquals("prelude.stvn_d", activeEditor.getVirtualFile().getName());
     }
 
     /**
@@ -151,6 +177,18 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertNotNull("Reference at #kind must resolve to prelude", resolved);
         assertEquals(":StvnDocumentKind", resolved.getText());
         assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+        assertTrue("Resolved target must be Navigatable", resolved instanceof Navigatable);
+        var navigatable = (Navigatable) resolved;
+        assertTrue("canNavigate() must return true", navigatable.canNavigate());
+        assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
+        var descriptor = StvnNavigationUtil.getDescriptor(resolved);
+        assertNotNull("Navigation descriptor must not be null", descriptor);
+        assertEquals("prelude.stvn_d", descriptor.getFile().getName());
+        assertEquals(resolved.getTextOffset(), descriptor.getOffset());
+        navigatable.navigate(true);
+        var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Active editor must not be null after navigation dispatch", activeEditor);
+        assertEquals("prelude.stvn_d", activeEditor.getVirtualFile().getName());
     }
 
     /**
@@ -175,5 +213,48 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertNotNull("Reference at #DEFS must resolve to prelude variant", resolved);
         assertEquals("#DEFS", resolved.getText());
         assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+        assertTrue("Resolved target must be Navigatable", resolved instanceof Navigatable);
+        var navigatable = (Navigatable) resolved;
+        assertTrue("canNavigate() must return true", navigatable.canNavigate());
+        assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
+        var descriptor = StvnNavigationUtil.getDescriptor(resolved);
+        assertNotNull("Navigation descriptor must not be null", descriptor);
+        assertEquals("prelude.stvn_d", descriptor.getFile().getName());
+        assertEquals(resolved.getTextOffset(), descriptor.getOffset());
+        navigatable.navigate(true);
+        var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Active editor must not be null after navigation dispatch", activeEditor);
+        assertEquals("prelude.stvn_d", activeEditor.getVirtualFile().getName());
+        assertEquals(resolved.getTextOffset(), activeEditor.getCaretModel().getOffset());
+    }
+
+    /**
+     * Verifies end-to-end navigation dispatch across all kind variants (#BODY, #BODY_INCLUDE, #DEFS_INCLUDE).
+     */
+    public void testMetaAllKindVariantsNavigateToPreludeEnumVariants() {
+        String[] variants = {"#BODY", "#BODY_INCLUDE", "#DEFS_INCLUDE"};
+        for (var variant : variants) {
+            var content = "{\n  :meta {\n    #name \"test_doc\"\n    #kind " + variant + "\n  }\n  :defs {}\n}\n";
+            myFixture.configureByText("test_" + variant.substring(1).toLowerCase() + ".stvn_d", content);
+            myFixture.doHighlighting();
+
+            var offset = content.indexOf(variant);
+            myFixture.getEditor().getCaretModel().moveToOffset(offset + 1);
+            var ref = myFixture.getReferenceAtCaretPosition();
+            assertNotNull("Reference at " + variant + " must exist", ref);
+            var resolved = ref.resolve();
+            assertNotNull("Reference at " + variant + " must resolve to prelude variant", resolved);
+            assertEquals(variant, resolved.getText());
+            assertTrue("Resolved target must be Navigatable", resolved instanceof Navigatable);
+            var navigatable = (Navigatable) resolved;
+            assertTrue("canNavigate() must return true for " + variant, navigatable.canNavigate());
+            var descriptor = StvnNavigationUtil.getDescriptor(resolved);
+            assertNotNull("Descriptor for " + variant + " must not be null", descriptor);
+            navigatable.navigate(true);
+            var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+            assertNotNull("Active editor must not be null", activeEditor);
+            assertEquals("prelude.stvn_d", activeEditor.getVirtualFile().getName());
+            assertEquals(resolved.getTextOffset(), activeEditor.getCaretModel().getOffset());
+        }
     }
 }
