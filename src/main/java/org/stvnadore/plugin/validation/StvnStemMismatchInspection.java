@@ -68,9 +68,13 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 var file = facet.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();
-                String[] parts = fileName.split("\\.");
-                if (parts.length == 0) return;
-                String stem = parts[0];
+                int lastDot = fileName.lastIndexOf('.');
+                if (lastDot < 0) return;
+                var ext = fileName.substring(lastDot);
+                var stemPart = fileName.substring(0, lastDot);
+                var dotParts = stemPart.split("\\.");
+                if (dotParts.length == 0) return;
+                String stem = dotParts[0];
 
                 StringLiteral stringLit = facet.getStringLiteral();
                 if (stringLit == null) return;
@@ -78,6 +82,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 String declared = stripQuotes(rawText);
 
                 if (!stem.equals(declared)) {
+                    var targetFileName = declared;
+                    for (int i = 1; i < dotParts.length; i++) {
+                        targetFileName += "." + dotParts[i];
+                    }
+                    targetFileName += ext;
                     holder.registerProblem(
                         stringLit,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -85,7 +94,8 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH
                         ),
                         ProblemHighlightType.WARNING,
-                        new AlignStemNameQuickFix(stem)
+                        new AlignStemNameQuickFix(stem),
+                        new RenameFileToDeclaredNameQuickFix(stringLit, targetFileName)
                     );
                 }
             }
@@ -174,6 +184,48 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 var range = element.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), "\"" + stem + "\"");
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+        }
+    }
+
+    /**
+     * Quick-fix renaming the active file to match declared #name in filename stem slot 0.
+     */
+    public static final class RenameFileToDeclaredNameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+        private final String targetFileName;
+
+        public RenameFileToDeclaredNameQuickFix(@NotNull PsiElement element, String targetFileName) {
+            super(element);
+            this.targetFileName = targetFileName;
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return "Rename file to '" + targetFileName + "'";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Rename file to match declared #name";
+        }
+
+        @Override
+        public boolean isAvailable(@NotNull Project project,
+                                   @NotNull PsiFile file,
+                                   @NotNull PsiElement startElement,
+                                   @NotNull PsiElement endElement) {
+            return startElement.isValid();
+        }
+
+        @Override
+        public void invoke(@NotNull Project project,
+                           @NotNull PsiFile file,
+                           @Nullable Editor editor,
+                           @NotNull PsiElement startElement,
+                           @NotNull PsiElement endElement) {
+            try {
+                file.setName(targetFileName);
+            } catch (com.intellij.util.IncorrectOperationException ignored) {
             }
         }
     }

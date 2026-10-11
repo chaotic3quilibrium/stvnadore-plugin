@@ -2,7 +2,6 @@ package org.stvnadore.plugin.documentation;
 
 import com.intellij.lang.documentation.DocumentationProvider;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
@@ -28,6 +27,10 @@ import org.stvnadore.psi.DefsElement;
 import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.MetaDomainFacet;
+import org.stvnadore.psi.MetaKindFacet;
+import org.stvnadore.psi.MetaKindValue;
+import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.PackageElement;
@@ -317,12 +320,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append(metricHtml).append("<br/>");
             }
 
-            var docComments = extractDocumentationComments(typeDef);
-            if (docComments != null && !docComments.isEmpty()) {
-                sb.append("<div style=\"margin-top: 4px; margin-bottom: 6px; color: #CCCCCC; font-style: italic;\">")
-                  .append(docComments)
-                  .append("</div>");
-            }
 
             if (subset != null) {
                 var lineage = formatDerivationLineage(typeDef, subset);
@@ -491,6 +488,45 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<b>Variant Index:</b> ").append(idx);
             }
             return sb.toString();
+        }
+
+        if (target instanceof MetaNameFacet facet) {
+            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+            var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+            return """
+                <b>Root Metadata Facet:</b> <code>#name</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnPosixId64</code><br/>
+                Declares the nominal document name identifier.<br/>
+                <hr/>
+                """ + (baseDoc != null ? baseDoc : "<b>Underlying Structure:</b> <code>{ #maxSize 64 } :PosixId</code>");
+        }
+
+        if (target instanceof MetaDomainFacet facet) {
+            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+            var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+            return """
+                <b>Root Metadata Facet:</b> <code>#domain</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnPosixId64</code><br/>
+                Declares the optional secondary domain classification for filename slot 1.<br/>
+                <hr/>
+                """ + (baseDoc != null ? baseDoc : "<b>Underlying Structure:</b> <code>{ #maxSize 64 } :PosixId</code>");
+        }
+
+        if (target instanceof MetaKindFacet facet) {
+            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
+            var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+            return """
+                <b>Root Metadata Facet:</b> <code>#kind</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code><br/>
+                Declares the architectural document kind variant.<br/>
+                <hr/>
+                """ + (baseDoc != null ? baseDoc : "<b>Underlying Structure:</b> <code>:Enum [ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]</code>");
+        }
+
+        if (target instanceof MetaKindValue kindVal) {
+            var text = kindVal.getText().trim();
+            return """
+                <b>Document Kind Variant:</b> <code>%s</code><br/>
+                <b>Enclosing Enum:</b> <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code> (<code>:StvnDocumentKind</code>)<br/>
+                <b>Allowed Variants:</b> <code>[ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]</code>
+                """.formatted(text);
         }
 
         if (target instanceof ProductType productType) {
@@ -815,58 +851,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         html.append("</tbody></table>");
         return html.toString();
-    }
-
-    private static @Nullable String extractDocumentationComments(TypeDefinition typeDef) {
-        var parts = new java.util.ArrayList<String>();
-        var file = typeDef.getContainingFile();
-        if (file == null) return null;
-
-        // 1. Preceding comments
-        var parent = typeDef.getParent();
-        var anchor = (parent instanceof PackageElement || parent instanceof DefsElement) ? parent : typeDef;
-        var prev = anchor.getPrevSibling();
-        var preceding = new java.util.ArrayList<String>();
-        while (prev != null) {
-            if (prev instanceof PsiWhiteSpace ws) {
-                if (ws.getText().contains("\n\n")) break; // Boundary stop
-            } else if (prev instanceof PsiComment comment) {
-                var clean = cleanCommentText(comment.getText());
-                if (!clean.isEmpty()) preceding.add(0, clean);
-            } else {
-                break;
-            }
-            prev = prev.getPrevSibling();
-        }
-        parts.addAll(preceding);
-
-        // 2. Trailing comment on same line
-        int endOffset = typeDef.getTextRange().getEndOffset();
-        var nextLeaf = file.findElementAt(endOffset);
-        if (nextLeaf instanceof PsiComment comment) {
-            var clean = cleanCommentText(comment.getText());
-            if (!clean.isEmpty()) parts.add(clean);
-        } else if (nextLeaf instanceof PsiWhiteSpace ws && !ws.getText().contains("\n")) {
-            var trailingLeaf = file.findElementAt(ws.getTextRange().getEndOffset());
-            if (trailingLeaf instanceof PsiComment comment) {
-                var clean = cleanCommentText(comment.getText());
-                if (!clean.isEmpty()) parts.add(clean);
-            }
-        }
-
-        if (parts.isEmpty()) return null;
-        return String.join("<br/>", parts);
-    }
-
-    private static String cleanCommentText(String text) {
-        var t = text.trim();
-        if (t.startsWith("//")) {
-            return t.substring(2).trim();
-        }
-        if (t.startsWith("/*") && t.endsWith("*/")) {
-            return t.substring(2, t.length() - 2).trim();
-        }
-        return t;
     }
 
     private static boolean isCompositeOrCollectionType(String baseType) {
@@ -1665,7 +1649,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return element;
         }
 
+        if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet || element instanceof MetaKindFacet || element instanceof MetaKindValue) {
+            return element;
+        }
+
         if (originalElement != null) {
+            var metaKindVal = PsiTreeUtil.getParentOfType(originalElement, MetaKindValue.class);
+            if (metaKindVal != null) return metaKindVal;
+            var metaKind = PsiTreeUtil.getParentOfType(originalElement, MetaKindFacet.class);
+            if (metaKind != null) return metaKind;
+            var metaName = PsiTreeUtil.getParentOfType(originalElement, MetaNameFacet.class);
+            if (metaName != null) return metaName;
+            var metaDomain = PsiTreeUtil.getParentOfType(originalElement, MetaDomainFacet.class);
+            if (metaDomain != null) return metaDomain;
+
             var typeKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class);
             if (typeKw != null) {
                 return getDocumentationElement(typeKw, null);
@@ -1734,6 +1731,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
         if (valKwAncestor != null) {
             return valKwAncestor;
+        }
+        var metaKindVal = PsiTreeUtil.getParentOfType(contextElement, MetaKindValue.class);
+        if (metaKindVal != null) {
+            return metaKindVal;
+        }
+        var metaKind = PsiTreeUtil.getParentOfType(contextElement, MetaKindFacet.class);
+        if (metaKind != null) {
+            return metaKind;
+        }
+        var metaName = PsiTreeUtil.getParentOfType(contextElement, MetaNameFacet.class);
+        if (metaName != null) {
+            return metaName;
+        }
+        var metaDomain = PsiTreeUtil.getParentOfType(contextElement, MetaDomainFacet.class);
+        if (metaDomain != null) {
+            return metaDomain;
         }
         var atomicAncestor = PsiTreeUtil.getParentOfType(contextElement, AtomicType.class);
         if (atomicAncestor != null) {

@@ -119,13 +119,25 @@ meta_element              ::= meta_name_facet
                             | meta_kind_facet
                             | meta_unknown_facet
 
-meta_name_facet           ::= KW_META_NAME string_literal {pin=1}
-meta_domain_facet         ::= KW_META_DOMAIN string_literal {pin=1}
-meta_kind_facet           ::= KW_META_KIND meta_kind_value {pin=1}
+meta_name_facet           ::= KW_META_NAME string_literal {
+  pin=1
+  mixin="org.stvnadore.plugin.psi.impl.StvnMetaNameFacetMixin"
+}
+meta_domain_facet         ::= KW_META_DOMAIN string_literal {
+  pin=1
+  mixin="org.stvnadore.plugin.psi.impl.StvnMetaDomainFacetMixin"
+}
+meta_kind_facet           ::= KW_META_KIND meta_kind_value {
+  pin=1
+  mixin="org.stvnadore.plugin.psi.impl.StvnMetaKindFacetMixin"
+}
 meta_kind_value           ::= KW_KIND_BODY
                             | KW_KIND_DEFS
                             | KW_KIND_BODY_INCLUDE
                             | KW_KIND_DEFS_INCLUDE
+{
+  mixin="org.stvnadore.plugin.psi.impl.StvnMetaKindValueMixin"
+}
 
 meta_unknown_facet        ::= value_keyword (value | schema_type)?
 

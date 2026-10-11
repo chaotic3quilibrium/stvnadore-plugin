@@ -148,4 +148,56 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
 
         assertEquals("json_example.custom.stvn_i", myFixture.getFile().getName());
     }
+
+    /**
+     * Verifies that when #name mismatches single-segment file stem, both Align and Rename quick-fixes are offered.
+     */
+    public void testNameMismatchReportsWarningAndOffersBothQuickFixes() {
+        var content = """
+            {
+              :meta {
+                #name "<caret>declared_name"
+                #kind #BODY_INCLUDE
+              }
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("original_stem.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_NAME_MISMATCH"))
+            .toList();
+        assertFalse("Expected name mismatch warning", warnings.isEmpty());
+
+        var alignActions = myFixture.filterAvailableIntentions("Align #name with file stem");
+        assertFalse("Expected AlignStemNameQuickFix intention", alignActions.isEmpty());
+
+        var renameActions = myFixture.filterAvailableIntentions("Rename file to 'declared_name.stvn_i'");
+        assertFalse("Expected RenameFileToDeclaredNameQuickFix intention", renameActions.isEmpty());
+    }
+
+    /**
+     * Verifies that RenameFileToDeclaredNameQuickFix renames a multi-segment file while preserving slot 1 and extension.
+     */
+    public void testRenameFileToDeclaredNameQuickFixPreservesMultiSegmentStem() {
+        var content = """
+            {
+              :meta {
+                #name "<caret>rfc8259_json_substrat"
+                #domain "json_schema"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.json_schema.stvn_d", content);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Rename file to 'rfc8259_json_substrat.json_schema.stvn_d'");
+        assertFalse("Expected RenameFileToDeclaredNameQuickFix intention preserving domain slot 1", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        assertEquals("rfc8259_json_substrat.json_schema.stvn_d", myFixture.getFile().getName());
+    }
 }

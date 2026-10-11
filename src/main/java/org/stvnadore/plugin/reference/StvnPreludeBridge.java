@@ -12,6 +12,7 @@ import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.ValueKeyword;
 
 /**
  * Bridge providing an in-memory synthetic AST of the canonical standard library prelude
@@ -163,5 +164,28 @@ public final class StvnPreludeBridge {
     public static @Nullable TypeKeyword resolvePreludeType(Project project, String nameOrFqni) {
         var def = resolvePreludeTypeDefinition(project, nameOrFqni);
         return def != null ? def.getTypeKeyword() : null;
+    }
+
+    /**
+     * Resolves a prelude enum variant AST node within the specified enum type definition.
+     *
+     * @param project the active IntelliJ project
+     * @param enumFqni the fully qualified nominal identifier of the enum type
+     * @param variantName the variant identifier (for example, {@code "#DEFS"})
+     * @return the resolved ValueKeyword element, or {@code null} if not found in the prelude
+     */
+    public static @Nullable ValueKeyword resolvePreludeEnumVariant(Project project, String enumFqni, String variantName) {
+        var def = resolvePreludeTypeDefinition(project, enumFqni);
+        if (def == null) return null;
+        var schemaType = def.getSchemaType();
+        if (schemaType == null || schemaType.getSchemaConstructor() == null) return null;
+        var sumType = schemaType.getSchemaConstructor().getSumType();
+        if (sumType == null || sumType.getEnumDef() == null) return null;
+        for (var valKw : sumType.getEnumDef().getValueKeywordList()) {
+            if (valKw.getText().equals(variantName)) {
+                return valKw;
+            }
+        }
+        return null;
     }
 }

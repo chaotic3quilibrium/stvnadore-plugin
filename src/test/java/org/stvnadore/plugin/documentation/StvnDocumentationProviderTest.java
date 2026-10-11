@@ -638,7 +638,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must render Package header", doc.contains("<b>Package:</b> <code>:org/ietf/rfc8259/json</code>"));
         assertTrue("Doc must render FQNI header", doc.contains("<b>FQNI:</b> <code>:org/ietf/rfc8259/json/JsonArray</code>"));
         assertFalse("Doc inside package must NOT render 'Declared In: Local Definitions'", doc.contains("Declared In: Local Definitions"));
-        assertTrue("Doc must render adjacent trailing comment", doc.contains("Structural Category: SEQUENCE (Heterogeneous JSON Array)"));
+        assertFalse("Doc must NOT scrape adjacent trailing comment", doc.contains("Structural Category: SEQUENCE (Heterogeneous JSON Array)"));
         assertTrue("Doc must render Effective Facets & Traits table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
         assertTrue("Doc must render #equatable trait", doc.contains("<code>#equatable</code>"));
         assertTrue("Doc must render #comparable trait", doc.contains("<code>#comparable</code>"));
@@ -666,12 +666,76 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
 
         assertTrue("Doc must render Package header", doc.contains("<b>Package:</b> <code>:org/ietf/rfc8259/json</code>"));
         assertTrue("Doc must render FQNI header", doc.contains("<b>FQNI:</b> <code>:org/ietf/rfc8259/json/JsonNumberInteger</code>"));
-        assertTrue("Doc must render adjacent trailing comment", doc.contains("Structural Category: INTEGER"));
+        assertFalse("Doc must NOT scrape adjacent trailing comment", doc.contains("Structural Category: INTEGER"));
         assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
         assertTrue("Doc must render #size facet with value 53", doc.contains("<code>#size</code></td><td style=\"padding: 2px 4px;\"><code>53</code>"));
         assertTrue("Doc must render #size before #equatable in 5-tier order", doc.indexOf("#size") < doc.indexOf("#equatable"));
         assertTrue("Doc must render #equatable before #comparable in 5-tier order", doc.indexOf("#equatable") < doc.indexOf("#comparable"));
         assertTrue("Doc must render underlying structure", doc.contains("<b>Underlying Structure:</b> :Int"));
     }
-}
 
+    /**
+     * Verifies that hovering over #name displays :org/stvnadore/prelude/meta/StvnPosixId64 documentation.
+     */
+    public void testMetaNameHoverRendersPreludePosixId64Documentation() {
+        var content = """
+            {
+              :meta {
+                #name "rfc8259_json_substrate"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.stvn_d", content);
+        var offset = content.indexOf("#name");
+        var doc = getDocAtOffset(content, offset);
+        assertNotNull("Documentation on #name must not be null", doc);
+        assertTrue("Must reference :StvnPosixId64", doc.contains(":StvnPosixId64"));
+        assertTrue("Must reference :org/stvnadore/prelude/meta", doc.contains(":org/stvnadore/prelude/meta"));
+        assertTrue("Must render #maxSize facet", doc.contains("<code>#maxSize</code>"));
+        assertTrue("Must render 64 limit", doc.contains("64"));
+    }
+
+    /**
+     * Verifies that hovering over #kind displays :org/stvnadore/prelude/meta/StvnDocumentKind documentation.
+     */
+    public void testMetaKindHoverRendersPreludeDocumentKindDocumentation() {
+        var content = """
+            {
+              :meta {
+                #name "rfc8259_json_substrate"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.stvn_d", content);
+        var offset = content.indexOf("#kind");
+        var doc = getDocAtOffset(content, offset);
+        assertNotNull("Documentation on #kind must not be null", doc);
+        assertTrue("Must reference :StvnDocumentKind", doc.contains(":StvnDocumentKind"));
+        assertTrue("Must list enum variants", doc.contains("#BODY"));
+    }
+
+    /**
+     * Verifies that hovering over #DEFS kind value displays enum variant documentation.
+     */
+    public void testMetaKindValueHoverRendersEnumVariantDocumentation() {
+        var content = """
+            {
+              :meta {
+                #name "rfc8259_json_substrate"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.stvn_d", content);
+        var offset = content.indexOf("#DEFS");
+        var doc = getDocAtOffset(content, offset);
+        assertNotNull("Documentation on #DEFS must not be null", doc);
+        assertTrue("Must display variant name #DEFS", doc.contains("<b>Document Kind Variant:</b> <code>#DEFS</code>"));
+        assertTrue("Must display enclosing enum", doc.contains(":StvnDocumentKind"));
+    }
+}

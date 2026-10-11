@@ -8,6 +8,10 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.MetaDomainFacet;
+import org.stvnadore.psi.MetaKindFacet;
+import org.stvnadore.psi.MetaKindValue;
+import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
@@ -127,6 +131,58 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                         return PsiReference.EMPTY_ARRAY;
                     }
                     return new PsiReference[]{new StvnIncludeReference(stringLit)};
+                }
+            }
+        );
+
+        // 4. Meta Name Facet Reference Provider: matches #name in root :meta
+        registrar.registerReferenceProvider(
+            PlatformPatterns.psiElement(MetaNameFacet.class),
+            new PsiReferenceProvider() {
+                @Override
+                public PsiReference @NotNull [] getReferencesByElement(
+                        @NotNull PsiElement element,
+                        @NotNull ProcessingContext context) {
+                    return new PsiReference[]{StvnMetaReference.forPosixIdFacet(element, 5)};
+                }
+            }
+        );
+
+        // 5. Meta Domain Facet Reference Provider: matches #domain in root :meta
+        registrar.registerReferenceProvider(
+            PlatformPatterns.psiElement(MetaDomainFacet.class),
+            new PsiReferenceProvider() {
+                @Override
+                public PsiReference @NotNull [] getReferencesByElement(
+                        @NotNull PsiElement element,
+                        @NotNull ProcessingContext context) {
+                    return new PsiReference[]{StvnMetaReference.forPosixIdFacet(element, 7)};
+                }
+            }
+        );
+
+        // 6. Meta Kind Facet Reference Provider: matches #kind in root :meta
+        registrar.registerReferenceProvider(
+            PlatformPatterns.psiElement(MetaKindFacet.class),
+            new PsiReferenceProvider() {
+                @Override
+                public PsiReference @NotNull [] getReferencesByElement(
+                        @NotNull PsiElement element,
+                        @NotNull ProcessingContext context) {
+                    return new PsiReference[]{StvnMetaReference.forKindFacet((MetaKindFacet) element)};
+                }
+            }
+        );
+
+        // 7. Meta Kind Value Reference Provider: matches #BODY, #DEFS, etc. in #kind
+        registrar.registerReferenceProvider(
+            PlatformPatterns.psiElement(MetaKindValue.class),
+            new PsiReferenceProvider() {
+                @Override
+                public PsiReference @NotNull [] getReferencesByElement(
+                        @NotNull PsiElement element,
+                        @NotNull ProcessingContext context) {
+                    return new PsiReference[]{StvnMetaReference.forKindValue((MetaKindValue) element)};
                 }
             }
         );

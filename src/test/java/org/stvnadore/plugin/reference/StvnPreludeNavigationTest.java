@@ -79,4 +79,101 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
         assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
     }
+
+    /**
+     * Verifies that navigating #name in root :meta resolves to :org/stvnadore/prelude/meta/StvnPosixId64.
+     */
+    public void testMetaNameNavigatesToPreludePosixId64() {
+        var content = """
+            {
+              :meta {
+                #n<caret>ame "test_doc"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("test_doc.stvn_d", content);
+        myFixture.doHighlighting();
+
+        var ref = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #name must exist", ref);
+        var resolved = ref.resolve();
+        assertNotNull("Reference at #name must resolve to prelude", resolved);
+        assertEquals(":StvnPosixId64", resolved.getText());
+        assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+    }
+
+    /**
+     * Verifies that navigating #domain in root :meta resolves to :org/stvnadore/prelude/meta/StvnPosixId64.
+     */
+    public void testMetaDomainNavigatesToPreludePosixId64() {
+        var content = """
+            {
+              :meta {
+                #name "test_doc"
+                #dom<caret>ain "test_domain"
+                #kind #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("test_doc.test_domain.stvn_d", content);
+        myFixture.doHighlighting();
+
+        var ref = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #domain must exist", ref);
+        var resolved = ref.resolve();
+        assertNotNull("Reference at #domain must resolve to prelude", resolved);
+        assertEquals(":StvnPosixId64", resolved.getText());
+        assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+    }
+
+    /**
+     * Verifies that navigating #kind in root :meta resolves to :org/stvnadore/prelude/meta/StvnDocumentKind.
+     */
+    public void testMetaKindNavigatesToPreludeDocumentKind() {
+        var content = """
+            {
+              :meta {
+                #name "test_doc"
+                #ki<caret>nd #DEFS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("test_doc.stvn_d", content);
+        myFixture.doHighlighting();
+
+        var ref = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #kind must exist", ref);
+        var resolved = ref.resolve();
+        assertNotNull("Reference at #kind must resolve to prelude", resolved);
+        assertEquals(":StvnDocumentKind", resolved.getText());
+        assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+    }
+
+    /**
+     * Verifies that navigating #DEFS kind value resolves to #DEFS variant in :StvnDocumentKind.
+     */
+    public void testMetaKindValueNavigatesToPreludeDocumentKindVariant() {
+        var content = """
+            {
+              :meta {
+                #name "test_doc"
+                #kind #DE<caret>FS
+              }
+              :defs {}
+            }
+            """;
+        myFixture.configureByText("test_doc.stvn_d", content);
+        myFixture.doHighlighting();
+
+        var ref = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #DEFS must exist", ref);
+        var resolved = ref.resolve();
+        assertNotNull("Reference at #DEFS must resolve to prelude variant", resolved);
+        assertEquals("#DEFS", resolved.getText());
+        assertEquals("prelude.stvn_d", resolved.getContainingFile().getName());
+    }
 }
