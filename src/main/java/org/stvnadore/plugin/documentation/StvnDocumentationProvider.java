@@ -491,7 +491,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof MetaNameFacet facet) {
-            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+            var containingFile = facet.getContainingFile();
+            var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnPosixId64")
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
             var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
             return """
                 <b>Root Metadata Facet:</b> <code>#name</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnPosixId64</code><br/>
@@ -501,7 +504,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof MetaDomainFacet facet) {
-            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+            var containingFile = facet.getContainingFile();
+            var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnPosixId64")
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
             var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
             return """
                 <b>Root Metadata Facet:</b> <code>#domain</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnPosixId64</code><br/>
@@ -511,7 +517,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof MetaKindFacet facet) {
-            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
+            var containingFile = facet.getContainingFile();
+            var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnDocumentKind")
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
             var baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
             return """
                 <b>Root Metadata Facet:</b> <code>#kind</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code><br/>
@@ -1525,6 +1534,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (isContainerDocumentationSuppressionTarget(element)) {
             return null;
         }
+
+        if (originalElement != null) {
+            var metaKindVal = PsiTreeUtil.getParentOfType(originalElement, MetaKindValue.class);
+            if (metaKindVal != null) return metaKindVal;
+            var metaKind = PsiTreeUtil.getParentOfType(originalElement, MetaKindFacet.class);
+            if (metaKind != null) return metaKind;
+            var metaName = PsiTreeUtil.getParentOfType(originalElement, MetaNameFacet.class);
+            if (metaName != null) return metaName;
+            var metaDomain = PsiTreeUtil.getParentOfType(originalElement, MetaDomainFacet.class);
+            if (metaDomain != null) return metaDomain;
+        }
+
         if (element instanceof TypeDefinition || element instanceof ConstantDefinition) {
             return element;
         }

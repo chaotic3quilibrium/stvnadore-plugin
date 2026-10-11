@@ -173,6 +173,18 @@ public final class StvnPreludeBridge {
     }
 
     /**
+     * Resolves a prelude type keyword directly within the specified prelude PSI file.
+     *
+     * @param file the target prelude PSI file to scan
+     * @param nameOrFqni the type identifier or FQNI to resolve
+     * @return the resolved TypeKeyword element, or {@code null} if not found in the prelude file
+     */
+    public static @Nullable TypeKeyword resolvePreludeType(PsiFile file, String nameOrFqni) {
+        var def = resolvePreludeTypeDefinition(file, nameOrFqni);
+        return def != null ? def.getTypeKeyword() : null;
+    }
+
+    /**
      * Resolves a prelude enum variant AST node within the specified enum type definition.
      *
      * @param project the active IntelliJ project
@@ -181,7 +193,20 @@ public final class StvnPreludeBridge {
      * @return the resolved ValueKeyword element, or {@code null} if not found in the prelude
      */
     public static @Nullable ValueKeyword resolvePreludeEnumVariant(Project project, String enumFqni, String variantName) {
-        var def = resolvePreludeTypeDefinition(project, enumFqni);
+        var file = getPreludeFile(project);
+        return resolvePreludeEnumVariant(file, enumFqni, variantName);
+    }
+
+    /**
+     * Resolves a prelude enum variant AST node directly within the specified prelude PSI file.
+     *
+     * @param file the target prelude PSI file to scan
+     * @param enumFqni the fully qualified nominal identifier of the enum type
+     * @param variantName the variant identifier (for example, {@code "#DEFS"})
+     * @return the resolved ValueKeyword element, or {@code null} if not found in the prelude file
+     */
+    public static @Nullable ValueKeyword resolvePreludeEnumVariant(PsiFile file, String enumFqni, String variantName) {
+        var def = resolvePreludeTypeDefinition(file, enumFqni);
         if (def == null) return null;
         var schemaType = def.getSchemaType();
         if (schemaType == null || schemaType.getSchemaConstructor() == null) return null;

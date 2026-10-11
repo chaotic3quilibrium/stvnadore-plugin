@@ -48,17 +48,17 @@ public final class StvnIcons {
 
   /** @deprecated Replaced by canonical {@link #STVN} in STVN 2.0.0. */
   @Deprecated(forRemoval = true)
-  public static final Icon STVN_F = IconLoader.getIcon("/icons/stvn_f_file.svg", StvnIcons.class);
+  public static final Icon STVN_F = STVN;
 
   /** @deprecated Replaced by modular {@link #STVN_PAYLOAD_INCL} in STVN 2.0.0. */
   @Deprecated(forRemoval = true)
-  public static final Icon STVN_INCL = IconLoader.getIcon("/icons/stvn_incl_file.svg", StvnIcons.class);
+  public static final Icon STVN_INCL = STVN_PAYLOAD_INCL;
 
   /** @deprecated Replaced by modular {@link #STVN_DEFS_INCL} in STVN 2.0.0. */
   @Deprecated(forRemoval = true)
-  public static final Icon STVN_INCLF = IconLoader.getIcon("/icons/stvn_inclf_file.svg", StvnIcons.class);
+  public static final Icon STVN_INCLF = STVN_DEFS_INCL;
 
   private StvnIcons() {
     // Prevent instantiation
   }
-}
+}

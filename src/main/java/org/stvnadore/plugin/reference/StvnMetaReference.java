@@ -8,6 +8,9 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
+import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.ValueKeyword;
 
 /**
  * Resolves root metadata facets (#name, #domain, #kind) and document kind variants
@@ -68,6 +71,18 @@ public final class StvnMetaReference extends PsiReferenceBase<PsiElement> {
 
     @Override
     public @Nullable PsiElement resolve() {
+        var containingFile = getElement().getContainingFile();
+        if (StvnPreludeBridge.isPreludeFile(containingFile)) {
+            if (isVariantReference) {
+                return StvnPreludeBridge.resolvePreludeEnumVariant(
+                    containingFile,
+                    ":org/stvnadore/prelude/meta/StvnDocumentKind",
+                    targetFqniOrVariant
+                );
+            }
+            return StvnPreludeBridge.resolvePreludeType(containingFile, targetFqniOrVariant);
+        }
+
         var project = getElement().getProject();
         if (isVariantReference) {
             return StvnPreludeBridge.resolvePreludeEnumVariant(
@@ -86,6 +101,20 @@ public final class StvnMetaReference extends PsiReferenceBase<PsiElement> {
         var manager = getElement().getManager();
         if (manager.areElementsEquivalent(resolved, element)) return true;
         var parent = resolved.getParent();
-        return parent != null && manager.areElementsEquivalent(parent, element);
+        if (parent != null && manager.areElementsEquivalent(parent, element)) return true;
+
+        if (StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
+            && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {
+            String resolvedText = (resolved instanceof TypeKeyword tk) ? tk.getText()
+                : (resolved instanceof TypeDefinition td && td.getTypeKeyword() != null ? td.getTypeKeyword().getText()
+                : (resolved instanceof ValueKeyword vk ? vk.getText() : null));
+            String elemText = (element instanceof TypeKeyword tk) ? tk.getText()
+                : (element instanceof TypeDefinition td && td.getTypeKeyword() != null ? td.getTypeKeyword().getText()
+                : (element instanceof ValueKeyword vk ? vk.getText() : null));
+            if (resolvedText != null && resolvedText.equals(elemText)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

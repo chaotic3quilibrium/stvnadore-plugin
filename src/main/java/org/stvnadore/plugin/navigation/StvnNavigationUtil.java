@@ -96,7 +96,13 @@ public final class StvnNavigationUtil {
     public static void navigate(@Nullable PsiElement element, boolean requestFocus) {
         var descriptor = getDescriptor(element);
         if (descriptor != null && element != null) {
-            FileEditorManager.getInstance(element.getProject()).openTextEditor(descriptor, requestFocus);
+            var editor = FileEditorManager.getInstance(element.getProject()).openTextEditor(descriptor, requestFocus);
+            if (editor != null) {
+                editor.getCaretModel().moveToOffset(element.getTextOffset());
+                editor.getScrollingModel().scrollToCaret(com.intellij.openapi.editor.ScrollType.MAKE_VISIBLE);
+            } else {
+                descriptor.navigate(requestFocus);
+            }
         }
     }
 }

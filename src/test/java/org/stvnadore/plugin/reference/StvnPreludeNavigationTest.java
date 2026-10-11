@@ -6,6 +6,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.stdlib.StvnPrelude;
+import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.psi.TypeDefinition;
 
@@ -256,5 +257,119 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
             assertEquals("prelude.stvn_core.stvn_d", activeEditor.getVirtualFile().getName());
             assertEquals(resolved.getTextOffset(), activeEditor.getCaretModel().getOffset());
         }
+    }
+
+    /**
+     * Verifies that within prelude.stvn_core.stvn_d itself, interacting with #name, #domain,
+     * #kind, and #DEFS resolves to local declarations and navigates the caret within the active editor.
+     */
+    public void testPreludeSelfReferentialMetadataNavigation() {
+        var file = myFixture.configureByText("prelude.stvn_core.stvn_d", StvnPrelude.PRELUDE_STVN_D);
+        myFixture.doHighlighting();
+
+        var text = file.getText();
+
+        // 1. Test #name -> :StvnPosixId64 navigation within prelude
+        var nameIdx = text.indexOf("#name \"prelude\"");
+        assertTrue("Must locate #name in prelude", nameIdx >= 0);
+        myFixture.getEditor().getCaretModel().moveToOffset(nameIdx + 1);
+        var nameRef = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #name must not be null", nameRef);
+        var resolvedName = nameRef.resolve();
+        assertNotNull("Resolved element for #name must not be null", resolvedName);
+        assertEquals("Resolved target must belong to active prelude file", file, resolvedName.getContainingFile());
+        assertEquals(":StvnPosixId64", resolvedName.getText());
+        assertTrue("Resolved target must be Navigatable", resolvedName instanceof Navigatable);
+        ((Navigatable) resolvedName).navigate(true);
+        var activeEditor = FileEditorManager.getInstance(getProject()).getSelectedTextEditor();
+        assertNotNull("Active editor must not be null", activeEditor);
+        assertEquals("prelude.stvn_core.stvn_d", activeEditor.getVirtualFile().getName());
+        assertEquals(resolvedName.getTextOffset(), activeEditor.getCaretModel().getOffset());
+
+        // 2. Test #domain -> :StvnPosixId64 navigation within prelude
+        var domainIdx = text.indexOf("#domain \"stvn_core\"");
+        assertTrue("Must locate #domain in prelude", domainIdx >= 0);
+        myFixture.getEditor().getCaretModel().moveToOffset(domainIdx + 1);
+        var domainRef = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #domain must not be null", domainRef);
+        var resolvedDomain = domainRef.resolve();
+        assertNotNull("Resolved element for #domain must not be null", resolvedDomain);
+        assertEquals("Resolved target must belong to active prelude file", file, resolvedDomain.getContainingFile());
+        assertEquals(":StvnPosixId64", resolvedDomain.getText());
+        ((Navigatable) resolvedDomain).navigate(true);
+        assertEquals(resolvedDomain.getTextOffset(), activeEditor.getCaretModel().getOffset());
+
+        // 3. Test #kind -> :StvnDocumentKind navigation within prelude
+        var kindIdx = text.indexOf("#kind #DEFS");
+        assertTrue("Must locate #kind in prelude", kindIdx >= 0);
+        myFixture.getEditor().getCaretModel().moveToOffset(kindIdx + 1);
+        var kindRef = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #kind must not be null", kindRef);
+        var resolvedKind = kindRef.resolve();
+        assertNotNull("Resolved element for #kind must not be null", resolvedKind);
+        assertEquals("Resolved target must belong to active prelude file", file, resolvedKind.getContainingFile());
+        assertEquals(":StvnDocumentKind", resolvedKind.getText());
+        ((Navigatable) resolvedKind).navigate(true);
+        assertEquals(resolvedKind.getTextOffset(), activeEditor.getCaretModel().getOffset());
+
+        // 4. Test #DEFS -> enum variant navigation within prelude
+        var defsIdx = text.indexOf("#DEFS", kindIdx);
+        assertTrue("Must locate #DEFS in prelude", defsIdx >= 0);
+        myFixture.getEditor().getCaretModel().moveToOffset(defsIdx + 1);
+        var defsRef = myFixture.getReferenceAtCaretPosition();
+        assertNotNull("Reference at #DEFS must not be null", defsRef);
+        var resolvedDefs = defsRef.resolve();
+        assertNotNull("Resolved element for #DEFS must not be null", resolvedDefs);
+        assertEquals("Resolved target must belong to active prelude file", file, resolvedDefs.getContainingFile());
+        assertEquals("#DEFS", resolvedDefs.getText());
+        assertTrue("Target must be inside :StvnDocumentKind enum definition",
+            resolvedDefs.getParent() instanceof org.stvnadore.psi.EnumDef);
+        ((Navigatable) resolvedDefs).navigate(true);
+        assertEquals(resolvedDefs.getTextOffset(), activeEditor.getCaretModel().getOffset());
+    }
+
+    /**
+     * Verifies that within prelude.stvn_core.stvn_d itself, hovering over #name, #domain,
+     * #kind, and #DEFS generates complete Quick Documentation cards.
+     */
+    public void testPreludeSelfReferentialMetadataHoverDocumentation() {
+        var file = myFixture.configureByText("prelude.stvn_core.stvn_d", StvnPrelude.PRELUDE_STVN_D);
+        myFixture.doHighlighting();
+
+        var docProvider = new StvnDocumentationProvider();
+        var text = file.getText();
+
+        // 1. Verify #name hover documentation card
+        var nameIdx = text.indexOf("#name \"prelude\"");
+        var nameElem = file.findElementAt(nameIdx + 1);
+        assertNotNull(nameElem);
+        var nameCustom = docProvider.getCustomDocumentationElement(myFixture.getEditor(), file, nameElem, nameIdx + 1);
+        assertNotNull("Custom doc element for #name must not be null", nameCustom);
+        var nameDoc = docProvider.generateDoc(nameCustom, nameElem);
+        assertNotNull("Generated doc for #name must not be null", nameDoc);
+        assertTrue("Doc must reference #name", nameDoc.contains("#name"));
+        assertTrue("Doc must reference :StvnPosixId64", nameDoc.contains(":StvnPosixId64"));
+
+        // 2. Verify #kind hover documentation card
+        var kindIdx = text.indexOf("#kind #DEFS");
+        var kindElem = file.findElementAt(kindIdx + 1);
+        assertNotNull(kindElem);
+        var kindCustom = docProvider.getCustomDocumentationElement(myFixture.getEditor(), file, kindElem, kindIdx + 1);
+        assertNotNull("Custom doc element for #kind must not be null", kindCustom);
+        var kindDoc = docProvider.generateDoc(kindCustom, kindElem);
+        assertNotNull("Generated doc for #kind must not be null", kindDoc);
+        assertTrue("Doc must reference #kind", kindDoc.contains("#kind"));
+        assertTrue("Doc must reference :StvnDocumentKind", kindDoc.contains(":StvnDocumentKind"));
+
+        // 3. Verify #DEFS kind value hover documentation card
+        var defsIdx = text.indexOf("#DEFS", kindIdx);
+        var defsElem = file.findElementAt(defsIdx + 1);
+        assertNotNull(defsElem);
+        var defsCustom = docProvider.getCustomDocumentationElement(myFixture.getEditor(), file, defsElem, defsIdx + 1);
+        assertNotNull("Custom doc element for #DEFS must not be null", defsCustom);
+        var defsDoc = docProvider.generateDoc(defsCustom, defsElem);
+        assertNotNull("Generated doc for #DEFS must not be null", defsDoc);
+        assertTrue("Doc must display variant name #DEFS", defsDoc.contains("<b>Document Kind Variant:</b> <code>#DEFS</code>"));
+        assertTrue("Doc must reference enclosing enum", defsDoc.contains(":StvnDocumentKind"));
     }
 }

@@ -27,6 +27,9 @@ public final class StvnIconsTest extends TestCase {
         assertNotNull("STVN_F icon must not be null", StvnIcons.STVN_F);
         assertNotNull("STVN_INCL icon must not be null", StvnIcons.STVN_INCL);
         assertNotNull("STVN_INCLF icon must not be null", StvnIcons.STVN_INCLF);
+        assertSame("STVN_F must resolve to canonical STVN instance", StvnIcons.STVN, StvnIcons.STVN_F);
+        assertSame("STVN_INCL must resolve to canonical STVN_PAYLOAD_INCL instance", StvnIcons.STVN_PAYLOAD_INCL, StvnIcons.STVN_INCL);
+        assertSame("STVN_INCLF must resolve to canonical STVN_DEFS_INCL instance", StvnIcons.STVN_DEFS_INCL, StvnIcons.STVN_INCLF);
 
         // 3. Pixel Dimension Assertions
         assertTrue(StvnIcons.STVN.getIconWidth() > 0);
