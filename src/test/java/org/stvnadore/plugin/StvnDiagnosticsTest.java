@@ -8,6 +8,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction;
+import org.stvnadore.plugin.validation.StvnDiagnosticFormatter;
 import org.stvnadore.plugin.validation.StvnMapAutoHealerQuickFix;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.TupleLiteral;
@@ -105,7 +106,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                         var description = info.getDescription();
                         foundMessages.add(description);
                         if (description != null) {
-                            if (description.contains(expectedSubstring)) {
+                            var cleanExpected = expectedSubstring.endsWith(".") ? expectedSubstring.substring(0, expectedSubstring.length() - 1) : expectedSubstring;
+                            if (description.contains(expectedSubstring) || description.contains(cleanExpected)) {
                                 found = true;
                                 break;
                             }
@@ -1075,10 +1077,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     var matchedText = text.substring(startOffset, endOffset);
                     System.out.println("Duplicate Key Violation range: " + startOffset + "-" + endOffset + " text: " + matchedText);
                     
-                    if (description.equals("Duplicate map key detected: '12345678-1234-1234-1234-123456789012'")) {
+                    if (description.equals(StvnDiagnosticFormatter.formatCore("Duplicate map key detected: '12345678-1234-1234-1234-123456789012'", "DUPLICATE_MAP_KEY"))) {
                         foundUuidError = true;
                         assertEquals("\"12345678-1234-1234-1234-123456789012\"", matchedText);
-                    } else if (description.equals("Duplicate map key detected: '1'")) {
+                    } else if (description.equals(StvnDiagnosticFormatter.formatCore("Duplicate map key detected: '1'", "DUPLICATE_MAP_KEY"))) {
                         foundOneError = true;
                         assertEquals("\"1\"", matchedText);
                     }
@@ -1641,10 +1643,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         for (var info : highlights) {
             var desc = info.getDescription();
             if (desc != null) {
-                if (desc.contains("Value '#TRUEx' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F.")) {
+                if (desc.contains("Value '#TRUEx' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F")) {
                     foundTruexError = true;
                 }
-                if (desc.contains("Value '#xxxxx' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F.")) {
+                if (desc.contains("Value '#xxxxx' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F")) {
                     foundXxxxxError = true;
                 }
             }
@@ -5614,7 +5616,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("Expected 0 compilation errors", 0, errors.size());
 
         var redundant = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
         assertEquals("Expected exactly 1 warning on element 0 (#1 100) and 0 warnings on element 1 (#1 200)", 1, redundant.size());
     }
@@ -5941,7 +5943,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("Expected 0 compilation errors for explicit variant tags on duplicate branches", 0, errors.size());
 
         var warnings = highlights.stream()
-            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
         assertEquals("Explicit tags on identical branches are mandatory discriminators and must produce 0 redundant tag warnings", 0, warnings.size());
     }
@@ -5969,7 +5971,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(h -> h.getDescription() != null && h.getDescription().contains("Tuple arity mismatch"))
             .findFirst();
         assertTrue("Expected error matching 'Tuple arity mismatch'", arityError.isPresent());
-        assertEquals("Tuple arity mismatch: Expected 2 elements, got 1 (1 missing)", arityError.get().getDescription());
+        assertEquals(StvnDiagnosticFormatter.formatCore("Tuple arity mismatch: Expected 2 elements, got 1 (1 missing)", "TUPLE_ARITY_MISMATCH"), arityError.get().getDescription());
 
         var text = psiFile.getText();
         var rparenOffset = text.lastIndexOf(')');

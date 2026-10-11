@@ -471,7 +471,10 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         var entryText = entry.getText().trim();
         holder.registerProblem(
             entry,
-            "Redundant facet override: parent type already specifies effective value '" + effectiveValue + "'",
+            StvnDiagnosticFormatter.formatPlugin(
+                "Redundant facet override: parent type already specifies effective value '" + effectiveValue + "'",
+                StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE
+            ),
             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
             new RemoveRedundantFacetQuickFix(entryText)
         );

@@ -2,13 +2,8 @@ package org.stvnadore.plugin.reference;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.ModificationTracker;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.util.CachedValue;
-import com.intellij.psi.util.CachedValueProvider;
-import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.LightVirtualFile;
 import org.jspecify.annotations.NullMarked;
@@ -25,7 +20,7 @@ import org.stvnadore.psi.TypeKeyword;
 @NullMarked
 public final class StvnPreludeBridge {
 
-    private static final Key<CachedValue<PsiFile>> PRELUDE_FILE_KEY = Key.create("STVN_PRELUDE_FILE");
+    private static final Key<PsiFile> PRELUDE_PSI_FILE_KEY = Key.create("STVN_PRELUDE_PSI_FILE");
     private static final Key<LightVirtualFile> PRELUDE_VIRTUAL_FILE_KEY = Key.create("STVN_PRELUDE_VIRTUAL_FILE");
 
     private StvnPreludeBridge() {
@@ -38,13 +33,18 @@ public final class StvnPreludeBridge {
      * @return the shared LightVirtualFile representing prelude.stvn_d
      */
     public static LightVirtualFile getPreludeVirtualFile(Project project) {
-        var vFile = project.getUserData(PRELUDE_VIRTUAL_FILE_KEY);
-        if (vFile == null || !vFile.isValid()) {
-            vFile = new LightVirtualFile("prelude.stvn_d", StvnFileType.Defs.INSTANCE, StvnPrelude.PRELUDE_STVN_D);
-            vFile.setWritable(false);
-            project.putUserData(PRELUDE_VIRTUAL_FILE_KEY, vFile);
+        var file = getPreludeFile(project);
+        var vFile = file.getViewProvider().getVirtualFile();
+        if (vFile instanceof LightVirtualFile lvf) {
+            return lvf;
         }
-        return vFile;
+        var customVFile = project.getUserData(PRELUDE_VIRTUAL_FILE_KEY);
+        if (customVFile == null || !customVFile.isValid()) {
+            customVFile = new LightVirtualFile("prelude.stvn_d", StvnFileType.Defs.INSTANCE, StvnPrelude.PRELUDE_STVN_D);
+            customVFile.setWritable(false);
+            project.putUserData(PRELUDE_VIRTUAL_FILE_KEY, customVFile);
+        }
+        return customVFile;
     }
 
     /**
@@ -54,16 +54,16 @@ public final class StvnPreludeBridge {
      * @return the synthetic prelude PSI file
      */
     public static PsiFile getPreludeFile(Project project) {
-        return CachedValuesManager.getManager(project).getCachedValue(project, PRELUDE_FILE_KEY, () -> {
-            var vFile = getPreludeVirtualFile(project);
-            var psiFile = PsiManager.getInstance(project).findFile(vFile);
-            var file = psiFile != null ? psiFile : PsiFileFactory.getInstance(project).createFileFromText(
+        var file = project.getUserData(PRELUDE_PSI_FILE_KEY);
+        if (file == null || !file.isValid()) {
+            file = PsiFileFactory.getInstance(project).createFileFromText(
                 "prelude.stvn_d",
                 StvnFileType.Defs.INSTANCE,
                 StvnPrelude.PRELUDE_STVN_D
             );
-            return CachedValueProvider.Result.create(file, ModificationTracker.NEVER_CHANGED);
-        }, false);
+            project.putUserData(PRELUDE_PSI_FILE_KEY, file);
+        }
+        return file;
     }
 
     /**

@@ -95,7 +95,10 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                 if (val.compareTo(min) < 0 || val.compareTo(max) > 0) {
                     holder.registerProblem(
                         value.getIntegerLiteral(),
-                        "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
+                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+                        ),
                         ProblemHighlightType.ERROR
                     );
                 }

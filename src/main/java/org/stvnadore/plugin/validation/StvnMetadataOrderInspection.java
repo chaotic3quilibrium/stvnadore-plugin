@@ -74,7 +74,7 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
                         holder.registerProblem(
                             target,
-                            "Metadata facet '" + keyword + "' violates canonical 5-tier order (ERR_FACET_ORDER_VIOLATION).",
+                            StvnDiagnosticFormatter.formatPlugin("Metadata facet '" + keyword + "' violates canonical 5-tier order", StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION),
                             ProblemHighlightType.GENERIC_ERROR,
                             new StvnReorderMetadataFacetsQuickFix(metadataMap)
                         );

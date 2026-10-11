@@ -57,7 +57,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     for (var filter : filterEntries) {
                         holder.registerProblem(
                             filter,
-                            "Constraint violation (" + kw + "): filter facets cannot be applied to inline enum constructors; filter facets are only allowed on nominal aliases of :Enum or existing enum subsets",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (" + kw + "): filter facets cannot be applied to inline enum constructors; filter facets are only allowed on nominal aliases of :Enum or existing enum subsets",
+                                StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM
+                            ),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
@@ -75,7 +78,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     for (var filter : filterEntries) {
                         holder.registerProblem(
                             filter,
-                            "Constraint violation (" + kw + "): filter facets are not allowed on " + baseName,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (" + kw + "): filter facets are not allowed on " + baseName,
+                                StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM
+                            ),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
@@ -89,7 +95,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     for (var filter : filterEntries) {
                         holder.registerProblem(
                             filter,
-                            "Constraint violation (" + kw + "): #filterIncl and #filterExcl are mutually exclusive",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (" + kw + "): #filterIncl and #filterExcl are mutually exclusive",
+                                StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE
+                            ),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
@@ -127,7 +136,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     if (valueKeywords.isEmpty()) {
                         holder.registerProblem(
                             variantList,
-                            "Constraint violation (" + kw + "): enum filter variant list cannot be empty",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (" + kw + "): enum filter variant list cannot be empty",
+                                StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST
+                            ),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                         continue;
@@ -139,7 +151,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         if (!seen.add(vkw.getText())) {
                             holder.registerProblem(
                                 vkw,
-                                "Constraint violation (" + kw + "): duplicate variant in filter facet",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Constraint violation (" + kw + "): duplicate variant in filter facet",
+                                    StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
                         }
@@ -151,7 +166,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         if (!parentAllowed.contains(text)) {
                             holder.registerProblem(
                                 vkw,
-                                "Constraint violation (" + kw + "): Monotonic narrowing violation: variant " + text + " does not exist in immediate parent type " + parentName,
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Constraint violation (" + kw + "): Monotonic narrowing violation: variant " + text + " does not exist in immediate parent type " + parentName,
+                                    StvnDiagnosticCodes.ERR_FILTER_MONOTONIC_NARROWING_VIOLATION
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
                         }
@@ -174,7 +192,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
 
                     if (outOfOrderText != null) {
                         var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
-                        var msg = "Constraint violation (" + kw + "): Root ordering violation: variant " + outOfOrderText + " does not match relative declaration order of root :Enum " + rootEnumName;
+                        var msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + kw + "): Root ordering violation: variant " + outOfOrderText + " does not match relative declaration order of root :Enum " + rootEnumName,
+                            StvnDiagnosticCodes.ERR_FILTER_ROOT_ORDER_VIOLATION
+                        );
                         for (var vkw : valueKeywords) {
                             holder.registerProblem(
                                 vkw,
@@ -192,7 +213,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         if (remaining.isEmpty()) {
                             holder.registerProblem(
                                 variantList,
-                                "Constraint violation (" + kw + "): Complete exclusion violation: enum subset results in empty variant list",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Constraint violation (" + kw + "): Complete exclusion violation: enum subset results in empty variant list",
+                                    StvnDiagnosticCodes.ERR_FILTER_COMPLETE_EXCLUSION_VIOLATION
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
                         }
@@ -211,7 +235,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
                         holder.registerProblem(
                             entry.getMetadataFilter(),
-                            "Constraint violation (" + constName + "): filter facets are not allowed on constants",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (" + constName + "): filter facets are not allowed on constants",
+                                StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
+                            ),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
@@ -234,7 +261,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 if (subset.rootVariants().contains(text) && !subset.containsVariant(text)) {
                     holder.registerProblem(
                         vkw,
-                        "Payload variant '" + text + "' is not a member of active enum subset '" + subset.name() + "'",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Payload variant '" + text + "' is not a member of active enum subset '" + subset.name() + "'",
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION
+                        ),
                         ProblemHighlightType.GENERIC_ERROR
                     );
                 }

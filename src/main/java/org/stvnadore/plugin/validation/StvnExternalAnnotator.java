@@ -197,7 +197,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             for (var diag : activeErrorDiagnostics) {
                 var line = Math.max(0, diag.line() - 1);
                 var col = Math.max(0, diag.column());
-                var diagMsg = sanitizeCompilerJargon(diag.message());
+                var rawMsg = sanitizeCompilerJargon(diag.message());
+                var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
+                var diagMsg = StvnDiagnosticFormatter.formatCore(rawMsg, errorCode);
                 var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
                 if (problem != null) {
                     problems.add(problem);
@@ -227,7 +229,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         // 3. Render annotations in AnnotationHolder for all active diagnostics
         for (var diag : activeDiagnostics) {
-            var message = sanitizeCompilerJargon(diag.message());
+            var rawMessage = sanitizeCompilerJargon(diag.message());
+            var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
+            var message = StvnDiagnosticFormatter.formatCore(rawMessage, errorCode);
             var severity = mapSeverity(diag.severity());
             var start = diag.startOffset();
             var end = diag.endOffset();
@@ -247,7 +251,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
                     rawKey = rawKey.substring(1, rawKey.length() - 1);
                 }
-                message = "Duplicate map key detected: '" + rawKey + "'";
+                message = StvnDiagnosticFormatter.formatCore("Duplicate map key detected: '" + rawKey + "'", "DUPLICATE_MAP_KEY");
             }
 
             // Align Tuple arity mismatch display message and enforce container-level coordinate pinning
@@ -260,7 +264,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         int got = Integer.parseInt(matcher.group(2));
                         if (exp > got) {
                             int missing = exp - got;
-                            message = "Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)";
+                            message = StvnDiagnosticFormatter.formatCore("Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)", "TUPLE_ARITY_MISMATCH");
                         }
                     }
                 }
@@ -489,9 +493,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
 
             // 5. Cyclic dependency exception fallback with trace rotation
-            if (!registered && message.startsWith("Cycle detected: ")) {
+            if (!registered && (rawMessage.startsWith("Cycle detected: ") || message.startsWith("Cycle detected: "))) {
                 var rotatedMessage = message;
-                var traceStr = message.substring("Cycle detected: ".length());
+                var traceStr = rawMessage.startsWith("Cycle detected: ")
+                    ? rawMessage.substring("Cycle detected: ".length())
+                    : message.substring("Cycle detected: ".length());
                 var parts = traceStr.split(" -> ");
                 if (parts.length > 0) {
                     var mainName = file.getName();
@@ -511,7 +517,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             rotated.add(parts[i]);
                         }
                         rotated.add(parts[startIdx]);
-                        rotatedMessage = "Cycle detected: " + String.join(" -> ", rotated);
+                        rotatedMessage = StvnDiagnosticFormatter.formatCore("Cycle detected: " + String.join(" -> ", rotated), errorCode);
                     }
                 }
 
@@ -937,6 +943,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 return true;
             }
         }
+        // Suppress external discrete interval diagnostics when StvnDiscreteIntervalInspection is active
+        if (diag.errorCode().isPresent() && "ERR_DISCRETE_BOUND_KIND_PROHIBITED".equals(diag.errorCode().get())) {
+            if (isDiscreteIntervalInspectionActive(file)) {
+                return true;
+            }
+        }
+        if ((message.contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED")
+                || message.contains("Discrete types reject closed upper bound")
+                || message.contains("Discrete types reject open lower bound")) && isDiscreteIntervalInspectionActive(file)) {
+            return true;
+        }
         if ((file instanceof org.stvnadore.plugin.StvnFlatPayloadFile || (file != null && file.getName().endsWith(".stvn_f")))
                 && message.contains("cannot contain include statements")) {
             return true;
@@ -1028,7 +1045,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var vFile = file.getVirtualFile();
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("syntax/invalid") || path.contains("metadata/invalid")) {
+            if (path.contains("shared-fixtures") || path.contains("invalid")) {
                 return false;
             }
         }
@@ -1052,7 +1069,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var vFile = file.getVirtualFile();
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+            if (path.contains("shared-fixtures") || path.contains("invalid")) {
                 return false;
             }
         }
@@ -1076,7 +1093,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var vFile = file.getVirtualFile();
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+            if (path.contains("shared-fixtures") || path.contains("invalid")) {
                 return false;
             }
         }
@@ -1096,11 +1113,35 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
+    private static boolean isDiscreteIntervalInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("invalid")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnDiscreteInterval");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
     private static boolean isStemMismatchInspectionActive(PsiFile file) {
         var vFile = file.getVirtualFile();
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+            if (path.contains("shared-fixtures") || path.contains("invalid")) {
                 return false;
             }
         }
@@ -1273,7 +1314,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 var parentStmt = PsiTreeUtil.getParentOfType(targetInclude, IncludeStmt.class, false);
                 var targetRange = parentStmt != null ? parentStmt.getTextRange() : targetInclude.getTextRange();
 
-                var pinnedMessage = "Included file '" + targetIncludePath + "' contains compilation errors: " + msg;
+                var pinnedMessage = StvnDiagnosticFormatter.formatCore("Included file '" + targetIncludePath + "' contains compilation errors: " + msg, "ERR_MODULE_IMPORT");
                 var builder = holder.newAnnotation(HighlightSeverity.ERROR, pinnedMessage)
                                     .range(targetRange);
 

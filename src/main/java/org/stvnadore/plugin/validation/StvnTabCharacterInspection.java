@@ -66,7 +66,7 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
                         holder.registerProblem(
                             file,
                             new TextRange(i, i + 1),
-                            "Tab characters are forbidden under Rule STR-01 (ERR_TAB_CHARACTER_FORBIDDEN).",
+                            StvnDiagnosticFormatter.formatPlugin("Tab characters are forbidden under Rule STR-01", StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN),
                             new ReplaceTabWithSpacesQuickFix()
                         );
                         count++;

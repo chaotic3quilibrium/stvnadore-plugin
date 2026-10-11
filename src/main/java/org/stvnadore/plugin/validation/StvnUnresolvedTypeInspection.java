@@ -105,7 +105,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         var bareName = text;
         var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
         var fqni = pkgPath + "/" + text.substring(1);
-        var message = "Unresolved Prelude type reference '" + text + "'. Available as '" + fqni + "'.";
+        var message = StvnDiagnosticFormatter.formatPlugin("Unresolved Prelude type reference '" + text + "'. Available as '" + fqni + "'", StvnDiagnosticCodes.ERR_UNRESOLVED_TYPE);
 
         holder.registerProblem(
             typeKw,

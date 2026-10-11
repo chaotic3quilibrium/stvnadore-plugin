@@ -79,7 +79,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : LocalQuickFix.EMPTY_ARRAY;
                         holder.registerProblem(
                             entry,
-                            "Discrete types reject closed upper bound '#maxIncl'; use half-open bound '#maxExcl' (ERR_DISCRETE_BOUND_KIND_PROHIBITED).",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Discrete types reject closed upper bound '#maxIncl'; use half-open bound '#maxExcl'",
+                                StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            ),
                             ProblemHighlightType.GENERIC_ERROR,
                             quickFixes
                         );
@@ -89,7 +92,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : LocalQuickFix.EMPTY_ARRAY;
                         holder.registerProblem(
                             entry,
-                            "Discrete types reject open lower bound '#minExcl'; use half-open bound '#minIncl' (ERR_DISCRETE_BOUND_KIND_PROHIBITED).",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Discrete types reject open lower bound '#minExcl'; use half-open bound '#minIncl'",
+                                StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            ),
                             ProblemHighlightType.GENERIC_ERROR,
                             quickFixes
                         );

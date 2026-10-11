@@ -73,8 +73,10 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                     if (aliasName != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), aliasName)) {
                         var resolved = StvnTypeResolver.resolveNominalSchema(schema);
                         var fallbackBase = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(schema);
-                        var message = "Value bound to degraded schema '" + aliasName + 
-                            "' (operating on fallback base '" + fallbackBase + "')";
+                        var message = StvnDiagnosticFormatter.formatPlugin(
+                            "Value bound to degraded schema '" + aliasName + "' (operating on fallback base '" + fallbackBase + "')",
+                            StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE
+                        );
 
                         holder.registerProblem(
                             value,

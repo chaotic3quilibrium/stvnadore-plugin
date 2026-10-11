@@ -28,7 +28,10 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
             public void visitNestedPackageIllegal(@NotNull NestedPackageIllegal element) {
                 holder.registerProblem(
                     element,
-                    "Nested packages are prohibited",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Nested packages are prohibited",
+                        StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED
+                    ),
                     ProblemHighlightType.ERROR
                 );
             }

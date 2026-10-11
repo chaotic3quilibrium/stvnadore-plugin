@@ -106,7 +106,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         if (text.startsWith("\"\"\"->")) {
             holder.registerProblem(
                 element,
-                "Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited",
+                    StvnDiagnosticCodes.ERR_PROHIBITED_FENCE_ARROW
+                ),
                 ProblemHighlightType.GENERIC_ERROR,
                 new RemoveProhibitedArrowQuickFix()
             );
@@ -134,7 +137,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 openRange,
-                "Rule STR-04 violation: Fenced string delimiter tag must not be empty",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string delimiter tag must not be empty",
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_EMPTY
+                ),
                 new SupplyDefaultTagQuickFix("FENCE")
             );
             return;
@@ -144,7 +150,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 openRange,
-                "Rule STR-04 violation: Fenced string delimiter tag must not contain whitespace, got '" + openTag + "'",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string delimiter tag must not contain whitespace, got '" + openTag + "'",
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_WHITESPACE
+                ),
                 new SanitizeFenceTagQuickFix(openTag)
             );
             return;
@@ -154,7 +163,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 openRange,
-                "Rule STR-04 violation: Fenced string delimiter tag length exceeds maximum of 256 characters, got " + openTag.length(),
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string delimiter tag length exceeds maximum of 256 characters, got " + openTag.length(),
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_LENGTH_OVERFLOW
+                ),
                 new TruncateTagQuickFix(openTag)
             );
             return;
@@ -164,7 +176,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 openRange,
-                "Rule STR-04 violation: Fenced string delimiter tag '" + openTag + "' contains invalid characters; must match positive character class ^[a-zA-Z0-9_-]{1,256}$",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string delimiter tag '" + openTag + "' contains invalid characters; must match positive character class ^[a-zA-Z0-9_-]{1,256}$",
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID
+                ),
                 new SanitizeFenceTagQuickFix(openTag)
             );
             return;
@@ -236,14 +251,20 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 candidateClosingRange,
-                "Rule STR-04 violation: Mismatched closing fence tag '[" + candidateClosingTag + "]', expected '[" + openTag + "]'",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Mismatched closing fence tag '[" + candidateClosingTag + "]', expected '[" + openTag + "]'",
+                    StvnDiagnosticCodes.ERR_FENCE_CLOSING_TAG_MISMATCH
+                ),
                 new BalanceClosingTagQuickFix(openTag, candidateClosingTag, closingRelativeOffset),
                 new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
             );
             holder.registerProblem(
                 element,
                 openRange,
-                "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + candidateClosingTag + "]'",
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + candidateClosingTag + "]'",
+                    StvnDiagnosticCodes.ERR_FENCE_OPENING_TAG_MISMATCH
+                ),
                 new AppendClosingFenceQuickFix(openTag),
                 new BalanceClosingTagQuickFix(openTag, candidateClosingTag, closingRelativeOffset),
                 new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
@@ -255,7 +276,10 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         holder.registerProblem(
             element,
             openRange,
-            "Rule STR-04 violation: Unclosed fenced string block; expected closing delimiter '[" + openTag + "]\"\"\"'",
+            StvnDiagnosticFormatter.formatPlugin(
+                "Rule STR-04 violation: Unclosed fenced string block; expected closing delimiter '[" + openTag + "]\"\"\"'",
+                StvnDiagnosticCodes.ERR_FENCE_BLOCK_UNCLOSED
+            ),
             new AppendClosingFenceQuickFix(openTag)
         );
     }

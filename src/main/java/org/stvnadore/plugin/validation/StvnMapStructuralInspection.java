@@ -43,7 +43,10 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                 if (typeInfo != null && isMapSchema(typeInfo.getSchema())) {
                     holder.registerProblem(
                         listLiteral,
-                        "Flat list supplied to map slot; map collections require canonical '{ [ key value ] }' literal envelope (STVN Spec §5.4)",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Flat list supplied to map slot; map collections require canonical '{ [ key value ] }' literal envelope (STVN Spec §5.4)",
+                            StvnDiagnosticCodes.ERR_FLAT_LIST_IN_MAP_SLOT
+                        ),
                         ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                         new StvnMapAutoHealerQuickFix(listLiteral)
                     );
@@ -69,7 +72,10 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                         if (seenKeys.containsKey(keyText)) {
                             holder.registerProblem(
                                 keyElem,
-                                "Duplicate map key '" + keyText + "' is forbidden in map collection",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Duplicate map key '" + keyText + "' is forbidden in map collection",
+                                    StvnDiagnosticCodes.ERR_DUPLICATE_MAP_KEY
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
                         } else {
@@ -79,7 +85,10 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                         if (seenValues.containsKey(valText)) {
                             holder.registerProblem(
                                 valElem,
-                                "Invertible map violates bidirectional uniqueness invariant: duplicate value '" + valText + "'",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Invertible map violates bidirectional uniqueness invariant: duplicate value '" + valText + "'",
+                                    StvnDiagnosticCodes.ERR_INVERTIBLE_MAP_DUPLICATE_VALUE
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
                         } else {

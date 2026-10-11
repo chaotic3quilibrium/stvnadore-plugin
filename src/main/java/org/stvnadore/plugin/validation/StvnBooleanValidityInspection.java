@@ -86,7 +86,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                 ? (useLong ? "#TRUE" : "#T") 
                 : (useLong ? "#FALSE" : "#F");
 
-            var message = "Invalid boolean literal casing: '" + text + "'. Valid forms are case-sensitive: #TRUE, #T, #FALSE, #F.";
+            var message = StvnDiagnosticFormatter.formatPlugin("Invalid boolean literal casing: '" + text + "'. Valid forms are case-sensitive: #TRUE, #T, #FALSE, #F", StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING);
             holder.registerProblem(
                 element,
                 message,
@@ -94,7 +94,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                 new StvnVariantStyleInspection.ChangeVariantTagFormQuickFix(targetTag)
             );
         } else {
-            var message = "Value '" + text + "' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F.";
+            var message = StvnDiagnosticFormatter.formatPlugin("Value '" + text + "' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F", StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_LITERAL);
             if (useLong) {
                 holder.registerProblem(
                     element,

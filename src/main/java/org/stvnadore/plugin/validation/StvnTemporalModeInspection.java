@@ -77,13 +77,13 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     if (scaleCount > 1 && metaMap != null) {
                         holder.registerProblem(
                             metaMap,
-                            "Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     } else if (!hasScale) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING),
                             ProblemHighlightType.GENERIC_ERROR,
                             new AddDefaultTemporalFacetQuickFix(typeDef, "#ms")
                         );
@@ -105,13 +105,13 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     if (modeCount > 1 && metaMap != null) {
                         holder.registerProblem(
                             metaMap,
-                            "Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive", StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     } else if (modeCount == 0) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'", StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING),
                             ProblemHighlightType.GENERIC_ERROR,
                             new AddDefaultTemporalFacetQuickFix(typeDef, "#offset")
                         );
@@ -150,7 +150,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     if (!hasScale) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }
@@ -171,7 +171,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     if (!hasMode) {
                         holder.registerProblem(
                             schemaType,
-                            "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'.",
+                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'", StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING),
                             ProblemHighlightType.GENERIC_ERROR
                         );
                     }

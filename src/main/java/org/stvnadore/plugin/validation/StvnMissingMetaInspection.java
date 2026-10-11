@@ -77,13 +77,13 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     String message;
                     if (isDefs) {
                         expectedKind = "#DEFS";
-                        message = "Definitions schema requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                        message = StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
                     } else if (isDefsIncl) {
                         expectedKind = "#DEFS_INCLUDE";
-                        message = "Definitions schema requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                        message = StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
                     } else {
                         expectedKind = "#BODY_INCLUDE";
-                        message = "Payload include document requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH).";
+                        message = StvnDiagnosticFormatter.formatPlugin("Payload include document requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
                     }
                     var targetElement = file.getFirstChild() != null ? file.getFirstChild() : file;
                     holder.registerProblem(
@@ -118,7 +118,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     if (!expected.equals(actual)) {
                         holder.registerProblem(
                             facet,
-                            "Document kind mismatch: expected " + expected + " for file extension (ERR_DOCUMENT_KIND_MISMATCH).",
+                            StvnDiagnosticFormatter.formatPlugin("Document kind mismatch: expected " + expected + " for file extension", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH),
                             ProblemHighlightType.GENERIC_ERROR,
                             new UpdateMetaKindQuickFix(expected)
                         );

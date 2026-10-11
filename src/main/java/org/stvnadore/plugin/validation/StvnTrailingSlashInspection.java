@@ -28,7 +28,10 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
             public void visitUseTargetIllegal(@NotNull UseTargetIllegal element) {
                 holder.registerProblem(
                     element,
-                    "Trailing slash prohibited in :use target",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Trailing slash prohibited in :use target",
+                        StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
+                    ),
                     ProblemHighlightType.ERROR
                 );
             }

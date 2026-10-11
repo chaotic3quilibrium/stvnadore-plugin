@@ -34,7 +34,10 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                         || (file != null && (file.getName().endsWith(".stvn_f") || file.getName().endsWith(".stvn_inclf")))) {
                     holder.registerProblem(
                         stmt,
-                        "Flat document or leaf module (.stvn_f / .stvn_inclf) cannot contain include statements",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Flat document or leaf module (.stvn_f / .stvn_inclf) cannot contain include statements",
+                            StvnDiagnosticCodes.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT
+                        ),
                         ProblemHighlightType.ERROR
                     );
                 }

@@ -80,7 +80,10 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 if (!stem.equals(declared)) {
                     holder.registerProblem(
                         stringLit,
-                        "Document #name '" + declared + "' does not match file stem '" + stem + "' (WARN_DOCUMENT_NAME_MISMATCH).",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Document #name '" + declared + "' does not match file stem '" + stem + "'",
+                            StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH
+                        ),
                         ProblemHighlightType.WARNING,
                         new AlignStemNameQuickFix(stem)
                     );
@@ -108,7 +111,10 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     var targetFileName = dotParts[0] + "." + declared + ext;
                     holder.registerProblem(
                         stringLit,
-                        "Declared #domain '" + declared + "' is omitted from filename stem slot 1 (WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME).",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Declared #domain '" + declared + "' is omitted from filename stem slot 1",
+                            StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
+                        ),
                         ProblemHighlightType.WARNING,
                         new IncludeDomainInFilenameQuickFix(stringLit, targetFileName),
                         new RemoveMetaDomainQuickFix(facet)
@@ -123,7 +129,10 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                         targetFileName += ext;
                         holder.registerProblem(
                             stringLit,
-                            "Declared #domain '" + declared + "' does not match filename stem slot 1 '" + stemDomain + "' (WARN_DOCUMENT_NAME_MISMATCH).",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Declared #domain '" + declared + "' does not match filename stem slot 1 '" + stemDomain + "'",
+                                StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH
+                            ),
                             ProblemHighlightType.WARNING,
                             new IncludeDomainInFilenameQuickFix(stringLit, targetFileName),
                             new RemoveMetaDomainQuickFix(facet)

@@ -72,7 +72,10 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
                     if (entry.getText().startsWith(StvnVocabulary.FACET_KW_SIZE) || (entry.getNode().findChildByType(StvnTypes.KW_SIZE) != null)) {
                         holder.registerProblem(
                             entry,
-                            "Facet '#size' is prohibited on ':String' (MCT § 3.1.3). Use '#minSize' and '#maxSize' for character bounds.",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Facet '#size' is prohibited on ':String' (MCT § 3.1.3). Use '#minSize' and '#maxSize' for character bounds.",
+                                StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED
+                            ),
                             ProblemHighlightType.GENERIC_ERROR,
                             new ConvertSizeToStringBoundsQuickFix(entry)
                         );

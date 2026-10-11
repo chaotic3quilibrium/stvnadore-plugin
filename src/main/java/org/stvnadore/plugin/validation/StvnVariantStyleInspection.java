@@ -87,7 +87,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                         }
 
                         if (!isInnerNone) {
-                            holder.registerProblem(tagElement, "Redundant variant tag", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
+                            holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
                         }
                     }
 
@@ -96,17 +96,17 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                         var useLong = StvnSettings.getInstance(project).getState().useLongFormSumTypes;
                         if (useLong) {
                             if (o.getSomeShortLiteral() != null) {
-                                holder.registerProblem(o.getSomeShortLiteral(), "Use long-form tag '#Some'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Some"));
+                                holder.registerProblem(o.getSomeShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Some'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Some"));
                             }
                             if (o.getNoneShortLiteral() != null) {
-                                holder.registerProblem(o.getNoneShortLiteral(), "Use long-form tag '#None'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#None"));
+                                holder.registerProblem(o.getNoneShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#None'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#None"));
                             }
                         } else {
                             if (o.getSomeLiteral() != null) {
-                                holder.registerProblem(o.getSomeLiteral(), "Use short-form tag '#S'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#S"));
+                                holder.registerProblem(o.getSomeLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#S'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#S"));
                             }
                             if (o.getNoneLiteral() != null) {
-                                holder.registerProblem(o.getNoneLiteral(), "Use short-form tag '#N'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#N"));
+                                holder.registerProblem(o.getNoneLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#N'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#N"));
                             }
                         }
                     }
@@ -157,7 +157,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                             var matchesLeft = StvnTypeResolver.matchesSchemaPattern(child, leftBranch);
                                             var matchesRight = StvnTypeResolver.matchesSchemaPattern(child, rightBranch);
                                             if (!matchesLeft && matchesRight) {
-                                                holder.registerProblem(tagElement, "Redundant variant tag", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
+                                                holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
                                             }
                                         }
                                     }
@@ -171,17 +171,17 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                         var useLong = StvnSettings.getInstance(project).getState().useLongFormSumTypes;
                         if (useLong) {
                             if (o.getLeftShortLiteral() != null) {
-                                holder.registerProblem(o.getLeftShortLiteral(), "Use long-form tag '#Left'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Left"));
+                                holder.registerProblem(o.getLeftShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Left'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Left"));
                             }
                             if (o.getRightShortLiteral() != null) {
-                                holder.registerProblem(o.getRightShortLiteral(), "Use long-form tag '#Right'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Right"));
+                                holder.registerProblem(o.getRightShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Right'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Right"));
                             }
                         } else {
                             if (o.getLeftLiteral() != null) {
-                                holder.registerProblem(o.getLeftLiteral(), "Use short-form tag '#L'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#L"));
+                                holder.registerProblem(o.getLeftLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#L'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#L"));
                             }
                             if (o.getRightLiteral() != null) {
-                                holder.registerProblem(o.getRightLiteral(), "Use short-form tag '#R'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#R"));
+                                holder.registerProblem(o.getRightLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#R'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#R"));
                             }
                         }
                     }
@@ -241,7 +241,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                                     }
                                                 }
                                                 if (matchCount == 1 && matchedBranchIndex == tagIndex) {
-                                                    holder.registerProblem(tagElement, "Redundant variant tag", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
+                                                    holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
                                                 }
                                             }
                                         }
@@ -269,20 +269,20 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 if (useLong) {
                     var trueShort = o.getTrueShortLiteral();
                     if (trueShort != null) {
-                        holder.registerProblem(trueShort, "Use long-form tag '#TRUE'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#TRUE"));
+                        holder.registerProblem(trueShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#TRUE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#TRUE"));
                     }
                     var falseShort = o.getFalseShortLiteral();
                     if (falseShort != null) {
-                        holder.registerProblem(falseShort, "Use long-form tag '#FALSE'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#FALSE"));
+                        holder.registerProblem(falseShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#FALSE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#FALSE"));
                     }
                 } else {
                     var trueLong = o.getTrueLiteral();
                     if (trueLong != null) {
-                        holder.registerProblem(trueLong, "Use short-form tag '#T'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#T"));
+                        holder.registerProblem(trueLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#T'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#T"));
                     }
                     var falseLong = o.getFalseLiteral();
                     if (falseLong != null) {
-                        holder.registerProblem(falseLong, "Use short-form tag '#F'", ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#F"));
+                        holder.registerProblem(falseLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#F'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#F"));
                     }
                 }
             }

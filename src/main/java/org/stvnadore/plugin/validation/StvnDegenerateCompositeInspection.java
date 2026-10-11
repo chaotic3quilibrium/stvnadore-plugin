@@ -43,7 +43,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
                     var highlightElement = findKeywordToken(o, StvnTypes.KW_TUPLE);
                     var formatted = StvnSchemaFormatter.formatCleanSchema(o);
                     var innerFormatted = StvnSchemaFormatter.formatCleanSchema(innerType);
-                    var message = "Degenerate 1-element tuple: '" + formatted + "' provides redundant container wrapping";
+                    var message = StvnDiagnosticFormatter.formatPlugin("Degenerate 1-element tuple: '" + formatted + "' provides redundant container wrapping", StvnDiagnosticCodes.WARN_DEGENERATE_TUPLE);
 
                     holder.registerProblem(
                         highlightElement != null ? highlightElement : o,
@@ -63,7 +63,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
                     if (variants.size() == 1) {
                         var highlightElement = findKeywordToken(o, StvnTypes.KW_ENUM);
                         var formatted = StvnSchemaFormatter.formatCleanSchema(o);
-                        var message = "Degenerate 1-variant enum: '" + formatted + "' provides zero branching entropy";
+                        var message = StvnDiagnosticFormatter.formatPlugin("Degenerate 1-variant enum: '" + formatted + "' provides zero branching entropy", StvnDiagnosticCodes.WARN_DEGENERATE_ENUM);
 
                         holder.registerProblem(
                             highlightElement != null ? highlightElement : o,
@@ -81,7 +81,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
                         var highlightElement = findKeywordToken(o, StvnTypes.KW_UNION);
                         var formatted = StvnSchemaFormatter.formatCleanSchema(o);
                         var innerFormatted = StvnSchemaFormatter.formatCleanSchema(innerType);
-                        var message = "Degenerate 1-branch union: '" + formatted + "' is isomorphic to its inner type";
+                        var message = StvnDiagnosticFormatter.formatPlugin("Degenerate 1-branch union: '" + formatted + "' is isomorphic to its inner type", StvnDiagnosticCodes.WARN_DEGENERATE_UNION);
 
                         holder.registerProblem(
                             highlightElement != null ? highlightElement : o,
@@ -103,7 +103,7 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
                         var innerType = types.get(0);
                         var formatted = StvnSchemaFormatter.formatCleanSchema(o);
                         var innerFormatted = StvnSchemaFormatter.formatCleanSchema(innerType);
-                        var message = "Degenerate 1-element tuple: '" + formatted + "' provides redundant container wrapping";
+                        var message = StvnDiagnosticFormatter.formatPlugin("Degenerate 1-element tuple: '" + formatted + "' provides redundant container wrapping", StvnDiagnosticCodes.WARN_DEGENERATE_TUPLE);
 
                         holder.registerProblem(
                             firstChild,

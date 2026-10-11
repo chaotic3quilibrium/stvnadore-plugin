@@ -208,20 +208,24 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                     String msg;
                     String category = isCollection ? "collection" : "string";
                     String units = isCollection ? (typeName.equals(StvnVocabulary.TYPE_MAP) ? "entries" : "elements") : "characters";
+                    String diagCode;
                     if (isUnadorned) {
                         msg = "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is "
                             + DEFAULT_UNBOUNDED_STRING_CAPACITY
                             + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
+                        diagCode = StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED;
                     } else {
                         msg = "Nominal " + category + " type '" + typeName + "' specifies capacity " + explicitCapacity
                             + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
+                        diagCode = StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
                     }
+                    var formattedMsg = StvnDiagnosticFormatter.formatPlugin(msg, diagCode);
 
                     if (isError) {
                         // Suppress Default Allocation Cap QuickFixes under ERROR severity
                         holder.registerProblem(
                             typeElem,
-                            msg,
+                            formattedMsg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
@@ -231,7 +235,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                         // Offer 6 Distinct Structural QuickFixes under WARNING / WEAK WARNING
                         holder.registerProblem(
                             typeElem,
-                            msg,
+                            formattedMsg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                             new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
@@ -307,7 +311,10 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 if (content.length() > capacityBound) {
                     holder.registerProblem(
                         literal,
-                        "String literal length (" + content.length() + ") exceeds declared schema capacity (" + capacityBound + ")",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "String literal length (" + content.length() + ") exceeds declared schema capacity (" + capacityBound + ")",
+                            StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW
+                        ),
                         ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                         new TruncateStringLiteralQuickFix(capacityBound),
                         new WidenSchemaCapacityQuickFix(schemaType, content.length())

@@ -573,7 +573,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     public void testJsonExampleDefsScopeCollectsEightStrippedSymbolsAtDepthOne() throws Exception {
         var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.json_schema.stvn_d", rfcContent);
 
         var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);
@@ -600,7 +600,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     public void testJsonExampleTypeScopeMaintainsEightSymbols() throws Exception {
         var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.json_schema.stvn_d", rfcContent);
 
         var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);
@@ -630,7 +630,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     public void testJsonExampleBodyScopeCapturesAllInferredNominalTypesAndVariants() throws Exception {
         var rfcPath = java.nio.file.Path.of("temp/examples/json/rfc8259_json_substrate.json_schema.stvn_d");
         var rfcContent = java.nio.file.Files.readString(rfcPath);
-        myFixture.addFileToProject("rfc8259_json_substrate.stvn_d", rfcContent);
+        myFixture.addFileToProject("rfc8259_json_substrate.json_schema.stvn_d", rfcContent);
 
         var jsonPath = java.nio.file.Path.of("temp/examples/json/json_example.json.stvn_i");
         var jsonContent = java.nio.file.Files.readString(jsonPath);

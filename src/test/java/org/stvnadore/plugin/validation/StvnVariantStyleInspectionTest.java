@@ -101,9 +101,9 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
 
         assertFalse("Expected style warnings to be present on multi-variant tuple elements", warnings.isEmpty());
         var descriptions = warnings.stream().map(com.intellij.codeInsight.daemon.impl.HighlightInfo::getDescription).toList();
-        assertTrue("Expected redundant tag warning", descriptions.contains("Redundant variant tag"));
-        assertTrue("Expected form discrepancy warning for #S", descriptions.contains("Use long-form tag '#Some'"));
-        assertTrue("Expected form discrepancy warning for #T", descriptions.contains("Use long-form tag '#TRUE'"));
+        assertTrue("Expected redundant tag warning", descriptions.contains("Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]"));
+        assertTrue("Expected form discrepancy warning for #S", descriptions.contains("Use long-form tag '#Some' [stvn-plugin:WARN_VARIANT_FORM_DISCREPANCY]"));
+        assertTrue("Expected form discrepancy warning for #T", descriptions.contains("Use long-form tag '#TRUE' [stvn-plugin:WARN_VARIANT_FORM_DISCREPANCY]"));
     }
 
     public void testRedundantTagDisabledWhenSettingFalse() {
@@ -121,7 +121,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("union_redundant_disabled.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected zero redundant tag warnings when preferImpliedSumTypes is false", 0, redundantWarnings.size());
@@ -143,7 +143,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("uhoh_redundant_tags.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected exactly 10 redundant tag warnings across uhoh fixture (4 + 3 + 2 + 1 + 0)", 10, redundantWarnings.size());
@@ -187,7 +187,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("union_overlap_int_uint.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, redundantWarnings.size());
@@ -210,7 +210,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected exactly 1 redundant tag warning for disjoint branch #1 1", 1, redundantWarnings.size());
@@ -251,7 +251,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("union_overlap_float.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because 1.234 matches both :FloatA and :FloatB", 0, redundantWarnings.size());
@@ -274,7 +274,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("union_overlap_nominal.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings for overlapping nominal aliases", 0, redundantWarnings.size());
@@ -301,7 +301,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("tuple_mixed_unions.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected exactly 1 redundant tag warning (on disjoint element, but not overlapping element)", 1, redundantWarnings.size());
@@ -322,7 +322,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("either_overlap_int_uint_left.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, redundantWarnings.size());
@@ -343,7 +343,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("either_overlap_int_uint_right.stvn", rightText);
         var rightHighlights = myFixture.doHighlighting();
         var rightWarnings = rightHighlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
         assertEquals("Expected 0 redundant tag warnings because 1 matches both :FirstId and :SecondId", 0, rightWarnings.size());
         var rightActions = myFixture.filterAvailableIntentions("Remove redundant tag");
@@ -365,7 +365,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("either_overlap_float_left.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because #Left is non-inferable", 0, redundantWarnings.size());
@@ -386,7 +386,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("either_overlap_float_right.stvn", rightText);
         var rightHighlights = myFixture.doHighlighting();
         var rightWarnings = rightHighlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because 1.2 matches both :FloatA and :FloatB", 0, rightWarnings.size());
@@ -409,7 +409,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected 0 redundant tag warnings because #Left is non-inferable under Rule E", 0, redundantWarnings.size());
@@ -433,7 +433,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected exactly 1 redundant tag warning for disjoint right branch #Right \"text\"", 1, redundantWarnings.size());
@@ -475,7 +475,7 @@ public final class StvnVariantStyleInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("tuple_mixed_eithers.stvn", text);
         var highlights = myFixture.doHighlighting();
         var redundantWarnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
 
         assertEquals("Expected exactly 1 redundant tag warning (on disjoint #Right element, but not overlapping #Right element)", 1, redundantWarnings.size());

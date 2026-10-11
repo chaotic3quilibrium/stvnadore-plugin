@@ -33,7 +33,7 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getDescription() != null && h.getDescription().contains("requires root :meta block"))
             .toList();
         assertFalse("Expected missing :meta error on .stvn_i document", errors.isEmpty());
-        assertTrue(errors.get(0).getDescription().contains("Payload include document requires root :meta block (ERR_DOCUMENT_KIND_MISMATCH)."));
+        assertTrue(errors.get(0).getDescription().contains("Payload include document requires root :meta block [stvn-plugin:ERR_DOCUMENT_KIND_MISMATCH]"));
     }
 
     /**

@@ -85,7 +85,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     if (!seenFacets.add(facetName)) {
                         holder.registerProblem(
                             entry,
-                            "Duplicate facet '#" + facetName + "' is prohibited",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Duplicate facet '#" + facetName + "' is prohibited",
+                                StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
+                            ),
                             ProblemHighlightType.GENERIC_ERROR,
                             new RemoveElementQuickFix("Remove duplicate facet")
                         );
@@ -104,7 +107,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
                             holder.registerProblem(
                                 trait,
-                                "Metadata facet #preserveIndent requires an explicit boolean value (#TRUE or #FALSE)",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Metadata facet #preserveIndent requires an explicit boolean value (#TRUE or #FALSE)",
+                                    StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR,
                                 fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
                             );
@@ -124,7 +130,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     if (metaMap.getMetadataEntryList().isEmpty()) {
                         holder.registerProblem(
                             metaMap,
-                            "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                                StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
+                            ),
                             ProblemHighlightType.ERROR,
                             new RemoveElementQuickFix("Remove empty metadata block")
                         );
@@ -141,7 +150,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     if (metaMap.getMetadataEntryList().isEmpty()) {
                         holder.registerProblem(
                             metaMap,
-                            "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                                StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
+                            ),
                             ProblemHighlightType.ERROR,
                             new RemoveElementQuickFix("Remove empty metadata block")
                         );
@@ -149,7 +161,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         for (var entry : metaMap.getMetadataEntryList()) {
                             holder.registerProblem(
                                 entry,
-                                "Metadata facets are not permitted on constants; permitted facets: []",
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Metadata facets are not permitted on constants; permitted facets: []",
+                                    StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
+                                ),
                                 ProblemHighlightType.ERROR,
                                 new RemoveElementQuickFix("Remove invalid facet")
                             );
@@ -164,7 +179,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (optBlock != null && optBlock.getText().replaceAll("\\s+", "").equals("{}")) {
                     holder.registerProblem(
                         optBlock,
-                        "Empty directive block in :use statement is invalid; specify {#strip} or remove '{}'",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Empty directive block in :use statement is invalid; specify {#strip} or remove '{}'",
+                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                        ),
                         ProblemHighlightType.ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
@@ -173,7 +191,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (aliasBlock != null && aliasBlock.getUseMapAliasList().isEmpty()) {
                     holder.registerProblem(
                         aliasBlock,
-                        "Empty directive block in :use statement is invalid; specify alias mappings or remove '{}'",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Empty directive block in :use statement is invalid; specify alias mappings or remove '{}'",
+                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                        ),
                         ProblemHighlightType.ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
@@ -186,7 +207,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (optBlock != null && optBlock.getIncludeOptionList().isEmpty()) {
                     holder.registerProblem(
                         optBlock,
-                        "Empty directive block in :include statement is invalid; specify {#strip} or remove '{}'",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Empty directive block in :include statement is invalid; specify {#strip} or remove '{}'",
+                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                        ),
                         ProblemHighlightType.ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
@@ -195,7 +219,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (aliasBlock != null && aliasBlock.getIncludeMapAliasList().isEmpty()) {
                     holder.registerProblem(
                         aliasBlock,
-                        "Empty directive block in :include statement is invalid; specify alias mappings or remove '{}'",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Empty directive block in :include statement is invalid; specify alias mappings or remove '{}'",
+                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                        ),
                         ProblemHighlightType.ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
@@ -218,7 +245,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             if (entry.getMetadataDirective() != null) {
                 holder.registerProblem(
                     entry,
-                    "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
+                        StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
@@ -230,49 +260,70 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             if (hasToken(entry, INTERVAL_FACET_TOKENS) && !isNumeric && !isTemporal && !isString) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for numeric, temporal, and string types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for numeric, temporal, and string types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (hasToken(entry, NUMERIC_FACET_TOKENS) && !isNumeric) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (hasToken(entry, DIMENSION_FACET_TOKENS) && !isString && !isCollection) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (hasToken(entry, TEMPORAL_FACET_TOKENS) && !isTemporal) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#s, #ms, #us, #ns, #offset, #zoned, #audited]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#s, #ms, #us, #ns, #offset, #zoned, #audited]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (hasToken(entry, MAP_FACET_TOKENS) && !isMap) {
                 holder.registerProblem(
                     entry,
-                    "Facet is not permitted on " + baseType + "; permitted facets for map types: [#invertible]",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + "; permitted facets for map types: [#invertible]",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (entry.getMetadataFilter() != null && !isEnum) {
                 holder.registerProblem(
                     entry,
-                    "Filter facets are permitted strictly on nominal aliases of :Enum and enum subsets",
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Filter facets are permitted strictly on nominal aliases of :Enum and enum subsets",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );

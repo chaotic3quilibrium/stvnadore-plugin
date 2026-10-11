@@ -906,7 +906,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Exactly one error highlight must exist on opening delimiter line", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited", error.getDescription());
+        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited [stvn-plugin:ERR_PROHIBITED_FENCE_ARROW]", error.getDescription());
         assertFalse("Raw compiler syntax error duplicate must be suppressed", error.getDescription().contains("STVN Syntax Error:"));
 
         var quickFixes = myFixture.getAllQuickFixes();

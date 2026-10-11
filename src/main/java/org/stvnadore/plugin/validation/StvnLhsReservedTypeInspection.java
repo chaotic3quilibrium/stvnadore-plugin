@@ -40,7 +40,10 @@ public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
                         || target.getReservedKeyword() != null) {
                     holder.registerProblem(
                         target,
-                        "Fundamental type '" + rawText + "' cannot be aliased",
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Fundamental type '" + rawText + "' cannot be aliased",
+                            StvnDiagnosticCodes.ERR_RESERVED_KEYWORD_ON_LHS
+                        ),
                         ProblemHighlightType.ERROR
                     );
                 }
