@@ -379,6 +379,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                     }
 
+                    // Attach stem mismatch quick-fixes for WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
+                    if (diag.errorCode().isPresent() && "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME".equals(diag.errorCode().get())) {
+                        var fileName = file.getName();
+                        int lastDot = fileName.lastIndexOf('.');
+                        if (lastDot >= 0) {
+                            var ext = fileName.substring(lastDot);
+                            var stemPart = fileName.substring(0, lastDot);
+                            var dotParts = stemPart.split("\\.");
+                            var tokens = extractCitedTokens(diag.message());
+                            var domainVal = !tokens.isEmpty() ? tokens.get(0) : "default";
+                            var targetFileName = dotParts[0] + "." + domainVal + ext;
+                            var targetElem = file.findElementAt(range.getStartOffset());
+                            var elemForFix = targetElem != null ? targetElem : file;
+                            annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(elemForFix, targetFileName));
+                            annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(elemForFix));
+                        }
+                    }
+
                     annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
 
                     annotationBuilder.create();

@@ -5,10 +5,12 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.ModificationTracker;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiManager;
 import com.intellij.psi.util.CachedValue;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.testFramework.LightVirtualFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.stdlib.StvnPrelude;
@@ -24,8 +26,25 @@ import org.stvnadore.psi.TypeKeyword;
 public final class StvnPreludeBridge {
 
     private static final Key<CachedValue<PsiFile>> PRELUDE_FILE_KEY = Key.create("STVN_PRELUDE_FILE");
+    private static final Key<LightVirtualFile> PRELUDE_VIRTUAL_FILE_KEY = Key.create("STVN_PRELUDE_VIRTUAL_FILE");
 
     private StvnPreludeBridge() {
+    }
+
+    /**
+     * Obtains the single canonical in-memory VirtualFile for the standard library prelude.
+     *
+     * @param project the active IntelliJ project
+     * @return the shared LightVirtualFile representing prelude.stvn_d
+     */
+    public static LightVirtualFile getPreludeVirtualFile(Project project) {
+        var vFile = project.getUserData(PRELUDE_VIRTUAL_FILE_KEY);
+        if (vFile == null || !vFile.isValid()) {
+            vFile = new LightVirtualFile("prelude.stvn_d", StvnFileType.Defs.INSTANCE, StvnPrelude.PRELUDE_STVN_D);
+            vFile.setWritable(false);
+            project.putUserData(PRELUDE_VIRTUAL_FILE_KEY, vFile);
+        }
+        return vFile;
     }
 
     /**
@@ -36,7 +55,9 @@ public final class StvnPreludeBridge {
      */
     public static PsiFile getPreludeFile(Project project) {
         return CachedValuesManager.getManager(project).getCachedValue(project, PRELUDE_FILE_KEY, () -> {
-            var file = PsiFileFactory.getInstance(project).createFileFromText(
+            var vFile = getPreludeVirtualFile(project);
+            var psiFile = PsiManager.getInstance(project).findFile(vFile);
+            var file = psiFile != null ? psiFile : PsiFileFactory.getInstance(project).createFileFromText(
                 "prelude.stvn_d",
                 StvnFileType.Defs.INSTANCE,
                 StvnPrelude.PRELUDE_STVN_D
@@ -60,6 +81,19 @@ public final class StvnPreludeBridge {
     }
 
     /**
+     * Checks whether the specified file is a standard library prelude file.
+     *
+     * @param file the PSI file to inspect
+     * @return {@code true} if the file name matches canonical prelude naming conventions
+     */
+    public static boolean isPreludeFile(@Nullable PsiFile file) {
+        if (file == null) return false;
+        var name = file.getName();
+        return "prelude.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name)
+            || "prelude.stvn_inclf".equals(name) || "org_stvnadore_prelude.stvn_inclf".equals(name);
+    }
+
+    /**
      * Resolves the canonical package namespace path for a prelude type by nominal name or FQNI.
      *
      * @param project the active IntelliJ project
@@ -80,6 +114,17 @@ public final class StvnPreludeBridge {
      */
     public static @Nullable TypeDefinition resolvePreludeTypeDefinition(Project project, String nameOrFqni) {
         var file = getPreludeFile(project);
+        return resolvePreludeTypeDefinition(file, nameOrFqni);
+    }
+
+    /**
+     * Resolves a prelude type definition AST node directly within the specified file.
+     *
+     * @param file the target prelude PSI file to scan
+     * @param nameOrFqni the type identifier or FQNI to resolve
+     * @return the resolved TypeDefinition element, or {@code null} if not found
+     */
+    public static @Nullable TypeDefinition resolvePreludeTypeDefinition(PsiFile file, String nameOrFqni) {
         var normName = nameOrFqni.startsWith(":") ? nameOrFqni : ":" + nameOrFqni;
 
         var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);

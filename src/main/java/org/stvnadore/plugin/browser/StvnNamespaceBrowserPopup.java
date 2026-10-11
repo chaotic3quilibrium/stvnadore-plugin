@@ -33,6 +33,7 @@ import javax.swing.table.TableRowSorter;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
 
@@ -250,12 +251,7 @@ public final class StvnNamespaceBrowserPopup {
 
     private static void navigateToSymbol(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         if (entry.isPrelude()) {
-            var lightFile = new LightVirtualFile(
-                "org_stvnadore_prelude.stvn_d",
-                StvnFileType.Defs.INSTANCE,
-                StvnPrelude.PRELUDE_STVN_D
-            );
-            lightFile.setWritable(false);
+            var lightFile = StvnPreludeBridge.getPreludeVirtualFile(project);
             FileEditorManager.getInstance(project).openTextEditor(
                 new OpenFileDescriptor(project, lightFile, entry.navigationOffset()),
                 true

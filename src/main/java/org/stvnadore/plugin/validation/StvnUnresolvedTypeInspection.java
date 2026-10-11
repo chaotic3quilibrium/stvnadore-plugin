@@ -64,7 +64,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         }
 
         var file = typeKw.getContainingFile();
-        if (file == null || "prelude.stvn_inclf".equals(file.getName()) || "org_stvnadore_prelude.stvn_inclf".equals(file.getName())) {
+        if (file == null || StvnPreludeBridge.isPreludeFile(file)) {
             return;
         }
 

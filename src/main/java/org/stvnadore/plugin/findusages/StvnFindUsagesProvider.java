@@ -31,7 +31,8 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
     public @Nullable WordsScanner getWordsScanner() {
         return new DefaultWordsScanner(
                 new com.intellij.lexer.FlexAdapter(new org.stvnadore.parser._StvnLexer(null)),
-                TokenSet.create(StvnTypes.IDENTIFIER, StvnTypes.TYPE_KEYWORD_BASE, StvnTypes.VALUE_KEYWORD_BASE),
+                TokenSet.create(StvnTypes.IDENTIFIER, StvnTypes.TYPE_KEYWORD_BASE, StvnTypes.VALUE_KEYWORD_BASE,
+                        StvnTypes.KW_KIND_BODY, StvnTypes.KW_KIND_DEFS, StvnTypes.KW_KIND_BODY_INCLUDE, StvnTypes.KW_KIND_DEFS_INCLUDE),
                 TokenSet.create(StvnTypes.COMMENT),
                 TokenSet.create(StvnTypes.LITERAL_STRING_SIMPLE, StvnTypes.LITERAL_STRING_BLOCK, StvnTypes.LITERAL_STRING_FENCED)
         );

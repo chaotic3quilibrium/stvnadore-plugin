@@ -699,6 +699,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var docKind = findEntryByName(preludeEntries, ":StvnDocumentKind");
         assertNotNull("Must contain :StvnDocumentKind", docKind);
         assertEquals(":org/stvnadore/prelude/meta", docKind.source());
+        assertEquals(":Enum [ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]", docKind.typeStructure());
 
         var docMeta = findEntryByName(preludeEntries, ":StvnDocumentMeta");
         assertNotNull("Must contain :StvnDocumentMeta", docMeta);

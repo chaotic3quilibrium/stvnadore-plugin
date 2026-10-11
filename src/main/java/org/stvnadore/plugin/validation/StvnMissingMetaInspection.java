@@ -155,7 +155,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             String fileName = file.getName();
             String[] parts = fileName.split("\\.");
             String stem = parts.length > 0 ? parts[0] : "schema";
-            String domain = parts.length > 2 ? parts[1] : "default";
+            String domain = parts.length > 2 ? parts[1] : "place_holder";
             String metaBlock = "\n  :meta {\n    #name \"" + stem + "\"\n    #domain \"" + domain + "\"\n    #kind " + kind + "\n  }\n";
 
             String text = doc.getText();

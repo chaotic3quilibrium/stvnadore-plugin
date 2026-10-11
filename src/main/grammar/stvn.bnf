@@ -191,6 +191,7 @@ private value_keyword_start ::= VALUE_KEYWORD_BASE
                               | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE
                               | KW_OFFSET | KW_ZONED | KW_AUDITED
                               | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS
+                              | KW_KIND_BODY | KW_KIND_DEFS | KW_KIND_BODY_INCLUDE | KW_KIND_DEFS_INCLUDE
 
 // --- INCLUDES & DEFINITIONS ---
 include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}

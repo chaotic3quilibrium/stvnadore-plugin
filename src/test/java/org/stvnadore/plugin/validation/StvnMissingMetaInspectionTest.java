@@ -80,4 +80,26 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .toList();
         assertTrue("Expected zero kind mismatch errors on valid .stvn_i", errors.isEmpty());
     }
+
+    /**
+     * Verifies that InsertMissingMetaBlockQuickFix defaults to place_holder domain when filename stem slot 1 is absent.
+     */
+    public void testQuickFixGeneratesPlaceholderDomainWhenStemSlot1Absent() {
+        var content = """
+            {
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("json_example.stvn_i", content);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
+        assertFalse("Expected InsertMissingMetaBlockQuickFix intention", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var text = myFixture.getFile().getText();
+        assertTrue("Expected #name \"json_example\"", text.contains("#name \"json_example\""));
+        assertTrue("Expected #domain \"place_holder\"", text.contains("#domain \"place_holder\""));
+        assertTrue("Expected #kind #BODY_INCLUDE", text.contains("#kind #BODY_INCLUDE"));
+    }
 }

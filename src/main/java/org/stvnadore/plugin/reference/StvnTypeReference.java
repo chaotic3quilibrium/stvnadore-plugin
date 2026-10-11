@@ -110,6 +110,16 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
         }
+        if (StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
+            && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {
+            String resolvedText = (resolved instanceof TypeKeyword tk) ? tk.getText()
+                : (resolved instanceof TypeDefinition td && td.getTypeKeyword() != null ? td.getTypeKeyword().getText() : null);
+            String elemText = (element instanceof TypeKeyword tk) ? tk.getText()
+                : (element instanceof TypeDefinition td && td.getTypeKeyword() != null ? td.getTypeKeyword().getText() : null);
+            if (resolvedText != null && resolvedText.equals(elemText)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -211,7 +221,8 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             if (pkgPath != null) {
                 var bare = targetTypeName.startsWith(":") ? targetTypeName.substring(1) : targetTypeName;
                 var fqni = pkgPath.getText() + "/" + bare;
-                var resolvedFqni = StvnTypeReference.resolveTypeInFile(containingFile, fqni, visited);
+                var localVisited = new HashSet<PsiFile>();
+                var resolvedFqni = StvnTypeReference.resolveTypeInFile(containingFile, fqni, localVisited);
                 if (resolvedFqni != null) {
                     return new ResolveResult[]{new PsiElementResolveResult(resolvedFqni)};
                 }
@@ -261,6 +272,14 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace, boolean allowUnqualifiedPackaged) {
         if (!visited.add(file)) {
             return null;
+        }
+
+        // Local prelude file short-circuit: resolve directly within local file AST
+        if (StvnPreludeBridge.isPreludeFile(file)) {
+            var localDef = StvnPreludeBridge.resolvePreludeTypeDefinition(file, targetName);
+            if (localDef != null && localDef.getTypeKeyword() != null) {
+                return localDef.getTypeKeyword();
+            }
         }
 
         // 1. Local definitions scanning

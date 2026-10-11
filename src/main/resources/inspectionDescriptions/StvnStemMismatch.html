@@ -1,10 +1,14 @@
 <html>
 <body>
-<p>Audits document metadata declarations to ensure that the declared <code>#name</code> facet strictly matches the primary filename stem.</p>
+<p>Audits document metadata declarations to ensure that declared <code>#name</code> and <code>#domain</code> facets match the filename stem hierarchy.</p>
 
-<p>When the schema declared name diverges from slot 0 of the filename stem, a warning is raised to guard against broken schema publishing and referencing mismatches.</p>
+<p>Filename stem slot 0 corresponds to the declared document <code>#name</code>. Filename stem slot 1 corresponds to the optional declared document <code>#domain</code>.</p>
+
+<p>When declared <code>#name</code> differs from slot 0, warning <code>WARN_DOCUMENT_NAME_MISMATCH</code> is emitted. When declared <code>#domain</code> is omitted from slot 1, warning <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> is emitted.</p>
 
 <p><b>Quick-Fix:</b></p>
-<p>Renames the <code>#name</code> string literal to match the active file stem.</p>
+<p>Renames the <code>#name</code> string literal to match the active file stem slot 0.</p>
+<p>Renames the file to include the declared domain in filename stem slot 1 (e.g. <code>name.domain.stvn_i</code>).</p>
+<p>Removes the optional <code>#domain</code> attribute from the root <code>:meta</code> block.</p>
 </body>
 </html>

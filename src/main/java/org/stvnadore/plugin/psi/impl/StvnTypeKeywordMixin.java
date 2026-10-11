@@ -3,8 +3,12 @@ package org.stvnadore.plugin.psi.impl;
 import com.intellij.extapi.psi.ASTWrapperPsiElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.SearchScope;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -61,6 +65,36 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
                 return StvnIcons.STVN;
             }
         };
+    }
+
+    @Override
+    public boolean canNavigate() {
+        return true;
+    }
+
+    @Override
+    public boolean canNavigateToSource() {
+        return true;
+    }
+
+    @Override
+    public void navigate(boolean requestFocus) {
+        var file = getContainingFile();
+        if (file == null) return;
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var descriptor = new OpenFileDescriptor(getProject(), vFile, getTextOffset());
+            FileEditorManager.getInstance(getProject()).openTextEditor(descriptor, requestFocus);
+        }
+    }
+
+    @Override
+    public @NotNull SearchScope getUseScope() {
+        var file = getContainingFile();
+        if (file != null && (org.stvnadore.plugin.reference.StvnPreludeBridge.isPreludeFile(file) || !file.isPhysical())) {
+            return GlobalSearchScope.allScope(getProject());
+        }
+        return super.getUseScope();
     }
 
     @Override
