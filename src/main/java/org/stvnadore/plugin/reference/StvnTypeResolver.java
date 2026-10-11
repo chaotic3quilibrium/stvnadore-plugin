@@ -113,6 +113,13 @@ public final class StvnTypeResolver {
         var keyword = typeDef.getTypeKeyword();
         if (keyword == null) return null;
         var typeName = keyword.getText().trim();
+        var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
+        String fqniKey = typeName;
+        if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
+            var pkgText = enclosingPkg.getPackagePath().getText().trim();
+            var localPart = typeName.startsWith(":") ? typeName.substring(1) : typeName;
+            fqniKey = pkgText + "/" + localPart;
+        }
 
         var manager = CachedValuesManager.getManager(file.getProject());
         var map = manager.getCachedValue(file, RESOLVED_SCHEMAS_KEY, () -> {
@@ -133,14 +140,26 @@ public final class StvnTypeResolver {
                 for (var entry : defs.entrySet()) {
                     var schemaNode = entry.getValue().defNode().schemaType();
                     var rsOpt = org.stvnadore.core.validation.StvnTypeResolver.resolvePrimitiveSchema(docCtx, schemaNode, new HashSet<>());
-                    rsOpt.ifPresent(rs -> resolvedMap.put(entry.getKey(), rs));
+                    rsOpt.ifPresent(rs -> {
+                        resolvedMap.put(entry.getKey(), rs);
+                        var rawKey = entry.getKey();
+                        if (rawKey.contains("/")) {
+                            var slash = rawKey.lastIndexOf('/');
+                            resolvedMap.putIfAbsent(":" + rawKey.substring(slash + 1), rs);
+                        }
+                    });
                 }
             } catch (Exception ignored) {
             }
             return CachedValueProvider.Result.create(resolvedMap, file);
         }, false);
 
-        return map != null ? map.get(typeName) : null;
+        if (map == null) return null;
+        var rs = map.get(fqniKey);
+        if (rs != null) {
+            return rs;
+        }
+        return map.get(typeName);
     }
 
     /**

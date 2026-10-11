@@ -133,6 +133,14 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
+        // Elements inside :meta { ... } indent by 2 spaces relative to :meta (4 spaces relative to root)
+        if (parentType == StvnTypes.META_BLOCK) {
+            if (childType == StvnTypes.META_ELEMENT || childType == StvnTypes.COMMENT) {
+                return Indent.getNormalIndent();
+            }
+            return Indent.getNoneIndent();
+        }
+
         // Definitions inside :defs { ... } indent by 2 spaces relative to :defs
         if (parentType == StvnTypes.DEFS_ENTRY) {
             if (childType == StvnTypes.DEFS_ELEMENT || childType == StvnTypes.COMMENT) {
@@ -194,6 +202,7 @@ public final class StvnBlock implements ASTBlock {
         IElementType type = node.getElementType();
         if (type instanceof IFileElementType
                 || type == StvnTypes.DEFS_ENTRY
+                || type == StvnTypes.META_BLOCK
                 || type == StvnTypes.PACKAGE_ENCLOSURE
                 || type == StvnTypes.LIST_LITERAL
                 || type == StvnTypes.MAP_LITERAL

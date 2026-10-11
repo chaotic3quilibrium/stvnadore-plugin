@@ -11,6 +11,7 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 
@@ -784,6 +785,45 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         // Verifies isDiagnosticSuppressed returns true
         var orderDiag = result.diagnostics().stream().filter(d -> d.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(d.errorCode().get())).findFirst().orElseThrow();
         assertTrue("External annotator must suppress order diagnostic when inspection active", annotator.isDiagnosticSuppressed(file, orderDiag));
+    }
+
+    public void testExternalAnnotatorSuppressesStemMismatchWhenInspectionActive() {
+        var content = """
+            {
+              :meta {
+                #name "json_example"
+                #domain "place_holder"
+                #kind #BODY_INCLUDE
+              }
+              :type :Seq(:Int)
+              :body [ 1 2 3 ]
+            }
+            """;
+        var file = myFixture.configureByText("json_example.stvn_i", content);
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(file);
+        assertNotNull(collected);
+        var result = annotator.doAnnotate(collected);
+        assertNotNull(result);
+
+        // Find domain omitted diagnostic from compiler result
+        var domainDiag = result.diagnostics().stream()
+            .filter(d -> (d.errorCode().isPresent() && DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME.equals(d.errorCode().get()))
+                || d.message().contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME")
+                || d.message().contains("is omitted from filename stem slot 1"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Compiler must produce WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME"));
+
+        assertTrue("External annotator must suppress domain omitted diagnostic when StvnStemMismatch inspection is active",
+            annotator.isDiagnosticSuppressed(file, domainDiag));
+
+        myFixture.enableInspections(new StvnStemMismatchInspection());
+        var highlights = myFixture.doHighlighting();
+        var domainWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("is omitted from filename stem slot 1"))
+            .toList();
+        assertEquals("Editor must contain exactly 1 domain warning without duplication", 1, domainWarnings.size());
     }
 
     public void testUhohNineCasesNominalOverrideAndMutualExclusivityDiagnostics() {

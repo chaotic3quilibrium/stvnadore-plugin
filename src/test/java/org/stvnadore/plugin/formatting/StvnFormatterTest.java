@@ -200,4 +200,25 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertTrue("Reformatting must normalize Port metadata to '{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }':\n" + text,
             text.contains("{ #unsigned #size 16 #minIncl 1 #maxExcl 65536 }"));
     }
+
+    public void testMetaBlockFormatterEnforcesFourSpaceChildIndentation() {
+        var unformatted = """
+            {
+              :meta {
+            #name "json_example"
+            #kind #BODY_INCLUDE
+              }
+              :body [ 1 2 3 ]
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_meta.stvn_i", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Children of :meta must indent by 4 spaces:\n" + text,
+            text.contains("  :meta {\n    #name \"json_example\"\n    #kind #BODY_INCLUDE\n  }"));
+    }
 }

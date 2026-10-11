@@ -2,9 +2,11 @@ package org.stvnadore.plugin.documentation;
 
 import com.intellij.lang.documentation.DocumentationProvider;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -22,11 +24,14 @@ import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.DefsElement;
 import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.PackageElement;
+import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
@@ -277,12 +282,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (keyword != null) {
                 sb.append("<b>Type Alias:</b> ").append(keyword.getText()).append("<br/>");
 
+                var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
+                if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
+                    var pkgPath = enclosingPkg.getPackagePath().getText().trim();
+                    var localName = keyword.getText().startsWith(":") ? keyword.getText().substring(1) : keyword.getText();
+                    var fqni = pkgPath + "/" + localName;
+                    sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
+                    sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
+                }
+
                 var containingFile = typeDef.getContainingFile();
                 if (containingFile != null) {
                     var fileName = containingFile.getName();
                     if (fileName.endsWith(".stvn_incl") || fileName.endsWith(".stvn_inclf")) {
                         sb.append("<b>Imported From:</b> <code>\"").append(fileName).append("\"</code><br/>");
-                    } else {
+                    } else if (enclosingPkg == null) {
                         sb.append("<b>Declared In:</b> Local Definitions (<code>:defs</code>)<br/>");
                     }
                 }
@@ -301,6 +315,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var metricHtml = extractStructuralMetricHtml(typeDef);
             if (metricHtml != null) {
                 sb.append(metricHtml).append("<br/>");
+            }
+
+            var docComments = extractDocumentationComments(typeDef);
+            if (docComments != null && !docComments.isEmpty()) {
+                sb.append("<div style=\"margin-top: 4px; margin-bottom: 6px; color: #CCCCCC; font-style: italic;\">")
+                  .append(docComments)
+                  .append("</div>");
             }
 
             if (subset != null) {
@@ -675,6 +696,35 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var rows = new java.util.ArrayList<FacetRow>();
 
         var constraints = rs.constraints();
+
+        // Tier 1: Definition Facets
+        if (constraints.unsigned()) {
+            rows.add(new FacetRow("#unsigned", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.exact()) {
+            rows.add(new FacetRow("#exact", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.invertible()) {
+            rows.add(new FacetRow("#invertible", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.scale().isPresent()) {
+            rows.add(new FacetRow("#scale", "#" + constraints.scale().get(), "Declared", "Active"));
+        }
+        if (constraints.offset()) {
+            rows.add(new FacetRow("#offset", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.zoned()) {
+            rows.add(new FacetRow("#zoned", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.audited()) {
+            rows.add(new FacetRow("#audited", "#TRUE", "Declared", "Active"));
+        }
+        if (constraints.size().isPresent()) {
+            int eff = constraints.size().get();
+            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_SIZE);
+            rows.add(new FacetRow("#size", String.valueOf(eff), originInfo.origin(), originInfo.status()));
+        }
+
         // 1. #preserveIndent (for String types)
         if (":String".equals(baseType)) {
             boolean eff = constraints.preserveIndent();
@@ -703,6 +753,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             rows.add(new FacetRow("#regex", eff, originInfo.origin(), originInfo.status()));
         }
 
+        // Tier 3: Bounds Facets
+        if (constraints.minIncl().isPresent()) {
+            rows.add(new FacetRow("#minIncl", constraints.minIncl().get().toPlainString(), "Declared", "Active"));
+        }
+        if (constraints.minExcl().isPresent()) {
+            rows.add(new FacetRow("#minExcl", constraints.minExcl().get().toPlainString(), "Declared", "Active"));
+        }
+        if (constraints.maxIncl().isPresent()) {
+            rows.add(new FacetRow("#maxIncl", constraints.maxIncl().get().toPlainString(), "Declared", "Active"));
+        }
+        if (constraints.maxExcl().isPresent()) {
+            rows.add(new FacetRow("#maxExcl", constraints.maxExcl().get().toPlainString(), "Declared", "Active"));
+        }
+        if (constraints.dateMinIncl().isPresent()) {
+            rows.add(new FacetRow("#dateMinIncl", "\"" + constraints.dateMinIncl().get() + "\"", "Declared", "Active"));
+        }
+        if (constraints.dateMaxExcl().isPresent()) {
+            rows.add(new FacetRow("#dateMaxExcl", "\"" + constraints.dateMaxExcl().get() + "\"", "Declared", "Active"));
+        }
+
         boolean isComposite = isCompositeOrCollectionType(baseType);
 
         // 5. #equatable
@@ -720,6 +790,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (rows.isEmpty()) return null;
+
+        // Sort rows strictly into 5-tier canonical order (§ 6.1)
+        rows.sort(java.util.Comparator.comparingInt(r -> org.stvnadore.plugin.validation.StvnMetadataOrderInspection.getFacetRank(r.tag())));
 
         var html = new StringBuilder();
         html.append("<b>Effective Facets &amp; Traits:</b><br/>");
@@ -742,6 +815,58 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         html.append("</tbody></table>");
         return html.toString();
+    }
+
+    private static @Nullable String extractDocumentationComments(TypeDefinition typeDef) {
+        var parts = new java.util.ArrayList<String>();
+        var file = typeDef.getContainingFile();
+        if (file == null) return null;
+
+        // 1. Preceding comments
+        var parent = typeDef.getParent();
+        var anchor = (parent instanceof PackageElement || parent instanceof DefsElement) ? parent : typeDef;
+        var prev = anchor.getPrevSibling();
+        var preceding = new java.util.ArrayList<String>();
+        while (prev != null) {
+            if (prev instanceof PsiWhiteSpace ws) {
+                if (ws.getText().contains("\n\n")) break; // Boundary stop
+            } else if (prev instanceof PsiComment comment) {
+                var clean = cleanCommentText(comment.getText());
+                if (!clean.isEmpty()) preceding.add(0, clean);
+            } else {
+                break;
+            }
+            prev = prev.getPrevSibling();
+        }
+        parts.addAll(preceding);
+
+        // 2. Trailing comment on same line
+        int endOffset = typeDef.getTextRange().getEndOffset();
+        var nextLeaf = file.findElementAt(endOffset);
+        if (nextLeaf instanceof PsiComment comment) {
+            var clean = cleanCommentText(comment.getText());
+            if (!clean.isEmpty()) parts.add(clean);
+        } else if (nextLeaf instanceof PsiWhiteSpace ws && !ws.getText().contains("\n")) {
+            var trailingLeaf = file.findElementAt(ws.getTextRange().getEndOffset());
+            if (trailingLeaf instanceof PsiComment comment) {
+                var clean = cleanCommentText(comment.getText());
+                if (!clean.isEmpty()) parts.add(clean);
+            }
+        }
+
+        if (parts.isEmpty()) return null;
+        return String.join("<br/>", parts);
+    }
+
+    private static String cleanCommentText(String text) {
+        var t = text.trim();
+        if (t.startsWith("//")) {
+            return t.substring(2).trim();
+        }
+        if (t.startsWith("/*") && t.endsWith("*/")) {
+            return t.substring(2, t.length() - 2).trim();
+        }
+        return t;
     }
 
     private static boolean isCompositeOrCollectionType(String baseType) {
@@ -944,6 +1069,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             case StvnVocabulary.FACET_NAME_REGEX -> local.regex().isPresent();
             case StvnVocabulary.FACET_NAME_MIN_SIZE -> local.minSize().isPresent();
             case StvnVocabulary.FACET_NAME_MAX_SIZE -> local.maxSize().isPresent();
+            case StvnVocabulary.FACET_NAME_SIZE -> local.size().isPresent();
             default -> false;
         };
     }

@@ -93,6 +93,34 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
     }
 
     /**
+     * Verifies that RemoveMetaDomainQuickFix preserves canonical 4-space indent on child elements of :meta.
+     */
+    public void testRemoveMetaDomainQuickFixPreservesCanonical4SpaceIndent() {
+        var content = """
+            {
+              :meta {
+                #name "json_example"
+                #domain "<caret>place_holder"
+                #kind #BODY_INCLUDE
+              }
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("json_example.stvn_i", content);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Remove optional #domain attribute");
+        assertFalse("Expected RemoveMetaDomainQuickFix intention", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var text = myFixture.getFile().getText();
+        assertFalse("Expected #domain facet to be removed", text.contains("#domain"));
+        assertTrue("Expected #name facet indented by 4 spaces", text.contains("    #name \"json_example\""));
+        assertTrue("Expected #kind facet indented by 4 spaces after #domain removal", text.contains("    #kind #BODY_INCLUDE"));
+        assertFalse("Must NOT collapse indentation to 2 spaces", text.contains("\n  #kind #BODY_INCLUDE"));
+    }
+
+    /**
      * Verifies that when a two-slot stem file has a mismatched domain, WARN_DOCUMENT_NAME_MISMATCH is reported.
      */
     public void testMismatchedDomainReportsWarningAndRenamesFile() {

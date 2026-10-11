@@ -9,6 +9,7 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
@@ -18,6 +19,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaNameFacet;
@@ -248,12 +250,16 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 facet = PsiTreeUtil.findChildOfType(file, MetaDomainFacet.class);
             }
             if (facet == null) return;
+            MetaBlock metaBlock = PsiTreeUtil.getParentOfType(facet, MetaBlock.class);
             PsiElement target = facet.getParent() instanceof MetaElement ? facet.getParent() : facet;
             var prev = target.getPrevSibling();
             if (prev instanceof PsiWhiteSpace) {
                 prev.delete();
             }
             target.delete();
+            if (metaBlock != null && metaBlock.isValid()) {
+                CodeStyleManager.getInstance(project).reformat(metaBlock);
+            }
         }
     }
 }

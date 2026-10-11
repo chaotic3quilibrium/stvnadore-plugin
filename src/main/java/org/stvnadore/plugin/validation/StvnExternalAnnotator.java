@@ -896,6 +896,20 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
             return true;
         }
+        // Suppress external compiler stem mismatch diagnostics when StvnStemMismatchInspection is active
+        if (diag.errorCode().isPresent() && (DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME.equals(diag.errorCode().get())
+                || DiagnosticBag.WARN_DOCUMENT_NAME_MISMATCH.equals(diag.errorCode().get()))) {
+            if (isStemMismatchInspectionActive(file)) {
+                return true;
+            }
+        }
+        if ((message.contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME")
+                || message.contains("WARN_DOCUMENT_NAME_MISMATCH")
+                || message.contains("is omitted from filename stem slot 1")
+                || message.contains("does not match file stem")
+                || message.contains("does not match filename stem slot 1")) && isStemMismatchInspectionActive(file)) {
+            return true;
+        }
         // Suppress external facet ordering diagnostics when StvnMetadataOrderInspection is active
         if (diag.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(diag.errorCode().get())) {
             if (isMetadataOrderInspectionActive(file)) {
@@ -1074,6 +1088,30 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var profileManager = InspectionProjectProfileManager.getInstance(project);
             var profile = profileManager.getCurrentProfile();
             var key = HighlightDisplayKey.find("StvnTemporalMode");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private static boolean isStemMismatchInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("syntax/invalid")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnStemMismatch");
             if (key != null) {
                 return profile.isToolEnabled(key, file);
             }

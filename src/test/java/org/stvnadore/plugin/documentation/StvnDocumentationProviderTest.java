@@ -600,5 +600,78 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Comparable must display all constituent fields conform",
             doc.contains("Derived (all constituent fields conform)"));
     }
+
+    public void testPackagedCollectionDocumentationRendersPackageFqniCommentsAndTraits() {
+        var content = """
+            {
+              :meta {
+                #name "rfc8259_json_substrate"
+                #domain "json_schema"
+                #kind #DEFS
+              }
+              :defs {
+                :package :org/ietf/rfc8259/json {
+                  :JsonNull :Enum [#NULL]
+                  :JsonBoolean :Boolean
+                  :JsonNumberInteger {#size 53} :Int
+                  :JsonNumberFloat :Float
+                  :JsonString :String
+                  :JsonObject :Map(:JsonString :JsonValue)
+                  :JsonArray :Seq(:JsonValue) // Structural Category: SEQUENCE (Heterogeneous JSON Array)
+                  :JsonValue :Union(
+                    :JsonNull
+                    :JsonBoolean
+                    :JsonNumberInteger
+                    :JsonNumberFloat
+                    :JsonString
+                    :JsonObject
+                    :JsonArray
+                  )
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.json_schema.stvn_d", content);
+        var offset = content.indexOf(":JsonArray :Seq");
+        var doc = getDocAtOffset(content, offset);
+
+        assertTrue("Doc must render Package header", doc.contains("<b>Package:</b> <code>:org/ietf/rfc8259/json</code>"));
+        assertTrue("Doc must render FQNI header", doc.contains("<b>FQNI:</b> <code>:org/ietf/rfc8259/json/JsonArray</code>"));
+        assertFalse("Doc inside package must NOT render 'Declared In: Local Definitions'", doc.contains("Declared In: Local Definitions"));
+        assertTrue("Doc must render adjacent trailing comment", doc.contains("Structural Category: SEQUENCE (Heterogeneous JSON Array)"));
+        assertTrue("Doc must render Effective Facets & Traits table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must render #equatable trait", doc.contains("<code>#equatable</code>"));
+        assertTrue("Doc must render #comparable trait", doc.contains("<code>#comparable</code>"));
+        assertTrue("Doc must render underlying structure", doc.contains("<b>Underlying Structure:</b> :Seq( :JsonValue )"));
+    }
+
+    public void testPackagedScalarWithFacetsDocumentationRendersSizeAndTraits() {
+        var content = """
+            {
+              :meta {
+                #name "rfc8259_json_substrate"
+                #domain "json_schema"
+                #kind #DEFS
+              }
+              :defs {
+                :package :org/ietf/rfc8259/json {
+                  :JsonNumberInteger {#size 53} :Int // Structural Category: INTEGER
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("rfc8259_json_substrate.json_schema.stvn_d", content);
+        var offset = content.indexOf(":JsonNumberInteger {");
+        var doc = getDocAtOffset(content, offset);
+
+        assertTrue("Doc must render Package header", doc.contains("<b>Package:</b> <code>:org/ietf/rfc8259/json</code>"));
+        assertTrue("Doc must render FQNI header", doc.contains("<b>FQNI:</b> <code>:org/ietf/rfc8259/json/JsonNumberInteger</code>"));
+        assertTrue("Doc must render adjacent trailing comment", doc.contains("Structural Category: INTEGER"));
+        assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must render #size facet with value 53", doc.contains("<code>#size</code></td><td style=\"padding: 2px 4px;\"><code>53</code>"));
+        assertTrue("Doc must render #size before #equatable in 5-tier order", doc.indexOf("#size") < doc.indexOf("#equatable"));
+        assertTrue("Doc must render #equatable before #comparable in 5-tier order", doc.indexOf("#equatable") < doc.indexOf("#comparable"));
+        assertTrue("Doc must render underlying structure", doc.contains("<b>Underlying Structure:</b> :Int"));
+    }
 }
 

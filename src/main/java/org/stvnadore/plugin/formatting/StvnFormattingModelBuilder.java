@@ -67,6 +67,7 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
     public static SpacingBuilder createSpacingBuilder(CodeStyleSettings settings) {
         return new SpacingBuilder(settings, StvnLanguage.INSTANCE)
                 // Section headers: single space before opening brace/bracket/value
+                .after(StvnTypes.KW_META).spaces(1)
                 .after(StvnTypes.KW_DEFS).spaces(1)
                 .after(StvnTypes.KW_TYPE).spaces(1)
                 .after(StvnTypes.KW_BODY).spaces(1)
@@ -101,6 +102,8 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 // Braces in document root and defs: line break after '{' and before '}'
                 .afterInside(StvnTypes.LBRACE, StvnParserDefinition.FILE).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnParserDefinition.FILE).lineBreakInCode()
+                .afterInside(StvnTypes.LBRACE, StvnTypes.META_BLOCK).lineBreakInCode()
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.META_BLOCK).lineBreakInCode()
                 .afterInside(StvnTypes.LBRACE, StvnTypes.DEFS_ENTRY).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.DEFS_ENTRY).lineBreakInCode()
                 .afterInside(StvnTypes.LBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
@@ -118,6 +121,10 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .beforeInside(StvnTypes.COMMENT, StvnParserDefinition.FILE).lineBreakInCode()
 
                 // Entries inside documents separated by line breaks
+                .between(StvnTypes.META_ELEMENT, StvnTypes.META_ELEMENT).lineBreakInCode()
+                .between(StvnTypes.META_ENTRY, StvnTypes.DEFS_ENTRY).lineBreakInCode()
+                .between(StvnTypes.META_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
+                .between(StvnTypes.META_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
 
