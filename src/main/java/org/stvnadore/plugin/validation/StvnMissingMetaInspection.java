@@ -116,7 +116,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
 
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
-                if (metaEntry == null) {
+                if (metaEntry == null && !hasMetaHeader(file)) {
                     rootProblemRegistered = true;
                     PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
                     var targetElement = anchor != null ? anchor : file;
@@ -214,7 +214,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             return null;
         }
         var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
-        if (metaEntry == null) {
+        if (metaEntry == null && !hasMetaHeader(file)) {
             String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
             String message = (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_bd") || file.getName().endsWith(".stvn_di"))
                 ? StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH)
@@ -232,6 +232,36 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             };
         }
         return null;
+    }
+
+    /**
+     * Checks whether :meta is lexically present in the file text or leaf tokens.
+     * Suppresses false ERR_DOCUMENT_KIND_MISMATCH diagnostics during parser rollback.
+     */
+    private static boolean hasMetaHeader(PsiFile file) {
+        var node = file.getNode();
+        if (node != null && node.findChildByType(StvnTypes.KW_META) != null) {
+            return true;
+        }
+        CharSequence text = file.getViewProvider().getContents();
+        String str = text.toString();
+        int metaIdx = str.indexOf(":meta");
+        while (metaIdx != -1) {
+            int lineStart = str.lastIndexOf('\n', metaIdx);
+            lineStart = lineStart == -1 ? 0 : lineStart + 1;
+            String linePrefix = str.substring(lineStart, metaIdx).trim();
+            if (!linePrefix.startsWith("//")) {
+                int openBraceIdx = str.indexOf('{', metaIdx);
+                if (openBraceIdx != -1) {
+                    String inBetween = str.substring(metaIdx + 5, openBraceIdx).trim();
+                    if (inBetween.isEmpty() || inBetween.startsWith("//") || inBetween.startsWith("/*")) {
+                        return true;
+                    }
+                }
+            }
+            metaIdx = str.indexOf(":meta", metaIdx + 5);
+        }
+        return false;
     }
 
     /**

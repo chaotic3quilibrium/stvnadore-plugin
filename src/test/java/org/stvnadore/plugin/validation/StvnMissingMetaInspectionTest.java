@@ -237,4 +237,29 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
         assertFalse("Expected missing :meta error on line 1 '{' for .stvn_i with :defs", errors.isEmpty());
         assertEquals("{", errors.get(0).getText());
     }
+
+    /**
+     * Verifies that when :meta is present, a syntax error in :defs (e.g. :Tuplex)
+     * does NOT falsely trigger missing :meta inspection on line 1 '{'.
+     */
+    public void testMetaPreservedWhenDefsContainsSyntaxError() {
+        var content = """
+            {
+              :meta {
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :TradeBatch :Tuplex( :BatchId :ExecutionReport )
+              }
+              :type :TradeBatch
+              :body ( 101 )
+            }
+            """;
+        myFixture.configureByText("order_batch.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var missingMetaErrors = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Payload include document requires root :meta block"))
+            .toList();
+        assertTrue("Line 1 '{' must NOT report missing :meta when :meta is written in file", missingMetaErrors.isEmpty());
+    }
 }

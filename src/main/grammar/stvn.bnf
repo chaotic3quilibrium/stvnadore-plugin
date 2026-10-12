@@ -106,7 +106,7 @@
 }
 
 // --- ROOT-LEVEL ENTRY POINTS ---
-stvn_file ::= LBRACE document_body RBRACE <<eof>>
+stvn_file ::= LBRACE document_body RBRACE <<eof>> {pin=1}
 private document_body ::= meta_entry? defs_entry? (type_entry body_entry)? { recoverWhile = document_recover }
 
 private document_recover  ::= !(RBRACE)
@@ -143,12 +143,16 @@ meta_unknown_facet        ::= value_keyword (value | schema_type)?
 
 
 // --- DEFINITIONS SECTION ---
-defs_entry                ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1}
+defs_entry                ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1 recoverWhile=defs_recover}
+private defs_recover      ::= !(KW_TYPE | KW_BODY | RBRACE)
+
 defs_element              ::= include_stmt
                             | package_enclosure
                             | use_stmt
                             | type_definition
                             | constant_definition
+                            { recoverWhile=defs_element_recover }
+private defs_element_recover ::= !(RBRACE | KW_TYPE | KW_BODY | KW_INCLUDE | KW_PACKAGE | KW_USE | type_keyword | value_keyword | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME | COLL_SEQ | COLL_SET | COLL_MAP)
 
 package_enclosure         ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 package_path              ::= type_keyword
