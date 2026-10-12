@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -14,6 +15,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -21,6 +23,7 @@ import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
+import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -59,19 +62,37 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
+            private boolean rootProblemRegistered = false;
+
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                super.visitElement(element);
+                if (element.getNode() != null && element.getNode().getElementType() == StvnTypes.LBRACE) {
+                    var file = element.getContainingFile();
+                    if (file instanceof StvnFile && element == StvnMetaTemplateUtil.findRootOpeningBrace(file)) {
+                        checkRootMeta(file, element, holder);
+                    }
+                }
+            }
+
             @Override
             public void visitFile(@NotNull PsiFile file) {
                 super.visitFile(file);
-                if (!(file instanceof StvnFile)) {
-                    return;
+                if (file instanceof StvnFile) {
+                    PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
+                    var targetElement = anchor != null ? anchor : file;
+                    checkRootMeta(file, targetElement, holder);
                 }
+            }
+
+            private void checkRootMeta(PsiFile file, PsiElement targetElement, ProblemsHolder holder) {
+                if (rootProblemRegistered) return;
                 var fileName = file.getName();
-                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) {
-                    return;
-                }
+                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
 
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
                 if (metaEntry == null) {
+                    rootProblemRegistered = true;
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message;
                     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
@@ -85,31 +106,38 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                         );
                     }
-                    PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
-                    var targetElement = anchor != null ? anchor : file;
                     holder.registerProblem(
                         targetElement,
                         message,
                         ProblemHighlightType.GENERIC_ERROR,
                         new InsertMissingMetaBlockQuickFix(expectedKind)
                     );
-                } else {
-                    var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
-                    if (kindFacet == null) {
-                        String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
-                        String message = StvnDiagnosticFormatter.formatPlugin(
-                            "Root :meta block requires #kind facet matching file extension",
-                            StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
-                        );
-                        MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
-                        PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
-                        holder.registerProblem(
-                            targetElement,
-                            message,
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new InsertMissingMetaKindFacetQuickFix(expectedKind)
-                        );
-                    }
+                }
+            }
+
+            @Override
+            public void visitMetaEntry(@NotNull MetaEntry metaEntry) {
+                super.visitMetaEntry(metaEntry);
+                var file = metaEntry.getContainingFile();
+                if (file == null) return;
+                var fileName = file.getName();
+                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
+
+                var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
+                if (kindFacet == null) {
+                    String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+                    String message = StvnDiagnosticFormatter.formatPlugin(
+                        "Root :meta block requires #kind facet matching file extension",
+                        StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
+                    );
+                    MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
+                    PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
+                    holder.registerProblem(
+                        targetElement,
+                        message,
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                    );
                 }
             }
 
@@ -144,6 +172,39 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    @Override
+    public ProblemDescriptor @Nullable [] checkFile(
+            @NotNull PsiFile file,
+            @NotNull InspectionManager manager,
+            boolean isOnTheFly
+    ) {
+        if (!(file instanceof StvnFile) || !StvnMetaTemplateUtil.isMetaMandatory(file.getName())) {
+            return null;
+        }
+        if (isOnTheFly) {
+            return null;
+        }
+        var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+        if (metaEntry == null) {
+            String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
+            String message = (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_bd") || file.getName().endsWith(".stvn_di"))
+                ? StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH)
+                : StvnDiagnosticFormatter.formatPlugin("Payload include document requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
+            PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
+            PsiElement target = anchor != null ? anchor : file;
+            return new ProblemDescriptor[]{
+                manager.createProblemDescriptor(
+                    target,
+                    message,
+                    new InsertMissingMetaBlockQuickFix(expectedKind),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    isOnTheFly
+                )
+            };
+        }
+        return null;
     }
 
     /**

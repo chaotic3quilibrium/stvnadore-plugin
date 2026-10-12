@@ -815,6 +815,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return true;
         }
 
+        // 1a. Missing Meta & Document Kind Mismatch Exemption:
+        // Never suppress missing :meta or document kind mismatch diagnostics based on cited token absence
+        boolean isKindMismatchOrMissingMeta = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
+            || message.contains("Mandatory :meta block missing")
+            || message.contains("ERR_DOCUMENT_KIND_MISMATCH");
+        if (isKindMismatchOrMissingMeta) {
+            return false;
+        }
+
         // 1b. Coordinate Mismatch Verification: active buffer slice at coordinates must match cited symbol
         if (isCoordinateMismatchInActiveBuffer(file, diag)) {
             return true;
@@ -1255,6 +1264,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return false;
     }
 
+    private record IncludeNode(
+        IncludeElement directInclude,
+        String directPath,
+        PsiFile directFile,
+        List<String> pathChain,
+        String targetPath,
+        PsiFile targetFile,
+        String fileName,
+        String extension
+    ) {}
+
     private static void renderPinnedIncludeDiagnostics(
             PsiFile file,
             List<StvnDiagnostic> diagnostics,
@@ -1266,8 +1286,40 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         if (includes.isEmpty()) return;
 
-        var pinnedKeys = new java.util.HashSet<String>();
         var document = file.getViewProvider().getDocument();
+
+        var includeNodes = new java.util.ArrayList<IncludeNode>();
+        for (var incl : includes) {
+            var stringLit = incl.getStringLiteral();
+            if (stringLit == null) continue;
+            var directPath = stringLit.getText().replace("\"", "");
+            var resolvedDirect = StvnTypeReference.resolveIncludeFile(stringLit);
+            if (resolvedDirect == null) continue;
+
+            var directChain = new java.util.ArrayList<String>();
+            directChain.add(directPath);
+            includeNodes.add(new IncludeNode(
+                incl,
+                directPath,
+                resolvedDirect,
+                directChain,
+                directPath,
+                resolvedDirect,
+                resolvedDirect.getName(),
+                getExtension(resolvedDirect.getName())
+            ));
+            collectTransitiveIncludes(incl, directPath, resolvedDirect, directChain, resolvedDirect, includeNodes, new java.util.HashSet<>());
+        }
+
+        record GroupedIncludeDiag(
+            String message,
+            String directPath,
+            @Nullable VirtualFile directVirtualFile,
+            String targetPath,
+            @Nullable VirtualFile targetVirtualFile
+        ) {}
+        var groupedMap = new java.util.LinkedHashMap<PsiElement, List<GroupedIncludeDiag>>();
+        var seenMessageKeys = new java.util.HashSet<String>();
 
         for (var diag : diagnostics) {
             if (diag.severity() != DiagnosticSeverity.ERROR) continue;
@@ -1275,76 +1327,166 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
             var msg = sanitizeCompilerJargon(diag.message());
             var primaryToken = extractPrimaryToken(msg);
+            var expectedExt = extractExtensionFromMessage(msg);
 
-            // Find matching IncludeElement
-            IncludeElement targetInclude = null;
-            PsiFile targetFile = null;
-            String targetIncludePath = null;
-
-            for (var incl : includes) {
-                var stringLit = incl.getStringLiteral();
-                if (stringLit != null) {
-                    var resolvedFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                    var pathText = stringLit.getText().replace("\"", "");
-
-                    if (resolvedFile != null && !primaryToken.isEmpty() && resolvedFile.getText().contains(primaryToken)) {
-                        targetInclude = incl;
-                        targetFile = resolvedFile;
-                        targetIncludePath = pathText;
+            IncludeNode matchedNode = null;
+            if (expectedExt != null) {
+                for (var node : includeNodes) {
+                    if (node.extension().equalsIgnoreCase(expectedExt)) {
+                        matchedNode = node;
                         break;
                     }
                 }
             }
 
-            if (targetInclude == null && !includes.isEmpty()) {
-                targetInclude = includes.iterator().next();
-                var stringLit = targetInclude.getStringLiteral();
-                if (stringLit != null) {
-                    targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                    targetIncludePath = stringLit.getText().replace("\"", "");
-                }
-            }
-
-            if (targetInclude != null && targetIncludePath != null) {
-                var pinKey = targetIncludePath + ":" + msg;
-                if (!pinnedKeys.add(pinKey)) {
-                    continue;
-                }
-
-                var parentStmt = PsiTreeUtil.getParentOfType(targetInclude, IncludeStmt.class, false);
-                var targetRange = parentStmt != null ? parentStmt.getTextRange() : targetInclude.getTextRange();
-
-                var pinnedMessage = StvnDiagnosticFormatter.formatCore("Included file '" + targetIncludePath + "' contains compilation errors: " + msg, "ERR_MODULE_IMPORT");
-                var builder = holder.newAnnotation(HighlightSeverity.ERROR, pinnedMessage)
-                                    .range(targetRange);
-
-                var targetVirtualFile = targetFile != null ? targetFile.getVirtualFile() : null;
-                if (targetVirtualFile == null) {
-                    var activeVf = file.getVirtualFile();
-                    if (activeVf != null && activeVf.getParent() != null) {
-                        targetVirtualFile = activeVf.getParent().findFileByRelativePath(targetIncludePath);
-                    }
-                }
-
-                if (targetVirtualFile != null && targetVirtualFile.isValid()) {
-                    builder = builder.withFix(new OpenIncludedFileQuickFix(targetIncludePath, targetVirtualFile));
-                }
-
-                builder.create();
-
-                if (problems != null && wolf != null && virtualFile != null) {
-                    int line = 0;
-                    int col = 0;
-                    if (document != null && targetRange.getStartOffset() >= 0 && targetRange.getStartOffset() <= document.getTextLength()) {
-                        line = document.getLineNumber(targetRange.getStartOffset());
-                        col = targetRange.getStartOffset() - document.getLineStartOffset(line);
-                    }
-                    var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ pinnedMessage });
-                    if (problem != null) {
-                        problems.add(problem);
+            if (matchedNode == null && !primaryToken.isEmpty()) {
+                for (var node : includeNodes) {
+                    if (node.targetFile().getText().contains(primaryToken)) {
+                        matchedNode = node;
+                        break;
                     }
                 }
             }
+
+            if (matchedNode == null && !includeNodes.isEmpty()) {
+                matchedNode = includeNodes.get(0);
+            }
+
+            if (matchedNode != null) {
+                String attributedMsg;
+                if (matchedNode.pathChain().size() > 1) {
+                    var chainStr = String.join(" -> ", matchedNode.pathChain());
+                    attributedMsg = "In included module '" + chainStr + "': " + msg;
+                } else {
+                    attributedMsg = "Included file '" + matchedNode.directPath() + "' contains compilation errors: " + msg;
+                }
+
+                var parentStmt = PsiTreeUtil.getParentOfType(matchedNode.directInclude(), IncludeStmt.class, false);
+                var targetRangeElement = parentStmt != null ? parentStmt : matchedNode.directInclude();
+                var dedupKey = targetRangeElement.getTextOffset() + ":" + attributedMsg;
+                if (seenMessageKeys.add(dedupKey)) {
+                    var directVf = matchedNode.directFile().getVirtualFile();
+                    if (directVf == null) {
+                        var activeVf = file.getVirtualFile();
+                        if (activeVf != null && activeVf.getParent() != null) {
+                            directVf = activeVf.getParent().findFileByRelativePath(matchedNode.directPath());
+                        }
+                    }
+
+                    var targetVf = matchedNode.targetFile().getVirtualFile();
+                    if (targetVf == null) {
+                        var activeVf = file.getVirtualFile();
+                        if (activeVf != null && activeVf.getParent() != null) {
+                            targetVf = activeVf.getParent().findFileByRelativePath(matchedNode.targetPath());
+                        }
+                    }
+
+                    groupedMap.computeIfAbsent(targetRangeElement, k -> new java.util.ArrayList<>())
+                        .add(new GroupedIncludeDiag(
+                            attributedMsg,
+                            matchedNode.directPath(),
+                            directVf,
+                            matchedNode.targetPath(),
+                            targetVf
+                        ));
+                }
+            }
+        }
+
+        for (var entry : groupedMap.entrySet()) {
+            var element = entry.getKey();
+            var diagList = entry.getValue();
+            var targetRange = element.getTextRange();
+
+            String finalMessage;
+            if (diagList.size() == 1) {
+                finalMessage = StvnDiagnosticFormatter.formatCore(diagList.get(0).message(), "ERR_MODULE_IMPORT");
+            } else {
+                var sb = new StringBuilder();
+                sb.append("Included module hierarchy contains compilation errors:\n");
+                for (var d : diagList) {
+                    sb.append("• ").append(d.message()).append("\n");
+                }
+                finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
+            }
+
+            var builder = holder.newAnnotation(HighlightSeverity.ERROR, finalMessage).range(targetRange);
+            var attachedFixPaths = new java.util.HashSet<String>();
+            for (var d : diagList) {
+                if (d.directVirtualFile() != null && d.directVirtualFile().isValid() && attachedFixPaths.add(d.directPath())) {
+                    builder = builder.withFix(new OpenIncludedFileQuickFix(d.directPath(), d.directVirtualFile()));
+                }
+                if (d.targetVirtualFile() != null && d.targetVirtualFile().isValid() && attachedFixPaths.add(d.targetPath())) {
+                    builder = builder.withFix(new OpenIncludedFileQuickFix(d.targetPath(), d.targetVirtualFile()));
+                }
+            }
+            builder.create();
+
+            if (problems != null && wolf != null && virtualFile != null) {
+                int line = 0;
+                int col = 0;
+                if (document != null && targetRange.getStartOffset() >= 0 && targetRange.getStartOffset() <= document.getTextLength()) {
+                    line = document.getLineNumber(targetRange.getStartOffset());
+                    col = targetRange.getStartOffset() - document.getLineStartOffset(line);
+                }
+                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ finalMessage });
+                if (problem != null) {
+                    problems.add(problem);
+                }
+            }
+        }
+    }
+
+    private static String getExtension(String name) {
+        int idx = name.lastIndexOf('.');
+        return idx >= 0 ? name.substring(idx) : "";
+    }
+
+    private static @Nullable String extractExtensionFromMessage(String msg) {
+        int extIdx = msg.indexOf("for extension '");
+        if (extIdx >= 0) {
+            int start = extIdx + "for extension '".length();
+            int end = msg.indexOf('\'', start);
+            if (end > start) {
+                return msg.substring(start, end);
+            }
+        }
+        return null;
+    }
+
+    private static void collectTransitiveIncludes(
+            IncludeElement directInclude,
+            String directPath,
+            PsiFile directFile,
+            List<String> currentChain,
+            PsiFile currentFile,
+            List<IncludeNode> accumulator,
+            java.util.Set<String> visited
+    ) {
+        if (currentChain.size() > 10) return;
+        var childIncludes = PsiTreeUtil.findChildrenOfType(currentFile, IncludeElement.class);
+        for (var child : childIncludes) {
+            var strLit = child.getStringLiteral();
+            if (strLit == null) continue;
+            var pathText = strLit.getText().replace("\"", "");
+            var resolved = StvnTypeReference.resolveIncludeFile(strLit);
+            if (resolved == null) continue;
+            var resolvedPath = resolved.getVirtualFile() != null ? resolved.getVirtualFile().getPath() : resolved.getName();
+            if (!visited.add(resolvedPath)) continue;
+
+            var nextChain = new java.util.ArrayList<>(currentChain);
+            nextChain.add(pathText);
+            accumulator.add(new IncludeNode(
+                directInclude,
+                directPath,
+                directFile,
+                nextChain,
+                pathText,
+                resolved,
+                resolved.getName(),
+                getExtension(resolved.getName())
+            ));
+            collectTransitiveIncludes(directInclude, directPath, directFile, nextChain, resolved, accumulator, visited);
         }
     }
 

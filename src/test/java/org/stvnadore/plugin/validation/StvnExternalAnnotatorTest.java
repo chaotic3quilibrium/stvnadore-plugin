@@ -914,4 +914,58 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .anyMatch(f -> f.getText().contains("Remove prohibited '->' arrow"));
         assertTrue("Remove prohibited '->' arrow quick-fix must be available", hasRemoveArrowFix);
     }
+
+    /**
+     * Verifies that transitive include failure correctly attributes the grandchild module
+     * and groups diagnostics on the parent include statement without stacked duplicate errors,
+     * while offering quick-fixes for both files in the failure chain.
+     */
+    public void testTransitiveIncludeDiagnosticAttributionAndDeduplication() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderId {#unsigned #size 64} :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("primitives.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "primitives.stvn_d" ]
+              }
+            }
+            """;
+        myFixture.addFileToProject("events.stvn_di", eventsContent);
+
+        var orderBatchContent = """
+            {
+              :defs {
+                :include [ "events.stvn_di" ]
+              }
+            }
+            """;
+        myFixture.configureByText("order_batch.stvn_i", orderBatchContent);
+        var highlights = myFixture.doHighlighting();
+
+        var includeErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("events.stvn_di"))
+            .toList();
+
+        assertEquals("Expected exactly one grouped annotation on include statement", 1, includeErrors.size());
+        var errorDesc = includeErrors.get(0).getDescription();
+        assertTrue("Expected attribution to transitive primitives.stvn_d", errorDesc.contains("primitives.stvn_d"));
+
+        var quickFixes = myFixture.getAllQuickFixes();
+        boolean hasEventsFix = quickFixes.stream()
+            .anyMatch(f -> f.getText().contains("events.stvn_di"));
+        boolean hasPrimitivesFix = quickFixes.stream()
+            .anyMatch(f -> f.getText().contains("primitives.stvn_d"));
+        assertTrue("Expected quick-fix to open direct include events.stvn_di", hasEventsFix);
+        assertTrue("Expected quick-fix to open transitive include primitives.stvn_d", hasPrimitivesFix);
+    }
 }

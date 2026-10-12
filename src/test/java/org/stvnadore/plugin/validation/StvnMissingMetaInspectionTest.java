@@ -145,4 +145,48 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .toList();
         assertFalse("Expected missing #kind facet error", errors.isEmpty());
     }
+
+    /**
+     * Verifies that omitting a root :meta block in a definitions schema (.stvn_d) highlights root '{'.
+     */
+    public void testMissingMetaOnDefinitionsSchemaHighlightsRootBrace() {
+        var content = """
+            {
+              :defs {
+                :package :com/example {
+                  :MyId :Int
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("primitives.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Definitions schema requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error on .stvn_d document", errors.isEmpty());
+        assertEquals("{", errors.get(0).getText());
+    }
+
+    /**
+     * Verifies that omitting a root :meta block in a modular definitions schema (.stvn_di) highlights root '{'.
+     */
+    public void testMissingMetaOnModularDefsIncludeHighlightsRootBrace() {
+        var content = """
+            {
+              :defs {
+                :include [ "primitives.stvn_d" ]
+              }
+            }
+            """;
+        myFixture.configureByText("events.stvn_di", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Definitions schema requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error on .stvn_di document", errors.isEmpty());
+        assertEquals("{", errors.get(0).getText());
+    }
 }
