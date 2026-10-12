@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.browser;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -75,11 +76,11 @@ public final class StvnNamespaceSymbolCollector {
      * @return ordered list of symbol entries
      */
     public static List<StvnNamespaceSymbolEntry> collectSymbols(PsiFile file, StvnNamespaceScope scope) {
-        return switch (scope) {
+        return ReadAction.compute(() -> switch (scope) {
             case DEFS -> collectDefsSymbols(file);
             case TYPE -> collectTypeSymbols(file);
             case BODY -> collectBodySymbols(file);
-        };
+        });
     }
 
     /**
@@ -89,30 +90,32 @@ public final class StvnNamespaceSymbolCollector {
      * @return unmodifiable list of prelude symbol entries
      */
     public static List<StvnNamespaceSymbolEntry> collectPreludeSymbols(Project project) {
-        var preludeFile = StvnPreludeBridge.getPreludeFile(project);
-        var results = new ArrayList<StvnNamespaceSymbolEntry>();
-        var defs = PsiTreeUtil.findChildrenOfType(preludeFile, TypeDefinition.class);
-        for (var def : defs) {
-            var kw = def.getTypeKeyword();
-            if (kw != null) {
-                var fullText = kw.getText();
-                var leafName = fullText.contains("/") ? ":" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
-                var schemaType = def.getSchemaType();
-                var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                var source = StvnPreludeBridge.getPreludePackagePath(def);
-                results.add(new StvnNamespaceSymbolEntry(
-                    leafName,
-                    source,
-                    schemaText,
-                    0,
-                    kw,
-                    true,
-                    kw.getTextOffset(),
-                    StvnNamespaceScope.DEFS
-                ));
+        return ReadAction.compute(() -> {
+            var preludeFile = StvnPreludeBridge.getPreludeFile(project);
+            var results = new ArrayList<StvnNamespaceSymbolEntry>();
+            var defs = PsiTreeUtil.findChildrenOfType(preludeFile, TypeDefinition.class);
+            for (var def : defs) {
+                var kw = def.getTypeKeyword();
+                if (kw != null) {
+                    var fullText = kw.getText();
+                    var leafName = fullText.contains("/") ? ":" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
+                    var schemaType = def.getSchemaType();
+                    var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                    var source = StvnPreludeBridge.getPreludePackagePath(def);
+                    results.add(new StvnNamespaceSymbolEntry(
+                        leafName,
+                        source,
+                        schemaText,
+                        0,
+                        kw,
+                        true,
+                        kw.getTextOffset(),
+                        StvnNamespaceScope.DEFS
+                    ));
+                }
             }
-        }
-        return List.copyOf(results);
+            return List.copyOf(results);
+        });
     }
 
     private static List<StvnNamespaceSymbolEntry> collectDefsSymbols(PsiFile file) {

@@ -794,4 +794,64 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNull("Un-prefixed :RegisteredSchema must not exist", findEntryByName(entries, ":RegisteredSchema"));
         assertNull("Un-prefixed :TypeRegistry must not exist", findEntryByName(entries, ":TypeRegistry"));
     }
+
+    /**
+     * Verifies that collectSymbols executes safely when invoked from an unprivileged thread
+     * without a pre-existing ReadAction across all supported namespace scopes.
+     */
+    public void testCollectSymbolsThreadSafetyWithoutOuterReadAction() throws Exception {
+        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        var file = myFixture.configureByFile("browser_document.stvn");
+
+        for (var scope : StvnNamespaceScope.values()) {
+            var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                assertFalse("Worker thread must not hold read access initially",
+                    com.intellij.openapi.application.ApplicationManager.getApplication().isReadAccessAllowed());
+                return StvnNamespaceSymbolCollector.collectSymbols(file, scope);
+            });
+            var entries = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertNotNull(entries);
+            assertFalse("Entries must not be empty for scope: " + scope, entries.isEmpty());
+        }
+    }
+
+    /**
+     * Verifies that collectPreludeSymbols executes safely from an unprivileged thread
+     * without a pre-existing ReadAction.
+     */
+    public void testCollectPreludeSymbolsThreadSafetyWithoutOuterReadAction() throws Exception {
+        var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            assertFalse("Worker thread must not hold read access initially",
+                com.intellij.openapi.application.ApplicationManager.getApplication().isReadAccessAllowed());
+            return StvnNamespaceSymbolCollector.collectPreludeSymbols(getProject());
+        });
+        var entries = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertNotNull(entries);
+        assertFalse("Prelude entries must not be empty", entries.isEmpty());
+    }
+
+    /**
+     * Verifies that toggling the prelude checkbox in the Namespace Browser popup
+     * re-filters and updates the table model on the EDT without throwing read-action threading assertions.
+     */
+    public void testPopupPreludeCheckboxToggleWithoutOuterReadAction() {
+        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        var file = myFixture.configureByFile("browser_document.stvn");
+
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
+        assertNotNull(content);
+        var initialCount = content.tableModel().getItems().size();
+
+        // Simulate user clicking checkbox to include prelude symbols
+        content.showPreludeCheckBox().doClick();
+        var withPreludeCount = content.tableModel().getItems().size();
+        assertTrue("Enabling prelude must increase symbol count", withPreludeCount > initialCount);
+        assertTrue(content.headerLabel().getText().contains(withPreludeCount + " symbols"));
+
+        // Simulate user clicking checkbox again to exclude prelude symbols
+        content.showPreludeCheckBox().doClick();
+        var revertedCount = content.tableModel().getItems().size();
+        assertEquals("Disabling prelude must revert symbol count", initialCount, revertedCount);
+        assertTrue(content.headerLabel().getText().contains(revertedCount + " symbols"));
+    }
 }

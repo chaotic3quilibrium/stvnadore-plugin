@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.browser;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -46,15 +47,16 @@ public final class StvnNamespaceBrowserPopup {
     private StvnNamespaceBrowserPopup() {
     }
 
-    /**
-     * Constructs and displays the namespace browser popup filtered to the given scope.
-     *
-     * @param project the active IntelliJ project
-     * @param file the source STVN file
-     * @param scope the initial section scope
-     */
-    public static void showPopup(Project project, PsiFile file, StvnNamespaceScope scope) {
-        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, scope);
+    record BrowserContent(
+        JPanel panel,
+        JBTable table,
+        JBCheckBox showPreludeCheckBox,
+        StvnNamespaceTableModel tableModel,
+        JBLabel headerLabel
+    ) {}
+
+    static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
+        var entries = ReadAction.compute(() -> StvnNamespaceSymbolCollector.collectSymbols(file, scope));
         var tableModel = new StvnNamespaceTableModel(entries);
         var table = new JBTable(tableModel);
 
@@ -75,15 +77,18 @@ public final class StvnNamespaceBrowserPopup {
         var showPreludeCheckBox = new JBCheckBox("Show Standard Library Prelude", false);
         showPreludeCheckBox.addActionListener(e -> {
             boolean selected = showPreludeCheckBox.isSelected();
-            var updatedEntries = new ArrayList<>(StvnNamespaceSymbolCollector.collectSymbols(file, scope));
-            if (selected) {
-                var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(file.getProject());
-                for (var pe : preludeEntries) {
-                    if (!updatedEntries.contains(pe)) {
-                        updatedEntries.add(pe);
+            var updatedEntries = ReadAction.compute(() -> {
+                var list = new ArrayList<>(StvnNamespaceSymbolCollector.collectSymbols(file, scope));
+                if (selected) {
+                    var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(file.getProject());
+                    for (var pe : preludeEntries) {
+                        if (!list.contains(pe)) {
+                            list.add(pe);
+                        }
                     }
                 }
-            }
+                return list;
+            });
             tableModel.setItems(updatedEntries);
             headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + updatedEntries.size() + " symbols)");
         });
@@ -92,6 +97,22 @@ public final class StvnNamespaceBrowserPopup {
 
         var scrollPane = new JBScrollPane(table);
         panel.add(scrollPane, BorderLayout.CENTER);
+
+        return new BrowserContent(panel, table, showPreludeCheckBox, tableModel, headerLabel);
+    }
+
+    /**
+     * Constructs and displays the namespace browser popup filtered to the given scope.
+     *
+     * @param project the active IntelliJ project
+     * @param file the source STVN file
+     * @param scope the initial section scope
+     */
+    public static void showPopup(Project project, PsiFile file, StvnNamespaceScope scope) {
+        var content = createBrowserContent(project, file, scope);
+        var panel = content.panel();
+        var table = content.table();
+        var tableModel = content.tableModel();
 
         var popupRef = new JBPopup[1];
 
@@ -261,10 +282,16 @@ public final class StvnNamespaceBrowserPopup {
 
         var targetPsi = entry.targetElement();
         if (targetPsi != null) {
-            var targetFile = targetPsi.getContainingFile();
-            if (targetFile != null && targetFile.getVirtualFile() != null) {
+            var targetVirtualFile = ReadAction.compute(() -> {
+                if (targetPsi.isValid()) {
+                    var targetFile = targetPsi.getContainingFile();
+                    return targetFile != null ? targetFile.getVirtualFile() : null;
+                }
+                return null;
+            });
+            if (targetVirtualFile != null) {
                 FileEditorManager.getInstance(project).openTextEditor(
-                    new OpenFileDescriptor(project, targetFile.getVirtualFile(), entry.navigationOffset()),
+                    new OpenFileDescriptor(project, targetVirtualFile, entry.navigationOffset()),
                     true
                 );
                 return;

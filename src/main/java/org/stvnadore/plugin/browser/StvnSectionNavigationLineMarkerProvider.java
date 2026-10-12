@@ -2,6 +2,7 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
 import com.intellij.codeInsight.daemon.LineMarkerProvider;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.psi.PsiElement;
 import org.jspecify.annotations.NullMarked;
@@ -37,7 +38,12 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
                 element.getTextRange(),
                 StvnIcons.STVN_DEFS,
                 elt -> "Browse :defs namespace dependencies",
-                (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.DEFS),
+                (e, elt) -> {
+                    var file = ReadAction.compute(elt::getContainingFile);
+                    if (file != null) {
+                        StvnNamespaceBrowserPopup.showPopup(elt.getProject(), file, StvnNamespaceScope.DEFS);
+                    }
+                },
                 GutterIconRenderer.Alignment.RIGHT,
                 () -> "STVN Section Navigation (:defs)"
             );
@@ -49,7 +55,12 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
                 element.getTextRange(),
                 StvnIcons.STVN,
                 elt -> "Browse :type schema contract dependencies",
-                (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.TYPE),
+                (e, elt) -> {
+                    var file = ReadAction.compute(elt::getContainingFile);
+                    if (file != null) {
+                        StvnNamespaceBrowserPopup.showPopup(elt.getProject(), file, StvnNamespaceScope.TYPE);
+                    }
+                },
                 GutterIconRenderer.Alignment.RIGHT,
                 () -> "STVN Section Navigation (:type)"
             );
@@ -61,7 +72,12 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
                 element.getTextRange(),
                 StvnIcons.STVN,
                 elt -> "Browse :body payload dependencies",
-                (e, elt) -> StvnNamespaceBrowserPopup.showPopup(elt.getProject(), elt.getContainingFile(), StvnNamespaceScope.BODY),
+                (e, elt) -> {
+                    var file = ReadAction.compute(elt::getContainingFile);
+                    if (file != null) {
+                        StvnNamespaceBrowserPopup.showPopup(elt.getProject(), file, StvnNamespaceScope.BODY);
+                    }
+                },
                 GutterIconRenderer.Alignment.RIGHT,
                 () -> "STVN Section Navigation (:body)"
             );

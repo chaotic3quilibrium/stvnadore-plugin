@@ -4,6 +4,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.application.ReadAction;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
 
@@ -31,8 +32,10 @@ public final class StvnBrowseNamespaceAction extends AnAction {
         }
 
         var offset = editor.getCaretModel().getOffset();
-        var element = file.findElementAt(offset);
-        var scope = StvnNamespaceScope.resolveFromElement(element);
+        var scope = ReadAction.compute(() -> {
+            var element = file.findElementAt(offset);
+            return StvnNamespaceScope.resolveFromElement(element);
+        });
 
         StvnNamespaceBrowserPopup.showPopup(project, file, scope);
     }
