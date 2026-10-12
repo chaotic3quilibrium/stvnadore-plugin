@@ -15,18 +15,17 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.plugin.StvnDefinitionsFile;
-import org.stvnadore.plugin.StvnDefsIncludeFile;
 import org.stvnadore.plugin.StvnFile;
-import org.stvnadore.plugin.StvnPayloadIncludeFile;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.Visitor;
 
 /**
- * Validates presence of root :meta blocks on definitions schemas (.stvn_d, .stvn_di)
- * and modular payload documents (.stvn_i), verifying that #kind matches the document
+ * Validates presence of root :meta blocks on definitions schemas (.stvn_d, .stvn_di, .stvn_bd)
+ * and modular payload documents (.stvn_i, .stvn_b), verifying that #kind matches the document
  * file extension (ERR_DOCUMENT_KIND_MISMATCH).
  */
 @NullMarked
@@ -67,31 +66,50 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     return;
                 }
                 var fileName = file.getName();
-                boolean isDefs = file instanceof StvnDefinitionsFile || fileName.endsWith(".stvn_d");
-                boolean isDefsIncl = file instanceof StvnDefsIncludeFile || fileName.endsWith(".stvn_di");
-                boolean isPayloadIncl = file instanceof StvnPayloadIncludeFile || fileName.endsWith(".stvn_i");
+                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) {
+                    return;
+                }
 
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
-                if ((isDefs || isDefsIncl || isPayloadIncl) && metaEntry == null) {
-                    String expectedKind;
+                if (metaEntry == null) {
+                    String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message;
-                    if (isDefs) {
-                        expectedKind = "#DEFS";
-                        message = StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
-                    } else if (isDefsIncl) {
-                        expectedKind = "#DEFS_INCLUDE";
-                        message = StvnDiagnosticFormatter.formatPlugin("Definitions schema requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
+                    if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
+                        message = StvnDiagnosticFormatter.formatPlugin(
+                            "Definitions schema requires root :meta block",
+                            StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
+                        );
                     } else {
-                        expectedKind = "#BODY_INCLUDE";
-                        message = StvnDiagnosticFormatter.formatPlugin("Payload include document requires root :meta block", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH);
+                        message = StvnDiagnosticFormatter.formatPlugin(
+                            "Payload include document requires root :meta block",
+                            StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
+                        );
                     }
-                    var targetElement = file.getFirstChild() != null ? file.getFirstChild() : file;
+                    PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
+                    var targetElement = anchor != null ? anchor : file;
                     holder.registerProblem(
                         targetElement,
                         message,
                         ProblemHighlightType.GENERIC_ERROR,
                         new InsertMissingMetaBlockQuickFix(expectedKind)
                     );
+                } else {
+                    var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
+                    if (kindFacet == null) {
+                        String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+                        String message = StvnDiagnosticFormatter.formatPlugin(
+                            "Root :meta block requires #kind facet matching file extension",
+                            StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
+                        );
+                        MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
+                        PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
+                        holder.registerProblem(
+                            targetElement,
+                            message,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                        );
+                    }
                 }
             }
 
@@ -102,13 +120,13 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 if (file == null) return;
                 var fileName = file.getName();
                 String expected = null;
-                if (fileName.endsWith(".stvn_d")) {
+                if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd")) {
                     expected = "#DEFS";
                 } else if (fileName.endsWith(".stvn_di")) {
                     expected = "#DEFS_INCLUDE";
                 } else if (fileName.endsWith(".stvn_i")) {
                     expected = "#BODY_INCLUDE";
-                } else if (fileName.endsWith(".stvn")) {
+                } else if (fileName.endsWith(".stvn") || fileName.endsWith(".stvn_b")) {
                     expected = "#BODY";
                 }
 
@@ -149,23 +167,38 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             if (element == null) return;
             PsiFile file = element.getContainingFile();
             if (file == null) return;
+            StvnMetaTemplateUtil.insertCanonicalMetaBlock(project, file, null);
+        }
+    }
+
+    /**
+     * Quick-fix inserting missing #kind facet into existing :meta block.
+     */
+    public static final class InsertMissingMetaKindFacetQuickFix implements LocalQuickFix {
+        private final String expectedKind;
+
+        public InsertMissingMetaKindFacetQuickFix(String expectedKind) {
+            this.expectedKind = expectedKind;
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Insert missing #kind facet";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            PsiElement element = descriptor.getPsiElement();
+            if (element == null) return;
+            PsiFile file = element.getContainingFile();
+            if (file == null) return;
             Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc == null) return;
 
-            String fileName = file.getName();
-            String[] parts = fileName.split("\\.");
-            String stem = parts.length > 0 ? parts[0] : "schema";
-            String domain = parts.length > 2 ? parts[1] : "place_holder";
-            String metaBlock = "\n  :meta {\n    #name \"" + stem + "\"\n    #domain \"" + domain + "\"\n    #kind " + kind + "\n  }\n";
-
-            String text = doc.getText();
-            int lbraceIdx = text.indexOf('{');
-            if (lbraceIdx >= 0) {
-                doc.insertString(lbraceIdx + 1, metaBlock);
-            } else {
-                doc.insertString(0, "{" + metaBlock + "\n}\n");
-            }
+            int offset = element.getTextRange().getStartOffset() + 1;
+            doc.insertString(offset, "\n    #kind " + expectedKind);
             PsiDocumentManager.getInstance(project).commitDocument(doc);
+            com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(element);
         }
     }
 

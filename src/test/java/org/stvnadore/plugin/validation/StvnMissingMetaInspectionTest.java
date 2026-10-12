@@ -82,9 +82,9 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that InsertMissingMetaBlockQuickFix defaults to place_holder domain when filename stem slot 1 is absent.
+     * Verifies that InsertMissingMetaBlockQuickFix omits domain when filename stem slot 1 is absent.
      */
-    public void testQuickFixGeneratesPlaceholderDomainWhenStemSlot1Absent() {
+    public void testQuickFixOmitsDomainWhenStemSlot1Absent() {
         var content = """
             {
               :body [ 1 2 3 ]
@@ -99,7 +99,50 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
 
         var text = myFixture.getFile().getText();
         assertTrue("Expected #name \"json_example\"", text.contains("#name \"json_example\""));
-        assertTrue("Expected #domain \"place_holder\"", text.contains("#domain \"place_holder\""));
+        assertFalse("Expected #domain omitted when stem slot 1 absent", text.contains("#domain"));
         assertTrue("Expected #kind #BODY_INCLUDE", text.contains("#kind #BODY_INCLUDE"));
+    }
+
+    /**
+     * Verifies that missing :meta error highlights anchor to opening brace when preceded by comments.
+     */
+    public void testMissingMetaAnchorsToOpeningBraceWhenPrecededByComments() {
+        var content = """
+            // @spec: SPEC-09-MODULES
+            // Header comment with {brace in comment}
+            {
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("commented_payload.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error", errors.isEmpty());
+        var error = errors.get(0);
+        assertEquals("{", error.getText());
+    }
+
+    /**
+     * Verifies that existing :meta block missing #kind facet triggers error diagnostic.
+     */
+    public void testMetaBlockMissingKindFacetTriggersError() {
+        var content = """
+            {
+              :meta {
+                #name "example"
+              }
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("incomplete_meta.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires #kind facet"))
+            .toList();
+        assertFalse("Expected missing #kind facet error", errors.isEmpty());
     }
 }
