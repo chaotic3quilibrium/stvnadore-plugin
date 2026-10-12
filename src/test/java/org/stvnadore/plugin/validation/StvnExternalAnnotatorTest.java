@@ -980,4 +980,168 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertNotNull("CollectedInfo must not be null", collected);
         assertEquals(file.getText(), collected.text());
     }
+
+    /**
+     * Verifies that when an included child module contains an adornment/empty metadata map error
+     * (such as {#sizex 64}), the coordinates do not bleed onto parent tokens (such as :package),
+     * and the diagnostic pins strictly to the parent :include statement.
+     */
+    public void testIncludedModuleEmptyMetadataMapDoesNotBleedCoordinatesToPackageEnclosure() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderId {#unsigned #size 64} :Int
+                  :Int64 {#sizex 64} :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("prim_meta_err.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "prim_meta_err.stvn_d" ]
+                :package :com/nyse/events {
+                  :AgencySide :Int
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("events_meta_err.stvn_di", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Assert :package :com/nyse/events receives ZERO error squiggles
+        int pkgOffset = eventsContent.indexOf(":package :com/nyse/events");
+        var pkgRange = new com.intellij.openapi.util.TextRange(pkgOffset, pkgOffset + ":package :com/nyse/events".length());
+
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(highlight.getStartOffset(), highlight.getEndOffset());
+                assertFalse("Parent package enclosure must not receive child error squiggly: " + highlight.getDescription(),
+                    hRange.intersects(pkgRange));
+            }
+        }
+
+        // 2. Assert error pins strictly to the :include statement
+        int includeOffset = eventsContent.indexOf(":include");
+        boolean foundPinnedError = false;
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                if (highlight.getStartOffset() <= includeOffset && highlight.getEndOffset() >= includeOffset) {
+                    foundPinnedError = true;
+                    assertTrue("Pinned annotation must identify child include: " + highlight.getDescription(),
+                        highlight.getDescription().contains("prim_meta_err.stvn_d"));
+                }
+            }
+        }
+        assertTrue("Parent :include statement must receive pinned child error annotation", foundPinnedError);
+    }
+
+    /**
+     * Verifies that hover tooltips on :include statements render clean HTML lists with <br/>
+     * and &bull; bullet points instead of collapsed run-on paragraphs.
+     */
+    public void testIncludeTooltipRendersCleanHtmlWithoutRunOnParagraph() {
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :Bad1 :UndefType1
+                  :Bad2 :UndefType2
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("html_tooltip_prim.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :defs {
+                :include [ "html_tooltip_prim.stvn_d" ]
+              }
+            }
+            """;
+        myFixture.configureByText("html_tooltip_events.stvn_di", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        int includeOffset = eventsContent.indexOf(":include");
+        com.intellij.codeInsight.daemon.impl.HighlightInfo pinnedHighlight = null;
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR &&
+                highlight.getStartOffset() <= includeOffset && highlight.getEndOffset() >= includeOffset) {
+                pinnedHighlight = highlight;
+                break;
+            }
+        }
+        assertNotNull("Include statement must receive error highlight", pinnedHighlight);
+        var tooltip = pinnedHighlight.getToolTip();
+        assertNotNull("Highlight must provide rich HTML tooltip", tooltip);
+        assertTrue("Tooltip must start with <html> tag: " + tooltip, tooltip.startsWith("<html>"));
+        assertTrue("Tooltip must contain HTML line break <br/>: " + tooltip, tooltip.contains("<br/>"));
+        assertTrue("Tooltip must contain bullet entity &bull;: " + tooltip, tooltip.contains("&bull;"));
+        assertFalse("Tooltip must not contain repeated file prefix per bullet: " + tooltip,
+            tooltip.contains("contains compilation errors: &bull; Included file"));
+    }
+
+    /**
+     * Verifies that when a leaf dependency fails, the root cause structural error is prioritized
+     * ahead of secondary cascading undefined type noise in the grouped diagnostics list.
+     */
+    public void testDeepestFailedDependencyPrioritizedOverCascadingUndefinedTypes() {
+        var leafContent = """
+            {
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderId {#unsigned #size 64} :Int
+                  :Int64 {#sizex 64} :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("prio_leaf.stvn_d", leafContent);
+
+        var intermediateContent = """
+            {
+              :defs {
+                :include [ "prio_leaf.stvn_d" ]
+                :package :com/nyse/events {
+                  :ExecReport :Tuple( :OrderId )
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("prio_intermediate.stvn_di", intermediateContent);
+
+        var rootContent = """
+            {
+              :defs {
+                :include [ "prio_intermediate.stvn_di" ]
+              }
+            }
+            """;
+        myFixture.configureByText("prio_root.stvn_i", rootContent);
+        var highlights = myFixture.doHighlighting();
+
+        int includeOffset = rootContent.indexOf(":include");
+        com.intellij.codeInsight.daemon.impl.HighlightInfo pinnedHighlight = null;
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR &&
+                highlight.getStartOffset() <= includeOffset && highlight.getEndOffset() >= includeOffset) {
+                pinnedHighlight = highlight;
+                break;
+            }
+        }
+        assertNotNull("Root include statement must receive error highlight", pinnedHighlight);
+        var tooltip = pinnedHighlight.getToolTip();
+        assertNotNull("Highlight must provide HTML tooltip", tooltip);
+
+        // Root cause error in leaf (Empty metadata block is invalid) must appear before cascading undefined type noise in tooltip
+        int rootCauseIdx = tooltip.indexOf("Empty metadata block is invalid");
+        assertTrue("Leaf root cause error must be present in tooltip: " + tooltip, rootCauseIdx >= 0);
+        int undefTypeIdx = tooltip.indexOf("Undefined type: :OrderId");
+        assertTrue("Cascading undefined type error must be present in tooltip: " + tooltip, undefTypeIdx >= 0);
+        assertTrue("Leaf root cause must appear before cascading undefined type noise in tooltip: " + tooltip, rootCauseIdx < undefTypeIdx);
+    }
 }
