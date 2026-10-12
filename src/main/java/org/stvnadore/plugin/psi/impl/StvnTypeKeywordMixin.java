@@ -5,9 +5,11 @@ import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiNameIdentifierOwner;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.SearchScope;
+import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -19,27 +21,32 @@ import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 
 @NullMarked
-public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implements TypeKeyword, com.intellij.psi.PsiNameIdentifierOwner, Navigatable {
+public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implements TypeKeyword, PsiNameIdentifierOwner, Navigatable {
 
-    protected StvnTypeKeywordMixin(ASTNode node) {
+    public StvnTypeKeywordMixin(@NotNull ASTNode node) {
         super(node);
     }
 
     @Override
-    public @Nullable PsiElement getNameIdentifier() {
+    public @NotNull PsiElement getNameIdentifier() {
         return this;
     }
 
     @Override
-    public String getName() {
+    public int getTextOffset() {
+        return getTextRange().getStartOffset();
+    }
+
+    @Override
+    public @Nullable String getName() {
         var text = getText();
         return text.startsWith(":") ? text.substring(1) : text;
     }
 
     @Override
-    public PsiElement setName(@NotNull String name) throws com.intellij.util.IncorrectOperationException {
+    public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
         if (name.startsWith(":") || name.startsWith("#")) {
-            throw new com.intellij.util.IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
+            throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
         }
         var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(getProject(), ":" + name);
         return replace(newKw);

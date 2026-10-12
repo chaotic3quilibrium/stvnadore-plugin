@@ -3,6 +3,7 @@ package org.stvnadore.plugin.reference;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReferenceBase;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -72,26 +73,33 @@ public final class StvnMetaReference extends PsiReferenceBase<PsiElement> {
     @Override
     public @Nullable PsiElement resolve() {
         var containingFile = getElement().getContainingFile();
-        if (StvnPreludeBridge.isPreludeFile(containingFile)) {
-            if (isVariantReference) {
-                return StvnPreludeBridge.resolvePreludeEnumVariant(
+        var project = getElement().getProject();
+
+        if (isVariantReference) {
+            if (StvnPreludeBridge.isPreludeFile(containingFile)) {
+                var local = StvnPreludeBridge.resolvePreludeEnumVariant(
                     containingFile,
                     ":org/stvnadore/prelude/meta/StvnDocumentKind",
                     targetFqniOrVariant
                 );
+                if (local != null) return local;
             }
-            return StvnPreludeBridge.resolvePreludeType(containingFile, targetFqniOrVariant);
-        }
-
-        var project = getElement().getProject();
-        if (isVariantReference) {
             return StvnPreludeBridge.resolvePreludeEnumVariant(
                 project,
                 ":org/stvnadore/prelude/meta/StvnDocumentKind",
                 targetFqniOrVariant
             );
         }
-        return StvnPreludeBridge.resolvePreludeType(project, targetFqniOrVariant);
+
+        // Return TypeKeyword so IntelliJ's CtrlMouseHandler paints the hyperlink underline
+        if (StvnPreludeBridge.isPreludeFile(containingFile)) {
+            var localDef = StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, targetFqniOrVariant);
+            if (localDef != null && localDef.getTypeKeyword() != null) {
+                return localDef.getTypeKeyword();
+            }
+        }
+        var globalDef = StvnPreludeBridge.resolvePreludeTypeDefinition(project, targetFqniOrVariant);
+        return globalDef != null ? globalDef.getTypeKeyword() : null;
     }
 
     @Override
@@ -102,6 +110,14 @@ public final class StvnMetaReference extends PsiReferenceBase<PsiElement> {
         if (manager.areElementsEquivalent(resolved, element)) return true;
         var parent = resolved.getParent();
         if (parent != null && manager.areElementsEquivalent(parent, element)) return true;
+        if (element.getParent() != null && manager.areElementsEquivalent(resolved, element.getParent())) return true;
+
+        // Accept both TypeKeyword and parent TypeDefinition
+        var resolvedTypeDef = (resolved instanceof TypeDefinition td) ? td : PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+        var elemTypeDef = (element instanceof TypeDefinition td) ? td : PsiTreeUtil.getParentOfType(element, TypeDefinition.class);
+        if (resolvedTypeDef != null && elemTypeDef != null && manager.areElementsEquivalent(resolvedTypeDef, elemTypeDef)) {
+            return true;
+        }
 
         if (StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
             && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {

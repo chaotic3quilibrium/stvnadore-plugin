@@ -131,31 +131,28 @@ public final class StvnPreludeBridge {
      * @param nameOrFqni the type identifier or FQNI to resolve
      * @return the resolved TypeDefinition element, or {@code null} if not found
      */
-    public static @Nullable TypeDefinition resolvePreludeTypeDefinition(PsiFile file, String nameOrFqni) {
+    public static @Nullable TypeDefinition resolvePreludeTypeDefinition(@Nullable PsiFile file, String nameOrFqni) {
+        if (file == null) return null;
         var normName = nameOrFqni.startsWith(":") ? nameOrFqni : ":" + nameOrFqni;
+        var bareName = normName.contains("/") ? ":" + normName.substring(normName.lastIndexOf('/') + 1) : normName;
 
-        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
-        for (var pkg : packages) {
-            var pkgPath = pkg.getPackagePath();
-            var pkgPrefix = pkgPath != null ? pkgPath.getText() : "";
-            var defs = PsiTreeUtil.findChildrenOfType(pkg, TypeDefinition.class);
-            for (var def : defs) {
-                var kw = def.getTypeKeyword();
-                if (kw == null) continue;
+        // Direct search across all TypeDefinition nodes in file (immune to package structure bugs)
+        var allDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var def : allDefs) {
+            var kw = def.getTypeKeyword();
+            if (kw != null) {
                 var localName = kw.getText();
-                var fqni = pkgPrefix + "/" + (localName.startsWith(":") ? localName.substring(1) : localName);
-                if (localName.equals(normName) || fqni.equals(normName)) {
+                if (localName.equals(bareName) || localName.equals(normName)) {
                     return def;
                 }
             }
         }
 
-        var rootDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var def : rootDefs) {
-            var kw = def.getTypeKeyword();
-            if (kw != null && kw.getText().equals(normName)) {
-                return def;
-            }
+        // Defensive fallback to project prelude cache if file did not contain it
+        var project = file.getProject();
+        var fallbackFile = project.getUserData(PRELUDE_PSI_FILE_KEY);
+        if (fallbackFile != null && fallbackFile != file && fallbackFile.isValid()) {
+            return resolvePreludeTypeDefinition(fallbackFile, nameOrFqni);
         }
         return null;
     }
@@ -179,7 +176,7 @@ public final class StvnPreludeBridge {
      * @param nameOrFqni the type identifier or FQNI to resolve
      * @return the resolved TypeKeyword element, or {@code null} if not found in the prelude file
      */
-    public static @Nullable TypeKeyword resolvePreludeType(PsiFile file, String nameOrFqni) {
+    public static @Nullable TypeKeyword resolvePreludeType(@Nullable PsiFile file, String nameOrFqni) {
         var def = resolvePreludeTypeDefinition(file, nameOrFqni);
         return def != null ? def.getTypeKeyword() : null;
     }
@@ -205,15 +202,21 @@ public final class StvnPreludeBridge {
      * @param variantName the variant identifier (for example, {@code "#DEFS"})
      * @return the resolved ValueKeyword element, or {@code null} if not found in the prelude file
      */
-    public static @Nullable ValueKeyword resolvePreludeEnumVariant(PsiFile file, String enumFqni, String variantName) {
+    public static @Nullable ValueKeyword resolvePreludeEnumVariant(@Nullable PsiFile file, String enumFqni, String variantName) {
+        if (file == null) return null;
         var def = resolvePreludeTypeDefinition(file, enumFqni);
-        if (def == null) return null;
-        var schemaType = def.getSchemaType();
-        if (schemaType == null || schemaType.getSchemaConstructor() == null) return null;
-        var sumType = schemaType.getSchemaConstructor().getSumType();
-        if (sumType == null || sumType.getEnumDef() == null) return null;
-        for (var valKw : sumType.getEnumDef().getValueKeywordList()) {
-            if (valKw.getText().equals(variantName)) {
+        if (def != null) {
+            var valKws = PsiTreeUtil.findChildrenOfType(def, ValueKeyword.class);
+            for (var valKw : valKws) {
+                if (valKw.getText().equals(variantName)) {
+                    return valKw;
+                }
+            }
+        }
+        // Direct file scan fallback if def traversal missed it
+        var allValKws = PsiTreeUtil.findChildrenOfType(file, ValueKeyword.class);
+        for (var valKw : allValKws) {
+            if (valKw.getText().equals(variantName) && valKw.getParent() instanceof org.stvnadore.psi.EnumDef) {
                 return valKw;
             }
         }
