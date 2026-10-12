@@ -189,4 +189,52 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
         assertFalse("Expected missing :meta error on .stvn_di document", errors.isEmpty());
         assertEquals("{", errors.get(0).getText());
     }
+
+    /**
+     * Verifies that missing :meta is pinned to line 1 '{' and provides quick-fix
+     * even when the :defs block contains errors (such as unresolved types).
+     */
+    public void testMissingMetaReportedEvenWhenDefsContainsErrors() {
+        var content = """
+            {
+              :defs {
+                :InvalidField :NonExistentType999
+              }
+            }
+            """;
+        myFixture.configureByText("broken_defs.stvn_di", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Definitions schema requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error on line 1 '{' despite errors in :defs", errors.isEmpty());
+        assertEquals("{", errors.get(0).getText());
+
+        var actions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
+        assertFalse("Expected InsertMissingMetaBlockQuickFix available despite errors in :defs", actions.isEmpty());
+    }
+
+    /**
+     * Verifies that missing :meta is pinned to line 1 '{' on payload include documents (.stvn_i)
+     * when :defs contains include statements.
+     */
+    public void testMissingMetaOnPayloadIncludeWithDefsEntry() {
+        var content = """
+            {
+              :defs {
+                :include [ "non_existent_module.stvn_d" ]
+              }
+              :body [ 10 20 30 ]
+            }
+            """;
+        myFixture.configureByText("order_batch.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Payload include document requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error on line 1 '{' for .stvn_i with :defs", errors.isEmpty());
+        assertEquals("{", errors.get(0).getText());
+    }
 }

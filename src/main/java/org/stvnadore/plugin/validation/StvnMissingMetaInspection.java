@@ -19,11 +19,14 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -67,25 +70,47 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             @Override
             public void visitElement(@NotNull PsiElement element) {
                 super.visitElement(element);
-                if (element.getNode() != null && element.getNode().getElementType() == StvnTypes.LBRACE) {
+                if (!rootProblemRegistered) {
                     var file = element.getContainingFile();
-                    if (file instanceof StvnFile && element == StvnMetaTemplateUtil.findRootOpeningBrace(file)) {
-                        checkRootMeta(file, element, holder);
+                    if (file instanceof StvnFile && StvnMetaTemplateUtil.isMetaMandatory(file.getName())) {
+                        checkRootMeta(file, holder);
                     }
+                }
+            }
+
+            @Override
+            public void visitDefsEntry(@NotNull DefsEntry o) {
+                super.visitDefsEntry(o);
+                if (!rootProblemRegistered) {
+                    checkRootMeta(o.getContainingFile(), holder);
+                }
+            }
+
+            @Override
+            public void visitBodyEntry(@NotNull BodyEntry o) {
+                super.visitBodyEntry(o);
+                if (!rootProblemRegistered) {
+                    checkRootMeta(o.getContainingFile(), holder);
+                }
+            }
+
+            @Override
+            public void visitTypeEntry(@NotNull TypeEntry o) {
+                super.visitTypeEntry(o);
+                if (!rootProblemRegistered) {
+                    checkRootMeta(o.getContainingFile(), holder);
                 }
             }
 
             @Override
             public void visitFile(@NotNull PsiFile file) {
                 super.visitFile(file);
-                if (file instanceof StvnFile) {
-                    PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
-                    var targetElement = anchor != null ? anchor : file;
-                    checkRootMeta(file, targetElement, holder);
+                if (file instanceof StvnFile && !rootProblemRegistered) {
+                    checkRootMeta(file, holder);
                 }
             }
 
-            private void checkRootMeta(PsiFile file, PsiElement targetElement, ProblemsHolder holder) {
+            private void checkRootMeta(PsiFile file, ProblemsHolder holder) {
                 if (rootProblemRegistered) return;
                 var fileName = file.getName();
                 if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
@@ -93,6 +118,8 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
                 if (metaEntry == null) {
                     rootProblemRegistered = true;
+                    PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
+                    var targetElement = anchor != null ? anchor : file;
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message;
                     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {

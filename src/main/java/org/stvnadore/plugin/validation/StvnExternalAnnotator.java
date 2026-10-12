@@ -8,6 +8,7 @@ import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -131,6 +132,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var virtualFile = file.getVirtualFile();
         if (virtualFile == null) {
             return null;
+        }
+        // Flush all unsaved editor document buffers to physical storage on EDT
+        // to guarantee that external compiler (stvn-core) reads latest included module content.
+        var app = ApplicationManager.getApplication();
+        if (app != null && app.isDispatchThread()) {
+            FileDocumentManager.getInstance().saveAllDocuments();
         }
         return new CollectedInfo(file.getText(), virtualFile.getPath(), virtualFile, file.getProject());
     }

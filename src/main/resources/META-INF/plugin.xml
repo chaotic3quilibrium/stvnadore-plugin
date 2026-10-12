@@ -122,6 +122,11 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
 
+    <applicationListeners>
+        <listener class="org.stvnadore.plugin.validation.StvnIncludeDependencyWatcher"
+                  topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    </applicationListeners>
+
     <extensions defaultExtensionNs="com.intellij">
         <!-- 1. File Type Extension Registrations -->
         <fileType name="STVN_PAYLOAD"

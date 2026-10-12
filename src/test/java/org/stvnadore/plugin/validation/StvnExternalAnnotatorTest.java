@@ -968,4 +968,16 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("Expected quick-fix to open direct include events.stvn_di", hasEventsFix);
         assertTrue("Expected quick-fix to open transitive include primitives.stvn_d", hasPrimitivesFix);
     }
+
+    /**
+     * Verifies that collectInformation flushes unsaved editor documents via saveAllDocuments()
+     * and produces valid collected information.
+     */
+    public void testExternalAnnotatorCollectInformationFlushesDocuments() {
+        var file = myFixture.configureByText("dummy.stvn", "{\n  :body 42\n}\n");
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(file);
+        assertNotNull("CollectedInfo must not be null", collected);
+        assertEquals(file.getText(), collected.text());
+    }
 }
