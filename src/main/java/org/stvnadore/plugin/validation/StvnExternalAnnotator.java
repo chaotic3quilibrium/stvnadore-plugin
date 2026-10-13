@@ -203,7 +203,19 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         renderPinnedIncludeDiagnostics(file, rawDiagnostics, holder, problems, wolf, virtualFile);
 
         if (wolf != null && virtualFile != null) {
-            for (var diag : activeErrorDiagnostics) {
+            // Notify Wolf of all active local errors, including missing :meta even if visual annotation is deduplicated
+            var wolfErrors = new java.util.ArrayList<StvnDiagnostic>(activeErrorDiagnostics);
+            for (var diag : rawDiagnostics) {
+                if (diag.severity() == DiagnosticSeverity.ERROR && !isDiagnosticFromIncludedFile(file, diag)) {
+                    boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
+                        || diag.message().contains("Mandatory :meta block missing")
+                        || diag.message().contains("ERR_DOCUMENT_KIND_MISMATCH");
+                    if (isKindMismatch && !wolfErrors.contains(diag)) {
+                        wolfErrors.add(diag);
+                    }
+                }
+            }
+            for (var diag : wolfErrors) {
                 boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
                     || diag.message().contains("Mandatory :meta block missing")
                     || diag.message().contains("does not match file extension");
@@ -337,6 +349,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     var listLit = findMapTargetListLiteral(file, range);
                     if (listLit != null) {
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
+                    }
+
+                    // Attach InsertMissingMetaBlockQuickFix when missing root :meta is rendered as fail-safe
+                    if (isKindMismatch && s == 0) {
+                        var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
+                        annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
                     }
 
                     if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")

@@ -103,7 +103,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var trait = entry.getMetadataTrait();
-                        if (trait != null && trait.getBooleanValue() == null) {
+                        if (trait != null && trait.getBooleanValue() == null && trait.getValueKeyword() == null) {
                             var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
                             holder.registerProblem(
                                 trait,

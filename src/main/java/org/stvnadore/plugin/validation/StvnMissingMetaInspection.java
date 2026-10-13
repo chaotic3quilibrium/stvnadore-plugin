@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
@@ -7,6 +8,7 @@ import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
@@ -68,45 +70,21 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             private boolean rootProblemRegistered = false;
 
             @Override
-            public void visitElement(@NotNull PsiElement element) {
-                super.visitElement(element);
-                if (!rootProblemRegistered) {
-                    var file = element.getContainingFile();
-                    if (file instanceof StvnFile && StvnMetaTemplateUtil.isMetaMandatory(file.getName())) {
-                        checkRootMeta(file, holder);
-                    }
-                }
-            }
-
-            @Override
-            public void visitDefsEntry(@NotNull DefsEntry o) {
-                super.visitDefsEntry(o);
-                if (!rootProblemRegistered) {
-                    checkRootMeta(o.getContainingFile(), holder);
-                }
-            }
-
-            @Override
-            public void visitBodyEntry(@NotNull BodyEntry o) {
-                super.visitBodyEntry(o);
-                if (!rootProblemRegistered) {
-                    checkRootMeta(o.getContainingFile(), holder);
-                }
-            }
-
-            @Override
-            public void visitTypeEntry(@NotNull TypeEntry o) {
-                super.visitTypeEntry(o);
-                if (!rootProblemRegistered) {
-                    checkRootMeta(o.getContainingFile(), holder);
-                }
-            }
-
-            @Override
             public void visitFile(@NotNull PsiFile file) {
                 super.visitFile(file);
                 if (file instanceof StvnFile && !rootProblemRegistered) {
                     checkRootMeta(file, holder);
+                }
+            }
+
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                super.visitElement(element);
+                if (!rootProblemRegistered && "{".equals(element.getText())) {
+                    var file = element.getContainingFile();
+                    if (file instanceof StvnFile && element == StvnMetaTemplateUtil.findRootOpeningBrace(file)) {
+                        checkRootMeta(file, holder);
+                    }
                 }
             }
 
@@ -119,7 +97,6 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 if (metaEntry == null && !StvnMetaTemplateUtil.hasMetaHeader(file)) {
                     rootProblemRegistered = true;
                     PsiElement anchor = StvnMetaTemplateUtil.findRootOpeningBrace(file);
-                    var targetElement = anchor != null ? anchor : file;
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message;
                     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
@@ -134,9 +111,9 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                         );
                     }
                     holder.registerProblem(
-                        targetElement,
+                        file,
+                        anchor != null ? anchor.getTextRange() : new TextRange(0, 1),
                         message,
-                        ProblemHighlightType.GENERIC_ERROR,
                         new InsertMissingMetaBlockQuickFix(expectedKind)
                     );
                 }
@@ -237,11 +214,16 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
     /**
      * Quick-fix inserting a canonical :meta block into a definitions schema.
      */
-    public static final class InsertMissingMetaBlockQuickFix implements LocalQuickFix {
+    public static final class InsertMissingMetaBlockQuickFix implements LocalQuickFix, IntentionAction {
         private final String kind;
 
         public InsertMissingMetaBlockQuickFix(String kind) {
             this.kind = kind;
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return getFamilyName();
         }
 
         @Override
@@ -250,10 +232,30 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
         }
 
         @Override
+        public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            return true;
+        }
+
+        @Override
+        public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            if (file != null) {
+                StvnMetaTemplateUtil.insertCanonicalMetaBlock(project, file, editor);
+            }
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return true;
+        }
+
+        @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             PsiElement element = descriptor.getPsiElement();
             if (element == null) return;
             PsiFile file = element.getContainingFile();
+            if (file == null && element instanceof PsiFile pf) {
+                file = pf;
+            }
             if (file == null) return;
             StvnMetaTemplateUtil.insertCanonicalMetaBlock(project, file, null);
         }

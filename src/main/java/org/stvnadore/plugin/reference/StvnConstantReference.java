@@ -119,8 +119,9 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      * @param visited set of already visited files to prevent infinite cycles
      * @return the resolved constant definition element, or {@code null} if unresolved
      */
-    public static @Nullable PsiElement resolveConstantInFile(PsiFile file, String constName, Set<PsiFile> visited) {
-        if (!visited.add(file)) {
+    public static @Nullable PsiElement resolveConstantInFile(PsiFile file, String constName, Set<String> visited) {
+        String cycleKey = (file.getVirtualFile() != null ? file.getVirtualFile().getPath() : file.getName()) + "#" + constName;
+        if (!visited.add(cycleKey)) {
             return null;
         }
 
@@ -170,7 +171,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                 }
             }
             var optBlock = use.getUseOptionsBlock();
-            if (optBlock != null && optBlock.getText().contains("#strip")) {
+            if (optBlock != null && optBlock.getText().contains("#strip") && !constName.contains("/")) {
                 var target = use.getUseTarget();
                 if (target != null) {
                     var prefix = target.getText();
@@ -194,6 +195,18 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                     if (resolved != null) {
                         return resolved;
                     }
+                }
+            }
+        }
+
+        // 5. Standard library prelude fallback
+        var project = file.getProject();
+        if (project != null && !project.isDisposed()) {
+            var preludeFile = StvnPreludeBridge.getPreludeFile(project);
+            if (preludeFile != null && !preludeFile.equals(file)) {
+                var resolved = resolveConstantInFile(preludeFile, constName, visited);
+                if (resolved != null) {
+                    return resolved;
                 }
             }
         }

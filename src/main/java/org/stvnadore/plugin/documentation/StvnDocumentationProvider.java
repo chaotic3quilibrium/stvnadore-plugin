@@ -480,8 +480,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var value = constDef.getValue();
 
             var sb = new StringBuilder();
+            var containingFile = constDef.getContainingFile();
+            var isPrelude = containingFile != null && StvnPreludeBridge.isPreludeFile(containingFile);
+            var enclosingPkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+
+            if (isPrelude || (enclosingPkg != null && enclosingPkg.getPackagePath() != null && enclosingPkg.getPackagePath().getText().startsWith(":org/stvnadore/prelude"))) {
+                sb.append("<b>Standard Library Prelude Constant:</b> ");
+            } else {
+                sb.append("<b>Typed Constant:</b> ");
+            }
             if (keyword != null) {
-                sb.append("<b>Typed Constant:</b> ").append(keyword.getText()).append("<br/>");
+                sb.append("<code>").append(keyword.getText()).append("</code><br/>");
+            }
+            if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
+                var pkgPath = enclosingPkg.getPackagePath().getText().trim();
+                var localName = keyword != null ? keyword.getText() : "";
+                sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
+                sb.append("<b>FQNI:</b> <code>").append(pkgPath).append("/").append(localName).append("</code><br/>");
             }
             if (schemaType != null) {
                 sb.append("<b>Type:</b> ").append(StvnSchemaFormatter.formatSchema(schemaType)).append("<br/>");
@@ -1709,6 +1724,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var ref = valKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnConstantReference(valKw).resolve();
+            if (resolved instanceof ConstantDefinition targetConstDef) {
+                return targetConstDef;
+            }
             if (resolved != null && resolved.getParent() instanceof ConstantDefinition targetConstDef) {
                 return targetConstDef;
             }

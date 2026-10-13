@@ -266,7 +266,7 @@ metadata_unknown_entry    ::= value_keyword (value | schema_type)? {
   pin=1
   recoverWhile=metadata_entry_recover
 }
-metadata_trait            ::= KW_PRESERVE_INDENT boolean_value {
+metadata_trait            ::= KW_PRESERVE_INDENT (boolean_value | value_keyword) {
   pin=1
   recoverWhile=metadata_entry_recover
 }

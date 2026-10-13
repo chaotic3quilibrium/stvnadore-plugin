@@ -10,6 +10,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.ValueKeyword;
@@ -221,5 +222,42 @@ public final class StvnPreludeBridge {
             }
         }
         return null;
+    }
+
+    /**
+     * Resolves a prelude constant definition AST node by identifier or fully qualified path.
+     *
+     * @param project the active IntelliJ project
+     * @param constName the constant identifier (for example, {@code "#POSIX_ID_REGEX"})
+     * @return the resolved ConstantDefinition element, or {@code null} if not found in the prelude
+     */
+    public static @Nullable ConstantDefinition resolvePreludeConstantDefinition(Project project, String constName) {
+        var file = getPreludeFile(project);
+        if (file == null) return null;
+        var normName = constName.startsWith("#") ? constName : "#" + constName;
+        var bareName = normName.contains("/") ? "#" + normName.substring(normName.lastIndexOf('/') + 1) : normName;
+        var allConstDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
+        for (var cDef : allConstDefs) {
+            var kw = cDef.getValueKeyword();
+            if (kw != null) {
+                var text = kw.getText();
+                if (text.equals(bareName) || text.equals(normName)) {
+                    return cDef;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a prelude constant value keyword by identifier or fully qualified path.
+     *
+     * @param project the active IntelliJ project
+     * @param constName the constant identifier
+     * @return the resolved ValueKeyword element, or {@code null} if not found in the prelude
+     */
+    public static @Nullable ValueKeyword resolvePreludeConstant(Project project, String constName) {
+        var def = resolvePreludeConstantDefinition(project, constName);
+        return def != null ? def.getValueKeyword() : null;
     }
 }
