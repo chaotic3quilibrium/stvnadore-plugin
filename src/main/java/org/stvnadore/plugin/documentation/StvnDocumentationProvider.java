@@ -61,6 +61,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     @Override
+    public @Nullable String generateHoverDoc(PsiElement element, @Nullable PsiElement originalElement) {
+        return generateDoc(element, originalElement);
+    }
+
+    @Override
     public @Nullable String generateDoc(PsiElement element, @Nullable PsiElement originalElement) {
         var settings = StvnProjectSettings.getInstance(element.getProject());
         if (settings != null && !settings.getState().showHoverDocs) {
@@ -510,6 +515,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         if (target instanceof ValueKeyword valKw) {
             var text = valKw.getText().trim();
+            if (valKw.getParent() instanceof ConstantDefinition constDef) {
+                return buildTargetDocumentation(constDef, originalElement);
+            }
+            var ref = valKw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnConstantReference(valKw).resolve();
+            if (resolved instanceof ConstantDefinition cDef) {
+                return buildTargetDocumentation(cDef, originalElement);
+            }
+            if (resolved != null && resolved.getParent() instanceof ConstantDefinition cDef) {
+                return buildTargetDocumentation(cDef, originalElement);
+            }
             if (valKw.getParent() instanceof org.stvnadore.psi.EnumDef enumDef) {
                 var typeDef = PsiTreeUtil.getParentOfType(enumDef, TypeDefinition.class);
                 var typeName = (typeDef != null && typeDef.getTypeKeyword() != null) ? typeDef.getTypeKeyword().getText() : "Enum";
@@ -1861,6 +1877,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
         if (valKwAncestor != null) {
+            if (valKwAncestor.getParent() instanceof ConstantDefinition constDef) {
+                return constDef;
+            }
+            var ref = valKwAncestor.getReference();
+            var resolved = ref != null ? ref.resolve() : null;
+            if (resolved instanceof ConstantDefinition constDef) {
+                return constDef;
+            }
+            if (resolved != null && resolved.getParent() instanceof ConstantDefinition constDef) {
+                return constDef;
+            }
             return valKwAncestor;
         }
         var atomicAncestor = PsiTreeUtil.getParentOfType(contextElement, AtomicType.class);

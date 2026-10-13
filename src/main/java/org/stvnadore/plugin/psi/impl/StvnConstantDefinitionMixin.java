@@ -5,6 +5,8 @@ import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.SearchScope;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -12,6 +14,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ValueKeyword;
 
@@ -92,6 +95,15 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
                 return StvnIcons.STVN;
             }
         };
+    }
+
+    @Override
+    public @NotNull SearchScope getUseScope() {
+        var file = getContainingFile();
+        if (file != null && (StvnPreludeBridge.isPreludeFile(file) || !file.isPhysical())) {
+            return GlobalSearchScope.allScope(getProject());
+        }
+        return super.getUseScope();
     }
 
     @Override

@@ -7,16 +7,19 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.MetaNameFacet;
+import org.stvnadore.psi.ValueKeyword;
 
 /**
  * Custom Goto Declaration handler enabling direct navigation from STVN root metadata facets
- * (#name, #domain, #kind, and #DEFS) to their corresponding canonical declarations in the
- * standard library prelude.
+ * (#name, #domain, #kind, and #DEFS) and constant references (#regex #CONST) to their
+ * corresponding canonical declarations in the standard library prelude or local schemas.
  */
 @NullMarked
 public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler {
@@ -65,6 +68,23 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
             return target != null ? new PsiElement[]{ target } : null;
         }
 
+        // 5. ValueKeyword (constant references in metadata facets, body entries, or schemas)
+        var valKw = PsiTreeUtil.getParentOfType(sourceElement, ValueKeyword.class, false);
+        if (valKw != null) {
+            if (valKw.getParent() instanceof ConstantDefinition constDef && constDef.getValueKeyword() == valKw) {
+                return null;
+            }
+            if (valKw.getParent() instanceof org.stvnadore.psi.EnumDef) {
+                return null;
+            }
+            var ref = valKw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnConstantReference(valKw).resolve();
+            if (resolved != null) {
+                var target = resolved.getParent() instanceof ConstantDefinition cDef ? cDef : resolved;
+                return new PsiElement[]{ target };
+            }
+        }
+
         return null;
     }
 
@@ -77,6 +97,10 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
         var text = sourceElement.getText();
         if (text.equals("#kind") || text.equals("#name") || text.equals("#domain")) {
             return sourceElement.getTextRange();
+        }
+        var valKw = PsiTreeUtil.getParentOfType(sourceElement, ValueKeyword.class, false);
+        if (valKw != null) {
+            return valKw.getTextRange();
         }
         return sourceElement.getTextRange();
     }

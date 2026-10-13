@@ -8,8 +8,10 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.ValueKeyword;
 
 /**
  * Platform unit test suite verifying standard library prelude navigation (Ctrl+Click)
@@ -547,5 +549,80 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         var hoverDocDefs = docProvider.generateDoc(targetDefsFromUtil, file.findElementAt(defsIdx + 1));
         assertNotNull("Hover doc for #DEFS must not be null", hoverDocDefs);
         assertTrue("Hover doc must contain #DEFS variant header", hoverDocDefs.contains("<b>Document Kind Variant:</b> <code>#DEFS</code>"));
+    }
+
+    /**
+     * Verifies that navigating on a constant reference in a facet (#POSIX_ID_REGEX)
+     * returns the prelude ConstantDefinition via StvnGotoDeclarationHandler and TargetElementUtil.
+     */
+    public void testConstantReferenceInFacetNavigatesToPreludeConstant() {
+        var content = """
+            {
+              :meta {
+                #name "consumer"
+                #kind #DEFS
+              }
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :MyPosixId { #regex #POSIX_ID_REGEX } :String
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("consumer.stvn_d", content);
+        int offset = content.indexOf("#POSIX_ID_REGEX");
+        assertTrue("Must locate #POSIX_ID_REGEX in consumer document", offset >= 0);
+
+        // 1. Verify StvnGotoDeclarationHandler directly
+        var handler = new org.stvnadore.plugin.navigation.StvnGotoDeclarationHandler();
+        var element = psiFile.findElementAt(offset + 1);
+        assertNotNull("Element at offset must exist", element);
+
+        var targets = handler.getGotoDeclarationTargets(element, offset + 1, myFixture.getEditor());
+        assertNotNull("GotoDeclarationHandler must return targets for constant reference", targets);
+        assertEquals("Must return exactly one navigation target", 1, targets.length);
+        var target = targets[0];
+        assertTrue("Resolved target must be ConstantDefinition or its identifier",
+            target instanceof ConstantDefinition || (target instanceof ValueKeyword && target.getParent() instanceof ConstantDefinition));
+
+        // 2. Verify TargetElementUtil findTargetElement
+        var utilTarget = com.intellij.codeInsight.TargetElementUtil.getInstance().findTargetElement(
+            myFixture.getEditor(),
+            com.intellij.codeInsight.TargetElementUtil.getInstance().getAllAccepted(),
+            offset + 1
+        );
+        assertNotNull("TargetElementUtil.findTargetElement must return target for constant reference", utilTarget);
+
+        // 3. Verify target navigability
+        assertTrue("Target must implement Navigatable", utilTarget instanceof Navigatable);
+        var navigatable = (Navigatable) utilTarget;
+        assertTrue("canNavigate() must return true", navigatable.canNavigate());
+        assertTrue("canNavigateToSource() must return true", navigatable.canNavigateToSource());
+    }
+
+    /**
+     * Verifies that navigating on a local constant declaration or reference within the same file succeeds.
+     */
+    public void testLocalConstantReferenceNavigatesToLocalDeclaration() {
+        var content = """
+            {
+              :defs {
+                #MY_LOCAL_CONST :String "hello"
+                :MyType { #regex #MY_LOCAL_CONST } :String
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("local_const.stvn", content);
+        int refOffset = content.indexOf("#MY_LOCAL_CONST", content.indexOf(":MyType"));
+        assertTrue("Must locate reference to #MY_LOCAL_CONST", refOffset >= 0);
+
+        var handler = new org.stvnadore.plugin.navigation.StvnGotoDeclarationHandler();
+        var element = psiFile.findElementAt(refOffset + 1);
+        var targets = handler.getGotoDeclarationTargets(element, refOffset + 1, myFixture.getEditor());
+        assertNotNull("Must return targets for local constant reference", targets);
+        assertEquals(1, targets.length);
+
+        int declOffset = content.indexOf("#MY_LOCAL_CONST");
+        assertEquals("Resolved target offset must match local declaration offset",
+            declOffset, targets[0].getTextOffset());
     }
 }
