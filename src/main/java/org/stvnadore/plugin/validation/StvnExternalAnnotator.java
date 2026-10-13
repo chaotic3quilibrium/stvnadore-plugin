@@ -281,6 +281,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             // 1. Direct Coordinate Range Highlighting with Defensive Clamping
             // startOffset and endOffset from stvnadore-core:2.0.0 are 0-based half-open [start, end)
             if (start >= 0 && end >= start) {
+                var hasIncludes = !PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).isEmpty();
+                if (hasIncludes && !isLocalAstMatch(file, diag, start, end)) {
+                    LOG.debug("Diagnostic coordinates do not match active file AST element; treating as included file: " + message);
+                    continue;
+                }
+
                 var s = Math.max(0, Math.min(start, textLength));
                 var e = Math.max(s, Math.min(end, textLength));
 
@@ -1259,6 +1265,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
+        // 3a. Universal ANTLR syntax error isolation in files containing includes
+        if (isAntlrSyntaxError(diag)) {
+            if (!hasLocalSyntaxErrorAt(file, diag)) {
+                return true;
+            }
+        }
+
         // 4. Strict AST element verification at target coordinates:
         if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
             return true;
@@ -1275,6 +1288,64 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
 
         return false;
+    }
+
+    private static boolean isAntlrSyntaxError(StvnDiagnostic diag) {
+        var msg = diag.message();
+        return (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
+            || msg.contains("mismatched input")
+            || msg.contains("no viable alternative")
+            || msg.contains("extraneous input")
+            || msg.startsWith("STVN Syntax Error");
+    }
+
+    private static boolean hasLocalSyntaxErrorAt(PsiFile file, StvnDiagnostic diag) {
+        var psiErrors = PsiTreeUtil.findChildrenOfType(file, com.intellij.psi.PsiErrorElement.class);
+        if (psiErrors.isEmpty()) {
+            return false;
+        }
+        var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
+        var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
+        var range = new TextRange(s, e);
+        for (var err : psiErrors) {
+            if (err.getTextRange().intersects(range)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isLocalAstMatch(PsiFile file, StvnDiagnostic diag, int start, int end) {
+        var textLength = file.getTextLength();
+        var s = Math.max(0, Math.min(start, textLength));
+        var e = Math.max(s, Math.min(end, textLength));
+        if (s >= e) return false;
+
+        if (isAntlrSyntaxError(diag)) {
+            return hasLocalSyntaxErrorAt(file, diag);
+        }
+
+        var msg = diag.message();
+        if (msg.contains("Undefined type: ") || msg.contains("Unknown or undefined type: ") || msg.contains("Unresolved type alias: ")) {
+            var typeName = extractCitedTypeToken(msg);
+            if (!typeName.isEmpty()) {
+                var typeKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeKeyword.class);
+                return typeKw != null && typeKw.getText().trim().equals(typeName);
+            }
+        }
+        if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
+            return false;
+        }
+        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
+            return false;
+        }
+        if (msg.contains("cannot be used on left-hand side of type definition")) {
+            var typeDef = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeDefinition.class);
+            if (typeDef == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isStructuralMetadataMismatchInActiveBuffer(PsiFile file, StvnDiagnostic diag) {
@@ -1307,6 +1378,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     private static boolean isCoordinateMismatchInActiveBuffer(PsiFile file, StvnDiagnostic diag) {
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        if (includes.isEmpty()) {
+            return false;
+        }
         var start = diag.startOffset();
         var end = diag.endOffset();
         var textLength = file.getTextLength();
@@ -1324,6 +1399,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (!slice.equals(typeName) && !slice.contains(typeName) && !slice.endsWith(typeName)) {
                     return true;
                 }
+            }
+        }
+
+        if (isAntlrSyntaxError(diag)) {
+            var quoted = extractCitedTokens(msg);
+            if (!quoted.isEmpty() && !slice.contains(quoted.get(0)) && !quoted.get(0).contains(slice)) {
+                return true;
             }
         }
 
@@ -1413,6 +1495,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
             }
 
+            boolean isUndefinedType = msg.contains("Undefined type:")
+                || msg.contains("Unknown or undefined type:")
+                || msg.contains("Unresolved type alias:");
+
+            // Vector 2 Remediation: Undefined type errors occur in the file that references the type,
+            // never in the dependency file that declares the type. Exclude definition sites.
+            if (matchedNode == null && isUndefinedType && !primaryToken.isEmpty()) {
+                for (var node : sortedNodes) {
+                    if (declaresTypeDefinition(node.targetFile(), primaryToken)) {
+                        continue;
+                    }
+                    if (referencesTypeKeyword(node.targetFile(), primaryToken)) {
+                        matchedNode = node;
+                        break;
+                    }
+                }
+            }
+
             if (matchedNode == null && !primaryToken.isEmpty()) {
                 for (var node : sortedNodes) {
                     if (node.targetFile().getText().contains(primaryToken)) {
@@ -1487,6 +1587,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 return Integer.compare(b.depth(), a.depth());
             });
 
+            var rootCauses = diagList.stream().filter(GroupedIncludeDiag::isRootCause).toList();
+            var cascadingErrors = diagList.stream().filter(d -> !d.isRootCause()).toList();
+            boolean collapseNoise = !rootCauses.isEmpty() && !cascadingErrors.isEmpty();
+
             boolean isHierarchy = diagList.stream().anyMatch(d -> d.depth() > 1 || !d.targetPath().equals(d.directPath()));
             String directPath = diagList.get(0).directPath();
 
@@ -1501,6 +1605,45 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 } else {
                     htmlTooltip = "<html>Included file '" + escapeHtml(single.directPath()) + "' contains compilation errors:<br/>" +
                                   "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
+                }
+            } else if (collapseNoise) {
+                // Vector 3 Remediation: Collapse cascading undefined-type warnings to isolate root cause
+                var primaryRoot = rootCauses.get(0);
+                var count = cascadingErrors.size();
+                var summarySuffix = "\n(+" + count + " secondary cascading undefined type errors suppressed)";
+
+                if (rootCauses.size() == 1) {
+                    String plainMsg = (primaryRoot.depth() > 1
+                        ? ("In included module '" + primaryRoot.chainStr() + "': ")
+                        : ("Included file '" + primaryRoot.directPath() + "' contains compilation errors: "))
+                        + primaryRoot.rawMessage() + summarySuffix;
+                    finalMessage = StvnDiagnosticFormatter.formatCore(plainMsg, "ERR_MODULE_IMPORT");
+
+                    var htmlSb = new StringBuilder();
+                    if (primaryRoot.depth() > 1) {
+                        htmlSb.append("<html>In included module '").append(escapeHtml(primaryRoot.chainStr())).append("':<br/>");
+                    } else {
+                        htmlSb.append("<html>Included file '").append(escapeHtml(primaryRoot.directPath())).append("' contains compilation errors:<br/>");
+                    }
+                    htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(primaryRoot.rawMessage())).append("<br/><br/>");
+                    htmlSb.append("<font color=\"#888888\"><i>(+").append(count).append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                    htmlTooltip = htmlSb.toString();
+                } else {
+                    var sb = new StringBuilder();
+                    sb.append("Included module hierarchy contains compilation errors:\n");
+                    for (var r : rootCauses) {
+                        sb.append("• [").append(r.depth() > 1 ? r.chainStr() : r.directPath()).append("] ").append(r.rawMessage()).append("\n");
+                    }
+                    sb.append("(+").append(count).append(" secondary cascading undefined type errors suppressed)");
+                    finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
+
+                    var htmlSb = new StringBuilder();
+                    htmlSb.append("<html>Included module hierarchy contains compilation errors:<br/>");
+                    for (var r : rootCauses) {
+                        htmlSb.append("&nbsp;&nbsp;&bull; <i>[").append(escapeHtml(r.depth() > 1 ? r.chainStr() : r.directPath())).append("]</i> ").append(escapeHtml(r.rawMessage())).append("<br/>");
+                    }
+                    htmlSb.append("<br/><font color=\"#888888\"><i>(+").append(count).append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                    htmlTooltip = htmlSb.toString();
                 }
             } else if (!isHierarchy) {
                 var sb = new StringBuilder();
@@ -1573,6 +1716,27 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 }
             }
         }
+    }
+
+    private static boolean declaresTypeDefinition(PsiFile file, String typeName) {
+        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var def : typeDefs) {
+            var kw = def.getTypeKeyword();
+            if (kw != null && kw.getText().trim().equals(typeName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean referencesTypeKeyword(PsiFile file, String typeName) {
+        var typeKeywords = PsiTreeUtil.findChildrenOfType(file, TypeKeyword.class);
+        for (var kw : typeKeywords) {
+            if (kw.getText().trim().equals(typeName) && !org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(kw)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String getExtension(String name) {

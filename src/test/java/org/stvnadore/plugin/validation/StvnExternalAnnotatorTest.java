@@ -1137,11 +1137,149 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var tooltip = pinnedHighlight.getToolTip();
         assertNotNull("Highlight must provide HTML tooltip", tooltip);
 
-        // Root cause error in leaf (Empty metadata block is invalid) must appear before cascading undefined type noise in tooltip
+        // Root cause error in leaf (Empty metadata block is invalid) must appear prominently in tooltip
         int rootCauseIdx = tooltip.indexOf("Empty metadata block is invalid");
         assertTrue("Leaf root cause error must be present in tooltip: " + tooltip, rootCauseIdx >= 0);
-        int undefTypeIdx = tooltip.indexOf("Undefined type: :OrderId");
-        assertTrue("Cascading undefined type error must be present in tooltip: " + tooltip, undefTypeIdx >= 0);
-        assertTrue("Leaf root cause must appear before cascading undefined type noise in tooltip: " + tooltip, rootCauseIdx < undefTypeIdx);
+        assertTrue("Cascading undefined type errors must be collapsed in tooltip: " + tooltip,
+            tooltip.contains("secondary cascading undefined type errors suppressed"));
+        assertFalse("Cascading undefined type error must not appear as bullet in tooltip: " + tooltip,
+            tooltip.contains("&bull; Undefined type: :OrderId"));
+    }
+
+    /**
+     * Verifies Vector 1: Universal Coordinate Bleed Elimination.
+     * When bleed_primitives.stvn_d contains a syntax error on line 11, line 11 of bleed_events.stvn_di
+     * must receive zero error squiggles, and the error must pin strictly to :include.
+     */
+    public void testChildSyntaxErrorDoesNotBleedCoordinatesToParentPackageEnclosure() {
+        var primitivesContent = """
+            {
+              :meta {
+                #kind #DEFS
+              }
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderId1 :Int
+                  :OrderId2 :Int
+                  :OrderId3 :Int
+                  :OrderId4 :Int
+                  :BadLine {#sizex 64} :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("bleed_primitives.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :meta {
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "bleed_primitives.stvn_d" ]
+                :Dummy1 :Int
+                :Dummy2 :Int
+                :Dummy3 :Int
+                :Dummy4 :Int
+                :package :com/nyse/events {
+                  :AgencySide :Int
+                }
+              }
+            }
+            """;
+        var eventsFile = myFixture.configureByText("bleed_events.stvn_di", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Negative Assertion: Assert line 11 / :package receives zero error squiggles
+        int pkgOffset = eventsContent.indexOf(":package :com/nyse/events");
+        var pkgRange = new com.intellij.openapi.util.TextRange(pkgOffset, pkgOffset + ":package :com/nyse/events".length());
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR) {
+                var hRange = new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset());
+                assertFalse("Parent package enclosure must not receive child syntax error: " + h.getDescription(),
+                    hRange.intersects(pkgRange));
+            }
+        }
+
+        // 2. Positive Assertion: Assert error pins strictly to the :include statement
+        int includeOffset = eventsContent.indexOf(":include");
+        boolean foundPinnedError = false;
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() <= includeOffset && h.getEndOffset() >= includeOffset) {
+                foundPinnedError = true;
+                assertTrue("Pinned annotation must identify child include: " + h.getDescription(),
+                    h.getDescription().contains("bleed_primitives.stvn_d"));
+            }
+        }
+        assertTrue("Parent :include statement must receive pinned child syntax error annotation", foundPinnedError);
+    }
+
+    /**
+     * Verifies Vector 2: Attribution Inversion Elimination.
+     * Undefined type :OrderSide in undef_events.stvn_di must attribute to undef_events.stvn_di,
+     * not inverted to undef_primitives.stvn_d which declared :OrderSide.
+     */
+    public void testUndefinedTypeAttributesToConsumerNotDeclarationSite() {
+        var primitivesContent = """
+            {
+              :meta {
+                #kind #DEFS
+              }
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderSide :Enum [ #BUY #SELL #CROSS ]
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("undef_primitives.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :meta {
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "undef_primitives.stvn_d" ]
+                :package :com/nyse/events {
+                  :AgencySide :OrderSide
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("undef_events.stvn_di", eventsContent);
+
+        var rootContent = """
+            {
+              :meta {
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :include [ "undef_events.stvn_di" ]
+              }
+            }
+            """;
+        myFixture.configureByText("undef_order_batch.stvn_i", rootContent);
+        var highlights = myFixture.doHighlighting();
+
+        int includeOffset = rootContent.indexOf(":include");
+        com.intellij.codeInsight.daemon.impl.HighlightInfo pinnedHighlight = null;
+        for (var h : highlights) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() <= includeOffset && h.getEndOffset() >= includeOffset) {
+                pinnedHighlight = h;
+                break;
+            }
+        }
+        assertNotNull("Root include statement must receive error highlight", pinnedHighlight);
+        var tooltip = pinnedHighlight.getToolTip();
+        assertNotNull("Highlight must provide HTML tooltip", tooltip);
+
+        // Must NOT attribute :OrderSide to undef_primitives.stvn_d
+        assertFalse("Undefined type :OrderSide must not be attributed to undef_primitives.stvn_d: " + tooltip,
+            tooltip.contains("[undef_events.stvn_di -> undef_primitives.stvn_d] Undefined type: :OrderSide"));
+        assertTrue("Tooltip must contain Undefined type: :OrderSide: " + tooltip,
+            tooltip.contains("Undefined type: :OrderSide"));
+        assertTrue("Tooltip must attribute error to consumer undef_events.stvn_di: " + tooltip,
+            tooltip.contains("undef_events.stvn_di"));
     }
 }
