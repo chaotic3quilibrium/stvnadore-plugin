@@ -83,6 +83,38 @@ public final class StvnMetaTemplateUtil {
   }
 
   /**
+   * Checks whether the document buffer contains a root :meta block or :meta keyword header.
+   *
+   * @param file target STVN PSI file
+   * @return true if :meta header is present in file, false otherwise
+   */
+  public static boolean hasMetaHeader(@NotNull PsiFile file) {
+    var node = file.getNode();
+    if (node != null && node.findChildByType(StvnTypes.KW_META) != null) {
+      return true;
+    }
+    CharSequence text = file.getViewProvider().getContents();
+    String str = text.toString();
+    int metaIdx = str.indexOf(":meta");
+    while (metaIdx != -1) {
+      int lineStart = str.lastIndexOf('\n', metaIdx);
+      lineStart = lineStart == -1 ? 0 : lineStart + 1;
+      String linePrefix = str.substring(lineStart, metaIdx).trim();
+      if (!linePrefix.startsWith("//")) {
+        int openBraceIdx = str.indexOf('{', metaIdx);
+        if (openBraceIdx != -1) {
+          String inBetween = str.substring(metaIdx + 5, openBraceIdx).trim();
+          if (inBetween.isEmpty() || inBetween.startsWith("//") || inBetween.startsWith("/*")) {
+            return true;
+          }
+        }
+      }
+      metaIdx = str.indexOf(":meta", metaIdx + 5);
+    }
+    return false;
+  }
+
+  /**
    * Locates the root opening brace element of an STVN document, bypassing leading
    * comments and whitespace tokens.
    *

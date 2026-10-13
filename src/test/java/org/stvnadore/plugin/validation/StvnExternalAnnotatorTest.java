@@ -1346,4 +1346,142 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("Expected Empty type constraint block diagnostic: " + errorDescriptions,
             errorDescriptions.stream().anyMatch(d -> d.contains("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]")));
     }
+
+    /**
+     * Vector 1: Verifies that omitting a root :meta block in a definitions schema (.stvn_d)
+     * produces exactly ONE error diagnostic on line 1 '{' and exactly ONE quick-fix,
+     * suppressing the external annotator duplicate when the inspection is active.
+     */
+    public void testMissingMetaProducesSingleDeduplicatedDiagnosticOnLine1() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var content = """
+            {
+              :defs {
+                :package :com/example {
+                  :MyId :Int
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("missing_meta_root.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+
+        var lineOneErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getStartOffset() == 0 || "{".equals(h.getText()))
+            .toList();
+
+        assertEquals("Expected exactly one error on line 1 '{'", 1, lineOneErrors.size());
+        var desc = lineOneErrors.get(0).getDescription();
+        assertTrue("Diagnostic must originate from inspection",
+            desc.contains("[stvn-plugin:ERR_DOCUMENT_KIND_MISMATCH]"));
+
+        var actions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
+        assertEquals("Expected exactly one quick-fix intention", 1, actions.size());
+    }
+
+    /**
+     * Vector 2: Verifies that when an included file (.stvn_d) misses :meta,
+     * the error is pinned strictly to the :include statement in the active file (.stvn_di)
+     * and NEVER leaks onto line 1 '{' of the active file buffer.
+     */
+    public void testChildMissingMetaDoesNotLeakToParentLineOne() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var primitivesContent = """
+            {
+              :defs {
+                :package :com/example {
+                  :OrderId :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("child_missing_meta.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :meta {
+                #name "events"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "child_missing_meta.stvn_d" ]
+              }
+            }
+            """;
+        myFixture.configureByText("parent_events_v2.stvn_di", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        // 1. Verify line 1 has zero errors because events.stvn_di has valid :meta
+        var lineOneErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getStartOffset() == 0 || "{".equals(h.getText()))
+            .toList();
+        assertTrue("Line 1 '{' must receive zero errors", lineOneErrors.isEmpty());
+
+        // 2. Verify :include statement receives the pinned error for child_missing_meta.stvn_d
+        int includeOffset = eventsContent.indexOf(":include");
+        var includeErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getStartOffset() <= includeOffset && h.getEndOffset() >= includeOffset)
+            .toList();
+        assertEquals("Expected error pinned to :include statement", 1, includeErrors.size());
+        var incDesc = includeErrors.get(0).getDescription();
+        assertTrue("Error must cite child_missing_meta.stvn_d", incDesc.contains("child_missing_meta.stvn_d"));
+        assertTrue("Error must cite missing :meta", incDesc.contains("Mandatory :meta block missing"));
+    }
+
+    /**
+     * Vector 3: Verifies that when an included module contains multiple errors (missing :meta
+     * and invalid facet), both are collected and rendered cleanly under the direct include tooltip.
+     */
+    public void testChildMultipleErrorsRenderCleanGroupedIncludeTooltip() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var primitivesContent = """
+            {
+              :meta {
+                #name "primitives"
+                #kind #BODY
+                #sizex 64
+              }
+              :defs {
+                :package :com/example {
+                  :OrderId :Int
+                }
+              }
+            }
+            """;
+        myFixture.addFileToProject("child_multi_err.stvn_d", primitivesContent);
+
+        var eventsContent = """
+            {
+              :meta {
+                #name "events"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "child_multi_err.stvn_d" ]
+              }
+            }
+            """;
+        myFixture.configureByText("parent_events_v3.stvn_di", eventsContent);
+        var highlights = myFixture.doHighlighting();
+
+        int includeOffset = eventsContent.indexOf(":include");
+        var pinnedHighlight = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getStartOffset() <= includeOffset && h.getEndOffset() >= includeOffset)
+            .findFirst()
+            .orElse(null);
+
+        assertNotNull("Include statement must receive error highlight", pinnedHighlight);
+        var tooltip = pinnedHighlight.getToolTip();
+        assertNotNull("Highlight must provide rich HTML tooltip", tooltip);
+        assertTrue("Tooltip must have direct file header",
+            tooltip.contains("Included file 'child_multi_err.stvn_d' contains compilation errors:"));
+        assertTrue("Tooltip must include invalid facet error",
+            tooltip.contains("sizex"));
+        assertTrue("Tooltip must include document kind mismatch error",
+            tooltip.contains("Document kind") && tooltip.contains("does not match file extension"));
+    }
 }
