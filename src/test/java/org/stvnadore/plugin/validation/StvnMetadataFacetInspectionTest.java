@@ -30,7 +30,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         int offset = text.indexOf("{}");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
-        var actions = myFixture.filterAvailableIntentions("Remove empty metadata block");
+        var actions = myFixture.filterAvailableIntentions("Remove empty type constraint block");
         assertFalse("Expected quick fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
         myFixture.checkResult("""
@@ -330,5 +330,113 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
 
         assertEquals("Expected exactly 1 facet error on incompatible primitive type", 1, facetErrors.size());
         assertTrue(facetErrors.get(0).getDescription().contains("permitted facets for string types: [#equatable, #comparable, #regex"));
+    }
+
+    public void testEmptyConstraintBlockDiagnosticOnType() {
+        var text = """
+            {
+              :defs {
+                :Int64 {} :Int
+              }
+              :type :Int64
+              :body 42
+            }
+            """;
+        myFixture.configureByText("empty_type_block.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertEquals("Expected exactly 1 inspection error on empty type constraint block", 1, errors.size());
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+            errors.get(0).getDescription());
+    }
+
+    public void testEmptyConstraintBlockWithCommentOnlyOnType() {
+        var text = """
+            {
+              :defs {
+                :Int64 {
+                  // Only a comment inside constraint block
+                } :Int
+              }
+              :type :Int64
+              :body 42
+            }
+            """;
+        myFixture.configureByText("empty_comment_block.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertEquals("Expected exactly 1 inspection error on constraint block with comment only", 1, errors.size());
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+            errors.get(0).getDescription());
+    }
+
+    public void testUnrecognizedFacetSuppressesEmptyConstraintBlockDiagnostic() {
+        var text = """
+            {
+              :defs {
+                :Int64 {#sizex 64} :Int
+              }
+              :type :Int64
+              :body 42
+            }
+            """;
+        myFixture.configureByText("unrecognized_facet.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertTrue("Unrecognized facet must suppress empty constraint block diagnostic: " + errors, errors.isEmpty());
+    }
+
+    public void testUnrecognizedBareFacetSuppressesEmptyConstraintBlockDiagnostic() {
+        var text = """
+            {
+              :defs {
+                :Int64 {#customFlag} :Int
+              }
+              :type :Int64
+              :body 42
+            }
+            """;
+        myFixture.configureByText("unrecognized_bare_facet.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertTrue("Unrecognized bare facet must suppress empty constraint block diagnostic: " + errors, errors.isEmpty());
+    }
+
+    public void testEmptyConstraintBlockDiagnosticOnConstant() {
+        var text = """
+            {
+              :defs {
+                #Port {} :Int 8080
+              }
+              :type :Int
+              :body #Port
+            }
+            """;
+        myFixture.configureByText("empty_const_block.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+
+        assertEquals("Expected exactly 1 inspection error on empty constant constraint block", 1, errors.size());
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+            errors.get(0).getDescription());
     }
 }

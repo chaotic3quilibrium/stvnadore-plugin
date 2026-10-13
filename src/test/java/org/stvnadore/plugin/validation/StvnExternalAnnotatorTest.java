@@ -1137,9 +1137,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var tooltip = pinnedHighlight.getToolTip();
         assertNotNull("Highlight must provide HTML tooltip", tooltip);
 
-        // Root cause error in leaf (Empty metadata block is invalid) must appear prominently in tooltip
-        int rootCauseIdx = tooltip.indexOf("Empty metadata block is invalid");
+        // Root cause error in leaf (Unrecognized constraint facet #sizex) must appear prominently in tooltip
+        int rootCauseIdx = tooltip.indexOf("Unrecognized constraint facet");
         assertTrue("Leaf root cause error must be present in tooltip: " + tooltip, rootCauseIdx >= 0);
+        assertTrue("Tooltip must contain unrecognized facet tag: " + tooltip, tooltip.contains("#sizex"));
         assertTrue("Cascading undefined type errors must be collapsed in tooltip: " + tooltip,
             tooltip.contains("secondary cascading undefined type errors suppressed"));
         assertFalse("Cascading undefined type error must not appear as bullet in tooltip: " + tooltip,
@@ -1281,5 +1282,68 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             tooltip.contains("Undefined type: :OrderSide"));
         assertTrue("Tooltip must attribute error to consumer undef_events.stvn_di: " + tooltip,
             tooltip.contains("undef_events.stvn_di"));
+    }
+
+    /**
+     * Verifies that unrecognized constraint facets in definitions do not emit spurious
+     * ERR_EMPTY_METADATA_BLOCK inspection errors, emitting strictly the single compiler diagnostic
+     * ERR_UNRECOGNIZED_METADATA_FACET.
+     */
+    public void testUnrecognizedFacetEliminatesSpuriousEmptyBlockDiagnostic() {
+        var content = """
+            {
+              :meta {
+                #name "primitives"
+                #domain "nyse"
+                #kind #DEFS
+              }
+              :defs {
+                :Int64 {#sizex 64} :Int
+              }
+            }
+            """;
+        myFixture.enableInspections(new StvnMetadataFacetInspection());
+        myFixture.configureByText("primitives.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+        var errorDescriptions = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .map(h -> h.getDescription() != null ? h.getDescription() : "")
+            .toList();
+
+        assertEquals("Expected strictly single compiler diagnostic for unrecognized facet: " + errorDescriptions,
+            1, errorDescriptions.size());
+        assertTrue("Expected compiler diagnostic ERR_UNRECOGNIZED_METADATA_FACET: " + errorDescriptions.get(0),
+            errorDescriptions.get(0).contains("Unrecognized constraint facet '#sizex'")
+            && errorDescriptions.get(0).contains("[stvn-core:ERR_UNRECOGNIZED_METADATA_FACET]"));
+        assertFalse("Spurious ERR_EMPTY_METADATA_BLOCK must be eliminated: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d.contains("ERR_EMPTY_METADATA_BLOCK")));
+    }
+
+    /**
+     * Verifies that genuinely empty constraint blocks emit ERR_EMPTY_METADATA_BLOCK with clarified terminology.
+     */
+    public void testGenuinelyEmptyConstraintBlockReportsDiagnostic() {
+        var content = """
+            {
+              :meta {
+                #name "primitives"
+                #domain "nyse"
+                #kind #DEFS
+              }
+              :defs {
+                :Int64 {} :Int
+              }
+            }
+            """;
+        myFixture.enableInspections(new StvnMetadataFacetInspection());
+        myFixture.configureByText("primitives.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+        var errorDescriptions = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .map(h -> h.getDescription() != null ? h.getDescription() : "")
+            .toList();
+
+        assertTrue("Expected Empty type constraint block diagnostic: " + errorDescriptions,
+            errorDescriptions.stream().anyMatch(d -> d.contains("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]")));
     }
 }

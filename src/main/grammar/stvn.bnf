@@ -252,7 +252,20 @@ private const_def_recover ::= !(RBRACE | KW_INCLUDE | KW_PACKAGE | KW_USE | KW_T
                              | LPAREN | LBRACK)
 
 metadata_map              ::= LBRACE metadata_entry* RBRACE {pin=1}
-metadata_entry            ::= metadata_trait | metadata_bare_flag | metadata_bool | metadata_num | metadata_string | metadata_filter | metadata_directive { recoverWhile=metadata_entry_recover }
+metadata_entry            ::= metadata_trait
+                            | metadata_bare_flag
+                            | metadata_bool
+                            | metadata_num
+                            | metadata_string
+                            | metadata_filter
+                            | metadata_directive
+                            | metadata_unknown_entry
+                            { recoverWhile=metadata_entry_recover }
+
+metadata_unknown_entry    ::= value_keyword (value | schema_type)? {
+  pin=1
+  recoverWhile=metadata_entry_recover
+}
 metadata_trait            ::= KW_PRESERVE_INDENT boolean_value {
   pin=1
   recoverWhile=metadata_entry_recover

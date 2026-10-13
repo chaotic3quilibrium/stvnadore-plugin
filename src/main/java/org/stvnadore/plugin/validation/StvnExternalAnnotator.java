@@ -1362,6 +1362,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var msg = diag.message();
         if (msg.contains("Empty metadata facet map is invalid")
             || msg.contains("Empty metadata block is invalid")
+            || msg.contains("Empty type constraint block is invalid")
             || (diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_MAP".equals(diag.errorCode().get()) || "ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get())))) {
             var metaMap = PsiTreeUtil.findElementOfClassAtRange(file, start, end, MetadataMap.class);
             if (metaMap == null) {

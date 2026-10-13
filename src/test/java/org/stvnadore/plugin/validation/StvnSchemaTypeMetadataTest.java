@@ -55,7 +55,7 @@ public final class StvnSchemaTypeMetadataTest extends BasePlatformTestCase {
 
         assertFalse("Must flag empty metadata block in child schema", highlights.isEmpty());
         assertTrue("Error message must indicate empty block",
-                highlights.get(0).getDescription().contains("Empty metadata block is invalid"));
+                highlights.get(0).getDescription().contains("Empty type constraint block is invalid"));
     }
 
     public void testIncompatibleFacetOnChildScalarRejection() throws Exception {

@@ -127,15 +127,15 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 }
                 var metaMap = schemaType.getMetadataMap();
                 if (metaMap != null) {
-                    if (metaMap.getMetadataEntryList().isEmpty()) {
+                    if (isGenuinelyEmptyConstraintBlock(metaMap)) {
                         holder.registerProblem(
                             metaMap,
                             StvnDiagnosticFormatter.formatPlugin(
-                                "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                                "Empty type constraint block is invalid; remove '{}' or specify valid constraint facets",
                                 StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
                             ),
                             ProblemHighlightType.ERROR,
-                            new RemoveElementQuickFix("Remove empty metadata block")
+                            new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
                         validateMetadataEntries(metaMap, schemaType, holder);
@@ -147,15 +147,15 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             public void visitConstantDefinition(@NotNull ConstantDefinition def) {
                 var metaMap = def.getMetadataMap();
                 if (metaMap != null) {
-                    if (metaMap.getMetadataEntryList().isEmpty()) {
+                    if (isGenuinelyEmptyConstraintBlock(metaMap)) {
                         holder.registerProblem(
                             metaMap,
                             StvnDiagnosticFormatter.formatPlugin(
-                                "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                                "Empty type constraint block is invalid; remove '{}' or specify valid constraint facets",
                                 StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
                             ),
                             ProblemHighlightType.ERROR,
-                            new RemoveElementQuickFix("Remove empty metadata block")
+                            new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
                         for (var entry : metaMap.getMetadataEntryList()) {
@@ -242,6 +242,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         boolean isEnum = baseType != null && isEnumConstructor(baseType);
 
         for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getMetadataUnknownEntry() != null) {
+                continue;
+            }
             if (entry.getMetadataDirective() != null) {
                 holder.registerProblem(
                     entry,
@@ -556,11 +559,58 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         return token.startsWith("#") ? token.substring(1) : token;
     }
 
+    private static boolean isGenuinelyEmptyConstraintBlock(@NotNull MetadataMap metaMap) {
+        if (!metaMap.getMetadataEntryList().isEmpty()) {
+            return false;
+        }
+        if (hasUnknownMetadataEntries(metaMap)) {
+            return false;
+        }
+        return !hasNonWhitespaceNonCommentTokens(metaMap);
+    }
+
+    private static boolean hasUnknownMetadataEntries(@NotNull MetadataMap metaMap) {
+        if (PsiTreeUtil.findChildOfType(metaMap, MetadataUnknownEntry.class) != null) {
+            return true;
+        }
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getMetadataUnknownEntry() != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasNonWhitespaceNonCommentTokens(@NotNull MetadataMap metaMap) {
+        String text = metaMap.getText();
+        if (text == null) {
+            return false;
+        }
+        int openBrace = text.indexOf('{');
+        if (openBrace == -1) {
+            return false;
+        }
+        int closeBrace = text.lastIndexOf('}');
+        String inner;
+        if (closeBrace > openBrace) {
+            inner = text.substring(openBrace + 1, closeBrace);
+        } else {
+            inner = text.substring(openBrace + 1);
+        }
+        String stripped = inner.replaceAll("(?m)//.*$", "");
+        return !stripped.trim().isEmpty();
+    }
+
     private static final class RemoveElementQuickFix implements LocalQuickFix {
         private final String familyName;
 
         RemoveElementQuickFix(String familyName) {
             this.familyName = familyName;
+        }
+
+        @Override
+        public @Nls @NotNull String getName() {
+            return familyName;
         }
 
         @Override
