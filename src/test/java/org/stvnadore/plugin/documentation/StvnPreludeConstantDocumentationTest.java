@@ -35,6 +35,8 @@ public final class StvnPreludeConstantDocumentationTest extends BasePlatformTest
             offset + 1
         );
         assertNotNull("TargetElementUtil must find target element for hover popup", targetElement);
+        assertTrue("Target must be ConstantDefinition or ValueKeyword",
+            targetElement instanceof ConstantDefinition || (targetElement instanceof ValueKeyword && targetElement.getParent() instanceof ConstantDefinition));
 
         // 2. Verify DocumentationProvider generates rich card via generateHoverDoc
         var provider = new StvnDocumentationProvider();
@@ -65,7 +67,8 @@ public final class StvnPreludeConstantDocumentationTest extends BasePlatformTest
             offset + 1
         );
         assertNotNull("TargetElementUtil must find declaration target for hover popup", targetElement);
-        assertTrue("Target must be ConstantDefinition", targetElement instanceof ConstantDefinition);
+        assertTrue("Target must be ConstantDefinition or ValueKeyword",
+            targetElement instanceof ConstantDefinition || (targetElement instanceof ValueKeyword && targetElement.getParent() instanceof ConstantDefinition));
 
         var provider = new StvnDocumentationProvider();
         var hoverDoc = provider.generateHoverDoc(targetElement, element);

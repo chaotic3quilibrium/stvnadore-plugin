@@ -83,6 +83,17 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
         }
+        if (resolved != null && resolved.getContainingFile() != null && element.getContainingFile() != null
+            && StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
+            && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {
+            String resolvedText = (resolved instanceof ValueKeyword vk) ? vk.getText()
+                : (resolved instanceof ConstantDefinition cd && cd.getValueKeyword() != null ? cd.getValueKeyword().getText() : null);
+            String elemText = (element instanceof ValueKeyword vk) ? vk.getText()
+                : (element instanceof ConstantDefinition cd && cd.getValueKeyword() != null ? cd.getValueKeyword().getText() : null);
+            if (resolvedText != null && resolvedText.equals(elemText)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -200,6 +211,9 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         }
 
         // 5. Standard library prelude fallback
+        if (StvnPreludeBridge.isPreludeFile(file)) {
+            return null;
+        }
         var project = file.getProject();
         if (project != null && !project.isDisposed()) {
             var preludeFile = StvnPreludeBridge.getPreludeFile(project);

@@ -3,8 +3,10 @@ package org.stvnadore.plugin.navigation;
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.reference.StvnConstantReference;
@@ -86,6 +88,15 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
         }
 
         return null;
+    }
+
+    public @Nullable TextRange getGotoDeclarationRange(@NotNull Editor editor, int offset) {
+        var project = editor.getProject();
+        if (project == null) return null;
+        var file = PsiDocumentManager.getInstance(project).getPsiFile(editor.getDocument());
+        if (file == null) return null;
+        var sourceElement = file.findElementAt(offset);
+        return getGotoDeclarationRange(sourceElement, offset, editor);
     }
 
     public @Nullable TextRange getGotoDeclarationRange(@Nullable PsiElement sourceElement, int offset, @Nullable Editor editor) {

@@ -1222,6 +1222,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (target instanceof ValueKeyword valKw && valKw.getParent() instanceof ConstantDefinition constDef) {
+            var keyword = constDef.getValueKeyword();
+            var schemaType = constDef.getSchemaType();
+            if (keyword != null && schemaType != null) {
+                return "Constant: " + keyword.getText() + " " + StvnSchemaFormatter.formatSchema(schemaType);
+            }
+        }
+
         if (target instanceof ValueKeyword valKw && valKw.getParent() instanceof org.stvnadore.psi.EnumDef enumDef) {
             var typeDef = PsiTreeUtil.getParentOfType(enumDef, TypeDefinition.class);
             var typeName = (typeDef != null && typeDef.getTypeKeyword() != null) ? typeDef.getTypeKeyword().getText() : "Enum";
@@ -1877,17 +1885,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
         if (valKwAncestor != null) {
-            if (valKwAncestor.getParent() instanceof ConstantDefinition constDef) {
-                return constDef;
-            }
-            var ref = valKwAncestor.getReference();
-            var resolved = ref != null ? ref.resolve() : null;
-            if (resolved instanceof ConstantDefinition constDef) {
-                return constDef;
-            }
-            if (resolved != null && resolved.getParent() instanceof ConstantDefinition constDef) {
-                return constDef;
-            }
             return valKwAncestor;
         }
         var atomicAncestor = PsiTreeUtil.getParentOfType(contextElement, AtomicType.class);

@@ -72,30 +72,6 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
                 : StvnPreludeBridge.resolvePreludeType(project, ":org/stvnadore/prelude/meta/StvnPosixId64");
         }
 
-        // 5. ConstantDefinition (declaration site)
-        var constDef = PsiTreeUtil.getParentOfType(element, ConstantDefinition.class, false);
-        if (constDef != null) {
-            var kw = constDef.getValueKeyword();
-            if (kw != null && (kw == element || kw.getTextRange().containsOffset(offset))) {
-                return constDef;
-            }
-        }
-
-        // 6. ValueKeyword (reference site)
-        var valKw = PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
-        if (valKw != null) {
-            if (valKw.getParent() instanceof ConstantDefinition cDef && cDef.getValueKeyword() == valKw) {
-                return cDef;
-            }
-            var ref = valKw.getReference();
-            if (ref != null) {
-                var resolved = ref.resolve();
-                if (resolved != null) {
-                    return resolved.getParent() instanceof ConstantDefinition cDef ? cDef : resolved;
-                }
-            }
-        }
-
         return null;
     }
 
@@ -107,6 +83,10 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
             int flags,
             @Nullable PsiElement refElement
     ) {
+        if ((flags & com.intellij.codeInsight.TargetElementUtil.ELEMENT_NAME_ACCEPTED) != 0
+            && (flags & com.intellij.codeInsight.TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED) == 0) {
+            return null;
+        }
         if (refElement != null) {
             return refElement;
         }
@@ -148,23 +128,30 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
 
     @Override
     public boolean isAcceptableNamedParent(@NotNull PsiElement parent) {
-        return parent instanceof TypeKeyword
-            || parent instanceof ValueKeyword
-            || parent instanceof TypeDefinition
+        if (parent instanceof ValueKeyword valKw) {
+            return valKw.getReferences().length == 0;
+        }
+        if (parent instanceof TypeKeyword typeKw) {
+            return typeKw.getReferences().length == 0;
+        }
+        return parent instanceof TypeDefinition
             || parent instanceof ConstantDefinition
             || parent instanceof EnumDef;
     }
 
     @Override
     public @Nullable PsiElement getNamedElement(@NotNull PsiElement element) {
-        if (element instanceof TypeKeyword || element instanceof ValueKeyword) {
-            return element;
-        }
         if (element instanceof ConstantDefinition constDef) {
             return constDef.getNameIdentifier();
         }
         if (element instanceof TypeDefinition typeDef) {
             return typeDef.getNameIdentifier();
+        }
+        if (element instanceof ValueKeyword valKw) {
+            return valKw.getReferences().length == 0 ? valKw : null;
+        }
+        if (element instanceof TypeKeyword typeKw) {
+            return typeKw.getReferences().length == 0 ? typeKw : null;
         }
         return null;
     }

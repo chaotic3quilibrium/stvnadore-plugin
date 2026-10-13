@@ -97,6 +97,17 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
         }
+        if (resolved != null && resolved.getContainingFile() != null && element.getContainingFile() != null
+            && StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
+            && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {
+            String resolvedText = (resolved instanceof ValueKeyword vk) ? vk.getText()
+                : (resolved instanceof ConstantDefinition cd && cd.getValueKeyword() != null ? cd.getValueKeyword().getText() : null);
+            String elemText = (element instanceof ValueKeyword vk) ? vk.getText()
+                : (element instanceof ConstantDefinition cd && cd.getValueKeyword() != null ? cd.getValueKeyword().getText() : null);
+            if (resolvedText != null && resolvedText.equals(elemText)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -111,6 +122,18 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
         var tokenText = element.getText().trim().split("\\s+")[0];
         if (!tokenText.startsWith("#")) {
             return null;
+        }
+
+        // 0. UseMapAlias remote keyword resolution (:use [ :pkg { #REMOTE_CONST #LOCAL_ALIAS } ])
+        if (element.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var list = alias.getValueKeywordList();
+            if (list.size() >= 2 && list.get(0) == element) {
+                var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
+                if (useStmt != null && useStmt.getUseTarget() != null) {
+                    var fqni = useStmt.getUseTarget().getText() + "/" + tokenText;
+                    return StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
+                }
+            }
         }
 
         // 1. Resolve target schema at this coordinate to determine Dimension 1 (:Enum) vs Dimension 2 (:defs constant)

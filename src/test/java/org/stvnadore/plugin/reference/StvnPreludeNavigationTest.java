@@ -625,4 +625,133 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         assertEquals("Resolved target offset must match local declaration offset",
             declOffset, targets[0].getTextOffset());
     }
+
+    /**
+     * Verifies that getGotoDeclarationRange(Editor, int) returns a non-null TextRange
+     * matching the constant token range at the caret offset.
+     */
+    public void testGotoDeclarationRangeSignatureMatchesEditorOffset() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :MyType { #regex #POSIX_ID_REGEX } :String
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("test_range.stvn_d", content);
+        int offset = content.indexOf("#POSIX_ID_REGEX");
+        assertTrue("Must locate #POSIX_ID_REGEX", offset >= 0);
+
+        var handler = new org.stvnadore.plugin.navigation.StvnGotoDeclarationHandler();
+        var range = handler.getGotoDeclarationRange(myFixture.getEditor(), offset + 1);
+        assertNotNull("Goto declaration range must not be null for constant reference", range);
+        assertEquals(offset, range.getStartOffset());
+        assertEquals(offset + "#POSIX_ID_REGEX".length(), range.getEndOffset());
+    }
+
+    /**
+     * Verifies that TargetElementUtil does not treat constant reference sites as declaration names
+     * under ELEMENT_NAME_ACCEPTED, enabling Ctrl+Hover hyperlink underline painting under REFERENCED_ELEMENT_ACCEPTED.
+     */
+    public void testCtrlHoverUnderlineDiscoveredByTargetElementUtil() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :MyType { #regex #POSIX_ID_REGEX } :String
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("ctrl_hover.stvn_d", content);
+        int offset = content.indexOf("#POSIX_ID_REGEX");
+        assertTrue("Must locate #POSIX_ID_REGEX", offset >= 0);
+
+        // 1. Pure declaration name query must return null at a reference site
+        var nameTarget = com.intellij.codeInsight.TargetElementUtil.getInstance().findTargetElement(
+            myFixture.getEditor(),
+            com.intellij.codeInsight.TargetElementUtil.ELEMENT_NAME_ACCEPTED,
+            offset + 1
+        );
+        assertNull("ELEMENT_NAME_ACCEPTED must return null at a constant reference site", nameTarget);
+
+        // 2. Reference query must resolve the referenced element
+        var refTarget = com.intellij.codeInsight.TargetElementUtil.getInstance().findTargetElement(
+            myFixture.getEditor(),
+            com.intellij.codeInsight.TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED,
+            offset + 1
+        );
+        assertNotNull("REFERENCED_ELEMENT_ACCEPTED must resolve target for Ctrl+Hover underline", refTarget);
+        assertTrue("Target must be ConstantDefinition or ValueKeyword",
+            refTarget instanceof ConstantDefinition || (refTarget instanceof ValueKeyword && refTarget.getParent() instanceof ConstantDefinition));
+    }
+
+    /**
+     * Verifies that constant references in a physical prelude file self-resolve to their local declaration
+     * without querying the synthetic StvnPreludeBridge.
+     */
+    public void testPhysicalPreludeFileSelfResolve() {
+        var content = """
+            {
+              :meta {
+                #name "prelude"
+                #domain "stvn_core"
+                #kind #DEFS
+              }
+              :defs {
+                #POSIX_ID_REGEX :String "^[a-zA-Z0-9_-]+$"
+                :StvnPosixId64 { #regex #POSIX_ID_REGEX } :String
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("prelude.stvn_core.stvn_d", content);
+        int refOffset = content.indexOf("#POSIX_ID_REGEX", content.indexOf(":StvnPosixId64"));
+        assertTrue("Must locate reference to #POSIX_ID_REGEX in physical prelude file", refOffset >= 0);
+
+        var element = psiFile.findElementAt(refOffset + 1);
+        assertNotNull(element);
+        var valKw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
+        assertNotNull(valKw);
+
+        var ref = valKw.getReference();
+        assertNotNull("Reference must exist in physical prelude file", ref);
+        var resolved = ref.resolve();
+        assertNotNull("Constant in physical prelude file must resolve locally", resolved);
+        assertEquals("Resolved target must belong to the physical prelude file itself",
+            psiFile, resolved.getContainingFile());
+        int declOffset = content.indexOf("#POSIX_ID_REGEX");
+        assertEquals("Resolved target offset must match local declaration", declOffset, resolved.getTextOffset());
+    }
+
+    /**
+     * Verifies that the remote LHS keyword of a UseMapAlias inside :use resolves
+     * to the remote constant qualified with the use target.
+     */
+    public void testUseMapAliasRemoteConstantResolution() {
+        var content = """
+            {
+              :defs {
+                :package :org/stvnadore/finance {
+                  #DEFAULT_CURRENCY :String "USD"
+                }
+                :use [ :org/stvnadore/finance { #DEFAULT_CURRENCY #CURR } ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("use_map_alias.stvn", content);
+        int aliasOffset = content.indexOf("#DEFAULT_CURRENCY", content.indexOf(":use"));
+        assertTrue("Must locate #DEFAULT_CURRENCY in :use statement", aliasOffset >= 0);
+
+        var element = psiFile.findElementAt(aliasOffset + 1);
+        assertNotNull(element);
+        var valKw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
+        assertNotNull(valKw);
+
+        var ref = valKw.getReference();
+        assertNotNull("Reference must exist on UseMapAlias LHS constant", ref);
+        var resolved = ref.resolve();
+        assertNotNull("UseMapAlias LHS constant must resolve to package-enclosed constant", resolved);
+        int declOffset = content.indexOf("#DEFAULT_CURRENCY");
+        assertEquals("Resolved target offset must match package declaration", declOffset, resolved.getTextOffset());
+    }
 }
