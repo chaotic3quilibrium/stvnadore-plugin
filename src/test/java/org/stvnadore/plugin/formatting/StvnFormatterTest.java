@@ -329,4 +329,57 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertFalse("Comments must never collapse onto map entry bracket:\n" + text,
             text.contains("localhost\" ]//"));
     }
+
+    public void testMultilineUseAliasBlockCanonicalIndentation() {
+        var unformatted = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude/meta {
+                         :StvnPosixId64 :StvnPosixId64
+                       } ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_use.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Alias entry must indent by 6 spaces (2 relative to :use):\n" + text,
+            text.contains("    :use [ :org/stvnadore/prelude/meta {\n      :StvnPosixId64 :StvnPosixId64\n    } ]"));
+        assertFalse("Alias entry must not align to opening brace column:\n" + text,
+            text.contains("             :StvnPosixId64"));
+    }
+
+    public void testMultilineMapEntryNestedCollectionIndentation() {
+        var unformatted = """
+            {
+              :type :Map(:String :Seq(:String))
+              :body {
+                [ "features"
+                [ "auth" "logging" ]
+                ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_map_nested_list.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Nested list payload on dedicated line must indent by 6 spaces (+2 relative to '['):\n" + text,
+            text.contains("    [ \"features\"\n      [ \"auth\" \"logging\" ]\n    ]"));
+        assertFalse("Nested list must not align flush with entry bracket:\n" + text,
+            text.contains("    [ \"features\"\n    [ \"auth\""));
+
+        // Mathematical AST equivalence verification
+        var docOriginal = StvnCompiler.compile(unformatted).document().orElseThrow();
+        var docFormatted = StvnCompiler.compile(text).document().orElseThrow();
+        assertEquals("Round-trip AST must be mathematically equivalent",
+            docOriginal.requirePayload(), docFormatted.requirePayload());
+    }
 }

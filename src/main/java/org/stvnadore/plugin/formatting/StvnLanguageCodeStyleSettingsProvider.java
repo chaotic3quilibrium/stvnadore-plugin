@@ -36,7 +36,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
     ) {
         indentOptions.INDENT_SIZE = 2;
         indentOptions.TAB_SIZE = 2;
-        indentOptions.CONTINUATION_INDENT_SIZE = 2;
+        indentOptions.CONTINUATION_INDENT_SIZE = 4;
         indentOptions.USE_TAB_CHARACTER = false;
     }
 

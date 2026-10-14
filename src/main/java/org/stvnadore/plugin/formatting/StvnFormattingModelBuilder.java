@@ -153,6 +153,14 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .afterInside(StvnTypes.LBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
 
+                // Use and Include alias block spacing: multiline line breaks, single-line 1 space
+                .afterInside(StvnTypes.LBRACE, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.USE_MAP_ALIAS, StvnTypes.USE_MAP_ALIAS, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACE, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
+
                 // Comments inside MAP_LITERAL
                 .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).lineBreakInCode()
                 .betweenInside(StvnTypes.COMMENT, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).lineBreakInCode()

@@ -122,7 +122,9 @@ public final class StvnBlock implements ASTBlock {
                 || childType == StvnTypes.KW_PACKAGE
                 || childType == StvnTypes.PACKAGE_PATH
                 || childType == StvnTypes.KW_TYPE
-                || childType == StvnTypes.KW_BODY) {
+                || childType == StvnTypes.KW_BODY
+                || childType == StvnTypes.KW_USE
+                || childType == StvnTypes.KW_INCLUDE) {
             return Indent.getNoneIndent();
         }
 
@@ -130,6 +132,9 @@ public final class StvnBlock implements ASTBlock {
         if (parentType == StvnTypes.MAP_LITERAL) {
             if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
                 return Indent.getNoneIndent();
+            }
+            if (isSecondValueOfMapEntry(child)) {
+                return Indent.getContinuationIndent();
             }
             return Indent.getNormalIndent();
         }
@@ -145,6 +150,31 @@ public final class StvnBlock implements ASTBlock {
         // Tuple literal block boundaries: ( and ) never indent; contents indent normally (+2)
         if (parentType == StvnTypes.TUPLE_LITERAL) {
             if (childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // Use and Include alias block boundaries: { and } never indent; entries indent normally (+2)
+        if (parentType == StvnTypes.USE_ALIAS_BLOCK || parentType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
+            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        if (parentType == StvnTypes.USE_MAP_ALIAS || parentType == StvnTypes.INCLUDE_MAP_ALIAS) {
+            return Indent.getNoneIndent();
+        }
+
+        if (childType == StvnTypes.USE_MAP_ALIAS || childType == StvnTypes.INCLUDE_MAP_ALIAS) {
+            return Indent.getNormalIndent();
+        }
+
+        if (parentType == StvnTypes.USE_STMT || parentType == StvnTypes.INCLUDE_STMT || parentType == StvnTypes.INCLUDE_ELEMENT) {
+            if (childType == StvnTypes.KW_USE || childType == StvnTypes.KW_INCLUDE
+                    || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
+                    || childType == StvnTypes.USE_ALIAS_BLOCK || childType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
                 return Indent.getNoneIndent();
             }
             return Indent.getNormalIndent();
@@ -206,6 +236,24 @@ public final class StvnBlock implements ASTBlock {
         return Indent.getNoneIndent();
     }
 
+    private boolean isSecondValueOfMapEntry(ASTNode child) {
+        if (child.getElementType() != StvnTypes.VALUE) {
+            return false;
+        }
+        ASTNode prev = child.getTreePrev();
+        while (prev != null && (prev.getElementType() == TokenType.WHITE_SPACE || prev.getElementType() == StvnTypes.COMMENT)) {
+            prev = prev.getTreePrev();
+        }
+        if (prev != null && prev.getElementType() == StvnTypes.VALUE) {
+            ASTNode beforeFirst = prev.getTreePrev();
+            while (beforeFirst != null && (beforeFirst.getElementType() == TokenType.WHITE_SPACE || beforeFirst.getElementType() == StvnTypes.COMMENT)) {
+                beforeFirst = beforeFirst.getTreePrev();
+            }
+            return beforeFirst != null && beforeFirst.getElementType() == StvnTypes.LBRACK;
+        }
+        return false;
+    }
+
     @Override
     public @Nullable Wrap getWrap() {
         return wrap;
@@ -247,6 +295,11 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.DEFS_ENTRY
                 || type == StvnTypes.META_BLOCK
                 || type == StvnTypes.PACKAGE_ENCLOSURE
+                || type == StvnTypes.USE_STMT
+                || type == StvnTypes.USE_ALIAS_BLOCK
+                || type == StvnTypes.INCLUDE_STMT
+                || type == StvnTypes.INCLUDE_ELEMENT
+                || type == StvnTypes.INCLUDE_ALIAS_BLOCK
                 || type == StvnTypes.LIST_LITERAL
                 || type == StvnTypes.MAP_LITERAL
                 || type == StvnTypes.TUPLE_LITERAL) {
@@ -264,6 +317,10 @@ public final class StvnBlock implements ASTBlock {
         return lastChild.getElementType() == TokenType.ERROR_ELEMENT
                 || (node.getElementType() == StvnTypes.DEFS_ENTRY && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.MAP_LITERAL && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.USE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.INCLUDE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.USE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
+                || (node.getElementType() == StvnTypes.INCLUDE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.LIST_LITERAL && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.TUPLE_LITERAL && lastChild.getElementType() != StvnTypes.RPAREN)
                 || (node.getElementType() instanceof IFileElementType && lastChild.getElementType() != StvnTypes.RBRACE);

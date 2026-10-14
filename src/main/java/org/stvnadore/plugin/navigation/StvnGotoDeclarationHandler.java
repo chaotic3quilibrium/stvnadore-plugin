@@ -87,6 +87,22 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
             }
         }
 
+        // 6. TypeKeyword inside UseMapAlias at index 0 (remote type symbol)
+        var typeKw = PsiTreeUtil.getParentOfType(sourceElement, org.stvnadore.psi.TypeKeyword.class, false);
+        if (typeKw != null) {
+            if (typeKw.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
+                var list = alias.getTypeKeywordList();
+                if (list.size() >= 2 && list.get(0) == typeKw) {
+                    var ref = typeKw.getReference();
+                    var resolved = ref != null ? ref.resolve() : new org.stvnadore.plugin.reference.StvnTypeReference(typeKw).resolve();
+                    if (resolved != null) {
+                        var target = resolved.getParent() instanceof org.stvnadore.psi.TypeDefinition tDef ? tDef : resolved;
+                        return new PsiElement[]{ target };
+                    }
+                }
+            }
+        }
+
         return null;
     }
 
@@ -112,6 +128,10 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
         var valKw = PsiTreeUtil.getParentOfType(sourceElement, ValueKeyword.class, false);
         if (valKw != null) {
             return valKw.getTextRange();
+        }
+        var typeKw = PsiTreeUtil.getParentOfType(sourceElement, org.stvnadore.psi.TypeKeyword.class, false);
+        if (typeKw != null) {
+            return typeKw.getTextRange();
         }
         return sourceElement.getTextRange();
     }

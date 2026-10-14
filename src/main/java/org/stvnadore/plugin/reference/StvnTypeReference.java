@@ -161,6 +161,33 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             if (list.size() >= 2) {
                 if (list.get(0) == keyword) {
                     isAliasFirstKeyword = true;
+                    var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
+                    if (useStmt != null && useStmt.getUseTarget() != null) {
+                        var targetPackage = useStmt.getUseTarget().getText();
+                        var targetTypeName = keyword.getText();
+                        var bare = targetTypeName.startsWith(":") ? targetTypeName.substring(1) : targetTypeName;
+                        var fqni = targetPackage + "/" + bare;
+                        if (":org/stvnadore/prelude".equals(targetPackage) || targetPackage.startsWith(":org/stvnadore/prelude/")) {
+                            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(keyword.getProject(), fqni);
+                            if (preludeDef == null) {
+                                preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(keyword.getProject(), targetTypeName);
+                            }
+                            if (preludeDef != null && preludeDef.getTypeKeyword() != null) {
+                                return new ResolveResult[]{new PsiElementResolveResult(preludeDef.getTypeKeyword())};
+                            }
+                        }
+                        var containingFile = keyword.getContainingFile();
+                        if (containingFile != null) {
+                            var resolved = StvnTypeReference.resolveTypeInFile(containingFile, fqni, new HashSet<>());
+                            if (resolved == null) {
+                                resolved = StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, new HashSet<>());
+                            }
+                            if (resolved != null) {
+                                return new ResolveResult[]{new PsiElementResolveResult(resolved)};
+                            }
+                        }
+                    }
+                    return ResolveResult.EMPTY_ARRAY;
                 } else {
                     return ResolveResult.EMPTY_ARRAY;
                 }

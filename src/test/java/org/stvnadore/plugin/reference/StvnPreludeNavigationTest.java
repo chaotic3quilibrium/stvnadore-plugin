@@ -754,4 +754,42 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         int declOffset = content.indexOf("#DEFAULT_CURRENCY");
         assertEquals("Resolved target offset must match package declaration", declOffset, resolved.getTextOffset());
     }
+
+    /**
+     * Verifies that the remote LHS TypeKeyword of a UseMapAlias inside :use resolves
+     * to the remote type definition qualified with the use target in standard library prelude.
+     */
+    public void testUseMapAliasRemoteTypeResolution() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude/meta { :StvnPosixId64 :StvnPosixId64 } ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("use_type_map_alias.stvn", content);
+        int aliasOffset = content.indexOf(":StvnPosixId64", content.indexOf(":use"));
+        assertTrue("Must locate :StvnPosixId64 in :use statement", aliasOffset >= 0);
+
+        var element = psiFile.findElementAt(aliasOffset + 1);
+        assertNotNull(element);
+        var typeKw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, TypeKeyword.class, false);
+        assertNotNull(typeKw);
+
+        var ref = typeKw.getReference();
+        assertNotNull("Reference must exist on UseMapAlias LHS type keyword", ref);
+        var resolved = ref.resolve();
+        assertNotNull("UseMapAlias LHS type keyword must resolve to prelude definition", resolved);
+        assertTrue("Resolved target must be TypeKeyword", resolved instanceof TypeKeyword);
+        assertEquals(":StvnPosixId64", resolved.getText());
+        assertEquals("prelude.stvn_core.stvn_d", resolved.getContainingFile().getName());
+
+        // Verify GotoDeclarationHandler dispatch
+        var handler = new org.stvnadore.plugin.navigation.StvnGotoDeclarationHandler();
+        var targets = handler.getGotoDeclarationTargets(element, aliasOffset + 1, myFixture.getEditor());
+        assertNotNull("GotoDeclarationHandler must return targets for UseMapAlias LHS", targets);
+        assertEquals(1, targets.length);
+        assertTrue("Target must be TypeDefinition or TypeKeyword",
+            targets[0] instanceof TypeDefinition || targets[0] instanceof TypeKeyword);
+    }
 }
