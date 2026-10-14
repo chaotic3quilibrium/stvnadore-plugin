@@ -117,7 +117,6 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
         registrar.registerReferenceProvider(PlatformPatterns.psiElement(org.stvnadore.psi.ExplicitOptionValue.class), valueKeywordProvider);
         registrar.registerReferenceProvider(PlatformPatterns.psiElement(org.stvnadore.psi.ExplicitEitherValue.class), valueKeywordProvider);
         registrar.registerReferenceProvider(PlatformPatterns.psiElement(org.stvnadore.psi.ExplicitUnionValue.class), valueKeywordProvider);
-        registrar.registerReferenceProvider(PlatformPatterns.psiElement(), valueKeywordProvider);
 
         // 3. StringLiteral Reference Provider: matches include file paths
         registrar.registerReferenceProvider(

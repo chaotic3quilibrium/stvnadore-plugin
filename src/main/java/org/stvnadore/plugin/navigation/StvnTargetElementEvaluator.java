@@ -72,6 +72,30 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
                 : StvnPreludeBridge.resolvePreludeType(project, ":org/stvnadore/prelude/meta/StvnPosixId64");
         }
 
+        // 5. ConstantDefinition (declaration site)
+        var constDef = PsiTreeUtil.getParentOfType(element, ConstantDefinition.class, false);
+        if (constDef != null) {
+            var kw = constDef.getValueKeyword();
+            if (kw != null && (kw == element || kw.getTextRange().containsOffset(offset))) {
+                return constDef;
+            }
+        }
+
+        // 6. ValueKeyword (reference site)
+        var valKw = PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
+        if (valKw != null) {
+            if (valKw.getParent() instanceof ConstantDefinition cDef && cDef.getValueKeyword() == valKw) {
+                return cDef;
+            }
+            var ref = valKw.getReference();
+            if (ref != null) {
+                var resolved = ref.resolve();
+                if (resolved != null) {
+                    return resolved.getParent() instanceof ConstantDefinition cDef ? cDef : resolved;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -103,10 +127,7 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
         if (element != null) {
             return element;
         }
-        if (contextElement != null) {
-            return contextElement;
-        }
-        return getTargetElement(editor, editor.getCaretModel().getOffset());
+        return null;
     }
 
     @Override
@@ -141,6 +162,18 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
 
     @Override
     public @Nullable PsiElement getNamedElement(@NotNull PsiElement element) {
+        if (element instanceof com.intellij.psi.impl.source.tree.LeafPsiElement) {
+            var parent = element.getParent();
+            if (parent instanceof ValueKeyword valKw) {
+                return valKw.getReferences().length == 0 ? valKw : null;
+            }
+            if (parent instanceof TypeKeyword typeKw) {
+                return typeKw.getReferences().length == 0 ? typeKw : null;
+            }
+            if (parent instanceof ConstantDefinition constDef && constDef.getValueKeyword() == element) {
+                return constDef.getNameIdentifier();
+            }
+        }
         if (element instanceof ConstantDefinition constDef) {
             return constDef.getNameIdentifier();
         }

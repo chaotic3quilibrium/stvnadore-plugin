@@ -7,6 +7,7 @@ import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.TokenType;
+import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
@@ -1653,6 +1654,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (metaNameElem != null) return metaNameElem;
         var metaDomainElem = PsiTreeUtil.getParentOfType(element, MetaDomainFacet.class, false);
         if (metaDomainElem != null) return metaDomainElem;
+
+        if (element instanceof LeafPsiElement) {
+            var valKwParent = PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
+            if (valKwParent != null) {
+                return getDocumentationElement(valKwParent, originalElement);
+            }
+            var typeKwParent = PsiTreeUtil.getParentOfType(element, TypeKeyword.class, false);
+            if (typeKwParent != null) {
+                return getDocumentationElement(typeKwParent, originalElement);
+            }
+        }
 
         if (element instanceof TypeDefinition || element instanceof ConstantDefinition) {
             return element;
