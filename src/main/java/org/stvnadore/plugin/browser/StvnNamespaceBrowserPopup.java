@@ -11,8 +11,9 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.ui.components.JBCheckBox;
@@ -220,33 +221,48 @@ public final class StvnNamespaceBrowserPopup {
 
         var enclosingPkg = PsiTreeUtil.findChildOfType(sourceFile, PackageEnclosure.class);
         int insertOffset;
+        String baseIndent;
         if (enclosingPkg != null) {
             var openBrace = enclosingPkg.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : enclosingPkg.getTextOffset();
+            baseIndent = computeElementIndent(doc, enclosingPkg);
         } else {
             var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
             if (defsEntry != null) {
                 var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
                 insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
+                baseIndent = computeElementIndent(doc, defsEntry);
             } else {
                 return;
             }
         }
-        var bareName = entry.name().contains("/")
-            ? (entry.name().startsWith("#") ? "#" : ":") + entry.name().substring(entry.name().lastIndexOf('/') + 1)
+        var rawSegment = entry.name().contains("/")
+            ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
             : entry.name();
-        var importStatement = "\n    :use [ " + entry.source() + " { " + bareName + " } ]";
+        var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
+            ? rawSegment.substring(1)
+            : rawSegment;
+        var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
+        var childIndent = baseIndent + "  ";
+        var importStatement = "\n" + childIndent + ":use [ " + entry.source() + " { " + bareName + " " + bareName + " } ]";
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
-        CodeStyleManager.getInstance(project).reformat(sourceFile);
     }
 
     private static void insertQualifiedReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
         if (editor != null) {
-            var fqni = entry.name().contains("/")
-                ? entry.name()
-                : entry.source() + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
+            String fqni;
+            if (entry.name().contains("/")) {
+                fqni = entry.name();
+            } else {
+                var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
+                if (entry.name().startsWith("#")) {
+                    fqni = "#" + src + "/" + (entry.name().startsWith("#") ? entry.name().substring(1) : entry.name());
+                } else {
+                    fqni = ":" + src + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
+                }
+            }
             var caret = editor.getCaretModel().getPrimaryCaret();
             var offset = caret.getOffset();
             var doc = editor.getDocument();
@@ -264,18 +280,46 @@ public final class StvnNamespaceBrowserPopup {
             var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             if (openBrace != null) {
                 int insertOffset = openBrace.getStartOffset() + 1;
-                var fqni = entry.name().contains("/")
-                    ? entry.name()
-                    : entry.source() + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
-                var bareName = entry.name().contains("/")
-                    ? (entry.name().startsWith("#") ? "#" : ":") + entry.name().substring(entry.name().lastIndexOf('/') + 1)
+                String fqni;
+                if (entry.name().contains("/")) {
+                    fqni = entry.name();
+                } else {
+                    var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
+                    if (entry.name().startsWith("#")) {
+                        fqni = "#" + src + "/" + (entry.name().startsWith("#") ? entry.name().substring(1) : entry.name());
+                    } else {
+                        fqni = ":" + src + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
+                    }
+                }
+                var rawSegment = entry.name().contains("/")
+                    ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
                     : entry.name();
-                var brandStatement = "\n    " + bareName + " " + fqni;
+                var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
+                    ? rawSegment.substring(1)
+                    : rawSegment;
+                var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
+                var baseIndent = computeElementIndent(doc, defsEntry);
+                var childIndent = baseIndent + "  ";
+                var brandStatement = "\n" + childIndent + bareName + " " + fqni;
                 doc.insertString(insertOffset, brandStatement);
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
-                CodeStyleManager.getInstance(project).reformat(sourceFile);
             }
         }
+    }
+
+    private static String computeElementIndent(com.intellij.openapi.editor.Document doc, PsiElement element) {
+        int line = doc.getLineNumber(element.getTextOffset());
+        int lineStart = doc.getLineStartOffset(line);
+        int elemOffset = element.getTextOffset();
+        if (elemOffset < lineStart) return "  ";
+        String prefix = doc.getText(new TextRange(lineStart, elemOffset));
+        var sb = new StringBuilder();
+        for (int i = 0; i < prefix.length(); i++) {
+            char c = prefix.charAt(i);
+            if (c == ' ') sb.append(' ');
+            else break;
+        }
+        return sb.toString();
     }
 
     private static void navigateToSymbol(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {

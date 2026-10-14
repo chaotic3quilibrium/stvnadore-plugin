@@ -66,6 +66,32 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertFalse("Formatted output must contain no tabs:\n" + text, text.contains("\t"));
     }
 
+    public void testReformatPreservesConsecutiveCommentLinesWithoutCollapsing() {
+        var unformatted = """
+            {
+              :defs {
+                // Line 1: Comment describing UserID
+                // Line 2: Deprecated legacy comment
+                :UserID :Int
+                // Line 3: Comment following definition
+                // Line 4: Another consecutive comment
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("comments_preserve.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Line 1 comment must be on its own line:\n" + text, text.contains("    // Line 1: Comment describing UserID\n"));
+        assertTrue("Line 2 comment must be on its own line:\n" + text, text.contains("    // Line 2: Deprecated legacy comment\n"));
+        assertTrue("Line 3 comment must be on its own line:\n" + text, text.contains("    // Line 3: Comment following definition\n"));
+        assertTrue("Line 4 comment must be on its own line:\n" + text, text.contains("    // Line 4: Another consecutive comment\n"));
+        assertFalse("Comments must never collapse onto the same line:\n" + text, text.contains("// Line 1: Comment describing UserID//"));
+    }
+
     public void testPreserveMultilineFencedStringBodies() {
         var fenced = """
             {

@@ -120,7 +120,7 @@ public final class StvnNamespaceSymbolCollector {
                 if (kw != null) {
                     var fullText = kw.getText();
                     var source = StvnPreludeBridge.getPreludePackagePath(cDef);
-                    var fqni = fullText.contains("/") ? fullText : source + "/" + fullText;
+                    var fqni = buildConstantFqni(source, fullText);
                     var schemaType = cDef.getSchemaType();
                     var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                     results.add(new StvnNamespaceSymbolEntry(
@@ -224,7 +224,7 @@ public final class StvnNamespaceSymbolCollector {
                     var kw = pkgConstDef.getValueKeyword();
                     if (kw != null) {
                         var kwText = kw.getText();
-                        var fqni = pathText + "/" + kwText;
+                        var fqni = buildConstantFqni(pathText, kwText);
                         var schemaType = pkgConstDef.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                         if (processedNames.add(fqni)) {
@@ -1122,6 +1122,17 @@ public final class StvnNamespaceSymbolCollector {
         return text.startsWith(":") ? text.substring(1) : text;
     }
 
+    private static String stripHash(String text) {
+        return text.startsWith("#") ? text.substring(1) : text;
+    }
+
+    static String buildConstantFqni(String packagePath, String constantName) {
+        if (constantName.contains("/")) {
+            return constantName.startsWith(":") ? "#" + constantName.substring(1) : constantName;
+        }
+        return "#" + stripColon(packagePath) + "/" + stripHash(constantName);
+    }
+
     private static void collectStrippedPackageSymbols(
             PsiFile file,
             String targetPackagePath,
@@ -1197,7 +1208,7 @@ public final class StvnNamespaceSymbolCollector {
                 var kw = constDef.getValueKeyword();
                 if (kw != null) {
                     var bareName = kw.getText();
-                    var fqni = targetPackagePath + "/" + bareName;
+                    var fqni = buildConstantFqni(targetPackagePath, bareName);
                     var navElement = originElement != null ? originElement : kw;
                     if (processedNames.add(bareName)) {
                         results.add(new StvnNamespaceSymbolEntry(

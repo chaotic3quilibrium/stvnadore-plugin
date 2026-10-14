@@ -18,6 +18,7 @@ import com.intellij.psi.tree.IFileElementType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.psi.StvnTypes;
 
 import java.util.ArrayList;
@@ -194,6 +195,20 @@ public final class StvnBlock implements ASTBlock {
 
     @Override
     public @Nullable Spacing getSpacing(@Nullable Block child1, @NotNull Block child2) {
+        if (child1 instanceof ASTBlock b1 && child2 instanceof ASTBlock b2) {
+            IElementType t1 = b1.getNode().getElementType();
+            IElementType t2 = b2.getNode().getElementType();
+            int keepBlankLines = settings.getCommonSettings(StvnLanguage.INSTANCE).KEEP_BLANK_LINES_IN_CODE;
+            if (t1 == StvnTypes.COMMENT && t2 == StvnTypes.COMMENT) {
+                return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+            }
+            if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT) && t2 == StvnTypes.COMMENT) {
+                return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+            }
+            if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT)) {
+                return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+            }
+        }
         return spacingBuilder.getSpacing(this, child1, child2);
     }
 

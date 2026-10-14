@@ -501,8 +501,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
                 var pkgPath = enclosingPkg.getPackagePath().getText().trim();
                 var localName = keyword != null ? keyword.getText() : "";
+                var cleanPkg = pkgPath.startsWith(":") ? pkgPath.substring(1) : pkgPath;
+                var cleanLocal = localName.startsWith("#") ? localName.substring(1) : localName;
+                var fqni = "#" + cleanPkg + "/" + cleanLocal;
                 sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
-                sb.append("<b>FQNI:</b> <code>").append(pkgPath).append("/").append(localName).append("</code><br/>");
+                sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
             }
             if (schemaType != null) {
                 sb.append("<b>Type:</b> ").append(StvnSchemaFormatter.formatSchema(schemaType)).append("<br/>");

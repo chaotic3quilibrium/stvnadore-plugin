@@ -116,6 +116,17 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
                 .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.DEFS_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.DEFS_ELEMENT).lineBreakInCode()
+                .between(StvnTypes.PACKAGE_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.PACKAGE_ELEMENT).lineBreakInCode()
+                .between(StvnTypes.META_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.META_ELEMENT).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.DEFS_ENTRY).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.TYPE_ENTRY).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.BODY_ENTRY).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.META_ENTRY).lineBreakInCode()
+                .between(StvnTypes.COMMENT, StvnTypes.COMMENT).lineBreakInCode()
 
                 // Standalone comments inside document roots preceded by line break
                 .beforeInside(StvnTypes.COMMENT, StvnParserDefinition.FILE).lineBreakInCode()
@@ -137,7 +148,6 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.MAP_LITERAL).spaces(1)
 
                 // Preservation of comment lines
-                .before(StvnTypes.COMMENT).lineBreakOrForceSpace(false, false)
                 .after(StvnTypes.COMMENT).lineBreakInCode();
     }
 

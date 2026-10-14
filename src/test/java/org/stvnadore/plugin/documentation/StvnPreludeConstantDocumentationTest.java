@@ -43,7 +43,7 @@ public final class StvnPreludeConstantDocumentationTest extends BasePlatformTest
         var hoverDoc = provider.generateHoverDoc(targetElement, element);
         assertNotNull("Hover documentation must not be null for prelude constant", hoverDoc);
         assertTrue("Must contain prelude constant badge", hoverDoc.contains("Standard Library Prelude Constant"));
-        assertTrue("Must contain FQNI", hoverDoc.contains(":org/stvnadore/prelude/#POSIX_ID_REGEX"));
+        assertTrue("Must contain FQNI", hoverDoc.contains("#org/stvnadore/prelude/POSIX_ID_REGEX"));
         assertTrue("Must contain pattern value", hoverDoc.contains("^[a-zA-Z0-9_-]+$"));
     }
 

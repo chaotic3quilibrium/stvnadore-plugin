@@ -120,7 +120,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull(findEntryByName(entries, ":RootItem"));
         assertNotNull(findEntryByName(entries, "#RootPort"));
         assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/PackagedItem"));
-        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/#PackagedPort"));
+        assertNotNull(findEntryByName(entries, "#org/stvnadore/sample/PackagedPort"));
         assertNull(findEntryByName(entries, ":PackagedItem"));
         assertNull(findEntryByName(entries, "#PackagedPort"));
     }
@@ -698,16 +698,16 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNull("Bare phantom #POSIX_ID_REGEX must not exist in prelude entries", findEntryByName(preludeEntries, "#POSIX_ID_REGEX"));
 
         // Verify harvested prelude constants under canonical FQNIs
-        assertNotNull("Must contain :org/stvnadore/prelude/#UUID_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#UUID_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#UUID_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#UUID_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#SHA256_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#SHA256_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#SHA256_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#SHA256_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#EMAIL_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#EMAIL_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#EMAIL_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#EMAIL_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#POSIX_ID_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX"));
-        assertNotNull("Must contain :org/stvnadore/prelude/#POLYGLOT_CODE_ID_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POLYGLOT_CODE_ID_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/UUID_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/UUID_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/UUID_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/UUID_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/SHA256_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/SHA256_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/SHA256_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/SHA256_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/EMAIL_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/EMAIL_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/EMAIL_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/EMAIL_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/POSIX_ID_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/POSIX_ID_REGEX"));
+        assertNotNull("Must contain #org/stvnadore/prelude/POLYGLOT_CODE_ID_REGEX", findEntryByName(preludeEntries, "#org/stvnadore/prelude/POLYGLOT_CODE_ID_REGEX"));
 
-        var posixConst = findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX");
+        var posixConst = findEntryByName(preludeEntries, "#org/stvnadore/prelude/POSIX_ID_REGEX");
         assertNotNull(posixConst);
         assertTrue("Constant entry must be marked prelude", posixConst.isPrelude());
         assertEquals(":org/stvnadore/prelude", posixConst.source());
@@ -768,7 +768,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull("Bare alias #POSIX_ID_REGEX must exist at Depth 1", initialPosixRegex);
         assertEquals(1, initialPosixRegex.useDepth());
         assertEquals(":org/stvnadore/prelude", initialPosixRegex.source());
-        assertEquals(":org/stvnadore/prelude/#POSIX_ID_REGEX", initialPosixRegex.typeStructure());
+        assertEquals("#org/stvnadore/prelude/POSIX_ID_REGEX", initialPosixRegex.typeStructure());
         assertFalse(initialPosixRegex.isPrelude());
 
         assertNull("Canonical FQNI :org/stvnadore/prelude/Port must NOT exist before checkbox toggle",
@@ -795,8 +795,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals(1, bareRegex.useDepth());
         assertFalse(bareRegex.isPrelude());
 
-        var fqniRegex = findEntryByName(withPreludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX");
-        assertNotNull("Canonical FQNI :org/stvnadore/prelude/#POSIX_ID_REGEX must be present at Depth 0", fqniRegex);
+        var fqniRegex = findEntryByName(withPreludeEntries, "#org/stvnadore/prelude/POSIX_ID_REGEX");
+        assertNotNull("Canonical FQNI #org/stvnadore/prelude/POSIX_ID_REGEX must be present at Depth 0", fqniRegex);
         assertEquals(0, fqniRegex.useDepth());
         assertEquals(":org/stvnadore/prelude", fqniRegex.source());
         assertTrue(fqniRegex.isPrelude());
