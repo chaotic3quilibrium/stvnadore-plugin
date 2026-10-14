@@ -232,7 +232,10 @@ public final class StvnNamespaceBrowserPopup {
                 return;
             }
         }
-        var importStatement = "\n    :use [ " + entry.source() + " { " + entry.name() + " } ]";
+        var bareName = entry.name().contains("/")
+            ? (entry.name().startsWith("#") ? "#" : ":") + entry.name().substring(entry.name().lastIndexOf('/') + 1)
+            : entry.name();
+        var importStatement = "\n    :use [ " + entry.source() + " { " + bareName + " } ]";
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
         CodeStyleManager.getInstance(project).reformat(sourceFile);
@@ -241,8 +244,9 @@ public final class StvnNamespaceBrowserPopup {
     private static void insertQualifiedReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
         if (editor != null) {
-            var cleanSymbol = entry.name().startsWith(":") ? entry.name().substring(1) : entry.name();
-            var fqni = entry.source() + "/" + cleanSymbol;
+            var fqni = entry.name().contains("/")
+                ? entry.name()
+                : entry.source() + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
             var caret = editor.getCaretModel().getPrimaryCaret();
             var offset = caret.getOffset();
             var doc = editor.getDocument();
@@ -260,9 +264,13 @@ public final class StvnNamespaceBrowserPopup {
             var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             if (openBrace != null) {
                 int insertOffset = openBrace.getStartOffset() + 1;
-                var cleanSymbol = entry.name().startsWith(":") ? entry.name().substring(1) : entry.name();
-                var fqni = entry.source() + "/" + cleanSymbol;
-                var brandStatement = "\n    " + entry.name() + " " + fqni;
+                var fqni = entry.name().contains("/")
+                    ? entry.name()
+                    : entry.source() + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
+                var bareName = entry.name().contains("/")
+                    ? (entry.name().startsWith("#") ? "#" : ":") + entry.name().substring(entry.name().lastIndexOf('/') + 1)
+                    : entry.name();
+                var brandStatement = "\n    " + bareName + " " + fqni;
                 doc.insertString(insertOffset, brandStatement);
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
                 CodeStyleManager.getInstance(project).reformat(sourceFile);

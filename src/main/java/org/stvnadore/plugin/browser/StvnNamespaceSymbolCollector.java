@@ -98,12 +98,12 @@ public final class StvnNamespaceSymbolCollector {
                 var kw = def.getTypeKeyword();
                 if (kw != null) {
                     var fullText = kw.getText();
-                    var leafName = fullText.contains("/") ? ":" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
+                    var source = StvnPreludeBridge.getPreludePackagePath(def);
+                    var fqni = fullText.contains("/") ? fullText : source + "/" + stripColon(fullText);
                     var schemaType = def.getSchemaType();
                     var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                    var source = StvnPreludeBridge.getPreludePackagePath(def);
                     results.add(new StvnNamespaceSymbolEntry(
-                        leafName,
+                        fqni,
                         source,
                         schemaText,
                         0,
@@ -119,12 +119,12 @@ public final class StvnNamespaceSymbolCollector {
                 var kw = cDef.getValueKeyword();
                 if (kw != null) {
                     var fullText = kw.getText();
-                    var leafName = fullText.contains("/") ? "#" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
+                    var source = StvnPreludeBridge.getPreludePackagePath(cDef);
+                    var fqni = fullText.contains("/") ? fullText : source + "/" + fullText;
                     var schemaType = cDef.getSchemaType();
                     var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                    var source = StvnPreludeBridge.getPreludePackagePath(cDef);
                     results.add(new StvnNamespaceSymbolEntry(
-                        leafName,
+                        fqni,
                         source,
                         schemaText,
                         0,
@@ -293,7 +293,7 @@ public final class StvnNamespaceSymbolCollector {
             }
             var optionsBlock = use.getUseOptionsBlock();
             if (optionsBlock != null && optionsBlock.getText().contains("#strip")) {
-                collectStrippedPackageSymbols(file, targetText, processedNames, results);
+                collectStrippedPackageSymbols(file, targetText, processedNames, results, use);
             }
         }
 
@@ -335,7 +335,7 @@ public final class StvnNamespaceSymbolCollector {
                 for (var pkg : remotePackages) {
                     var path = pkg.getPackagePath();
                     var pathText = path != null ? path.getText() : includeSource;
-                    collectStrippedElements(pkg, pathText, processedNames, results);
+                    collectStrippedElements(pkg, pathText, processedNames, results, incl);
                 }
             }
 
@@ -1126,13 +1126,14 @@ public final class StvnNamespaceSymbolCollector {
             PsiFile file,
             String targetPackagePath,
             Set<String> processedNames,
-            List<StvnNamespaceSymbolEntry> results
+            List<StvnNamespaceSymbolEntry> results,
+            @Nullable PsiElement originElement
     ) {
         var localPackages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : localPackages) {
             var path = pkg.getPackagePath();
             if (path != null && path.getText().equals(targetPackagePath)) {
-                collectStrippedElements(pkg, targetPackagePath, processedNames, results);
+                collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement);
             }
         }
 
@@ -1146,7 +1147,7 @@ public final class StvnNamespaceSymbolCollector {
                 for (var pkg : remotePackages) {
                     var path = pkg.getPackagePath();
                     if (path != null && path.getText().equals(targetPackagePath)) {
-                        collectStrippedElements(pkg, targetPackagePath, processedNames, results);
+                        collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement != null ? originElement : incl);
                     }
                 }
             }
@@ -1157,7 +1158,7 @@ public final class StvnNamespaceSymbolCollector {
         for (var pkg : preludePackages) {
             var path = pkg.getPackagePath();
             if (path != null && path.getText().equals(targetPackagePath)) {
-                collectStrippedElements(pkg, targetPackagePath, processedNames, results);
+                collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement);
             }
         }
     }
@@ -1166,7 +1167,8 @@ public final class StvnNamespaceSymbolCollector {
             PackageEnclosure pkg,
             String targetPackagePath,
             Set<String> processedNames,
-            List<StvnNamespaceSymbolEntry> results
+            List<StvnNamespaceSymbolEntry> results,
+            @Nullable PsiElement originElement
     ) {
         for (var elem : pkg.getPackageElementList()) {
             var typeDef = elem.getTypeDefinition();
@@ -1175,15 +1177,16 @@ public final class StvnNamespaceSymbolCollector {
                 if (kw != null) {
                     var bareName = kw.getText();
                     var fqni = targetPackagePath + "/" + stripColon(bareName);
+                    var navElement = originElement != null ? originElement : kw;
                     if (processedNames.add(bareName)) {
                         results.add(new StvnNamespaceSymbolEntry(
                             bareName,
                             targetPackagePath,
                             fqni,
                             1,
-                            kw,
+                            navElement,
                             false,
-                            kw.getTextOffset(),
+                            navElement.getTextOffset(),
                             StvnNamespaceScope.DEFS
                         ));
                     }
@@ -1195,15 +1198,16 @@ public final class StvnNamespaceSymbolCollector {
                 if (kw != null) {
                     var bareName = kw.getText();
                     var fqni = targetPackagePath + "/" + bareName;
+                    var navElement = originElement != null ? originElement : kw;
                     if (processedNames.add(bareName)) {
                         results.add(new StvnNamespaceSymbolEntry(
                             bareName,
                             targetPackagePath,
                             fqni,
                             1,
-                            kw,
+                            navElement,
                             false,
-                            kw.getTextOffset(),
+                            navElement.getTextOffset(),
                             StvnNamespaceScope.DEFS
                         ));
                     }

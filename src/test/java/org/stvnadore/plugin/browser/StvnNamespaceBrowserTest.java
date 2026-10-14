@@ -683,54 +683,129 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(getProject());
         assertFalse("Prelude entries must not be empty", preludeEntries.isEmpty());
         assertEquals("Prelude must contain exactly 29 symbols (21 types + 8 constants)", 29, preludeEntries.size());
-        assertNotNull("Must contain :IPv4", findEntryByName(preludeEntries, ":IPv4"));
-        assertNotNull("Must contain :Port", findEntryByName(preludeEntries, ":Port"));
-        assertNotNull("Must contain :UuidLowerCase", findEntryByName(preludeEntries, ":UuidLowerCase"));
-        assertNotNull("Must contain :UuidMixedCase", findEntryByName(preludeEntries, ":UuidMixedCase"));
-        assertNotNull("Must contain :Sha256LowerCase", findEntryByName(preludeEntries, ":Sha256LowerCase"));
-        assertNotNull("Must contain :Sha256MixedCase", findEntryByName(preludeEntries, ":Sha256MixedCase"));
-        assertNotNull("Must contain :EmailLowerCase", findEntryByName(preludeEntries, ":EmailLowerCase"));
-        assertNotNull("Must contain :EmailMixedCase", findEntryByName(preludeEntries, ":EmailMixedCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/IPv4", findEntryByName(preludeEntries, ":org/stvnadore/prelude/IPv4"));
+        assertNotNull("Must contain :org/stvnadore/prelude/Port", findEntryByName(preludeEntries, ":org/stvnadore/prelude/Port"));
+        assertNotNull("Must contain :org/stvnadore/prelude/UuidLowerCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/UuidLowerCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/UuidMixedCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/UuidMixedCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/Sha256LowerCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/Sha256LowerCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/Sha256MixedCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/Sha256MixedCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/EmailLowerCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/EmailLowerCase"));
+        assertNotNull("Must contain :org/stvnadore/prelude/EmailMixedCase", findEntryByName(preludeEntries, ":org/stvnadore/prelude/EmailMixedCase"));
 
-        // Verify harvested prelude constants
-        assertNotNull("Must contain #UUID_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#UUID_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain #UUID_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#UUID_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain #SHA256_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#SHA256_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain #SHA256_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#SHA256_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain #EMAIL_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#EMAIL_LOWER_CASE_REGEX"));
-        assertNotNull("Must contain #EMAIL_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#EMAIL_MIXED_CASE_REGEX"));
-        assertNotNull("Must contain #POSIX_ID_REGEX", findEntryByName(preludeEntries, "#POSIX_ID_REGEX"));
-        assertNotNull("Must contain #POLYGLOT_CODE_ID_REGEX", findEntryByName(preludeEntries, "#POLYGLOT_CODE_ID_REGEX"));
+        // Verify bare phantom names do not exist in prelude entries
+        assertNull("Bare phantom :IPv4 must not exist in prelude entries", findEntryByName(preludeEntries, ":IPv4"));
+        assertNull("Bare phantom :Port must not exist in prelude entries", findEntryByName(preludeEntries, ":Port"));
+        assertNull("Bare phantom #POSIX_ID_REGEX must not exist in prelude entries", findEntryByName(preludeEntries, "#POSIX_ID_REGEX"));
 
-        var posixConst = findEntryByName(preludeEntries, "#POSIX_ID_REGEX");
+        // Verify harvested prelude constants under canonical FQNIs
+        assertNotNull("Must contain :org/stvnadore/prelude/#UUID_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#UUID_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#UUID_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#UUID_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#SHA256_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#SHA256_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#SHA256_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#SHA256_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#EMAIL_LOWER_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#EMAIL_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#EMAIL_MIXED_CASE_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#EMAIL_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#POSIX_ID_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX"));
+        assertNotNull("Must contain :org/stvnadore/prelude/#POLYGLOT_CODE_ID_REGEX", findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POLYGLOT_CODE_ID_REGEX"));
+
+        var posixConst = findEntryByName(preludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX");
         assertNotNull(posixConst);
         assertTrue("Constant entry must be marked prelude", posixConst.isPrelude());
         assertEquals(":org/stvnadore/prelude", posixConst.source());
         assertEquals(":String", posixConst.typeStructure());
         assertEquals(0, posixConst.useDepth());
 
-        var ipv4Entry = findEntryByName(preludeEntries, ":IPv4");
+        var ipv4Entry = findEntryByName(preludeEntries, ":org/stvnadore/prelude/IPv4");
         assertNotNull(ipv4Entry);
         assertTrue("Entry must be marked prelude", ipv4Entry.isPrelude());
         assertEquals(":org/stvnadore/prelude", ipv4Entry.source());
 
-        var posixId64 = findEntryByName(preludeEntries, ":StvnPosixId64");
-        assertNotNull("Must contain :StvnPosixId64", posixId64);
+        var posixId64 = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnPosixId64");
+        assertNotNull("Must contain :org/stvnadore/prelude/meta/StvnPosixId64", posixId64);
         assertTrue("Entry must be marked prelude", posixId64.isPrelude());
         assertEquals(":org/stvnadore/prelude/meta", posixId64.source());
 
-        var docKind = findEntryByName(preludeEntries, ":StvnDocumentKind");
-        assertNotNull("Must contain :StvnDocumentKind", docKind);
+        var docKind = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnDocumentKind");
+        assertNotNull("Must contain :org/stvnadore/prelude/meta/StvnDocumentKind", docKind);
         assertEquals(":org/stvnadore/prelude/meta", docKind.source());
         assertEquals(":Enum [ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]", docKind.typeStructure());
 
-        var docMeta = findEntryByName(preludeEntries, ":StvnDocumentMeta");
-        assertNotNull("Must contain :StvnDocumentMeta", docMeta);
+        var docMeta = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnDocumentMeta");
+        assertNotNull("Must contain :org/stvnadore/prelude/meta/StvnDocumentMeta", docMeta);
         assertEquals(":org/stvnadore/prelude/meta", docMeta.source());
 
-        var catMeta = findEntryByName(preludeEntries, ":StvnCatalogMeta");
-        assertNotNull("Must contain :StvnCatalogMeta", catMeta);
+        var catMeta = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnCatalogMeta");
+        assertNotNull("Must contain :org/stvnadore/prelude/meta/StvnCatalogMeta", catMeta);
         assertEquals(":org/stvnadore/prelude/meta", catMeta.source());
+    }
+
+    /**
+     * Verifies that when a local document declares :use [ :org/stvnadore/prelude { #strip } ],
+     * the namespace browser table correctly contains both the Depth 1 bare aliases and the
+     * Depth 0 canonical FQNI prelude symbols when Show Standard Library Prelude is active.
+     */
+    public void testDocumentWithPreludeStripDisplaysBothBareAliasesAndCanonicalFqnis() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("prelude_strip.stvn", content);
+        var contentUi = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
+        assertNotNull(contentUi);
+
+        // Initially without prelude checkbox, contains only stripped aliases at Depth 1 (25 symbols)
+        var initialEntries = contentUi.tableModel().getItems();
+        var initialBarePort = findEntryByName(initialEntries, ":Port");
+        assertNotNull("Bare alias :Port must exist at Depth 1", initialBarePort);
+        assertEquals(1, initialBarePort.useDepth());
+        assertEquals(":org/stvnadore/prelude", initialBarePort.source());
+        assertEquals(":org/stvnadore/prelude/Port", initialBarePort.typeStructure());
+        assertFalse(initialBarePort.isPrelude());
+
+        var initialPosixRegex = findEntryByName(initialEntries, "#POSIX_ID_REGEX");
+        assertNotNull("Bare alias #POSIX_ID_REGEX must exist at Depth 1", initialPosixRegex);
+        assertEquals(1, initialPosixRegex.useDepth());
+        assertEquals(":org/stvnadore/prelude", initialPosixRegex.source());
+        assertEquals(":org/stvnadore/prelude/#POSIX_ID_REGEX", initialPosixRegex.typeStructure());
+        assertFalse(initialPosixRegex.isPrelude());
+
+        assertNull("Canonical FQNI :org/stvnadore/prelude/Port must NOT exist before checkbox toggle",
+            findEntryByName(initialEntries, ":org/stvnadore/prelude/Port"));
+
+        // Toggle checkbox on
+        contentUi.showPreludeCheckBox().doClick();
+        var withPreludeEntries = contentUi.tableModel().getItems();
+
+        // Both Depth 1 bare alias and Depth 0 canonical FQNI must now coexist harmoniously
+        var barePort = findEntryByName(withPreludeEntries, ":Port");
+        assertNotNull("Bare alias :Port must remain present at Depth 1", barePort);
+        assertEquals(1, barePort.useDepth());
+        assertFalse(barePort.isPrelude());
+
+        var fqniPort = findEntryByName(withPreludeEntries, ":org/stvnadore/prelude/Port");
+        assertNotNull("Canonical FQNI :org/stvnadore/prelude/Port must be present at Depth 0", fqniPort);
+        assertEquals(0, fqniPort.useDepth());
+        assertEquals(":org/stvnadore/prelude", fqniPort.source());
+        assertTrue(fqniPort.isPrelude());
+
+        var bareRegex = findEntryByName(withPreludeEntries, "#POSIX_ID_REGEX");
+        assertNotNull("Bare alias #POSIX_ID_REGEX must remain present at Depth 1", bareRegex);
+        assertEquals(1, bareRegex.useDepth());
+        assertFalse(bareRegex.isPrelude());
+
+        var fqniRegex = findEntryByName(withPreludeEntries, ":org/stvnadore/prelude/#POSIX_ID_REGEX");
+        assertNotNull("Canonical FQNI :org/stvnadore/prelude/#POSIX_ID_REGEX must be present at Depth 0", fqniRegex);
+        assertEquals(0, fqniRegex.useDepth());
+        assertEquals(":org/stvnadore/prelude", fqniRegex.source());
+        assertTrue(fqniRegex.isPrelude());
+
+        var metaDocKind = findEntryByName(withPreludeEntries, ":org/stvnadore/prelude/meta/StvnDocumentKind");
+        assertNotNull("Canonical FQNI :org/stvnadore/prelude/meta/StvnDocumentKind must be present at Depth 0", metaDocKind);
+        assertEquals(0, metaDocKind.useDepth());
+        assertEquals(":org/stvnadore/prelude/meta", metaDocKind.source());
+        assertTrue(metaDocKind.isPrelude());
     }
 
     private static com.intellij.psi.@Nullable PsiElement findTokenByText(com.intellij.psi.PsiFile file, String text) {
