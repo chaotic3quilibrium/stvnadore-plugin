@@ -709,16 +709,28 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             return false;
         }
         return typeName.equals(StvnVocabulary.TYPE_STRING)
+            || typeName.equals(":org/stvnadore/prelude/UuidLowerCase")
+            || typeName.equals(":org/stvnadore/prelude/UuidMixedCase")
             || typeName.equals(":org/stvnadore/prelude/Uuid")
             || typeName.equals(":org/stvnadore/prelude/Ulid")
+            || typeName.equals(":org/stvnadore/prelude/Sha256LowerCase")
+            || typeName.equals(":org/stvnadore/prelude/Sha256MixedCase")
             || typeName.equals(":org/stvnadore/prelude/Sha256")
             || typeName.equals(":org/stvnadore/prelude/SemVer")
+            || typeName.equals(":org/stvnadore/prelude/EmailLowerCase")
+            || typeName.equals(":org/stvnadore/prelude/EmailMixedCase")
             || typeName.equals(":org/stvnadore/prelude/Email")
             || typeName.equals(":org/stvnadore/prelude/IPv4")
+            || typeName.equals(":UuidLowerCase")
+            || typeName.equals(":UuidMixedCase")
             || typeName.equals(":Uuid")
             || typeName.equals(":Ulid")
+            || typeName.equals(":Sha256LowerCase")
+            || typeName.equals(":Sha256MixedCase")
             || typeName.equals(":Sha256")
             || typeName.equals(":SemVer")
+            || typeName.equals(":EmailLowerCase")
+            || typeName.equals(":EmailMixedCase")
             || typeName.equals(":Email")
             || typeName.equals(":IPv4");
     }

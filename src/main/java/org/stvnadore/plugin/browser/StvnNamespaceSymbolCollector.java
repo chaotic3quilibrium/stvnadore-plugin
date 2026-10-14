@@ -114,6 +114,27 @@ public final class StvnNamespaceSymbolCollector {
                     ));
                 }
             }
+            var constDefs = PsiTreeUtil.findChildrenOfType(preludeFile, ConstantDefinition.class);
+            for (var cDef : constDefs) {
+                var kw = cDef.getValueKeyword();
+                if (kw != null) {
+                    var fullText = kw.getText();
+                    var leafName = fullText.contains("/") ? "#" + fullText.substring(fullText.lastIndexOf('/') + 1) : fullText;
+                    var schemaType = cDef.getSchemaType();
+                    var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                    var source = StvnPreludeBridge.getPreludePackagePath(cDef);
+                    results.add(new StvnNamespaceSymbolEntry(
+                        leafName,
+                        source,
+                        schemaText,
+                        0,
+                        kw,
+                        true,
+                        kw.getTextOffset(),
+                        StvnNamespaceScope.DEFS
+                    ));
+                }
+            }
             return List.copyOf(results);
         });
     }

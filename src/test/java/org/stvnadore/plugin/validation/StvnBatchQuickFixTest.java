@@ -28,11 +28,11 @@ public final class StvnBatchQuickFixTest extends BasePlatformTestCase {
             :ZonedDateTime  { #zoned } :DateTime
             :AuditedDateTime { #audited } :DateTime
 
-            :IdUuid         :org/stvnadore/prelude/Uuid
+            :IdUuid         :org/stvnadore/prelude/UuidLowerCase
             :IdUlid         :Ulid
-            :HashSha256     :Sha256
+            :HashSha256     :Sha256LowerCase
             :VersionSemVer  :SemVer
-            :ContactEmail   :Email
+            :ContactEmail   :EmailLowerCase
             :NetworkIPv4    :IPv4
             :NetworkPort    :Port
             :RatioPercent   :Percentage
@@ -75,9 +75,9 @@ public final class StvnBatchQuickFixTest extends BasePlatformTestCase {
 
     private static final List<String> EXPECTED_PRELUDE_TOKENS = List.of(
         ":Ulid",
-        ":Sha256",
+        ":Sha256LowerCase",
         ":SemVer",
-        ":Email",
+        ":EmailLowerCase",
         ":IPv4",
         ":Port",
         ":Percentage",

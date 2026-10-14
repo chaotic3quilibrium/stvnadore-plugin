@@ -82,12 +82,12 @@ public final class StvnPreludeConstantDocumentationTest extends BasePlatformTest
         var content = """
             {
               :defs {
-                :MyType { #regex #EMAIL_REGEX } :String
+                :MyType { #regex #EMAIL_LOWER_CASE_REGEX } :String
               }
             }
             """;
         var psiFile = myFixture.configureByText("test_email.stvn_d", content);
-        var resolved = StvnConstantReference.resolveConstantInFile(psiFile, "#EMAIL_REGEX", new HashSet<>());
+        var resolved = StvnConstantReference.resolveConstantInFile(psiFile, "#EMAIL_LOWER_CASE_REGEX", new HashSet<>());
         assertNotNull("Unqualified prelude constant must resolve via bridge fallback", resolved);
         assertTrue("Resolved element must be ValueKeyword in ConstantDefinition",
             resolved instanceof ValueKeyword && resolved.getParent() instanceof ConstantDefinition);

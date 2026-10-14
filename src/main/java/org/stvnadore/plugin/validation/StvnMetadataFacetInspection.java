@@ -476,16 +476,28 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static boolean isCanonicalPreludeStringType(String baseType) {
-        return baseType.equals(":org/stvnadore/prelude/Uuid")
+        return baseType.equals(":org/stvnadore/prelude/UuidLowerCase")
+            || baseType.equals(":org/stvnadore/prelude/UuidMixedCase")
+            || baseType.equals(":org/stvnadore/prelude/Uuid")
             || baseType.equals(":org/stvnadore/prelude/Ulid")
+            || baseType.equals(":org/stvnadore/prelude/Sha256LowerCase")
+            || baseType.equals(":org/stvnadore/prelude/Sha256MixedCase")
             || baseType.equals(":org/stvnadore/prelude/Sha256")
             || baseType.equals(":org/stvnadore/prelude/SemVer")
+            || baseType.equals(":org/stvnadore/prelude/EmailLowerCase")
+            || baseType.equals(":org/stvnadore/prelude/EmailMixedCase")
             || baseType.equals(":org/stvnadore/prelude/Email")
             || baseType.equals(":org/stvnadore/prelude/IPv4")
+            || baseType.equals(":UuidLowerCase")
+            || baseType.equals(":UuidMixedCase")
             || baseType.equals(":Uuid")
             || baseType.equals(":Ulid")
+            || baseType.equals(":Sha256LowerCase")
+            || baseType.equals(":Sha256MixedCase")
             || baseType.equals(":Sha256")
             || baseType.equals(":SemVer")
+            || baseType.equals(":EmailLowerCase")
+            || baseType.equals(":EmailMixedCase")
             || baseType.equals(":Email")
             || baseType.equals(":IPv4");
     }

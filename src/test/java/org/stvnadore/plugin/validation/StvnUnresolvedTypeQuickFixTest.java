@@ -327,7 +327,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies Fix 2 on nonempty_torture.stvn referencing :Uuid in :type.
+     * Verifies Fix 2 on nonempty_torture.stvn referencing :UuidLowerCase in :type.
      */
     public void testNonemptyTortureQuickFixDefsSynthesis() {
         var content = """
@@ -335,7 +335,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
               :type :Tuple(
                       { #minSize 1 } :Seq(:Int)
                       { #minSize 1 } :Set(:String)
-                      { #minSize 1 } :Map(:Uuid :String)
+                      { #minSize 1 } :Map(:UuidLowerCase :String)
                       { #minSize 1 } :Map(:String :Int))
               :body (
                 [1]
@@ -352,17 +352,17 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
             }
             """;
         myFixture.configureByText("nonempty_torture_test.stvn", content);
-        var caretOffset = content.indexOf(":Uuid");
+        var caretOffset = content.indexOf(":UuidLowerCase");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
 
-        var actions = myFixture.filterAvailableIntentions("Import ':Uuid' from Prelude via :use (preserves type identity)");
-        assertFalse("Fix 2 must be available for :Uuid in nonempty_torture.stvn", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Import ':UuidLowerCase' from Prelude via :use (preserves type identity)");
+        assertFalse("Fix 2 must be available for :UuidLowerCase in nonempty_torture.stvn", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var text = myFixture.getFile().getText();
         assertTrue("Must synthesize :defs block before :type", text.indexOf(":defs") < text.indexOf(":type"));
-        assertTrue("Must contain :use statement for :Uuid", text.contains(":use [ :org/stvnadore/prelude { :Uuid :Uuid } ]"));
+        assertTrue("Must contain :use statement for :UuidLowerCase", text.contains(":use [ :org/stvnadore/prelude { :UuidLowerCase :UuidLowerCase } ]"));
 
         var errors = PsiTreeUtil.findChildrenOfType(myFixture.getFile(), PsiErrorElement.class);
         assertTrue("Must contain zero PsiErrorElement nodes. Found: " + errors, errors.isEmpty());

@@ -682,10 +682,33 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     public void testCollectPreludeSymbols() {
         var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(getProject());
         assertFalse("Prelude entries must not be empty", preludeEntries.isEmpty());
-        assertTrue("Prelude must contain canonical types", preludeEntries.size() >= 10);
+        assertEquals("Prelude must contain exactly 29 symbols (21 types + 8 constants)", 29, preludeEntries.size());
         assertNotNull("Must contain :IPv4", findEntryByName(preludeEntries, ":IPv4"));
         assertNotNull("Must contain :Port", findEntryByName(preludeEntries, ":Port"));
-        assertNotNull("Must contain :Uuid", findEntryByName(preludeEntries, ":Uuid"));
+        assertNotNull("Must contain :UuidLowerCase", findEntryByName(preludeEntries, ":UuidLowerCase"));
+        assertNotNull("Must contain :UuidMixedCase", findEntryByName(preludeEntries, ":UuidMixedCase"));
+        assertNotNull("Must contain :Sha256LowerCase", findEntryByName(preludeEntries, ":Sha256LowerCase"));
+        assertNotNull("Must contain :Sha256MixedCase", findEntryByName(preludeEntries, ":Sha256MixedCase"));
+        assertNotNull("Must contain :EmailLowerCase", findEntryByName(preludeEntries, ":EmailLowerCase"));
+        assertNotNull("Must contain :EmailMixedCase", findEntryByName(preludeEntries, ":EmailMixedCase"));
+
+        // Verify harvested prelude constants
+        assertNotNull("Must contain #UUID_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#UUID_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #UUID_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#UUID_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #SHA256_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#SHA256_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #SHA256_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#SHA256_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #EMAIL_LOWER_CASE_REGEX", findEntryByName(preludeEntries, "#EMAIL_LOWER_CASE_REGEX"));
+        assertNotNull("Must contain #EMAIL_MIXED_CASE_REGEX", findEntryByName(preludeEntries, "#EMAIL_MIXED_CASE_REGEX"));
+        assertNotNull("Must contain #POSIX_ID_REGEX", findEntryByName(preludeEntries, "#POSIX_ID_REGEX"));
+        assertNotNull("Must contain #POLYGLOT_CODE_ID_REGEX", findEntryByName(preludeEntries, "#POLYGLOT_CODE_ID_REGEX"));
+
+        var posixConst = findEntryByName(preludeEntries, "#POSIX_ID_REGEX");
+        assertNotNull(posixConst);
+        assertTrue("Constant entry must be marked prelude", posixConst.isPrelude());
+        assertEquals(":org/stvnadore/prelude", posixConst.source());
+        assertEquals(":String", posixConst.typeStructure());
+        assertEquals(0, posixConst.useDepth());
+
         var ipv4Entry = findEntryByName(preludeEntries, ":IPv4");
         assertNotNull(ipv4Entry);
         assertTrue("Entry must be marked prelude", ipv4Entry.isPrelude());

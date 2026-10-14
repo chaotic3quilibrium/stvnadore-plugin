@@ -1045,7 +1045,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :NonEmptyMap    { #minSize 1 } :Map(:Uuid :String)
+                :NonEmptyMap    { #minSize 1 } :Map(:UuidLowerCase :String)
                 :NonEmptyInvMap { #invertible #minSize 1 } :Map(:String :Int)
               }
               :type :Tuple(
@@ -3559,11 +3559,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :UserIp :IPv4
-                :UserId :Uuid
+                :UserId :UuidLowerCase
                 :SessionId :Ulid
-                :Digest :Sha256
+                :Digest :Sha256LowerCase
                 :AppVersion :SemVer
-                :Contact :Email
+                :Contact :EmailLowerCase
                 :HttpPort :Port
                 :CompletionRate :Percentage
                 :RiskScore :Probability
@@ -3617,15 +3617,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue(ipv4Doc.contains("dotted-quad IPv4 internet protocol address"));
         assertTrue(ipv4Doc.contains("0.0.0.0"));
 
-        // 2. Assert :Uuid Hover
-        var uuidOffset = text.indexOf(":Uuid");
+        // 2. Assert :UuidLowerCase Hover
+        var uuidOffset = text.indexOf(":UuidLowerCase");
         var uuidElem = myFixture.getFile().findElementAt(uuidOffset);
         assertNotNull(uuidElem);
         var uuidDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), uuidElem, uuidOffset);
         assertNotNull(uuidDocElem);
         var uuidDoc = provider.generateDoc(uuidDocElem, uuidElem);
-        assertNotNull("Hover doc for :Uuid must not be null", uuidDoc);
-        assertTrue(uuidDoc.contains("Standard Library Prelude:</b> :Uuid"));
+        assertNotNull("Hover doc for :UuidLowerCase must not be null", uuidDoc);
+        assertTrue(uuidDoc.contains("Standard Library Prelude:</b> :UuidLowerCase"));
         assertTrue(uuidDoc.contains("RFC 4122 Universally Unique Identifier"));
 
         // 3. Assert :Ulid Hover
@@ -3639,18 +3639,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue(ulidDoc.contains("Standard Library Prelude:</b> :Ulid"));
         assertTrue(ulidDoc.contains("Crockford's Base32"));
 
-        // 4. Assert :Sha256 Hover
-        var sha256Offset = text.indexOf(":Sha256");
+        // 4. Assert :Sha256LowerCase Hover
+        var sha256Offset = text.indexOf(":Sha256LowerCase");
         var sha256Elem = myFixture.getFile().findElementAt(sha256Offset);
         assertNotNull(sha256Elem);
         var sha256DocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), sha256Elem, sha256Offset);
         assertNotNull(sha256DocElem);
         var sha256Doc = provider.generateDoc(sha256DocElem, sha256Elem);
-        assertNotNull("Hover doc for :Sha256 must not be null", sha256Doc);
-        assertTrue(sha256Doc.contains("Standard Library Prelude:</b> :Sha256"));
-        assertTrue(sha256Doc.contains("SHA-256 cryptographic hash (64 hex characters)"));
-        assertTrue(sha256Doc.contains("{ #size 64 } :String"));
-        assertTrue(sha256Doc.contains("^[0-9a-fA-F]{64}$"));
+        assertNotNull("Hover doc for :Sha256LowerCase must not be null", sha256Doc);
+        assertTrue(sha256Doc.contains("Standard Library Prelude:</b> :Sha256LowerCase"));
+        assertTrue(sha256Doc.contains("SHA-256 cryptographic hash"));
+        assertTrue(sha256Doc.contains("#SHA256_LOWER_CASE_REGEX"));
 
         // 5. Assert :SemVer Hover
         var semVerOffset = text.indexOf(":SemVer");
@@ -3663,15 +3662,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue(semVerDoc.contains("Standard Library Prelude:</b> :SemVer"));
         assertTrue(semVerDoc.contains("Semantic Versioning 2.0.0"));
 
-        // 6. Assert :Email Hover
-        var emailOffset = text.indexOf(":Email");
+        // 6. Assert :EmailLowerCase Hover
+        var emailOffset = text.indexOf(":EmailLowerCase");
         var emailElem = myFixture.getFile().findElementAt(emailOffset);
         assertNotNull(emailElem);
         var emailDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), emailElem, emailOffset);
         assertNotNull(emailDocElem);
         var emailDoc = provider.generateDoc(emailDocElem, emailElem);
-        assertNotNull("Hover doc for :Email must not be null", emailDoc);
-        assertTrue(emailDoc.contains("Standard Library Prelude:</b> :Email"));
+        assertNotNull("Hover doc for :EmailLowerCase must not be null", emailDoc);
+        assertTrue(emailDoc.contains("Standard Library Prelude:</b> :EmailLowerCase"));
         assertTrue(emailDoc.contains("RFC 5322 electronic mail address"));
 
         // 7. Assert :Port Hover
@@ -3876,7 +3875,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :Digest :Sha256
+                :Digest :Sha256LowerCase
               }
               :type :Tuple( :Digest )
               :body (
@@ -3887,7 +3886,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var highlights = myFixture.doHighlighting();
         for (var info : highlights) {
-            assertFalse("Expected 0 ERROR annotations for valid :Sha256 literal, but found: " + info.getDescription(),
+            assertFalse("Expected 0 ERROR annotations for valid :Sha256LowerCase literal, but found: " + info.getDescription(),
                         info.getSeverity().equals(HighlightSeverity.ERROR));
         }
 
@@ -3897,7 +3896,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertFalse(tupleValues.isEmpty());
         var elementValue = tupleValues.get(0);
         var resolvedType = org.stvnadore.plugin.reference.StvnTypeResolver.resolveValueType(elementValue);
-        assertEquals(":Digest (-> :Sha256)", resolvedType);
+        assertEquals(":Digest (-> :Sha256LowerCase)", resolvedType);
     }
 
     public void testSha256InvalidLengthDiagnostic() {
@@ -3907,7 +3906,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :Digest :Sha256
+                :Digest :Sha256LowerCase
               }
               :type :Tuple( :Digest )
               :body (
@@ -3930,7 +3929,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 }
             }
         }
-        assertTrue("Expected error diagnostic for 40-character legacy digest under :Sha256", foundError);
+        assertTrue("Expected error diagnostic for 40-character legacy digest under :Sha256LowerCase", foundError);
     }
 
     public void testSha256NonHexCharacterDiagnostic() {
@@ -3940,7 +3939,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :use [ :org/stvnadore/prelude { #strip } ]
-                :Digest :Sha256
+                :Digest :Sha256LowerCase
               }
               :type :Tuple( :Digest )
               :body (
@@ -3963,7 +3962,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 }
             }
         }
-        assertTrue("Expected error diagnostic for non-hex character in :Sha256 literal", foundError);
+        assertTrue("Expected error diagnostic for non-hex character in :Sha256LowerCase literal", foundError);
     }
 
     public void testUhohEightAryTupleInlayHintPlacements() {
@@ -4393,7 +4392,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   :StringFixed15
                   :Boolean
                   { #ms } :TimeEpoch
-                  :Uuid
+                  :UuidLowerCase
                 )
               }
               :type :Tuple( :ClusterMetrics8 )

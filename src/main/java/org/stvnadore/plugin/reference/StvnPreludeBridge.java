@@ -2,6 +2,7 @@ package org.stvnadore.plugin.reference;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -80,7 +81,17 @@ public final class StvnPreludeBridge {
      * @return the package namespace path (for example, {@code ":org/stvnadore/prelude/meta"})
      */
     public static String getPreludePackagePath(TypeDefinition def) {
-        var pkg = PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class);
+        return getPreludePackagePath((PsiElement) def);
+    }
+
+    /**
+     * Resolves the canonical package namespace path of a prelude AST element.
+     *
+     * @param element the AST node from the prelude (TypeDefinition or ConstantDefinition)
+     * @return the package namespace path (for example, {@code ":org/stvnadore/prelude"})
+     */
+    public static String getPreludePackagePath(PsiElement element) {
+        var pkg = PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.PackageEnclosure.class);
         if (pkg != null && pkg.getPackagePath() != null) {
             return pkg.getPackagePath().getText();
         }

@@ -1473,6 +1473,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Lexical Form:</b> Four decimal octets (0–255) separated by periods (<code>.</code>).<br/>
                 <b>Examples:</b> <code>"127.0.0.1"</code>, <code>"192.168.1.1"</code>, <code>"10.0.0.1"</code>, <code>"255.255.255.255"</code>.
                 """;
+            case ":UuidLowerCase" -> """
+                <b>Standard Library Prelude:</b> :UuidLowerCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 36 #maxSize 36 #regex #UUID_LOWER_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents an <b>RFC 4122 Universally Unique Identifier</b> in strict lowercase hexadecimal format.<br/>
+                <b>Lexical Form:</b> Fixed 36-character string in 8-4-4-4-12 hyphenated lowercase notation.<br/>
+                <b>Examples:</b> <code>"123e4567-e89b-12d3-a456-426614174000"</code>, <code>"f47ac10b-58cc-4372-a567-0e02b2c3d479"</code>.
+                """;
+            case ":UuidMixedCase" -> """
+                <b>Standard Library Prelude:</b> :UuidMixedCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 36 #maxSize 36 #regex #UUID_MIXED_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents an <b>RFC 4122 Universally Unique Identifier</b> in case-insensitive mixed hexadecimal format.<br/>
+                <b>Lexical Form:</b> Fixed 36-character string in 8-4-4-4-12 hyphenated mixed-case notation.<br/>
+                <b>Examples:</b> <code>"123E4567-E89B-12D3-A456-426614174000"</code>.
+                """;
             case ":Uuid" -> """
                 <b>Standard Library Prelude:</b> :Uuid<br/>
                 <b>Underlying Type:</b> <code>{ #size 36 } :String</code><br/>
@@ -1491,6 +1507,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Lexical Form:</b> Fixed 26-character alphanumeric string (excludes <code>I</code>, <code>L</code>, <code>O</code>, <code>U</code>; first character in <code>0-7</code>).<br/>
                 <b>Examples:</b> <code>"01ARZ3NDEKTSV4RRFFQ69G5FAV"</code>, <code>"01EDZZZG8X69W1V3Q2P8P5MNQ3"</code>.
                 """;
+            case ":Sha256LowerCase" -> """
+                <b>Standard Library Prelude:</b> :Sha256LowerCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 64 #maxSize 64 #regex #SHA256_LOWER_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents a <b>SHA-256 cryptographic hash</b> in strict lowercase hexadecimal notation.<br/>
+                <b>Lexical Form:</b> Fixed 64-character lowercase hexadecimal string.<br/>
+                <b>Examples:</b> <code>"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"</code>.
+                """;
+            case ":Sha256MixedCase" -> """
+                <b>Standard Library Prelude:</b> :Sha256MixedCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 64 #maxSize 64 #regex #SHA256_MIXED_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents a <b>SHA-256 cryptographic hash</b> in case-insensitive mixed hexadecimal notation.<br/>
+                <b>Lexical Form:</b> Fixed 64-character hexadecimal string.<br/>
+                <b>Examples:</b> <code>"BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"</code>.
+                """;
             case ":Sha256" -> """
                 <b>Standard Library Prelude:</b> :Sha256<br/>
                 <b>Underlying Type:</b> <code>{ #size 64 } :String</code><br/>
@@ -1508,6 +1540,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 Represents a release version adhering to the <b>Semantic Versioning 2.0.0 specification</b>.<br/>
                 <b>Lexical Form:</b> <code>MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]</code> without leading zeros in numeric components.<br/>
                 <b>Examples:</b> <code>"1.0.0"</code>, <code>"2.1.4-beta.1"</code>, <code>"0.3.0-alpha.1+20260819"</code>.
+                """;
+            case ":EmailLowerCase" -> """
+                <b>Standard Library Prelude:</b> :EmailLowerCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 3 #maxSize 254 #regex #EMAIL_LOWER_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents an <b>RFC 5322 electronic mail address</b> in strict lowercase format.<br/>
+                <b>Lexical Form:</b> Standard <code>local-part@domain.tld</code> syntax restricted to lowercase characters.<br/>
+                <b>Examples:</b> <code>"developer@stvnadore.org"</code>, <code>"jane.doe@example.com"</code>.
+                """;
+            case ":EmailMixedCase" -> """
+                <b>Standard Library Prelude:</b> :EmailMixedCase<br/>
+                <b>Underlying Type:</b> <code>{ #minSize 3 #maxSize 254 #regex #EMAIL_MIXED_CASE_REGEX } :String</code><br/>
+                <hr/>
+                Represents an <b>RFC 5322 electronic mail address</b> permitting mixed-case characters.<br/>
+                <b>Lexical Form:</b> Standard <code>local-part@domain.tld</code> syntax.<br/>
+                <b>Examples:</b> <code>"Developer@stvnadore.org"</code>, <code>"Jane.Doe@Example.COM"</code>.
                 """;
             case ":Email" -> """
                 <b>Standard Library Prelude:</b> :Email<br/>
@@ -1578,10 +1626,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private static @Nullable String getBuiltInPreludeQuickNavigateInfo(String keyword) {
         return switch (keyword) {
             case ":IPv4" -> "Standard Prelude Type: :IPv4 (Dotted-Quad IPv4 Address)";
+            case ":UuidLowerCase" -> "Standard Prelude Type: :UuidLowerCase (RFC 4122 Lowercase UUID)";
+            case ":UuidMixedCase" -> "Standard Prelude Type: :UuidMixedCase (RFC 4122 Mixed-Case UUID)";
             case ":Uuid" -> "Standard Prelude Type: :Uuid (RFC 4122 UUID)";
             case ":Ulid" -> "Standard Prelude Type: :Ulid (Crockford Base32 ULID)";
+            case ":Sha256LowerCase" -> "Standard Prelude Type: :Sha256LowerCase (SHA-256 lowercase hash)";
+            case ":Sha256MixedCase" -> "Standard Prelude Type: :Sha256MixedCase (SHA-256 mixed-case hash)";
             case ":Sha256" -> "Standard Prelude Type: :Sha256 (SHA-256 cryptographic hash (64 hex characters))";
             case ":SemVer" -> "Standard Prelude Type: :SemVer (Semantic Version 2.0.0)";
+            case ":EmailLowerCase" -> "Standard Prelude Type: :EmailLowerCase (RFC 5322 Lowercase Email)";
+            case ":EmailMixedCase" -> "Standard Prelude Type: :EmailMixedCase (RFC 5322 Mixed-Case Email)";
             case ":Email" -> "Standard Prelude Type: :Email (RFC 5322 Email Address)";
             case ":Port" -> "Standard Prelude Type: :Port (TCP/UDP Port 1-65535)";
             case ":Percentage" -> "Standard Prelude Type: :Percentage (Float 0.0 - 100.0)";
