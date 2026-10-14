@@ -1,15 +1,18 @@
 package org.stvnadore.plugin.browser;
 
+import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -23,6 +26,7 @@ import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -195,6 +199,15 @@ public final class StvnNamespaceBrowserPopup {
         int modelRow = table.convertRowIndexToModel(row);
         var entry = tableModel.getItem(modelRow);
 
+        var popupMenu = buildContextMenu(project, sourceFile, entry);
+        popupMenu.show(table, e.getX(), e.getY());
+    }
+
+    static JBPopupMenu buildContextMenu(
+            Project project,
+            PsiFile sourceFile,
+            StvnNamespaceSymbolEntry entry
+    ) {
         var popupMenu = new JBPopupMenu();
         var itemUse = new JMenuItem("Insert Reference (:use)");
         itemUse.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
@@ -202,19 +215,19 @@ public final class StvnNamespaceBrowserPopup {
         ));
         popupMenu.add(itemUse);
 
-        var itemQualify = new JMenuItem("Qualify Reference in Editor (FQNI)");
-        itemQualify.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
-            insertQualifiedReferenceInEditor(project, sourceFile, entry)
-        ));
-        popupMenu.add(itemQualify);
+        var itemCopyFqni = new JMenuItem("Copy FQNI");
+        itemCopyFqni.addActionListener(ev -> copyFqniToClipboard(project, entry));
+        popupMenu.add(itemCopyFqni);
 
-        var itemBrand = new JMenuItem("Brand as New Nominal Type in :defs");
-        itemBrand.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
-            insertNominalBrandInDefs(project, sourceFile, entry)
-        ));
-        popupMenu.add(itemBrand);
+        if (!isConstantSymbol(entry)) {
+            var itemBrand = new JMenuItem("Brand as New Nominal Type in :defs");
+            itemBrand.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
+                insertNominalBrandInDefs(project, sourceFile, entry)
+            ));
+            popupMenu.add(itemBrand);
+        }
 
-        popupMenu.show(table, e.getX(), e.getY());
+        return popupMenu;
     }
 
     static void insertUseReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
@@ -325,29 +338,62 @@ public final class StvnNamespaceBrowserPopup {
         }
     }
 
-    private static void insertQualifiedReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
-        var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
-        if (editor != null) {
-            String fqni;
+    static boolean isConstantSymbol(StvnNamespaceSymbolEntry entry) {
+        var name = entry.name();
+        if (name.startsWith("#")) {
+            return true;
+        }
+        int lastSlash = name.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash + 1 < name.length()) {
+            return name.charAt(lastSlash + 1) == '#';
+        }
+        return false;
+    }
+
+    static String resolveCanonicalFqni(StvnNamespaceSymbolEntry entry) {
+        if (isConstantSymbol(entry)) {
             if (entry.name().contains("/")) {
-                fqni = entry.name();
-            } else {
-                var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
-                if (entry.name().startsWith("#")) {
-                    fqni = "#" + src + "/" + (entry.name().startsWith("#") ? entry.name().substring(1) : entry.name());
-                } else {
-                    fqni = ":" + src + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
+                var raw = entry.name();
+                if (raw.startsWith(":")) {
+                    raw = "#" + raw.substring(1);
                 }
+                int lastSlash = raw.lastIndexOf('/');
+                if (lastSlash >= 0 && lastSlash + 1 < raw.length() && raw.charAt(lastSlash + 1) == '#') {
+                    return raw.substring(0, lastSlash + 1) + raw.substring(lastSlash + 2);
+                }
+                return raw;
             }
-            var caret = editor.getCaretModel().getPrimaryCaret();
-            var offset = caret.getOffset();
-            var doc = editor.getDocument();
-            doc.insertString(offset, fqni);
-            PsiDocumentManager.getInstance(project).commitDocument(doc);
+            var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
+            var cleanName = entry.name().startsWith("#") ? entry.name().substring(1) : entry.name();
+            return src.contains("/") ? "#" + src + "/" + cleanName : "#" + cleanName;
+        } else {
+            if (entry.name().contains("/")) {
+                var raw = entry.name();
+                return raw.startsWith(":") ? raw : ":" + raw;
+            }
+            var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
+            var cleanName = entry.name().startsWith(":") ? entry.name().substring(1) : entry.name();
+            return src.contains("/") ? ":" + src + "/" + cleanName : ":" + cleanName;
         }
     }
 
-    private static void insertNominalBrandInDefs(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
+    static void copyFqniToClipboard(Project project, StvnNamespaceSymbolEntry entry) {
+        var fqni = resolveCanonicalFqni(entry);
+        CopyPasteManager.getInstance().setContents(new StringSelection(fqni));
+        var statusBar = WindowManager.getInstance().getStatusBar(project);
+        if (statusBar != null) {
+            statusBar.setInfo("Copied FQNI to clipboard: " + fqni);
+        }
+        var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
+        if (editor != null) {
+            HintManager.getInstance().showInformationHint(editor, "Copied FQNI: " + fqni);
+        }
+    }
+
+    static void insertNominalBrandInDefs(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
+        if (isConstantSymbol(entry)) {
+            return;
+        }
         var doc = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
         if (doc == null) return;
 
@@ -356,24 +402,14 @@ public final class StvnNamespaceBrowserPopup {
             var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
             if (openBrace != null) {
                 int insertOffset = openBrace.getStartOffset() + 1;
-                String fqni;
-                if (entry.name().contains("/")) {
-                    fqni = entry.name();
-                } else {
-                    var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
-                    if (entry.name().startsWith("#")) {
-                        fqni = "#" + src + "/" + (entry.name().startsWith("#") ? entry.name().substring(1) : entry.name());
-                    } else {
-                        fqni = ":" + src + "/" + (entry.name().startsWith(":") ? entry.name().substring(1) : entry.name());
-                    }
-                }
+                var fqni = resolveCanonicalFqni(entry);
                 var rawSegment = entry.name().contains("/")
                     ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
                     : entry.name();
                 var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
                     ? rawSegment.substring(1)
                     : rawSegment;
-                var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
+                var bareName = ":" + cleanSegment;
                 var baseIndent = computeElementIndent(doc, defsEntry);
                 var childIndent = baseIndent + "  ";
                 var brandStatement = "\n" + childIndent + bareName + " " + fqni;

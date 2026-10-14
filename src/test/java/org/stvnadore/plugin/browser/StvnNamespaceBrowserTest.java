@@ -2,9 +2,13 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.ui.table.JBTable;
+import java.awt.datatransfer.DataFlavor;
+import java.util.Arrays;
 import java.util.List;
+import javax.swing.JMenuItem;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.psi.StvnTypes;
@@ -1068,5 +1072,132 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
         var text = file.getText();
         assertEquals("File text must remain unmodified when alias is already present", content, text);
+    }
+
+    /**
+     * Verifies that context menu construction for constant rows suppresses
+     * "Brand as New Nominal Type in :defs" and includes "Copy FQNI".
+     */
+    public void testContextMenuForConstantOmitsBrandAction() {
+        var file = myFixture.configureByText("dummy.stvn", "{\n  :defs {}\n}\n");
+        var constantEntry = new StvnNamespaceSymbolEntry(
+            "#org/stvnadore/prelude/UUID_LOWER_CASE_REGEX",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        var menu = StvnNamespaceBrowserPopup.buildContextMenu(getProject(), file, constantEntry);
+        var items = Arrays.stream(menu.getComponents())
+            .filter(JMenuItem.class::isInstance)
+            .map(c -> ((JMenuItem) c).getText())
+            .toList();
+
+        assertEquals("Constant menu must contain exactly 2 actions", 2, items.size());
+        assertTrue("Must contain 'Insert Reference (:use)'", items.contains("Insert Reference (:use)"));
+        assertTrue("Must contain 'Copy FQNI'", items.contains("Copy FQNI"));
+        assertFalse("Must suppress 'Brand as New Nominal Type in :defs' for constants",
+            items.contains("Brand as New Nominal Type in :defs"));
+    }
+
+    /**
+     * Verifies that context menu construction for nominal type rows includes
+     * "Brand as New Nominal Type in :defs" along with "Copy FQNI".
+     */
+    public void testContextMenuForNominalTypeIncludesBrandAction() {
+        var file = myFixture.configureByText("dummy_type.stvn", "{\n  :defs {}\n}\n");
+        var typeEntry = new StvnNamespaceSymbolEntry(
+            ":org/stvnadore/prelude/Port",
+            ":org/stvnadore/prelude",
+            ":Int",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        var menu = StvnNamespaceBrowserPopup.buildContextMenu(getProject(), file, typeEntry);
+        var items = Arrays.stream(menu.getComponents())
+            .filter(JMenuItem.class::isInstance)
+            .map(c -> ((JMenuItem) c).getText())
+            .toList();
+
+        assertEquals("Nominal type menu must contain exactly 3 actions", 3, items.size());
+        assertTrue("Must contain 'Insert Reference (:use)'", items.contains("Insert Reference (:use)"));
+        assertTrue("Must contain 'Copy FQNI'", items.contains("Copy FQNI"));
+        assertTrue("Must include 'Brand as New Nominal Type in :defs' for nominal types",
+            items.contains("Brand as New Nominal Type in :defs"));
+    }
+
+    /**
+     * Verifies that invoking Copy FQNI on a constant entry places the exact canonical FQNI
+     * string onto the system clipboard.
+     */
+    public void testCopyFqniToClipboardPlacesCanonicalConstantFqni() throws Exception {
+        var entry = new StvnNamespaceSymbolEntry(
+            "#org/stvnadore/prelude/UUID_LOWER_CASE_REGEX",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        StvnNamespaceBrowserPopup.copyFqniToClipboard(getProject(), entry);
+        var clipText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+        assertEquals("#org/stvnadore/prelude/UUID_LOWER_CASE_REGEX", clipText);
+    }
+
+    /**
+     * Verifies that invoking Copy FQNI on a nominal type entry places the exact canonical FQNI
+     * string onto the system clipboard.
+     */
+    public void testCopyFqniToClipboardPlacesCanonicalTypeFqni() throws Exception {
+        var entry = new StvnNamespaceSymbolEntry(
+            ":org/stvnadore/prelude/Port",
+            ":org/stvnadore/prelude",
+            ":Int",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        StvnNamespaceBrowserPopup.copyFqniToClipboard(getProject(), entry);
+        var clipText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+        assertEquals(":org/stvnadore/prelude/Port", clipText);
+    }
+
+    /**
+     * Verifies that insertNominalBrandInDefs defensively rejects constant entries without mutating the file.
+     */
+    public void testInsertNominalBrandInDefsDefensivelyRejectsConstantEntry() {
+        var initial = "{\n  :defs {}\n}\n";
+        var file = myFixture.configureByText("guard_test.stvn", initial);
+        var constantEntry = new StvnNamespaceSymbolEntry(
+            "#POSIX_ID_REGEX",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            StvnNamespaceBrowserPopup.insertNominalBrandInDefs(getProject(), file, constantEntry);
+        });
+
+        assertEquals("File text must remain unmodified when attempting to brand a constant",
+            initial, file.getText());
     }
 }
