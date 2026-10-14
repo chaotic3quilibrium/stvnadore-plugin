@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.ui.table.JBTable;
 import java.util.List;
@@ -951,5 +952,121 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var revertedCount = content.tableModel().getItems().size();
         assertEquals("Disabling prelude must revert symbol count", initialCount, revertedCount);
         assertTrue(content.headerLabel().getText().contains(revertedCount + " symbols"));
+    }
+
+    public void testInsertUseReferenceMergesIntoExistingAliasBlock() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :Port :Port } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("merge_test.stvn", content);
+        var entry = new StvnNamespaceSymbolEntry(
+            "#POSIX_ID_REGEX",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            StvnNamespaceBrowserPopup.insertUseReferenceInEditor(getProject(), file, entry);
+        });
+
+        var text = file.getText();
+        assertTrue("Must merge #POSIX_ID_REGEX into existing alias block:\n" + text,
+            text.contains(":use [ :org/stvnadore/prelude { :Port :Port #POSIX_ID_REGEX #POSIX_ID_REGEX } ]"));
+        assertFalse("Must not create secondary :use statement:\n" + text,
+            text.contains(":use [ :org/stvnadore/prelude { #POSIX_ID_REGEX #POSIX_ID_REGEX } ]\n    :use [ :org/stvnadore/prelude"));
+    }
+
+    public void testInsertUseReferenceUpgradesBareUseStatement() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("bare_upgrade_test.stvn", content);
+        var entry = new StvnNamespaceSymbolEntry(
+            ":AsciiIdentifier",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            StvnNamespaceBrowserPopup.insertUseReferenceInEditor(getProject(), file, entry);
+        });
+
+        var text = file.getText();
+        assertTrue("Must append alias block to bare :use statement:\n" + text,
+            text.contains(":use [ :org/stvnadore/prelude { :AsciiIdentifier :AsciiIdentifier } ]"));
+    }
+
+    public void testInsertUseReferenceNoOpWhenStripPresent() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { #strip } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("strip_noop_test.stvn", content);
+        var entry = new StvnNamespaceSymbolEntry(
+            "#POSIX_ID_REGEX",
+            ":org/stvnadore/prelude",
+            ":String",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            StvnNamespaceBrowserPopup.insertUseReferenceInEditor(getProject(), file, entry);
+        });
+
+        var text = file.getText();
+        assertEquals("File text must remain unmodified when #strip is present", content, text);
+    }
+
+    public void testInsertUseReferenceNoOpWhenAliasAlreadyPresent() {
+        var content = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :Port :Port } ]
+              }
+            }
+            """;
+        var file = myFixture.configureByText("duplicate_noop_test.stvn", content);
+        var entry = new StvnNamespaceSymbolEntry(
+            ":Port",
+            ":org/stvnadore/prelude",
+            ":Int",
+            0,
+            null,
+            true,
+            0,
+            StvnNamespaceScope.DEFS
+        );
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            StvnNamespaceBrowserPopup.insertUseReferenceInEditor(getProject(), file, entry);
+        });
+
+        var text = file.getText();
+        assertEquals("File text must remain unmodified when alias is already present", content, text);
     }
 }

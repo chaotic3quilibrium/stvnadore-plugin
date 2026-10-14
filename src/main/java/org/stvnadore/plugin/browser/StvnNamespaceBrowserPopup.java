@@ -32,12 +32,14 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.ListSelectionModel;
 import javax.swing.table.TableRowSorter;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.UseStmt;
 
 /**
  * UI controller constructing and displaying the lightweight interactive dependency browser popup.
@@ -215,11 +217,38 @@ public final class StvnNamespaceBrowserPopup {
         popupMenu.show(table, e.getX(), e.getY());
     }
 
-    private static void insertUseReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
+    static void insertUseReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         var doc = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
         if (doc == null) return;
 
+        var rawSegment = entry.name().contains("/")
+            ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
+            : entry.name();
+        var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
+            ? rawSegment.substring(1)
+            : rawSegment;
+        var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
+
         var enclosingPkg = PsiTreeUtil.findChildOfType(sourceFile, PackageEnclosure.class);
+        if (enclosingPkg != null) {
+            var existingUse = findExistingUse(enclosingPkg, entry.source());
+            if (existingUse != null) {
+                appendSymbolToExistingUse(doc, existingUse, bareName);
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+                return;
+            }
+        } else {
+            var defsEntry = PsiTreeUtil.findChildOfType(sourceFile, DefsEntry.class);
+            if (defsEntry != null) {
+                var existingUse = findExistingUse(defsEntry, entry.source());
+                if (existingUse != null) {
+                    appendSymbolToExistingUse(doc, existingUse, bareName);
+                    PsiDocumentManager.getInstance(project).commitDocument(doc);
+                    return;
+                }
+            }
+        }
+
         int insertOffset;
         String baseIndent;
         if (enclosingPkg != null) {
@@ -236,17 +265,64 @@ public final class StvnNamespaceBrowserPopup {
                 return;
             }
         }
-        var rawSegment = entry.name().contains("/")
-            ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
-            : entry.name();
-        var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
-            ? rawSegment.substring(1)
-            : rawSegment;
-        var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
         var childIndent = baseIndent + "  ";
         var importStatement = "\n" + childIndent + ":use [ " + entry.source() + " { " + bareName + " " + bareName + " } ]";
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
+    }
+
+    private static @Nullable org.stvnadore.psi.UseStmt findExistingUse(PsiElement container, String targetSource) {
+        var useStmts = PsiTreeUtil.findChildrenOfType(container, org.stvnadore.psi.UseStmt.class);
+        for (var use : useStmts) {
+            if (container instanceof PackageEnclosure pkg) {
+                if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) continue;
+            } else if (container instanceof DefsEntry defs) {
+                if (PsiTreeUtil.getParentOfType(use, DefsEntry.class) != defs
+                        || PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) continue;
+            }
+            var target = use.getUseTarget();
+            if (target != null && target.getText().equals(targetSource)) {
+                return use;
+            }
+        }
+        return null;
+    }
+
+    private static void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse, String bareName) {
+        var opts = existingUse.getUseOptionsBlock();
+        if (opts != null && opts.getText().contains("#strip")) {
+            return; // Symbols already in scope via #strip
+        }
+        if (existingUse.getText().contains("#strip")) {
+            return;
+        }
+        var aliasBlock = existingUse.getUseAliasBlock();
+        var chars = doc.getCharsSequence();
+        if (aliasBlock != null) {
+            for (var alias : aliasBlock.getUseMapAliasList()) {
+                for (var tk : alias.getTypeKeywordList()) {
+                    if (bareName.equals(tk.getText())) return;
+                }
+                for (var vk : alias.getValueKeywordList()) {
+                    if (bareName.equals(vk.getText())) return;
+                }
+            }
+            var rbrace = aliasBlock.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACE);
+            int rbraceOffset = rbrace != null ? rbrace.getStartOffset() : aliasBlock.getTextRange().getEndOffset() - 1;
+            if (rbraceOffset > 0 && chars.charAt(rbraceOffset - 1) == ' ') {
+                doc.insertString(rbraceOffset - 1, " " + bareName + " " + bareName);
+            } else {
+                doc.insertString(rbraceOffset, " " + bareName + " " + bareName + " ");
+            }
+        } else {
+            var rbrack = existingUse.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACK);
+            int rbrackOffset = rbrack != null ? rbrack.getStartOffset() : existingUse.getTextRange().getEndOffset() - 1;
+            if (rbrackOffset > 0 && chars.charAt(rbrackOffset - 1) == ' ') {
+                doc.insertString(rbrackOffset - 1, " { " + bareName + " " + bareName + " }");
+            } else {
+                doc.insertString(rbrackOffset, " { " + bareName + " " + bareName + " } ");
+            }
+        }
     }
 
     private static void insertQualifiedReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {

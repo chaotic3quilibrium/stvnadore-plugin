@@ -247,4 +247,86 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         assertTrue("Children of :meta must indent by 4 spaces:\n" + text,
             text.contains("  :meta {\n    #name \"json_example\"\n    #kind #BODY_INCLUDE\n  }"));
     }
+
+    public void testMapLiteralReformatPreservesCanonicalTwoSpaceIndentation() {
+        var unformatted = """
+            {
+              :type :Map(:String :Int)
+              :body {
+              [ "alpha" 10 ]
+              [ "beta" 20 ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("map_indent.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Map entries must indent by 4 spaces (2 relative to :body):\n" + text,
+            text.contains("  :body {\n    [ \"alpha\" 10 ]\n    [ \"beta\" 20 ]\n  }"));
+        assertFalse("Formatted output must contain no tabs:\n" + text, text.contains("\t"));
+
+        // Mathematical AST equivalence verification
+        var docOriginal = StvnCompiler.compile(unformatted).document().orElseThrow();
+        var docFormatted = StvnCompiler.compile(text).document().orElseThrow();
+        assertEquals("Round-trip AST must be mathematically equivalent", docOriginal.requirePayload(), docFormatted.requirePayload());
+    }
+
+    public void testNestedMapLiteralIndentationHierarchy() {
+        var unformatted = """
+            {
+              :type :Map(:String :Map(:String :Int))
+              :body {
+              [ "outer" {
+              [ "inner" 99 ]
+              } ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("nested_map.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Outer map entry must be indented at 4 spaces:\n" + text,
+            text.contains("    [ \"outer\" {\n"));
+        assertTrue("Inner map entry must be indented at 6 spaces:\n" + text,
+            text.contains("      [ \"inner\" 99 ]\n"));
+        assertTrue("Inner map closing brace must be indented at 4 spaces:\n" + text,
+            text.contains("    } ]\n"));
+        assertTrue("Outer map closing brace must be indented at 2 spaces:\n" + text,
+            text.contains("  }\n"));
+    }
+
+    public void testMapEntriesWithCommentsPreserveIndentationAndDedicatedLines() {
+        var unformatted = """
+            {
+              :type :Map(:String :String)
+              :body {
+              // Entry one comment
+              [ "host" "localhost" ]
+              // Entry two comment
+              [ "port" "8080" ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("map_comments.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Entry one comment must be indented at 4 spaces on its own line:\n" + text,
+            text.contains("    // Entry one comment\n    [ \"host\" \"localhost\" ]"));
+        assertTrue("Entry two comment must be indented at 4 spaces on its own line:\n" + text,
+            text.contains("    // Entry two comment\n    [ \"port\" \"8080\" ]"));
+        assertFalse("Comments must never collapse onto map entry bracket:\n" + text,
+            text.contains("localhost\" ]//"));
+    }
 }

@@ -7,7 +7,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -106,7 +105,6 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
             if (existingUse != null) {
                 appendSymbolToExistingUse(doc, existingUse);
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
-                CodeStyleManager.getInstance(project).reformat(file);
                 return;
             }
             var openBrace = enclosingPkg.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
@@ -121,7 +119,6 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
             if (existingUse != null) {
                 appendSymbolToExistingUse(doc, existingUse);
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
-                CodeStyleManager.getInstance(project).reformat(file);
                 return;
             }
             var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
@@ -131,7 +128,6 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
 
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
-        CodeStyleManager.getInstance(project).reformat(file);
     }
 
     private @Nullable org.stvnadore.psi.UseStmt findExistingUse(PsiElement container) {
@@ -155,21 +151,41 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
     }
 
     private void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse) {
+        var opts = existingUse.getUseOptionsBlock();
+        if (opts != null && opts.getText().contains("#strip")) {
+            return;
+        }
+        if (existingUse.getText().contains("#strip")) {
+            return;
+        }
         var aliasBlock = existingUse.getUseAliasBlock();
+        var chars = doc.getCharsSequence();
         if (aliasBlock != null) {
             for (var alias : aliasBlock.getUseMapAliasList()) {
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2 && list.get(0) != null && list.get(0).getText().equals(symbolName)) {
                     return; // Already present
                 }
+                var vList = alias.getValueKeywordList();
+                if (vList.size() >= 2 && vList.get(0) != null && vList.get(0).getText().equals(symbolName)) {
+                    return; // Already present
+                }
             }
             var rbrace = aliasBlock.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACE);
             int offset = rbrace != null ? rbrace.getStartOffset() : aliasBlock.getTextRange().getEndOffset() - 1;
-            doc.insertString(offset, " " + symbolName + " " + symbolName + " ");
+            if (offset > 0 && chars.charAt(offset - 1) == ' ') {
+                doc.insertString(offset - 1, " " + symbolName + " " + symbolName);
+            } else {
+                doc.insertString(offset, " " + symbolName + " " + symbolName + " ");
+            }
         } else {
             var rbrack = existingUse.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACK);
             int offset = rbrack != null ? rbrack.getStartOffset() : existingUse.getTextRange().getEndOffset() - 1;
-            doc.insertString(offset, " { " + symbolName + " " + symbolName + " } ");
+            if (offset > 0 && chars.charAt(offset - 1) == ' ') {
+                doc.insertString(offset - 1, " { " + symbolName + " " + symbolName + " }");
+            } else {
+                doc.insertString(offset, " { " + symbolName + " " + symbolName + " } ");
+            }
         }
     }
 }

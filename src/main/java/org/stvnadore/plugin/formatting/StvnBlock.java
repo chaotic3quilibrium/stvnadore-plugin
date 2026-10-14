@@ -117,15 +117,43 @@ public final class StvnBlock implements ASTBlock {
         IElementType parentType = node.getElementType();
         IElementType childType = child.getElementType();
 
-        // Delimiters and section keywords at block boundaries never indent
-        if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE
-                || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
-                || childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN
-                || childType == StvnTypes.KW_DEFS
+        // Section keywords and top-level delimiters at block boundaries never indent
+        if (childType == StvnTypes.KW_DEFS
                 || childType == StvnTypes.KW_PACKAGE
                 || childType == StvnTypes.PACKAGE_PATH
                 || childType == StvnTypes.KW_TYPE
                 || childType == StvnTypes.KW_BODY) {
+            return Indent.getNoneIndent();
+        }
+
+        // Map literal block boundaries: { and } never indent; all entries between them indent normally (+2)
+        if (parentType == StvnTypes.MAP_LITERAL) {
+            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // List literal block boundaries: [ and ] never indent; contents indent normally (+2)
+        if (parentType == StvnTypes.LIST_LITERAL) {
+            if (childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // Tuple literal block boundaries: ( and ) never indent; contents indent normally (+2)
+        if (parentType == StvnTypes.TUPLE_LITERAL) {
+            if (childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // Delimiters at block boundaries never indent
+        if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE
+                || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
+                || childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN) {
             return Indent.getNoneIndent();
         }
 
@@ -202,10 +230,10 @@ public final class StvnBlock implements ASTBlock {
             if (t1 == StvnTypes.COMMENT && t2 == StvnTypes.COMMENT) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
-            if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT) && t2 == StvnTypes.COMMENT) {
+            if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT || t1 == StvnTypes.RBRACK) && t2 == StvnTypes.COMMENT) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
-            if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT)) {
+            if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT || t2 == StvnTypes.LBRACK)) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
         }
@@ -235,6 +263,9 @@ public final class StvnBlock implements ASTBlock {
         }
         return lastChild.getElementType() == TokenType.ERROR_ELEMENT
                 || (node.getElementType() == StvnTypes.DEFS_ENTRY && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.MAP_LITERAL && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.LIST_LITERAL && lastChild.getElementType() != StvnTypes.RBRACK)
+                || (node.getElementType() == StvnTypes.TUPLE_LITERAL && lastChild.getElementType() != StvnTypes.RPAREN)
                 || (node.getElementType() instanceof IFileElementType && lastChild.getElementType() != StvnTypes.RBRACE);
     }
 

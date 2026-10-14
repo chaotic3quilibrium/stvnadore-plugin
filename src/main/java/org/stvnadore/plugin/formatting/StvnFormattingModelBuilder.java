@@ -146,6 +146,16 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 // Brackets: map entries [ key val ] inside MAP_LITERAL have 1 space inside
                 .afterInside(StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spaces(1)
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.MAP_LITERAL).spaces(1)
+                .betweenInside(StvnTypes.VALUE, StvnTypes.VALUE, StvnTypes.MAP_LITERAL).spaces(1)
+
+                // Map entries separation: keep line breaks in multiline maps; 1 space in single line maps
+                .betweenInside(StvnTypes.RBRACK, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
+
+                // Comments inside MAP_LITERAL
+                .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).lineBreakInCode()
+                .betweenInside(StvnTypes.COMMENT, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).lineBreakInCode()
 
                 // Preservation of comment lines
                 .after(StvnTypes.COMMENT).lineBreakInCode();

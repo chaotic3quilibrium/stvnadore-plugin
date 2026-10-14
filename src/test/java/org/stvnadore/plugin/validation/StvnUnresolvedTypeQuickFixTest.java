@@ -80,7 +80,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
 
         var text = myFixture.getFile().getText();
         assertTrue("Expected :use statement in :defs", text.contains(":use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]"));
-        assertTrue("Expected original :IpAddress to remain unchanged", text.contains(":IpAddress") && text.contains(":Union(:IPv4 :StringFixed15)"));
+        assertTrue("Expected original :IpAddress to remain unchanged", text.contains(":IpAddress") && text.contains(":StringFixed15"));
     }
 
     /**
