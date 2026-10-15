@@ -710,16 +710,16 @@ STVN 1.2 introduces five dedicated, in-editor real-time inspections that activel
 
 ### 5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)
 
-STVN supports modular schema architecture via `.stvn_incl` (module definitions) and `.stvn_inclf` (flattened modules).
+STVN supports modular schema architecture via `.stvn_di` (modular definitions schemas) and `.stvn_i` (modular payload documents).
 
 * Place your cursor on any nominal type (e.g. `:UserId`, `:OrderHeader`) in `:type` or `:body` and press **`Ctrl+B`** (macOS: **`⌘B`**) or **`Ctrl+Click`** (macOS: **`⌘Click`**).
 * The editor navigates instantly across files to the exact line in `:defs` or `:include` where the type was declared.
 
 ```stvn
-// In orders.stvn:
+// In orders.stvn_i:
 {
-  :include { "schemas/common_types.stvn_incl" }
-  :type :UserProfile // Ctrl+Click jumps directly to common_types.stvn_incl!
+  :include [ "schemas/common_types.stvn_d" ]
+  :type :UserProfile // Ctrl+Click jumps directly to common_types.stvn_d!
   :body ...
 }
 ```

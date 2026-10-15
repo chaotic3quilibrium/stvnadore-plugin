@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -417,5 +418,209 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
 
         var importActions = myFixture.filterAvailableIntentions("Import ':StvnPosixId64' from :org/stvnadore/prelude/meta via :use");
         assertFalse("Expected import intention from :org/stvnadore/prelude/meta", importActions.isEmpty());
+    }
+
+    /**
+     * Verifies that referencing an unresolved type in a flat .stvn payload suppresses all :include fixes
+     * and offers Create Nominal Type.
+     */
+    public void testFlatStvnSuppressesAllIncludeQuickFixes() {
+        var content = """
+            {
+              :type :TimeEpochNs
+              :body 1773792000000000000
+            }
+            """;
+        myFixture.configureByText("time_epoch.stvn", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.indexOf(":TimeEpochNs"));
+        myFixture.doHighlighting();
+
+        var includeActions = myFixture.filterAvailableIntentions("Add :include");
+        assertTrue("Flat .stvn payload must NEVER offer :include quick-fixes", includeActions.isEmpty());
+
+        var stubActions = myFixture.getAvailableIntentions().stream()
+            .map(IntentionAction::getText)
+            .filter(t -> t.contains("common_types") || t.contains("stvn_incl"))
+            .toList();
+        assertTrue("No intention may reference common_types or stvn_incl. Found: " + stubActions, stubActions.isEmpty());
+
+        var createActions = myFixture.filterAvailableIntentions("Create nominal type ':TimeEpochNs' in :defs");
+        assertFalse("Create nominal type must be available in flat .stvn", createActions.isEmpty());
+    }
+
+    /**
+     * Verifies that referencing an unresolved type in a flat .stvn_d schema suppresses all :include fixes.
+     */
+    public void testFlatStvnDSuppressesAllIncludeQuickFixes() {
+        var content = """
+            {
+              :meta { #kind #DEFS }
+              :defs {
+                :LocalType :ExternalSchemaType
+              }
+            }
+            """;
+        myFixture.configureByText("schema.stvn_d", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.indexOf(":ExternalSchemaType"));
+        myFixture.doHighlighting();
+
+        var includeActions = myFixture.filterAvailableIntentions("Add :include");
+        assertTrue("Flat .stvn_d schema must NEVER offer :include quick-fixes", includeActions.isEmpty());
+    }
+
+    /**
+     * Verifies that referencing an unresolved type in a modular .stvn_i file offers catalog-grounded :include.
+     */
+    public void testModularStvnIOffersCatalogGroundedInclude() {
+        myFixture.addFileToProject("schemas/models.stvn_d", """
+            {
+              :meta { #kind #DEFS }
+              :defs {
+                :OrderHeader :String
+              }
+            }
+            """);
+
+        var content = """
+            {
+              :meta { #kind #BODY_INCLUDE }
+              :defs {}
+              :type :OrderHeader
+              :body "ORD-12345"
+            }
+            """;
+        myFixture.configureByText("report.stvn_i", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.indexOf(":OrderHeader"));
+        myFixture.doHighlighting();
+
+        var includeActions = myFixture.filterAvailableIntentions("Add :include [ \"schemas/models.stvn_d\" ] to :defs");
+        assertFalse("Modular .stvn_i must offer catalog-grounded include for models.stvn_d", includeActions.isEmpty());
+        myFixture.launchAction(includeActions.get(0));
+
+        var text = myFixture.getFile().getText();
+        assertTrue("Must inject include into :defs", text.contains(":include [ \"schemas/models.stvn_d\" ]"));
+    }
+
+    /**
+     * Verifies that referencing an external package in a flat .stvn file suppresses :use quick-fix (Spec Invariant 7).
+     */
+    public void testFlatDocumentSuppressesExternalUseQuickFix() {
+        myFixture.addFileToProject("external.stvn_di", """
+            {
+              :meta { #kind #DEFS_INCLUDE }
+              :defs {
+                :package :org/example/ext {
+                  :ExtType :Int
+                }
+              }
+            }
+            """);
+
+        var content = """
+            {
+              :type :ExtType
+              :body 42
+            }
+            """;
+        myFixture.configureByText("doc.stvn", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.indexOf(":ExtType"));
+        myFixture.doHighlighting();
+
+        var useActions = myFixture.filterAvailableIntentions("Import ':ExtType' from :org/example/ext via :use");
+        assertTrue("Flat .stvn document must NEVER offer external :use import", useActions.isEmpty());
+
+        var convertActions = myFixture.filterAvailableIntentions("Convert document to modular format (.stvn_i)");
+        assertFalse("Must offer conversion to modular format when external candidates exist", convertActions.isEmpty());
+    }
+
+    /**
+     * Verifies that referencing a local co-located package in a flat .stvn file permits :use quick-fix.
+     */
+    public void testFlatDocumentPermitsLocalPackageUseQuickFix() {
+        var content = """
+            {
+              :defs {
+                :package :org/local/net {
+                  :Port :Int
+                }
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("doc.stvn", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.lastIndexOf(":Port"));
+        myFixture.doHighlighting();
+
+        var useActions = myFixture.filterAvailableIntentions("Import ':Port' from :org/local/net via :use");
+        assertFalse("Flat .stvn document MUST permit :use for local co-located packages", useActions.isEmpty());
+    }
+
+    /**
+     * Verifies converting flat .stvn document to modular .stvn_i format.
+     */
+    public void testConversionOfFlatStvnToModularStvnI() {
+        var content = """
+            {
+              :meta {
+                #name "report"
+                #kind #BODY
+              }
+              :defs {}
+              :type :ExternalType
+              :body "val"
+            }
+            """;
+        myFixture.configureByText("report.stvn", content);
+        myFixture.getEditor().getCaretModel().moveToOffset(content.indexOf(":ExternalType"));
+        myFixture.doHighlighting();
+
+        var convertActions = myFixture.filterAvailableIntentions("Convert document to modular format (.stvn_i)");
+        assertFalse("Convert intention must be available", convertActions.isEmpty());
+        myFixture.launchAction(convertActions.get(0));
+
+        assertEquals("report.stvn_i", myFixture.getFile().getName());
+        assertTrue("Must update #kind to #BODY_INCLUDE", myFixture.getFile().getText().contains("#kind #BODY_INCLUDE"));
+    }
+
+    /**
+     * Verifies that no intention ever mentions common_types or stvn_incl across flat and modular files.
+     */
+    public void testEradicationOfCommonTypesStvnInclStubAcrossAllScenarios() {
+        var flatContent = """
+            {
+              :type :UnknownEntity
+              :body "unknown"
+            }
+            """;
+        myFixture.configureByText("flat_test.stvn", flatContent);
+        myFixture.getEditor().getCaretModel().moveToOffset(flatContent.indexOf(":UnknownEntity"));
+        myFixture.doHighlighting();
+
+        for (var intention : myFixture.getAvailableIntentions()) {
+            assertFalse("Intention must not contain common_types: " + intention.getText(),
+                intention.getText().contains("common_types"));
+            assertFalse("Intention must not contain stvn_incl: " + intention.getText(),
+                intention.getText().contains("stvn_incl"));
+        }
+
+        var modularContent = """
+            {
+              :meta { #kind #BODY_INCLUDE }
+              :defs {}
+              :type :UnknownEntityModular
+              :body "unknown"
+            }
+            """;
+        myFixture.configureByText("modular_test.stvn_i", modularContent);
+        myFixture.getEditor().getCaretModel().moveToOffset(modularContent.indexOf(":UnknownEntityModular"));
+        myFixture.doHighlighting();
+
+        for (var intention : myFixture.getAvailableIntentions()) {
+            assertFalse("Intention must not contain common_types: " + intention.getText(),
+                intention.getText().contains("common_types"));
+            assertFalse("Intention must not contain stvn_incl: " + intention.getText(),
+                intention.getText().contains("stvn_incl"));
+        }
     }
 }

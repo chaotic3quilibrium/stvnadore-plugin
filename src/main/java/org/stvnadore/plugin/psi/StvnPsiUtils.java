@@ -8,6 +8,13 @@ import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.plugin.StvnDefinitionsFile;
+import org.stvnadore.plugin.StvnDefsIncludeFile;
+import org.stvnadore.plugin.StvnFlatPayloadFile;
+import org.stvnadore.plugin.StvnInclFile;
+import org.stvnadore.plugin.StvnInclfFile;
+import org.stvnadore.plugin.StvnPayloadFile;
+import org.stvnadore.plugin.StvnPayloadIncludeFile;
 import org.stvnadore.psi.*;
 
 import java.util.ArrayList;
@@ -117,6 +124,81 @@ public final class StvnPsiUtils {
         }
         if (parent instanceof TypeDefinition td) {
             return td.getTypeKeyword() == element;
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether the given file represents a modular document (.stvn_i, .stvn_di, or legacy .stvn_incl).
+     *
+     * @param file target STVN PSI file
+     * @return true if modular, false if flat or null
+     */
+    public static boolean isModularDocument(@Nullable PsiFile file) {
+        if (file == null) return false;
+        if (file instanceof StvnPayloadIncludeFile || file instanceof StvnDefsIncludeFile || file instanceof StvnInclFile) {
+            return true;
+        }
+        var name = file.getName();
+        return name.endsWith(".stvn_i") || name.endsWith(".stvn_di") || name.endsWith(".stvn_incl");
+    }
+
+    /**
+     * Determines whether the given file represents a hermetic flat document (.stvn, .stvn_d, .stvn_b, .stvn_bd, .stvn_f, .stvn_inclf).
+     *
+     * @param file target STVN PSI file
+     * @return true if hermetic flat, false if modular or null
+     */
+    public static boolean isHermeticDocument(@Nullable PsiFile file) {
+        if (file == null) return false;
+        if (file instanceof StvnPayloadFile || file instanceof StvnDefinitionsFile || file instanceof StvnFlatPayloadFile || file instanceof StvnInclfFile) {
+            return true;
+        }
+        var name = file.getName();
+        return name.endsWith(".stvn") || name.endsWith(".stvn_d") || name.endsWith(".stvn_f")
+            || name.endsWith(".stvn_inclf") || name.endsWith(".stvn_b") || name.endsWith(".stvn_bd");
+    }
+
+    /**
+     * Determines whether a package namespace is declared locally within the given file's :defs block.
+     *
+     * @param file target STVN PSI file
+     * @param packagePath target package path string (e.g. ":org/example/local")
+     * @return true if declared locally in this file, false otherwise
+     */
+    public static boolean isPackageDeclaredLocally(@Nullable PsiFile file, String packagePath) {
+        if (file == null) return false;
+        var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
+        for (var pkg : packages) {
+            var path = pkg.getPackagePath();
+            if (path != null && path.getText().equals(packagePath)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether any local package within the file declares the specified type name.
+     *
+     * @param file target STVN PSI file
+     * @param typeName bare or colon-prefixed type name (e.g. :Port)
+     * @return true if declared inside a local :package enclosure, false otherwise
+     */
+    public static boolean isTypeDeclaredInLocalPackage(@Nullable PsiFile file, String typeName) {
+        if (file == null) return false;
+        var cleanName = typeName.startsWith(":") ? typeName : ":" + typeName;
+        var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
+        for (var pkg : packages) {
+            for (var elem : pkg.getPackageElementList()) {
+                var def = elem.getTypeDefinition();
+                if (def != null && def.getTypeKeyword() != null) {
+                    var kwText = def.getTypeKeyword().getText();
+                    if (kwText.equals(cleanName)) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }

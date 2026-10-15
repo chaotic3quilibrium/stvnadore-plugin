@@ -11,8 +11,10 @@ import com.intellij.psi.codeStyle.CodeStyleManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.plugin.StvnInclfFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.psi.IncludeStmt;
+import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeKeyword;
 
@@ -37,8 +39,21 @@ public final class StvnAddIncludeQuickFix extends LocalQuickFixAndIntentionActio
 
     @Override
     public boolean isAvailable(@NotNull Project project, @NotNull PsiFile file, @NotNull PsiElement startElement, @NotNull PsiElement endElement) {
-        // Leaf modules (.stvn_inclf) cannot contain includes (Rule INC-01)
-        return !(file instanceof StvnInclfFile) && super.isAvailable(project, file, startElement, endElement);
+        // Flat hermetic documents (.stvn, .stvn_d) strictly prohibit includes (Rule STR-STEM / Spec § 1.2)
+        if (StvnPsiUtils.isHermeticDocument(file) || !StvnPsiUtils.isModularDocument(file)) {
+            return false;
+        }
+        // Prevent duplicate includes if target file is already included
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeStmt.class);
+        for (var inc : includes) {
+            var strLits = PsiTreeUtil.findChildrenOfType(inc, StringLiteral.class);
+            for (var lit : strLits) {
+                if (lit.getText().contains(includePath)) {
+                    return false;
+                }
+            }
+        }
+        return super.isAvailable(project, file, startElement, endElement);
     }
 
     @Override

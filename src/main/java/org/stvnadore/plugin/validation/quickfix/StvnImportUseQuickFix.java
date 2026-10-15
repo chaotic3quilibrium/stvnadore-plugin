@@ -11,6 +11,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.TypeKeyword;
@@ -73,6 +74,19 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
     @Override
     public @NotNull Priority getPriority() {
         return priority;
+    }
+
+    @Override
+    public boolean isAvailable(@NotNull Project project, @NotNull PsiFile file, @NotNull PsiElement startElement, @NotNull PsiElement endElement) {
+        // In hermetic flat documents (.stvn, .stvn_d), :use must strictly target prelude or local packages (Spec Invariant 7)
+        if (StvnPsiUtils.isHermeticDocument(file)) {
+            boolean isPrelude = targetNamespace.startsWith(":org/stvnadore/prelude");
+            boolean isLocal = StvnPsiUtils.isPackageDeclaredLocally(file, targetNamespace);
+            if (!isPrelude && !isLocal) {
+                return false;
+            }
+        }
+        return super.isAvailable(project, file, startElement, endElement);
     }
 
     @Override

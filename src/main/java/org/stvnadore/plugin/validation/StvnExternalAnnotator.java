@@ -29,6 +29,7 @@ import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -369,7 +370,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                         if (offendingTypeKw != null) {
                             var kwText = offendingTypeKw.getText().trim();
-                            var isPrelude = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), kwText) != null;
+                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, kwText);
+                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), kwText) != null;
                             if (!isPrelude) {
                                 annotationBuilder = StvnUnresolvedTypeQuickFixProvider.registerFixes(annotationBuilder, offendingTypeKw);
                             }
@@ -698,7 +700,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         if (!isLhsDef) {
                             var ab = holder.newAnnotation(severity, message)
                                   .range(typeKw.getTextRange());
-                            var isPrelude = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
+                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, typeKw.getText().trim());
+                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
                             if (!isPrelude) {
                                 ab = StvnUnresolvedTypeQuickFixProvider.registerFixes(ab, typeKw);
                             }
@@ -713,7 +716,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         if (typeKw.getText().equals(typeName)) {
                             var ab = holder.newAnnotation(severity, message)
                                   .range(typeKw.getTextRange());
-                            var isPrelude = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
+                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, typeKw.getText().trim());
+                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
                             if (!isPrelude) {
                                 ab = StvnUnresolvedTypeQuickFixProvider.registerFixes(ab, typeKw);
                             }
