@@ -36,7 +36,9 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.*;
 
@@ -446,6 +448,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             if (entry != null) {
                                 annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
                             }
+                        }
+                    }
+
+                    // Intercept ERR_RESERVED_PACKAGE_PROHIBITED (E037) and attach RenameReservedPackageQuickFix
+                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get()))
+                        || message.contains("Reserved package namespace prohibited")) {
+                        var targetElem = file.findElementAt(range.getStartOffset());
+                        if (targetElem != null) {
+                            annotationBuilder = annotationBuilder.withFix(new StvnRenameReservedPackageQuickFix(targetElem));
+                        }
+                    }
+
+                    // Intercept ERR_RESERVED_DOMAIN_PROHIBITED (E038) and attach ChangeReservedDomainQuickFix
+                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get()))
+                        || message.contains("Reserved system domain")) {
+                        var targetElem = file.findElementAt(range.getStartOffset());
+                        if (targetElem != null) {
+                            annotationBuilder = annotationBuilder.withFix(new StvnChangeReservedDomainQuickFix(targetElem));
                         }
                     }
 

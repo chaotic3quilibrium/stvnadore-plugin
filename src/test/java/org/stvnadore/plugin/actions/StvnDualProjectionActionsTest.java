@@ -194,10 +194,10 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   :Transaction :Tuple( :Int :Float )
                 }
-                :use [ :org/stvnadore/finance { :Transaction :LocalTx } ]
+                :use [ :com/example/finance { :Transaction :LocalTx } ]
                 :A :String
                 :T :Tuple( :LocalTx :A )
               }
@@ -220,7 +220,7 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var clipboardContent = (String) CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
         assertNotNull(clipboardContent);
         assertFalse("Clipboard must not contain unresolved dangling alias token :LocalTx", clipboardContent.contains(":LocalTx"));
-        assertTrue("Clipboard must contain desugared package reference", clipboardContent.contains(":org/stvnadore/finance/Transaction"));
+        assertTrue("Clipboard must contain desugared package reference", clipboardContent.contains(":com/example/finance/Transaction"));
         assertTrue("Clipboard must retain intermediate type definition :T", clipboardContent.contains(":T"));
     }
 }

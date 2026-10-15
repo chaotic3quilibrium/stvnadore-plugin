@@ -4,12 +4,16 @@ import com.intellij.codeInsight.completion.*;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.patterns.PlatformPatterns;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.search.FileTypeIndex;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
@@ -41,6 +45,28 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
               @NotNull CompletionResultSet result
           ) {
             var position = parameters.getPosition();
+
+            // Rule E038: Check if caret is inside :meta { #domain "<caret>" }
+            var domainFacet = PsiTreeUtil.getParentOfType(position, MetaDomainFacet.class);
+            if (domainFacet == null) {
+              var prev = PsiTreeUtil.prevVisibleLeaf(position);
+              if (prev != null && "#domain".equals(prev.getText())) {
+                domainFacet = PsiTreeUtil.getParentOfType(prev, MetaDomainFacet.class);
+              }
+            }
+            if (domainFacet != null || isCaretInDomainFacet(position)) {
+              var project = parameters.getOriginalFile().getProject();
+              var candidateDomains = collectWorkspaceDomains(project);
+              for (var domain : candidateDomains) {
+                // Strictly suppress reserved system domains (§ 3.10.1 Rule 6)
+                if (!"stvn_core".equals(domain) && !"stvn_ir".equals(domain) && !"stvn_cas".equals(domain)) {
+                  result.addElement(LookupElementBuilder.create(domain)
+                      .withIcon(AllIcons.Nodes.Artifact)
+                      .withTypeText("Document Domain", true));
+                }
+              }
+              return;
+            }
 
             // Ensure caret is inside a metadata map and not inside a variant list
             var metaMap = PsiTreeUtil.getParentOfType(position, MetadataMap.class);
@@ -320,5 +346,52 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     return StvnVocabulary.TYPE_SEQ.equals(targetBaseType)
         || StvnVocabulary.TYPE_SET.equals(targetBaseType)
         || StvnVocabulary.TYPE_MAP.equals(targetBaseType);
+  }
+
+  private static boolean isCaretInDomainFacet(PsiElement position) {
+    var metaBlock = PsiTreeUtil.getParentOfType(position, MetaBlock.class);
+    if (metaBlock != null) {
+      var prev = PsiTreeUtil.prevVisibleLeaf(position);
+      if (prev != null && "#domain".equals(prev.getText())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Set<String> collectWorkspaceDomains(com.intellij.openapi.project.Project project) {
+    var domains = new HashSet<String>();
+    var projectName = project.getName().toLowerCase().replaceAll("[^a-z0-9_-]", "_");
+    if (!projectName.isEmpty()) {
+      domains.add(projectName);
+    }
+    domains.add("telemetry");
+    domains.add("catalog");
+    domains.add("models");
+    domains.add("finance");
+
+    var scope = GlobalSearchScope.projectScope(project);
+    var psiManager = com.intellij.psi.PsiManager.getInstance(project);
+
+    var virtualFiles = new java.util.ArrayList<com.intellij.openapi.vfs.VirtualFile>();
+    virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Defs.INSTANCE, scope));
+    virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.DefsInclude.INSTANCE, scope));
+    virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.PayloadInclude.INSTANCE, scope));
+    virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Payload.INSTANCE, scope));
+
+    for (var vf : virtualFiles) {
+      var psiFile = psiManager.findFile(vf);
+      if (psiFile == null) continue;
+      for (var facet : PsiTreeUtil.findChildrenOfType(psiFile, MetaDomainFacet.class)) {
+        var lit = facet.getStringLiteral();
+        if (lit != null) {
+          var text = lit.getText();
+          if (text.startsWith("\"") && text.endsWith("\"") && text.length() >= 2) {
+            domains.add(text.substring(1, text.length() - 1));
+          }
+        }
+      }
+    }
+    return domains;
   }
 }

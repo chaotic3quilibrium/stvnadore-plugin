@@ -731,10 +731,10 @@ public final class StvnPreludeNavigationTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   #DEFAULT_CURRENCY :String "USD"
                 }
-                :use [ :org/stvnadore/finance { #DEFAULT_CURRENCY #CURR } ]
+                :use [ :com/example/finance { #DEFAULT_CURRENCY #CURR } ]
               }
             }
             """;

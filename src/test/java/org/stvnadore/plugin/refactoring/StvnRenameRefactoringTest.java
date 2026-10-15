@@ -102,10 +102,10 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         var beforeCode = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   :LedgerItem :Tuple( :Int32 :String )
                 }
-                :use [ :org/stvnadore/finance { :LedgerItem :ItemAlias<caret> } ]
+                :use [ :com/example/finance { :LedgerItem :ItemAlias<caret> } ]
               }
               :type :ItemAlias
               :body ( 42 "Credit" )
@@ -117,10 +117,10 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
         var expected = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   :LedgerItem :Tuple( :Int32 :String )
                 }
-                :use [ :org/stvnadore/finance { :LedgerItem :RenamedItem } ]
+                :use [ :com/example/finance { :LedgerItem :RenamedItem } ]
               }
               :type :RenamedItem
               :body ( 42 "Credit" )

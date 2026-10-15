@@ -109,7 +109,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/sample {
+                :package :com/example/sample {
                   :PackagedItem :Int64
                   #PackagedPort 9090
                 }
@@ -124,8 +124,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals("Must contain exactly 4 symbols (2 root + 2 packaged)", 4, entries.size());
         assertNotNull(findEntryByName(entries, ":RootItem"));
         assertNotNull(findEntryByName(entries, "#RootPort"));
-        assertNotNull(findEntryByName(entries, ":org/stvnadore/sample/PackagedItem"));
-        assertNotNull(findEntryByName(entries, "#org/stvnadore/sample/PackagedPort"));
+        assertNotNull(findEntryByName(entries, ":com/example/sample/PackagedItem"));
+        assertNotNull(findEntryByName(entries, "#com/example/sample/PackagedPort"));
         assertNull(findEntryByName(entries, ":PackagedItem"));
         assertNull(findEntryByName(entries, "#PackagedPort"));
     }
@@ -137,10 +137,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/sample {
+                :package :com/example/sample {
                   :PackagedItem :Int64
                 }
-                :use [ :org/stvnadore/sample { #strip } ]
+                :use [ :com/example/sample { #strip } ]
               }
             }
             """;
@@ -148,14 +148,14 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
 
         assertEquals("Must contain 2 symbols (1 canonical FQNI + 1 stripped alias)", 2, entries.size());
-        var canonical = findEntryByName(entries, ":org/stvnadore/sample/PackagedItem");
+        var canonical = findEntryByName(entries, ":com/example/sample/PackagedItem");
         assertNotNull(canonical);
         assertEquals(0, canonical.useDepth());
 
         var alias = findEntryByName(entries, ":PackagedItem");
         assertNotNull(alias);
         assertEquals(1, alias.useDepth());
-        assertEquals(":org/stvnadore/sample", alias.source());
+        assertEquals(":com/example/sample", alias.source());
     }
 
     /**
@@ -197,7 +197,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
                 :A :String32
@@ -214,7 +214,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
         var localTx = findEntryByName(entries, ":LocalTx");
         assertNotNull(localTx);
-        assertEquals(":org/stvnadore/finance", localTx.source());
+        assertEquals(":com/example/finance", localTx.source());
         assertEquals(":Tuple( :Int64 :Float64 )", localTx.typeStructure());
         assertEquals(1, localTx.useDepth());
         assertEquals(StvnNamespaceScope.BODY, localTx.scope());
@@ -280,10 +280,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :com/example/finance {
                   :LocalTx :Tuple( :Int :Float )
                 }
-                :use [ :org/stvnadore/finance { #strip } ]
+                :use [ :com/example/finance { #strip } ]
                 :A :String
                 :T :Tuple( :LocalTx :A )
               }
@@ -321,10 +321,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :package :org/stvnadore/finance {
+                :package :org/example/finance {
                   :LocalTx :Tuple( :Int64 :Float64 )
                 }
-                :use [ :org/stvnadore/finance { #strip } ]
+                :use [ :org/example/finance { #strip } ]
                 :A :String32
                 :T :Tuple( :LocalTx :A )
               }

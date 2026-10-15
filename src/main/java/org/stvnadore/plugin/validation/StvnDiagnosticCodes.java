@@ -29,6 +29,10 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_NESTED_PACKAGE_PROHIBITED = "ERR_NESTED_PACKAGE_PROHIBITED";
     public static final String ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT = "ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT";
 
+    // Reserved Namespace & System Domain Invariants (§ 3.9 Invariant 8, § 3.10.1 Rule 6)
+    public static final String ERR_RESERVED_PACKAGE_PROHIBITED = "ERR_RESERVED_PACKAGE_PROHIBITED";
+    public static final String ERR_RESERVED_DOMAIN_PROHIBITED = "ERR_RESERVED_DOMAIN_PROHIBITED";
+
     // Schema, Type & LHS Invariants
     public static final String ERR_RESERVED_KEYWORD_ON_LHS = "ERR_RESERVED_KEYWORD_ON_LHS";
     public static final String ERR_UNRESOLVED_TYPE = "ERR_UNRESOLVED_TYPE";

@@ -106,4 +106,16 @@ public final class StvnElementFactory {
         }
         throw new IllegalStateException("Failed to create DefsEntry from content: " + content);
     }
+
+    public static org.stvnadore.psi.StringLiteral createStringLiteral(Project project, String text) {
+        var cleanText = text.startsWith("\"") ? text : "\"" + text + "\"";
+        var dummyFileText = "{\n  :defs {\n    :include [ " + cleanText + " ]\n  }\n}";
+        var file = PsiFileFactory.getInstance(project)
+                .createFileFromText("dummy.stvn_di", StvnFileType.DefsInclude.INSTANCE, dummyFileText);
+        var lit = PsiTreeUtil.findChildOfType(file, org.stvnadore.psi.StringLiteral.class);
+        if (lit != null) {
+            return lit;
+        }
+        throw new IllegalStateException("Failed to create StringLiteral from text: " + text);
+    }
 }

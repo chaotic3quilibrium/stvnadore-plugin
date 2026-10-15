@@ -294,6 +294,9 @@
         <completion.contributor
                 language="STVN"
                 implementationClass="org.stvnadore.plugin.completion.StvnMetadataCompletionContributor"/>
+        <completion.contributor
+                language="STVN"
+                implementationClass="org.stvnadore.plugin.completion.StvnPackageCompletionContributor"/>
 
         <!-- 8. Project-Scoped Settings Component -->
         <projectService serviceImplementation="org.stvnadore.plugin.settings.StvnProjectSettings"/>
