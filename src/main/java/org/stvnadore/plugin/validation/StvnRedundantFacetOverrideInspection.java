@@ -78,6 +78,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints,
             ProblemsHolder holder
     ) {
+        // Core Rule E036 & Non-Overridable Harmonization Gate:
+        // Suppress inspection warnings on floor tautologies, primitive trait re-assertions,
+        // and non-overridable re-specifications that are already enforced as fatal compilation errors
+        // by StvnExternalAnnotator.
+        if (isGovernedByCoreRuleE036(entry, metaMap, rs)) {
+            return;
+        }
+
         var trait = entry.getMetadataTrait();
         if (trait != null) {
             var bVal = trait.getBooleanValue();
@@ -467,6 +475,58 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(curr.node());
     }
 
+    private static boolean isGovernedByCoreRuleE036(
+            MetadataEntry entry,
+            MetadataMap metaMap,
+            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs
+    ) {
+        var text = entry.getText().trim();
+        var ultimateBase = getUltimateBaseType(rs);
+
+        // 1. #minSize 0 on string or collection is fatal error E036 in core
+        if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+            var valOpt = extractNumericValue(text);
+            if (valOpt.isPresent() && valOpt.getAsInt() == 0) {
+                return StvnVocabulary.TYPE_STRING.equals(ultimateBase)
+                    || StvnVocabulary.TYPE_SEQ.equals(ultimateBase)
+                    || StvnVocabulary.TYPE_SET.equals(ultimateBase)
+                    || StvnVocabulary.TYPE_MAP.equals(ultimateBase);
+            }
+        }
+
+        // 2. #minIncl 0 on unsigned integer domain is fatal error E036 in core
+        if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+            var valOpt = extractNumericValue(text);
+            if (valOpt.isPresent() && valOpt.getAsInt() == 0) {
+                boolean isUnsigned = hasLocalUnsignedFacet(metaMap);
+                return StvnVocabulary.TYPE_INT.equals(ultimateBase) && isUnsigned;
+            }
+        }
+
+        // 3. Default trait re-assertion on scalar primitives is fatal error E036 in core
+        if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+            var boolOpt = extractBooleanLiteral(text);
+            if (boolOpt.isPresent() && boolOpt.get()) {
+                return StvnVocabulary.TYPE_INT.equals(ultimateBase)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(ultimateBase)
+                    || StvnVocabulary.TYPE_STRING.equals(ultimateBase);
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean hasLocalUnsignedFacet(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) return false;
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var flag = entry.getMetadataBareFlag();
+            if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void registerRedundantProblem(MetadataEntry entry, String effectiveValue, ProblemsHolder holder) {
         var entryText = entry.getText().trim();
         holder.registerProblem(
@@ -476,7 +536,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE
             ),
             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-            new RemoveRedundantFacetQuickFix(entryText)
+            new RemoveRedundantFacetQuickFix(entry, entryText)
         );
     }
 
@@ -503,44 +563,5 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             if ("#FALSE".equals(val) || "#F".equals(val)) return java.util.Optional.of(false);
         }
         return java.util.Optional.empty();
-    }
-
-    private static final class RemoveRedundantFacetQuickFix implements LocalQuickFix {
-        private final String facetSnippet;
-
-        RemoveRedundantFacetQuickFix(String facetSnippet) {
-            this.facetSnippet = facetSnippet;
-        }
-
-        @Override
-        public @Nls @NotNull String getFamilyName() {
-            return "Remove redundant facet";
-        }
-
-        @Override
-        public @Nls @NotNull String getName() {
-            return "Remove redundant facet '" + facetSnippet + "'";
-        }
-
-        @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element instanceof MetadataEntry entry && entry.isValid()) {
-                var map = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
-                if (map != null && map.getMetadataEntryList().size() == 1) {
-                    var prev = map.getPrevSibling();
-                    if (prev instanceof PsiWhiteSpace) {
-                        prev.delete();
-                    }
-                    map.delete();
-                } else {
-                    var prev = entry.getPrevSibling();
-                    if (prev instanceof PsiWhiteSpace) {
-                        prev.delete();
-                    }
-                    entry.delete();
-                }
-            }
-        }
     }
 }

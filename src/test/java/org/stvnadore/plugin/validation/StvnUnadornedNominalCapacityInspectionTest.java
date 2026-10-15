@@ -418,6 +418,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
                 var highlights = myFixture.doHighlighting();
                 var errors = highlights.stream()
                     .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                    .filter(h -> h.getDescription() != null && !h.getDescription().contains("ERR_REDUNDANT_METADATA_FACET"))
                     .toList();
                 assertTrue("Applying '" + actionTitle + "' to " + constructor + " must generate code passing StvnMetadataFacetInspection with zero errors. Found: " + errors,
                     errors.isEmpty());

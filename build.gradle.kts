@@ -1,3 +1,7 @@
+import java.net.URI
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -215,6 +219,62 @@ intellijPlatform {
     instrumentCode.set(false)
 }
 
+abstract class SyncSiblingCoreTask : DefaultTask() {
+    @get:InputDirectory
+    @get:Optional
+    abstract val siblingClassesDir: DirectoryProperty
+
+    @get:Internal
+    abstract val sandboxDir: DirectoryProperty
+
+    @TaskAction
+    fun sync() {
+        if (siblingClassesDir.isPresent) {
+            val siblingClasses = siblingClassesDir.get().asFile
+            if (siblingClasses.exists() && siblingClasses.isDirectory && sandboxDir.isPresent) {
+                val sandbox = sandboxDir.get().asFile
+                if (sandbox.exists()) {
+                    val coreJars = sandbox.walk().filter { it.isFile && it.name.startsWith("stvnadore-core-") && it.name.endsWith(".jar") }
+                    coreJars.forEach { coreJar ->
+                        logger.lifecycle("Syncing updated sibling core classes into: ${coreJar.absolutePath}")
+                        val env = mapOf("create" to "false")
+                        val uri = URI.create("jar:" + coreJar.toURI().toString())
+                        FileSystems.newFileSystem(uri, env).use { zipFs ->
+                            siblingClasses.walk().filter { it.isFile }.forEach { sourceFile ->
+                                val relPath = sourceFile.relativeTo(siblingClasses).path.replace('\\', '/')
+                                val targetPath = zipFs.getPath("/" + relPath)
+                                val parent = targetPath.parent
+                                if (parent != null && !Files.exists(parent)) {
+                                    Files.createDirectories(parent)
+                                }
+                                Files.copy(sourceFile.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+val syncSiblingCoreToSandbox by tasks.registering(SyncSiblingCoreTask::class) {
+    description = "Syncs sibling core classes to sandbox plugin libraries"
+    group = "verification"
+    val siblingClasses = file("../ij_stvnadore_core/target/classes")
+    if (siblingClasses.exists() && siblingClasses.isDirectory) {
+        siblingClassesDir.set(siblingClasses)
+    }
+    sandboxDir.set(layout.projectDirectory.dir(".intellijPlatform/sandbox"))
+}
+
+tasks.prepareSandbox {
+    finalizedBy(syncSiblingCoreToSandbox)
+}
+
+tasks.prepareTestSandbox {
+    finalizedBy(syncSiblingCoreToSandbox)
+}
+
 val mirrorSharedFixtures by tasks.registering {
     description = "Mirrors test fixtures from sibling core repository if present"
     group = "verification"
@@ -277,6 +337,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnTemporalModeInspectionTest.class")
     exclude("**/StvnMetadataOrderInspectionTest.class")
     exclude("**/StvnRedundantFacetOverrideInspectionTest.class")
+    exclude("**/StvnRedundantFacetAlignmentTest.class")
     exclude("**/StvnSchemaTypeMetadataTest.class")
     exclude("**/StvnSchemaFormatterTest.class")
     exclude("**/StvnStructureViewTest.class")

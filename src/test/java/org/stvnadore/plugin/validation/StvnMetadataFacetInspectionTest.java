@@ -125,11 +125,11 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             {
               :defs {
                 :SeqCapMax    { #maxSize 4096 } :Seq( :Int )
-                :SeqCapRange  { #minSize 0 #maxSize 4096 } :Seq( :Int )
+                :SeqCapRange  { #minSize 1 #maxSize 4096 } :Seq( :Int )
                 :SetCapMax    { #maxSize 4096 } :Set( :Int )
                 :SetCapRange  { #minSize 1 #maxSize 4096 } :Set( :Int )
                 :MapCapMax    { #maxSize 4096 } :Map( :String :Int )
-                :MapCapRange  { #minSize 0 #maxSize 4096 } :Map( :String :Int )
+                :MapCapRange  { #minSize 1 #maxSize 4096 } :Map( :String :Int )
                 :MapInvert    { #invertible } :Map( :String :Int )
                 :MapAllFacets { #invertible #minSize 1 #maxSize 4096 } :Map( :String :Int )
               }

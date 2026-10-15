@@ -437,6 +437,18 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                     }
 
+                    // Intercept ERR_REDUNDANT_METADATA_FACET (E036) and attach RemoveRedundantFacetQuickFix
+                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get()))
+                        || message.contains("is redundant")) {
+                        var targetElem = file.findElementAt(range.getStartOffset());
+                        if (targetElem != null) {
+                            var entry = PsiTreeUtil.getParentOfType(targetElem, MetadataEntry.class, false);
+                            if (entry != null) {
+                                annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
+                            }
+                        }
+                    }
+
                     // Attach stem mismatch quick-fixes for WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
                     if (diag.errorCode().isPresent() && "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME".equals(diag.errorCode().get())) {
                         var fileName = file.getName();
@@ -2149,8 +2161,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     }
                 }
 
-                // Pass 2b: Non-overridable and transitive mutually exclusive facets anchor on the child facet entry
+                // Pass 2b: Non-overridable, redundant, and transitive mutually exclusive facets anchor on the child facet entry
                 if ("ERR_NON_OVERRIDABLE_FACET".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
+                    || StvnDiagnosticCodes.ERR_REDUNDANT_METADATA_FACET.equals(errorCode) || message.contains("is redundant")
                     || message.contains("non-overridable") || (message.contains("mutually exclusive") && message.contains("ancestor"))) {
                     for (var entry : map.getMetadataEntryList()) {
                         PsiElement leaf = entry.getFirstChild();

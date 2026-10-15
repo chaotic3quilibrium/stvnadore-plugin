@@ -48,6 +48,7 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_EMPTY_DIRECTIVE_BLOCK = "ERR_EMPTY_DIRECTIVE_BLOCK";
     public static final String ERR_STRIP_ON_TYPE_DEF = "ERR_STRIP_ON_TYPE_DEF";
     public static final String ERR_INVALID_METADATA_FACET = "ERR_INVALID_METADATA_FACET";
+    public static final String ERR_REDUNDANT_METADATA_FACET = "ERR_REDUNDANT_METADATA_FACET";
     public static final String WARN_REDUNDANT_FACET_OVERRIDE = "WARN_REDUNDANT_FACET_OVERRIDE";
 
     // Temporal Mode & Scale
