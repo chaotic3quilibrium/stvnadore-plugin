@@ -312,4 +312,202 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         .toList();
     assertTrue("Inspection warning must be suppressed on Core Rule E036 fatal error site", warnings.isEmpty());
   }
+
+  /**
+   * Asserts that declaring #size 32 on signed :Int triggers a fatal compilation error (E036)
+   * pinned to '#size 32' and offers RemoveRedundantFacetQuickFix.
+   */
+  public void testSignedIntSizeThirtyTwoTriggersFatalError() {
+    var text = """
+        {
+          :defs {
+            :MyInt { #size 32 } :Int
+          }
+          :type :MyInt
+          :body 42
+        }
+        """;
+    myFixture.configureByText("signed_int_size_32.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
+        .toList();
+    assertFalse("Expected fatal error for redundant #size 32 on signed :Int", errors.isEmpty());
+
+    var h = errors.get(0);
+    int expectedStart = text.indexOf("#size 32");
+    int expectedEnd = expectedStart + "#size 32".length();
+    assertEquals("Start offset must pin strictly to '#size 32'", expectedStart, h.getStartOffset());
+    assertEquals("End offset must pin strictly to '#size 32'", expectedEnd, h.getEndOffset());
+
+    myFixture.getEditor().getCaretModel().moveToOffset(expectedStart);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected 'Remove redundant facet' quick-fix to be available", actions.isEmpty());
+  }
+
+  /**
+   * Asserts that declaring #size 64 on continuous :Float triggers a fatal compilation error (E036)
+   * pinned to '#size 64' and offers RemoveRedundantFacetQuickFix.
+   */
+  public void testContinuousFloatSizeSixtyFourTriggersFatalError() {
+    var text = """
+        {
+          :defs {
+            :MyFloat { #size 64 } :Float
+          }
+          :type :MyFloat
+          :body 3.14
+        }
+        """;
+    myFixture.configureByText("continuous_float_size_64.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 64' is redundant"))
+        .toList();
+    assertFalse("Expected fatal error for redundant #size 64 on continuous :Float", errors.isEmpty());
+
+    var h = errors.get(0);
+    int expectedStart = text.indexOf("#size 64");
+    int expectedEnd = expectedStart + "#size 64".length();
+    assertEquals("Start offset must pin strictly to '#size 64'", expectedStart, h.getStartOffset());
+    assertEquals("End offset must pin strictly to '#size 64'", expectedEnd, h.getEndOffset());
+
+    myFixture.getEditor().getCaretModel().moveToOffset(expectedStart);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected 'Remove redundant facet' quick-fix to be available", actions.isEmpty());
+  }
+
+  /**
+   * Asserts that declaring #unsigned #size 32 on :Int compiles cleanly with zero error annotations.
+   */
+  public void testUnsignedIntSizeThirtyTwoPermittedWithoutError() {
+    var text = """
+        {
+          :defs {
+            :MyUInt { #unsigned #size 32 } :Int
+          }
+          :type :MyUInt
+          :body 4294967295
+        }
+        """;
+    myFixture.configureByText("unsigned_int_size_32.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+    assertTrue("Unsigned integer with #size 32 is valid domain modification and must produce zero error annotations: " + errors, errors.isEmpty());
+  }
+
+  /**
+   * Asserts that declaring single-precision #size 32 on continuous :Float compiles cleanly with zero error annotations.
+   */
+  public void testContinuousFloatSizeThirtyTwoPermittedWithoutError() {
+    var text = """
+        {
+          :defs {
+            :SingleFloat { #size 32 } :Float
+          }
+          :type :SingleFloat
+          :body 3.14
+        }
+        """;
+    myFixture.configureByText("continuous_float_size_32.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+    assertTrue("Continuous float with #size 32 narrows precision and must produce zero error annotations: " + errors, errors.isEmpty());
+  }
+
+  /**
+   * Asserts that applying RemoveRedundantFacetQuickFix to { #size 64 } :Float deletes the entire
+   * metadata block and leaves bare ':JsonNumberFloat :Float' without empty braces.
+   */
+  public void testExecuteQuickFixOnContinuousFloatSizeSixtyFourExcisesEmptyBlock() {
+    var text = """
+        {
+          :defs {
+            :JsonNumberFloat { #size 64 } :Float
+          }
+          :type :JsonNumberFloat
+          :body 1.0
+        }
+        """;
+    myFixture.configureByText("float_size_64_fix.stvn", text);
+    myFixture.doHighlighting();
+    int offset = text.indexOf("#size 64");
+    myFixture.getEditor().getCaretModel().moveToOffset(offset);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected quick-fix to be available", actions.isEmpty());
+    myFixture.launchAction(actions.get(0));
+
+    var result = myFixture.getFile().getText();
+    assertTrue("Applying quick-fix must remove single-facet block leaving bare ':JsonNumberFloat :Float':\n" + result,
+        result.contains(":JsonNumberFloat :Float"));
+    assertFalse("Result must not contain metadata braces for :JsonNumberFloat", result.contains(":JsonNumberFloat {"));
+    assertFalse("Result must not contain empty braces '{}'", result.contains("{}"));
+  }
+
+  /**
+   * Asserts that completion in ':defs { :MyInt { <caret> } :Int }' contains '#size 64' and '#size 16',
+   * but does NOT contain '#size 32'.
+   */
+  public void testCompletionSuppressesSizeThirtyTwoOnSignedInt() {
+    var text = """
+        {
+          :defs {
+            :MyInt { <caret> } :Int
+          }
+          :type :MyInt
+          :body 0
+        }
+        """;
+    myFixture.configureByText("completion_signed_int_size.stvn", text);
+    myFixture.completeBasic();
+    var lookupStrings = myFixture.getLookupElementStrings();
+    assertNotNull("Lookup strings must not be null", lookupStrings);
+    assertFalse("Must suppress redundant '#size 32' on signed :Int", lookupStrings.contains("#size 32"));
+    assertTrue("Must propose valid '#size 64' on signed :Int", lookupStrings.contains("#size 64"));
+    assertTrue("Must propose valid '#size 16' on signed :Int", lookupStrings.contains("#size 16"));
+  }
+
+  /**
+   * Asserts that completion in ':defs { :MyFloat { <caret> } :Float }' contains '#size 32',
+   * but does NOT contain '#size 64'.
+   */
+  public void testCompletionSuppressesSizeSixtyFourOnContinuousFloat() {
+    var text = """
+        {
+          :defs {
+            :MyFloat { <caret> } :Float
+          }
+          :type :MyFloat
+          :body 0.0
+        }
+        """;
+    myFixture.configureByText("completion_continuous_float_size.stvn", text);
+    myFixture.completeBasic();
+    var lookupStrings = myFixture.getLookupElementStrings();
+    assertNotNull("Lookup strings must not be null", lookupStrings);
+    assertFalse("Must suppress redundant '#size 64' on continuous :Float", lookupStrings.contains("#size 64"));
+    assertTrue("Must propose single-precision '#size 32' on continuous :Float", lookupStrings.contains("#size 32"));
+  }
+
+  /**
+   * Asserts that completion in ':defs { :MyUInt { #unsigned <caret> } :Int }' contains '#size 32'.
+   */
+  public void testCompletionProposesSizeThirtyTwoOnUnsignedInt() {
+    var text = """
+        {
+          :defs {
+            :MyUInt { #unsigned <caret> } :Int
+          }
+          :type :MyUInt
+          :body 0
+        }
+        """;
+    myFixture.configureByText("completion_unsigned_int_size.stvn", text);
+    myFixture.completeBasic();
+    var lookupStrings = myFixture.getLookupElementStrings();
+    assertNotNull("Lookup strings must not be null", lookupStrings);
+    assertTrue("Must propose '#size 32' on unsigned :Int", lookupStrings.contains("#size 32"));
+  }
 }

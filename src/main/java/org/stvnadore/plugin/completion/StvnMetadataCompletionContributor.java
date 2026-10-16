@@ -112,7 +112,23 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withTailText(" (bounds domain to [0, \\infty))", true));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
+                if (isUnsigned) {
+                  // Rule E036: Propose #size 32 as a valid unsigned domain modification
+                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
+                      .withIcon(AllIcons.Nodes.Property)
+                      .withTypeText("Storage Width", true));
+                }
+                // Rule E036: Propose non-default integer bit-widths (valid widenings and narrowings)
+                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 64")
+                    .withIcon(AllIcons.Nodes.Property)
+                    .withTypeText("Storage Width", true));
+                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 16")
+                    .withIcon(AllIcons.Nodes.Property)
+                    .withTypeText("Storage Width", true));
+                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 8")
+                    .withIcon(AllIcons.Nodes.Property)
+                    .withTypeText("Storage Width", true));
+                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 128")
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Storage Width", true));
               }
@@ -215,9 +231,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Exact Decimal", true));
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 64")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Storage Width", true));
+                  // Rule E036: Suppress #size 64 on continuous :Float; propose single-precision #size 32
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
                       .withIcon(AllIcons.Nodes.Property)
                       .withTypeText("Storage Width", true));

@@ -513,6 +513,20 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
+        // 4. Primitive Default Sizing Tautologies (Rule E036)
+        if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+            var valOpt = extractNumericValue(text);
+            if (valOpt.isPresent()) {
+                int val = valOpt.getAsInt();
+                if (val == 32 && StvnVocabulary.TYPE_INT.equals(ultimateBase) && !hasLocalUnsignedFacet(metaMap)) {
+                    return true;
+                }
+                if (val == 64 && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && !hasLocalExactFacet(metaMap)) {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 

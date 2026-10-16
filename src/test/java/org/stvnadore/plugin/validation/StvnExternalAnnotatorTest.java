@@ -853,8 +853,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var errorHighlights = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
-
-        assertEquals("Must produce exactly 9 error highlights for the 9 uhoh cases", 9, errorHighlights.size());
+        var uhohHighlights = errorHighlights.stream()
+            .filter(h -> h.getDescription() != null && !h.getDescription().contains("is redundant"))
+            .toList();
+        assertEquals("Must produce exactly 9 error highlights for the 9 uhoh cases", 9, uhohHighlights.size());
 
         // Verify lines 4, 8, 12 report mutual exclusivity for #exact
         long exactMutexCount = errorHighlights.stream()
