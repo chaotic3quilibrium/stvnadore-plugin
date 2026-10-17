@@ -527,6 +527,18 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
+        // 5. Exact Float Precision Ceiling Tautology (Rule E036)
+        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+            var valOpt = extractNumericValue(text);
+            if (valOpt.isPresent() && valOpt.getAsInt() == StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE) {
+                boolean isExact = hasLocalExactFacet(metaMap)
+                    || (rs != null && !rs.isPoisonedSentinel() && rs.constraints().exact());
+                if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && isExact) {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 

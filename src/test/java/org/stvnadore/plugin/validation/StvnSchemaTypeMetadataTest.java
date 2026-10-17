@@ -33,16 +33,16 @@ public final class StvnSchemaTypeMetadataTest extends BasePlatformTestCase {
         var errors = PsiTreeUtil.findChildrenOfType(file, PsiErrorElement.class);
         assertTrue("Valid composite inline metadata must parse with 0 syntax errors. Found: " + errors, errors.isEmpty());
 
-        // Verify child metadata maps exist in AST
+        // Verify child metadata maps exist in AST (7 non-tautological metadata blocks after Rule E036 tautology elimination)
         var metaMaps = PsiTreeUtil.findChildrenOfType(file, MetadataMap.class);
-        assertEquals("Must contain exactly 9 metadata blocks across composite constructors", 9, metaMaps.size());
+        assertEquals("Must contain exactly 7 metadata blocks across composite constructors", 7, metaMaps.size());
 
         // Verify child SchemaTypes have non-null getMetadataMap()
         var schemaTypes = PsiTreeUtil.findChildrenOfType(file, SchemaType.class);
         var schemaTypesWithMeta = schemaTypes.stream()
                 .filter(st -> st.getMetadataMap() != null)
                 .toList();
-        assertEquals("Must contain exactly 9 SchemaType nodes with metadata", 9, schemaTypesWithMeta.size());
+        assertEquals("Must contain exactly 7 SchemaType nodes with metadata", 7, schemaTypesWithMeta.size());
     }
 
     public void testEmptyChildMetadataBlockRejection() throws Exception {

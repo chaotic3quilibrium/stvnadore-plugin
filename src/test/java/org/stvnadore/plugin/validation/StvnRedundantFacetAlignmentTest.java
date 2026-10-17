@@ -510,4 +510,164 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     assertNotNull("Lookup strings must not be null", lookupStrings);
     assertTrue("Must propose '#size 32' on unsigned :Int", lookupStrings.contains("#size 32"));
   }
+
+  /**
+   * Asserts that declaring #maxSize 16777216 on { #exact } :Float triggers a fatal compilation error (E036)
+   * pinned strictly to '#maxSize 16777216' and offers RemoveRedundantFacetQuickFix.
+   */
+  public void testExactFloatMaxSizeSixteenMillionTriggersFatalError() {
+    var text = """
+        {
+          :defs {
+            :BadExact { #exact #maxSize 16777216 } :Float
+          }
+          :type :BadExact
+          :body 123.45
+        }
+        """;
+    myFixture.configureByText("exact_float_max_size_16m.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#maxSize 16777216' is redundant"))
+        .toList();
+    assertFalse("Expected fatal error for redundant #maxSize 16777216 on { #exact } :Float", errors.isEmpty());
+
+    var h = errors.get(0);
+    int expectedStart = text.indexOf("#maxSize 16777216");
+    int expectedEnd = expectedStart + "#maxSize 16777216".length();
+    assertEquals("Start offset must pin strictly to '#maxSize 16777216'", expectedStart, h.getStartOffset());
+    assertEquals("End offset must pin strictly to '#maxSize 16777216'", expectedEnd, h.getEndOffset());
+
+    myFixture.getEditor().getCaretModel().moveToOffset(expectedStart);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected 'Remove redundant facet' quick-fix to be available", actions.isEmpty());
+  }
+
+  /**
+   * Asserts that executing RemoveRedundantFacetQuickFix on { #exact #maxSize 16777216 } :Float
+   * deletes only '#maxSize 16777216' and leaves clean '{ #exact } :Float' without empty braces.
+   */
+  public void testExecuteQuickFixOnExactFloatMaxSizeSixteenMillionLeavesCleanFormatting() {
+    var text = """
+        {
+          :defs {
+            :BadExact { #exact #maxSize 16777216 } :Float
+          }
+          :type :BadExact
+          :body 123.45
+        }
+        """;
+    myFixture.configureByText("exact_float_max_size_16m_fix.stvn", text);
+    myFixture.doHighlighting();
+    int offset = text.indexOf("#maxSize 16777216");
+    myFixture.getEditor().getCaretModel().moveToOffset(offset);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected quick-fix to be available", actions.isEmpty());
+    myFixture.launchAction(actions.get(0));
+
+    var result = myFixture.getFile().getText();
+    assertTrue("Applying quick-fix must leave clean '{ #exact } :Float':\n" + result,
+        result.contains(":BadExact { #exact } :Float"));
+    assertFalse("Result must not contain #maxSize 16777216", result.contains("#maxSize 16777216"));
+  }
+
+  /**
+   * Asserts that declaring continuous :Float with #maxSize 18 triggers a fatal compilation error (E008)
+   * pinned strictly to '#maxSize 18'.
+   */
+  public void testContinuousFloatMaxSizeEighteenTriggersE008() {
+    var text = """
+        {
+          :defs {
+            :BadFloat { #maxSize 18 } :Float
+          }
+          :type :BadFloat
+          :body 1.5
+        }
+        """;
+    myFixture.configureByText("continuous_float_max_size_18.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#maxSize' is prohibited on continuous ':Float'"))
+        .toList();
+    assertFalse("Expected fatal error for #maxSize on continuous :Float", errors.isEmpty());
+
+    var h = errors.get(0);
+    int expectedStart = text.indexOf("#maxSize 18");
+    int expectedEnd = expectedStart + "#maxSize 18".length();
+    assertEquals("Start offset must pin strictly to '#maxSize 18'", expectedStart, h.getStartOffset());
+    assertEquals("End offset must pin strictly to '#maxSize 18'", expectedEnd, h.getEndOffset());
+  }
+
+  /**
+   * Asserts that declaring valid narrowing #maxSize 18 or widening #maxSize 100000000 on { #exact } :Float
+   * compiles cleanly with zero error annotations.
+   */
+  public void testExactFloatValidNarrowingAndWideningPermittedWithoutError() {
+    var text = """
+        {
+          :defs {
+            :CurrencyAmount { #exact #maxSize 18 } :Float
+            :SuperPrecise { #exact #maxSize 100000000 } :Float
+          }
+          :type :Tuple( :CurrencyAmount :SuperPrecise )
+          :body ( 123.45 3.141592653589793238462643383279 )
+        }
+        """;
+    myFixture.configureByText("exact_float_valid_sizing.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+    assertTrue("Valid exact float narrowings and widenings must produce zero error annotations: " + errors, errors.isEmpty());
+  }
+
+  /**
+   * Asserts that completion in ':defs { :Price { #exact <caret> } :Float }' proposes #maxSize 18
+   * and #maxSize 38, but suppresses #maxSize 16777216 and #size.
+   */
+  public void testCompletionInExactFloatProposesDomainNarrowingsAndSuppressesTautology() {
+    var text = """
+        {
+          :defs {
+            :Price { #exact <caret> } :Float
+          }
+          :type :Price
+          :body 0.0
+        }
+        """;
+    myFixture.configureByText("completion_exact_float.stvn", text);
+    myFixture.completeBasic();
+    var lookupStrings = myFixture.getLookupElementStrings();
+    assertNotNull("Lookup strings must not be null", lookupStrings);
+    assertTrue("Must propose currency narrowing '#maxSize 18'", lookupStrings.contains("#maxSize 18"));
+    assertTrue("Must propose financial narrowing '#maxSize 38'", lookupStrings.contains("#maxSize 38"));
+    assertFalse("Must suppress tautological default ceiling '#maxSize 16777216'", lookupStrings.contains("#maxSize 16777216"));
+    assertFalse("Must suppress '#size 32' on exact float", lookupStrings.contains("#size 32"));
+    assertFalse("Must suppress '#size 64' on exact float", lookupStrings.contains("#size 64"));
+  }
+
+  /**
+   * Asserts that completion in ':defs { :Continuous { <caret> } :Float }' suppresses #maxSize entirely.
+   */
+  public void testCompletionInContinuousFloatSuppressesMaxSize() {
+    var text = """
+        {
+          :defs {
+            :Continuous { <caret> } :Float
+          }
+          :type :Continuous
+          :body 0.0
+        }
+        """;
+    myFixture.configureByText("completion_continuous_float.stvn", text);
+    myFixture.completeBasic();
+    var lookupStrings = myFixture.getLookupElementStrings();
+    assertNotNull("Lookup strings must not be null", lookupStrings);
+    var maxSizeProposals = lookupStrings.stream().filter(s -> s.startsWith("#maxSize")).toList();
+    assertTrue("Must suppress all '#maxSize' proposals on continuous :Float: " + maxSizeProposals, maxSizeProposals.isEmpty());
+    assertTrue("Must propose '#exact' on continuous :Float", lookupStrings.contains("#exact"));
+    assertTrue("Must propose '#size 32' on continuous :Float", lookupStrings.contains("#size 32"));
+    assertFalse("Must suppress redundant '#size 64' on continuous :Float", lookupStrings.contains("#size 64"));
+  }
 }

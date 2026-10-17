@@ -1051,7 +1051,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (diag.errorCode().isPresent() && (DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING.equals(diag.errorCode().get())
                 || DiagnosticBag.ERR_DATETIME_MODE_INVALID.equals(diag.errorCode().get())
                 || DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diag.errorCode().get())
-                || DiagnosticBag.ERR_LEGACY_UNIT_FACET_PURGED.equals(diag.errorCode().get()))) {
+                || "ERR_LEGACY_UNIT_FACET_PURGED".equals(diag.errorCode().get()))) {
             if (isTemporalModeInspectionActive(file)) {
                 return true;
             }

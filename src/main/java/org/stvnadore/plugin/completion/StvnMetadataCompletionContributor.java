@@ -86,6 +86,11 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             boolean isUnsigned = isUnsignedActive(metaMap, schemaType);
             boolean isExact = isExactActive(metaMap, schemaType);
 
+            // Infer targetBaseType as :Float when in-flight definition declares #exact
+            if (targetBaseType.isEmpty() && isExact) {
+              targetBaseType = StvnVocabulary.TYPE_FLOAT;
+            }
+
             // Track facets already present to eliminate duplicate facet proposals (§ 5.1.4)
             Set<String> declaredFacets = new HashSet<>();
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -230,6 +235,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EXACT)
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Exact Decimal", true));
+                // Rule E008: Strictly suppress #maxSize on continuous :Float
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
                   // Rule E036: Suppress #size 64 on continuous :Float; propose single-precision #size 32
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
@@ -243,6 +249,18 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                       .withTypeText("Opt-In Equality", true));
                 }
               } else {
+                // Exact decimal float: propose domain-specific #maxSize narrowings (§ 5.1.3)
+                // Rule E036: Strictly suppress #maxSize 16777216 (intrinsic default ceiling tautology)
+                if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 18")
+                      .withIcon(AllIcons.Nodes.Property)
+                      .withTypeText("Mantissa Precision", true)
+                      .withTailText(" (Significant Digits: Currency / Int64 decimal)", true));
+                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 38")
+                      .withIcon(AllIcons.Nodes.Property)
+                      .withTypeText("Mantissa Precision", true)
+                      .withTailText(" (Significant Digits: Financial / Int128 decimal)", true));
+                }
                 // Exact decimal float: suppress #TRUE (intrinsically equatable and comparable)
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
