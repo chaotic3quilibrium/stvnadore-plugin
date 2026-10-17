@@ -518,7 +518,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             var valOpt = extractNumericValue(text);
             if (valOpt.isPresent()) {
                 int val = valOpt.getAsInt();
-                if (val == 32 && StvnVocabulary.TYPE_INT.equals(ultimateBase) && !hasLocalUnsignedFacet(metaMap)) {
+                if (val == 32 && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
                     return true;
                 }
                 if (val == 64 && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && !hasLocalExactFacet(metaMap)) {

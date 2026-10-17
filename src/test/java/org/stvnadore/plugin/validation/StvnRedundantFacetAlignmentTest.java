@@ -380,22 +380,22 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
-   * Asserts that declaring #unsigned #size 32 on :Int compiles cleanly with zero error annotations.
+   * Asserts that declaring valid non-default bit-width #unsigned #size 16 on :Int compiles cleanly with zero error annotations.
    */
-  public void testUnsignedIntSizeThirtyTwoPermittedWithoutError() {
+  public void testUnsignedIntSizeSixteenPermittedWithoutError() {
     var text = """
         {
           :defs {
-            :MyUInt { #unsigned #size 32 } :Int
+            :MyUInt { #unsigned #size 16 } :Int
           }
           :type :MyUInt
-          :body 4294967295
+          :body 65535
         }
         """;
-    myFixture.configureByText("unsigned_int_size_32.stvn", text);
+    myFixture.configureByText("unsigned_int_size_16.stvn", text);
     var highlights = myFixture.doHighlighting();
     var errors = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
-    assertTrue("Unsigned integer with #size 32 is valid domain modification and must produce zero error annotations: " + errors, errors.isEmpty());
+    assertTrue("Unsigned integer with non-default #size 16 is valid domain narrowing and must produce zero error annotations: " + errors, errors.isEmpty());
   }
 
   /**
@@ -492,9 +492,9 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
-   * Asserts that completion in ':defs { :MyUInt { #unsigned <caret> } :Int }' contains '#size 32'.
+   * Asserts that completion in ':defs { :MyUInt { #unsigned <caret> } :Int }' suppresses redundant #size 32 under Rule E036.
    */
-  public void testCompletionProposesSizeThirtyTwoOnUnsignedInt() {
+  public void testCompletionUnsignedIntSuppressesSize32AndProposesNonDefaultSizes() {
     var text = """
         {
           :defs {
@@ -508,7 +508,40 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     myFixture.completeBasic();
     var lookupStrings = myFixture.getLookupElementStrings();
     assertNotNull("Lookup strings must not be null", lookupStrings);
-    assertTrue("Must propose '#size 32' on unsigned :Int", lookupStrings.contains("#size 32"));
+    assertFalse("Must suppress redundant '#size 32' on unsigned :Int under Rule E036", lookupStrings.contains("#size 32"));
+    assertTrue("Must propose non-default width '#size 64' on unsigned :Int", lookupStrings.contains("#size 64"));
+    assertTrue("Must propose non-default width '#size 16' on unsigned :Int", lookupStrings.contains("#size 16"));
+    assertTrue("Must propose non-default width '#size 8' on unsigned :Int", lookupStrings.contains("#size 8"));
+    assertTrue("Must propose non-default width '#size 128' on unsigned :Int", lookupStrings.contains("#size 128"));
+  }
+
+  /**
+   * Asserts that declaring #size 32 on { #unsigned } :Int triggers fatal compilation error E036
+   * and suppresses duplicate local inspection warnings.
+   */
+  public void testUnsignedIntSize32TriggersFatalErrorE036WithoutDuplicateWarning() {
+    var text = """
+        {
+          :defs {
+            :BadUInt { #unsigned #size 32 } :Int
+          }
+          :type :BadUInt
+          :body 42
+        }
+        """;
+    myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
+    myFixture.configureByText("unsigned_size_32_tautology.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var errors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
+        .toList();
+    assertFalse("Expected fatal error E036 for redundant #size 32 on unsigned integer", errors.isEmpty());
+
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .toList();
+    assertTrue("Redundant facet inspection warning must be suppressed by E036 gate: " + warnings, warnings.isEmpty());
   }
 
   /**

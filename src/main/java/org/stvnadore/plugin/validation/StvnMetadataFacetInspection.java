@@ -41,8 +41,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     private static final TokenSet STRING_ONLY_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_REGEX
     );
-    private static final TokenSet DIMENSION_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_MIN_SIZE, StvnTypes.KW_MAX_SIZE
+    private static final TokenSet MIN_SIZE_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_MIN_SIZE
+    );
+    private static final TokenSet MAX_SIZE_FACET_TOKENS = TokenSet.create(
+        StvnTypes.KW_MAX_SIZE
     );
     private static final TokenSet TEMPORAL_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_SCALE_S, StvnTypes.KW_SCALE_MS, StvnTypes.KW_SCALE_US, StvnTypes.KW_SCALE_NS,
@@ -290,7 +293,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
-            } else if (hasToken(entry, DIMENSION_FACET_TOKENS) && !isString && !isCollection) {
+            } else if (hasToken(entry, MIN_SIZE_FACET_TOKENS) && !isString && !isCollection) {
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -300,6 +303,29 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.ERROR,
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
+            } else if (hasToken(entry, MAX_SIZE_FACET_TOKENS)) {
+                boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(baseType);
+                if (isFloat) {
+                    boolean exactActive = isExactActive(metaMap, schemaType);
+                    if (exactActive) {
+                        // When #exact is active, #maxSize is permitted (precision narrowing/widening)
+                        continue;
+                    }
+                    // Continuous float (#exact absent) is governed strictly by Core Rule E008 via StvnExternalAnnotator.
+                    // Suppress duplicate generic inspection errors on continuous float.
+                    continue;
+                }
+                if (!isString && !isCollection) {
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Facet is not permitted on " + baseType + "; permitted facets for collections, string types, and exact float: [#minSize, #maxSize]",
+                            StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                        ),
+                        ProblemHighlightType.ERROR,
+                        new RemoveElementQuickFix("Remove invalid facet")
+                    );
+                }
             } else if (hasToken(entry, TEMPORAL_FACET_TOKENS) && !isTemporal) {
                 holder.registerProblem(
                     entry,
@@ -332,6 +358,47 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 );
             }
         }
+    }
+
+    private static boolean isExactActive(@Nullable MetadataMap metaMap, @NotNull SchemaType schemaType) {
+        if (hasLocalExactFacet(metaMap)) {
+            return true;
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var text = kw.getText().trim();
+            if (!StvnVocabulary.isBaseScalarType(text)) {
+                var file = schemaType.getContainingFile();
+                if (file != null) {
+                    var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
+                    if (resolved != null) {
+                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                        if (parentDef != null && parentDef.getSchemaType() != null) {
+                            return isExactActive(parentDef.getSchemaType().getMetadataMap(), parentDef.getSchemaType());
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLocalExactFacet(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) return false;
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var bare = entry.getMetadataBareFlag();
+            if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
+                var bVal = bare.getBooleanValue();
+                return bVal == null || isBooleanTrue(bVal);
+            }
+        }
+        return false;
+    }
+
+    private static boolean isBooleanTrue(@Nullable BooleanValue bVal) {
+        if (bVal == null) return false;
+        var t = bVal.getText().trim();
+        return "#TRUE".equals(t) || "#T".equals(t);
     }
 
     private static boolean hasToken(MetadataEntry entry, TokenSet tokenSet) {

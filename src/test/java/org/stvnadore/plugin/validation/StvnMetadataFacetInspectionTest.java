@@ -439,4 +439,63 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
             errors.get(0).getDescription());
     }
+
+    public void testExactFloatPermitsMaxSizeNarrowingWithoutInspectionError() {
+        var text = """
+            {
+              :defs {
+                :FloatExactGoodB { #exact #maxSize 16777215 } :Float
+              }
+              :type :FloatExactGoodB
+              :body 123.45
+            }
+            """;
+        myFixture.configureByText("exact_float_good.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+        assertTrue("Exact float narrowing must not produce StvnMetadataFacet error: " + errors, errors.isEmpty());
+    }
+
+    public void testTransitiveExactFloatPermitsMaxSizeNarrowingWithoutInspectionError() {
+        var text = """
+            {
+              :defs {
+                :BaseExact { #exact } :Float
+                :SubExact  { #maxSize 18 } :BaseExact
+              }
+              :type :SubExact
+              :body 12.34
+            }
+            """;
+        myFixture.configureByText("transitive_exact_float.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+        assertTrue("Transitive exact float narrowing must not produce StvnMetadataFacet error: " + errors, errors.isEmpty());
+    }
+
+    public void testMinSizeProhibitedOnExactFloat() {
+        var text = """
+            {
+              :defs {
+                :BadExactMin { #exact #minSize 4 } :Float
+              }
+              :type :BadExactMin
+              :body 123.45
+            }
+            """;
+        myFixture.configureByText("exact_float_bad_minsize.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
+            .toList();
+        assertEquals("Expected exactly 1 inspection error on #minSize on :Float", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Facet is not permitted on :Float; permitted facets for collections and string types"));
+    }
 }
