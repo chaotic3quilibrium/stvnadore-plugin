@@ -21,7 +21,7 @@ import org.jspecify.annotations.NullMarked;
 @NullMarked
 public final class ConvertToFencedStringIntentionAction implements IntentionAction {
 
-    private static final String DEFAULT_TAG = "TEXT";
+    private static final String DEFAULT_TAG = "FENCE";
     private final TextRange targetRange;
 
     /**

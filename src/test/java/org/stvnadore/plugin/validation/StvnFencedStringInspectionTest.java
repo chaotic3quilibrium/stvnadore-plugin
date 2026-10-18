@@ -390,10 +390,10 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             new com.intellij.openapi.util.TextRange(expectedStart, expectedStart + 3),
             new com.intellij.openapi.util.TextRange(errorHighlight.getStartOffset(), errorHighlight.getEndOffset()));
 
-        var action = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[TEXT]...[TEXT]\"\"\"'");
+        var action = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[FENCE]...[FENCE]\"\"\"'");
         assertNotNull("Expected Convert to fenced string quick-fix", action);
         myFixture.launchAction(action);
-        String expected = "{\n  :type :String\n  :body \"\"\"[TEXT]\n    Legacy block string content\n  [TEXT]\"\"\"\n}\n";
+        String expected = "{\n  :type :String\n  :body \"\"\"[FENCE]\n    Legacy block string content\n  [FENCE]\"\"\"\n}\n";
         myFixture.checkResult(expected);
     }
 

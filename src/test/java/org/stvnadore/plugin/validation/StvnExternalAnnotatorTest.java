@@ -1507,10 +1507,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             new com.intellij.openapi.util.TextRange(tripleOffset, tripleOffset + 3),
             new com.intellij.openapi.util.TextRange(err.getStartOffset(), err.getEndOffset()));
 
-        var fix = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[TEXT]...[TEXT]\"\"\"'");
+        var fix = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[FENCE]...[FENCE]\"\"\"'");
         assertNotNull("Expected Convert to fenced string quick-fix", fix);
         myFixture.launchAction(fix);
-        String expected = "{\n  :defs {}\n  :type :String\n  :body \"\"\"[TEXT]\n    Line 1\n    Line 2\n  [TEXT]\"\"\"\n}\n";
+        String expected = "{\n  :defs {}\n  :type :String\n  :body \"\"\"[FENCE]\n    Line 1\n    Line 2\n  [FENCE]\"\"\"\n}\n";
         myFixture.checkResult(expected);
     }
 }
