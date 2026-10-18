@@ -347,6 +347,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             }
                         }
                     }
+                    // Enforce Rule STR-04 Coordinate Pinning: pin unfenced block strings strictly to opening """
+                    if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
+                            || message.contains("Unfenced block strings are prohibited")) {
+                        range = new TextRange(s, Math.min(s + 3, textLength));
+                    }
                     var annotationBuilder = holder.newAnnotation(severity, message)
                           .range(range);
                     var listLit = findMapTargetListLiteral(file, range);
@@ -485,6 +490,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(elemForFix, targetFileName));
                             annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(elemForFix));
                         }
+                    }
+
+                    // Attach ConvertToFencedStringIntentionAction for unfenced block strings (Rule STR-04)
+                    if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
+                            || message.contains("Unfenced block strings are prohibited")) {
+                        annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
                     }
 
                     annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);

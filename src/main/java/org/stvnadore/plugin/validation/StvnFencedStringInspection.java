@@ -116,21 +116,13 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             return;
         }
 
-        // Detect legacy unfenced block strings (Rule STR-04)
-        if (!text.contains("[") || (text.indexOf('\n') >= 0 && text.indexOf('[') > text.indexOf('\n'))) {
-            holder.registerProblem(
-                element,
-                StvnDiagnosticFormatter.formatPlugin(
-                    "Rule STR-04 violation: Unfenced block strings are prohibited; multi-line strings must use fenced syntax \"\"\"[TAG]",
-                    StvnDiagnosticCodes.ERR_UNFENCED_BLOCK_STRING_PROHIBITED
-                ),
-                ProblemHighlightType.GENERIC_ERROR,
-                new ConvertToFencedStringQuickFix()
-            );
+        // Guard against legacy unfenced block strings or non-fenced tokens:
+        // If '[' is missing or appears after the first newline, yield completely to StvnExternalAnnotator
+        int newline = text.indexOf('\n');
+        int openBracket = text.indexOf('[');
+        if (openBracket < 0 || (newline >= 0 && openBracket > newline)) {
             return;
         }
-
-        int openBracket = text.indexOf('[');
         int closeBracket = text.indexOf(']', openBracket >= 0 ? openBracket : 0);
         if (openBracket < 0 || closeBracket <= openBracket) {
             return;
@@ -680,54 +672,5 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             }
         }
     }
-
-    private static final class ConvertToFencedStringQuickFix implements LocalQuickFix {
-        private static final String DEFAULT_TAG = "TEXT";
-
-        @Override
-        public @NotNull String getName() {
-            return "Convert to fenced string '\"\"\"[" + DEFAULT_TAG + "]...[" + DEFAULT_TAG + "]\"\"\"'";
-        }
-
-        @Override
-        public @NotNull String getFamilyName() {
-            return "Convert to fenced string";
-        }
-
-        @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element == null) return;
-            var file = element.getContainingFile();
-            if (file == null) return;
-            var docManager = PsiDocumentManager.getInstance(project);
-            var doc = file.getViewProvider().getDocument();
-            String text = element.getText();
-            int startOffset = element.getTextRange().getStartOffset();
-
-            String updated;
-            if (text.startsWith("\"\"\"") && text.endsWith("\"\"\"") && text.length() >= 6) {
-                String body = text.substring(3, text.length() - 3);
-                updated = "\"\"\"[" + DEFAULT_TAG + "]" + body + "[" + DEFAULT_TAG + "]\"\"\"";
-            } else if (text.startsWith("\"\"\"")) {
-                String lineSep = text.contains("\r\n") ? "\r\n" : "\n";
-                CharSequence docChars = (doc != null) ? doc.getCharsSequence() : text;
-                String indent = computeOpeningIndent(docChars, startOffset);
-                String rest = text.substring(3);
-                updated = "\"\"\"[" + DEFAULT_TAG + "]" + rest + lineSep + indent + "[" + DEFAULT_TAG + "]\"\"\"";
-            } else {
-                return;
-            }
-
-            if (doc != null) {
-                doc.replaceString(startOffset, startOffset + text.length(), updated);
-                docManager.commitDocument(doc);
-                repositionCaretToBodyLine(project, doc, startOffset);
-            } else {
-                var dummy = StvnElementFactory.createValue(project, updated);
-                var newLiteral = dummy.getStringLiteral();
-                element.replace(newLiteral != null ? newLiteral : dummy);
-            }
-        }
-    }
 }
+

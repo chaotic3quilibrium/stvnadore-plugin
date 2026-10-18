@@ -1486,4 +1486,32 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("Tooltip must include document kind mismatch error",
             tooltip.contains("Document kind") && tooltip.contains("does not match file extension"));
     }
+
+    /**
+     * Asserts that an unfenced block string receives exactly 1 syntax error annotation pinned
+     * strictly to the opening delimiter span, leaving lines 10-11 clean and attaching
+     * the ConvertToFencedStringIntentionAction quick-fix.
+     */
+    public void testUnfencedBlockStringSingleHighlightAndCoordinatePinning() {
+        String code = "{\n  :defs {}\n  :type :String\n  :body \"\"\"<caret>\n    Line 1\n    Line 2\n  \"\"\"\n}\n";
+        myFixture.configureByText("uhoh_test.stvn", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation"))
+            .toList();
+        assertEquals("Must report exactly 1 syntax error squiggle across entire document", 1, errors.size());
+        var err = errors.get(0);
+        int tripleOffset = code.indexOf("\"\"\"");
+        assertEquals("Highlight range must pin strictly to opening triple quotes (Rule STR-04 § 7.3)",
+            new com.intellij.openapi.util.TextRange(tripleOffset, tripleOffset + 3),
+            new com.intellij.openapi.util.TextRange(err.getStartOffset(), err.getEndOffset()));
+
+        var fix = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[TEXT]...[TEXT]\"\"\"'");
+        assertNotNull("Expected Convert to fenced string quick-fix", fix);
+        myFixture.launchAction(fix);
+        String expected = "{\n  :defs {}\n  :type :String\n  :body \"\"\"[TEXT]\n    Line 1\n    Line 2\n  [TEXT]\"\"\"\n}\n";
+        myFixture.checkResult(expected);
+    }
 }
+

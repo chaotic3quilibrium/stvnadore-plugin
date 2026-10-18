@@ -378,10 +378,17 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         String code = "{\n  :type :String\n  :body \"\"\"<caret>\n    Legacy block string content\n  \"\"\"\n}\n";
         myFixture.configureByText("legacy_block.stvn", code);
         var highlights = myFixture.doHighlighting();
-        var errorHighlight = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Unfenced block strings are prohibited; multi-line strings must use fenced syntax \"\"\"[TAG] [stvn-plugin:ERR_UNFENCED_BLOCK_STRING_PROHIBITED]"))
-            .findFirst();
-        assertTrue("Expected ERR_UNFENCED_BLOCK_STRING_PROHIBITED error highlight", errorHighlight.isPresent());
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Unfenced block strings are prohibited; multi-line strings must use fenced syntax"))
+            .toList();
+        assertEquals("Must report exactly 1 error highlight for unfenced block string (zero duplication)", 1, errorHighlights.size());
+        var errorHighlight = errorHighlights.get(0);
+        assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:STVN_SYNTAX_ERROR]"));
+
+        int expectedStart = code.indexOf("\"\"\"");
+        assertEquals("Error highlight must pin strictly to opening triple-quote delimiter [startOffset, startOffset + 3)",
+            new com.intellij.openapi.util.TextRange(expectedStart, expectedStart + 3),
+            new com.intellij.openapi.util.TextRange(errorHighlight.getStartOffset(), errorHighlight.getEndOffset()));
 
         var action = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[TEXT]...[TEXT]\"\"\"'");
         assertNotNull("Expected Convert to fenced string quick-fix", action);
