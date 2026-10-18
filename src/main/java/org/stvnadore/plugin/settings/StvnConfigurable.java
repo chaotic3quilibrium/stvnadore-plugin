@@ -14,9 +14,14 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.BorderFactory;
 import javax.swing.Icon;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.Font;
 
 /**
  * Project-level settings configurable page for STVN options and code formatting.
@@ -34,6 +39,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
     private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
     private @Nullable JComboBox<AliasExpansionMode> aliasExpansionModeComboBox;
+    private @Nullable JTextArea templateStvnArea;
+    private @Nullable JTextArea templateStvnIArea;
+    private @Nullable JTextArea templateStvnDArea;
+    private @Nullable JTextArea templateStvnDiArea;
 
     /**
      * Constructs a new StvnConfigurable instance for the specified project.
@@ -112,6 +121,27 @@ public final class StvnConfigurable implements SearchableConfigurable {
         styleCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         styleCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, styleCombo.getPreferredSize().height));
         panel.add(styleCombo);
+
+        panel.add(javax.swing.Box.createVerticalStrut(15));
+        var templateBorderPanel = new JPanel(new BorderLayout());
+        templateBorderPanel.setBorder(BorderFactory.createTitledBorder("Bootstrap Templates"));
+        templateBorderPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+
+        var tabbedPane = new JTabbedPane();
+
+        var areaStvn = createTemplateEditorArea();
+        var areaStvnI = createTemplateEditorArea();
+        var areaStvnD = createTemplateEditorArea();
+        var areaStvnDi = createTemplateEditorArea();
+
+        tabbedPane.addTab("Payload (.stvn)", new JScrollPane(areaStvn));
+        tabbedPane.addTab("Payload Include (.stvn_i)", new JScrollPane(areaStvnI));
+        tabbedPane.addTab("Defs Schema (.stvn_d)", new JScrollPane(areaStvnD));
+        tabbedPane.addTab("Defs Include (.stvn_di)", new JScrollPane(areaStvnDi));
+
+        tabbedPane.setPreferredSize(new Dimension(550, 180));
+        templateBorderPanel.add(tabbedPane, BorderLayout.CENTER);
+        panel.add(templateBorderPanel);
         panel.add(javax.swing.Box.createVerticalGlue());
 
         mainPanel = panel;
@@ -123,6 +153,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
         preferImpliedSumTypesCheckBox = cb6;
         blockStringEnterStyleComboBox = styleCombo;
         aliasExpansionModeComboBox = aliasModeCombo;
+        templateStvnArea = areaStvn;
+        templateStvnIArea = areaStvnI;
+        templateStvnDArea = areaStvnD;
+        templateStvnDiArea = areaStvnDi;
 
         reset();
         return panel;
@@ -146,7 +180,19 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var settings = StvnSettings.getInstance(project);
         var projSettings = StvnProjectSettings.getInstance(project);
 
-        return cb1.isSelected() != settings.getState().useLongFormSumTypes ||
+        var a1 = templateStvnArea;
+        var a2 = templateStvnIArea;
+        var a3 = templateStvnDArea;
+        var a4 = templateStvnDiArea;
+
+        boolean templatesModified = (a1 != null && a2 != null && a3 != null && a4 != null) &&
+               (!a1.getText().equals(settings.getState().bootstrapTemplateStvn) ||
+                !a2.getText().equals(settings.getState().bootstrapTemplateStvnI) ||
+                !a3.getText().equals(settings.getState().bootstrapTemplateStvnD) ||
+                !a4.getText().equals(settings.getState().bootstrapTemplateStvnDi));
+
+        return templatesModified ||
+               cb1.isSelected() != settings.getState().useLongFormSumTypes ||
                cb2.isSelected() != projSettings.getState().showTypeHints ||
                cb3.isSelected() != projSettings.getState().showHoverDocs ||
                cb4.isSelected() != projSettings.getState().enableRedundantTagInspection ||
@@ -185,6 +231,18 @@ public final class StvnConfigurable implements SearchableConfigurable {
         if (selectedMode != null) {
             projSettings.getState().aliasExpansionMode = selectedMode;
         }
+
+        var a1 = templateStvnArea;
+        var a2 = templateStvnIArea;
+        var a3 = templateStvnDArea;
+        var a4 = templateStvnDiArea;
+        if (a1 != null && a2 != null && a3 != null && a4 != null) {
+            settings.getState().bootstrapTemplateStvn = a1.getText();
+            settings.getState().bootstrapTemplateStvnI = a2.getText();
+            settings.getState().bootstrapTemplateStvnD = a3.getText();
+            settings.getState().bootstrapTemplateStvnDi = a4.getText();
+        }
+
         DaemonCodeAnalyzer.getInstance(project).restart(this);
     }
 
@@ -214,6 +272,17 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb6.setSelected(projSettings.getState().preferImpliedSumTypes);
         combo.setSelectedItem(settings.getState().blockStringEnterStyle);
         aliasCombo.setSelectedItem(projSettings.getState().aliasExpansionMode);
+
+        var a1 = templateStvnArea;
+        var a2 = templateStvnIArea;
+        var a3 = templateStvnDArea;
+        var a4 = templateStvnDiArea;
+        if (a1 != null && a2 != null && a3 != null && a4 != null) {
+            a1.setText(settings.getState().bootstrapTemplateStvn);
+            a2.setText(settings.getState().bootstrapTemplateStvnI);
+            a3.setText(settings.getState().bootstrapTemplateStvnD);
+            a4.setText(settings.getState().bootstrapTemplateStvnDi);
+        }
     }
 
     @Override
@@ -227,6 +296,17 @@ public final class StvnConfigurable implements SearchableConfigurable {
         preferImpliedSumTypesCheckBox = null;
         blockStringEnterStyleComboBox = null;
         aliasExpansionModeComboBox = null;
+        templateStvnArea = null;
+        templateStvnIArea = null;
+        templateStvnDArea = null;
+        templateStvnDiArea = null;
+    }
+
+    private static JTextArea createTemplateEditorArea() {
+        var area = new JTextArea();
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        area.setTabSize(2);
+        return area;
     }
 
 }

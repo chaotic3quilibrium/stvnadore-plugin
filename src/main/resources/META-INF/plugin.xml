@@ -597,6 +597,13 @@
             <description>Inserts a canonical root :meta header conforming to file stem and document kind</description>
         </intentionAction>
 
+        <!-- 14c. Context Action for Bootstrapping Empty STVN Document -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnBootstrapDocumentIntentionAction</className>
+            <category>STVN</category>
+            <description>Bootstraps a minimal valid STVN document structure conforming to file extension</description>
+        </intentionAction>
+
     </extensions>
 
     <actions>

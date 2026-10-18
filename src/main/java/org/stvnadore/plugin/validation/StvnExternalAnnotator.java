@@ -355,6 +355,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             || message.contains("Unfenced block strings are prohibited")) {
                         range = new TextRange(s, Math.min(s + 3, textLength));
                     }
+                    // Pin empty block diagnostics strictly to '{}' tokens [s, s + 2) (§ 7.3, § 3.5.1, § 3.8.0)
+                    if ((diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get()) || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
+                            || message.contains("ERR_EMPTY_METADATA_BLOCK")
+                            || message.contains("ERR_EMPTY_DEFS_BLOCK")
+                            || message.contains("must not be empty")
+                            || message.contains("requires at least one type definition inside ':defs { ... }'")
+                            || message.contains("Empty definition block ':defs {}' is redundant")) {
+                        if (s >= 0 && s + 2 <= textLength && "{}".equals(file.getText().substring(s, s + 2))) {
+                            range = new TextRange(s, s + 2);
+                        }
+                    }
                     // Prevent tooltip stacking on identical ranges or overlapping start offsets
                     if (registeredRanges.contains(range) || registeredStartOffsets.contains(range.getStartOffset())) {
                         continue;
@@ -509,6 +520,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     }
 
                     // Attach interactive bootstrapping intention actions for incomplete clauses
+                    if (message.contains("clause ':meta' requires a metadata block") || message.contains("':meta' requires a metadata block")) {
+                        var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
+                        annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
+                    }
                     if (message.contains("clause ':defs' requires definition block") || message.contains("':defs' requires definition block")) {
                         annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
                     }

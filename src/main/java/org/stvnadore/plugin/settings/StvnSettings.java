@@ -37,6 +37,11 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
      * Serializable persistent state properties.
      */
     public static final class State {
+        public static final String DEFAULT_TEMPLATE_STVN = "{\n  :type :String\n  :body \"\"\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_I = "{\n  :meta {\n    #name \"payload\"\n    #kind #BODY_INCLUDE\n  }\n  :type :String\n  :body \"\"\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_D = "{\n  :meta {\n    #name \"schema\"\n    #kind #DEFS\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_DI = "{\n  :meta {\n    #name \"schema\"\n    #kind #DEFS_INCLUDE\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
+
         /**
          * Constructs a new State instance with default editor settings.
          */
@@ -46,6 +51,14 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public boolean useLongFormSumTypes = true;
         /** Multiline string auto-closing delimiter shape. */
         public BlockStringEnterStyle blockStringEnterStyle = BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        /** Canonical bootstrap template for modular payload documents (.stvn). */
+        public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
+        /** Canonical bootstrap template for isolated payload documents (.stvn_i). */
+        public String bootstrapTemplateStvnI = DEFAULT_TEMPLATE_STVN_I;
+        /** Canonical bootstrap template for modular definitions schema documents (.stvn_d). */
+        public String bootstrapTemplateStvnD = DEFAULT_TEMPLATE_STVN_D;
+        /** Canonical bootstrap template for isolated definitions schema documents (.stvn_di). */
+        public String bootstrapTemplateStvnDi = DEFAULT_TEMPLATE_STVN_DI;
     }
 
     private final Object lock = new Object();

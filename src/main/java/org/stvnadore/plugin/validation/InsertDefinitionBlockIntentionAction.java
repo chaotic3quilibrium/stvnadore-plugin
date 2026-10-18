@@ -28,7 +28,7 @@ public final class InsertDefinitionBlockIntentionAction implements IntentionActi
 
     @Override
     public @NotNull String getText() {
-        return "Insert definition block '{ }'";
+        return "Insert definition block '{ :Type :String }'";
     }
 
     @Override
@@ -60,11 +60,11 @@ public final class InsertDefinitionBlockIntentionAction implements IntentionActi
         String indent = computeLineIndent(chars, targetRange.getStartOffset());
         String innerIndent = indent + "  ";
 
-        String insertion = " {" + lineSep + innerIndent + lineSep + indent + "}";
+        String insertion = " {" + lineSep + innerIndent + ":Type :String" + lineSep + indent + "}";
         doc.insertString(defsEnd, insertion);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
 
-        repositionCaret(project, doc, defsEnd + 2 + lineSep.length() + innerIndent.length());
+        repositionCaret(project, doc, defsEnd + 2 + lineSep.length() + innerIndent.length() + ":Type :String".length());
     }
 
     @Override

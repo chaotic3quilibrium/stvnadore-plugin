@@ -5452,9 +5452,12 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
             .toList();
 
-        // 1. Count Assertion: Exactly 7 errors (1 per defective line: 3, 4, 5, 6, 7, 8, 10; 0 duplicate rows)
-        assertEquals("Must produce exactly 7 error highlights for uhoh_empty_composites.stvn (no duplicates). Found: " + errorHighlights,
-                7, errorHighlights.size());
+        // 1. Count Assertion: Exactly 7 syntax errors (1 per defective line: 3, 4, 5, 6, 7, 8, 10; 0 duplicate rows)
+        var syntaxErrorHighlights = errorHighlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("STVN Syntax Error"))
+            .toList();
+        assertEquals("Must produce exactly 7 syntax error highlights for uhoh_empty_composites.stvn (no duplicates). Found: " + syntaxErrorHighlights,
+                7, syntaxErrorHighlights.size());
 
         // 2. Deduplication Assertion: 0 Grammar-Kit default error descriptions
         for (var h : errorHighlights) {

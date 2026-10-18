@@ -737,7 +737,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :String0 { #minSize 0 #maxSize 0 } :String
+                :String0 { #maxSize 0 } :String
               }
               :type :Map( :String0 :Set( :String0 ) )
               :body {
@@ -1527,7 +1527,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
             .toList();
 
-        assertEquals("Expected exactly 2 syntax errors on incomplete clauses", 2, errors.size());
+        assertEquals("Expected exactly 3 syntax errors on incomplete clauses", 3, errors.size());
 
         int defsStart = code.indexOf(":defs");
         assertEquals(new com.intellij.openapi.util.TextRange(defsStart, defsStart + 5), new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
@@ -1537,8 +1537,12 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals(new com.intellij.openapi.util.TextRange(typeStart, typeStart + 5), new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
         assertTrue(errors.get(1).getDescription().contains("clause ':type' requires a schema type"));
 
+        int bodyStart = code.indexOf(":body");
+        assertEquals(new com.intellij.openapi.util.TextRange(bodyStart, bodyStart + 5), new com.intellij.openapi.util.TextRange(errors.get(2).getStartOffset(), errors.get(2).getEndOffset()));
+        assertTrue(errors.get(2).getDescription().contains("clause ':body' requires a value payload"));
+
         myFixture.getEditor().getCaretModel().moveToOffset(defsStart);
-        assertNotNull(myFixture.findSingleIntention("Insert definition block '{ }'"));
+        assertNotNull(myFixture.findSingleIntention("Insert definition block '{ :Type :String }'"));
 
         myFixture.getEditor().getCaretModel().moveToOffset(typeStart);
         assertNotNull(myFixture.findSingleIntention("Insert schema type ':String'"));
@@ -1619,6 +1623,109 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         myFixture.launchAction(defsFix);
         String expected = "{\n  :defs {\n    :Type :String\n  }\n}\n";
         myFixture.checkResult(expected);
+    }
+
+    /**
+     * Asserts that { :meta :defs :type :body } produces exactly 4 distinct error squiggles
+     * pinned strictly to the four keywords, with zero secondary cascade errors on '}' or EOF (§ 7.3.1).
+     */
+    public void testAcidTestFourClausesProducesExactlyFourErrorsPinned() {
+        String code = "{\n  :meta\n  :defs\n  :type\n  :body\n}\n";
+        myFixture.configureByText("acid_test.stvn", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Must produce exactly 4 distinct clause errors", 4, errors.size());
+
+        // Verify pinning to :meta
+        int metaIdx = code.indexOf(":meta");
+        assertEquals(new com.intellij.openapi.util.TextRange(metaIdx, metaIdx + 5),
+            new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
+        assertTrue(errors.get(0).getDescription().contains("clause ':meta' requires a metadata block"));
+
+        // Verify pinning to :defs
+        int defsIdx = code.indexOf(":defs");
+        assertEquals(new com.intellij.openapi.util.TextRange(defsIdx, defsIdx + 5),
+            new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
+        assertTrue(errors.get(1).getDescription().contains("clause ':defs' requires definition block"));
+
+        // Verify pinning to :type
+        int typeIdx = code.indexOf(":type");
+        assertEquals(new com.intellij.openapi.util.TextRange(typeIdx, typeIdx + 5),
+            new com.intellij.openapi.util.TextRange(errors.get(2).getStartOffset(), errors.get(2).getEndOffset()));
+        assertTrue(errors.get(2).getDescription().contains("clause ':type' requires a schema type"));
+
+        // Verify pinning to :body
+        int bodyIdx = code.indexOf(":body");
+        assertEquals(new com.intellij.openapi.util.TextRange(bodyIdx, bodyIdx + 5),
+            new com.intellij.openapi.util.TextRange(errors.get(3).getStartOffset(), errors.get(3).getEndOffset()));
+        assertTrue(errors.get(3).getDescription().contains("clause ':body' requires a value payload"));
+    }
+
+    /**
+     * Asserts that example_a.stvn does NOT report ERR_RESERVED_KEYWORD_ON_LHS or 'cannot be aliased' on :type.
+     */
+    public void testExampleANoSpuriousLhsReservedErrorOnType() {
+        myFixture.enableInspections(new StvnLhsReservedTypeInspection());
+        String code = "{\n  :defs\n  :type\n  :body\n}\n";
+        myFixture.configureByText("example_a.stvn", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+
+        for (var err : errors) {
+            assertFalse("Must never report ERR_RESERVED_KEYWORD_ON_LHS on :type",
+                err.getDescription().contains("ERR_RESERVED_KEYWORD_ON_LHS") ||
+                err.getDescription().contains("cannot be aliased"));
+        }
+    }
+
+    /**
+     * Asserts that { :meta {} :defs {} :type :body } highlights both sets of empty '{}'
+     * alongside syntax errors on :type and :body.
+     */
+    public void testEmptyBlocksWithSyntaxErrorsHighlightsBothEmptyBlocksAndSyntaxErrors() {
+        String code = "{\n  :meta {}\n  :defs {}\n  :type\n  :body\n}\n";
+        myFixture.configureByText("empty_blocks.stvn", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Must report exactly 4 errors simultaneously", 4, errors.size());
+
+        // Verify squiggles pin strictly to '{}'
+        int metaBraces = code.indexOf("{}");
+        int defsBraces = code.indexOf("{}", metaBraces + 2);
+        assertEquals(new com.intellij.openapi.util.TextRange(metaBraces, metaBraces + 2),
+            new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
+        assertEquals(new com.intellij.openapi.util.TextRange(defsBraces, defsBraces + 2),
+            new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
+    }
+
+    /**
+     * Asserts that StvnBootstrapDocumentIntentionAction correctly bootstraps 0-byte documents
+     * across all 4 canonical extensions and transforms them into 100% clean non-erred states.
+     */
+    public void testBootstrapDocumentIntentionOnZeroByteFiles() {
+        String[] extensions = { "order.stvn", "order.stvn_i", "order.stvn_d", "order.stvn_di" };
+        for (var ext : extensions) {
+            myFixture.configureByText(ext, "");
+            var intention = myFixture.findSingleIntention("Bootstrap STVN Document");
+            assertNotNull("Intention must be available on 0-byte " + ext, intention);
+            myFixture.launchAction(intention);
+
+            // Re-highlight: Result must have ZERO errors
+            var highlights = myFixture.doHighlighting();
+            var errors = highlights.stream()
+                .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+                .toList();
+            assertEquals("Bootstrapped document for " + ext + " must compile cleanly with 0 errors", 0, errors.size());
+        }
     }
 }
 

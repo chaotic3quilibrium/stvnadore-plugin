@@ -6,6 +6,7 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Visitor;
@@ -33,6 +34,9 @@ public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
                     return;
                 }
                 var rawText = target.getText().trim();
+                if (isRootClauseKeyword(rawText)) {
+                    return;
+                }
                 if (StvnTypeResolver.isReservedFundamentalType(rawText)
                         || target.getAtomicType() != null
                         || target.getCollectionType() != null
@@ -49,5 +53,15 @@ public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    private static boolean isRootClauseKeyword(String text) {
+        return text.equals(StvnVocabulary.KEYWORD_META)
+            || text.equals(StvnVocabulary.KEYWORD_DEFS)
+            || text.equals(StvnVocabulary.KEYWORD_TYPE)
+            || text.equals(StvnVocabulary.KEYWORD_BODY)
+            || text.equals(StvnVocabulary.KEYWORD_USE)
+            || text.equals(StvnVocabulary.KEYWORD_INCLUDE)
+            || text.equals(StvnVocabulary.KEYWORD_PACKAGE);
     }
 }
