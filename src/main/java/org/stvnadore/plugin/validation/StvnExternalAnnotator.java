@@ -261,6 +261,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
 
         // 3. Render annotations in AnnotationHolder for all active diagnostics
+        var registeredRanges = new java.util.HashSet<com.intellij.openapi.util.TextRange>();
+        var registeredStartOffsets = new java.util.HashSet<Integer>();
+
         for (var diag : activeDiagnostics) {
             var rawMessage = sanitizeCompilerJargon(diag.message());
             var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
@@ -352,6 +355,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             || message.contains("Unfenced block strings are prohibited")) {
                         range = new TextRange(s, Math.min(s + 3, textLength));
                     }
+                    // Prevent tooltip stacking on identical ranges or overlapping start offsets
+                    if (registeredRanges.contains(range) || registeredStartOffsets.contains(range.getStartOffset())) {
+                        continue;
+                    }
+                    registeredRanges.add(range);
+                    registeredStartOffsets.add(range.getStartOffset());
+
                     var annotationBuilder = holder.newAnnotation(severity, message)
                           .range(range);
                     var listLit = findMapTargetListLiteral(file, range);
@@ -496,6 +506,28 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
                             || message.contains("Unfenced block strings are prohibited")) {
                         annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
+                    }
+
+                    // Attach interactive bootstrapping intention actions for incomplete clauses
+                    if (message.contains("clause ':defs' requires definition block") || message.contains("':defs' requires definition block")) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
+                    }
+                    if (message.contains("clause ':type' requires a schema type") || message.contains("':type' requires a schema type")) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertSchemaTypeIntentionAction(range));
+                    }
+                    if (message.contains("clause ':body' requires a value payload") || message.contains("':body' requires a value payload")) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertDefaultBodyValueIntentionAction(range));
+                    }
+                    if (diag.errorCode().isPresent() && "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())
+                            || message.contains("ERR_EMPTY_DEFS_BLOCK")
+                            || message.contains("requires at least one type definition inside ':defs { ... }'")
+                            || message.contains("Empty definition block ':defs {}' is redundant")) {
+                        var fileName = file.getName();
+                        if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
+                            annotationBuilder = annotationBuilder.withFix(new InsertTypeDefinitionIntentionAction(range));
+                        } else {
+                            annotationBuilder = annotationBuilder.withFix(new RemoveRedundantDefsBlockIntentionAction(range));
+                        }
                     }
 
                     annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
@@ -964,17 +996,26 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             || message.contains("violates #")
             || message.contains("violates canonical");
 
+        boolean isExemptFromSliceCheck = isConstraintViolation
+            || (diag.errorCode().isPresent() && ("ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()) || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
+            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
+            || message.contains("ERR_EMPTY_DEFS_BLOCK")
+            || message.contains("Definitions schema requires root :meta block")
+            || message.contains("Mandatory :meta block missing")
+            || message.contains("requires at least one type definition inside ':defs { ... }'")
+            || message.contains("Empty definition block ':defs {}' is redundant");
+
         if (!isAntlrSyntaxError && !quotedTokens.isEmpty()) {
             // Check if the primary offending token (the first quoted token) exists in active buffer
             var primaryToken = quotedTokens.get(0);
-            if (!text.contains(primaryToken)) {
+            if (!isExemptFromSliceCheck && !text.contains(primaryToken)) {
                 return true;
             }
 
             // If the message cites quoted tokens, and a slice exists, verify that
             // at least one quoted token appears in the target range slice (preventing offset drift onto comments).
-            // Skip slice check for constraint violations where target slice is a payload literal value.
-            if (!slice.isEmpty() && !isConstraintViolation) {
+            // Skip slice check for constraint violations and exempt bootstrap diagnostics.
+            if (!slice.isEmpty() && !isExemptFromSliceCheck) {
                 boolean anyTokenInSlice = false;
                 for (var t : quotedTokens) {
                     if (slice.contains(t) || t.contains(slice)) {

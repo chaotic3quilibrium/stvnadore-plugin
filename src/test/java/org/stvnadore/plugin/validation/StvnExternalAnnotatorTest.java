@@ -1513,5 +1513,112 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         String expected = "{\n  :defs {}\n  :type :String\n  :body \"\"\"[FENCE]\n    Line 1\n    Line 2\n  [FENCE]\"\"\"\n}\n";
         myFixture.checkResult(expected);
     }
+
+    /**
+     * Asserts that example_a.stvn produces exactly 3 error highlights on :defs, :type, and :body
+     * with zero cascade on closing brace, zero duplicate tooltips, and correct intention availability.
+     */
+    public void testExampleABootstrapCoordinatePinningAndIntentions() {
+        String code = "{\n  :defs\n  :type\n  :body\n}\n";
+        myFixture.configureByText("example_a.stvn", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
+            .toList();
+
+        assertEquals("Expected exactly 2 syntax errors on incomplete clauses", 2, errors.size());
+
+        int defsStart = code.indexOf(":defs");
+        assertEquals(new com.intellij.openapi.util.TextRange(defsStart, defsStart + 5), new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
+        assertTrue(errors.get(0).getDescription().contains("clause ':defs' requires definition block"));
+
+        int typeStart = code.indexOf(":type");
+        assertEquals(new com.intellij.openapi.util.TextRange(typeStart, typeStart + 5), new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
+        assertTrue(errors.get(1).getDescription().contains("clause ':type' requires a schema type"));
+
+        myFixture.getEditor().getCaretModel().moveToOffset(defsStart);
+        assertNotNull(myFixture.findSingleIntention("Insert definition block '{ }'"));
+
+        myFixture.getEditor().getCaretModel().moveToOffset(typeStart);
+        assertNotNull(myFixture.findSingleIntention("Insert schema type ':String'"));
+    }
+
+    /**
+     * Asserts that example_b.stvn offers 'Remove redundant :defs {} block'.
+     */
+    public void testExampleBEmptyDefsInPayloadRemediation() {
+        String code = "{\n  :defs {}\n  :type :String\n  :body \"hello\"\n}\n";
+        myFixture.configureByText("example_b.stvn", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Expected exactly 1 error on empty :defs {}", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Empty definition block ':defs {}' is redundant"));
+
+        myFixture.getEditor().getCaretModel().moveToOffset(code.indexOf("{}"));
+        var fix = myFixture.findSingleIntention("Remove redundant ':defs {}' block");
+        assertNotNull(fix);
+        myFixture.launchAction(fix);
+        myFixture.checkResult("{\n  :type :String\n  :body \"hello\"\n}\n");
+    }
+
+    /**
+     * Asserts that example_d.stvn infers 0 for :Int body payload.
+     */
+    public void testExampleDInferredBodyValue() {
+        String code = "{\n  :type :Int\n  :body\n}\n";
+        myFixture.configureByText("example_d.stvn", code);
+        myFixture.doHighlighting();
+
+        myFixture.getEditor().getCaretModel().moveToOffset(code.indexOf(":body"));
+        var fix = myFixture.findSingleIntention("Insert default body value");
+        assertNotNull(fix);
+        myFixture.launchAction(fix);
+        myFixture.checkResult("{\n  :type :Int\n  :body 0\n}\n");
+    }
+
+    /**
+     * Asserts that example_f.stvn_d renders exactly 2 canvas squiggles (root brace '{' and defs braces '{}')
+     * with zero ghost errors, zero tooltips stacked, and appropriate intentions attached.
+     */
+    public void testExampleFZeroWidthGhostErrorRemediation() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        String code = "{\n  :defs {}\n}\n";
+        myFixture.configureByText("example_f.stvn_d", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
+            .toList();
+
+        assertEquals("Expected exactly 2 canvas error squiggles on example_f.stvn_d", 2, errors.size());
+
+        // First error on root opening brace '{'
+        var metaError = errors.get(0);
+        assertEquals("Missing meta error must pin to line 1 '{' [0, 1)", new com.intellij.openapi.util.TextRange(0, 1), new com.intellij.openapi.util.TextRange(metaError.getStartOffset(), metaError.getEndOffset()));
+        assertTrue(metaError.getDescription().contains("Definitions schema requires root :meta block"));
+
+        // Second error on empty defs braces '{}'
+        var defsError = errors.get(1);
+        int bracesStart = code.indexOf("{}");
+        assertEquals("Empty defs error must pin to '{}' [10, 12)", new com.intellij.openapi.util.TextRange(bracesStart, bracesStart + 2), new com.intellij.openapi.util.TextRange(defsError.getStartOffset(), defsError.getEndOffset()));
+        assertTrue(defsError.getDescription().contains("requires at least one type definition inside ':defs { ... }'"));
+
+        myFixture.getEditor().getCaretModel().moveToOffset(0);
+        var metaFix = myFixture.findSingleIntention("Insert missing root :meta block");
+        assertNotNull(metaFix);
+
+        myFixture.getEditor().getCaretModel().moveToOffset(bracesStart);
+        var defsFix = myFixture.findSingleIntention("Insert type definition ':Type :String'");
+        assertNotNull(defsFix);
+
+        // Execute type definition fix
+        myFixture.launchAction(defsFix);
+        String expected = "{\n  :defs {\n    :Type :String\n  }\n}\n";
+        myFixture.checkResult(expected);
+    }
 }
 

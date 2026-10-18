@@ -110,12 +110,21 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                         );
                     }
-                    holder.registerProblem(
-                        file,
-                        anchor != null ? anchor.getTextRange() : new TextRange(0, 1),
-                        message,
-                        new InsertMissingMetaBlockQuickFix(expectedKind)
-                    );
+                    if (anchor != null) {
+                        holder.registerProblem(
+                            anchor,
+                            message,
+                            new InsertMissingMetaBlockQuickFix(expectedKind)
+                        );
+                    } else {
+                        int textLen = file.getTextLength();
+                        holder.registerProblem(
+                            file,
+                            new TextRange(0, Math.min(1, textLen)),
+                            message,
+                            new InsertMissingMetaBlockQuickFix(expectedKind)
+                        );
+                    }
                 }
             }
 

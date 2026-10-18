@@ -57,7 +57,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(invalidDir)) {
             var fixtureFiles = stream
-                .filter(p -> (p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_inclf")) && !p.toString().endsWith(".contract.stvn"))
+                .filter(p -> (p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_inclf")) && !p.toString().endsWith(".contract.stvn"))
                 .toList();
 
             for (var fixturePath : fixtureFiles) {
