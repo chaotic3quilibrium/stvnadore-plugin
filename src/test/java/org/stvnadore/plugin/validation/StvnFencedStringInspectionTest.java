@@ -365,21 +365,28 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         assertEquals("Caret must be positioned on body line 3", 3, lineNum);
     }
 
-    public void testEnterKeyAutoClosesBareBlockStringExpandedThreeLine() {
+    public void testEnterKeyOnBareTripleQuotesDoesNotAutoCloseBareBlockString() {
         StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.EXPANDED_THREE_LINE;
         String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
-        myFixture.configureByText("enter_bare_expanded.stvn", code);
+        myFixture.configureByText("enter_bare_suppressed.stvn", code);
         myFixture.type('\n');
-        String expected = "{\n  :type :String\n  :body \"\"\"\n    \n  \"\"\"\n}\n";
+        String expected = "{\n  :type :String\n  :body \"\"\"\n  \n}\n";
         myFixture.checkResult(expected);
     }
 
-    public void testEnterKeyAutoClosesBareBlockStringTightTwoLine() {
-        StvnSettings.getInstance(getProject()).getState().blockStringEnterStyle = StvnSettings.BlockStringEnterStyle.TIGHT_TWO_LINE;
-        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
-        myFixture.configureByText("enter_bare_tight.stvn", code);
-        myFixture.type('\n');
-        String expected = "{\n  :type :String\n  :body \"\"\"\n    \"\"\"\n}\n";
+    public void testUnfencedBlockStringHighlightedAsErrorWithQuickFix() {
+        String code = "{\n  :type :String\n  :body \"\"\"<caret>\n    Legacy block string content\n  \"\"\"\n}\n";
+        myFixture.configureByText("legacy_block.stvn", code);
+        var highlights = myFixture.doHighlighting();
+        var errorHighlight = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-04 violation: Unfenced block strings are prohibited; multi-line strings must use fenced syntax \"\"\"[TAG] [stvn-plugin:ERR_UNFENCED_BLOCK_STRING_PROHIBITED]"))
+            .findFirst();
+        assertTrue("Expected ERR_UNFENCED_BLOCK_STRING_PROHIBITED error highlight", errorHighlight.isPresent());
+
+        var action = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[TEXT]...[TEXT]\"\"\"'");
+        assertNotNull("Expected Convert to fenced string quick-fix", action);
+        myFixture.launchAction(action);
+        String expected = "{\n  :type :String\n  :body \"\"\"[TEXT]\n    Legacy block string content\n  [TEXT]\"\"\"\n}\n";
         myFixture.checkResult(expected);
     }
 

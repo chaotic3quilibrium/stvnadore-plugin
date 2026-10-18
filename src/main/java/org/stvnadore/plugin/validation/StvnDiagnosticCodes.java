@@ -18,6 +18,7 @@ public final class StvnDiagnosticCodes {
     // Syntax & Lexical Invariants
     public static final String ERR_TAB_CHARACTER_FORBIDDEN = "ERR_TAB_CHARACTER_FORBIDDEN";
     public static final String ERR_PROHIBITED_FENCE_ARROW = "ERR_PROHIBITED_FENCE_ARROW";
+    public static final String ERR_UNFENCED_BLOCK_STRING_PROHIBITED = "ERR_UNFENCED_BLOCK_STRING_PROHIBITED";
     public static final String ERR_FENCE_TAG_EMPTY = "ERR_FENCE_TAG_EMPTY";
     public static final String ERR_FENCE_TAG_WHITESPACE = "ERR_FENCE_TAG_WHITESPACE";
     public static final String ERR_FENCE_TAG_LENGTH_OVERFLOW = "ERR_FENCE_TAG_LENGTH_OVERFLOW";

@@ -1363,7 +1363,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Built-in String Type:</b> :String<br/>
                 <hr/>
                 Represents an unbounded UTF-8 text string (up to maximum allocation size of 16,777,216 characters).<br/>
-                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Multi-line block (<code>\"\"\"...\"\"\"</code>), Polyglot fenced (<code>\"\"\"[LANG]...[LANG]\"\"\"</code>).<br/>
+                <b>Forms:</b> Simple double-quoted (<code>"text"</code>), Fenced verbatim (<code>\"\"\"[TAG]...[TAG]\"\"\"</code>).<br/>
                 <b>Supported Facets:</b> <code>#minSize</code>, <code>#maxSize</code>, <code>#minIncl</code>, <code>#minExcl</code>, <code>#maxIncl</code>, <code>#maxExcl</code>, <code>#regex</code>, <code>#preserveIndent</code>, <code>#equatable</code>, <code>#comparable</code>.
                 """;
         }

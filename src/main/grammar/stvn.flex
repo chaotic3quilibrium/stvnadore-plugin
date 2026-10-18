@@ -25,8 +25,6 @@ import static org.stvnadore.psi.StvnTypes.*;
 WHITE_SPACE=[ \r\n]+
 TAB_CHARACTER=\t+
 COMMENT="//".*
-
-LITERAL_STRING_BLOCK=\"\"\"[ \t\r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"
 LITERAL_STRING_SIMPLE=\"([^\"\\\r\n]|\\.)*\"
 
 
@@ -166,8 +164,9 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
     // Fail closed on unclosed fence reaching EOF
     return BAD_CHARACTER;
   }
-
-  {LITERAL_STRING_BLOCK}         { return LITERAL_STRING_BLOCK; }
+  // Prohibit legacy unfenced block strings (Rule STR-04 fallback interceptors)
+  \"\"\"[ \t\r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\" { return BAD_CHARACTER; }
+  \"\"\"                                             { return BAD_CHARACTER; }
   {LITERAL_STRING_SIMPLE}        { return LITERAL_STRING_SIMPLE; }
   {TYPE_KEYWORD_BASE}            { return TYPE_KEYWORD_BASE; }
   {UNION_TAG_PREFIX}             { return UNION_TAG_PREFIX; }

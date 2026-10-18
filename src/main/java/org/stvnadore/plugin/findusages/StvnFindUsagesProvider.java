@@ -34,7 +34,7 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
                 TokenSet.create(StvnTypes.IDENTIFIER, StvnTypes.TYPE_KEYWORD_BASE, StvnTypes.VALUE_KEYWORD_BASE,
                         StvnTypes.KW_KIND_BODY, StvnTypes.KW_KIND_DEFS, StvnTypes.KW_KIND_BODY_INCLUDE, StvnTypes.KW_KIND_DEFS_INCLUDE),
                 TokenSet.create(StvnTypes.COMMENT),
-                TokenSet.create(StvnTypes.LITERAL_STRING_SIMPLE, StvnTypes.LITERAL_STRING_BLOCK, StvnTypes.LITERAL_STRING_FENCED)
+                TokenSet.create(StvnTypes.LITERAL_STRING_SIMPLE, StvnTypes.LITERAL_STRING_FENCED)
         );
     }
 

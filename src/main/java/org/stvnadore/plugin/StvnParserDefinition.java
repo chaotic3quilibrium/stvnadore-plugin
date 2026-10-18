@@ -51,7 +51,6 @@ public final class StvnParserDefinition implements ParserDefinition {
     public TokenSet getStringLiteralElements() {
         return TokenSet.create(
             StvnTypes.LITERAL_STRING_SIMPLE,
-            StvnTypes.LITERAL_STRING_BLOCK,
             StvnTypes.LITERAL_STRING_FENCED
         );
     }

@@ -215,20 +215,19 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
     }
 
     /**
-     * V10: CRLF Block Strings
-     * Assert '\"\"\"\r\nHello\r\n\"\"\"' produces LITERAL_STRING_BLOCK.
+     * V10: Rejection of Legacy Unfenced Block Strings (Rule STR-04)
+     * Assert '\"\"\"\r\nHello\r\n\"\"\"' emits BAD_CHARACTER and does NOT produce any valid string token.
      */
-    public void testV10_CrlfBlockStringParsing() {
+    public void testV10_UnfencedCrlfBlockStringRejection() {
         var input = "\"\"\"\r\nHello\r\n\"\"\"";
         var tokens = tokenize(input);
-        var badChars = tokens.stream().filter(t -> t.type() == TokenType.BAD_CHARACTER).toList();
-        assertTrue("V10: CRLF block string must not produce BAD_CHARACTER", badChars.isEmpty());
+        var hasBadCharacter = tokens.stream().anyMatch(t -> t.type() == TokenType.BAD_CHARACTER);
+        assertTrue("V10: Legacy unfenced block string must emit BAD_CHARACTER under Rule STR-04", hasBadCharacter);
 
-        var blockTokens = tokens.stream()
-            .filter(t -> t.type() == StvnTypes.LITERAL_STRING_BLOCK)
+        var validStringTokens = tokens.stream()
+            .filter(t -> t.type() == StvnTypes.LITERAL_STRING_SIMPLE || t.type() == StvnTypes.LITERAL_STRING_FENCED)
             .toList();
-        assertEquals("V10: Expected 1 LITERAL_STRING_BLOCK token", 1, blockTokens.size());
-        assertEquals(input, blockTokens.get(0).text());
+        assertTrue("V10: Legacy unfenced block string must NOT produce valid string tokens", validStringTokens.isEmpty());
     }
 
     /**

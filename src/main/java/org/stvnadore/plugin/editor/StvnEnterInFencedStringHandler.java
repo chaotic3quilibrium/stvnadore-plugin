@@ -31,7 +31,6 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
     }
 
     private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"\\[([a-zA-Z0-9_-]{1,256})\\][ \t]*$");
-    private static final Pattern BARE_BLOCK_PATTERN = Pattern.compile("^.*\"\"\"[ \t]*$");
 
     @Override
     public Result preprocessEnter(@NotNull PsiFile file,
@@ -87,48 +86,7 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
             return applyAutoClose(file, editor, doc, lineStart, lineEnd, offset, closingFence);
         }
 
-        var bareMatcher = BARE_BLOCK_PATTERN.matcher(lineText);
-        if (bareMatcher.matches()) {
-            int lastTriple = lineText.lastIndexOf("\"\"\"");
-            if (lastTriple < 0 || offset < lineStart + lastTriple + 3) {
-                return Result.Continue;
-            }
-
-            // Forward parity check: count bare triple-quotes in downstream text
-            int docLength = doc.getTextLength();
-            String forwardText = doc.getText(new TextRange(offset, docLength));
-            int bareCount = countBareTripleQuotes(forwardText);
-            if (bareCount % 2 != 0) {
-                // Odd bare triple-quote count indicates block is already closed downstream
-                return Result.Continue;
-            }
-
-            return applyAutoClose(file, editor, doc, lineStart, lineEnd, offset, "\"\"\"");
-        }
-
         return Result.Continue;
-    }
-
-    private static int countBareTripleQuotes(String text) {
-        int count = 0;
-        int idx = 0;
-        while ((idx = text.indexOf("\"\"\"", idx)) >= 0) {
-            boolean isClosingFence = (idx > 0 && text.charAt(idx - 1) == ']');
-            boolean isOpeningFence = false;
-            int after = idx + 3;
-            while (after < text.length() && (text.charAt(after) == ' ' || text.charAt(after) == '\t')) {
-                after++;
-            }
-            if (after < text.length() && text.charAt(after) == '[') {
-                isOpeningFence = true;
-            }
-
-            if (!isClosingFence && !isOpeningFence) {
-                count++;
-            }
-            idx += 3;
-        }
-        return count;
     }
 
     private static Result applyAutoClose(PsiFile file,

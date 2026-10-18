@@ -13,7 +13,6 @@
     comment    = 'regexp://.*'
 
     LITERAL_STRING_FENCED  = 'regexp:"""\[[a-zA-Z0-9_-]{1,256}][^\n]*\n([^\]]|\]+[^"\]]|\]+"[^"\]]|\]+""[^"\]])*\]+"""'
-    LITERAL_STRING_BLOCK   = 'regexp:"""[ \t]*\n([^"]|"[^"]|""[^"])*"""'
     LITERAL_STRING_SIMPLE  = 'regexp:"([^"\\\r\n]|\\.)*"'
 
     LBRACK                        = '['
@@ -395,6 +394,6 @@ private tuple_recover   ::= !(RPAREN | RBRACE | RBRACK)
 id_token                ::= IDENTIFIER
 integer_literal         ::= LITERAL_INTEGER
 float_literal           ::= LITERAL_FLOAT
-string_literal          ::= LITERAL_STRING_SIMPLE | LITERAL_STRING_BLOCK | LITERAL_STRING_FENCED {
+string_literal          ::= LITERAL_STRING_SIMPLE | LITERAL_STRING_FENCED {
   mixin="org.stvnadore.plugin.psi.impl.StvnStringLiteralMixin"
 }

@@ -41,7 +41,6 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
         if (tokenType.equals(StvnTypes.COMMENT)) {
             return COMMENT_KEYS;
         } else if (tokenType.equals(StvnTypes.LITERAL_STRING_SIMPLE) ||
-                   tokenType.equals(StvnTypes.LITERAL_STRING_BLOCK) ||
                    tokenType.equals(StvnTypes.LITERAL_STRING_FENCED)) {
             return STRING_KEYS;
         } else if (tokenType.equals(StvnTypes.LITERAL_INTEGER) ||
