@@ -1,0 +1,29 @@
+<html>
+<body>
+<p>Reports declared mantissa precision on exact decimal float types (<code>{ #exact } :Float</code>) that exceeds the configured warning threshold (default: 38 significant decimal digits).</p>
+
+<p>Under STVN Language Specification &sect; 5.1.3 and &sect; 6.1, facet <code>#maxSize &lt;N&gt;</code> specifies the maximum allowable count of significant decimal digits in the unscaled mantissa, carrying an intrinsic default ceiling of 16,777,216 digits.</p>
+
+<p>Developers frequently confuse mantissa precision with numeric value bounds, declaring <code>#maxSize 100</code>, <code>#maxSize 1000</code>, or <code>#maxSize 10000</code> under the mistaken belief that it restricts numerical magnitude. Multi-thousand digit decimal calculations cause severe CPU and memory performance degradation.</p>
+
+<p><b>Compliant Examples:</b></p>
+<pre><code>// Compliant: Standard financial precision (&le; 38 digits)
+:Price { #exact #maxSize 18 } :Float
+:Currency { #exact #maxSize 38 } :Float
+
+// Compliant: Numerical magnitude bound instead of mantissa precision
+:BoundedAmount { #exact #minIncl 0.0 #maxExcl 1000.0 } :Float
+</code></pre>
+
+<p><b>Warning Example:</b></p>
+<pre><code>// Warning: Declared mantissa precision of 1000 digits is unusually large
+:BadPrice { #exact #maxSize 1000 } :Float
+</code></pre>
+
+<p><b>Available Quick-Fixes:</b></p>
+<ul>
+  <li><b>Clamp #maxSize to 38:</b> Replaces the declared numeric precision with 38 (standard ANSI SQL <code>DECIMAL(38, s)</code> and IEEE 754-2008 <code>decimal128</code> hardware boundary).</li>
+  <li><b>Convert to numeric bound '#maxExcl ':</b> Replaces <code>#maxSize &lt;N&gt;</code> with <code>#maxExcl &lt;N&gt;.0</code> for schemas where a numeric range limit was intended.</li>
+</ul>
+</body>
+</html>

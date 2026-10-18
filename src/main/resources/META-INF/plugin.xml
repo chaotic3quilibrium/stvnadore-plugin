@@ -454,6 +454,16 @@
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnStringCapacityInspection"/>
 
+        <!-- 12k2. Local Inspection for Exact Float Mantissa Precision -->
+        <localInspection language="STVN"
+                         shortName="StvnExcessiveExactFloatPrecision"
+                         displayName="Excessive exact float mantissa precision inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnExcessiveExactFloatPrecisionInspection"/>
+
         <!-- 12l. Local Inspection for Metadata Facet & Empty Block Governance -->
         <localInspection language="STVN"
                          shortName="StvnMetadataFacet"
