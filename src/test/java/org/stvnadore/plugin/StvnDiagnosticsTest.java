@@ -193,7 +193,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
-    private static final int METADATA_FIXTURES_VALID_COUNT = 112;
+    private static final int METADATA_FIXTURES_VALID_COUNT = 113;
 
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
