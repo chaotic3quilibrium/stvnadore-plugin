@@ -20,16 +20,55 @@ import org.stvnadore.psi.StvnTypes;
 @NullMarked
 public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
-    @Override
-    protected String getTestDataPath() {
-        return "src/test/resources/fixtures/browser";
-    }
+    private static final String MODULAR_SCHEMA_CONTENT = """
+        {
+          :meta {
+            #name "browser_modular_schema"
+            #kind #DEFS_INCLUDE
+          }
+          :defs {
+            :AccountStatus :Enum [ #ACTIVE #SUSPENDED #CLOSED ]
+            :BaseEntity    :Tuple( :Int :String )
+            :package :com/example/finance {
+              :Transaction :Tuple( :Int :Float :String )
+            }
+          }
+        }
+        """;
+
+    private static final String BROWSER_DOCUMENT_CONTENT = """
+        {
+          :meta {
+            #name "browser_document"
+            #kind #BODY_INCLUDE
+          }
+          :defs {
+            :include [
+              "browser_modular_schema.stvn_di" {
+                :BaseEntity    :LocalEntity
+                :AccountStatus :StatusAlias
+              }
+            ]
+            :use [ :com/example/finance { :Transaction :LocalTx } ]
+            :use [ :org/stvnadore/prelude { :Port :Port } ]
+            :AppConfig   :Tuple( :String :Boolean )
+            :DeepAlias   :LocalEntity
+            #DefaultPort :Port 8080
+          }
+          :type :Tuple( :LocalTx :StatusAlias )
+          :body (
+            ( 1001 49.99 "Subscription" )
+            #ACTIVE
+          )
+        }
+        """;
 
     /**
      * Verifies that line marker providers attach gutter icons to :defs, :type, and :body headers.
      */
     public void testGutterIconsAttachedToSectionHeaders() {
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
         myFixture.doHighlighting();
 
         var markers = myFixture.findAllGutters();
@@ -56,8 +95,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol collection under :defs scope, checking alias hop counts and imports.
      */
     public void testDefsScopeSymbolCollection() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
         assertFalse(entries.isEmpty());
@@ -162,8 +201,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol filtering under :type scope strictly matches referenced schema symbols.
      */
     public void testTypeScopeFiltering() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
         assertFalse(entries.isEmpty());
@@ -178,8 +217,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol filtering under :body scope strictly matches payload instantiated values.
      */
     public void testBodyScopeFiltering() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
         assertFalse(entries.isEmpty());
@@ -231,8 +270,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies multi-column sorting behavior in the table model.
      */
     public void testMultiColumnSorting() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
         var model = new StvnNamespaceTableModel(entries);
@@ -254,8 +293,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies resolution of enclosing scope based on caret offset.
      */
     public void testCaretScopeResolution() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var defsToken = findTokenByText(file, ":defs");
         assertNotNull(defsToken);
@@ -903,8 +942,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * without a pre-existing ReadAction across all supported namespace scopes.
      */
     public void testCollectSymbolsThreadSafetyWithoutOuterReadAction() throws Exception {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         for (var scope : StvnNamespaceScope.values()) {
             var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
@@ -938,8 +977,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * re-filters and updates the table model on the EDT without throwing read-action threading assertions.
      */
     public void testPopupPreludeCheckboxToggleWithoutOuterReadAction() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
-        var file = myFixture.configureByFile("browser_document.stvn");
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
         assertNotNull(content);
@@ -1199,5 +1238,35 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
 
         assertEquals("File text must remain unmodified when attempting to brand a constant",
             initial, file.getText());
+    }
+
+    /**
+     * Verifies that both inlined STVN 2.0.0 test documents compile with zero errors via StvnCompiler,
+     * guaranteeing specification conformance and preventing regression drift.
+     */
+    public void testInlinedFixturesCompileWithZeroErrors() throws Exception {
+        var schemaResult = org.stvnadore.core.StvnCompiler.compileToResult(
+            MODULAR_SCHEMA_CONTENT,
+            "browser_modular_schema.stvn_di",
+            org.stvnadore.core.StvnParserConfig.DEFAULT
+        );
+        assertFalse("Modular schema must compile cleanly: " + schemaResult.diagnostics(), schemaResult.hasErrors());
+
+        var tempDir = java.nio.file.Files.createTempDirectory("stvn_browser_test");
+        try {
+            var schemaPath = tempDir.resolve("browser_modular_schema.stvn_di");
+            java.nio.file.Files.writeString(schemaPath, MODULAR_SCHEMA_CONTENT);
+            var docPath = tempDir.resolve("browser_document.stvn_i");
+            java.nio.file.Files.writeString(docPath, BROWSER_DOCUMENT_CONTENT);
+
+            var docResult = org.stvnadore.core.StvnCompiler.compileToResult(
+                BROWSER_DOCUMENT_CONTENT,
+                docPath.toString(),
+                org.stvnadore.core.StvnParserConfig.DEFAULT
+            );
+            assertFalse("Modular payload must compile cleanly: " + docResult.diagnostics(), docResult.hasErrors());
+        } finally {
+            com.intellij.openapi.util.io.FileUtil.delete(tempDir.toFile());
+        }
     }
 }

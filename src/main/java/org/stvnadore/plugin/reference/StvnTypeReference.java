@@ -631,8 +631,31 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
     /**
      * Exact canonical and standard prelude terminal type names.
+     * <p>
+     * Terminal type names halt sequential alias resolution traces because they represent either:
+     * <ol>
+     *   <li><b>Normative Language Base Primitives (§ 2.1):</b> Fundamental scalar types
+     *       ({@code :Boolean}, {@code :Int}, {@code :Float}, {@code :String}, {@code :TimeEpoch},
+     *       {@code :DateTime}) and composite constructors ({@code :Seq}, {@code :Set}, {@code :Map},
+     *       {@code :Tuple}, {@code :Option}, {@code :Either}, {@code :Union}, {@code :Enum}).</li>
+     *   <li><b>Canonical Standard Prelude Domain Types:</b> Nominal types pre-registered under
+     *       {@code :org/stvnadore/prelude/} (e.g. {@code :UuidLowerCase}, {@code :UuidMixedCase},
+     *       {@code :Ulid}, {@code :Sha256LowerCase}, {@code :Sha256MixedCase}, {@code :SemVer},
+     *       {@code :EmailLowerCase}, {@code :EmailMixedCase}, {@code :IPv4}, {@code :Port},
+     *       {@code :Percentage}, {@code :Probability}, {@code :Currency}, {@code :Latitude},
+     *       {@code :Longitude}, {@code :PosixId}, {@code :PolyglotCodeId}).</li>
+     *   <li><b>Meta-Circular Substrate Types:</b> Substrate types pre-registered under
+     *       {@code :org/stvnadore/prelude/meta/} ({@code :StvnPosixId64}, {@code :StvnDocumentKind},
+     *       {@code :StvnDocumentMeta}, {@code :StvnCatalogMeta}).</li>
+     * </ol>
+     * <p>
+     * Bare un-cased types ({@code :Uuid}, {@code :Sha256}, {@code :Email}) and numbered fixed-width
+     * primitives ({@code :Int32}, {@code :Int64}, {@code :Float64}, {@code :String32}) are permanently
+     * prohibited in STVN 2.0.0. Widths, precision, and bounds must be declared via metadata facets
+     * (e.g. {@code { #size 16 } :Int}, {@code { #maxSize 32 } :String}, {@code { #exact } :Float}).
      */
     public static final Set<String> EXACT_TERMINAL_TYPE_NAMES = Set.of(
+        // Group 1: Normative Language Base Primitives (§ 2.1)
         StvnVocabulary.TYPE_BOOLEAN,
         StvnVocabulary.TYPE_ENUM,
         StvnVocabulary.TYPE_INT,
@@ -647,17 +670,17 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         StvnVocabulary.TYPE_OPTION,
         StvnVocabulary.TYPE_EITHER,
         StvnVocabulary.TYPE_UNION,
+
+        // Group 2: Canonical Standard Prelude Domain Types (:org/stvnadore/prelude/)
         ":UuidLowerCase",
         ":UuidMixedCase",
-        ":Uuid",
         ":Ulid",
         ":Sha256LowerCase",
         ":Sha256MixedCase",
-        ":Sha256",
         ":SemVer",
         ":EmailLowerCase",
         ":EmailMixedCase",
-        ":Email",
+        ":IPv4",
         ":Port",
         ":Percentage",
         ":Probability",
@@ -666,22 +689,16 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         ":Longitude",
         ":PosixId",
         ":PolyglotCodeId",
+
+        // Group 3: Meta-Circular Substrate Types (:org/stvnadore/prelude/meta/)
         ":StvnPosixId64",
         ":StvnDocumentKind",
         ":StvnDocumentMeta",
-        ":StvnCatalogMeta",
-        ":Int32",
-        ":Float64",
-        ":StringNonEmpty64",
-        ":StringFixed15"
-    );
-
-    private static final java.util.regex.Pattern PRIMITIVE_PATTERN = java.util.regex.Pattern.compile(
-        "^:(?:Int[0-9]*|Float[0-9]*|FloatExact|String[0-9]*)$"
+        ":StvnCatalogMeta"
     );
 
     private static boolean isPrimitiveTypeName(String name) {
-        return EXACT_TERMINAL_TYPE_NAMES.contains(name) || PRIMITIVE_PATTERN.matcher(name).matches();
+        return EXACT_TERMINAL_TYPE_NAMES.contains(name) || StvnVocabulary.isBaseScalarType(name);
     }
 
     /**

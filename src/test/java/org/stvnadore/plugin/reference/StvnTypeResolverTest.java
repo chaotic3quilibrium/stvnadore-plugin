@@ -58,8 +58,8 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             {
               :defs {
                 :IPBase :StringFixed15
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :IPBase
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :HostIPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :IPBase
+                :IpAddress :Union( :HostIPv4 :StringFixed15 )
               }
               :type :Tuple( :IpAddress :IpAddress )
               :body (
@@ -77,7 +77,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var firstVariant = tupleValues.get(0);
         var secondVariant = tupleValues.get(1);
 
-        assertEquals(":IpAddress #1 (-> :IPv4 -> :IPBase -> :StringFixed15)", StvnTypeResolver.resolveValueType(firstVariant));
+        assertEquals(":IpAddress #1 (-> :HostIPv4 -> :IPBase -> :StringFixed15)", StvnTypeResolver.resolveValueType(firstVariant));
         assertEquals(":IpAddress #2 (-> :StringFixed15)", StvnTypeResolver.resolveValueType(secondVariant));
     }
 
@@ -127,8 +127,8 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
               :defs {
                 :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
                 :RemoteHost :HostName
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :HostIPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :StringFixed15
+                :IpAddress :Union( :HostIPv4 :StringFixed15 )
                 :Endpoint :Either( :RemoteHost :IpAddress )
               }
               :type :Tuple( :Endpoint :Endpoint )
@@ -148,7 +148,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var rightValue = tupleValues.get(1);
 
         assertEquals(":Endpoint #Left (-> :RemoteHost -> :HostName -> :StringNonEmpty64)", StvnTypeResolver.resolveValueType(leftValue));
-        assertEquals(":Endpoint #Right (-> :IpAddress #1 (-> :IPv4 -> :StringFixed15))", StvnTypeResolver.resolveValueType(rightValue));
+        assertEquals(":Endpoint #Right (-> :IpAddress #1 (-> :HostIPv4 -> :StringFixed15))", StvnTypeResolver.resolveValueType(rightValue));
     }
 
     public void testMixedEnumVsConstantDisambiguation() {

@@ -2228,7 +2228,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   }
                   :type :Tuple( :Disjoint :Disjoint )
                   :body (
-                    #Left 100<hint text=":Disjoint #Left (-> :Int32)"/>
+                    #Left 100<hint text=":Disjoint #Left (-> :Int32 -> :Int)"/>
                     "implicit right"<hint text=":Disjoint [#Right] (-> :String)"/>
                   )<hint text=":Tuple( :Disjoint :Disjoint )"/>
                 }
@@ -2248,8 +2248,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   }
                   :type :Tuple( :MultiBranch :MultiBranch :MultiBranch :MultiBranch )
                   :body (
-                    42<hint text=":MultiBranch [#1] (-> :Int32)"/>
-                    #1 100<hint text=":MultiBranch #1 (-> :Int32)"/>
+                    42<hint text=":MultiBranch [#1] (-> :Int32 -> :Int)"/>
+                    #1 100<hint text=":MultiBranch #1 (-> :Int32 -> :Int)"/>
                     "hello"<hint text=":MultiBranch [#2] (-> :String)"/>
                     #3 #TRUE<hint text=":MultiBranch #3 (-> :Boolean)"/>
                   )<hint text=":Tuple( :MultiBranch :MultiBranch :MultiBranch :MultiBranch )"/>
@@ -2336,7 +2336,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                   }
                   :type :Tuple( :ContentUnion :ContentUnion :ContentUnion )
                   :body (
-                    100<hint text=":ContentUnion [#1] (-> :Int32)"/>
+                    100<hint text=":ContentUnion [#1] (-> :Int32 -> :Int)"/>
                     #Active<hint text=":ContentUnion [#2] (-> :DocStatus -> :Enum)"/>
                     "metadata"<hint text=":ContentUnion [#3] (-> :String)"/>
                   )<hint text=":Tuple( :ContentUnion :ContentUnion :ContentUnion )"/>
@@ -2389,9 +2389,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             {
               :defs {
                 :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
+                :HostIPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable { #invertible } :Map( :RemoteHost :IpAddress )
-                :IpAddress :Union( :IPv4 :String )
+                :IpAddress :Union( :HostIPv4 :String )
               }
 
               :type :Tuple(
@@ -2402,7 +2402,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 {
                   [
                     "auth.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
-                    #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :IPv4 -> :String)"/>
+                    #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :HostIPv4 -> :String)"/>
                   ]
                   [
                     "db.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
@@ -2429,8 +2429,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               }
               :type :Tuple( :HostOption :HostOption :HostOption )
               :body (
-                "auth.internal"<hint text=":HostOption [#Some] (-> :RemoteHost -> :HostName -> :StringNonEmpty64)"/>
-                #Some "auth.internal"<hint text=":HostOption #Some (-> :RemoteHost -> :HostName -> :StringNonEmpty64)"/>
+                "auth.internal"<hint text=":HostOption [#Some] (-> :RemoteHost -> :HostName -> :StringNonEmpty64 -> :String)"/>
+                #Some "auth.internal"<hint text=":HostOption #Some (-> :RemoteHost -> :HostName -> :StringNonEmpty64 -> :String)"/>
                 #None<hint text=":HostOption #None"/>
               )<hint text=":Tuple( :HostOption :HostOption :HostOption )"/>
             }
@@ -2449,15 +2449,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 :StringFixed15 :String
                 :HostName { #regex "^[a-zA-Z0-9.-]+$" } :StringNonEmpty64
                 :RemoteHost :HostName
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :HostIPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
+                :IpAddress :Union( :HostIPv4 :StringFixed15 )
                 :Endpoint :Either( :RemoteHost :IpAddress )
               }
               :type :Tuple( :Endpoint :Endpoint :Endpoint )
               :body (
-                #Left "auth.internal"<hint text=":Endpoint #Left (-> :RemoteHost -> :HostName -> :StringNonEmpty64)"/>
-                #Right #1 "10.0.0.1"<hint text=":Endpoint #Right (-> :IpAddress #1 (-> :IPv4 -> :StringNonEmpty64))"/>
-                #Right #2 "100.000.000.002"<hint text=":Endpoint #Right (-> :IpAddress #2 (-> :StringFixed15))"/>
+                #Left "auth.internal"<hint text=":Endpoint #Left (-> :RemoteHost -> :HostName -> :StringNonEmpty64 -> :String)"/>
+                #Right #1 "10.0.0.1"<hint text=":Endpoint #Right (-> :IpAddress #1 (-> :HostIPv4 -> :StringNonEmpty64 -> :String))"/>
+                #Right #2 "100.000.000.002"<hint text=":Endpoint #Right (-> :IpAddress #2 (-> :StringFixed15 -> :String))"/>
               )<hint text=":Tuple( :Endpoint :Endpoint :Endpoint )"/>
             }
             """);
@@ -2473,15 +2473,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               :defs {
                 :StringNonEmpty64 :String
                 :StringFixed15 :String
-                :IPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
-                :IpAddress :Union( :IPv4 :StringFixed15 )
+                :HostIPv4 { #regex "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" } :StringNonEmpty64
+                :IpAddress :Union( :HostIPv4 :StringFixed15 )
                 :RouteSeq :Seq( :IpAddress )
               }
               :type :RouteSeq
               :body [
-                #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :IPv4 -> :StringNonEmpty64)"/>
-                #1 "192.168.1.1"<hint text=":IpAddress #1 (-> :IPv4 -> :StringNonEmpty64)"/>
-                #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :StringFixed15)"/>
+                #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :HostIPv4 -> :StringNonEmpty64 -> :String)"/>
+                #1 "192.168.1.1"<hint text=":IpAddress #1 (-> :HostIPv4 -> :StringNonEmpty64 -> :String)"/>
+                #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :StringFixed15 -> :String)"/>
               ]<hint text=":RouteSeq"/>
             }
             """);
@@ -4017,8 +4017,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               }
               :type :Tuple( :OptInt :Disjoint )
               :body (
-                #Some 42<hint text=":OptInt #Some (-> :Int32)"/>
-                #Right 100<hint text=":Disjoint #Right (-> :Int32)"/>
+                #Some 42<hint text=":OptInt #Some (-> :Int32 -> :Int)"/>
+                #Right 100<hint text=":Disjoint #Right (-> :Int32 -> :Int)"/>
               )<hint text=":Tuple( :OptInt :Disjoint )"/>
             }
             """);
