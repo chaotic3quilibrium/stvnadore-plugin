@@ -1,7 +1,7 @@
 {
   :defs {
     :include [
-      "browser_modular_schema.stvn_inclf" {
+      "browser_modular_schema.stvn_di" {
         :BaseEntity    :LocalEntity
         :AccountStatus :StatusAlias
       }

@@ -60,13 +60,13 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("rename_module.stvn_inclf", moduleContent);
+        myFixture.addFileToProject("rename_module.stvn_di", moduleContent);
 
         var beforeCode = """
             {
               :defs {
                 :include [
-                  "rename_module.stvn_inclf" {
+                  "rename_module.stvn_di" {
                     :RemoteRecord :LocalRecord<caret>
                   }
                 ]
@@ -82,7 +82,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             {
               :defs {
                 :include [
-                  "rename_module.stvn_inclf" {
+                  "rename_module.stvn_di" {
                     :RemoteRecord :RenamedLocalRecord
                   }
                 ]
@@ -163,7 +163,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
      * in a modular schema propagates to consumer files including the schema.
      */
     public void testCrossFileRenamePropagatesFromDeclarationToConsumers() {
-        var moduleFile = myFixture.addFileToProject("shared_schema.stvn_inclf", """
+        var moduleFile = myFixture.addFileToProject("shared_schema.stvn_di", """
             {
               :defs {
                 :SharedRecord<caret> :Tuple( :Int32 :String )
@@ -175,7 +175,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             {
               :defs {
                 :include [
-                  "shared_schema.stvn_inclf"
+                  "shared_schema.stvn_di"
                 ]
               }
               :type :SharedRecord
@@ -199,7 +199,7 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
             {
               :defs {
                 :include [
-                  "shared_schema.stvn_inclf"
+                  "shared_schema.stvn_di"
                 ]
               }
               :type :RenamedSharedRecord

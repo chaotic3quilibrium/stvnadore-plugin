@@ -37,9 +37,6 @@ public final class StvnNamespaceIndexHelper {
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.DefsInclude.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.PayloadInclude.INSTANCE, scope));
         virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Payload.INSTANCE, scope));
-        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.FlatPayload.INSTANCE, scope));
-        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Incl.INSTANCE, scope));
-        virtualFiles.addAll(FileTypeIndex.getFiles(StvnFileType.Inclf.INSTANCE, scope));
 
         var preludeFile = StvnPreludeBridge.getPreludeFile(project);
         if (preludeFile != null) {

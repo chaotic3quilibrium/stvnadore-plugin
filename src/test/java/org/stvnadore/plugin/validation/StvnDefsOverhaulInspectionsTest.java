@@ -93,11 +93,11 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
     }
 
     public void testFlatDocumentIncludeInspection() {
-        myFixture.configureByText("test_flat.stvn_f",
+        myFixture.configureByText("test_flat.stvn",
             """
             {
               :defs {
-                :include [ "foo.stvn_incl" ]
+                :include [ "foo.stvn_d" ]
               }
               :type :String
               :body "data"
@@ -107,10 +107,10 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Flat document or leaf module"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Hermetic document or schema"))
             .toList();
-        assertEquals("Expected include in flat document to be flagged", 1, errors.size());
-        assertTrue(errors.get(0).getDescription().contains("Flat document or leaf module (.stvn_f / .stvn_inclf) cannot contain include statements"));
+        assertEquals("Expected include in hermetic document to be flagged", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements"));
     }
 
     public void testNestedPackageInspection() {

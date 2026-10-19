@@ -45,11 +45,11 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
     }
 
     public void testEmptyDirectiveBlockInIncludeQuickFix() {
-        myFixture.addFileToProject("module.stvn_incl", "{\n  :defs {}\n}\n");
+        myFixture.addFileToProject("module.stvn_di", "{\n  :defs {}\n}\n");
         var text = """
             {
               :defs {
-                :include [ "module.stvn_incl" {} ]
+                :include [ "module.stvn_di" {} ]
               }
               :type :String
               :body "test"
@@ -65,7 +65,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.checkResult("""
             {
               :defs {
-                :include [ "module.stvn_incl" ]
+                :include [ "module.stvn_di" ]
               }
               :type :String
               :body "test"

@@ -56,7 +56,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol collection under :defs scope, checking alias hop counts and imports.
      */
     public void testDefsScopeSymbolCollection() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
@@ -162,7 +162,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol filtering under :type scope strictly matches referenced schema symbols.
      */
     public void testTypeScopeFiltering() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
@@ -178,7 +178,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies symbol filtering under :body scope strictly matches payload instantiated values.
      */
     public void testBodyScopeFiltering() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
@@ -231,7 +231,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies multi-column sorting behavior in the table model.
      */
     public void testMultiColumnSorting() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
@@ -254,7 +254,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies resolution of enclosing scope based on caret offset.
      */
     public void testCaretScopeResolution() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var defsToken = findTokenByText(file, ":defs");
@@ -383,14 +383,14 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that calcified_audit.stvn_f under :defs scope produces exactly 12 symbols
+     * Verifies that calcified_audit.stvn under :defs scope produces exactly 12 symbols
      * (9 canonical declarations at Depth 0 and 3 root-level stripped aliases at Depth 1),
      * completely isolating package-local :use directives and generating zero bare phantom duplicates.
      */
     public void testCalcifiedAuditDefsScopeProducesExactTenSymbolsWithoutPackageLocalLeakage() throws Exception {
-        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn");
         var content = java.nio.file.Files.readString(path);
-        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var file = myFixture.configureByText("calcified_audit.stvn", content);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
 
         assertEquals("Must contain exactly 12 symbols (9 canonical declarations + 3 stripped aliases)", 12, entries.size());
@@ -462,14 +462,14 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that calcified_audit.stvn_f under :type scope produces contiguous depths (0, 1, 2)
+     * Verifies that calcified_audit.stvn under :type scope produces contiguous depths (0, 1, 2)
      * without phantom hop skips, stamping :AuditRecord at Depth 0, direct tuple members at Depth 1,
      * and transitive sub-dependencies at Depth 2.
      */
     public void testCalcifiedAuditTypeScopeProducesContiguousDepthsWithoutPhantomHops() throws Exception {
-        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn");
         var content = java.nio.file.Files.readString(path);
-        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var file = myFixture.configureByText("calcified_audit.stvn", content);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.TYPE);
 
         assertEquals("Must contain exactly 10 symbols across depths 0, 1, 2", 10, entries.size());
@@ -522,13 +522,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that calcified_audit.stvn_f under :body scope produces exactly 9 symbols
+     * Verifies that calcified_audit.stvn under :body scope produces exactly 9 symbols
      * (1 root contract at Depth 0 and 8 instantiated elements/variants at Depth 1).
      */
     public void testCalcifiedAuditBodyScopeProducesExactNineSymbols() throws Exception {
-        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn_f");
+        var path = java.nio.file.Path.of("temp/examples/package_and_use/calcified_audit.stvn");
         var content = java.nio.file.Files.readString(path);
-        var file = myFixture.configureByText("calcified_audit.stvn_f", content);
+        var file = myFixture.configureByText("calcified_audit.stvn", content);
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.BODY);
 
         assertEquals("Must contain exactly 9 symbols (1 root at Depth 0 + 8 instantiated elements/variants at Depth 1)", 9, entries.size());
@@ -903,7 +903,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * without a pre-existing ReadAction across all supported namespace scopes.
      */
     public void testCollectSymbolsThreadSafetyWithoutOuterReadAction() throws Exception {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         for (var scope : StvnNamespaceScope.values()) {
@@ -938,7 +938,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * re-filters and updates the table model on the EDT without throwing read-action threading assertions.
      */
     public void testPopupPreludeCheckboxToggleWithoutOuterReadAction() {
-        myFixture.copyFileToProject("browser_modular_schema.stvn_inclf");
+        myFixture.copyFileToProject("browser_modular_schema.stvn_di");
         var file = myFixture.configureByFile("browser_document.stvn");
 
         var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);

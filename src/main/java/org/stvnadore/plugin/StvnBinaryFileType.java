@@ -9,7 +9,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.icons.StvnIcons;
 
 /**
- * File type representation for binary STVN payload documents (.stvn_bin).
+ * File type representation for binary STVN payload documents (.stvn_b).
  */
 @NullMarked
 public final class StvnBinaryFileType implements FileType {
@@ -38,7 +38,7 @@ public final class StvnBinaryFileType implements FileType {
 
     @Override
     public @NotNull Icon getIcon() {
-        return StvnIcons.STVN_BIN;
+        return StvnIcons.STVN_B;
     }
 
     @Override

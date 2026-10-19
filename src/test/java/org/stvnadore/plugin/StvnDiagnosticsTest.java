@@ -57,7 +57,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(invalidDir)) {
             var fixtureFiles = stream
-                .filter(p -> (p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_inclf")) && !p.toString().endsWith(".contract.stvn"))
+                .filter(p -> (p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i")) && !p.toString().endsWith(".contract.stvn"))
                 .toList();
 
             for (var fixturePath : fixtureFiles) {
@@ -140,7 +140,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
 
         try (var stream = Files.walk(invalidDir)) {
-            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_b") || p.toString().endsWith(".stvn_bin")).toList();
+            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_b") || p.toString().endsWith(".stvn_bd")).toList();
             for (var binPath : binaryFixtures) {
                 var fileName = binPath.getFileName().toString();
                 var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
@@ -176,7 +176,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(validDir)) {
             var stvnFiles = stream
-                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_inclf") || p.toString().endsWith(".stvn_incl"))
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
                 .toList();
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();
@@ -203,7 +203,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         try (var stream = Files.walk(validDir)) {
             var validFiles = stream
-                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i") || p.toString().endsWith(".stvn_incl") || p.toString().endsWith(".stvn_inclf"))
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
                 .sorted()
                 .toList();
             assertEquals("Must validate all %d valid metadata fixtures".formatted(METADATA_FIXTURES_VALID_COUNT), METADATA_FIXTURES_VALID_COUNT, validFiles.size());
@@ -903,20 +903,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Expected Union branch suffix to remain identical: " + docUnionLong, docUnionLong.contains("Value Type:</b> :Union( :TypeA :TypeB ) [#1]"));
     }
 
-    @SuppressWarnings("removal")
     public void testIconResourceLoading() {
         var icons = java.util.List.of(
             org.stvnadore.plugin.icons.StvnIcons.STVN,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_DEFS,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_PAYLOAD_INCL,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_DEFS_INCL,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_BIN,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_D,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_I,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_DI,
+            org.stvnadore.plugin.icons.StvnIcons.STVN_B,
             org.stvnadore.plugin.icons.StvnIcons.STVN_BD,
             org.stvnadore.plugin.icons.StvnIcons.STVN_CAS,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_IR,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_F,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_INCL,
-            org.stvnadore.plugin.icons.StvnIcons.STVN_INCLF
+            org.stvnadore.plugin.icons.StvnIcons.STVN_IR
         );
         for (var icon : icons) {
             assertNotNull("STVN icon resource handle must not be null", icon);
@@ -2375,7 +2371,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testUnionTrajectoryInlayHintsWithUhohFixture() {
         setUseLongFormSumTypes(true);
         myFixture.addFileToProject(
-            "network_primitives.stvn_inclf",
+            "network_primitives.stvn_di",
             """
             {
               :defs {
@@ -2392,7 +2388,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable { #invertible } :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3265,7 +3261,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testHoverDocumentationForTypeReferencesInMapInv() {
         myFixture.addFileToProject(
-            "network_primitives.stvn_inclf",
+            "network_primitives.stvn_di",
             """
             {
               :defs {
@@ -3282,16 +3278,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
               }
-
+ 
               :type :Tuple(
                 :RouteTable
               )
-
+ 
               :body (
                 {
                   [ "auth.internal" #1 "10.0.0.1" ]
@@ -3316,7 +3312,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var remoteHostDoc = provider.generateDoc(customDocElem, remoteHostElem);
         assertNotNull("Hover documentation for :RemoteHost in :Map is null", remoteHostDoc);
         assertTrue("Doc must contain Type Alias", remoteHostDoc.contains("Type Alias:</b> :RemoteHost"));
-        assertTrue("Doc must contain imported source", remoteHostDoc.contains("network_primitives.stvn_inclf"));
+        assertTrue("Doc must contain imported source", remoteHostDoc.contains("network_primitives.stvn_di"));
         assertTrue("Doc must contain resolution trajectory", remoteHostDoc.contains(":RemoteHost &rarr; :HostName &rarr; :String"));
         assertTrue("Doc must contain underlying structure", remoteHostDoc.contains("Underlying Structure:</b> :String"));
 
@@ -3334,7 +3330,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testHoverDocumentationForTypeReferencesInUnion() {
         myFixture.addFileToProject(
-            "network_primitives.stvn_inclf",
+            "network_primitives.stvn_di",
             """
             {
               :defs {
@@ -3347,7 +3343,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3385,7 +3381,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testHoverDocumentationForTypeReferencesInTuple() {
         myFixture.addFileToProject(
-            "network_primitives.stvn_inclf",
+            "network_primitives.stvn_di",
             """
             {
               :defs {
@@ -3398,7 +3394,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3436,7 +3432,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testGoToDefinitionForCompositeSchemaArguments() {
         myFixture.addFileToProject(
-            "network_primitives.stvn_inclf",
+            "network_primitives.stvn_di",
             """
             {
               :defs {
@@ -3449,7 +3445,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """
             {
               :defs {
-                :include ["network_primitives.stvn_inclf" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -4940,16 +4936,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     }
 
     public void testModularHeaderMultiDiagnosticHighlighting() {
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnFlatDocumentIncludeInspection());
         var headerCode = """
             {
               :defs {
-                :include [ "sub_module.stvn_inclf" ]
+                :include [ "sub_module.stvn_di" ]
                 :MutuallyExclusive { #minIncl 10 #minExcl 10 } :Int
                 :IncompatibleMeta  { #preserveIndent #TRUE } :Int
               }
             }
             """;
-        myFixture.configureByText("header_multi_error.stvn_inclf", headerCode);
+        myFixture.configureByText("header_multi_error.stvn_d", headerCode);
 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
@@ -4957,9 +4954,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .toList();
         assertTrue("Expected at least 3 concurrent errors in modular header", errors.size() >= 3);
 
-        // 1. Leaf Module Include Restriction
-        assertTrue("Must report leaf module include violation", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("Leaf module (.stvn_inclf) cannot contain include statements")
+        // 1. Hermetic Schema Include Restriction
+        assertTrue("Must report hermetic schema include violation", errors.stream().anyMatch(e ->
+            e.getDescription() != null && e.getDescription().contains("Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements")
         ));
 
         // 2. Mutually Exclusive Bounds

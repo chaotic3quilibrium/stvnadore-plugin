@@ -25,7 +25,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
     }
 
     public void testUnadornedStringWarning() {
-        myFixture.configureByText("test_unadorned.stvn_inclf",
+        myFixture.configureByText("test_unadorned.stvn_di",
             """
             {
               :defs {
@@ -44,7 +44,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
     }
 
     public void testThresholdExceededWarning() {
-        myFixture.configureByText("test_oversized.stvn_inclf",
+        myFixture.configureByText("test_oversized.stvn_di",
             """
             {
               :defs {
@@ -63,7 +63,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
     }
 
     public void testCompliantCapacitiesProduceNoWarnings() {
-        myFixture.configureByText("test_compliant.stvn_inclf",
+        myFixture.configureByText("test_compliant.stvn_di",
             """
             {
               :defs {
@@ -88,7 +88,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
               }
             }
             """;
-        myFixture.configureByText("primary_fix.stvn_inclf", text);
+        myFixture.configureByText("primary_fix.stvn_di", text);
         int offset = text.indexOf(":String");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
@@ -116,7 +116,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
               }
             }
             """;
-        myFixture.configureByText("secondary_fix.stvn_inclf", text);
+        myFixture.configureByText("secondary_fix.stvn_di", text);
         int offset = text.indexOf(":String");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
@@ -144,7 +144,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
               }
             }
             """;
-        myFixture.configureByText("error_suppress.stvn_inclf", text);
+        myFixture.configureByText("error_suppress.stvn_di", text);
         int offset = text.indexOf(":String");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
@@ -157,7 +157,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
     }
 
     public void testPayloadScopeDisabledByDefault() {
-        myFixture.configureByText("payload_default.stvn_f",
+        myFixture.configureByText("payload_default.stvn",
             """
             {
               :defs {
@@ -187,7 +187,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
               :body "123456789012"
             }
             """;
-        myFixture.configureByText("payload_truncate.stvn_f", text);
+        myFixture.configureByText("payload_truncate.stvn", text);
         int offset = text.indexOf("\"123456789012\"");
         myFixture.getEditor().getCaretModel().moveToOffset(offset + 1);
         myFixture.doHighlighting();
@@ -219,7 +219,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
               :body "123456789012"
             }
             """;
-        myFixture.configureByText("payload_widen.stvn_f", text);
+        myFixture.configureByText("payload_widen.stvn", text);
         int offset = text.indexOf("\"123456789012\"");
         myFixture.getEditor().getCaretModel().moveToOffset(offset + 1);
         myFixture.doHighlighting();
@@ -278,7 +278,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
      * and fail closed under standard nominal type resolution.
      */
     public void testUndeclaredCompoundStringDoesNotOfferObsoleteQuickFix() {
-        myFixture.configureByText("test_undeclared.stvn_inclf",
+        myFixture.configureByText("test_undeclared.stvn_di",
             """
             {
               :defs {

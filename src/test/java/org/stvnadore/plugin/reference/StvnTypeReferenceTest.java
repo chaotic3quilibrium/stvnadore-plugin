@@ -20,7 +20,7 @@ public final class StvnTypeReferenceTest extends BasePlatformTestCase {
      * Verifies that short type names within a package enclosure resolve to sibling declarations.
      */
     public void testPackageSiblingTypeResolution() {
-        var file = myFixture.configureByText("package_test.stvn_inclf", """
+        var file = myFixture.configureByText("package_test.stvn_di", """
             {
               :defs {
                 :package :org/ietf/rfc8259/json {
@@ -67,7 +67,7 @@ public final class StvnTypeReferenceTest extends BasePlatformTestCase {
      * Verifies that hover documentation generates for package-enclosed sibling types.
      */
     public void testPackageSiblingHoverDocumentation() {
-        var file = myFixture.configureByText("package_hover.stvn_inclf", """
+        var file = myFixture.configureByText("package_hover.stvn_di", """
             {
               :defs {
                 :package :org/ietf/rfc8259/json {

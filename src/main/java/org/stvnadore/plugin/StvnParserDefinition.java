@@ -69,13 +69,7 @@ public final class StvnParserDefinition implements ParserDefinition {
             return new StvnDefsIncludeFile(viewProvider);
         } else if ("stvn_i".equalsIgnoreCase(ext)) {
             return new StvnPayloadIncludeFile(viewProvider);
-        } else if ("stvn_f".equalsIgnoreCase(ext)) {
-            return new StvnFlatPayloadFile(viewProvider);
-        } else if ("stvn_incl".equalsIgnoreCase(ext)) {
-            return new StvnInclFile(viewProvider);
-        } else if ("stvn_inclf".equalsIgnoreCase(ext)) {
-            return new StvnInclfFile(viewProvider);
         }
         return new StvnPayloadFile(viewProvider);
     }
-}
+}

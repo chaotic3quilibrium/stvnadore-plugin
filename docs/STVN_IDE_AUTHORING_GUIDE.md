@@ -64,7 +64,7 @@
     * [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
       * [Package Enclaves (`:package`)](#package-enclaves-package)
       * [Lexical Imports (`:use`)](#lexical-imports-use)
-    * [5.6 Flat Payload Documents (`.stvn_f`)](#56-flat-payload-documents-stvn_f)
+    * [5.6 Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)](#56-hermetic-documents--definitions-schemas-stvn-stvn_d)
     * [5.7 Token Boundary & Sum Disambiguation Quick-Fixes](#57-token-boundary--sum-disambiguation-quick-fixes)
       * [Token Boundary Completion Guard](#token-boundary-completion-guard)
       * [Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)](#right-first-sum-intention-actions-wrap-with-right--wrap-with-1)
@@ -697,9 +697,9 @@ STVN 1.2 introduces five dedicated, in-editor real-time inspections that activel
 3. **`StvnLhsReservedType` (Reserved Keyword in LHS Definition):**
    * Prevents overriding or redefining built-in STVN atomic or composite type keywords on the left-hand side of `:defs` (e.g., `:String :Int32` or `:Tuple :Seq`).
    * Highlights the reserved keyword with `ERROR` severity.
-4. **`StvnFlatDocumentInclude` (Include Directive in Flat Payload):**
-   * Detached flat payload documents (`.stvn_f`) must be self-contained or pre-bound; they cannot contain `:include` statements.
-   * Highlights illegal `:include` directives in `.stvn_f` files with `ERROR` severity.
+4. **`StvnFlatDocumentInclude` (Include Directive in Hermetic Document):**
+   * Hermetic documents (`.stvn`) and hermetic definitions schemas (`.stvn_d`) must be self-contained; they cannot contain `:include` statements under STVN 2.0.0 Specification § 1.2.
+   * Highlights illegal `:include` directives in `.stvn` and `.stvn_d` files with `ERROR` severity.
 5. **`StvnConstantRange` (Inverted Numeric Constant Range):**
    * When declaring numeric bounding metadata (`#minIncl`, `#maxIncl`, `#minExcl`, `#maxExcl`), asserts that minimum bounds do not exceed maximum bounds.
    * Highlights inverted range facets with `ERROR` severity.
@@ -752,7 +752,7 @@ When hovering over an enum subset alias (such as `:PromotionRole`), `StvnDocumen
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │ Type Alias: :PromotionRole                                             │
-│ Imported From: "chess_turn.stvn_inclf"                                 │
+│ Imported From: "chess_turn.stvn_di"                                    │
 │ Variant Count: 4                                                       │
 │ Derivation: Parent: :PieceRole via #filterExcl [ #PAWN #KING ]         │
 │ ────────────────────────────────────────────────────────────────────── │
@@ -834,11 +834,11 @@ Position the caret on either the opening `[TAG]` or closing `[TAG]` bracket and 
 
 ### 5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)
 
-When preparing STVN schemas for production deployments or microservice distribution, you can bundle modular multi-file schemas into a single standalone `.stvn_inclf` archive:
+When preparing STVN schemas for production deployments or microservice distribution, you can bundle modular multi-file schemas into a single standalone `.stvn_d` archive:
 
-1. Right-click any `.stvn` or `.stvn_incl` file in the **Project View**.
+1. Right-click any `.stvn_di`, `.stvn_d`, `.stvn_i`, or `.stvn` file in the **Project View**.
 2. Select **Flatten STVN Workspace** (also available under the **Build** menu).
-3. The plugin resolves all relative `:include` paths, checks for namespace collisions and circular dependencies, strips redundant comments, and exports a canonical `.stvn_inclf` file.
+3. The plugin resolves all relative `:include` paths, checks for namespace collisions and circular dependencies, strips redundant comments, and exports a canonical `.stvn_d` file.
 
 ---
 
@@ -887,13 +887,13 @@ The `:use` statement imports nominal types into the local lexical scope:
 
 ---
 
-### 5.6 Flat Payload Documents (`.stvn_f`)
+### 5.6 Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)
 
-STVN 1.2 introduces `.stvn_f` files for high-throughput, headerless flat data payloads:
+STVN 2.0.0 establishes canonical hermetic file types for self-contained schemas and payload documents:
 
-* **Detached Schema Evaluation**: Flat payload files omit top-level `:defs` and `:type` blocks. They contain only a single root data payload (`:Tuple`, `:Seq`, `:Map`, or primitive).
-* **Wire Protocol Efficiency**: Ideal for streaming partitions, columnar chunks, or pre-negotiated RPC boundaries where transmitting schema metadata in every message creates unacceptable overhead.
-* **Prohibition of `:include`**: Because flat files have no schema enclosure, `:include` statements are strictly prohibited and immediately flagged by the `StvnFlatDocumentInclude` inspection.
+* **Hermetic Definitions Schemas (`.stvn_d`)**: Standalone schema definitions containing strictly `:defs` blocks without `:include` statements.
+* **Hermetic Payload Documents (`.stvn`)**: Standalone data documents containing inline `:type` and `:body` blocks without `:include` statements.
+* **Prohibition of `:include`**: Under STVN 2.0.0 Specification § 1.2, `:include` statements are strictly prohibited in hermetic documents and schemas, and are immediately flagged by the `StvnFlatDocumentInclude` inspection.
 
 ---
 

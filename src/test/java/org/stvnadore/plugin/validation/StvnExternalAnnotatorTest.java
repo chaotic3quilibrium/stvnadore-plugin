@@ -31,24 +31,24 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testIncludedFileDiagnosticsDoNotLeakToParentComments() {
         var includedContent = """
             {
-              // primitives.stvn_inclf
+              // primitives.stvn_di
               :defs {
                 :BadType { #regex "^[0-9]+$" } :Int
               }
             }
             """;
-        myFixture.addFileToProject("primitives.stvn_inclf", includedContent);
+        myFixture.addFileToProject("primitives.stvn_di", includedContent);
 
         var parentContent = """
             {
-              // Header comment in events.stvn_incl that must never receive error squiggles
+              // Header comment in events.stvn_i that must never receive error squiggles
               :defs {
-                :include [ "primitives.stvn_inclf" ]
+                :include [ "primitives.stvn_di" ]
                 :EventId :String
               }
             }
             """;
-        var parentFile = myFixture.configureByText("events.stvn_incl", parentContent);
+        var parentFile = myFixture.configureByText("events.stvn_i", parentContent);
 
         var annotator = new StvnExternalAnnotator();
         var collected = annotator.collectInformation(parentFile);
@@ -78,7 +78,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testProhibitedCompoundKeywordsInIncludedModuleDoNotLeakToParentComments() {
         var primitivesContent = """
             {
-              // primitives.stvn_inclf
+              // primitives.stvn_di
               :defs {
                 :package :com/nyse/primitives {
                   // Legacy compound string keyword
@@ -90,14 +90,14 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("primitives.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
-              // events.stvn_incl
+              // events.stvn_i
               :defs {
                 // 1. Ingest primitives module directly
-                :include [ "primitives.stvn_inclf" ]
+                :include [ "primitives.stvn_di" ]
 
                 // 2. Scoped Package Enclosure: entries expand to :com/nyse/events/*
                 :package :com/nyse/events {
@@ -112,7 +112,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        var eventsFile = myFixture.configureByText("events.stvn_incl", eventsContent);
+        var eventsFile = myFixture.configureByText("events.stvn_i", eventsContent);
 
         var annotator = new StvnExternalAnnotator();
         var collected = annotator.collectInformation(eventsFile);
@@ -163,7 +163,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        var file = myFixture.configureByText("pinning_test.stvn_inclf", content);
+        var file = myFixture.configureByText("pinning_test.stvn_di", content);
         var highlights = myFixture.doHighlighting();
 
         // 1. Positive Assertion: Assert error exists and pins strictly to :StringFixed4
@@ -205,7 +205,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("pkg_pinning_test.stvn_inclf", content);
+        myFixture.configureByText("pkg_pinning_test.stvn_di", content);
         var highlights = myFixture.doHighlighting();
 
         // 1. Positive assertion on :StringFixed4
@@ -241,6 +241,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testLocalUndefinedTypeInFileWithIncludesPinsLocalTokenNotInclude() {
         var primitivesContent = """
             {
+              :meta {
+                #name "local_prim"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
                 :package :com/nyse/primitives {
                   :MicCode :String
@@ -248,12 +252,12 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("local_prim.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("local_prim.stvn_di", primitivesContent);
 
         var activeContent = """
             {
               :defs {
-                :include [ "local_prim.stvn_inclf" ]
+                :include [ "local_prim.stvn_di" ]
                 :OrderId :Uint64
               }
             }
@@ -277,7 +281,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         // 2. Assert :include does NOT receive a pinned error for :Uint64
         int inclOffset = activeContent.indexOf(":include");
         for (var h : highlights) {
-            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains("local_prim.stvn_inclf")) {
+            if (h.getSeverity() == HighlightSeverity.ERROR && h.getDescription() != null && h.getDescription().contains("local_prim.stvn_di")) {
                 fail("Local error must not pin to clean include statement: " + h.getDescription());
             }
         }
@@ -291,6 +295,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     public void testChildUndefinedTypeDoesNotProjectOffsetsOntoParentTokens() {
         var primitivesContent = """
             {
+              :meta {
+                #name "undef_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
                 :package :com/nyse/primitives {
                   :MicCode { #minSize 4 #maxSize 4 } :String
@@ -300,12 +308,12 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("undef_primitives.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("undef_primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
               :defs {
-                :include [ "undef_primitives.stvn_inclf" ]
+                :include [ "undef_primitives.stvn_di" ]
                 :package :com/nyse/events {
                   :use [ :com/nyse/primitives { #strip } ]
                   :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
@@ -313,7 +321,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        var eventsFile = myFixture.configureByText("undef_events.stvn_incl", eventsContent);
+        var eventsFile = myFixture.configureByText("undef_events.stvn_i", eventsContent);
         var highlights = myFixture.doHighlighting();
 
         // 1. Assert #DEFAULT_MIC and #PRIMARY_EXCHANGE receive ZERO error squiggles
@@ -357,24 +365,24 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("trans_primitives.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("trans_primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
               :defs {
-                :include [ "trans_primitives.stvn_inclf" ]
+                :include [ "trans_primitives.stvn_di" ]
                 :package :com/nyse/events {
                   :use [ :com/nyse/primitives { #strip } ]
                 }
               }
             }
             """;
-        myFixture.addFileToProject("trans_events.stvn_incl", eventsContent);
+        myFixture.addFileToProject("trans_events.stvn_di", eventsContent);
 
         var orderBatchContent = """
             {
               :defs {
-                :include [ "trans_events.stvn_incl" ]
+                :include [ "trans_events.stvn_di" ]
                 :BatchId {#unsigned #size 32} :Int
                 :ExecutionReport {#unsigned #size 64} :Int
                 :TradeBatch :Tuple( :BatchId :ExecutionReport )
@@ -459,19 +467,19 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.addFileToProject("wolf_primitives.stvn_inclf", primitivesContent);
+        myFixture.addFileToProject("wolf_primitives.stvn_di", primitivesContent);
 
         var eventsContent = """
             {
               :defs {
-                :include [ "wolf_primitives.stvn_inclf" ]
+                :include [ "wolf_primitives.stvn_di" ]
                 :package :com/nyse/events {
                   :use [ :com/nyse/primitives { #strip } ]
                 }
               }
             }
             """;
-        var eventsFile = myFixture.configureByText("wolf_events.stvn_incl", eventsContent);
+        var eventsFile = myFixture.configureByText("wolf_events.stvn_di", eventsContent);
         var virtualFile = eventsFile.getVirtualFile();
         assertNotNull("VirtualFile must not be null", virtualFile);
 
@@ -487,10 +495,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             boolean hasPinnedError = highlights.stream().anyMatch(h ->
                 h.getSeverity() == HighlightSeverity.ERROR &&
                 h.getDescription() != null &&
-                h.getDescription().contains("wolf_primitives.stvn_inclf"));
+                h.getDescription().contains("wolf_primitives.stvn_di"));
             assertTrue("Parent file must display pinned error highlight on include statement", hasPinnedError);
 
-            assertTrue("WolfTheProblemSolver must report wolf_events.stvn_incl as problem file for pinned include error",
+            assertTrue("WolfTheProblemSolver must report wolf_events.stvn_di as problem file for pinned include error",
                 wolf.isProblemFile(virtualFile));
         } finally {
             if (wolf instanceof MockWolfTheProblemSolver mockWolf) {

@@ -213,26 +213,5 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                 return;
             }
         }
-        var flatFiles = FileTypeIndex.getFiles(StvnFileType.FlatPayload.INSTANCE, scope);
-        for (var vf : flatFiles) {
-            var psiFile = psiManager.findFile(vf);
-            if (psiFile != null && !fileProcessor.process(psiFile)) {
-                return;
-            }
-        }
-        var inclFiles = FileTypeIndex.getFiles(StvnFileType.Incl.INSTANCE, scope);
-        for (var vf : inclFiles) {
-            var psiFile = psiManager.findFile(vf);
-            if (psiFile != null && !fileProcessor.process(psiFile)) {
-                return;
-            }
-        }
-        var inclfFiles = FileTypeIndex.getFiles(StvnFileType.Inclf.INSTANCE, scope);
-        for (var vf : inclfFiles) {
-            var psiFile = psiManager.findFile(vf);
-            if (psiFile != null && !fileProcessor.process(psiFile)) {
-                return;
-            }
-        }
     }
 }

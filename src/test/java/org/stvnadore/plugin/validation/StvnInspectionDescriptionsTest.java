@@ -25,7 +25,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnFencedStringInspection.class, List.of("fenced", "string", "delimiter", "Rule STR-04")),
         Map.entry(StvnLhsReservedTypeInspection.class, List.of("fundamental", "LHS", "aliased")),
         Map.entry(StvnConstantRangeInspection.class, List.of("bit-width", "constant", "range")),
-        Map.entry(StvnFlatDocumentIncludeInspection.class, List.of("flat", "leaf", "include")),
+        Map.entry(StvnFlatDocumentIncludeInspection.class, List.of("hermetic", "document", "include")),
         Map.entry(StvnNestedPackageInspection.class, List.of("nested", "package")),
         Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use")),
         Map.entry(StvnStringCapacityInspection.class, List.of("capacity", "threshold", ":String", "governance")),

@@ -321,7 +321,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var containingFile = typeDef.getContainingFile();
                 if (containingFile != null) {
                     var fileName = containingFile.getName();
-                    if (fileName.endsWith(".stvn_incl") || fileName.endsWith(".stvn_inclf")) {
+                    if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_di")) {
                         sb.append("<b>Imported From:</b> <code>\"").append(fileName).append("\"</code><br/>");
                     } else if (enclosingPkg == null) {
                         sb.append("<b>Declared In:</b> Local Definitions (<code>:defs</code>)<br/>");

@@ -48,16 +48,14 @@ public final class PublishSchemaAction extends AnAction {
         String schemaName = deriveSchemaName(fileName);
         String schemaContent;
 
-        if (fileName.endsWith(".stvn_di") || fileName.endsWith(".stvn_incl")) {
+        if (fileName.endsWith(".stvn_di")) {
             // 1. Perform in-memory modular schema flattening on-the-fly to canonical .stvn_d
             Map<String, String> workspaceMap = new HashMap<>();
             ProjectFileIndex.getInstance(project).iterateContent(fileOrDir -> {
                 if (!fileOrDir.isDirectory() && (fileOrDir.getName().endsWith(".stvn_d")
                         || fileOrDir.getName().endsWith(".stvn_di")
                         || fileOrDir.getName().endsWith(".stvn")
-                        || fileOrDir.getName().endsWith(".stvn_i")
-                        || fileOrDir.getName().endsWith(".stvn_incl")
-                        || fileOrDir.getName().endsWith(".stvn_inclf"))) {
+                        || fileOrDir.getName().endsWith(".stvn_i"))) {
                     String path = StvnSchemaFlattener.normalizePath(fileOrDir.getPath());
                     String content = getLatestContent(project, fileOrDir);
                     workspaceMap.put(path, content);
@@ -81,7 +79,7 @@ public final class PublishSchemaAction extends AnAction {
                 StvnWorkspaceNotificationHelper.showGenericError(project, ex);
                 return;
             }
-        } else if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_inclf")) {
+        } else if (fileName.endsWith(".stvn_d")) {
             // 2. Standalone definitions schema: transmit buffer directly
             schemaContent = getLatestContent(project, entryFile);
         } else {
@@ -129,8 +127,7 @@ public final class PublishSchemaAction extends AnAction {
         Project project = e.getProject();
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
         boolean visible = project != null && file != null && !file.isDirectory() &&
-                (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_di")
-                        || file.getName().endsWith(".stvn_incl") || file.getName().endsWith(".stvn_inclf"));
+                (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_di"));
         e.getPresentation().setEnabledAndVisible(visible);
     }
 
@@ -140,12 +137,6 @@ public final class PublishSchemaAction extends AnAction {
         }
         if (fileName.endsWith(".stvn_di")) {
             return fileName.substring(0, fileName.length() - ".stvn_di".length());
-        }
-        if (fileName.endsWith(".stvn_incl")) {
-            return fileName.substring(0, fileName.length() - ".stvn_incl".length());
-        }
-        if (fileName.endsWith(".stvn_inclf")) {
-            return fileName.substring(0, fileName.length() - ".stvn_inclf".length());
         }
         return fileName;
     }

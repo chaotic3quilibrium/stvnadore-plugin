@@ -566,10 +566,10 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
 
     /**
      * V36: Include Alias Mapping
-     * Assert ':include [\"m.stvn_incl\" { :A :B }]' parses cleanly with 0 syntax errors.
+     * Assert ':include [\"m.stvn_di\" { :A :B }]' parses cleanly with 0 syntax errors.
      */
     public void testV36_IncludeAliasMapping() {
-        var input = "{:defs { :include [\"m.stvn_incl\" { :A :B }] } :type :B :body 1}";
+        var input = "{:defs { :include [\"m.stvn_di\" { :A :B }] } :type :B :body 1}";
         var file = myFixture.configureByText("v36.stvn", input);
         assertNoSyntaxErrors(file);
     }
@@ -590,7 +590,7 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
      */
     public void testV38_IncludeOnlyDocument() {
         var input = "{:defs { :Port :Int } }";
-        var file = myFixture.configureByText("v38.stvn_incl", input);
+        var file = myFixture.configureByText("v38.stvn_di", input);
         assertNoSyntaxErrors(file);
     }
 

@@ -42,7 +42,10 @@ public final class StvnFlattenWorkspaceAction extends AnAction {
 
         Map<String, String> workspaceMap = new HashMap<>();
         ProjectFileIndex.getInstance(project).iterateContent(fileOrDir -> {
-            if (!fileOrDir.isDirectory() && (fileOrDir.getName().endsWith(".stvn") || fileOrDir.getName().endsWith(".stvn_incl"))) {
+            if (!fileOrDir.isDirectory() && (fileOrDir.getName().endsWith(".stvn_d")
+                    || fileOrDir.getName().endsWith(".stvn_di")
+                    || fileOrDir.getName().endsWith(".stvn")
+                    || fileOrDir.getName().endsWith(".stvn_i"))) {
                 String path = StvnSchemaFlattener.normalizePath(fileOrDir.getPath());
                 String content = getLatestContent(project, fileOrDir);
                 workspaceMap.put(path, content);
@@ -77,9 +80,13 @@ public final class StvnFlattenWorkspaceAction extends AnAction {
     private void writeOutputAsset(Project project, VirtualFile entryFile, String content) {
         String outputName;
         if (entryFile.getName().endsWith(".stvn")) {
-            outputName = entryFile.getName().substring(0, entryFile.getName().length() - 5) + ".stvn_inclf";
+            outputName = entryFile.getName().substring(0, entryFile.getName().length() - 5) + ".stvn_d";
+        } else if (entryFile.getName().endsWith(".stvn_di")) {
+            outputName = entryFile.getName().substring(0, entryFile.getName().length() - 8) + ".stvn_d";
+        } else if (entryFile.getName().endsWith(".stvn_i")) {
+            outputName = entryFile.getName().substring(0, entryFile.getName().length() - 7) + ".stvn_d";
         } else {
-            outputName = entryFile.getName() + ".stvn_inclf";
+            outputName = entryFile.getName() + ".stvn_d";
         }
 
         VirtualFile parent = entryFile.getParent();
@@ -101,7 +108,7 @@ public final class StvnFlattenWorkspaceAction extends AnAction {
         Project project = e.getProject();
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
         boolean visible = project != null && file != null && !file.isDirectory() &&
-                (file.getName().endsWith(".stvn") || file.getName().endsWith(".stvn_incl"));
+                (file.getName().endsWith(".stvn") || file.getName().endsWith(".stvn_di") || file.getName().endsWith(".stvn_i"));
         e.getPresentation().setEnabledAndVisible(visible);
     }
 }

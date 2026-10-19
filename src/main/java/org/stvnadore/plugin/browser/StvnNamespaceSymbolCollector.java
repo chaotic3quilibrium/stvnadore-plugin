@@ -25,7 +25,7 @@ import org.stvnadore.psi.*;
 @NullMarked
 public final class StvnNamespaceSymbolCollector {
 
-    private static final String PRELUDE_URI = "stvn://prelude/org_stvnadore_prelude.stvn_inclf";
+    private static final String PRELUDE_URI = "stvn://prelude/org_stvnadore_prelude.stvn_d";
     private static final java.util.regex.Pattern PRIMITIVE_TYPE_PATTERN = java.util.regex.Pattern.compile(
         "^:(?:Boolean|Int|Float|String|TimeEpoch|DateTime)$"
     );

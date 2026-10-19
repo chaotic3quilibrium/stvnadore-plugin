@@ -10,9 +10,6 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.StvnDefinitionsFile;
 import org.stvnadore.plugin.StvnDefsIncludeFile;
-import org.stvnadore.plugin.StvnFlatPayloadFile;
-import org.stvnadore.plugin.StvnInclFile;
-import org.stvnadore.plugin.StvnInclfFile;
 import org.stvnadore.plugin.StvnPayloadFile;
 import org.stvnadore.plugin.StvnPayloadIncludeFile;
 import org.stvnadore.psi.*;
@@ -129,34 +126,33 @@ public final class StvnPsiUtils {
     }
 
     /**
-     * Determines whether the given file represents a modular document (.stvn_i, .stvn_di, or legacy .stvn_incl).
+     * Determines whether the given file represents a modular document (.stvn_i, .stvn_di).
      *
      * @param file target STVN PSI file
      * @return true if modular, false if flat or null
      */
     public static boolean isModularDocument(@Nullable PsiFile file) {
         if (file == null) return false;
-        if (file instanceof StvnPayloadIncludeFile || file instanceof StvnDefsIncludeFile || file instanceof StvnInclFile) {
+        if (file instanceof StvnPayloadIncludeFile || file instanceof StvnDefsIncludeFile) {
             return true;
         }
         var name = file.getName();
-        return name.endsWith(".stvn_i") || name.endsWith(".stvn_di") || name.endsWith(".stvn_incl");
+        return name.endsWith(".stvn_i") || name.endsWith(".stvn_di");
     }
 
     /**
-     * Determines whether the given file represents a hermetic flat document (.stvn, .stvn_d, .stvn_b, .stvn_bd, .stvn_f, .stvn_inclf).
+     * Determines whether the given file represents a hermetic document (.stvn, .stvn_d, .stvn_b, .stvn_bd).
      *
      * @param file target STVN PSI file
      * @return true if hermetic flat, false if modular or null
      */
     public static boolean isHermeticDocument(@Nullable PsiFile file) {
         if (file == null) return false;
-        if (file instanceof StvnPayloadFile || file instanceof StvnDefinitionsFile || file instanceof StvnFlatPayloadFile || file instanceof StvnInclfFile) {
+        if (file instanceof StvnPayloadFile || file instanceof StvnDefinitionsFile) {
             return true;
         }
         var name = file.getName();
-        return name.endsWith(".stvn") || name.endsWith(".stvn_d") || name.endsWith(".stvn_f")
-            || name.endsWith(".stvn_inclf") || name.endsWith(".stvn_b") || name.endsWith(".stvn_bd");
+        return name.endsWith(".stvn") || name.endsWith(".stvn_d") || name.endsWith(".stvn_b") || name.endsWith(".stvn_bd");
     }
 
     /**
@@ -225,10 +221,6 @@ public final class StvnPsiUtils {
      * @return the resolved or synthesized DefsEntry, or null if file is invalid or flat
      */
     public static @Nullable DefsEntry getOrCreateDefsBlock(PsiFile file) {
-        if (file instanceof org.stvnadore.plugin.StvnFlatPayloadFile) {
-            return null;
-        }
-
         var existingDefs = PsiTreeUtil.findChildOfType(file, DefsEntry.class);
         if (existingDefs != null) {
             return existingDefs;

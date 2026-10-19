@@ -30,7 +30,7 @@ public final class StvnCommenterTest extends BasePlatformTestCase {
               #B :Int32 20
             }</selection>
             """;
-        myFixture.configureByText("definitions.stvn_incl", initial);
+        myFixture.configureByText("definitions.stvn_di", initial);
         myFixture.performEditorAction(IdeActions.ACTION_COMMENT_LINE);
 
         var expectedCommented = """

@@ -30,7 +30,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
     * [8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)](#8b-polyglot-fenced-strings--delimiter-invariants-rule-str-04)
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
     * [10. Package Enclaves & Lexical Scoping (STVN 1.2)](#10-package-enclaves--lexical-scoping-stvn-12)
-    * [11. Flat Payload Documents (`.stvn_f`)](#11-flat-payload-documents-stvn_f)
+    * [11. Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)](#11-hermetic-documents--definitions-schemas-stvn-stvn_d)
     * [12. String Capacity Governance (STVN 1.3)](#12-string-capacity-governance-stvn-13)
     * [13. Native Code Formatter & Dual Projections (STVN 1.3)](#13-native-code-formatter--dual-projections-stvn-13)
     * [14. First-Class Rename Refactoring (Shift+F6)](#14-first-class-rename-refactoring-shiftf6)
@@ -78,7 +78,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 ### 4. Workspace Flattening & Schema Publishing
 
-* **Flatten STVN Workspace Action**: Ingests modular multi-file schemas (`.stvn_incl`), validates DAG dependencies, resolves aliases, strips comments, and exports a standalone `.stvn_inclf` file.
+* **Flatten STVN Workspace Action**: Ingests modular multi-file schemas (`.stvn_di`), validates DAG dependencies, resolves aliases, strips comments, and exports a standalone `.stvn_d` file.
 * **Publish Schema Action**: Publishes the active schema directly to the configured STVN Schema Repository server with balloon notification feedback.
 
 ### 5. Enum Subset Filtering & Derivation
@@ -151,10 +151,11 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Lexical Imports (`:use`)**: Selectively import types using scoped `:use` statements inside `:defs` and `:package` blocks with multi-target maps and aliasing (`:use [ :org/stvnadore/prelude { #strip } ]`).
 * **Cross-File Scoped Resolution**: Resolves relative, absolute, and nested package identifiers seamlessly with full IDE navigation and type completion.
 
-### 11. Flat Payload Documents (`.stvn_f`)
+### 11. Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)
 
-* **Detached Flat Payloads**: First-class support for `.stvn_f` files representing headerless, high-throughput flat payloads evaluated against detached or pre-negotiated schemas.
-* **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring `.stvn_f` files adhere strictly to single-payload root syntax while prohibiting `:include` statements.
+* **Hermetic Definitions Schemas**: First-class support for `.stvn_d` files representing standalone definitions schemas containing strictly `:defs` blocks without `:include` directives.
+* **Hermetic Payload Documents**: First-class support for `.stvn` files representing standalone data documents containing inline `:type` and `:body` blocks without `:include` directives.
+* **Grammar Verification**: Fully integrated parser definition and syntax highlighter ensuring hermetic documents and schemas adhere strictly to canonical STVN 2.0.0 syntax while prohibiting `:include` statements.
 
 ### 12. String Capacity Governance (STVN 2.0)
 
@@ -184,7 +185,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 * **Real-time Rename Validation**: `StvnRenameInputValidator` blocks sigil prefixes in real time with explicit footer errors, disabling the Refactor action until a bare identifier is entered.
 * **Dual Search Everywhere Indexing**: Indexes symbols by both bare name and canonical prefixed name for zero-friction `Ctrl+N` / `Shift+Shift` navigation.
 * **Precise Caret Anchoring**: Mixins override `getTextOffset()`, guaranteeing the refactoring template highlights the exact identifier token rather than enclosing block delimiters.
-* **Atomic Cross-File Mutation**: Renaming declarations in modular flat schema files (`.stvn_inclf`) propagates atomically across all consumer documents (`.stvn`, `.stvn_f`).
+* **Atomic Cross-File Mutation**: Renaming declarations in modular schema files (`.stvn_di`) propagates atomically across all consumer documents (`.stvn`, `.stvn_i`).
 
 ### 15. Interactive Namespace Dependency Browser
 
@@ -196,7 +197,7 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
   3. `Type`: Terminal schema structure or constructor layout (alphabetical sort).
   4. `Use Depth`: Resolution depth as integer (alias hop count in `:defs`, derivation depth in `:type`, nesting depth in `:body`; numeric sort).
 * **Zero-Latency Speed Search**: Attached via `TableSpeedSearch` for immediate keyboard-driven filtering.
-* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a synthetic, read-only `LightVirtualFile` (`stvn://prelude/org_stvnadore_prelude.stvn_inclf`) positioned at the nominal declaration.
+* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a synthetic, read-only `LightVirtualFile` (`stvn://prelude/org_stvnadore_prelude.stvn_d`) positioned at the nominal declaration.
 
 ---
 
@@ -204,8 +205,8 @@ Language support plugin for **Strongly Typed Value Notation (STVN)** in JetBrain
 
 | Action ID                                                          | Name                                                   | Menu Location                     | Shortcut / Trigger                       |
 |:-------------------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-----------------------------------------|
-| `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction`          | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn` or `.stvn_incl`  |
-| `org.stvnadore.plugin.actions.PublishSchemaAction`                 | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn` or `.stvn_inclf` |
+| `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction`          | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn`, `.stvn_d`, or `.stvn_di` |
+| `org.stvnadore.plugin.actions.PublishSchemaAction`                 | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn_d` or `.stvn_di`  |
 | `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction`      | **Canonicalize & Pretty Print**                        | Editor Popup Menu (`STVN`)        | Context menu in STVN editor              |
 | `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction`     | **Canonicalize & Compact Print**                       | Editor Popup Menu (`STVN`)        | Context menu in STVN editor              |
 | `org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction`  | **Copy Canonical Pretty Print to Clipboard**           | Editor Popup Menu (`STVN`)        | Context menu in STVN editor              |
@@ -336,6 +337,16 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
   - Authoritative diagnostic coordinate pinning and single-character locus isolation for bare colons and hashes.
   - Clean domain error presentation eliminating compiler generator jargon.
   - Complete Java 21 strict Javadoc compliance under `failOnWarnings = true`.
+
+## v2.0.0-SNAPSHOT
+
+- 2026.10.18
+- Integrated STVN 2.0.0 orthogonal 6-extension architecture (§ 1.2):
+  - Canonical textual payload documents (`.stvn`), modular payload documents (`.stvn_i`), binary payload documents (`.stvn_b`)
+  - Canonical textual definitions schemas (`.stvn_d`), modular definitions schemas (`.stvn_di`), binary definitions schemas (`.stvn_bd`)
+- Excised legacy 1.x file extensions (`.stvn_incl`, `.stvn_inclf`, `.stvn_f`, `.stvn_bin`) across plugin manifest, file types, PSI classes, inspections, actions, and test suites
+- Updated `StvnFlatDocumentIncludeInspection` to govern hermetic documents (`.stvn`, `.stvn_d`)
+- Updated `StvnFlattenWorkspaceAction` and `PublishSchemaAction` to export and publish canonical `.stvn_d` schemas
 
 ## v1.3.1
 

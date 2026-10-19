@@ -8,13 +8,13 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 
 /**
- * Platform test suite verifying Fix 1, Fix 2, Fix 3, and hover notices on network_primitives.stvn_inclf.
+ * Platform test suite verifying Fix 1, Fix 2, Fix 3, and hover notices on network_primitives.stvn_di.
  */
 public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
 
     private static final String NETWORK_PRIMITIVES_FIXTURE = """
         {
-          // network_primitives.stvn_inclf
+          // network_primitives.stvn_di
           :defs {
             :BitFlag        :Uint1
             :UnixPermission :Uint3
@@ -36,7 +36,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies Fix 1 in-place qualification replacing bare :IPv4 with :org/stvnadore/prelude/IPv4.
      */
     public void testFix1QualifiesPreludeTypeInPlace() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -50,7 +50,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
 
         myFixture.checkResult("""
             {
-              // network_primitives.stvn_inclf
+              // network_primitives.stvn_di
               :defs {
                 :BitFlag        :Uint1
                 :UnixPermission :Uint3
@@ -67,7 +67,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies Fix 2 scoped :use import injection into :defs preserving FQNI type identity.
      */
     public void testFix2InjectsScopedUseImportIntoDefs() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -88,7 +88,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies that re-highlighting the document after applying Fix 2 produces zero syntax errors.
      */
     public void testFix2ProducesZeroSyntaxErrorsAfterExecution() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -112,7 +112,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies Fix 3 nominal branding injection into :defs creating a distinct opaque nominal type.
      */
     public void testFix3InjectsNominalBrandingIntoDefs() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -133,7 +133,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      */
     public void testFix3ProducesZeroStringCapacityWarnings() {
         myFixture.enableInspections(new StvnUnresolvedTypeInspection(), new StvnStringCapacityInspection());
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -155,7 +155,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies the canonical intention priority sequence (Qualify -> Import -> Brand).
      */
     public void testCanonicalOrderOfUnresolvedTypeIntentions() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var caretOffset = NETWORK_PRIMITIVES_FIXTURE.indexOf(":IPv4");
         myFixture.getEditor().getCaretModel().moveToOffset(caretOffset);
         myFixture.doHighlighting();
@@ -185,7 +185,7 @@ public final class StvnUnresolvedTypeQuickFixTest extends BasePlatformTestCase {
      * Verifies hover documentation displays unqualified reference warning and underlying structure.
      */
     public void testHoverDisplaysUnqualifiedReferenceWarning() {
-        myFixture.configureByText("network_primitives.stvn_inclf", NETWORK_PRIMITIVES_FIXTURE);
+        myFixture.configureByText("network_primitives.stvn_di", NETWORK_PRIMITIVES_FIXTURE);
         var offset = myFixture.getFile().getText().indexOf(":IPv4");
         var elem = myFixture.getFile().findElementAt(offset);
         assertNotNull(elem);

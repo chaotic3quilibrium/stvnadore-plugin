@@ -108,8 +108,7 @@ public final class StvnPreludeBridge {
         if (file == null) return false;
         var name = file.getName();
         return "prelude.stvn_core.stvn_d".equals(name) || "prelude.stvn_d".equals(name)
-            || "org_stvnadore_prelude.stvn_core.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name)
-            || "prelude.stvn_inclf".equals(name) || "org_stvnadore_prelude.stvn_inclf".equals(name);
+            || "org_stvnadore_prelude.stvn_core.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name);
     }
 
     /**

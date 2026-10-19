@@ -593,7 +593,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
     }
 
     public void testPackageEnclaveUnqualifiedLeakFails() {
-        myFixture.addFileToProject("packaged_module.stvn_incl", """
+        myFixture.addFileToProject("packaged_module.stvn_di", """
             {
               :defs {
                 :package :Remote {
@@ -606,7 +606,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var psiFile = myFixture.configureByText("consumer.stvn", """
             {
               :defs {
-                :include [ "packaged_module.stvn_incl" ]
+                :include [ "packaged_module.stvn_di" ]
               }
               :type :LocalPort
               :body 8080
@@ -625,7 +625,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
     }
 
     public void testPackageEnclaveWithStripResolves() {
-        myFixture.addFileToProject("packaged_module_strip.stvn_incl", """
+        myFixture.addFileToProject("packaged_module_strip.stvn_di", """
             {
               :defs {
                 :package :Remote {
@@ -638,7 +638,7 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
         var psiFile = myFixture.configureByText("consumer_strip.stvn", """
             {
               :defs {
-                :include [ "packaged_module_strip.stvn_incl" { #strip } ]
+                :include [ "packaged_module_strip.stvn_di" { #strip } ]
               }
               :type :LocalPort
               :body 8080

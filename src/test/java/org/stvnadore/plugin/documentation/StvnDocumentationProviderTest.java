@@ -33,7 +33,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
               :body #KNIGHT
             }
             """;
-        myFixture.configureByText("chess_turn.stvn_inclf", text);
+        myFixture.configureByText("chess_turn.stvn_di", text);
 
         var offset = text.indexOf(":PromotionRole");
         var doc = getDocAtOffset(text, offset);
@@ -193,7 +193,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
 
     public void testIncludeMapAliasSubsetHover() {
         myFixture.addFileToProject(
-            "chess_turn.stvn_inclf",
+            "chess_turn.stvn_di",
             """
             {
               :defs {
@@ -207,7 +207,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :include [ "chess_turn.stvn_inclf" { :PromotionRole :LocalPromo } ]
+                :include [ "chess_turn.stvn_di" { :PromotionRole :LocalPromo } ]
               }
               :type :LocalPromo
               :body #KNIGHT
@@ -374,7 +374,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("scoped_use.stvn_inclf", text);
+        myFixture.configureByText("scoped_use.stvn_di", text);
         var offset = text.indexOf(":IPv4");
         var doc = getDocAtOffset(text, offset);
         assertTrue("Doc must render 'Scoped Import:'", doc.contains("<b>Scoped Import:</b> :IPv4"));
@@ -401,7 +401,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("renamed_use.stvn_inclf", text);
+        myFixture.configureByText("renamed_use.stvn_di", text);
         var offset = text.indexOf(":LocalIp");
         var doc = getDocAtOffset(text, offset);
         assertTrue("Doc must render 'Renamed Reference:'", doc.contains("<b>Renamed Reference:</b> :LocalIp &rarr; :org/stvnadore/prelude/IPv4"));
@@ -425,7 +425,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("scoped_use_chain.stvn_inclf", text);
+        myFixture.configureByText("scoped_use_chain.stvn_di", text);
         var offset = text.indexOf(":IPv4");
         var doc = getDocAtOffset(text, offset);
 
@@ -444,7 +444,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("renamed_use_chain.stvn_inclf", text);
+        myFixture.configureByText("renamed_use_chain.stvn_di", text);
         var offset = text.indexOf(":LocalIp");
         var doc = getDocAtOffset(text, offset);
 

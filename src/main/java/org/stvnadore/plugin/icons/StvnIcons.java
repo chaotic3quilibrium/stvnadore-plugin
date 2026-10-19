@@ -18,16 +18,16 @@ public final class StvnIcons {
   public static final Icon STVN = IconLoader.getIcon("/icons/stvn_file.svg", StvnIcons.class);
 
   /** Icon for canonical textual definitions schemas (.stvn_d). */
-  public static final Icon STVN_DEFS = IconLoader.getIcon("/icons/stvn_defs_file.svg", StvnIcons.class);
+  public static final Icon STVN_D = IconLoader.getIcon("/icons/stvn_defs_file.svg", StvnIcons.class);
 
   /** Icon for modular textual STVN payload documents (.stvn_i). */
-  public static final Icon STVN_PAYLOAD_INCL = IconLoader.getIcon("/icons/stvn_payload_incl_file.svg", StvnIcons.class);
+  public static final Icon STVN_I = IconLoader.getIcon("/icons/stvn_payload_incl_file.svg", StvnIcons.class);
 
   /** Icon for modular textual definitions schemas (.stvn_di). */
-  public static final Icon STVN_DEFS_INCL = IconLoader.getIcon("/icons/stvn_defs_incl_file.svg", StvnIcons.class);
+  public static final Icon STVN_DI = IconLoader.getIcon("/icons/stvn_defs_incl_file.svg", StvnIcons.class);
 
   /** Icon for canonical binary STVN payload documents (.stvn_b). */
-  public static final Icon STVN_BIN = IconLoader.getIcon("/icons/stvn_bin_file.svg", StvnIcons.class);
+  public static final Icon STVN_B = IconLoader.getIcon("/icons/stvn_bin_file.svg", StvnIcons.class);
 
   /** Icon for canonical binary definitions schemas (.stvn_bd). */
   public static final Icon STVN_BD = IconLoader.getIcon("/icons/stvn_bin_defs_file.svg", StvnIcons.class);
@@ -43,20 +43,17 @@ public final class StvnIcons {
   public static final Icon STVN_CAS = IconLoader.getIcon("/icons/stvn_cas_file.svg", StvnIcons.class);
 
   // ============================================================================
-  // 3. TRANSITIONAL COMPATIBILITY SHIMS (DEPRECATED FOR REMOVAL)
+  // 3. CANONICAL ALIAS FORWARDERS
   // ============================================================================
 
-  /** @deprecated Replaced by canonical {@link #STVN} in STVN 2.0.0. */
-  @Deprecated(forRemoval = true)
-  public static final Icon STVN_F = STVN;
+  /** Alias for canonical {@link #STVN_D}. */
+  public static final Icon STVN_DEFS = STVN_D;
 
-  /** @deprecated Replaced by modular {@link #STVN_PAYLOAD_INCL} in STVN 2.0.0. */
-  @Deprecated(forRemoval = true)
-  public static final Icon STVN_INCL = STVN_PAYLOAD_INCL;
+  /** Alias for modular {@link #STVN_I}. */
+  public static final Icon STVN_PAYLOAD_INCL = STVN_I;
 
-  /** @deprecated Replaced by modular {@link #STVN_DEFS_INCL} in STVN 2.0.0. */
-  @Deprecated(forRemoval = true)
-  public static final Icon STVN_INCLF = STVN_DEFS_INCL;
+  /** Alias for modular {@link #STVN_DI}. */
+  public static final Icon STVN_DEFS_INCL = STVN_DI;
 
   private StvnIcons() {
     // Prevent instantiation

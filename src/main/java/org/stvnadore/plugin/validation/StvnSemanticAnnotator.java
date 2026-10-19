@@ -33,17 +33,7 @@ public final class StvnSemanticAnnotator implements Annotator {
 
         var type = node.getElementType();
 
-        // 1. Validate leaf module (.stvn_inclf) include constraint
-        if (type.equals(StvnTypes.KW_INCLUDE)) {
-            var file = element.getContainingFile();
-            if (file != null && file.getName().endsWith(".stvn_inclf")) {
-                holder.newAnnotation(HighlightSeverity.ERROR, "Leaf module (.stvn_inclf) cannot contain include statements")
-                      .range(element.getTextRange())
-                      .create();
-            }
-        }
-
-        // 1b. Validate in-flight Rule G Union tag bounds
+        // 1. Validate in-flight Rule G Union tag bounds
         if (element instanceof ExplicitUnionValue explicitUnion) {
             var prefixElem = explicitUnion.getUnionTagPrefix();
             var prefixText = prefixElem.getText().trim();

@@ -37,8 +37,6 @@ public final class StvnFileEditorListener implements FileEditorManagerListener {
         || name.endsWith(".stvn_di")
         || name.endsWith(".stvn_i")
         || name.endsWith(".stvn_b")
-        || name.endsWith(".stvn_bd")
-        || name.endsWith(".stvn_incl")
-        || name.endsWith(".stvn_inclf");
+        || name.endsWith(".stvn_bd");
   }
 }

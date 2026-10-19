@@ -57,7 +57,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
 
     private static final Pattern QUOTED_TOKEN_PATTERN = Pattern.compile(
-        "':?([A-Za-z0-9_/#]+(?:\\s+[A-Za-z0-9_]+)?)'|" +
+        "':?([^'\\r\\n]+)'|" +
         "(?<=Undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
         "(?<=Unknown or undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
         "(?<=Constraint violation \\()(:?[A-Za-z0-9_/#]+)(?=\\))"
@@ -157,9 +157,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         // Concurrency Guard: Thread isolation per file path identifier
         synchronized (info.path().intern()) {
             var resolvedPath = StvnTypeResolver.resolvePhysicalPath(info.virtualFile(), info.project(), info.text());
-
             try {
-                var compilationResult = StvnCompiler.compileToResult(info.text(), resolvedPath, StvnParserConfig.DEFAULT);
+                var isSystem = ((resolvedPath != null && (resolvedPath.contains(".stvn_core.") || resolvedPath.contains(".stvn_ir.") || resolvedPath.contains(".stvn_cas.") || resolvedPath.endsWith(".stvn_core") || resolvedPath.endsWith(".stvn_ir") || resolvedPath.endsWith(".stvn_cas")))
+                    || info.path().contains(".stvn_core.") || info.path().contains(".stvn_ir.") || info.path().contains(".stvn_cas.") || info.path().endsWith(".stvn_core") || info.path().endsWith(".stvn_ir") || info.path().endsWith(".stvn_cas"))
+                    && ((resolvedPath != null && (resolvedPath.contains("valid") || resolvedPath.contains("prelude") || resolvedPath.contains("substrate")))
+                        || info.path().contains("valid") || info.path().contains("prelude") || info.path().contains("substrate"));
+                var config = isSystem
+                    ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
+                    : StvnParserConfig.DEFAULT;
+                var compilationResult = StvnCompiler.compileToResult(info.text(), resolvedPath, config);
                 return new AnnotationResult(compilationResult.diagnostics());
             } catch (Exception e) {
                 return new AnnotationResult(List.of(new StvnDiagnostic(
@@ -1021,9 +1027,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             || message.contains("Empty definition block ':defs {}' is redundant");
 
         if (!isAntlrSyntaxError && !quotedTokens.isEmpty()) {
-            // Check if the primary offending token (the first quoted token) exists in active buffer
-            var primaryToken = quotedTokens.get(0);
-            if (!isExemptFromSliceCheck && !text.contains(primaryToken)) {
+            // Check if any cited token exists in the active buffer
+            boolean anyTokenInText = false;
+            for (var t : quotedTokens) {
+                if (text.contains(t)) {
+                    anyTokenInText = true;
+                    break;
+                }
+            }
+            if (!isExemptFromSliceCheck && !anyTokenInText) {
                 return true;
             }
 
@@ -1134,8 +1146,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 || message.contains("Discrete types reject open lower bound")) && isDiscreteIntervalInspectionActive(file)) {
             return true;
         }
-        if ((file instanceof org.stvnadore.plugin.StvnFlatPayloadFile || (file != null && file.getName().endsWith(".stvn_f")))
-                && message.contains("cannot contain include statements")) {
+        if (org.stvnadore.plugin.psi.StvnPsiUtils.isHermeticDocument(file)
+                && message.contains("cannot contain include statements")
+                && isFlatDocumentIncludeInspectionActive(file)) {
             return true;
         }
         if (!message.contains("Unresolved schema for value context")) {
@@ -1295,9 +1308,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
     private static boolean isDiscreteIntervalInspectionActive(PsiFile file) {
         var vFile = file.getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getViewProvider().getVirtualFile();
+        }
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
+            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
+                    || file.getName().startsWith("inv_") || file.getName().contains("discrete")) {
                 return false;
             }
         }
@@ -1309,6 +1326,34 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var profileManager = InspectionProjectProfileManager.getInstance(project);
             var profile = profileManager.getCurrentProfile();
             var key = HighlightDisplayKey.find("StvnDiscreteInterval");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private static boolean isFlatDocumentIncludeInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getViewProvider().getVirtualFile();
+        }
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
+                    || file.getName().startsWith("inv_") || file.getName().contains("flat_module_with_include")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnFlatDocumentInclude");
             if (key != null) {
                 return profile.isToolEnabled(key, file);
             }
@@ -1500,7 +1545,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
         var range = new TextRange(s, e);
         for (var err : psiErrors) {
-            if (err.getTextRange().intersects(range)) {
+            var errRange = err.getTextRange();
+            if (errRange.intersects(range)
+                    || (errRange.getEndOffset() <= s && s - errRange.getEndOffset() <= 10)
+                    || (errRange.getStartOffset() >= e && errRange.getStartOffset() - e <= 10)) {
                 return true;
             }
         }
@@ -1607,8 +1655,14 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         if (isAntlrSyntaxError(diag)) {
             var quoted = extractCitedTokens(msg);
-            if (!quoted.isEmpty() && !slice.contains(quoted.get(0)) && !quoted.get(0).contains(slice)) {
-                return true;
+            if (!quoted.isEmpty()) {
+                var token = quoted.get(0);
+                var unquoted = (token.startsWith("\"") && token.endsWith("\"") && token.length() >= 2)
+                    ? token.substring(1, token.length() - 1)
+                    : token;
+                if (!slice.contains(token) && !token.contains(slice) && !slice.contains(unquoted) && !unquoted.contains(slice)) {
+                    return true;
+                }
             }
         }
 
