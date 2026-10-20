@@ -1735,5 +1735,36 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             assertEquals("Bootstrapped document for " + ext + " must compile cleanly with 0 errors", 0, errors.size());
         }
     }
-}
 
+    /**
+     * Asserts that invoking the in-place :meta quick-fix on an incomplete clause
+     * generates a valid :meta block without duplicating the :meta keyword.
+     */
+    public void testInPlaceMetaScaffoldingDoesNotDuplicateKeyword() {
+        var initial = """
+            {
+              :meta
+              :defs
+            }
+            """;
+        myFixture.configureByText("example_i.stvn_di", initial);
+        myFixture.doHighlighting();
+
+        int metaOffset = initial.indexOf(":meta");
+        myFixture.getEditor().getCaretModel().moveToOffset(metaOffset + 2);
+
+        var actions = myFixture.filterAvailableIntentions("Insert metadata block");
+        assertFalse("Expected in-place metadata block intention action to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :meta {
+                #name "example_i"
+                #kind #DEFS_INCLUDE
+              }
+              :defs
+            }
+            """);
+    }
+}

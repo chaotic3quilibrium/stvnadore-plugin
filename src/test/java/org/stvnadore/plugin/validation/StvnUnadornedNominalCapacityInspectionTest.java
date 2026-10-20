@@ -52,10 +52,10 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
             .toList();
 
         assertEquals("Expected exactly 4 unadorned nominal warnings (String, Seq, Set, Map)", 4, warnings.size());
-        assertTrue(warnings.get(0).getDescription().contains("Nominal string type ':String'"));
-        assertTrue(warnings.get(1).getDescription().contains("Nominal collection type ':Seq'"));
-        assertTrue(warnings.get(2).getDescription().contains("Nominal collection type ':Set'"));
-        assertTrue(warnings.get(3).getDescription().contains("Nominal collection type ':Map'"));
+        assertTrue(warnings.get(0).getDescription().contains("Nominal string type ':StrAlias'"));
+        assertTrue(warnings.get(1).getDescription().contains("Nominal collection type ':SeqAlias'"));
+        assertTrue(warnings.get(2).getDescription().contains("Nominal collection type ':SetAlias'"));
+        assertTrue(warnings.get(3).getDescription().contains("Nominal collection type ':MapAlias'"));
     }
 
     public void testAllSixIntentionsAvailableOnSeq() {
@@ -382,7 +382,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
             .toList();
 
         assertEquals("Only top-level :Map should produce warning, not inner :String parameter", 1, warnings.size());
-        assertTrue(warnings.get(0).getDescription().contains("Nominal collection type ':Map'"));
+        assertTrue(warnings.get(0).getDescription().contains("Nominal collection type ':NestedMap'"));
     }
 
     public void testCompositeInspectionZeroErrorsAfterFixApplicationAcrossAllTypes() {

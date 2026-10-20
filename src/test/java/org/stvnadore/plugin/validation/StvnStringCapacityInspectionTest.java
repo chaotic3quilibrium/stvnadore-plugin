@@ -89,7 +89,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             }
             """;
         myFixture.configureByText("primary_fix.stvn_di", text);
-        int offset = text.indexOf(":String");
+        int offset = text.indexOf(":Target");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
@@ -117,7 +117,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             }
             """;
         myFixture.configureByText("secondary_fix.stvn_di", text);
-        int offset = text.indexOf(":String");
+        int offset = text.indexOf(":Target");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
@@ -145,7 +145,7 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             }
             """;
         myFixture.configureByText("error_suppress.stvn_di", text);
-        int offset = text.indexOf(":String");
+        int offset = text.indexOf(":Target");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
@@ -298,5 +298,57 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
         myFixture.getEditor().getCaretModel().moveToOffset(myFixture.getFile().getText().indexOf(":String4096"));
         var actions = myFixture.filterAvailableIntentions("Convert obsolete string syntax");
         assertTrue("Convert obsolete string quick-fix must not be offered", actions.isEmpty());
+    }
+
+    /**
+     * Asserts that referencing Standard Prelude string types via :use imports
+     * inherits canonical #maxSize constraints and produces zero capacity warnings.
+     */
+    public void testPreludeStringImportProducesZeroWarnings() {
+        myFixture.configureByText("prelude_import.stvn",
+            """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :IPv4 :IPv4 } ]
+                :A :IPv4
+              }
+            }
+            """
+        );
+        var highlights = myFixture.doHighlighting();
+        var capacityWarnings = highlights.stream()
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("unadorned") || h.getDescription().contains("exceeding configured threshold")))
+            .toList();
+        assertTrue("Imported prelude string types must produce zero capacity warnings: " + capacityWarnings, capacityWarnings.isEmpty());
+    }
+
+    /**
+     * Asserts that genuinely unadorned nominal string definitions register problems
+     * strictly on the LHS declared identifier (TypeDefTarget), citing the declared type name.
+     */
+    public void testUnadornedStringWarningAttributedToLhsTarget() {
+        myFixture.configureByText("unadorned_blame.stvn_di",
+            """
+            {
+              :defs {
+                :MyStr :String
+              }
+            }
+            """
+        );
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+            .toList();
+        assertEquals("Expected exactly one unadorned string warning", 1, warnings.size());
+        var warning = warnings.get(0);
+        assertTrue("Message must cite declared nominal type ':MyStr'",
+            warning.getDescription().contains("Nominal string type ':MyStr' is unadorned"));
+
+        int myStrOffset = myFixture.getFile().getText().indexOf(":MyStr");
+        assertEquals("Warning highlight range must pin strictly to LHS target ':MyStr'",
+            new com.intellij.openapi.util.TextRange(myStrOffset, myStrOffset + ":MyStr".length()),
+            new com.intellij.openapi.util.TextRange(warning.getStartOffset(), warning.getEndOffset()));
     }
 }

@@ -527,8 +527,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
                     // Attach interactive bootstrapping intention actions for incomplete clauses
                     if (message.contains("clause ':meta' requires a metadata block") || message.contains("':meta' requires a metadata block")) {
-                        var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
-                        annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
+                        annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
                     }
                     if (message.contains("clause ':defs' requires definition block") || message.contains("':defs' requires definition block")) {
                         annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
