@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.actions;
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
@@ -10,6 +11,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnSchemaFlattener;
 import org.stvnadore.core.validation.CyclicDependencyException;
@@ -110,5 +112,10 @@ public final class StvnFlattenWorkspaceAction extends AnAction {
         boolean visible = project != null && file != null && !file.isDirectory() &&
                 (file.getName().endsWith(".stvn") || file.getName().endsWith(".stvn_di") || file.getName().endsWith(".stvn_i"));
         e.getPresentation().setEnabledAndVisible(visible);
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+        return ActionUpdateThread.BGT;
     }
 }

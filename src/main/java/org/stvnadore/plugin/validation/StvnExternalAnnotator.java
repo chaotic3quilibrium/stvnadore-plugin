@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
+import com.intellij.codeInsight.problems.ProblemImpl;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.lang.annotation.AnnotationBuilder;
@@ -367,6 +368,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
                 var diagMsg = StvnDiagnosticFormatter.formatCore(rawMsg, errorCode);
                 var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
+                if (problem == null) {
+                    var highlightInfo = com.intellij.codeInsight.daemon.impl.HighlightInfo.newHighlightInfo(com.intellij.codeInsight.daemon.impl.HighlightInfoType.ERROR)
+                        .range(new com.intellij.openapi.util.TextRange(0, 0))
+                        .descriptionAndTooltip(diagMsg)
+                        .create();
+                    if (highlightInfo != null) {
+                        problem = new ProblemImpl(virtualFile, highlightInfo, false);
+                    }
+                }
                 if (problem != null) {
                     problems.add(problem);
                 }
@@ -374,6 +384,18 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
             if (!problems.isEmpty()) {
                 wolf.reportProblems(virtualFile, problems);
+            } else if (!activeErrorDiagnostics.isEmpty()) {
+                var firstDiag = activeErrorDiagnostics.get(0);
+                var rawMsg = sanitizeCompilerJargon(firstDiag.message());
+                var errorCode = firstDiag.errorCode().orElse("ERR_COMPILATION_ERROR");
+                var diagMsg = StvnDiagnosticFormatter.formatCore(rawMsg, errorCode);
+                var highlightInfo = com.intellij.codeInsight.daemon.impl.HighlightInfo.newHighlightInfo(com.intellij.codeInsight.daemon.impl.HighlightInfoType.ERROR)
+                    .range(new com.intellij.openapi.util.TextRange(0, 0))
+                    .descriptionAndTooltip(diagMsg)
+                    .create();
+                if (highlightInfo != null) {
+                    wolf.reportProblems(virtualFile, List.of(new ProblemImpl(virtualFile, highlightInfo, false)));
+                }
             } else {
                 wolf.clearProblems(virtualFile);
             }
@@ -413,6 +435,23 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (start >= 0 && start < textLength) {
                     end = start + 1;
                 }
+            }
+
+            boolean isLayer1Identity = (diag.errorCode().isPresent() && (
+                DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
+                || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
+                || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get())
+            )) || message.contains("Reserved system domain prohibited")
+               || message.contains("bare dotfiles are prohibited")
+               || message.contains("prohibited legacy extension");
+
+            if (file.getTextLength() == 0 || (isLayer1Identity && start == end)) {
+                holder.newAnnotation(HighlightSeverity.ERROR, message)
+                      .fileLevel()
+                      .create();
+                continue;
             }
 
             if (diag.errorCode().isPresent() && diag.errorCode().get().equals("DUPLICATE_MAP_KEY") && start >= 0 && end > start && end <= textLength) {
@@ -1143,7 +1182,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             || message.contains("violates #")
             || message.contains("violates canonical");
 
+        boolean isLayer1Identity = diag.errorCode().isPresent() && (
+            DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
+            || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
+            || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+            || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+            || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get())
+        );
+
         boolean isExemptFromSliceCheck = isConstraintViolation
+            || isLayer1Identity
+            || textLength == 0
             || (diag.errorCode().isPresent() && ("ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()) || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
             || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
             || message.contains("ERR_EMPTY_DEFS_BLOCK")

@@ -1,7 +1,10 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.daemon.impl.AnnotationHolderImpl;
+import com.intellij.codeInsight.daemon.impl.AnnotationSessionImpl;
 import com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver;
 import com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl;
+import com.intellij.lang.annotation.Annotation;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.vcs.FileStatus;
@@ -1807,6 +1810,34 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 && DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(d.errorCode().get()))
             .findFirst();
         assertTrue("Empty prelude.stvn_core.stvn_d must emit ERR_RESERVED_DOMAIN_PROHIBITED in Layer 1", e038.isPresent());
+
+        var wolf = WolfTheProblemSolver.getInstance(getProject());
+        if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+            mockWolf.setDelegate(WolfTheProblemSolverImpl.createTestInstance(getProject()));
+        }
+        try {
+            List<Annotation> annotations = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() ->
+                com.intellij.openapi.application.ReadAction.compute(() ->
+                    AnnotationSessionImpl.computeWithSession(file, false, annotator, holder -> {
+                        ((AnnotationHolderImpl) holder).applyExternalAnnotatorWithContext(file, result);
+                        return (AnnotationHolderImpl) holder;
+                    })
+                )
+            ).get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertFalse("Emitted annotations must not be empty", annotations.isEmpty());
+            var fileLevelAnnotation = annotations.stream()
+                .filter(Annotation::isFileLevelAnnotation)
+                .findFirst();
+            assertTrue("Emitted annotation on prelude.stvn_core.stvn_d must be marked isFileLevelAnnotation", fileLevelAnnotation.isPresent());
+            assertTrue("File-level annotation flag must be true", fileLevelAnnotation.get().isFileLevelAnnotation());
+            assertTrue("WolfTheProblemSolver must report prelude.stvn_core.stvn_d as problem file", wolf.isProblemFile(file.getVirtualFile()));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            if (wolf instanceof MockWolfTheProblemSolver mockWolf) {
+                mockWolf.resetDelegate();
+            }
+        }
     }
 
     /**

@@ -345,6 +345,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnBreadcrumbsTest.class")
     exclude("**/StvnFormatterTest.class")
     exclude("**/StvnDualProjectionActionsTest.class")
+    exclude("**/StvnActionThreadingTest.class")
     exclude("**/StvnRenameRefactoringTest.class")
     exclude("**/StvnNamespaceBrowserTest.class")
     exclude("**/StvnDualGrammarDifferentialTest*.class")
