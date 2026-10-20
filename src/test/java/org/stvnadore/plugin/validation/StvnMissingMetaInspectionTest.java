@@ -262,4 +262,14 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .toList();
         assertTrue("Line 1 '{' must NOT report missing :meta when :meta is written in file", missingMetaErrors.isEmpty());
     }
+
+    /**
+     * Verifies that configuring an empty (0-byte) .stvn_d file and executing inspection
+     * produces zero IntelliJ SDK assertion errors or throwables (e.g. empty PSI element descriptor crash).
+     */
+    public void testEmptyFileProducesZeroAssertionErrors() {
+        myFixture.configureByText("empty.stvn_d", "");
+        var highlights = myFixture.doHighlighting();
+        assertNotNull(highlights);
+    }
 }

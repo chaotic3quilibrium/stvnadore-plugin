@@ -13,6 +13,8 @@ import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -112,7 +114,25 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
      * @param virtualFile underlying virtual file
      * @param project active project context
      */
-    public record CollectedInfo(String text, String path, VirtualFile virtualFile, @Nullable Project project) {
+    public record CollectedInfo(
+        String text,
+        String path,
+        VirtualFile virtualFile,
+        @Nullable Project project,
+        boolean systemMode
+    ) {
+        /**
+         * Constructs a CollectedInfo instance with default systemMode of false.
+         *
+         * @param text document text content
+         * @param path physical or virtual file path
+         * @param virtualFile underlying virtual file
+         * @param project active project context
+         */
+        public CollectedInfo(String text, String path, VirtualFile virtualFile, @Nullable Project project) {
+            this(text, path, virtualFile, project, false);
+        }
+
         /**
          * Constructs a CollectedInfo instance without an explicit project context.
          *
@@ -121,7 +141,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
          * @param virtualFile underlying virtual file
          */
         public CollectedInfo(String text, String path, VirtualFile virtualFile) {
-            this(text, path, virtualFile, null);
+            this(text, path, virtualFile, null, false);
         }
     }
 
@@ -144,7 +164,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (app != null && app.isDispatchThread()) {
             FileDocumentManager.getInstance().saveAllDocuments();
         }
-        return new CollectedInfo(file.getText(), virtualFile.getPath(), virtualFile, file.getProject());
+        boolean isSystemPrelude = isGenuineSyntheticPrelude(file, virtualFile, file.getProject());
+        return new CollectedInfo(file.getText(), virtualFile.getPath(), virtualFile, file.getProject(), isSystemPrelude);
     }
 
     @Override
@@ -156,17 +177,41 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     public @Nullable AnnotationResult doAnnotate(CollectedInfo info) {
         // Concurrency Guard: Thread isolation per file path identifier
         synchronized (info.path().intern()) {
+            String fileName;
+            if (info.virtualFile() != null) {
+                fileName = info.virtualFile().getName();
+            } else {
+                int lastSlash = Math.max(info.path().lastIndexOf('/'), info.path().lastIndexOf('\\'));
+                fileName = lastSlash >= 0 ? info.path().substring(lastSlash + 1) : info.path();
+            }
+
+            // Layer 1: File Identity Ingress validation (unconditional)
+            var layer1Diag = validateLayer1Identity(fileName, info.systemMode());
+
+            // If buffer is blank (0-byte or whitespace-only)
+            if (info.text().isBlank()) {
+                if (layer1Diag != null) {
+                    return new AnnotationResult(List.of(layer1Diag));
+                }
+                // Clean canvas: Zero content diagnostics on valid empty files
+                return new AnnotationResult(List.of());
+            }
+
             var resolvedPath = StvnTypeResolver.resolvePhysicalPath(info.virtualFile(), info.project(), info.text());
             try {
-                var isSystem = ((resolvedPath != null && (resolvedPath.contains(".stvn_core.") || resolvedPath.contains(".stvn_ir.") || resolvedPath.contains(".stvn_cas.") || resolvedPath.endsWith(".stvn_core") || resolvedPath.endsWith(".stvn_ir") || resolvedPath.endsWith(".stvn_cas")))
-                    || info.path().contains(".stvn_core.") || info.path().contains(".stvn_ir.") || info.path().contains(".stvn_cas.") || info.path().endsWith(".stvn_core") || info.path().endsWith(".stvn_ir") || info.path().endsWith(".stvn_cas"))
-                    && ((resolvedPath != null && (resolvedPath.contains("valid") || resolvedPath.contains("prelude") || resolvedPath.contains("substrate")))
-                        || info.path().contains("valid") || info.path().contains("prelude") || info.path().contains("substrate"));
-                var config = isSystem
+                var config = info.systemMode()
                     ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
                     : StvnParserConfig.DEFAULT;
                 var compilationResult = StvnCompiler.compileToResult(info.text(), resolvedPath, config);
-                return new AnnotationResult(compilationResult.diagnostics());
+                var diags = new java.util.ArrayList<>(compilationResult.diagnostics());
+                if (layer1Diag != null) {
+                    boolean alreadyEmitted = diags.stream().anyMatch(d ->
+                        d.errorCode().isPresent() && d.errorCode().get().equals(layer1Diag.errorCode().orElse(null)));
+                    if (!alreadyEmitted) {
+                        diags.add(0, layer1Diag);
+                    }
+                }
+                return new AnnotationResult(diags);
             } catch (Exception e) {
                 return new AnnotationResult(List.of(new StvnDiagnostic(
                     "Internal Compilation Exception: " + e.getMessage(),
@@ -175,6 +220,88 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 )));
             }
         }
+    }
+
+    private static @Nullable StvnDiagnostic validateLayer1Identity(String fileName, boolean systemMode) {
+        if (fileName.startsWith(".")) {
+            return new StvnDiagnostic(
+                "Filename '" + fileName + "' lacks a visible non-empty stem segment before extension; bare dotfiles are prohibited",
+                DiagnosticSeverity.ERROR,
+                1, 0, 0, 0,
+                null,
+                java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+            );
+        }
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot < 0 || fileName.substring(0, lastDot).isEmpty()) {
+            return new StvnDiagnostic(
+                "Filename '" + fileName + "' lacks a visible non-empty stem segment before extension; bare dotfiles are prohibited",
+                DiagnosticSeverity.ERROR,
+                1, 0, 0, 0,
+                null,
+                java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+            );
+        }
+        String[] legacyExts = {
+            ".stvn_incl", ".stvn_inclf", ".stvn_cas", ".stvn_bin",
+            ".stvn_f", ".stvn_df", ".stvn_bf", ".stvn_bdf"
+        };
+        for (String legacyExt : legacyExts) {
+            if (fileName.endsWith(legacyExt)) {
+                int dotIdx = fileName.indexOf('.');
+                String matchedExt = dotIdx >= 0 ? fileName.substring(dotIdx) : fileName;
+                return new StvnDiagnostic(
+                    "Excised legacy file extension '" + matchedExt + "' is permanently prohibited",
+                    DiagnosticSeverity.ERROR,
+                    1, 0, 0, 0,
+                    null,
+                    java.util.Optional.of(DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED)
+                );
+            }
+        }
+        if (!systemMode) {
+            String stem = fileName.substring(0, lastDot);
+            String[] dotParts = stem.split("\\.");
+            if (dotParts.length > 1 && !dotParts[1].isEmpty()) {
+                String slot1 = dotParts[1];
+                if ("stvn_core".equals(slot1) || "stvn_ir".equals(slot1) || "stvn_cas".equals(slot1)) {
+                    return new StvnDiagnostic(
+                        "Reserved system domain prohibited: '" + slot1 + "' is reserved for internal compiler substrates and CAS envelopes",
+                        DiagnosticSeverity.ERROR,
+                        1, 0, 0, 0,
+                        null,
+                        java.util.Optional.of(DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED)
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isGenuineSyntheticPrelude(PsiFile file, VirtualFile virtualFile, @Nullable Project project) {
+        if (project != null && !project.isDisposed()) {
+            try {
+                if (ProjectFileIndex.getInstance(project).isInContent(virtualFile)) {
+                    return false;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (file.isPhysical()) {
+            return false;
+        }
+        if (virtualFile.isWritable()) {
+            return false;
+        }
+        if (virtualFile instanceof LightVirtualFile lvf) {
+            if ("stvn://prelude/org_stvnadore_prelude.stvn_d".equals(lvf.getUrl())) {
+                return true;
+            }
+        }
+        if (project != null && file == StvnPreludeBridge.getPreludeFile(project)) {
+            return true;
+        }
+        return StvnPreludeBridge.isPreludeFile(file);
     }
 
     @Override
@@ -194,7 +321,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             .toList();
 
         var textLength = file.getTextLength();
-        if (textLength == 0) {
+        if (textLength == 0 && activeErrorDiagnostics.isEmpty()) {
             if (virtualFile != null && virtualFile.isValid() && !project.isDisposed()) {
                 WolfTheProblemSolver.getInstance(project).clearProblems(virtualFile);
             }

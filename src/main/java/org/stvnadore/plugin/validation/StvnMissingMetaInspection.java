@@ -90,6 +90,9 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
             private void checkRootMeta(PsiFile file, ProblemsHolder holder) {
                 if (rootProblemRegistered) return;
+                if (file.getTextLength() == 0 || file.getText().isBlank()) {
+                    return;
+                }
                 var fileName = file.getName();
                 if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
 
@@ -110,13 +113,13 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                         );
                     }
-                    if (anchor != null) {
+                    if (anchor != null && anchor.getTextRange() != null && !anchor.getTextRange().isEmpty()) {
                         holder.registerProblem(
                             anchor,
                             message,
                             new InsertMissingMetaBlockQuickFix(expectedKind)
                         );
-                    } else {
+                    } else if (file.getTextLength() > 0) {
                         int textLen = file.getTextLength();
                         holder.registerProblem(
                             file,
@@ -145,12 +148,14 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     );
                     MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
                     PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
-                    holder.registerProblem(
-                        targetElement,
-                        message,
-                        ProblemHighlightType.GENERIC_ERROR,
-                        new InsertMissingMetaKindFacetQuickFix(expectedKind)
-                    );
+                    if (targetElement.getTextRange() != null && !targetElement.getTextRange().isEmpty()) {
+                        holder.registerProblem(
+                            targetElement,
+                            message,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                        );
+                    }
                 }
             }
 
@@ -175,12 +180,14 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     var kindValue = facet.getMetaKindValue();
                     String actual = kindValue != null ? kindValue.getText().trim() : "";
                     if (!expected.equals(actual)) {
-                        holder.registerProblem(
-                            facet,
-                            StvnDiagnosticFormatter.formatPlugin("Document kind mismatch: expected " + expected + " for file extension", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new UpdateMetaKindQuickFix(expected)
-                        );
+                        if (facet.getTextRange() != null && !facet.getTextRange().isEmpty()) {
+                            holder.registerProblem(
+                                facet,
+                                StvnDiagnosticFormatter.formatPlugin("Document kind mismatch: expected " + expected + " for file extension", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new UpdateMetaKindQuickFix(expected)
+                            );
+                        }
                     }
                 }
             }

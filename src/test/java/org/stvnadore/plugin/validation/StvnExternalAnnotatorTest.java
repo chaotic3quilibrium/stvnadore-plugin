@@ -1767,4 +1767,59 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
             """);
     }
+
+    /**
+     * Asserts that bootstrapping a compound file 'order.finance.stvn_d' from 0 bytes
+     * inserts #name "order" and #domain "finance", compiling cleanly with 0 errors.
+     */
+    public void testBootstrapDocumentIntentionOnCompoundStem() {
+        myFixture.configureByText("order.finance.stvn_d", "");
+        var intention = myFixture.findSingleIntention("Bootstrap STVN Document");
+        assertNotNull("Intention must be available on 0-byte compound file", intention);
+        myFixture.launchAction(intention);
+
+        var text = myFixture.getEditor().getDocument().getText();
+        assertTrue("Bootstrapped document must contain #name \"order\":\n" + text, text.contains("#name \"order\""));
+        assertTrue("Bootstrapped document must contain #domain \"finance\":\n" + text, text.contains("#domain \"finance\""));
+
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .toList();
+        assertEquals("Bootstrapped compound document must compile cleanly with 0 errors: " + errors, 0, errors.size());
+    }
+
+    /**
+     * Asserts that an empty (0-byte) project file named 'prelude.stvn_core.stvn_d'
+     * emits ERR_RESERVED_DOMAIN_PROHIBITED (E038) in Layer 1 identity ingress
+     * without requiring any file content.
+     */
+    public void testEmptyReservedDomainProjectFileEmitsLayer1Error() {
+        var file = myFixture.configureByText("prelude.stvn_core.stvn_d", "");
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(file);
+        assertNotNull("CollectedInfo must not be null", collected);
+        var result = annotator.doAnnotate(collected);
+        assertNotNull("AnnotationResult must not be null", result);
+        var e038 = result.diagnostics().stream()
+            .filter(d -> d.severity() == DiagnosticSeverity.ERROR
+                && d.errorCode().isPresent()
+                && DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(d.errorCode().get()))
+            .findFirst();
+        assertTrue("Empty prelude.stvn_core.stvn_d must emit ERR_RESERVED_DOMAIN_PROHIBITED in Layer 1", e038.isPresent());
+    }
+
+    /**
+     * Asserts that 'Bootstrap STVN Document' intention action is suppressed
+     * on dead-on-arrival compilation units violating Layer 1 identity invariants.
+     */
+    public void testBootstrapIntentionSuppressedOnLayer1InvalidFiles() {
+        myFixture.configureByText("prelude.stvn_core.stvn_d", "");
+        var reservedIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
+        assertTrue("Bootstrap intention must be unavailable on prelude.stvn_core.stvn_d", reservedIntention.isEmpty());
+
+        myFixture.configureByText("test.stvn_incl", "");
+        var legacyIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
+        assertTrue("Bootstrap intention must be unavailable on test.stvn_incl", legacyIntention.isEmpty());
+    }
 }

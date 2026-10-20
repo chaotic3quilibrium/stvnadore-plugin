@@ -177,6 +177,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         try (var stream = Files.walk(validDir)) {
             var stvnFiles = stream
                 .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
+                .filter(p -> {
+                    var name = p.getFileName().toString();
+                    return !name.contains(".stvn_ir.") && !name.contains(".stvn_core.") && !name.contains(".stvn_cas.");
+                })
                 .toList();
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();

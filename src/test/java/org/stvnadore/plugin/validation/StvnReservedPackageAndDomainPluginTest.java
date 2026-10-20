@@ -4,6 +4,7 @@ import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
@@ -295,5 +296,28 @@ public final class StvnReservedPackageAndDomainPluginTest extends BasePlatformTe
 
     var updated = myFixture.getEditor().getDocument().getText();
     assertTrue("Must change domain to account:\n" + updated, updated.contains("#domain \"account\""));
+  }
+
+  /**
+   * TC-PLUG-RES-10: Verifies that configuring a physical project file named 'prelude.stvn_core.stvn_d'
+   * does not bypass security gates and emits ERR_RESERVED_DOMAIN_PROHIBITED and ERR_RESERVED_PACKAGE_PROHIBITED.
+   */
+  public void testProjectPreludeFileEmitsReservedDomainAndPackageErrors() {
+    myFixture.configureByText("prelude.stvn_core.stvn_d", StvnPrelude.PRELUDE_STVN_D);
+    var highlights = myFixture.doHighlighting();
+
+    var e038 = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+            && h.getDescription() != null
+            && h.getDescription().contains(DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED))
+        .findFirst();
+    assertTrue("Must emit ERR_RESERVED_DOMAIN_PROHIBITED on 'stvn_core'", e038.isPresent());
+
+    var e037 = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+            && h.getDescription() != null
+            && h.getDescription().contains(DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED))
+        .findFirst();
+    assertTrue("Must emit ERR_RESERVED_PACKAGE_PROHIBITED on ':org/stvnadore/prelude'", e037.isPresent());
   }
 }
