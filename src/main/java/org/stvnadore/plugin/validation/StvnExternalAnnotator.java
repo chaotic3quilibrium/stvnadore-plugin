@@ -662,11 +662,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get()))
                         || message.contains("is redundant")) {
                         var targetElem = file.findElementAt(range.getStartOffset());
-                        if (targetElem != null) {
-                            var entry = PsiTreeUtil.getParentOfType(targetElem, MetadataEntry.class, false);
-                            if (entry != null) {
-                                annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
-                            }
+                        var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                        if (entry == null && range.getStartOffset() > 0) {
+                            entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(file.findElementAt(range.getStartOffset() + 1));
+                        }
+                        if (entry != null) {
+                            annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
                         }
                     }
 

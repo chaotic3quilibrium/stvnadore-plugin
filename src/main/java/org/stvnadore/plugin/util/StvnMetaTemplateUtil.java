@@ -9,9 +9,11 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.StvnTypes;
 
 /**
@@ -89,27 +91,32 @@ public final class StvnMetaTemplateUtil {
    * @return true if :meta header is present in file, false otherwise
    */
   public static boolean hasMetaHeader(@NotNull PsiFile file) {
-    var node = file.getNode();
-    if (node != null && node.findChildByType(StvnTypes.KW_META) != null) {
+    // Primary check: Grammar-Kit parsed root MetaEntry node
+    if (PsiTreeUtil.findChildOfType(file, MetaEntry.class) != null) {
       return true;
     }
-    CharSequence text = file.getViewProvider().getContents();
-    String str = text.toString();
-    int metaIdx = str.indexOf(":meta");
-    while (metaIdx != -1) {
-      int lineStart = str.lastIndexOf('\n', metaIdx);
-      lineStart = lineStart == -1 ? 0 : lineStart + 1;
-      String linePrefix = str.substring(lineStart, metaIdx).trim();
-      if (!linePrefix.startsWith("//")) {
-        int openBraceIdx = str.indexOf('{', metaIdx);
-        if (openBraceIdx != -1) {
-          String inBetween = str.substring(metaIdx + 5, openBraceIdx).trim();
-          if (inBetween.isEmpty() || inBetween.startsWith("//") || inBetween.startsWith("/*")) {
-            return true;
-          }
-        }
+    // Fallback for broken AST during in-flight editing:
+    // Under SPEC § 1.1 Root Enclosure Rule, :meta strictly precedes :defs, :type, and :body.
+    // Verify whether the first non-trivia token immediately following the root opening brace '{' is ':meta'.
+    PsiElement rootBrace = findRootOpeningBrace(file);
+    if (rootBrace == null) {
+      return false;
+    }
+    PsiElement next = rootBrace.getNextSibling();
+    while (next != null && (next instanceof PsiWhiteSpace || next instanceof PsiComment)) {
+      next = next.getNextSibling();
+    }
+    if (next != null) {
+      if (next.getNode() != null && next.getNode().getElementType() == StvnTypes.KW_META) {
+        return true;
       }
-      metaIdx = str.indexOf(":meta", metaIdx + 5);
+      if (next instanceof MetaEntry) {
+        return true;
+      }
+      String text = next.getText().trim();
+      if (text.startsWith(":meta") && (text.length() == 5 || Character.isWhitespace(text.charAt(5)) || text.charAt(5) == '{')) {
+        return true;
+      }
     }
     return false;
   }

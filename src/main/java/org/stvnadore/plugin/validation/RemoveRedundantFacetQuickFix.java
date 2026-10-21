@@ -64,7 +64,10 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       @NotNull PsiElement startElement,
       @NotNull PsiElement endElement
   ) {
-    return startElement.isValid();
+    if (!startElement.isValid()) {
+      return false;
+    }
+    return resolveMetadataEntry(startElement) != null;
   }
 
   @Override
@@ -78,15 +81,34 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     executeRemoval(startElement);
   }
 
-  private static void executeRemoval(@Nullable PsiElement element) {
+  /**
+   * Resolves the target MetadataEntry from a given PSI element or interior leaf token.
+   * Supports caret independence across keyword tokens, literal values, and boundary tokens.
+   *
+   * @param element terminal leaf or composite element
+   * @return enclosing MetadataEntry or null if outside metadata block
+   */
+  public static @Nullable MetadataEntry resolveMetadataEntry(@Nullable PsiElement element) {
     if (element == null || !element.isValid()) {
-      return;
+      return null;
     }
+    if (element instanceof MetadataEntry entry) {
+      return entry;
+    }
+    MetadataEntry parent = PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false);
+    if (parent != null) {
+      return parent;
+    }
+    // Boundary fallback: if element is RBRACE '}' or trailing whitespace inside MetadataMap, check prevSibling
+    PsiElement prev = element.getPrevSibling();
+    if (prev instanceof MetadataEntry prevEntry) {
+      return prevEntry;
+    }
+    return null;
+  }
 
-    MetadataEntry entry = element instanceof MetadataEntry
-        ? (MetadataEntry) element
-        : PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false);
-
+  private static void executeRemoval(@Nullable PsiElement element) {
+    MetadataEntry entry = resolveMetadataEntry(element);
     if (entry == null || !entry.isValid()) {
       return;
     }
@@ -95,7 +117,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     if (map != null && map.isValid()) {
       var entries = map.getMetadataEntryList();
       if (entries.size() <= 1) {
-        // Excising the entire MetadataMap avoids creating an invalid empty block '{}' (E003)
+        // Excising the entire MetadataMap avoids creating an invalid empty block '{}' (SPEC § 3.5.1, E003)
         var prev = map.getPrevSibling();
         var next = map.getNextSibling();
         if (prev instanceof PsiWhiteSpace) {
@@ -109,7 +131,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     }
 
     // Multiple entries remain in the metadata block: excise only this entry.
-    // Clean up adjacent whitespace to prevent orphaned double spaces.
+    // Normalize surrounding whitespace so { #unsigned #size 32 } cleanly becomes { #unsigned }
     var prev = entry.getPrevSibling();
     var next = entry.getNextSibling();
     if (prev instanceof PsiWhiteSpace && prev.getPrevSibling() instanceof MetadataEntry) {
@@ -118,6 +140,8 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       next.delete();
     } else if (prev instanceof PsiWhiteSpace) {
       prev.delete();
+    } else if (next instanceof PsiWhiteSpace) {
+      next.delete();
     }
 
     entry.delete();

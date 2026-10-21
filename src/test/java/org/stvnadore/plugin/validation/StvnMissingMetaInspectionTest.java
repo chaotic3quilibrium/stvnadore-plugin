@@ -170,6 +170,31 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
     }
 
     /**
+     * Asserts that primitives.stvn_d lacking :meta flags the missing :meta block on root '{'
+     * even when the file contains references to :org/stvnadore/prelude/meta/* packages.
+     */
+    public void testMissingMetaOnDefinitionsSchemaWithPreludeMetaReference() {
+        var content = """
+            {
+              // primitives.stvn_d
+              :defs {
+                :package :com/nyse/primitives {
+                  :ExecutionPrice :org/stvnadore/prelude/meta/Currency
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("primitives.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Definitions schema requires root :meta block"))
+            .toList();
+        assertFalse("Expected missing :meta error on line 1 '{' despite prelude meta reference", errors.isEmpty());
+        assertEquals("{", errors.get(0).getText());
+    }
+
+    /**
      * Verifies that omitting a root :meta block in a modular definitions schema (.stvn_di) highlights root '{'.
      */
     public void testMissingMetaOnModularDefsIncludeHighlightsRootBrace() {

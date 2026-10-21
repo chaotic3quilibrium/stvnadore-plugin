@@ -1581,6 +1581,47 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     }
 
     /**
+     * Asserts that line 12 of primitives.stvn_d offers 'Remove redundant facet' on :ShareQuantity
+     * inside a scoped package enclosure and cleanly removes '#size 32' without AST deletion errors.
+     */
+    public void testRemoveRedundantFacetOnShareQuantityInPackage() {
+        var text = """
+            {
+              :meta {
+                #name "primitives"
+                #kind #DEFS
+              }
+              :defs {
+                :package :com/nyse/primitives {
+                  :OrderId        {#unsigned #size 64} :Int
+                  :SequenceNumber {#unsigned #size 49} :Int
+                  :ShareQuantity  {#unsigned #size 32} :Int
+                }
+              }
+            }
+            """;
+        myFixture.configureByText("primitives.stvn_d", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
+            .toList();
+        assertFalse("Expected fatal error E036 on #size 32", errors.isEmpty());
+
+        int offset = text.indexOf("#size 32");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+        assertFalse("Expected 'Remove redundant facet' quick-fix to be available on #size 32", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        assertTrue("Result must cleanly retain #unsigned and excise #size 32:\n" + result,
+            result.contains(":ShareQuantity  {#unsigned } :Int")
+            || result.contains(":ShareQuantity  {#unsigned} :Int")
+            || result.contains(":ShareQuantity  { #unsigned } :Int"));
+        assertFalse("Result must not contain #size 32", result.contains("#size 32"));
+    }
+
+    /**
      * Asserts that example_d.stvn infers 0 for :Int body payload.
      */
     public void testExampleDInferredBodyValue() {
