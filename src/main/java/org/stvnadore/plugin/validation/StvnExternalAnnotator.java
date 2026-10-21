@@ -41,6 +41,9 @@ import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.*;
@@ -448,9 +451,27 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                || message.contains("prohibited legacy extension");
 
             if (file.getTextLength() == 0 || (isLayer1Identity && start == end)) {
-                holder.newAnnotation(HighlightSeverity.ERROR, message)
-                      .fileLevel()
-                      .create();
+                var builder = holder.newAnnotation(HighlightSeverity.ERROR, message)
+                      .fileLevel();
+                boolean isReservedDomain = (diag.errorCode().isPresent() && (
+                    DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                    || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                )) || message.contains("Reserved system domain");
+
+                if (isReservedDomain) {
+                    var omitFix = StvnOmitDomainQuickFix.create(file);
+                    if (omitFix != null) {
+                        builder = builder.withFix(omitFix);
+                    }
+                    var renameFix = StvnRenameDomainQuickFix.create(file);
+                    if (renameFix != null) {
+                        builder = builder.withFix(renameFix);
+                    }
+                    builder = builder.withFix(new StvnInteractiveRenameQuickFix());
+                } else if (isLayer1Identity) {
+                    builder = builder.withFix(new StvnInteractiveRenameQuickFix());
+                }
+                builder.create();
                 continue;
             }
 
@@ -659,12 +680,23 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     }
 
                     // Intercept ERR_RESERVED_DOMAIN_PROHIBITED (E038) and attach ChangeReservedDomainQuickFix
-                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get()))
-                        || message.contains("Reserved system domain")) {
+                    if ((diag.errorCode().isPresent() && (
+                        DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                        || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
+                    )) || message.contains("Reserved system domain")) {
                         var targetElem = file.findElementAt(range.getStartOffset());
                         if (targetElem != null) {
                             annotationBuilder = annotationBuilder.withFix(new StvnChangeReservedDomainQuickFix(targetElem));
                         }
+                        var omitFix = StvnOmitDomainQuickFix.create(file);
+                        if (omitFix != null) {
+                            annotationBuilder = annotationBuilder.withFix(omitFix);
+                        }
+                        var renameFix = StvnRenameDomainQuickFix.create(file);
+                        if (renameFix != null) {
+                            annotationBuilder = annotationBuilder.withFix(renameFix);
+                        }
+                        annotationBuilder = annotationBuilder.withFix(new StvnInteractiveRenameQuickFix());
                     }
 
                     // Attach stem mismatch quick-fixes for WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
