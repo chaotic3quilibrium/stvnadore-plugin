@@ -39,6 +39,7 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
+import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
@@ -577,6 +578,39 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (isKindMismatch && s == 0) {
                         var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
                         annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
+                    }
+
+                    // Attach RemoveIllegalStructuralSectionQuickFix when definitions schema contains illegal :type or :body
+                    if (isKindMismatch && (rawMessage.contains("cannot declare ':type'") || rawMessage.contains("cannot declare ':body'") || rawMessage.contains("Structural violation:"))) {
+                        if (rawMessage.contains("cannot declare ':type'")) {
+                            var typeEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeEntry.class);
+                            if (typeEntry == null) {
+                                var elem = file.findElementAt(s);
+                                if (elem != null) {
+                                    typeEntry = PsiTreeUtil.getParentOfType(elem, TypeEntry.class, false);
+                                }
+                            }
+                            if (typeEntry == null) {
+                                typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
+                            }
+                            if (typeEntry != null) {
+                                annotationBuilder = annotationBuilder.withFix(new RemoveIllegalStructuralSectionQuickFix(typeEntry, ":type"));
+                            }
+                        } else if (rawMessage.contains("cannot declare ':body'")) {
+                            var bodyEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, BodyEntry.class);
+                            if (bodyEntry == null) {
+                                var elem = file.findElementAt(s);
+                                if (elem != null) {
+                                    bodyEntry = PsiTreeUtil.getParentOfType(elem, BodyEntry.class, false);
+                                }
+                            }
+                            if (bodyEntry == null) {
+                                bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+                            }
+                            if (bodyEntry != null) {
+                                annotationBuilder = annotationBuilder.withFix(new RemoveIllegalStructuralSectionQuickFix(bodyEntry, ":body"));
+                            }
+                        }
                     }
 
                     if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
@@ -1168,9 +1202,14 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         // 1a. Missing Meta & Document Kind Mismatch Exemption & Deduplication:
         // When StvnMissingMetaInspection is active, suppress external annotator duplicate
         // to ensure the developer sees exactly ONE diagnostic and ONE quick-fix on line 1 '{'.
-        boolean isKindMismatchOrMissingMeta = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
+        boolean isStructuralSectionViolation = message.contains("cannot declare ':type'")
+            || message.contains("cannot declare ':body'")
+            || message.contains("Structural violation:");
+        boolean isKindMismatchOrMissingMeta = !isStructuralSectionViolation && (
+            (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
             || message.contains("Mandatory :meta block missing")
-            || message.contains("ERR_DOCUMENT_KIND_MISMATCH");
+            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
+        );
         if (isKindMismatchOrMissingMeta) {
             if (isMissingMetaInspectionActive(file)) {
                 return true;

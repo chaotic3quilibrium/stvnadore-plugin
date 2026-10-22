@@ -106,7 +106,7 @@
 
 // --- ROOT-LEVEL ENTRY POINTS ---
 stvn_file ::= LBRACE document_body RBRACE <<eof>> {pin=1}
-private document_body ::= meta_entry? defs_entry? (type_entry body_entry)? { recoverWhile = document_recover }
+private document_body ::= meta_entry? defs_entry? type_entry? body_entry? { recoverWhile = document_recover }
 
 private document_recover  ::= !(RBRACE)
 

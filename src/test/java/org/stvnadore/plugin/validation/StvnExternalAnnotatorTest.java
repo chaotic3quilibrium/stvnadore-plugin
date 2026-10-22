@@ -265,7 +265,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               }
             }
             """;
-        myFixture.configureByText("local_active.stvn", activeContent);
+        myFixture.configureByText("local_active.stvn_i", activeContent);
         var highlights = myFixture.doHighlighting();
 
         // 1. Assert :Uint64 receives error highlight
@@ -1893,5 +1893,112 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         myFixture.configureByText("test.stvn_incl", "");
         var legacyIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
         assertTrue("Bootstrap intention must be unavailable on test.stvn_incl", legacyIntention.isEmpty());
+    }
+
+    /**
+     * Verifies that a definitions schema (.stvn_d) declaring prohibited :type and :body
+     * sections renders two distinct ERROR annotations on :type and :body tokens.
+     */
+    public void testDefinitionsSchemaWithIllegalTypeAndBodyRendersTwoErrors() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var content = """
+            {
+              :meta {
+                #name "defs_with_type_and_body"
+                #kind #DEFS
+              }
+              :defs {
+                :Port :Int
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("defs_with_type_and_body.stvn_d", content);
+        var highlights = myFixture.doHighlighting();
+
+        var typeErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("cannot declare ':type'"))
+            .toList();
+        assertEquals("Expected exactly one error on illegal :type section", 1, typeErrors.size());
+        int expectedTypeStart = content.indexOf(":type :Port");
+        assertEquals(expectedTypeStart, typeErrors.get(0).getStartOffset());
+
+        var bodyErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("cannot declare ':body'"))
+            .toList();
+        assertEquals("Expected exactly one error on illegal :body section", 1, bodyErrors.size());
+        int expectedBodyStart = content.indexOf(":body 8080");
+        assertEquals(expectedBodyStart, bodyErrors.get(0).getStartOffset());
+    }
+
+    /**
+     * Verifies that invoking RemoveIllegalStructuralSectionQuickFix on :type cleanly excises
+     * the prohibited :type section and normalizes whitespace without breaking document syntax.
+     */
+    public void testRemoveIllegalTypeSectionQuickFixCleanlyExcisesType() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var content = """
+            {
+              :meta {
+                #name "defs_with_type"
+                #kind #DEFS
+              }
+              :defs {
+                :Port :Int
+              }
+              :type :Port
+            }
+            """;
+        myFixture.configureByText("defs_with_type.stvn_d", content);
+        myFixture.doHighlighting();
+
+        int typeOffset = content.indexOf(":type");
+        myFixture.getEditor().getCaretModel().moveToOffset(typeOffset);
+
+        var actions = myFixture.filterAvailableIntentions("Remove illegal section ':type'");
+        assertEquals("Expected quick-fix action to be available on :type", 1, actions.size());
+        myFixture.launchAction(actions.get(0));
+
+        var updatedText = myFixture.getFile().getText();
+        assertFalse("Document must no longer contain ':type'", updatedText.contains(":type"));
+        assertFalse("Document must no longer contain ':Port' outside :defs", updatedText.contains(":type :Port"));
+        assertTrue("Document must retain valid :defs block", updatedText.contains(":Port :Int"));
+    }
+
+    /**
+     * Verifies that invoking RemoveIllegalStructuralSectionQuickFix on :body cleanly excises
+     * the prohibited :body section and normalizes whitespace.
+     */
+    public void testRemoveIllegalBodySectionQuickFixCleanlyExcisesBody() {
+        myFixture.enableInspections(new StvnMissingMetaInspection());
+        var content = """
+            {
+              :meta {
+                #name "defs_with_body"
+                #kind #DEFS
+              }
+              :defs {
+                :Port :Int
+              }
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("defs_with_body.stvn_d", content);
+        myFixture.doHighlighting();
+
+        int bodyOffset = content.indexOf(":body");
+        myFixture.getEditor().getCaretModel().moveToOffset(bodyOffset);
+
+        var actions = myFixture.filterAvailableIntentions("Remove illegal section ':body'");
+        assertEquals("Expected quick-fix action to be available on :body", 1, actions.size());
+        myFixture.launchAction(actions.get(0));
+
+        var updatedText = myFixture.getFile().getText();
+        assertFalse("Document must no longer contain ':body'", updatedText.contains(":body"));
+        assertFalse("Document must no longer contain '8080'", updatedText.contains("8080"));
+        assertTrue("Document must retain valid :defs block", updatedText.contains(":Port :Int"));
     }
 }
