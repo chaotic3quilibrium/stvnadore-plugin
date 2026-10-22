@@ -7,16 +7,16 @@ import org.jspecify.annotations.NullMarked;
 /**
  * Platform test suite validating diagnostic recognition, external annotator pinning,
  * automated quick-fix remediation, inspection harmonization, and code completion filtering
- * for redundant metadata facets under STVN 2.0.0 Core Rule E036 (ERR_REDUNDANT_METADATA_FACET).
+ * for redundant metadata facets under STVN 2.0.0 Core Rule W003 (WARN_REDUNDANT_METADATA_FACET).
  */
 @NullMarked
 public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase {
 
   /**
-   * Asserts that declaring #minIncl 0 on an unsigned integer triggers a fatal compilation error (E036)
+   * Asserts that declaring #minIncl 0 on an unsigned integer triggers a non-blocking warning (W003)
    * and offers the automated RemoveRedundantFacetQuickFix.
    */
-  public void testUnsignedIntMinInclZeroTriggersFatalErrorAndOffersFix() {
+  public void testUnsignedIntMinInclZeroTriggersWarningAndOffersFix() {
     var text = """
         {
           :defs {
@@ -28,13 +28,13 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("unsigned_min_incl_zero.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
         .toList();
-    assertFalse("Expected fatal error for redundant #minIncl 0 on unsigned :Int", errors.isEmpty());
-    assertTrue("Error description must mention '#minIncl 0'",
-        errors.get(0).getDescription().contains("#minIncl 0"));
+    assertFalse("Expected warning for redundant #minIncl 0 on unsigned :Int", warnings.isEmpty());
+    assertTrue("Warning description must mention '#minIncl 0'",
+        warnings.get(0).getDescription().contains("#minIncl 0"));
 
     int offset = text.indexOf("#minIncl 0");
     myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -116,11 +116,11 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("transitive_unsigned_fix.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
         .toList();
-    assertFalse("Expected fatal error on child #minIncl 0", errors.isEmpty());
+    assertFalse("Expected warning on child #minIncl 0", warnings.isEmpty());
 
     int offset = text.indexOf("#minIncl 0");
     myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -138,7 +138,7 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
    * Asserts that declaring redundant default trait #equatable #TRUE on scalar primitive :Int
    * triggers a fatal error, and applying the quick-fix excises the facet cleanly.
    */
-  public void testPrimitiveEquatableTrueTriggersFatalError() {
+  public void testPrimitiveEquatableTrueTriggersWarning() {
     var text = """
         {
           :defs {
@@ -150,11 +150,11 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("primitive_equatable_true.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
         .toList();
-    assertFalse("Expected fatal error for redundant #equatable #TRUE on scalar primitive :Int", errors.isEmpty());
+    assertFalse("Expected warning for redundant #equatable #TRUE on scalar primitive :Int", warnings.isEmpty());
 
     int offset = text.indexOf("#equatable #TRUE");
     myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -284,9 +284,9 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
 
   /**
    * Asserts that StvnRedundantFacetOverrideInspection suppresses warning annotations on tokens
-   * governed by Core Rule E036, yielding exclusively to StvnExternalAnnotator fatal error squiggles.
+   * governed by Core Rule W003, yielding exclusively to StvnExternalAnnotator warning squiggles.
    */
-  public void testHarmonizationSuppressesInspectionWarningOnE036FatalError() {
+  public void testHarmonizationSuppressesInspectionWarningOnW003Warning() {
     var text = """
         {
           :defs {
@@ -300,24 +300,24 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     myFixture.configureByText("harmonization_string_min_size.stvn", text);
     var highlights = myFixture.doHighlighting();
 
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var annotatorWarnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
         .toList();
-    assertEquals("Must report exactly 1 fatal error annotation from StvnExternalAnnotator", 1, errors.size());
+    assertEquals("Must report exactly 1 warning annotation from StvnExternalAnnotator", 1, annotatorWarnings.size());
 
-    var warnings = highlights.stream()
+    var inspectionWarnings = highlights.stream()
         .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
         .toList();
-    assertTrue("Inspection warning must be suppressed on Core Rule E036 fatal error site", warnings.isEmpty());
+    assertTrue("Inspection warning must be suppressed on Core Rule W003 warning site", inspectionWarnings.isEmpty());
   }
 
   /**
-   * Asserts that declaring #size 32 on signed :Int triggers a fatal compilation error (E036)
+   * Asserts that declaring #size 32 on signed :Int triggers a non-blocking warning (W003)
    * pinned to '#size 32' and offers RemoveRedundantFacetQuickFix.
    */
-  public void testSignedIntSizeThirtyTwoTriggersFatalError() {
+  public void testSignedIntSizeThirtyTwoTriggersWarning() {
     var text = """
         {
           :defs {
@@ -329,13 +329,13 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("signed_int_size_32.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
         .toList();
-    assertFalse("Expected fatal error for redundant #size 32 on signed :Int", errors.isEmpty());
+    assertFalse("Expected warning for redundant #size 32 on signed :Int", warnings.isEmpty());
 
-    var h = errors.get(0);
+    var h = warnings.get(0);
     int expectedStart = text.indexOf("#size 32");
     int expectedEnd = expectedStart + "#size 32".length();
     assertEquals("Start offset must pin strictly to '#size 32'", expectedStart, h.getStartOffset());
@@ -347,10 +347,10 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
-   * Asserts that declaring #size 64 on continuous :Float triggers a fatal compilation error (E036)
+   * Asserts that declaring #size 64 on continuous :Float triggers a non-blocking warning (W003)
    * pinned to '#size 64' and offers RemoveRedundantFacetQuickFix.
    */
-  public void testContinuousFloatSizeSixtyFourTriggersFatalError() {
+  public void testContinuousFloatSizeSixtyFourTriggersWarning() {
     var text = """
         {
           :defs {
@@ -362,13 +362,13 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("continuous_float_size_64.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 64' is redundant"))
         .toList();
-    assertFalse("Expected fatal error for redundant #size 64 on continuous :Float", errors.isEmpty());
+    assertFalse("Expected warning for redundant #size 64 on continuous :Float", warnings.isEmpty());
 
-    var h = errors.get(0);
+    var h = warnings.get(0);
     int expectedStart = text.indexOf("#size 64");
     int expectedEnd = expectedStart + "#size 64".length();
     assertEquals("Start offset must pin strictly to '#size 64'", expectedStart, h.getStartOffset());
@@ -492,7 +492,7 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
-   * Asserts that completion in ':defs { :MyUInt { #unsigned <caret> } :Int }' suppresses redundant #size 32 under Rule E036.
+   * Asserts that completion in ':defs { :MyUInt { #unsigned <caret> } :Int }' suppresses redundant #size 32 under Rule W003.
    */
   public void testCompletionUnsignedIntSuppressesSize32AndProposesNonDefaultSizes() {
     var text = """
@@ -508,7 +508,7 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     myFixture.completeBasic();
     var lookupStrings = myFixture.getLookupElementStrings();
     assertNotNull("Lookup strings must not be null", lookupStrings);
-    assertFalse("Must suppress redundant '#size 32' on unsigned :Int under Rule E036", lookupStrings.contains("#size 32"));
+    assertFalse("Must suppress redundant '#size 32' on unsigned :Int under Rule W003", lookupStrings.contains("#size 32"));
     assertTrue("Must propose non-default width '#size 64' on unsigned :Int", lookupStrings.contains("#size 64"));
     assertTrue("Must propose non-default width '#size 16' on unsigned :Int", lookupStrings.contains("#size 16"));
     assertTrue("Must propose non-default width '#size 8' on unsigned :Int", lookupStrings.contains("#size 8"));
@@ -516,10 +516,10 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
-   * Asserts that declaring #size 32 on { #unsigned } :Int triggers fatal compilation error E036
+   * Asserts that declaring #size 32 on { #unsigned } :Int triggers warning W003
    * and suppresses duplicate local inspection warnings.
    */
-  public void testUnsignedIntSize32TriggersFatalErrorE036WithoutDuplicateWarning() {
+  public void testUnsignedIntSize32TriggersWarningW003WithoutDuplicateWarning() {
     var text = """
         {
           :defs {
@@ -532,23 +532,23 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
     myFixture.configureByText("unsigned_size_32_tautology.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
-        .toList();
-    assertFalse("Expected fatal error E036 for redundant #size 32 on unsigned integer", errors.isEmpty());
-
     var warnings = highlights.stream()
         .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
         .toList();
-    assertTrue("Redundant facet inspection warning must be suppressed by E036 gate: " + warnings, warnings.isEmpty());
+    assertFalse("Expected warning W003 for redundant #size 32 on unsigned integer", warnings.isEmpty());
+
+    var allWarnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .toList();
+    assertEquals("Redundant facet inspection warning must be suppressed by W003 gate, leaving exactly 1 warning squiggle: " + allWarnings, 1, allWarnings.size());
   }
 
   /**
-   * Asserts that declaring #maxSize 16777216 on { #exact } :Float triggers a fatal compilation error (E036)
+   * Asserts that declaring #maxSize 16777216 on { #exact } :Float triggers a non-blocking warning (W003)
    * pinned strictly to '#maxSize 16777216' and offers RemoveRedundantFacetQuickFix.
    */
-  public void testExactFloatMaxSizeSixteenMillionTriggersFatalError() {
+  public void testExactFloatMaxSizeSixteenMillionTriggersWarning() {
     var text = """
         {
           :defs {
@@ -560,13 +560,13 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         """;
     myFixture.configureByText("exact_float_max_size_16m.stvn", text);
     var highlights = myFixture.doHighlighting();
-    var errors = highlights.stream()
-        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
         .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#maxSize 16777216' is redundant"))
         .toList();
-    assertFalse("Expected fatal error for redundant #maxSize 16777216 on { #exact } :Float", errors.isEmpty());
+    assertFalse("Expected warning for redundant #maxSize 16777216 on { #exact } :Float", warnings.isEmpty());
 
-    var h = errors.get(0);
+    var h = warnings.get(0);
     int expectedStart = text.indexOf("#maxSize 16777216");
     int expectedEnd = expectedStart + "#maxSize 16777216".length();
     assertEquals("Start offset must pin strictly to '#maxSize 16777216'", expectedStart, h.getStartOffset());
@@ -702,5 +702,139 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     assertTrue("Must propose '#exact' on continuous :Float", lookupStrings.contains("#exact"));
     assertTrue("Must propose '#size 32' on continuous :Float", lookupStrings.contains("#size 32"));
     assertFalse("Must suppress redundant '#size 64' on continuous :Float", lookupStrings.contains("#size 64"));
+  }
+
+  /**
+   * Asserts that declaring natural exclusive bound #maxExcl 64 on #size 6 unsigned integer
+   * triggers non-blocking warning W003, and executing quick-fix removes it cleanly.
+   */
+  public void testUnsignedIntNaturalCeilingTriggersWarningW003() {
+    var text = """
+        {
+          :defs {
+            :SquareIndex { #unsigned #size 6 #maxExcl 64 } :Int
+          }
+          :type :SquareIndex
+          :body 42
+        }
+        """;
+    myFixture.configureByText("unsigned_natural_ceiling.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("#maxExcl 64"))
+        .toList();
+    assertFalse("Expected W003 warning for redundant #maxExcl 64 on unsigned :Int with #size 6", warnings.isEmpty());
+
+    int offset = text.indexOf("#maxExcl 64");
+    myFixture.getEditor().getCaretModel().moveToOffset(offset);
+    var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
+    assertFalse("Expected quick-fix for #maxExcl 64", actions.isEmpty());
+    myFixture.launchAction(actions.get(0));
+
+    var result = myFixture.getFile().getText();
+    assertTrue("Applying quick-fix must leave clean '{ #unsigned #size 6 } :Int':\n" + result,
+        result.contains(":SquareIndex { #unsigned #size 6 } :Int"));
+    assertFalse("Result must not contain #maxExcl 64", result.contains("#maxExcl 64"));
+  }
+
+  /**
+   * Asserts that declaring signed integer natural bounds triggers warning W003.
+   */
+  public void testSignedIntNaturalBoundsTriggersWarningW003() {
+    var text = """
+        {
+          :defs {
+            :NaturalInt { #size 32 #minIncl -2147483648 #maxExcl 2147483648 } :Int
+          }
+          :type :NaturalInt
+          :body 0
+        }
+        """;
+    myFixture.configureByText("signed_natural_bounds.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
+        .toList();
+    assertEquals("Expected 3 warnings for redundant size and signed natural bounds", 3, warnings.size());
+    assertTrue("Warning must cover #minIncl natural bound", warnings.stream().anyMatch(w -> w.getText().contains("-2147483648")));
+    assertTrue("Warning must cover #maxExcl natural bound", warnings.stream().anyMatch(w -> w.getText().contains("2147483648")));
+  }
+
+  /**
+   * Asserts that StvnRedundantFacetOverrideInspection suppresses duplicate warning on natural bound.
+   */
+  public void testHarmonizationSuppressesDuplicateOnNaturalBound() {
+    var text = """
+        {
+          :defs {
+            :SquareIndex { #unsigned #size 6 #maxExcl 64 } :Int
+          }
+          :type :SquareIndex
+          :body 42
+        }
+        """;
+    myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
+    myFixture.configureByText("harmonization_natural_bound.stvn", text);
+    var highlights = myFixture.doHighlighting();
+    var maxExclWarnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .filter(h -> h.getText().contains("#maxExcl 64") || (h.getDescription() != null && h.getDescription().contains("#maxExcl 64")))
+        .toList();
+    assertEquals("Expected exactly 1 warning highlight over #maxExcl 64 (suppressing duplicate local inspection)", 1, maxExclWarnings.size());
+  }
+
+  /**
+   * Asserts that hover documentation on redundant facet renders the W003 warning card.
+   */
+  public void testHoverDocOnRedundantFacetRendersWarningCard() {
+    var text = """
+        {
+          :defs {
+            :SquareIndex { #unsigned #size 6 #maxExcl 64 } :Int
+          }
+          :type :SquareIndex
+          :body 42
+        }
+        """;
+    var file = myFixture.configureByText("hover_redundant_facet.stvn", text);
+    int offset = text.indexOf("#maxExcl 64");
+    var element = file.findElementAt(offset);
+    assertNotNull(element);
+
+    var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+    var customDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), file, element, offset);
+    assertNotNull("Expected custom documentation element for metadata entry", customDocElem);
+
+    var doc = provider.generateDoc(customDocElem, element);
+    assertNotNull("Expected hover doc for redundant facet", doc);
+    assertTrue("Doc must mention 'Warning W003'", doc.contains("Warning W003"));
+    assertTrue("Doc must state why facet is redundant", doc.contains("already bounds the maximum exclusive bound"));
+    assertTrue("Doc must present canonical form", doc.contains(":SquareIndex { #unsigned #size 6 } :Int"));
+  }
+
+  /**
+   * Asserts that bare sigil tokens (#, :, /) in metadata blocks do not trigger hover cards.
+   */
+  public void testIncompleteSigilsDoNotTriggerHoverCard() {
+    var text = """
+        {
+          :defs {
+            :MyType { # } :Int
+          }
+          :type :MyType
+          :body 0
+        }
+        """;
+    var file = myFixture.configureByText("bare_sigil_hover.stvn", text);
+    int offset = text.indexOf("#");
+    var element = file.findElementAt(offset);
+    assertNotNull(element);
+
+    var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+    var customDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), file, element, offset);
+    var doc = customDocElem != null ? provider.generateDoc(customDocElem, element) : null;
+    assertNull("Hover doc on bare sigil must be null", doc);
   }
 }

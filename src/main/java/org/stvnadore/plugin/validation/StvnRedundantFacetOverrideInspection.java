@@ -78,11 +78,11 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints,
             ProblemsHolder holder
     ) {
-        // Core Rule E036 & Non-Overridable Harmonization Gate:
+        // Core Rule W003 & Non-Overridable Harmonization Gate:
         // Suppress inspection warnings on floor tautologies, primitive trait re-assertions,
-        // and non-overridable re-specifications that are already enforced as fatal compilation errors
+        // and natural bounds that are already enforced as non-blocking compilation warnings
         // by StvnExternalAnnotator.
-        if (isGovernedByCoreRuleE036(entry, metaMap, rs)) {
+        if (isGovernedByCoreRuleW003(entry, metaMap, rs)) {
             return;
         }
 
@@ -475,7 +475,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(curr.node());
     }
 
-    private static boolean isGovernedByCoreRuleE036(
+    private static boolean isGovernedByCoreRuleW003(
             MetadataEntry entry,
             MetadataMap metaMap,
             org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs
@@ -483,7 +483,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         var text = entry.getText().trim();
         var ultimateBase = getUltimateBaseType(rs);
 
-        // 1. #minSize 0 on string or collection is fatal error E036 in core
+        // 1. #minSize 0 on string or collection is warning W003 in core
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
             var valOpt = extractNumericValue(text);
             if (valOpt.isPresent() && valOpt.getAsInt() == 0) {
@@ -494,16 +494,37 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
-        // 2. #minIncl 0 on unsigned integer domain is fatal error E036 in core
+        // 2. Natural integer boundary tautologies (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
-            var valOpt = extractNumericValue(text);
-            if (valOpt.isPresent() && valOpt.getAsInt() == 0) {
+            var biOpt = extractBigInteger(text);
+            if (biOpt.isPresent() && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
                 boolean isUnsigned = hasLocalUnsignedFacet(metaMap);
-                return StvnVocabulary.TYPE_INT.equals(ultimateBase) && isUnsigned;
+                if (isUnsigned && biOpt.get().compareTo(java.math.BigInteger.ZERO) == 0) {
+                    return true;
+                }
+                int bitWidth = resolveLocalBitWidth(metaMap);
+                if (!isUnsigned) {
+                    var naturalMin = java.math.BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
+                    if (biOpt.get().compareTo(naturalMin) == 0) {
+                        return true;
+                    }
+                }
+            }
+        } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+            var biOpt = extractBigInteger(text);
+            if (biOpt.isPresent() && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
+                boolean isUnsigned = hasLocalUnsignedFacet(metaMap);
+                int bitWidth = resolveLocalBitWidth(metaMap);
+                var naturalMax = isUnsigned
+                    ? java.math.BigInteger.ONE.shiftLeft(bitWidth)
+                    : java.math.BigInteger.ONE.shiftLeft(bitWidth - 1);
+                if (biOpt.get().compareTo(naturalMax) == 0) {
+                    return true;
+                }
             }
         }
 
-        // 3. Default trait re-assertion on scalar primitives is fatal error E036 in core
+        // 3. Default trait re-assertion on scalar primitives is warning W003 in core
         if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             var boolOpt = extractBooleanLiteral(text);
             if (boolOpt.isPresent() && boolOpt.get()) {
@@ -513,7 +534,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
-        // 4. Primitive Default Sizing Tautologies (Rule E036)
+        // 4. Primitive Default Sizing Tautologies (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
             var valOpt = extractNumericValue(text);
             if (valOpt.isPresent()) {
@@ -527,7 +548,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
-        // 5. Exact Float Precision Ceiling Tautology (Rule E036)
+        // 5. Exact Float Precision Ceiling Tautology (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
             var valOpt = extractNumericValue(text);
             if (valOpt.isPresent() && valOpt.getAsInt() == StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE) {
@@ -549,8 +570,33 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
                 return true;
             }
+            if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
+                return true;
+            }
         }
         return false;
+    }
+
+    private static int resolveLocalBitWidth(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) return 32;
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var text = entry.getText().trim();
+            if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                var valOpt = extractNumericValue(text);
+                if (valOpt.isPresent()) return valOpt.getAsInt();
+            }
+        }
+        return 32;
+    }
+
+    private static java.util.Optional<java.math.BigInteger> extractBigInteger(String text) {
+        var parts = text.split("\\s+");
+        if (parts.length >= 2) {
+            try {
+                return java.util.Optional.of(new java.math.BigInteger(parts[1].trim()));
+            } catch (NumberFormatException ignored) {}
+        }
+        return java.util.Optional.empty();
     }
 
     private static void registerRedundantProblem(MetadataEntry entry, String effectiveValue, ProblemsHolder holder) {

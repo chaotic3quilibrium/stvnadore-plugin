@@ -692,9 +692,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         }
                     }
 
-                    // Intercept ERR_REDUNDANT_METADATA_FACET (E036) and attach RemoveRedundantFacetQuickFix
-                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get()))
-                        || message.contains("is redundant")) {
+                    // Intercept WARN_REDUNDANT_METADATA_FACET (W003) and attach RemoveRedundantFacetQuickFix
+                    if ((diag.errorCode().isPresent() && (
+                        DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get())
+                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get())
+                    )) || message.contains("is redundant")) {
                         var targetElem = file.findElementAt(range.getStartOffset());
                         var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                         if (entry == null && range.getStartOffset() > 0) {
@@ -2551,7 +2553,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
                 // Pass 2b: Non-overridable, redundant, and transitive mutually exclusive facets anchor on the child facet entry
                 if ("ERR_NON_OVERRIDABLE_FACET".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
-                    || StvnDiagnosticCodes.ERR_REDUNDANT_METADATA_FACET.equals(errorCode) || message.contains("is redundant")
+                    || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(errorCode)
+                    || DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(errorCode) || message.contains("is redundant")
                     || message.contains("non-overridable") || (message.contains("mutually exclusive") && message.contains("ancestor"))) {
                     for (var entry : map.getMetadataEntryList()) {
                         PsiElement leaf = entry.getFirstChild();

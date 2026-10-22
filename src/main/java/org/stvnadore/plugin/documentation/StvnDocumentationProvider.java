@@ -87,7 +87,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // 2. Direct facet element fallback
         if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet
-            || element instanceof MetaKindFacet || element instanceof MetaKindValue) {
+            || element instanceof MetaKindFacet || element instanceof MetaKindValue || element instanceof MetadataEntry) {
             return buildTargetDocumentation(element, originalElement);
         }
         if (isContainerDocumentationSuppressionTarget(element) || (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement))) {
@@ -611,6 +611,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Enclosing Enum:</b> <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code> (<code>:StvnDocumentKind</code>)<br/>
                 <b>Allowed Variants:</b> <code>[ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]</code>
                 """.formatted(text);
+        }
+
+        if (target instanceof MetadataEntry entry) {
+            var redundantCard = buildRedundantFacetHoverDoc(entry);
+            if (redundantCard != null) {
+                return redundantCard;
+            }
+            var text = entry.getText().trim();
+            var keyword = text.split("\\s+")[0];
+            var specDesc = getFacetSpecificationDoc(keyword);
+            if (specDesc != null) {
+                return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
+            }
+            return "<b>Metadata Facet:</b> <code>" + text + "</code>";
         }
 
         if (target instanceof ProductType productType) {
@@ -1272,6 +1286,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (target instanceof MetadataEntry entry) {
+            var redundantCard = buildRedundantFacetHoverDoc(entry);
+            if (redundantCard != null) {
+                return redundantCard;
+            }
+            var text = entry.getText().trim();
+            var keyword = text.split("\\s+")[0];
+            var specDesc = getFacetSpecificationDoc(keyword);
+            if (specDesc != null) {
+                return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
+            }
+            return "<b>Metadata Facet:</b> <code>" + text + "</code>";
+        }
+
         if (target instanceof ProductType productType) {
             var firstChild = productType.getFirstChild();
             var text = firstChild != null ? firstChild.getText().trim() : productType.getText().trim();
@@ -1682,7 +1710,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private @Nullable PsiElement getDocumentationElement(PsiElement element, @Nullable PsiElement originalElement) {
         if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet
-            || element instanceof MetaKindFacet || element instanceof MetaKindValue) {
+            || element instanceof MetaKindFacet || element instanceof MetaKindValue || element instanceof MetadataEntry) {
             return element;
         }
         if (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement)) {
@@ -1850,7 +1878,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return element;
         }
 
-        if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet || element instanceof MetaKindFacet || element instanceof MetaKindValue) {
+        if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet || element instanceof MetaKindFacet || element instanceof MetaKindValue || element instanceof MetadataEntry) {
             return element;
         }
 
@@ -1863,6 +1891,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaName != null) return metaName;
             var metaDomain = PsiTreeUtil.getParentOfType(originalElement, MetaDomainFacet.class);
             if (metaDomain != null) return metaDomain;
+            var metaEntry = PsiTreeUtil.getParentOfType(originalElement, MetadataEntry.class, false);
+            if (metaEntry != null) return metaEntry;
 
             var typeKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class);
             if (typeKw != null) {
@@ -1939,6 +1969,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (isContainerDocumentationSuppressionTarget(contextElement)) {
             return null;
         }
+        var typeKwAncestor = PsiTreeUtil.getParentOfType(contextElement, TypeKeyword.class);
+        if (typeKwAncestor != null) {
+            return typeKwAncestor;
+        }
+        var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
+        if (valKwAncestor != null) {
+            return valKwAncestor;
+        }
+        var metaEntry = PsiTreeUtil.getParentOfType(contextElement, MetadataEntry.class, false);
+        if (metaEntry != null) {
+            return metaEntry;
+        }
         var valueAncestor = PsiTreeUtil.getParentOfType(contextElement, Value.class);
         if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
             if (isContainerLiteral(valueAncestor)) {
@@ -1947,14 +1989,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
             return valueAncestor;
-        }
-        var typeKwAncestor = PsiTreeUtil.getParentOfType(contextElement, TypeKeyword.class);
-        if (typeKwAncestor != null) {
-            return typeKwAncestor;
-        }
-        var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
-        if (valKwAncestor != null) {
-            return valKwAncestor;
         }
         var atomicAncestor = PsiTreeUtil.getParentOfType(contextElement, AtomicType.class);
         if (atomicAncestor != null) {
@@ -2118,6 +2152,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static boolean isContainerDocumentationSuppressionTarget(@Nullable PsiElement element) {
+        if (element != null) {
+            var rawSigil = element.getText().trim();
+            if (rawSigil.equals(StvnVocabulary.SIGIL_VALUE) || rawSigil.equals(StvnVocabulary.SIGIL_TYPIC) || rawSigil.equals("/")) {
+                return true;
+            }
+        }
         if (element == null) {
             return false;
         }
@@ -2125,7 +2165,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (PsiTreeUtil.getParentOfType(element, MetaNameFacet.class, false) != null
             || PsiTreeUtil.getParentOfType(element, MetaDomainFacet.class, false) != null
             || PsiTreeUtil.getParentOfType(element, MetaKindFacet.class, false) != null
-            || PsiTreeUtil.getParentOfType(element, MetaKindValue.class, false) != null) {
+            || PsiTreeUtil.getParentOfType(element, MetaKindValue.class, false) != null
+            || PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false) != null) {
             return false;
         }
         if (element instanceof PsiErrorElement) {
@@ -2163,5 +2204,157 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return false;
         }
         return element == targetContainer.getFirstChild() || element == targetContainer.getLastChild();
+    }
+
+    private static @Nullable String buildRedundantFacetHoverDoc(MetadataEntry entry) {
+        var metaMap = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
+        var typeDef = PsiTreeUtil.getParentOfType(entry, TypeDefinition.class);
+        if (metaMap == null || typeDef == null) {
+            return null;
+        }
+
+        var typeKeyword = typeDef.getTypeKeyword();
+        String typeName = typeKeyword != null ? typeKeyword.getText().trim() : ":Type";
+        var schemaType = typeDef.getSchemaType();
+        String baseType = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "";
+
+        String text = entry.getText().trim();
+        String reason = null;
+
+        boolean isUnsigned = false;
+        int bitWidth = 32;
+        for (var e : metaMap.getMetadataEntryList()) {
+            var et = e.getText().trim();
+            if (et.startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
+                isUnsigned = true;
+            } else if (et.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                var parts = et.split("\\s+");
+                if (parts.length >= 2) {
+                    try {
+                        bitWidth = Integer.parseInt(parts[1]);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+
+        // 1. Unsigned lower bound #minIncl 0 or signed natural min bound
+        if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2) {
+                var valStr = parts[1].trim();
+                try {
+                    var val = new java.math.BigInteger(valStr);
+                    if (isUnsigned && val.compareTo(java.math.BigInteger.ZERO) == 0 && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                        reason = "unsigned integer <code>{ #unsigned } :Int</code> is already bounded from below by 0.";
+                    } else if (!isUnsigned && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                        var naturalMin = java.math.BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
+                        if (val.compareTo(naturalMin) == 0) {
+                            reason = "<code>#size " + bitWidth + "</code> already bounds the minimum inclusive bound to " + valStr + ".";
+                        }
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        // 2. Natural upper bound #maxExcl
+        else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2) {
+                var valStr = parts[1].trim();
+                try {
+                    var val = new java.math.BigInteger(valStr);
+                    var naturalMax = isUnsigned
+                        ? java.math.BigInteger.ONE.shiftLeft(bitWidth)
+                        : java.math.BigInteger.ONE.shiftLeft(bitWidth - 1);
+                    if (val.compareTo(naturalMax) == 0 && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                        reason = "<code>#size " + bitWidth + "</code> already bounds the maximum exclusive bound to " + valStr + ".";
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        // 3. Sizing tautologies
+        else if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2) {
+                var valStr = parts[1].trim();
+                if ("32".equals(valStr) && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                    String desc = isUnsigned ? "unsigned integer <code>{ #unsigned } :Int</code>" : "signed integer <code>:Int</code>";
+                    reason = desc + " intrinsically defaults to 32-bit storage.";
+                } else if ("64".equals(valStr) && (baseType.endsWith(":Float") || baseType.equals(":Float"))) {
+                    reason = "continuous <code>:Float</code> intrinsically defaults to 64-bit IEEE-754 double precision.";
+                }
+            }
+        }
+        // 4. Exact float max size
+        else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2) {
+                var valStr = parts[1].trim();
+                if (String.valueOf(StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE).equals(valStr) && (baseType.endsWith(":Float") || baseType.equals(":Float"))) {
+                    reason = "exact decimal float <code>{ #exact } :Float</code> intrinsically defaults to a ceiling of 16,777,216 significant decimal digits.";
+                }
+            }
+        }
+        // 5. Cardinality min size
+        else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2 && "0".equals(parts[1].trim())) {
+                String targetDesc = (baseType.endsWith(":String") || baseType.equals(":String"))
+                    ? "string cardinality is inherently non-negative."
+                    : "container cardinality is inherently non-negative.";
+                reason = targetDesc;
+            }
+        }
+        // 6. Primitive default traits
+        else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2 && ("#TRUE".equals(parts[1].trim()) || "#T".equals(parts[1].trim()))) {
+                boolean isEq = text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
+                reason = "scalar primitive <code>" + baseType + "</code> is intrinsically " + (isEq ? "equatable" : "comparable") + ".";
+            }
+        }
+
+        if (reason == null) {
+            return null;
+        }
+
+        var otherEntries = metaMap.getMetadataEntryList().stream()
+            .filter(e -> e != entry)
+            .map(e -> e.getText().trim())
+            .toList();
+
+        String canonicalForm;
+        if (otherEntries.isEmpty()) {
+            canonicalForm = typeName + " " + baseType;
+        } else {
+            canonicalForm = typeName + " { " + String.join(" ", otherEntries) + " } " + baseType;
+        }
+
+        return """
+            <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
+                <b style="font-size: 1.05em;">&#9888; Warning W003: Redundant Metadata Facet</b><br/>
+                Facet <code>%s</code> is redundant; %s<br/>
+                <b>Canonical Form:</b> <code>%s</code>
+            </div>
+            <hr/>
+            <b>Quick-Fix:</b> Press <code>Alt+Enter</code> to invoke <i>Remove redundant facet '%s'</i>.
+            """.formatted(text, reason, canonicalForm, text);
+    }
+
+    private static @Nullable String getFacetSpecificationDoc(String keyword) {
+        return switch (keyword) {
+            case StvnVocabulary.FACET_KW_SIZE -> "Configures physical storage bit-width (e.g. <code>#size 16</code>, <code>#size 64</code>).";
+            case StvnVocabulary.FACET_KW_UNSIGNED -> "Enforces non-negative physical unsigned boundaries <code>[0, 2^n - 1]</code> on integer domains.";
+            case StvnVocabulary.FACET_KW_MIN_INCL -> "Defines inclusive lower bound <code>[v, ...)</code> for numeric or temporal ranges.";
+            case StvnVocabulary.FACET_KW_MAX_EXCL -> "Defines exclusive upper bound <code>(..., v)</code> for numeric or temporal ranges.";
+            case StvnVocabulary.FACET_KW_MIN_EXCL -> "Defines exclusive lower bound <code>(v, ...)</code> for continuous float ranges.";
+            case StvnVocabulary.FACET_KW_MAX_INCL -> "Defines inclusive upper bound <code>(..., v]</code> for continuous float ranges.";
+            case StvnVocabulary.FACET_KW_MIN_SIZE -> "Defines minimum non-negative character length or element cardinality.";
+            case StvnVocabulary.FACET_KW_MAX_SIZE -> "Defines maximum character capacity or decimal float mantissa precision.";
+            case StvnVocabulary.FACET_KW_EXACT -> "Enforces arbitrary-precision decimal arithmetic on floating-point types.";
+            case StvnVocabulary.FACET_KW_EQUATABLE -> "Controls participation in value equivalence and hashing operations.";
+            case StvnVocabulary.FACET_KW_COMPARABLE -> "Controls participation in total ordering and comparison operations.";
+            case StvnVocabulary.FACET_KW_PRESERVE_INDENT -> "Preserves verbatim leading indentation and whitespace across multiline strings.";
+            default -> null;
+        };
     }
 }

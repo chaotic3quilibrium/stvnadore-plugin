@@ -24,7 +24,7 @@ import java.util.Set;
 /**
  * Intelligent code completion contributor for metadata facet blocks ({ ... }).
  * <p>
- * Enforces Core Rule E036 and Minimal Canonical Forms (VOP Invariant 1):
+ * Enforces Core Rule W003 and Minimal Canonical Forms (VOP Invariant 1):
  * 1. Suppresses '#minIncl 0' on unsigned :Int domains (proposes '#minIncl 1').
  * 2. Suppresses '#minSize 0' on strings and collections (proposes '#minSize 1').
  * 3. Suppresses redundant default trait assertions ('#equatable #TRUE', '#comparable #TRUE' on primitives).
@@ -117,7 +117,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withTailText(" (bounds domain to [0, \\infty))", true));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
-                // Rule E036: Propose non-default integer bit-widths (valid widenings and narrowings)
+                // Rule W003: Propose non-default integer bit-widths (valid widenings and narrowings)
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 64")
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Storage Width", true));
@@ -133,7 +133,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_INCL)) {
                 if (isUnsigned) {
-                  // Rule E036: Suppress '#minIncl 0' on unsigned :Int; propose '#minIncl 1'
+                  // Rule W003: Suppress '#minIncl 0' on unsigned :Int; propose '#minIncl 1'
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_INCL + " 1")
                       .withIcon(AllIcons.Nodes.Property)
                       .withTypeText("Lower Bound", true)
@@ -154,7 +154,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Exclusive Upper Bound", true));
               }
-              // Intrinsic trait override opt-outs only (Rule E036 suppresses #TRUE)
+              // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE)
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
                     .withIcon(AllIcons.Nodes.Property)
@@ -170,7 +170,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             // Strings (:String)
             if (StvnVocabulary.TYPE_STRING.equals(targetBaseType)) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                // Rule E036: Suppress '#minSize 0'; propose non-empty '#minSize 1'
+                // Rule W003: Suppress '#minSize 0'; propose non-empty '#minSize 1'
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_SIZE + " 1")
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Non-Empty Bound", true));
@@ -190,7 +190,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Formatting Trait", true));
               }
-              // Intrinsic trait override opt-outs only (Rule E036 suppresses #TRUE)
+              // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE)
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
                     .withIcon(AllIcons.Nodes.Property)
@@ -206,7 +206,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             // Collections (:Seq, :Set, :Map)
             if (isCollectionType(targetBaseType)) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                // Rule E036: Suppress '#minSize 0'; propose '#minSize 1'
+                // Rule W003: Suppress '#minSize 0'; propose '#minSize 1'
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_SIZE + " 1")
                     .withIcon(AllIcons.Nodes.Property)
                     .withTypeText("Container Bound", true));
@@ -231,7 +231,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withTypeText("Exact Decimal", true));
                 // Rule E008: Strictly suppress #maxSize on continuous :Float
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
-                  // Rule E036: Suppress #size 64 on continuous :Float; propose single-precision #size 32
+                  // Rule W003: Suppress #size 64 on continuous :Float; propose single-precision #size 32
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
                       .withIcon(AllIcons.Nodes.Property)
                       .withTypeText("Storage Width", true));
@@ -244,7 +244,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                 }
               } else {
                 // Exact decimal float: propose domain-specific #maxSize narrowings (§ 5.1.3)
-                // Rule E036: Strictly suppress #maxSize 16777216 (intrinsic default ceiling tautology)
+                // Rule W003: Strictly suppress #maxSize 16777216 (intrinsic default ceiling tautology)
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_SIZE)) {
                   targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 18")
                       .withIcon(AllIcons.Nodes.Property)

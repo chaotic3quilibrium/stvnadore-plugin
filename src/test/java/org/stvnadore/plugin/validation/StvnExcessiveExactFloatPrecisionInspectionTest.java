@@ -10,7 +10,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
  * <ul>
  *   <li>TC-PREC-01: Clean compilation on valid sizing (#maxSize 18, 38).</li>
  *   <li>TC-PREC-02: Warning on threshold overflow (#maxSize 39, 100, 10000).</li>
- *   <li>TC-PREC-03: Suppression of warning on tautology ceiling (#maxSize 16777216 -> Core E036).</li>
+ *   <li>TC-PREC-03: Suppression of warning on tautology ceiling (#maxSize 16777216 -> Core W003).</li>
  *   <li>TC-PREC-04: Automated clamp Quick-Fix execution.</li>
  *   <li>TC-PREC-04B: Automated bound Quick-Fix execution.</li>
  *   <li>TC-PREC-05: Continuous :Float isolation (governed strictly by Core Rule E008).</li>
@@ -100,7 +100,7 @@ public final class StvnExcessiveExactFloatPrecisionInspectionTest extends BasePl
 
     /**
      * TC-PREC-03 (Tautology Collision Suppression):
-     * Assert that { #exact #maxSize 16777216 } :Float emits strictly fatal compiler error E036,
+     * Assert that { #exact #maxSize 16777216 } :Float emits strictly compiler warning W003,
      * cleanly suppressing the precision warning.
      */
     public void testTautologyCollisionSuppression() {
@@ -123,12 +123,12 @@ public final class StvnExcessiveExactFloatPrecisionInspectionTest extends BasePl
             .toList();
         assertTrue("Warning must be suppressed on default ceiling 16777216: " + warnings, warnings.isEmpty());
 
-        // 2. Assert fatal Core Rule E036 error is present
-        var errors = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+        // 2. Assert Core Rule W003 warning is present
+        var redundantWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#maxSize 16777216' is redundant"))
             .toList();
-        assertFalse("Expected fatal Core Rule E036 error for #maxSize 16777216", errors.isEmpty());
+        assertFalse("Expected Core Rule W003 warning for #maxSize 16777216", redundantWarnings.isEmpty());
     }
 
     /**

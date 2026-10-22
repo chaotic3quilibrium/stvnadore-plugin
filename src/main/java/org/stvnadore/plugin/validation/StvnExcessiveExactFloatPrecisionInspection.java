@@ -35,7 +35,7 @@ import java.util.Set;
  * Emits a warning when {@code #maxSize <N>} exceeds the configured warning threshold (default: 38 digits,
  * corresponding to the ANSI SQL {@code DECIMAL(38, s)} and IEEE 754-2008 {@code decimal128} boundary).
  * <p>
- * Suppresses warnings when {@code #maxSize 16777216} is declared, deferring to Core Rule {@code E036}.
+ * Suppresses warnings when {@code #maxSize 16777216} is declared, deferring to Core Rule {@code W003}.
  * Leaves continuous {@code :Float} uninspected, deferring to Core Rule {@code E008}.
  */
 @NullMarked
@@ -140,7 +140,7 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
                     return;
                 }
 
-                // 6. Suppress tautology ceiling collision: #maxSize 16777216 is fatal Core Rule E036
+                // 6. Suppress tautology ceiling collision: #maxSize 16777216 is Core Rule W003
                 if (declaredVal.compareTo(BigInteger.valueOf(StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE)) == 0) {
                     return;
                 }

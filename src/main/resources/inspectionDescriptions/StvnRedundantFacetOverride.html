@@ -2,10 +2,9 @@
 <body>
 <p>Reports redundant metadata facet overrides in nominal type definitions within <code>:defs</code> blocks.</p>
 <p>
-Under STVN 2.0.0 (Core Rule E036), tautological metadata facets that bifurcate Content-Addressable Storage
-(CAS) hashes are rejected as fatal compile-time errors (<code>ERR_REDUNDANT_METADATA_FACET</code>), including
-<code>#minIncl 0</code> on unsigned integers, <code>#minSize 0</code> on strings and collections, and default trait
-re-assertions on scalar primitives.
+Under STVN 2.0.0 (Core Rule W003), tautological metadata facets emit non-blocking compiler warnings
+(<code>WARN_REDUNDANT_METADATA_FACET</code>). Tautologies are purged during semantic IR lowering to guarantee
+bitwise-identical Content-Addressable Storage (CAS) hashes without halting compilation.
 </p>
 <p>
 This inspection audits non-fatal nominal inheritance overrides (such as redundant <code>#preserveIndent #FALSE</code>

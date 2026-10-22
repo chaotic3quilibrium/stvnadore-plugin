@@ -1602,10 +1602,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             """;
         myFixture.configureByText("primitives.stvn_d", text);
         var highlights = myFixture.doHighlighting();
-        var errors = highlights.stream()
+        var redundantWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("facet '#size 32' is redundant"))
             .toList();
-        assertFalse("Expected fatal error E036 on #size 32", errors.isEmpty());
+        assertFalse("Expected warning W003 on #size 32", redundantWarnings.isEmpty());
 
         int offset = text.indexOf("#size 32");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
