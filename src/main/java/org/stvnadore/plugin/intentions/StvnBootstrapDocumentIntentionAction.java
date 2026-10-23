@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.intentions;
 
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -59,7 +60,13 @@ public final class StvnBootstrapDocumentIntentionAction implements IntentionActi
         if (!(file instanceof StvnFile)) {
             return;
         }
-        Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
+        Document doc = file.getViewProvider().getDocument();
+        if (doc == null && editor != null) {
+            doc = editor.getDocument();
+        }
+        if (doc == null) {
+            doc = PsiDocumentManager.getInstance(project).getDocument(file);
+        }
         if (doc == null) {
             return;
         }
@@ -117,6 +124,15 @@ public final class StvnBootstrapDocumentIntentionAction implements IntentionActi
         if (editor != null) {
             repositionCaret(editor, doc, fileName);
         }
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+        if (!isAvailable(project, editor, file)) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        invoke(project, editor, file);
+        return IntentionPreviewInfo.DIFF;
     }
 
     @Override

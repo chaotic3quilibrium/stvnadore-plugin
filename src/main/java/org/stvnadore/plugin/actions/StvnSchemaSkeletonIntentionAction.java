@@ -1,6 +1,8 @@
 package org.stvnadore.plugin.actions;
 
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.psi.PsiFile;
 import com.intellij.codeInsight.template.TemplateBuilderImpl;
 import com.intellij.codeInsight.template.impl.ConstantNode;
 import com.intellij.openapi.editor.Editor;
@@ -63,6 +65,16 @@ public final class StvnSchemaSkeletonIntentionAction extends PsiElementBaseInten
 
         var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
         return typeEntry != null && typeEntry.getSchemaType() != null;
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+        var element = getElement(editor, file);
+        if (element == null || !isAvailable(project, editor, element)) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        invoke(project, editor, element);
+        return IntentionPreviewInfo.DIFF;
     }
 
     @Override

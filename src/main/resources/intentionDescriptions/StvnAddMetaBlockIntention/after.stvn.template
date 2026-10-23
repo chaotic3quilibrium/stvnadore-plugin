@@ -1,0 +1,8 @@
+{
+  :meta {
+    #name "player_data"
+    #kind #BODY
+  }
+  :type :Int
+  :body 42
+}

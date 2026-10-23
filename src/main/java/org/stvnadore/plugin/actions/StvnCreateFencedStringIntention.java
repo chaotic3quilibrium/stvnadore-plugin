@@ -1,6 +1,8 @@
 package org.stvnadore.plugin.actions;
 
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.psi.PsiFile;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
@@ -72,6 +74,16 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
 
         String beforeTriple = lineText.substring(0, tripleIdx).trim();
         return !beforeTriple.endsWith("]");
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+        var element = getElement(editor, file);
+        if (element == null || !isAvailable(project, editor, element)) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        invoke(project, editor, element);
+        return IntentionPreviewInfo.DIFF;
     }
 
     @Override

@@ -555,6 +555,7 @@
         <intentionAction>
             <className>org.stvnadore.plugin.actions.StvnCreateFencedStringIntention</className>
             <category>STVN</category>
+            <descriptionDirectoryName>StvnCreateFencedStringIntention</descriptionDirectoryName>
             <description>Convert bare triple-quote string to fenced string block</description>
         </intentionAction>
 
@@ -562,6 +563,7 @@
         <intentionAction>
             <className>org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction</className>
             <category>STVN</category>
+            <descriptionDirectoryName>StvnSchemaSkeletonIntentionAction</descriptionDirectoryName>
             <description>Scaffolds canonical data templates from resolved document schemas</description>
         </intentionAction>
 
@@ -569,6 +571,7 @@
         <intentionAction>
             <className>org.stvnadore.plugin.intentions.StvnAddMetaBlockIntention</className>
             <category>STVN</category>
+            <descriptionDirectoryName>StvnAddMetaBlockIntention</descriptionDirectoryName>
             <description>Inserts a canonical root :meta header conforming to file stem and document kind</description>
         </intentionAction>
 
@@ -576,6 +579,7 @@
         <intentionAction>
             <className>org.stvnadore.plugin.intentions.StvnBootstrapDocumentIntentionAction</className>
             <category>STVN</category>
+            <descriptionDirectoryName>StvnBootstrapDocumentIntentionAction</descriptionDirectoryName>
             <description>Bootstraps a minimal valid STVN document structure conforming to file extension</description>
         </intentionAction>
 

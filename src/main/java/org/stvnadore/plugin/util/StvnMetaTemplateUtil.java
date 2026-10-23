@@ -143,7 +143,7 @@ public final class StvnMetaTemplateUtil {
       if (firstLeaf != null && "{".equals(firstLeaf.getText())) {
         return firstLeaf;
       }
-      return child;
+      return null;
     }
     return null;
   }
@@ -167,23 +167,25 @@ public final class StvnMetaTemplateUtil {
    * @param editor active editor instance if available
    */
   public static void insertCanonicalMetaBlock(@NotNull Project project, @NotNull PsiFile file, @Nullable Editor editor) {
-    Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
+    Document doc = file.getViewProvider().getDocument();
+    if (doc == null && editor != null) {
+      doc = editor.getDocument();
+    }
+    if (doc == null) {
+      doc = PsiDocumentManager.getInstance(project).getDocument(file);
+    }
     if (doc == null) {
       return;
     }
 
-    String metaBlock = generateCanonicalMetaBlock(file.getName());
     PsiElement rootLBrace = findRootOpeningBrace(file);
-
-    int insertOffset;
-    if (rootLBrace != null && "{".equals(rootLBrace.getText())) {
-      insertOffset = rootLBrace.getTextRange().getEndOffset();
-      doc.insertString(insertOffset, metaBlock);
-    } else {
-      String fullBlock = "{" + metaBlock + "\n}\n";
-      doc.insertString(0, fullBlock);
-      insertOffset = 1;
+    if (rootLBrace == null || !"{".equals(rootLBrace.getText())) {
+      return;
     }
+
+    String metaBlock = generateCanonicalMetaBlock(file.getName());
+    int insertOffset = rootLBrace.getTextRange().getEndOffset();
+    doc.insertString(insertOffset, metaBlock);
 
     PsiDocumentManager.getInstance(project).commitDocument(doc);
     CodeStyleManager.getInstance(project).reformat(file);
