@@ -24,8 +24,8 @@ import static org.stvnadore.psi.StvnTypes.*;
 
 WHITE_SPACE=[ \r\n]+
 TAB_CHARACTER=\t+
-COMMENT="//".*
-LITERAL_STRING_SIMPLE=\"([^\"\\\r\n]|\\.)*\"
+COMMENT="//"[^\r\n\t]*
+LITERAL_STRING_SIMPLE=\"([^\"\\\r\n\t]|\\.)*\"
 
 
 UNION_TAG_PREFIX=#[1-9][0-9]*
@@ -133,10 +133,10 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
 
   // Intercept prohibited Rule STR-04 fenced string arrow delimiter
-  \"\"\"->\[[^\r\n\]]*\][ \t\r]*\n { return BAD_CHARACTER; }
+  \"\"\"->\[[^\r\n\]]*\][ \r]*\n { return BAD_CHARACTER; }
 
   // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG]
-  \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
+  \"\"\"\[[^\r\n\]]*\][ \r]*\n {
     String text = yytext().toString();
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);
@@ -165,7 +165,7 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
     return BAD_CHARACTER;
   }
   // Prohibit legacy unfenced block strings (Rule STR-04 fallback interceptors)
-  \"\"\"[ \t\r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\" { return BAD_CHARACTER; }
+  \"\"\"[ \r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\" { return BAD_CHARACTER; }
   \"\"\"                                             { return BAD_CHARACTER; }
   {LITERAL_STRING_SIMPLE}        { return LITERAL_STRING_SIMPLE; }
   {TYPE_KEYWORD_BASE}            { return TYPE_KEYWORD_BASE; }

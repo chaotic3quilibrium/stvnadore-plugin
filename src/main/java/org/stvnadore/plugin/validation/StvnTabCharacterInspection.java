@@ -15,10 +15,12 @@ import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
+import org.stvnadore.psi.StvnTypes;
 
 /**
  * Enforces the Zero-Tab Invariant (Rule STR-01 / ERR_TAB_CHARACTER_FORBIDDEN).
- * Prohibits tab characters (0x09) across all STVN documents.
+ * Prohibits tab characters (0x09) across structural whitespace, indentation, comments,
+ * and single-line strings. Permits raw tabs exclusively within fenced string literals (Rule STR-04).
  */
 @NullMarked
 public final class StvnTabCharacterInspection extends LocalInspectionTool {
@@ -63,6 +65,15 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
                 int count = 0;
                 for (int i = 0; i < len && count < MAX_PROBLEMS_PER_FILE; i++) {
                     if (text.charAt(i) == '\t') {
+                        PsiElement leaf = file.findElementAt(i);
+                        if (leaf != null && leaf.getNode() != null && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
+                            // Verbatim tab character exemption within fenced string literals (§ 5.3)
+                            int end = leaf.getTextRange().getEndOffset();
+                            if (end > i) {
+                                i = end - 1;
+                            }
+                            continue;
+                        }
                         holder.registerProblem(
                             file,
                             new TextRange(i, i + 1),
@@ -94,8 +105,24 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
             Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc != null) {
                 String content = doc.getText();
-                String replaced = content.replace("\t", "  ");
-                doc.setText(replaced);
+                StringBuilder sb = new StringBuilder(content.length());
+                int len = content.length();
+                for (int i = 0; i < len; i++) {
+                    char c = content.charAt(i);
+                    if (c == '\t') {
+                        PsiElement leaf = file.findElementAt(i);
+                        if (leaf != null && leaf.getNode() != null && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
+                            int end = Math.min(len, leaf.getTextRange().getEndOffset());
+                            sb.append(content, i, end);
+                            i = end - 1;
+                        } else {
+                            sb.append("  ");
+                        }
+                    } else {
+                        sb.append(c);
+                    }
+                }
+                doc.setText(sb.toString());
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
             }
         }

@@ -1324,8 +1324,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (leaf == null) {
                     break;
                 }
-                if (leaf instanceof com.intellij.psi.PsiComment
-                    || PsiTreeUtil.getParentOfType(leaf, com.intellij.psi.PsiComment.class, false) != null) {
+                if (!isTabError && (leaf instanceof com.intellij.psi.PsiComment
+                    || PsiTreeUtil.getParentOfType(leaf, com.intellij.psi.PsiComment.class, false) != null)) {
                     return true;
                 }
                 var nextOffset = leaf.getTextRange().getEndOffset();

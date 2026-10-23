@@ -30,7 +30,7 @@ public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegat
     public StvnEnterInFencedStringHandler() {
     }
 
-    private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"\\[([a-zA-Z0-9_-]{1,256})\\][ \t]*$");
+    private static final Pattern OPEN_FENCE_PATTERN = Pattern.compile("^.*\"\"\"\\[([a-zA-Z0-9_-]{1,256})\\][ ]*$");
 
     @Override
     public Result preprocessEnter(@NotNull PsiFile file,
