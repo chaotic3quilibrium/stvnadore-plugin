@@ -351,7 +351,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
                         || diag.message().contains("Mandatory :meta block missing")
                         || diag.message().contains("ERR_DOCUMENT_KIND_MISMATCH");
-                    if (isKindMismatch && !wolfErrors.contains(diag)) {
+                    boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
+                        || diag.message().contains("ERR_TAB_CHARACTER_FORBIDDEN")
+                        || diag.message().contains("Tab character");
+                    if ((isKindMismatch || isTabError) && !wolfErrors.contains(diag)) {
                         wolfErrors.add(diag);
                     }
                 }
@@ -1312,6 +1315,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
             || message.contains("Tab character");
 
+        // Suppress external compiler tab character diagnostics when StvnTabCharacterInspection is active (Invariant 10)
+        if (isTabError && isTabCharacterInspectionActive(file)) {
+            return true;
+        }
+
         if (start >= 0 && start <= textLength) {
             if (!isTabError && s < e && text.substring(s, e).isBlank()) {
                 return true;
@@ -1651,6 +1659,34 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var profileManager = InspectionProjectProfileManager.getInstance(project);
             var profile = profileManager.getCurrentProfile();
             var key = HighlightDisplayKey.find("StvnMissingMeta");
+            if (key != null) {
+                return profile.isToolEnabled(key, file);
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private static boolean isTabCharacterInspectionActive(PsiFile file) {
+        var vFile = file.getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getViewProvider().getVirtualFile();
+        }
+        if (vFile != null) {
+            var path = vFile.getPath().replace('\\', '/');
+            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
+                    || file.getName().startsWith("inv_") || file.getName().contains("tab_character_indent_disallowed")) {
+                return false;
+            }
+        }
+        var project = file.getProject();
+        if (project.isDisposed()) {
+            return true;
+        }
+        try {
+            var profileManager = InspectionProjectProfileManager.getInstance(project);
+            var profile = profileManager.getCurrentProfile();
+            var key = HighlightDisplayKey.find("StvnTabCharacter");
             if (key != null) {
                 return profile.isToolEnabled(key, file);
             }

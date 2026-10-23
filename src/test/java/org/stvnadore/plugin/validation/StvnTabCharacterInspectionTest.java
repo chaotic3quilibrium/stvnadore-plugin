@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 
@@ -59,40 +60,54 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         String code = "{\n\t:type :String\n  :body \"hello\"\n}";
         myFixture.configureByText("structural_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
-        var tabErrors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-01"))
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
-        assertEquals("Structural indentation tab must report exactly one problem", 1, tabErrors.size());
+        assertEquals("Structural indentation tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testCommentTabReportsProblemDescriptor() {
         String code = "{\n  //\tForbidden tab in comment\n  :type :String\n  :body \"hello\"\n}";
         myFixture.configureByText("comment_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
-        var tabErrors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-01"))
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
-        assertEquals("Comment tab must report exactly one problem", 1, tabErrors.size());
+        assertEquals("Comment tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testSimpleStringRawTabReportsProblemDescriptor() {
         String code = "{\n  :type :String\n  :body \"raw\ttab\"\n}";
         myFixture.configureByText("simple_string_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
+        int tabOffset = code.indexOf('\t');
         var tabErrors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-01"))
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == tabOffset && h.getEndOffset() == tabOffset + 1)
             .toList();
-        assertEquals("Unescaped tab in simple string must report exactly one problem", 1, tabErrors.size());
+        assertEquals("Unescaped tab in simple string must report exactly one error highlight over tab span under Invariant 10", 1, tabErrors.size());
+        var error = tabErrors.get(0);
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testOpeningFenceLineTabReportsProblemDescriptor() {
         String code = "{\n  :type :String\n  :body \"\"\"[TAG]\t\ncontent\n[TAG]\"\"\"\n}";
         myFixture.configureByText("opening_fence_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
+        int tabOffset = code.indexOf('\t');
         var tabErrors = highlights.stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Rule STR-01"))
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == tabOffset && h.getEndOffset() == tabOffset + 1)
             .toList();
-        assertEquals("Opening fence delimiter tab must report problem descriptor", 1, tabErrors.size());
+        assertEquals("Opening fence delimiter tab must report exactly one error highlight over tab span under Invariant 10", 1, tabErrors.size());
+        var error = tabErrors.get(0);
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testQuickFixReplacesOnlyStructuralTabsAndPreservesFencedTabs() {

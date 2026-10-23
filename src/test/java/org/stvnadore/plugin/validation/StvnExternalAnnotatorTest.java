@@ -798,6 +798,31 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("External annotator must suppress order diagnostic when inspection active", annotator.isDiagnosticSuppressed(file, orderDiag));
     }
 
+    /**
+     * Verifies Single Diagnostic Highlight Invariant (Rule STR-01 / Invariant 10):
+     * When StvnTabCharacterInspection is active, the external annotator suppresses
+     * the raw compiler ERR_TAB_CHARACTER_FORBIDDEN diagnostic.
+     */
+    public void testTabCharacterDiagnosticSuppressedWhenInspectionActive() {
+        var content = "{\n\t:type :String\n  :body \"sample\"\n}";
+        var file = myFixture.configureByText("tab_suppression.stvn", content);
+        var annotator = new StvnExternalAnnotator();
+        var collected = annotator.collectInformation(file);
+        assertNotNull("Collected information must not be null", collected);
+        var result = annotator.doAnnotate(collected);
+        assertNotNull("Annotation result must not be null", result);
+
+        var tabDiag = result.diagnostics().stream()
+            .filter(d -> (d.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(d.errorCode().get()))
+                || d.message().contains("ERR_TAB_CHARACTER_FORBIDDEN")
+                || d.message().contains("Tab character"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Compiler must produce ERR_TAB_CHARACTER_FORBIDDEN"));
+
+        assertTrue("External annotator must suppress tab diagnostic when StvnTabCharacter inspection is active",
+            annotator.isDiagnosticSuppressed(file, tabDiag));
+    }
+
     public void testExternalAnnotatorSuppressesStemMismatchWhenInspectionActive() {
         var content = """
             {
