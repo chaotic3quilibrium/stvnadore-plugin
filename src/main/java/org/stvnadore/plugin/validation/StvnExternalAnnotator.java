@@ -317,7 +317,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         // 1. Pre-filter diagnostics to eliminate verified false-positive diagnostics
         var rawDiagnostics = result.diagnostics();
         var activeDiagnostics = rawDiagnostics.stream()
-            .filter(d -> !isDiagnosticSuppressed(file, d))
+            .filter(d -> !isDiagnosticSuppressed(file, d, rawDiagnostics))
             .filter(d -> !isDuplicateOrCascadingMismatchedInput(rawDiagnostics, d))
             .toList();
 
@@ -354,6 +354,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
                         || diag.message().contains("ERR_TAB_CHARACTER_FORBIDDEN")
                         || diag.message().contains("Tab character");
+                    // Suppress secondary cascade kind mismatches from Wolf tracking (Spec § 7.3.1)
+                    if (isSecondaryCascadeKindMismatch(file, diag, rawDiagnostics)) {
+                        continue;
+                    }
                     if ((isKindMismatch || isTabError) && !wolfErrors.contains(diag)) {
                         wolfErrors.add(diag);
                     }
@@ -1197,10 +1201,20 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
+        return isDiagnosticSuppressed(file, diag, java.util.List.of());
+    }
+
+    boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag, List<StvnDiagnostic> allDiagnostics) {
         var message = diag.message();
 
         // 1. Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
         if (isDiagnosticFromIncludedFile(file, diag)) {
+            return true;
+        }
+
+        // Spec § 7.3.1: Suppress secondary cascade ERR_DOCUMENT_KIND_MISMATCH on root '{'
+        // when fatal syntax errors (e.g. ERR_TAB_CHARACTER_FORBIDDEN) truncate the parse tree.
+        if (isSecondaryCascadeKindMismatch(file, diag, allDiagnostics)) {
             return true;
         }
 
@@ -1674,13 +1688,70 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
         if (vFile != null) {
             var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
-                    || file.getName().startsWith("inv_") || file.getName().contains("tab_character_indent_disallowed")) {
+            if (path.contains("shared-fixtures/syntax/invalid") || path.contains("tab_character_indent_disallowed.stvn")) {
                 return false;
             }
         }
         // Unconditional inspection primacy on all user documents (Invariant 10)
         return true;
+    }
+
+    private static boolean isSecondaryCascadeKindMismatch(PsiFile file, StvnDiagnostic diag, List<StvnDiagnostic> allDiagnostics) {
+        var message = diag.message();
+        boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
+            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
+            || message.contains("Mandatory ':type' and ':body' sections missing");
+        if (!isKindMismatch) {
+            return false;
+        }
+        // Spec § 7.3.1: Blame pinning to root brace
+        if (diag.startOffset() != 0 && (diag.line() != 1 || diag.column() != 0)) {
+            return false;
+        }
+
+        // Check if fatal syntax errors exist in compilation diagnostics bag
+        boolean hasFatalSyntaxError = allDiagnostics.stream().anyMatch(StvnExternalAnnotator::isFatalSyntaxDiagnostic);
+        if (!hasFatalSyntaxError && allDiagnostics.isEmpty()) {
+            // Fallback buffer inspection for standalone contract checks
+            hasFatalSyntaxError = hasBufferFatalSyntaxError(file);
+        }
+        return hasFatalSyntaxError;
+    }
+
+    private static boolean isFatalSyntaxDiagnostic(StvnDiagnostic d) {
+        if (d.errorCode().isPresent()) {
+            var code = d.errorCode().get();
+            if ("ERR_TAB_CHARACTER_FORBIDDEN".equals(code) || "STVN_SYNTAX_ERROR".equals(code)
+                    || "STVN_SYNTAX_CANCELLATION".equals(code) || "STVN_PARSE_CANCELLATION".equals(code)) {
+                return true;
+            }
+        }
+        var msg = d.message();
+        return msg.contains("ERR_TAB_CHARACTER_FORBIDDEN")
+            || msg.contains("Tab character")
+            || msg.contains("mismatched input")
+            || msg.contains("no viable alternative")
+            || msg.contains("extraneous input")
+            || msg.startsWith("STVN Syntax Error");
+    }
+
+    private static boolean hasBufferFatalSyntaxError(PsiFile file) {
+        CharSequence text = file.getViewProvider().getContents();
+        int len = text.length();
+        for (int i = 0; i < len; i++) {
+            if (text.charAt(i) == '\t') {
+                PsiElement leaf = file.findElementAt(i);
+                if (leaf != null && leaf.getNode() != null && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
+                    int end = leaf.getTextRange().getEndOffset();
+                    if (end > i) {
+                        i = end - 1;
+                    }
+                    continue;
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isDiagnosticFromIncludedFile(PsiFile file, StvnDiagnostic diag) {

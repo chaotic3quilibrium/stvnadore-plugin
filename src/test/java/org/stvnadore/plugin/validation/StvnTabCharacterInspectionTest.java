@@ -69,6 +69,29 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
+    public void testTrailingTabAfterTypeClauseReportsSingleProblemDescriptor() {
+        String code = "{\n  :type :String\t\n  :body \"hello\"\n}";
+        myFixture.configureByText("trailing_tab.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Trailing tab after type clause must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+    }
+
+    public void testSecondaryCascadeSuppressionOnRootBraceWhenTabPresent() {
+        String code = "{\n  :type :String\t\n  :body \"hello\"\n}";
+        myFixture.configureByText("cascade_suppression.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var rootErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == 0)
+            .toList();
+        assertTrue("Root brace must have zero error highlights when tab character is present under Spec § 7.3.1", rootErrors.isEmpty());
+    }
+
     public void testCommentTabReportsProblemDescriptor() {
         String code = "{\n  //\tForbidden tab in comment\n  :type :String\n  :body \"hello\"\n}";
         myFixture.configureByText("comment_tab.stvn", code);

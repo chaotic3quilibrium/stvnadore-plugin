@@ -2063,4 +2063,42 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertFalse("Tab diagnostic must not be suppressed on shared fixture files",
             annotator.isDiagnosticSuppressed(file, diag));
     }
+
+    /**
+     * Verifies secondary cascade suppression (Spec § 7.3.1):
+     * When a document contains a tab error, ERR_DOCUMENT_KIND_MISMATCH on root brace is suppressed.
+     */
+    public void testIsDiagnosticSuppressedSuppressesSecondaryCascadeOnRootBrace() {
+        var annotator = new StvnExternalAnnotator();
+        var file = myFixture.configureByText("cascade.stvn", "{\n  :type :String\t\n  :body \"sample\"\n}");
+        var collected = annotator.collectInformation(file);
+        assertNotNull(collected);
+        var result = annotator.doAnnotate(collected);
+        assertNotNull(result);
+
+        var kindMismatchOpt = result.diagnostics().stream()
+            .filter(d -> (d.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(d.errorCode().get()))
+                || d.message().contains("Mandatory ':type' and ':body' sections missing"))
+            .findFirst();
+        assertTrue("Compiler must produce cascading ERR_DOCUMENT_KIND_MISMATCH on incomplete parse tree", kindMismatchOpt.isPresent());
+        assertTrue("External annotator must suppress cascading ERR_DOCUMENT_KIND_MISMATCH under Spec § 7.3.1",
+            annotator.isDiagnosticSuppressed(file, kindMismatchOpt.get(), result.diagnostics()));
+    }
+
+    /**
+     * Verifies that generic substring 'invalid' does not disable tab suppression on user documents.
+     */
+    public void testIsDiagnosticSuppressedPreservesSuppressionOnUserPathWithInvalidSubstring() {
+        var annotator = new StvnExternalAnnotator();
+        var file = myFixture.configureByText("tab_character.stvn", "{\n\t:type :Int\n  :body 42\n}");
+        var diag = new StvnDiagnostic(
+            "Tab character ('\\t', U+0009) is strictly forbidden in STVN syntax outside fenced string literals",
+            DiagnosticSeverity.ERROR,
+            2, 0, 2, 3,
+            null,
+            java.util.Optional.of(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN)
+        );
+        assertTrue("Tab diagnostic must be suppressed on tab_character.stvn user document",
+            annotator.isDiagnosticSuppressed(file, diag));
+    }
 }
