@@ -82,9 +82,9 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that InsertMissingMetaBlockQuickFix omits domain when filename stem slot 1 is absent.
+     * Verifies that InsertMissingMetaBlockQuickFix defaults domain to "domain" when filename stem slot 1 is absent.
      */
-    public void testQuickFixOmitsDomainWhenStemSlot1Absent() {
+    public void testQuickFixEmitsDefaultDomainWhenStemSlot1Absent() {
         var content = """
             {
               :body [ 1 2 3 ]
@@ -99,7 +99,7 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
 
         var text = myFixture.getFile().getText();
         assertTrue("Expected #name \"json_example\"", text.contains("#name \"json_example\""));
-        assertFalse("Expected #domain omitted when stem slot 1 absent", text.contains("#domain"));
+        assertTrue("Expected #domain \"domain\" when stem slot 1 absent", text.contains("#domain \"domain\""));
         assertTrue("Expected #kind #BODY_INCLUDE", text.contains("#kind #BODY_INCLUDE"));
     }
 

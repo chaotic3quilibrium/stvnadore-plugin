@@ -68,15 +68,13 @@ public final class InsertMetaBlockIntentionAction implements IntentionAction {
         String[] dotParts = stemPart.split("\\.");
 
         String slot0 = dotParts.length > 0 && !dotParts[0].isEmpty() ? dotParts[0] : "document";
-        String slot1 = dotParts.length > 1 && !dotParts[1].isEmpty() ? dotParts[1] : null;
+        String slot1 = dotParts.length > 1 && !dotParts[1].isEmpty() ? dotParts[1] : "domain";
         String kind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
 
         var sb = new StringBuilder();
         sb.append(" {").append(lineSep);
         sb.append(innerIndent).append("#name \"").append(slot0).append("\"").append(lineSep);
-        if (slot1 != null) {
-            sb.append(innerIndent).append("#domain \"").append(slot1).append("\"").append(lineSep);
-        }
+        sb.append(innerIndent).append("#domain \"").append(slot1).append("\"").append(lineSep);
         sb.append(innerIndent).append("#kind ").append(kind).append(lineSep);
         sb.append(indent).append("}");
 

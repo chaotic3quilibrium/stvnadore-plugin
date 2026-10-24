@@ -1,8 +1,12 @@
 {
   :meta {
     #name "order"
+    #domain "domain"
     #kind #BODY
   }
-  :type :String
+  :defs {
+    :Type :String
+  }
+  :type :Type
   :body ""
 }

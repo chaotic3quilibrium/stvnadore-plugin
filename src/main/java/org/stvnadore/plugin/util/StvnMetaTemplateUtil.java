@@ -70,15 +70,13 @@ public final class StvnMetaTemplateUtil {
     String[] dotParts = stemPart.split("\\.", -1);
 
     String slot0 = dotParts.length > 0 && !dotParts[0].isEmpty() ? dotParts[0] : "document";
-    String slot1 = dotParts.length > 1 && !dotParts[1].isEmpty() ? dotParts[1] : null;
+    String slot1 = dotParts.length > 1 && !dotParts[1].isEmpty() ? dotParts[1] : "domain";
     String kind = resolveExpectedKind(fileName);
 
     StringBuilder sb = new StringBuilder();
     sb.append("\n  :meta {\n");
     sb.append("    #name \"").append(slot0).append("\"\n");
-    if (slot1 != null) {
-      sb.append("    #domain \"").append(slot1).append("\"\n");
-    }
+    sb.append("    #domain \"").append(slot1).append("\"\n");
     sb.append("    #kind ").append(kind).append("\n");
     sb.append("  }\n");
     return sb.toString();

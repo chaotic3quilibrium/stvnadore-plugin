@@ -1,6 +1,7 @@
 {
   :meta {
     #name "player_data"
+    #domain "domain"
     #kind #BODY
   }
   :type :Int

@@ -90,7 +90,8 @@ public final class StvnBootstrapDocumentIntentionAction implements IntentionActi
         String[] dotParts = stem.split("\\.");
         String slot0 = dotParts.length > 0 && !dotParts[0].isEmpty() ? dotParts[0] : "document";
         String resolvedTemplate = template.replace("\"schema\"", "\"" + slot0 + "\"")
-                                          .replace("\"payload\"", "\"" + slot0 + "\"");
+                                          .replace("\"payload\"", "\"" + slot0 + "\"")
+                                          .replace("\"module\"", "\"" + slot0 + "\"");
 
         if (dotParts.length > 1 && !dotParts[1].isEmpty()) {
             String slot1 = dotParts[1];

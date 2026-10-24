@@ -1790,6 +1790,30 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      * across all 4 canonical extensions and transforms them into 100% clean non-erred states.
      */
     public void testBootstrapDocumentIntentionOnZeroByteFiles() {
+        myFixture.addFileToProject("primitives.common.stvn_d", """
+            {
+              :meta {
+                #name "primitives"
+                #domain "common"
+                #kind #DEFS
+              }
+              :defs {
+                :Primitive :String
+              }
+            }
+            """);
+        myFixture.addFileToProject("models.domain.stvn_di", """
+            {
+              :meta {
+                #name "models"
+                #domain "domain"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :Model :String
+              }
+            }
+            """);
         String[] extensions = { "order.stvn", "order.stvn_i", "order.stvn_d", "order.stvn_di" };
         for (var ext : extensions) {
             myFixture.configureByText(ext, "");
@@ -1831,6 +1855,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             {
               :meta {
                 #name "example_i"
+                #domain "domain"
                 #kind #DEFS_INCLUDE
               }
               :defs

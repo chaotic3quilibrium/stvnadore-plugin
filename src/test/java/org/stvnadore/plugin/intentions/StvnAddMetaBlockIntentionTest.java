@@ -66,9 +66,9 @@ public final class StvnAddMetaBlockIntentionTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that invoking the intention on single-stem file omits #domain.
+     * Verifies that invoking the intention on single-stem file emits default #domain "domain".
      */
-    public void testIntentionOmitsDomainOnSingleStemFile() {
+    public void testIntentionEmitsDefaultDomainOnSingleStemFile() {
         var content = "{ :body <caret>1 }";
         myFixture.configureByText("simple.stvn", content);
         var actions = myFixture.filterAvailableIntentions("Add root :meta header");
@@ -77,7 +77,7 @@ public final class StvnAddMetaBlockIntentionTest extends BasePlatformTestCase {
 
         var text = myFixture.getFile().getText();
         assertTrue("Expected #name \"simple\"", text.contains("#name \"simple\""));
-        assertFalse("Expected #domain omitted", text.contains("#domain"));
+        assertTrue("Expected #domain \"domain\"", text.contains("#domain \"domain\""));
         assertTrue("Expected #kind #BODY", text.contains("#kind #BODY"));
     }
 

@@ -37,10 +37,10 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
      * Serializable persistent state properties.
      */
     public static final class State {
-        public static final String DEFAULT_TEMPLATE_STVN = "{\n  :type :String\n  :body \"\"\n}\n";
-        public static final String DEFAULT_TEMPLATE_STVN_I = "{\n  :meta {\n    #name \"payload\"\n    #kind #BODY_INCLUDE\n  }\n  :type :String\n  :body \"\"\n}\n";
-        public static final String DEFAULT_TEMPLATE_STVN_D = "{\n  :meta {\n    #name \"schema\"\n    #kind #DEFS\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
-        public static final String DEFAULT_TEMPLATE_STVN_DI = "{\n  :meta {\n    #name \"schema\"\n    #kind #DEFS_INCLUDE\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN = "{\n  :meta {\n    #name \"payload\"\n    #domain \"domain\"\n    #kind #BODY\n  }\n  :defs {\n    :Type :String\n  }\n  :type :Type\n  :body \"\"\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_I = "{\n  :meta {\n    #name \"payload\"\n    #domain \"domain\"\n    #kind #BODY_INCLUDE\n  }\n  :defs {\n    :include [ \"models.domain.stvn_di\" ]\n  }\n  :type :String\n  :body \"\"\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_D = "{\n  :meta {\n    #name \"schema\"\n    #domain \"domain\"\n    #kind #DEFS\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
+        public static final String DEFAULT_TEMPLATE_STVN_DI = "{\n  :meta {\n    #name \"module\"\n    #domain \"domain\"\n    #kind #DEFS_INCLUDE\n  }\n  :defs {\n    :include [ \"primitives.common.stvn_d\" ]\n\n    :Type :String\n  }\n}\n";
 
         /**
          * Constructs a new State instance with default editor settings.
