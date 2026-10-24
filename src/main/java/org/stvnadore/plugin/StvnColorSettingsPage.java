@@ -86,7 +86,7 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
                 "  \"service\": \"active\",\n" +
                 "  \"endpoint\": \"gateway.internal\"\n" +
                 "}\n" +
-                "\"\"\"</string>\n" +
+                "[JSON]\"\"\"</string>\n" +
                 "  )\n" +
                 "}";
     }

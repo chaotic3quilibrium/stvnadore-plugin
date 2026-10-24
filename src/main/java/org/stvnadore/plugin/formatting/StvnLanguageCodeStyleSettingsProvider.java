@@ -48,7 +48,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
           "service": "active",
           "port": 8443
         }
-        \"\"\"
+        [JSON]\"\"\"
           )
         }
         """;
@@ -98,7 +98,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
             \"\"\"[TEXT]
         Line 1
         Line 2
-        \"\"\"
+        [TEXT]\"\"\"
           )
         }
         """;
