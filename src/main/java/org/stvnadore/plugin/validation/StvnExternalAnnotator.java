@@ -266,10 +266,19 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
         if (!systemMode) {
             String stem = fileName.substring(0, lastDot);
-            String[] dotParts = stem.split("\\.");
+            String[] dotParts = stem.split("\\.", -1);
+            if (dotParts.length >= 3) {
+                return new StvnDiagnostic(
+                    "Invalid filename stem '" + fileName + "'; filename must contain exactly one or two dot-separated stem segments (<name>.<ext> or <name>.<domain>.<ext>)",
+                    DiagnosticSeverity.ERROR,
+                    1, 0, 0, 0,
+                    null,
+                    java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+                );
+            }
             if (dotParts.length > 1 && !dotParts[1].isEmpty()) {
                 String slot1 = dotParts[1];
-                if ("stvn_core".equals(slot1) || "stvn_ir".equals(slot1) || "stvn_cas".equals(slot1)) {
+                if (slot1.startsWith("stvn_")) {
                     return new StvnDiagnostic(
                         "Reserved system domain prohibited: '" + slot1 + "' is reserved for internal compiler substrates and CAS envelopes",
                         DiagnosticSeverity.ERROR,
@@ -450,12 +459,14 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
             boolean isLayer1Identity = (diag.errorCode().isPresent() && (
                 DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
+                || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
                 || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
                 || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
                 || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
                 || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get())
             )) || message.contains("Reserved system domain prohibited")
                || message.contains("bare dotfiles are prohibited")
+               || message.contains("Invalid filename stem")
                || message.contains("prohibited legacy extension");
 
             if (file.getTextLength() == 0 || (isLayer1Identity && start == end)) {
@@ -556,9 +567,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                             || message.contains("Unfenced block strings are prohibited")) {
                         range = new TextRange(s, Math.min(s + 3, textLength));
                     }
-                    // Pin empty block diagnostics strictly to '{}' tokens [s, s + 2) (§ 7.3, § 3.5.1, § 3.8.0)
-                    if ((diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get()) || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
+                    // Pin empty block diagnostics strictly to '{}' tokens [s, s + 2) (§ 7.3, § 3.5.1, § 3.8.0, § 3.10.1)
+                    if ((diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get())
+                            || "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
+                            || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
+                            || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
                             || message.contains("ERR_EMPTY_METADATA_BLOCK")
+                            || message.contains("ERR_EMPTY_META_BLOCK")
                             || message.contains("ERR_EMPTY_DEFS_BLOCK")
                             || message.contains("must not be empty")
                             || message.contains("requires at least one type definition inside ':defs { ... }'")
@@ -581,8 +596,14 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
                     }
 
-                    // Attach InsertMissingMetaBlockQuickFix when missing root :meta is rendered as fail-safe
-                    if (isKindMismatch && s == 0) {
+                    // Attach InsertMissingMetaBlockQuickFix when missing root :meta is rendered as fail-safe or when :meta {} is empty
+                    boolean isEmptyMeta = (diag.errorCode().isPresent() && (
+                        "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
+                        || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
+                    )) || message.contains("ERR_EMPTY_META_BLOCK")
+                       || message.contains("Metadata block ':meta {}' must not be empty");
+
+                    if ((isKindMismatch && s == 0) || isEmptyMeta) {
                         var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
                         annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
                     }
@@ -1284,6 +1305,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         boolean isLayer1Identity = diag.errorCode().isPresent() && (
             DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
+            || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
             || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
             || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
             || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
@@ -1293,9 +1315,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         boolean isExemptFromSliceCheck = isConstraintViolation
             || isLayer1Identity
             || textLength == 0
-            || (diag.errorCode().isPresent() && ("ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()) || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
+            || (diag.errorCode().isPresent() && (
+                "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get())
+                || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())
+                || "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
+                || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
+            ))
             || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
             || message.contains("ERR_EMPTY_DEFS_BLOCK")
+            || message.contains("ERR_EMPTY_META_BLOCK")
+            || message.contains("Metadata block ':meta {}' must not be empty")
+            || message.contains("clause ':meta' requires a metadata block")
             || message.contains("Definitions schema requires root :meta block")
             || message.contains("Mandatory :meta block missing")
             || message.contains("requires at least one type definition inside ':defs { ... }'")
@@ -1800,7 +1830,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         return true;
                     }
                 }
+                return false;
             }
+            return false;
         }
 
         // 2. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
@@ -1826,6 +1858,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         var citedTokens = extractCitedTokens(msg);
         for (var candidateSymbol : citedTokens) {
+            if (isStructuralKeyword(candidateSymbol)) {
+                continue;
+            }
             if (candidateSymbol.startsWith(":") || candidateSymbol.startsWith("#")) {
                 if (!file.getText().contains(candidateSymbol)) {
                     return true;
@@ -1897,6 +1932,16 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
         return false;
+    }
+
+    private static boolean isStructuralKeyword(String token) {
+        return switch (token) {
+            case ":meta", ":defs", ":include", ":package", ":use",
+                 "#name", "#domain", "#kind", "#version", "#schemaVersion", "#formatVersion",
+                 "#CANONICAL_HERMETIC", "#DEFINITION", "#DEFS_INCLUDE", "#BODY", "#BODY_INCLUDE",
+                 "#strip" -> true;
+            default -> false;
+        };
     }
 
     private static boolean isLocalAstMatch(PsiFile file, StvnDiagnostic diag, int start, int end) {

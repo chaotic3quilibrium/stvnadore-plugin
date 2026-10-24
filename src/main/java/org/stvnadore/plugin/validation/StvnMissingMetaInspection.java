@@ -149,12 +149,22 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
                     PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
                     if (targetElement.getTextRange() != null && !targetElement.getTextRange().isEmpty()) {
-                        holder.registerProblem(
-                            targetElement,
-                            message,
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new InsertMissingMetaKindFacetQuickFix(expectedKind)
-                        );
+                        if (metaBlock != null && metaBlock.getMetaElementList().isEmpty()) {
+                            holder.registerProblem(
+                                targetElement,
+                                message,
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new InsertMissingMetaBlockQuickFix(expectedKind),
+                                new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                            );
+                        } else {
+                            holder.registerProblem(
+                                targetElement,
+                                message,
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                            );
+                        }
                     }
                 }
             }

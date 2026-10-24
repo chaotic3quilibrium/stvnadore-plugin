@@ -367,6 +367,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnMetaVisibilityAndWolfTest.class")
     exclude("**/StvnReservedPackageAndDomainPluginTest.class")
     exclude("**/StvnFileIdentityRenameQuickFixTest.class")
+    exclude("**/StvnIdentityHardeningTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

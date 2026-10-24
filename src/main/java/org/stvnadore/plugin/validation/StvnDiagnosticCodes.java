@@ -14,6 +14,8 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_DOCUMENT_NAME_MISMATCH = "WARN_DOCUMENT_NAME_MISMATCH";
     public static final String WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME = "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME";
     public static final String ERR_DOCUMENT_KIND_MISMATCH = "ERR_DOCUMENT_KIND_MISMATCH";
+    /** Error code emitted when a filename lacks a visible stem or violates stem cardinality (1 <= |stems| <= 2, multi-stem >= 3) (SPEC § 3.10.2, E032). */
+    public static final String ERR_INVALID_FILENAME_STEM = "ERR_INVALID_FILENAME_STEM";
 
     // Syntax & Lexical Invariants
     public static final String ERR_TAB_CHARACTER_FORBIDDEN = "ERR_TAB_CHARACTER_FORBIDDEN";
@@ -50,7 +52,10 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_FACET_ORDER_VIOLATION = "ERR_FACET_ORDER_VIOLATION";
     public static final String ERR_DUPLICATE_METADATA_FACET = "ERR_DUPLICATE_METADATA_FACET";
     public static final String ERR_INCOMPLETE_TRAIT_FACET = "ERR_INCOMPLETE_TRAIT_FACET";
+    /** Error code emitted when an empty type or constant metadata constraint annotation block '{}' is encountered (SPEC § 3.5.1, E003). */
     public static final String ERR_EMPTY_METADATA_BLOCK = "ERR_EMPTY_METADATA_BLOCK";
+    /** Error code emitted when an empty root document metadata block ':meta {}' is encountered (SPEC § 3.10.1, E039). */
+    public static final String ERR_EMPTY_META_BLOCK = "ERR_EMPTY_META_BLOCK";
     public static final String ERR_METADATA_FACET_ON_CONSTANT = "ERR_METADATA_FACET_ON_CONSTANT";
     public static final String ERR_EMPTY_DIRECTIVE_BLOCK = "ERR_EMPTY_DIRECTIVE_BLOCK";
     public static final String ERR_EMPTY_DEFS_BLOCK = "ERR_EMPTY_DEFS_BLOCK";

@@ -67,7 +67,7 @@ public final class StvnMetaTemplateUtil {
   public static String generateCanonicalMetaBlock(@NotNull String fileName) {
     int lastDot = fileName.lastIndexOf('.');
     String stemPart = lastDot >= 0 ? fileName.substring(0, lastDot) : fileName;
-    String[] dotParts = stemPart.split("\\.");
+    String[] dotParts = stemPart.split("\\.", -1);
 
     String slot0 = dotParts.length > 0 && !dotParts[0].isEmpty() ? dotParts[0] : "document";
     String slot1 = dotParts.length > 1 && !dotParts[1].isEmpty() ? dotParts[1] : null;
@@ -184,6 +184,20 @@ public final class StvnMetaTemplateUtil {
     }
 
     String metaBlock = generateCanonicalMetaBlock(file.getName());
+
+    MetaEntry existingMeta = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+    if (existingMeta != null && existingMeta.isValid()) {
+      var range = existingMeta.getTextRange();
+      doc.replaceString(range.getStartOffset(), range.getEndOffset(), metaBlock.trim());
+      PsiDocumentManager.getInstance(project).commitDocument(doc);
+      CodeStyleManager.getInstance(project).reformat(file);
+      if (editor != null) {
+        int targetOffset = Math.min(range.getStartOffset() + metaBlock.trim().length(), doc.getTextLength());
+        editor.getCaretModel().moveToOffset(targetOffset);
+      }
+      return;
+    }
+
     int insertOffset = rootLBrace.getTextRange().getEndOffset();
     doc.insertString(insertOffset, metaBlock);
 

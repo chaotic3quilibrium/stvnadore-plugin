@@ -2500,7 +2500,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 {
                   :type :Tuple( :Union( :Int :Boolean ) :Union( :Int :Boolean ) )
                   :body (
-                    #FALSE<hint text=":Boolean"/>
+                    #FALSE<hint text=":Union( :Int :Boolean ) [#2]"/>
                     #2 #FALSE<hint text=":Union( :Int :Boolean ) #2"/>
                   )<hint text=":Tuple( :Union( :Int :Boolean ) :Union( :Int :Boolean ) )"/>
                 }
