@@ -3,6 +3,7 @@ package org.stvnadore.plugin.formatting;
 import com.intellij.application.options.CodeStyleAbstractConfigurable;
 import com.intellij.application.options.CodeStyleAbstractPanel;
 import com.intellij.application.options.TabbedLanguageCodeStylePanel;
+import com.intellij.lang.Language;
 import com.intellij.psi.codeStyle.CodeStyleConfigurable;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CodeStyleSettingsProvider;
@@ -55,5 +56,15 @@ public final class StvnCodeStyleSettingsProvider extends CodeStyleSettingsProvid
     @Override
     public @Nullable String getConfigurableDisplayName() {
         return "STVN";
+    }
+
+    @Override
+    public @NotNull Language getLanguage() {
+        return StvnLanguage.INSTANCE;
+    }
+
+    @Override
+    public @NotNull String getConfigurableId() {
+        return "preferences.sourceCode." + StvnLanguage.INSTANCE.getID();
     }
 }
