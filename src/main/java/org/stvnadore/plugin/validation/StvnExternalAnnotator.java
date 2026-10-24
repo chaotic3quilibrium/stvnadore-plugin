@@ -1248,6 +1248,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         var quotedTokens = extractCitedTokens(message);
 
+        boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
+            || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
+            || message.contains("Tab character");
+
+        // Suppress external compiler tab character diagnostics when StvnTabCharacterInspection is active (Invariant 10)
+        if (isTabError) {
+            return isTabCharacterInspectionActive(file);
+        }
+
         boolean isAntlrSyntaxError = (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
             || message.contains("mismatched input")
             || message.contains("no viable alternative")
@@ -1311,15 +1320,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         // 3. Universal Comment & Whitespace Locus Protection:
         // Compiler diagnostics across all severities must never land on comments or blank spans,
         // unless reporting forbidden tab characters.
-        boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
-            || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
-            || message.contains("Tab character");
-
-        // Suppress external compiler tab character diagnostics when StvnTabCharacterInspection is active (Invariant 10)
-        if (isTabError && isTabCharacterInspectionActive(file)) {
-            return true;
-        }
-
         if (start >= 0 && start <= textLength) {
             if (!isTabError && s < e && text.substring(s, e).isBlank()) {
                 return true;
@@ -1679,19 +1679,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 return false;
             }
         }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnTabCharacter");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
+        // Unconditional inspection primacy on all user documents (Invariant 10)
         return true;
     }
 

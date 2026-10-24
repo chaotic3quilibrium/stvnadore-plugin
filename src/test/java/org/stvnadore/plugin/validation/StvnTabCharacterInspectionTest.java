@@ -87,11 +87,11 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("simple_string_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
         int tabOffset = code.indexOf('\t');
-        var tabErrors = highlights.stream()
+        var errorHighlights = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == tabOffset && h.getEndOffset() == tabOffset + 1)
             .toList();
-        assertEquals("Unescaped tab in simple string must report exactly one error highlight over tab span under Invariant 10", 1, tabErrors.size());
-        var error = tabErrors.get(0);
+        assertEquals("Unescaped tab in simple string must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
         assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
         assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
@@ -101,11 +101,11 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("opening_fence_tab.stvn", code);
         List<HighlightInfo> highlights = myFixture.doHighlighting();
         int tabOffset = code.indexOf('\t');
-        var tabErrors = highlights.stream()
+        var errorHighlights = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == tabOffset && h.getEndOffset() == tabOffset + 1)
             .toList();
-        assertEquals("Opening fence delimiter tab must report exactly one error highlight over tab span under Invariant 10", 1, tabErrors.size());
-        var error = tabErrors.get(0);
+        assertEquals("Opening fence delimiter tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
+        var error = errorHighlights.get(0);
         assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
         assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
     }

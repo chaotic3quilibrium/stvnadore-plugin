@@ -2027,4 +2027,40 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertFalse("Document must no longer contain '8080'", updatedText.contains("8080"));
         assertTrue("Document must retain valid :defs block", updatedText.contains(":Port :Int"));
     }
+
+    /**
+     * Verifies that StvnExternalAnnotator suppresses compiler tab diagnostics
+     * in user documents (Invariant 10) to give primacy to StvnTabCharacterInspection.
+     */
+    public void testIsDiagnosticSuppressedReturnsTrueForUserDocumentTab() {
+        var annotator = new StvnExternalAnnotator();
+        var file = myFixture.configureByText("user_doc.stvn", "{\n\t:type :Int\n  :body 42\n}");
+        var diag = new StvnDiagnostic(
+            "Tab character ('\\t', U+0009) is strictly forbidden in STVN syntax outside fenced string literals",
+            DiagnosticSeverity.ERROR,
+            2, 0, 2, 3,
+            null,
+            java.util.Optional.of(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN)
+        );
+        assertTrue("Tab diagnostic must be suppressed on user document buffers under Invariant 10",
+            annotator.isDiagnosticSuppressed(file, diag));
+    }
+
+    /**
+     * Verifies that StvnExternalAnnotator preserves compiler tab diagnostics
+     * in shared fixture files to satisfy contract test assertions.
+     */
+    public void testIsDiagnosticSuppressedReturnsFalseForSharedFixtureTab() {
+        var annotator = new StvnExternalAnnotator();
+        var file = myFixture.addFileToProject("shared-fixtures/syntax/invalid/lexical/tab_character_indent_disallowed.stvn", "{\n\t:type :Int\n  :body 42\n}");
+        var diag = new StvnDiagnostic(
+            "Tab character ('\\t', U+0009) is strictly forbidden in STVN syntax outside fenced string literals",
+            DiagnosticSeverity.ERROR,
+            2, 0, 2, 3,
+            null,
+            java.util.Optional.of(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN)
+        );
+        assertFalse("Tab diagnostic must not be suppressed on shared fixture files",
+            annotator.isDiagnosticSuppressed(file, diag));
+    }
 }
