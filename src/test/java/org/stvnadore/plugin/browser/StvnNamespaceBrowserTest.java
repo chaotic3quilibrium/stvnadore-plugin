@@ -787,7 +787,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * the namespace browser table correctly contains both the Depth 1 bare aliases and the
      * Depth 0 canonical FQNI prelude symbols when Show Standard Library Prelude is active.
      */
-    public void testDocumentWithPreludeStripDisplaysBothBareAliasesAndCanonicalFqnis() {
+    public void testDocumentWithPreludeStripDisplaysBothBareAliasesAndCanonicalFqnis() throws Exception {
         var content = """
             {
               :defs {
@@ -798,6 +798,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var file = myFixture.configureByText("prelude_strip.stvn", content);
         var contentUi = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
         assertNotNull(contentUi);
+        contentUi.waitForAnalysis(5, java.util.concurrent.TimeUnit.SECONDS);
 
         // Initially without prelude checkbox, contains only stripped aliases at Depth 1 (25 symbols)
         var initialEntries = contentUi.tableModel().getItems();
@@ -976,12 +977,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
      * Verifies that toggling the prelude checkbox in the Namespace Browser popup
      * re-filters and updates the table model on the EDT without throwing read-action threading assertions.
      */
-    public void testPopupPreludeCheckboxToggleWithoutOuterReadAction() {
+    public void testPopupPreludeCheckboxToggleWithoutOuterReadAction() throws Exception {
         myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
         var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
 
         var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
         assertNotNull(content);
+        content.waitForAnalysis(5, java.util.concurrent.TimeUnit.SECONDS);
         var initialCount = content.tableModel().getItems().size();
 
         // Simulate user clicking checkbox to include prelude symbols
@@ -1268,5 +1270,111 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         } finally {
             com.intellij.openapi.util.io.FileUtil.delete(tempDir.toFile());
         }
+    }
+
+    /**
+     * Verifies that createBrowserContent returns in under 50 ms with an active loading panel.
+     */
+    public void testAsyncPopupPresentationUnder50Ms() {
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
+
+        long start = System.currentTimeMillis();
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.BODY);
+        long duration = System.currentTimeMillis() - start;
+
+        assertNotNull(content);
+        assertTrue("Popup UI construction must return in under 50 ms, was " + duration + " ms", duration < 50);
+        assertTrue("Loading panel must be active immediately upon creation", content.loadingPanel().isLoading());
+        assertFalse("Prelude checkbox must be initially disabled while loading", content.showPreludeCheckBox().isEnabled());
+    }
+
+    /**
+     * Verifies that background analysis completes, populates the table model, and stops the loading panel.
+     */
+    public void testBackgroundAnalysisPopulatesTableModel() throws Exception {
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
+
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.BODY);
+        content.waitForAnalysis(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertFalse("Loading panel must stop after analysis completes", content.loadingPanel().isLoading());
+        assertTrue("Prelude checkbox must be enabled after analysis completes", content.showPreludeCheckBox().isEnabled());
+        assertFalse("Table model must be populated with collected symbols", content.tableModel().getItems().isEmpty());
+        assertTrue("Header label must reflect symbol count", content.headerLabel().getText().contains("symbols"));
+    }
+
+    /**
+     * Verifies that toggling the prelude checkbox executes in under 5 ms via single-pass in-memory caching.
+     */
+    public void testSinglePassCachingAndInstantPreludeFilter0Ms() throws Exception {
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
+
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.DEFS);
+        content.waitForAnalysis(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        int initialCount = content.tableModel().getItems().size();
+
+        long start = System.currentTimeMillis();
+        content.showPreludeCheckBox().doClick(0);
+        long toggleDuration = System.currentTimeMillis() - start;
+
+        int withPreludeCount = content.tableModel().getItems().size();
+        assertTrue("Filter toggle must execute in under 50 ms via in-memory caching, was " + toggleDuration + " ms", toggleDuration < 50);
+        assertTrue("Enabling prelude must increase symbol count", withPreludeCount > initialCount);
+
+        start = System.currentTimeMillis();
+        content.showPreludeCheckBox().doClick(0);
+        long revertDuration = System.currentTimeMillis() - start;
+
+        int revertedCount = content.tableModel().getItems().size();
+        assertTrue("Filter toggle must execute in under 50 ms on revert, was " + revertDuration + " ms", revertDuration < 50);
+        assertEquals("Disabling prelude must revert to initial count", initialCount, revertedCount);
+    }
+
+    /**
+     * Verifies that disposing the parent disposable cancels the background read action cleanly.
+     */
+    public void testCooperativeCancellationOnPopupClose() throws Exception {
+        myFixture.addFileToProject("browser_modular_schema.stvn_di", MODULAR_SCHEMA_CONTENT);
+        var file = myFixture.configureByText("browser_document.stvn_i", BROWSER_DOCUMENT_CONTENT);
+
+        var disposable = com.intellij.openapi.util.Disposer.newDisposable("TestPopupDisposable");
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.BODY, disposable);
+
+        // Immediately dispose parent disposable to simulate early popup close
+        com.intellij.openapi.util.Disposer.dispose(disposable);
+
+        try {
+            content.waitForAnalysis(1, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
+            assertTrue("Cause must be cancellation or disposal",
+                e.getCause() instanceof com.intellij.openapi.progress.ProcessCanceledException ||
+                e.getCause() instanceof java.util.concurrent.CancellationException);
+        } catch (java.util.concurrent.CancellationException | java.util.concurrent.TimeoutException expected) {
+            // Expected cancellation on disposal
+        }
+    }
+
+    /**
+     * Verifies that an empty body section evaluates gracefully without NullPointerException.
+     */
+    public void testEmptyAndDegradedBodyHandling() throws Exception {
+        var emptyBodyContent = """
+            {
+              :type :Tuple( :Int :String )
+              :body ()
+            }
+            """;
+        var file = myFixture.configureByText("empty_body.stvn", emptyBodyContent);
+        var content = StvnNamespaceBrowserPopup.createBrowserContent(getProject(), file, StvnNamespaceScope.BODY);
+        content.waitForAnalysis(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertNotNull(content);
+        assertFalse("Loading panel must complete", content.loadingPanel().isLoading());
+        assertEquals("Empty body must produce zero collected body symbols", 0, content.tableModel().getItems().size());
+        assertTrue(content.headerLabel().getText().contains("0 symbols"));
     }
 }

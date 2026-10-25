@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.browser;
 
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -76,6 +77,7 @@ public final class StvnNamespaceSymbolCollector {
      * @return ordered list of symbol entries
      */
     public static List<StvnNamespaceSymbolEntry> collectSymbols(PsiFile file, StvnNamespaceScope scope) {
+        ProgressManager.checkCanceled();
         return ReadAction.compute(() -> switch (scope) {
             case DEFS -> collectDefsSymbols(file);
             case TYPE -> collectTypeSymbols(file);
@@ -95,6 +97,7 @@ public final class StvnNamespaceSymbolCollector {
             var results = new ArrayList<StvnNamespaceSymbolEntry>();
             var defs = PsiTreeUtil.findChildrenOfType(preludeFile, TypeDefinition.class);
             for (var def : defs) {
+                ProgressManager.checkCanceled();
                 var kw = def.getTypeKeyword();
                 if (kw != null) {
                     var fullText = kw.getText();
@@ -116,6 +119,7 @@ public final class StvnNamespaceSymbolCollector {
             }
             var constDefs = PsiTreeUtil.findChildrenOfType(preludeFile, ConstantDefinition.class);
             for (var cDef : constDefs) {
+                ProgressManager.checkCanceled();
                 var kw = cDef.getValueKeyword();
                 if (kw != null) {
                     var fullText = kw.getText();
@@ -408,7 +412,8 @@ public final class StvnNamespaceSymbolCollector {
             var currentDepth = item.depth();
             var currentFile = item.contextFile();
 
-            var kw = currentSchema.getTypeKeyword();
+            ProgressManager.checkCanceled();
+        var kw = currentSchema.getTypeKeyword();
             if (kw != null) {
                 var name = kw.getText();
                 if (isPrimitiveTypeName(name)) {
@@ -523,6 +528,7 @@ public final class StvnNamespaceSymbolCollector {
     }
 
     private static List<StvnNamespaceSymbolEntry> collectBodySymbols(PsiFile file) {
+        ProgressManager.checkCanceled();
         var results = new ArrayList<StvnNamespaceSymbolEntry>();
         var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
         if (bodyEntry == null || bodyEntry.getValue() == null) {
@@ -566,6 +572,7 @@ public final class StvnNamespaceSymbolCollector {
         Set<String> processed
     ) {
         var depth = calculateValueNestingDepth(currentVal, rootVal);
+        ProgressManager.checkCanceled();
 
         // 1. Check for value keywords (#NULL, #BUY)
         var valueKw = currentVal.getValueKeyword();
@@ -712,18 +719,21 @@ public final class StvnNamespaceSymbolCollector {
             var mapLit = coll.getMapLiteral();
             if (mapLit != null) {
                 for (var child : mapLit.getValueList()) {
+                    ProgressManager.checkCanceled();
                     collectPayloadSymbols(child, rootVal, file, results, processed);
                 }
             }
             var listLit = coll.getListLiteral();
             if (listLit != null) {
                 for (var child : listLit.getValueList()) {
+                    ProgressManager.checkCanceled();
                     collectPayloadSymbols(child, rootVal, file, results, processed);
                 }
             }
             var tupleLit = coll.getTupleLiteral();
             if (tupleLit != null) {
                 for (var child : tupleLit.getValueList()) {
+                    ProgressManager.checkCanceled();
                     collectPayloadSymbols(child, rootVal, file, results, processed);
                 }
             }
@@ -851,6 +861,7 @@ public final class StvnNamespaceSymbolCollector {
             return;
         }
 
+        ProgressManager.checkCanceled();
         var kw = currentSchema.getTypeKeyword();
         if (kw != null) {
             var name = kw.getText();

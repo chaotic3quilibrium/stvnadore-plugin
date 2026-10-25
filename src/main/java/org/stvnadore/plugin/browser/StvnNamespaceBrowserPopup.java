@@ -1,6 +1,16 @@
 package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.hint.HintManager;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.components.JBLoadingPanel;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.ScrollType;
@@ -59,12 +69,45 @@ public final class StvnNamespaceBrowserPopup {
         JBTable table,
         JBCheckBox showPreludeCheckBox,
         StvnNamespaceTableModel tableModel,
-        JBLabel headerLabel
-    ) {}
+        JBLabel headerLabel,
+        JBLoadingPanel loadingPanel,
+        CompletableFuture<List<StvnNamespaceSymbolEntry>> analysisFuture
+    ) {
+        /**
+         * Waits for the background dependency analysis to complete.
+         *
+         * @param timeout maximum wait time
+         * @param unit time unit
+         * @throws Exception if interrupted or timed out
+         */
+        public void waitForAnalysis(long timeout, TimeUnit unit) throws Exception {
+            if (ApplicationManager.getApplication().isDispatchThread()) {
+                long deadline = System.currentTimeMillis() + unit.toMillis(timeout);
+                while (!analysisFuture.isDone()) {
+                    if (System.currentTimeMillis() > deadline) {
+                        throw new java.util.concurrent.TimeoutException("Timed out waiting for analysis");
+                    }
+                    com.intellij.util.ui.UIUtil.dispatchAllInvocationEvents();
+                    Thread.sleep(10);
+                }
+                analysisFuture.get(0, TimeUnit.MILLISECONDS);
+            } else {
+                analysisFuture.get(timeout, unit);
+            }
+        }
+    }
 
     static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
-        var entries = ReadAction.compute(() -> StvnNamespaceSymbolCollector.collectSymbols(file, scope));
-        var tableModel = new StvnNamespaceTableModel(entries);
+        return createBrowserContent(project, file, scope, Disposer.newDisposable());
+    }
+
+    static BrowserContent createBrowserContent(
+        Project project,
+        PsiFile file,
+        StvnNamespaceScope scope,
+        Disposable parentDisposable
+    ) {
+        var tableModel = new StvnNamespaceTableModel(new ArrayList<>());
         var table = new JBTable(tableModel);
 
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -77,35 +120,73 @@ public final class StvnNamespaceBrowserPopup {
         panel.setPreferredSize(new Dimension(750, 380));
 
         var northPanel = new JPanel(new BorderLayout(0, 0));
-        var headerLabel = new JBLabel("Scope: " + scope.getDisplayTitle() + " (" + entries.size() + " symbols)");
+        var headerLabel = new JBLabel("Scope: " + scope.getDisplayTitle() + " (Analyzing...)");
         headerLabel.setBorder(JBUI.Borders.emptyBottom(4));
         northPanel.add(headerLabel, BorderLayout.WEST);
 
         var showPreludeCheckBox = new JBCheckBox("Show Standard Library Prelude", false);
-        showPreludeCheckBox.addActionListener(e -> {
-            boolean selected = showPreludeCheckBox.isSelected();
-            var updatedEntries = ReadAction.compute(() -> {
-                var list = new ArrayList<>(StvnNamespaceSymbolCollector.collectSymbols(file, scope));
-                if (selected) {
-                    var preludeEntries = StvnNamespaceSymbolCollector.collectPreludeSymbols(file.getProject());
-                    for (var pe : preludeEntries) {
-                        if (!list.contains(pe)) {
-                            list.add(pe);
-                        }
-                    }
-                }
-                return list;
-            });
-            tableModel.setItems(updatedEntries);
-            headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + updatedEntries.size() + " symbols)");
-        });
+        showPreludeCheckBox.setEnabled(false);
         northPanel.add(showPreludeCheckBox, BorderLayout.EAST);
         panel.add(northPanel, BorderLayout.NORTH);
 
         var scrollPane = new JBScrollPane(table);
-        panel.add(scrollPane, BorderLayout.CENTER);
+        var loadingPanel = new JBLoadingPanel(new BorderLayout(), parentDisposable);
+        loadingPanel.add(scrollPane, BorderLayout.CENTER);
+        loadingPanel.setLoadingText("Analyzing " + scope.getSectionKeyword() + " dependencies...");
+        loadingPanel.startLoading();
+        panel.add(loadingPanel, BorderLayout.CENTER);
 
-        return new BrowserContent(panel, table, showPreludeCheckBox, tableModel, headerLabel);
+        var cachedAllEntries = new ArrayList<StvnNamespaceSymbolEntry>();
+        var analysisFuture = new CompletableFuture<List<StvnNamespaceSymbolEntry>>();
+
+        showPreludeCheckBox.addActionListener(e -> {
+            boolean selected = showPreludeCheckBox.isSelected();
+            var visibleEntries = filterVisibleEntries(cachedAllEntries, selected);
+            tableModel.setItems(visibleEntries);
+            headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + visibleEntries.size() + " symbols)");
+        });
+
+        var promise = ReadAction.nonBlocking(() -> {
+            ProgressManager.checkCanceled();
+            var localSymbols = StvnNamespaceSymbolCollector.collectSymbols(file, scope);
+            ProgressManager.checkCanceled();
+            var preludeSymbols = StvnNamespaceSymbolCollector.collectPreludeSymbols(project);
+            var merged = new ArrayList<>(localSymbols);
+            for (var pe : preludeSymbols) {
+                if (!merged.contains(pe)) {
+                    merged.add(pe);
+                }
+            }
+            return List.copyOf(merged);
+        })
+        .inSmartMode(project)
+        .expireWith(parentDisposable)
+        .expireWhen(() -> !file.isValid() || project.isDisposed())
+        .finishOnUiThread(ModalityState.any(), entries -> {
+            cachedAllEntries.clear();
+            cachedAllEntries.addAll(entries);
+            boolean selected = showPreludeCheckBox.isSelected();
+            var visible = filterVisibleEntries(cachedAllEntries, selected);
+            tableModel.setItems(visible);
+            headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + visible.size() + " symbols)");
+            showPreludeCheckBox.setEnabled(true);
+            loadingPanel.stopLoading();
+            analysisFuture.complete(entries);
+        })
+        .submit(AppExecutorUtil.getAppExecutorService());
+
+        promise.onError(analysisFuture::completeExceptionally);
+
+        return new BrowserContent(panel, table, showPreludeCheckBox, tableModel, headerLabel, loadingPanel, analysisFuture);
+    }
+
+    private static List<StvnNamespaceSymbolEntry> filterVisibleEntries(List<StvnNamespaceSymbolEntry> entries, boolean showPrelude) {
+        if (showPrelude) {
+            return List.copyOf(entries);
+        }
+        return entries.stream()
+            .filter(e -> !e.isPrelude())
+            .toList();
     }
 
     /**
@@ -116,7 +197,8 @@ public final class StvnNamespaceBrowserPopup {
      * @param scope the initial section scope
      */
     public static void showPopup(Project project, PsiFile file, StvnNamespaceScope scope) {
-        var content = createBrowserContent(project, file, scope);
+        var popupDisposable = Disposer.newDisposable("StvnNamespaceBrowserPopup");
+        var content = createBrowserContent(project, file, scope, popupDisposable);
         var panel = content.panel();
         var table = content.table();
         var tableModel = content.tableModel();
@@ -182,6 +264,7 @@ public final class StvnNamespaceBrowserPopup {
             .setCancelKeyEnabled(true)
             .createPopup();
 
+        Disposer.register(popup, popupDisposable);
         popupRef[0] = popup;
         popup.showInFocusCenter();
     }
