@@ -6,7 +6,7 @@ import com.intellij.psi.PsiReference;
 import org.jetbrains.annotations.NotNull;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.StringLiteral;
-import org.stvnadore.plugin.reference.StvnIncludeReference;
+import org.stvnadore.plugin.reference.StvnIncludeFileReferenceSet;
 
 public abstract class StvnStringLiteralMixin extends ASTWrapperPsiElement implements StringLiteral {
     
@@ -17,13 +17,13 @@ public abstract class StvnStringLiteralMixin extends ASTWrapperPsiElement implem
     @Override
     public PsiReference getReference() {
         PsiReference[] references = getReferences();
-        return references.length > 0 ? references[0] : null;
+        return references.length > 0 ? references[references.length - 1] : null;
     }
 
     @Override
     public PsiReference @NotNull [] getReferences() {
         if (getParent() instanceof IncludeElement) {
-            return new PsiReference[]{new StvnIncludeReference((StringLiteral) this)};
+            return new StvnIncludeFileReferenceSet((StringLiteral) this).getAllReferences();
         }
         return PsiReference.EMPTY_ARRAY;
     }

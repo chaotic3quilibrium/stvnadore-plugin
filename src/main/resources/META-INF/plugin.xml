@@ -247,6 +247,9 @@
         <chooseByNameContributor implementation="org.stvnadore.plugin.reference.StvnChooseByNameContributor"/>
 
         <!-- 6c. PSI Reference Contributor -->
+        <lang.elementManipulator
+                forClass="org.stvnadore.psi.StringLiteral"
+                implementationClass="org.stvnadore.plugin.psi.StvnStringLiteralManipulator"/>
         <psi.referenceContributor language="STVN"
                                   implementation="org.stvnadore.plugin.reference.StvnReferenceContributor"/>
 
@@ -272,6 +275,9 @@
         <completion.contributor
                 language="STVN"
                 implementationClass="org.stvnadore.plugin.completion.StvnPackageCompletionContributor"/>
+        <completion.contributor
+                language="STVN"
+                implementationClass="org.stvnadore.plugin.completion.StvnIncludeCompletionContributor"/>
 
         <!-- 8. Project-Scoped Settings Component -->
         <projectService serviceImplementation="org.stvnadore.plugin.settings.StvnProjectSettings"/>

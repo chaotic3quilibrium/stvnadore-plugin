@@ -129,7 +129,7 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                     if (!(element instanceof StringLiteral stringLit)) {
                         return PsiReference.EMPTY_ARRAY;
                     }
-                    return new PsiReference[]{new StvnIncludeReference(stringLit)};
+                    return new StvnIncludeFileReferenceSet(stringLit).getAllReferences();
                 }
             }
         );

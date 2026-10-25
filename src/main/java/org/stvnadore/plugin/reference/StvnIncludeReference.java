@@ -1,46 +1,58 @@
 package org.stvnadore.plugin.reference;
 
+import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiReferenceBase;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.impl.source.resolve.reference.impl.providers.FileReference;
+import com.intellij.psi.impl.source.resolve.reference.impl.providers.FileReferenceSet;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
-import org.jspecify.annotations.Nullable;
-import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.plugin.icons.StvnIcons;
 
 /**
- * Resolves STVN include string literals to their corresponding target files.
+ * Resolves STVN include path segments to corresponding target files and directories.
+ * Extends FileReference to enable segment navigation, completion, and rename refactoring.
  */
 @NullMarked
-public final class StvnIncludeReference extends PsiReferenceBase<StringLiteral> {
+public final class StvnIncludeReference extends FileReference {
 
     /**
-     * Constructs an StvnIncludeReference for the given string literal element.
+     * Constructs an StvnIncludeReference instance.
      *
-     * @param element the string literal element
+     * @param fileReferenceSet the owning FileReferenceSet
+     * @param range            the text range of the reference within the element
+     * @param index            the index of the segment
+     * @param text             the path segment text
      */
-    public StvnIncludeReference(StringLiteral element) {
-        super(element, getInnerRange(element));
-    }
-
-    private static TextRange getInnerRange(StringLiteral element) {
-        var text = element.getText();
-        if (text.startsWith("\"\"\"")) {
-            if (text.startsWith("\"\"\"[")) {
-                var closeIndex = text.indexOf(']');
-                if (closeIndex != -1 && text.endsWith("\"\"\"") && text.length() > closeIndex + 4) {
-                    return new TextRange(closeIndex + 1, text.length() - 3);
-                }
-            } else if (text.endsWith("\"\"\"") && text.length() >= 6) {
-                return new TextRange(3, text.length() - 3);
-            }
-        } else if (text.startsWith("\"") && text.endsWith("\"") && text.length() >= 2) {
-            return new TextRange(1, text.length() - 1);
-        }
-        return new TextRange(0, text.length());
+    public StvnIncludeReference(
+            FileReferenceSet fileReferenceSet,
+            TextRange range,
+            int index,
+            String text
+    ) {
+        super(fileReferenceSet, range, index, text);
     }
 
     @Override
-    public @Nullable PsiElement resolve() {
-        return StvnTypeReference.resolveIncludeFile(getElement());
+    protected @Nullable Object createLookupItem(PsiElement candidate) {
+        if (candidate instanceof PsiFile psiFile) {
+            var name = psiFile.getName();
+            var icon = psiFile.getIcon(0);
+            if (icon == null) {
+                icon = name.endsWith(".stvn_di")
+                    ? StvnIcons.STVN_DI
+                    : (name.endsWith(".stvn_d") ? StvnIcons.STVN_D : StvnIcons.STVN_BD);
+            }
+            var typeText = name.endsWith(".stvn_di")
+                ? "Modular Schema Module"
+                : (name.endsWith(".stvn_d") ? "Hermetic Schema" : "Binary Schema");
+
+            return LookupElementBuilder.create(psiFile, name)
+                .withIcon(icon)
+                .withTypeText(typeText, true);
+        }
+        return super.createLookupItem(candidate);
     }
 }
