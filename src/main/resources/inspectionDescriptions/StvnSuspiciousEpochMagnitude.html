@@ -1,0 +1,44 @@
+<html>
+<body>
+<p>Reports integer literals in <code>:body</code> bound to <code>:TimeEpoch</code> whose digit length mismatches the declared scale flag by &ge; 3 orders of magnitude.</p>
+
+<p>Under STVN Language Specification &sect; 5.6.1, <code>:TimeEpoch</code> denotes discrete duration since Unix Epoch (<code>1970-01-01T00:00:00Z</code>) qualified by an explicit bare scale flag (<code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>).</p>
+
+<p>Developers frequently paste millisecond or nanosecond timestamps into seconds-resolution schemas, causing computed calendar dates to resolve tens of thousands of years into the future.</p>
+
+<p><b>Magnitude Bands:</b></p>
+<ul>
+  <li><b>Seconds (<code>#s</code>):</b> 9..10 digits (e.g. <code>1704067200</code>)</li>
+  <li><b>Milliseconds (<code>#ms</code>):</b> 12..13 digits (e.g. <code>1704067200000</code>)</li>
+  <li><b>Microseconds (<code>#us</code>):</b> 15..16 digits (e.g. <code>1704067200000000</code>)</li>
+  <li><b>Nanoseconds (<code>#ns</code>):</b> 18..19 digits (e.g. <code>1704067200000000000</code>)</li>
+</ul>
+
+<p><b>Compliant Example:</b></p>
+<pre><code>{
+  :defs {
+    :CreatedEpoch { #s } :TimeEpoch
+  }
+  :type :CreatedEpoch
+  :body 1704067200
+}
+</code></pre>
+
+<p><b>Warning Example:</b></p>
+<pre><code>{
+  :defs {
+    :CreatedEpoch { #s } :TimeEpoch
+  }
+  :type :CreatedEpoch
+  // Warning: 13 digits indicate milliseconds, but schema declared seconds #s
+  :body 1704067200000
+}
+</code></pre>
+
+<p><b>Available Quick-Fixes:</b></p>
+<ul>
+  <li><b>Rescale literal:</b> Divides or multiplies the literal value to align with the declared schema scale.</li>
+  <li><b>Update schema scale flag:</b> Replaces the scale flag in the local schema definition to match the literal magnitude band.</li>
+</ul>
+</body>
+</html>

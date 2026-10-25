@@ -20,6 +20,7 @@ import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
+import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.CollectionType;
@@ -745,10 +746,123 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<b>Value Type:</b> ").append(typeLabel).append("<br/>");
                 sb.append("<hr/>");
                 sb.append("<b>Expression:</b> ").append(value.getText());
+                var epochDoc = buildTimeEpochValueHoverDoc(value, typeLabel);
+                if (epochDoc != null) {
+                    sb.append(epochDoc);
+                }
                 return sb.toString();
             }
         }
 
+        return null;
+    }
+
+    private @Nullable String buildTimeEpochValueHoverDoc(Value value, String typeLabel) {
+        var intLit = value.getIntegerLiteral();
+        if (intLit == null) {
+            return null;
+        }
+        var bodyEntry = PsiTreeUtil.getParentOfType(value, BodyEntry.class);
+        if (bodyEntry == null) {
+            return null;
+        }
+        var info = StvnTypeResolver.resolveBaseTypeInfo(value);
+        if (info == null) {
+            return null;
+        }
+        var baseType = resolveBaseTypeString(info.getSchema(), new HashSet<>());
+        if (!StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+            return null;
+        }
+        var scale = extractScaleFlag(info.getSchema());
+        var settings = StvnSettings.getInstance(value.getProject());
+        var hourFormat = settings.getState().timeEpochHourFormat;
+        var result = StvnTimeEpochFormatter.format(intLit.getText().trim(), scale, hourFormat);
+
+        var sb = new StringBuilder();
+        sb.append("<br/><b>UTC Time:</b> ").append(result.formattedUtc());
+
+        if (settings.getState().showEpochMagnitudeWarnings && (result.isCivilWindowViolation() || result.isMagnitudeMismatch())) {
+            sb.append("<br/><br/>");
+            sb.append("""
+                <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-top: 6px; border-radius: 2px; font-family: sans-serif;">
+                    <b style="font-size: 1.05em;">&#9888; Suspicious Epoch Magnitude Warning</b><br/>
+                """);
+            if (result.isCivilWindowViolation() && result.year() != null) {
+                sb.append(String.format("Computed year <b>%d</b> falls outside civil window [1900, 2100].<br/>", result.year()));
+            }
+            if (result.isMagnitudeMismatch()) {
+                sb.append(String.format("Literal has %s, but declared scale is <b>%s</b> (expected %s).",
+                    result.detectedBandDescription(), scale, result.expectedBandDescription()));
+            }
+            sb.append("</div>");
+        }
+        return sb.toString();
+    }
+
+    private static String extractScaleFlag(SchemaType schemaType) {
+        var metaMap = schemaType.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                    || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                    return text;
+                }
+            }
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (td != null) {
+                    if (td.getMetadataMap() != null) {
+                        for (var entry : td.getMetadataMap().getMetadataEntryList()) {
+                            var text = entry.getText().trim();
+                            if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                                || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                                return text;
+                            }
+                        }
+                    }
+                    if (td.getSchemaType() != null) {
+                        return extractScaleFlag(td.getSchemaType());
+                    }
+                }
+            }
+        }
+        return StvnVocabulary.FACET_KW_SCALE_MS;
+    }
+
+    private static @Nullable String resolveBaseTypeString(SchemaType schemaType, Set<String> visited) {
+        var constructor = schemaType.getSchemaConstructor();
+        if (constructor != null) {
+            var atomic = constructor.getAtomicType();
+            if (atomic != null) {
+                return atomic.getText().trim();
+            }
+            return constructor.getText().trim();
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var text = kw.getText().trim();
+            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(text) || StvnVocabulary.isBaseScalarType(text)) {
+                return text;
+            }
+            if (!visited.add(text)) {
+                return null;
+            }
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
+                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (td != null && td.getSchemaType() != null) {
+                    return resolveBaseTypeString(td.getSchemaType(), visited);
+                }
+            }
+        }
         return null;
     }
 

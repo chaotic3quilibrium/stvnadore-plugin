@@ -547,6 +547,16 @@
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnStemMismatchInspection"/>
 
+        <!-- 12v. Local Inspection for Suspicious TimeEpoch Magnitude -->
+        <localInspection language="STVN"
+                         shortName="StvnSuspiciousEpochMagnitude"
+                         displayName="Suspicious epoch magnitude inspection"
+                         groupPath="STVN"
+                         groupName="Governance"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnSuspiciousEpochMagnitudeInspection"/>
+
         <!-- 13. Notification Group for Workspace compilation alerts -->
         <notificationGroup id="STVN Workspace Group" displayType="BALLOON"/>
 

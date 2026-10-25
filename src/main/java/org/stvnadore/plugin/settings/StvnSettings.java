@@ -34,6 +34,16 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
     }
 
     /**
+     * Hour presentation format for TimeEpoch hover documentation cards.
+     */
+    public enum TimeEpochHourFormat {
+        /** 12-hour format with AM/PM indicator (e.g., 7:30:00 PM UTC). */
+        HOUR_12,
+        /** 24-hour format (e.g., 19:30:00 UTC). */
+        HOUR_24
+    }
+
+    /**
      * Serializable persistent state properties.
      */
     public static final class State {
@@ -51,6 +61,10 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public boolean useLongFormSumTypes = true;
         /** Multiline string auto-closing delimiter shape. */
         public BlockStringEnterStyle blockStringEnterStyle = BlockStringEnterStyle.EXPANDED_THREE_LINE;
+        /** Hour presentation format for TimeEpoch hover documentation cards. */
+        public TimeEpochHourFormat timeEpochHourFormat = TimeEpochHourFormat.HOUR_12;
+        /** If true, displays warning banner on suspicious epoch magnitude in hover cards. */
+        public boolean showEpochMagnitudeWarnings = true;
         /** Canonical bootstrap template for modular payload documents (.stvn). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
         /** Canonical bootstrap template for isolated payload documents (.stvn_i). */

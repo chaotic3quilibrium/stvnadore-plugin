@@ -39,6 +39,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
     private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
     private @Nullable JComboBox<AliasExpansionMode> aliasExpansionModeComboBox;
+    private @Nullable JComboBox<StvnSettings.TimeEpochHourFormat> timeEpochHourFormatComboBox;
+    private @Nullable JCheckBox showEpochMagnitudeWarningsCheckBox;
     private @Nullable JTextArea templateStvnArea;
     private @Nullable JTextArea templateStvnIArea;
     private @Nullable JTextArea templateStvnDArea;
@@ -123,6 +125,38 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(styleCombo);
 
         panel.add(javax.swing.Box.createVerticalStrut(15));
+        var epochBorderPanel = new JPanel();
+        epochBorderPanel.setLayout(new javax.swing.BoxLayout(epochBorderPanel, javax.swing.BoxLayout.Y_AXIS));
+        epochBorderPanel.setBorder(BorderFactory.createTitledBorder("TimeEpoch Formatting"));
+        epochBorderPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+
+        var epochFormatLabel = new JLabel("Hover card UTC hour display format:");
+        epochFormatLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        epochBorderPanel.add(epochFormatLabel);
+
+        var epochCombo = new JComboBox<>(StvnSettings.TimeEpochHourFormat.values());
+        epochCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value == StvnSettings.TimeEpochHourFormat.HOUR_12) {
+                    setText("12-Hour format (e.g., Saturday, September 12, 2026, at 7:30:00 PM UTC)");
+                } else if (value == StvnSettings.TimeEpochHourFormat.HOUR_24) {
+                    setText("24-Hour format (e.g., Saturday, September 12, 2026, at 19:30:00 UTC)");
+                }
+                return this;
+            }
+        });
+        epochCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        epochCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, epochCombo.getPreferredSize().height));
+        epochBorderPanel.add(epochCombo);
+
+        var epochWarnCb = new JCheckBox("Display warning on suspicious epoch magnitude in hover cards");
+        epochWarnCb.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        epochBorderPanel.add(epochWarnCb);
+        panel.add(epochBorderPanel);
+
+        panel.add(javax.swing.Box.createVerticalStrut(15));
         var templateBorderPanel = new JPanel(new BorderLayout());
         templateBorderPanel.setBorder(BorderFactory.createTitledBorder("Bootstrap Templates"));
         templateBorderPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -153,6 +187,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
         preferImpliedSumTypesCheckBox = cb6;
         blockStringEnterStyleComboBox = styleCombo;
         aliasExpansionModeComboBox = aliasModeCombo;
+        timeEpochHourFormatComboBox = epochCombo;
+        showEpochMagnitudeWarningsCheckBox = epochWarnCb;
         templateStvnArea = areaStvn;
         templateStvnIArea = areaStvnI;
         templateStvnDArea = areaStvnD;
@@ -172,8 +208,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
+        var epCombo = timeEpochHourFormatComboBox;
+        var epWarn = showEpochMagnitudeWarningsCheckBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
             return false;
         }
 
@@ -199,6 +237,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
                cb5.isSelected() != projSettings.getState().enableFormDiscrepancyInspection ||
                cb6.isSelected() != projSettings.getState().preferImpliedSumTypes ||
                combo.getSelectedItem() != settings.getState().blockStringEnterStyle ||
+               epCombo.getSelectedItem() != settings.getState().timeEpochHourFormat ||
+               epWarn.isSelected() != settings.getState().showEpochMagnitudeWarnings ||
                aliasCombo.getSelectedItem() != projSettings.getState().aliasExpansionMode;
     }
 
@@ -212,8 +252,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
+        var epCombo = timeEpochHourFormatComboBox;
+        var epWarn = showEpochMagnitudeWarningsCheckBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
             return;
         }
 
@@ -231,6 +273,11 @@ public final class StvnConfigurable implements SearchableConfigurable {
         if (selectedMode != null) {
             projSettings.getState().aliasExpansionMode = selectedMode;
         }
+        var selectedEpochFormat = (StvnSettings.TimeEpochHourFormat) epCombo.getSelectedItem();
+        if (selectedEpochFormat != null) {
+            settings.getState().timeEpochHourFormat = selectedEpochFormat;
+        }
+        settings.getState().showEpochMagnitudeWarnings = epWarn.isSelected();
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -256,8 +303,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb6 = preferImpliedSumTypesCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
+        var epCombo = timeEpochHourFormatComboBox;
+        var epWarn = showEpochMagnitudeWarningsCheckBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
             return;
         }
 
@@ -272,6 +321,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb6.setSelected(projSettings.getState().preferImpliedSumTypes);
         combo.setSelectedItem(settings.getState().blockStringEnterStyle);
         aliasCombo.setSelectedItem(projSettings.getState().aliasExpansionMode);
+        epCombo.setSelectedItem(settings.getState().timeEpochHourFormat);
+        epWarn.setSelected(settings.getState().showEpochMagnitudeWarnings);
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -296,6 +347,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
         preferImpliedSumTypesCheckBox = null;
         blockStringEnterStyleComboBox = null;
         aliasExpansionModeComboBox = null;
+        timeEpochHourFormatComboBox = null;
+        showEpochMagnitudeWarningsCheckBox = null;
         templateStvnArea = null;
         templateStvnIArea = null;
         templateStvnDArea = null;

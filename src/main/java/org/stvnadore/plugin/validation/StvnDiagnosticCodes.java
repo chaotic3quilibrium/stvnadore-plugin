@@ -69,6 +69,7 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_TEMPORAL_SCALE_MISSING = "ERR_TEMPORAL_SCALE_MISSING";
     public static final String ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE = "ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE";
     public static final String ERR_DATETIME_MODE_MISSING = "ERR_DATETIME_MODE_MISSING";
+    public static final String WARN_SUSPICIOUS_EPOCH_MAGNITUDE = "WARN_SUSPICIOUS_EPOCH_MAGNITUDE";
 
     // Enum & Enum Subsets
     public static final String ERR_FILTER_ON_INLINE_ENUM = "ERR_FILTER_ON_INLINE_ENUM";
