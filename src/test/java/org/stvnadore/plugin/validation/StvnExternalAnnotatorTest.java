@@ -2126,4 +2126,61 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("Tab diagnostic must be suppressed on tab_character.stvn user document",
             annotator.isDiagnosticSuppressed(file, diag));
     }
+
+    /**
+     * Verifies Strict Diagnostic Source Path Pinning (§ 7.3):
+     * In-editor syntax errors on type definitions on line 10 must remain pinned to line 10
+     * and must never produce error annotations or popups on sibling :include statements on line 8.
+     */
+    public void testActiveFileSyntaxErrorDoesNotPinToSiblingInclude() {
+        var childContent = """
+            {
+              :meta {
+                #name "child"
+                #domain "common"
+                #kind #DEFS
+              }
+              :defs {
+                :ValidType :String
+              }
+            }
+            """;
+        myFixture.addFileToProject("child.common.stvn_d", childContent);
+
+        var parentContent = """
+            {
+              :meta {
+                #name "parent"
+                #domain "test"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "child.common.stvn_d" ]
+                :GoodType :String
+                :BrokenType { #minSize } :String
+              }
+            }
+            """;
+        var parentFile = myFixture.configureByText("parent.test.stvn_di", parentContent);
+
+        var highlights = myFixture.doHighlighting();
+
+        int includeOffset = parentContent.indexOf(":include");
+        int brokenTypeOffset = parentContent.indexOf(":BrokenType");
+
+        // 1. Line 8 :include must receive ZERO error annotations
+        for (var highlight : highlights) {
+            if (highlight.getSeverity() == HighlightSeverity.ERROR) {
+                var range = new com.intellij.openapi.util.TextRange(highlight.getStartOffset(), highlight.getEndOffset());
+                assertFalse("Include statement on line 8 must NOT receive error highlight for active file syntax error: " + highlight.getDescription(),
+                    range.contains(includeOffset));
+            }
+        }
+
+        // 2. Line 10 :BrokenType must receive the error highlight
+        boolean brokenTypeHighlighted = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .anyMatch(h -> h.getStartOffset() >= brokenTypeOffset && h.getStartOffset() <= brokenTypeOffset + 35);
+        assertTrue("Syntax error on line 10 must remain pinned to :BrokenType line", brokenTypeHighlighted);
+    }
 }

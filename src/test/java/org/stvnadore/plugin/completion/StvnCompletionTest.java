@@ -876,6 +876,74 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         assertTrue("Should offer #Right tag", lookupStrings.contains("#Right ") || lookupStrings.contains("#Right"));
         assertTrue("Should offer #Left tag", lookupStrings.contains("#Left ") || lookupStrings.contains("#Left"));
     }
+
+    /**
+     * Verifies the Sigil Symmetrical Consumption Invariant (§ 3.1, § 7.4):
+     * Completing #minSize 1 when caret is on or after # in ':Type {# #maxSize 4096 } :String'
+     * consumes the preceding bare '#' and produces exactly ':Type { #minSize 1 #maxSize 4096 } :String'
+     * with zero '##' tokens.
+     */
+    public void testMetadataFacetSigilSymmetricalConsumption() {
+        myFixture.configureByText(
+            "sigil_consumption.stvn_d",
+            """
+            {
+              :meta {
+                #name "sigil_test"
+                #domain "test"
+                #kind #DEFS
+              }
+              :defs {
+                :Type {#<caret> #maxSize 4096 } :String
+              }
+            }
+            """
+        );
+
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist inside metadata map", elements);
+
+        var minSizeElement = findLookupElement(elements, "#minSize 1");
+        assertNotNull("Completion must offer #minSize 1", minSizeElement);
+
+        myFixture.getLookup().setCurrentItem(minSizeElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertFalse("Completion must never produce '##' tokens", resultText.contains("##"));
+        assertTrue("Completion must cleanly insert '#minSize 1' with proper spacing:\n" + resultText,
+            resultText.contains(":Type { #minSize 1 #maxSize 4096 } :String"));
+    }
+
+    /**
+     * Verifies the Lexical Facet Deduplication Invariant (§ 5.1.4):
+     * When #maxSize is already lexically present in the metadata block, completion must
+     * strictly exclude #maxSize proposals even when preceding syntax contains incomplete tokens.
+     */
+    public void testMetadataFacetLexicalDeduplication() {
+        myFixture.configureByText(
+            "facet_dedup.stvn_d",
+            """
+            {
+              :meta {
+                #name "dedup_test"
+                #domain "test"
+                #kind #DEFS
+              }
+              :defs {
+                :Type {#<caret> #maxSize 4096 } :String
+              }
+            }
+            """
+        );
+
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Completion must offer candidate #minSize 1", lookupStrings.contains("#minSize 1"));
+        assertFalse("Completion must NOT offer duplicate #maxSize 256", lookupStrings.contains("#maxSize 256"));
+    }
 }
 
 

@@ -1790,27 +1790,47 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return false;
         }
 
-        // 1. Forward-compatible reflection lookup for diagnostic.sourcePath()
-        try {
-            var method = diag.getClass().getMethod("sourcePath");
-            var pathObj = method.invoke(diag);
-            if (pathObj instanceof String sourcePath && !sourcePath.isEmpty()) {
-                var virtualFile = file.getVirtualFile();
-                if (virtualFile != null) {
-                    var activePath = virtualFile.getPath().replace('\\', '/');
-                    var normalizedSource = sourcePath.replace('\\', '/');
-                    if (!activePath.endsWith(normalizedSource) && !normalizedSource.endsWith(virtualFile.getName())) {
-                        return true;
-                    }
+        // 1. Strict Diagnostic Source Path Pinning Invariant (§ 7.3):
+        // If diag.sourcePath() is present, route strictly by matching sourcePath against active file / includes.
+        String sourcePath = getDiagnosticSourcePath(diag);
+        if (sourcePath != null && !sourcePath.isEmpty()) {
+            var virtualFile = file.getVirtualFile();
+            if (virtualFile == null) {
+                return false;
+            }
+            var activePath = virtualFile.getPath().replace('\\', '/');
+            var normalizedSource = sourcePath.replace('\\', '/');
+
+            // If sourcePath matches the active file path or name, the diagnostic is strictly local
+            if (activePath.equals(normalizedSource) || activePath.endsWith("/" + normalizedSource)
+                || normalizedSource.endsWith("/" + virtualFile.getName()) || normalizedSource.equals(virtualFile.getName())) {
+                return false;
+            }
+            // Confirm that sourcePath matches an actual entry in the include graph
+            return isPathInIncludeGraph(file, normalizedSource);
+        }
+
+        // 2. Fallback Semantic Isolation (when sourcePath method is not present on core record):
+        var doc = file.getViewProvider().getDocument();
+
+        // 2a. Active buffer syntax error isolation:
+        // Syntax errors occurring within the active buffer bounds are strictly local and NEVER leak to includes.
+        if (isAntlrSyntaxError(diag)) {
+            if (diag.startOffset() >= 0 && diag.endOffset() <= file.getTextLength()
+                    && (doc == null || diag.line() <= doc.getLineCount())) {
+                if (!isCoordinateMismatchInActiveBuffer(file, diag)) {
+                    return false;
                 }
             }
-        } catch (Throwable ignored) {
-            // sourcePath method not present in current core record; fallback to semantic checks
+            return true;
         }
 
         var msg = diag.message();
+        if (msg.startsWith("Cycle detected: ")) {
+            return false;
+        }
 
-        // 1b. Extension-aware origin routing for missing :meta / document kind mismatch diagnostics:
+        // 2b. Extension-aware origin routing for missing :meta / document kind mismatch diagnostics:
         boolean isKindMismatchOrMissingMeta = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
             || msg.contains("Mandatory :meta block missing")
             || msg.contains("ERR_DOCUMENT_KIND_MISMATCH")
@@ -1835,12 +1855,15 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return false;
         }
 
-        // 2. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
-        if (msg.startsWith("Constraint violation (") || msg.startsWith("Zero-Shadowing constraint violated: ")) {
+        // 2c. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
+        if (msg.startsWith("Constraint violation (") || msg.startsWith("Metadata violation (") || msg.startsWith("Zero-Shadowing constraint violated: ")) {
             var openParen = msg.indexOf('(');
             var closeParen = msg.indexOf(')', openParen);
             if (openParen >= 0 && closeParen > openParen) {
                 var typeName = msg.substring(openParen + 1, closeParen).trim();
+                if (!typeName.isEmpty() && !file.getText().contains(typeName)) {
+                    return true;
+                }
                 var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
                 if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
                     return true;
@@ -1848,7 +1871,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
-        // 3. Child module detection for files containing includes:
+        // 2d. Child module detection for undefined / unresolved types:
         if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ") || msg.startsWith("Unresolved type alias: ")) {
             var typeName = extractCitedTypeToken(msg);
             if (!typeName.isEmpty() && !file.getText().contains(typeName)) {
@@ -1856,53 +1879,72 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
-        var citedTokens = extractCitedTokens(msg);
-        for (var candidateSymbol : citedTokens) {
-            if (isStructuralKeyword(candidateSymbol)) {
-                continue;
-            }
-            if (candidateSymbol.startsWith(":") || candidateSymbol.startsWith("#")) {
-                if (!file.getText().contains(candidateSymbol)) {
+        // 2e. Invalid metadata facet tag in :meta block:
+        if (msg.contains("Invalid metadata facet tag") || (diag.errorCode().isPresent() && "ERR_INVALID_METADATA_FACET".equals(diag.errorCode().get()))) {
+            var quoted = extractCitedTokens(msg);
+            if (!quoted.isEmpty()) {
+                var tag = quoted.get(0);
+                if (!file.getText().contains(tag)) {
                     return true;
                 }
-                var resolved = StvnTypeReference.resolveTypeInFile(file, candidateSymbol, new java.util.HashSet<>());
-                if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
-                    var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
-                    var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
-                    if (s < e) {
-                        var slice = file.getText().substring(s, e);
-                        if (!slice.contains(candidateSymbol)) {
-                            return true;
-                        }
-                    } else {
-                        return true;
-                    }
-                }
             }
         }
 
-        // 3a. Universal ANTLR syntax error isolation in files containing includes
-        if (isAntlrSyntaxError(diag)) {
-            if (!hasLocalSyntaxErrorAt(file, diag)) {
-                return true;
-            }
-        }
-
-        // 4. Strict AST element verification at target coordinates:
+        // 2f. Strict AST element verification at target coordinates:
         if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
             return true;
         }
 
-        // 5. Active buffer boundary clamp: coordinates outside active file text length belong to child
+        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
+            return true;
+        }
+
+        // 2f. Active buffer boundary clamp: coordinates outside active file text length belong to child
         if (diag.endOffset() > file.getTextLength() || diag.startOffset() < 0) {
             return true;
         }
 
-        var doc = file.getViewProvider().getDocument();
         if (doc != null && diag.line() > doc.getLineCount()) {
             return true;
         }
 
+        return false;
+    }
+
+    private static @Nullable String getDiagnosticSourcePath(StvnDiagnostic diag) {
+        try {
+            var method = diag.getClass().getMethod("sourcePath");
+            var pathObj = method.invoke(diag);
+            if (pathObj instanceof java.util.Optional<?> opt) {
+                var val = opt.orElse(null);
+                return val instanceof String s ? s : null;
+            }
+            if (pathObj instanceof String sourcePath) {
+                return sourcePath;
+            }
+        } catch (Throwable ignored) {
+            // Reflection fallback when sourcePath method is not present on core record
+        }
+        return null;
+    }
+
+    private static boolean isPathInIncludeGraph(PsiFile file, String normalizedSourcePath) {
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        for (var incl : includes) {
+            var stringLit = incl.getStringLiteral();
+            if (stringLit == null) continue;
+            var pathText = stringLit.getText().replace("\"", "").replace('\\', '/');
+            if (normalizedSourcePath.endsWith(pathText) || pathText.endsWith(normalizedSourcePath)) {
+                return true;
+            }
+            var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+            if (targetFile != null && targetFile.getVirtualFile() != null) {
+                var targetPath = targetFile.getVirtualFile().getPath().replace('\\', '/');
+                if (targetPath.equals(normalizedSourcePath) || targetPath.endsWith("/" + normalizedSourcePath)) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
@@ -1942,6 +1984,25 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                  "#strip" -> true;
             default -> false;
         };
+    }
+
+    private static boolean isGenericNoiseToken(String token) {
+        if (token.isEmpty() || isStructuralKeyword(token)) {
+            return true;
+        }
+        if (token.equals("}") || token.equals("{") || token.equals("]") || token.equals("[")
+                || token.equals(")") || token.equals("(") || token.equals(":") || token.equals("#")
+                || token.equals(",") || token.equals(";") || token.equals("\"") || token.equals("'")) {
+            return true;
+        }
+        if (token.equals(StvnVocabulary.TYPE_STRING) || token.equals(StvnVocabulary.TYPE_INT) || token.equals(StvnVocabulary.TYPE_FLOAT)
+                || token.equals(StvnVocabulary.TYPE_BOOLEAN) || token.equals(StvnVocabulary.TYPE_DATE_TIME) || token.equals(StvnVocabulary.TYPE_TIME_EPOCH)
+                || token.equals(StvnVocabulary.TYPE_TUPLE) || token.equals(StvnVocabulary.TYPE_SEQ)
+                || token.equals(StvnVocabulary.TYPE_SET) || token.equals(StvnVocabulary.TYPE_MAP) || token.equals(StvnVocabulary.TYPE_EITHER)
+                || token.equals(StvnVocabulary.TYPE_ENUM) || token.equals(StvnVocabulary.TYPE_OPTION) || token.equals(StvnVocabulary.TYPE_UNION)) {
+            return true;
+        }
+        return token.matches("^[0-9]+$");
     }
 
     private static boolean isLocalAstMatch(PsiFile file, StvnDiagnostic diag, int start, int end) {
@@ -2008,7 +2069,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 return true;
             }
         }
-        if (msg.contains("facet '") && (msg.contains("is not permitted on") || msg.contains("is prohibited on"))) {
+        if ((msg.contains("facet '") && (msg.contains("is not permitted on") || msg.contains("is prohibited on")))
+            || msg.contains("Unrecognized constraint facet")) {
             var metaEntry = PsiTreeUtil.findElementOfClassAtRange(file, start, end, MetadataEntry.class);
             if (metaEntry == null) {
                 return true;
@@ -2132,7 +2194,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var expectedExt = extractExtensionFromMessage(msg);
 
             IncludeNode matchedNode = null;
-            if (expectedExt != null) {
+            // Route strictly by explicit sourcePath matching the include graph node
+            String diagSourcePath = getDiagnosticSourcePath(diag);
+            if (diagSourcePath != null && !diagSourcePath.isEmpty()) {
+                var normalizedSource = diagSourcePath.replace('\\', '/');
+                for (var node : sortedNodes) {
+                    var targetVf = node.targetFile().getVirtualFile();
+                    if (targetVf != null) {
+                        var targetPath = targetVf.getPath().replace('\\', '/');
+                        if (targetPath.equals(normalizedSource) || targetPath.endsWith("/" + normalizedSource)
+                                || normalizedSource.endsWith(node.directPath())) {
+                            matchedNode = node;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (matchedNode == null && expectedExt != null) {
                 for (var node : sortedNodes) {
                     if (node.extension().equalsIgnoreCase(expectedExt)) {
                         if (msg.contains("Mandatory :meta block missing")) {
@@ -2158,8 +2237,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 || msg.contains("Unknown or undefined type:")
                 || msg.contains("Unresolved type alias:");
 
-            // Vector 2 Remediation: Undefined type errors occur in the file that references the type,
-            // never in the dependency file that declares the type. Exclude definition sites.
             if (matchedNode == null && isUndefinedType && !primaryToken.isEmpty()) {
                 for (var node : sortedNodes) {
                     if (declaresTypeDefinition(node.targetFile(), primaryToken)) {
@@ -2170,19 +2247,24 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         break;
                     }
                 }
+                if (matchedNode == null) {
+                    for (var node : sortedNodes) {
+                        if (node.targetFile().getText().contains(primaryToken)) {
+                            matchedNode = node;
+                            break;
+                        }
+                    }
+                }
             }
 
-            if (matchedNode == null && !primaryToken.isEmpty()) {
+            // 4. Token matching for specific child module tokens (excluding generic words like :String, }, 4096):
+            if (matchedNode == null && !isGenericNoiseToken(primaryToken)) {
                 for (var node : sortedNodes) {
                     if (node.targetFile().getText().contains(primaryToken)) {
                         matchedNode = node;
                         break;
                     }
                 }
-            }
-
-            if (matchedNode == null && !sortedNodes.isEmpty()) {
-                matchedNode = sortedNodes.get(0);
             }
 
             if (matchedNode != null) {
