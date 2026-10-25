@@ -4,9 +4,12 @@ import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.psi.NestedPackageIllegal;
+import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -34,6 +37,22 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
                     ),
                     ProblemHighlightType.ERROR
                 );
+            }
+
+            @Override
+            public void visitTypeDefinition(@NotNull TypeDefinition def) {
+                var target = def.getTypeDefTarget();
+                if (target != null && ":package".equals(target.getText().trim())
+                        && PsiTreeUtil.getParentOfType(def, PackageEnclosure.class) != null) {
+                    holder.registerProblem(
+                        def,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Nested packages are prohibited",
+                            StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED
+                        ),
+                        ProblemHighlightType.ERROR
+                    );
+                }
             }
         };
     }

@@ -82,6 +82,8 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
         assertEquals("Expected exactly 1 WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME highlight", 1, domainWarnings.size());
         assertTrue("Highlight must originate exclusively from stvn-plugin",
             domainWarnings.get(0).getDescription().contains("[stvn-plugin:WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME]"));
+        assertNoCoreHighlight("roots.stvn", highlights, "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME");
+        assertNoCoreHighlight("roots.stvn", highlights, "W002");
     }
 
     /**
@@ -99,6 +101,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
         var highlights = myFixture.doHighlighting();
 
         assertZeroDuplicateDiagnostics("epoch_sample.stvn", highlights);
+        assertNoCoreHighlight("epoch_sample.stvn", highlights, "WARN_SUSPICIOUS_EPOCH_MAGNITUDE");
     }
 
     /**
@@ -126,6 +129,8 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
 
         assertEquals("Expected exactly 1 ERR_DOCUMENT_KIND_MISMATCH on line 1 brace", 1, line1Errors.size());
         assertTrue(line1Errors.get(0).getDescription().contains("[stvn-plugin:ERR_DOCUMENT_KIND_MISMATCH]"));
+        assertNoCoreHighlight("schema.stvn_d", highlights, "ERR_DOCUMENT_KIND_MISMATCH");
+        assertNoCoreHighlight("schema.stvn_d", highlights, "E031");
     }
 
     /**
@@ -137,6 +142,72 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
         var highlights = myFixture.doHighlighting();
 
         assertZeroDuplicateDiagnostics("tab_sample.stvn", highlights);
+        assertNoCoreHighlight("tab_sample.stvn", highlights, "ERR_TAB_CHARACTER_FORBIDDEN");
+    }
+
+    /**
+     * Asserts that StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive returns true
+     * across symbolic codes, numeric standard codes (W002, E001, E031), and prose patterns.
+     */
+    public void testIsDiagnosticGovernedAndActiveMultiKeyResolution() {
+        var file = myFixture.configureByText("test.stvn", "{\n  :type :Int\n  :body 42\n}");
+
+        // 1. Symbolic name resolution
+        var symbolicDiag = new org.stvnadore.core.StvnDiagnostic(
+            "Declared #domain 'domain' is omitted from filename stem slot 1",
+            org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.WARNING,
+            1, 0, 0, 10, null, java.util.Optional.of("WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME")
+        );
+        assertTrue("Symbolic diagnostic code must be governed and active",
+            StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, symbolicDiag));
+
+        // 2. Numeric specification code resolution (W002)
+        var numericDiag = new org.stvnadore.core.StvnDiagnostic(
+            "Declared #domain 'domain' is omitted from filename stem slot 1",
+            org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.WARNING,
+            1, 0, 0, 10, null, java.util.Optional.of("W002")
+        );
+        assertTrue("Numeric specification code W002 must be governed and active",
+            StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, numericDiag));
+
+        // 3. Specification table canonical identifier (DOCUMENT_DOMAIN_OMITTED_IN_FILENAME)
+        var specTableDiag = new org.stvnadore.core.StvnDiagnostic(
+            "Declared #domain 'domain' is omitted from filename stem slot 1",
+            org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.WARNING,
+            1, 0, 0, 10, null, java.util.Optional.of("DOCUMENT_DOMAIN_OMITTED_IN_FILENAME")
+        );
+        assertTrue("Spec table canonical name must be governed and active",
+            StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, specTableDiag));
+
+        // 4. Defensive prose fallback with empty errorCode
+        var proseDiag = new org.stvnadore.core.StvnDiagnostic(
+            "Declared #domain 'domain' is omitted from filename stem slot 1",
+            org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.WARNING,
+            1, 0, 0, 10, null, java.util.Optional.empty()
+        );
+        assertTrue("Prose pattern fallback must govern untyped diagnostic",
+            StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, proseDiag));
+
+        // 5. Fatal syntax error must NOT be governed
+        var syntaxDiag = new org.stvnadore.core.StvnDiagnostic(
+            "STVN Syntax Error: mismatched input",
+            org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR,
+            1, 0, 0, 1, null, java.util.Optional.of("STVN_SYNTAX_ERROR")
+        );
+        assertFalse("Raw syntax errors must remain ungoverned",
+            StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, syntaxDiag));
+    }
+
+    /**
+     * Asserts that zero [stvn-core:...] highlights exist for the specified diagnostic code.
+     */
+    private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {
+        var coreHighlights = highlights.stream()
+            .filter(h -> h.getDescription() != null)
+            .filter(h -> h.getDescription().contains("[stvn-core:" + code + "]"))
+            .toList();
+        assertTrue(String.format("File '%s' must contain zero [stvn-core:%s] highlights, but found: %s",
+            fileName, code, coreHighlights), coreHighlights.isEmpty());
     }
 
     /**
