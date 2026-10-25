@@ -782,6 +782,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
             """;
         var file = myFixture.configureByText("disordered.stvn", disorderedContent);
+        myFixture.enableInspections(new StvnMetadataOrderInspection());
         var annotator = new StvnExternalAnnotator();
         var collected = annotator.collectInformation(file);
         assertNotNull(collected);
@@ -804,6 +805,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      * the raw compiler ERR_TAB_CHARACTER_FORBIDDEN diagnostic.
      */
     public void testTabCharacterDiagnosticSuppressedWhenInspectionActive() {
+        myFixture.enableInspections(new StvnTabCharacterInspection());
         var content = "{\n\t:type :String\n  :body \"sample\"\n}";
         var file = myFixture.configureByText("tab_suppression.stvn", content);
         var annotator = new StvnExternalAnnotator();
@@ -836,6 +838,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
             """;
         var file = myFixture.configureByText("json_example.stvn_i", content);
+        myFixture.enableInspections(new StvnStemMismatchInspection());
         var annotator = new StvnExternalAnnotator();
         var collected = annotator.collectInformation(file);
         assertNotNull(collected);
@@ -853,7 +856,6 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("External annotator must suppress domain omitted diagnostic when StvnStemMismatch inspection is active",
             annotator.isDiagnosticSuppressed(file, domainDiag));
 
-        myFixture.enableInspections(new StvnStemMismatchInspection());
         var highlights = myFixture.doHighlighting();
         var domainWarnings = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
@@ -2058,6 +2060,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      * in user documents (Invariant 10) to give primacy to StvnTabCharacterInspection.
      */
     public void testIsDiagnosticSuppressedReturnsTrueForUserDocumentTab() {
+        myFixture.enableInspections(new StvnTabCharacterInspection());
         var annotator = new StvnExternalAnnotator();
         var file = myFixture.configureByText("user_doc.stvn", "{\n\t:type :Int\n  :body 42\n}");
         var diag = new StvnDiagnostic(
@@ -2114,6 +2117,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      * Verifies that generic substring 'invalid' does not disable tab suppression on user documents.
      */
     public void testIsDiagnosticSuppressedPreservesSuppressionOnUserPathWithInvalidSubstring() {
+        myFixture.enableInspections(new StvnTabCharacterInspection());
         var annotator = new StvnExternalAnnotator();
         var file = myFixture.configureByText("tab_character.stvn", "{\n\t:type :Int\n  :body 42\n}");
         var diag = new StvnDiagnostic(

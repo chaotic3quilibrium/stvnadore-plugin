@@ -603,10 +603,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     )) || message.contains("ERR_EMPTY_META_BLOCK")
                        || message.contains("Metadata block ':meta {}' must not be empty");
 
-                    if ((isKindMismatch && s == 0) || isEmptyMeta) {
-                        var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
-                        annotationBuilder = annotationBuilder.withFix(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
-                    }
 
                     // Attach RemoveIllegalStructuralSectionQuickFix when definitions schema contains illegal :type or :body
                     if (isKindMismatch && (rawMessage.contains("cannot declare ':type'") || rawMessage.contains("cannot declare ':body'") || rawMessage.contains("Structural violation:"))) {
@@ -764,23 +760,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                         annotationBuilder = annotationBuilder.withFix(new StvnInteractiveRenameQuickFix());
                     }
 
-                    // Attach stem mismatch quick-fixes for WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
-                    if (diag.errorCode().isPresent() && "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME".equals(diag.errorCode().get())) {
-                        var fileName = file.getName();
-                        int lastDot = fileName.lastIndexOf('.');
-                        if (lastDot >= 0) {
-                            var ext = fileName.substring(lastDot);
-                            var stemPart = fileName.substring(0, lastDot);
-                            var dotParts = stemPart.split("\\.");
-                            var tokens = extractCitedTokens(diag.message());
-                            var domainVal = !tokens.isEmpty() ? tokens.get(0) : "default";
-                            var targetFileName = dotParts[0] + "." + domainVal + ext;
-                            var targetElem = file.findElementAt(range.getStartOffset());
-                            var elemForFix = targetElem != null ? targetElem : file;
-                            annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(elemForFix, targetFileName));
-                            annotationBuilder = annotationBuilder.withFix(new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(elemForFix));
-                        }
-                    }
 
                     // Attach ConvertToFencedStringIntentionAction for unfenced block strings (Rule STR-04)
                     if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
@@ -1239,22 +1218,9 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return true;
         }
 
-        // 1a. Missing Meta & Document Kind Mismatch Exemption & Deduplication:
-        // When StvnMissingMetaInspection is active, suppress external annotator duplicate
-        // to ensure the developer sees exactly ONE diagnostic and ONE quick-fix on line 1 '{'.
-        boolean isStructuralSectionViolation = message.contains("cannot declare ':type'")
-            || message.contains("cannot declare ':body'")
-            || message.contains("Structural violation:");
-        boolean isKindMismatchOrMissingMeta = !isStructuralSectionViolation && (
-            (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-            || message.contains("Mandatory :meta block missing")
-            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
-        );
-        if (isKindMismatchOrMissingMeta) {
-            if (isMissingMetaInspectionActive(file)) {
-                return true;
-            }
-            return false;
+        // Deconfliction Gate: Suppress external annotator diagnostics when condition is governed by an active inspection
+        if (StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, diag)) {
+            return true;
         }
 
         // 1b. Coordinate Mismatch Verification: active buffer slice at coordinates must match cited symbol
@@ -1287,10 +1253,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
             || message.contains("Tab character");
 
-        // Suppress external compiler tab character diagnostics when StvnTabCharacterInspection is active (Invariant 10)
-        if (isTabError) {
-            return isTabCharacterInspectionActive(file);
-        }
 
         boolean isAntlrSyntaxError = (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
             || message.contains("mismatched input")
@@ -1314,6 +1276,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
         boolean isExemptFromSliceCheck = isConstraintViolation
             || isLayer1Identity
+            || isTabError
             || textLength == 0
             || (diag.errorCode().isPresent() && (
                 "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get())
@@ -1395,63 +1358,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
             return true;
         }
-        // Suppress external compiler stem mismatch diagnostics when StvnStemMismatchInspection is active
-        if (diag.errorCode().isPresent() && (DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME.equals(diag.errorCode().get())
-                || DiagnosticBag.WARN_DOCUMENT_NAME_MISMATCH.equals(diag.errorCode().get()))) {
-            if (isStemMismatchInspectionActive(file)) {
-                return true;
-            }
-        }
-        if ((message.contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME")
-                || message.contains("WARN_DOCUMENT_NAME_MISMATCH")
-                || message.contains("is omitted from filename stem slot 1")
-                || message.contains("does not match file stem")
-                || message.contains("does not match filename stem slot 1")) && isStemMismatchInspectionActive(file)) {
-            return true;
-        }
-        // Suppress external facet ordering diagnostics when StvnMetadataOrderInspection is active
-        if (diag.errorCode().isPresent() && "ERR_FACET_ORDER_VIOLATION".equals(diag.errorCode().get())) {
-            if (isMetadataOrderInspectionActive(file)) {
-                return true;
-            }
-        }
-        if ((message.contains("ERR_FACET_ORDER_VIOLATION") || message.contains("violates canonical")) && isMetadataOrderInspectionActive(file)) {
-            return true;
-        }
-        // Suppress external fenced string delimiter arrow diagnostics when StvnFencedStringInspection is active
-        if (diag.errorCode().isPresent() && DiagnosticBag.ERR_PROHIBITED_FENCE_ARROW.equals(diag.errorCode().get())) {
-            if (isFencedStringInspectionActive(file)) {
-                return true;
-            }
-        }
-        if (message.contains("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited") && isFencedStringInspectionActive(file)) {
-            return true;
-        }
-        // Suppress external temporal mode & scale diagnostics when StvnTemporalModeInspection is active
-        if (diag.errorCode().isPresent() && (DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING.equals(diag.errorCode().get())
-                || DiagnosticBag.ERR_DATETIME_MODE_INVALID.equals(diag.errorCode().get())
-                || DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diag.errorCode().get())
-                || "ERR_LEGACY_UNIT_FACET_PURGED".equals(diag.errorCode().get()))) {
-            if (isTemporalModeInspectionActive(file)) {
-                return true;
-            }
-        }
-        // Suppress external discrete interval diagnostics when StvnDiscreteIntervalInspection is active
-        if (diag.errorCode().isPresent() && "ERR_DISCRETE_BOUND_KIND_PROHIBITED".equals(diag.errorCode().get())) {
-            if (isDiscreteIntervalInspectionActive(file)) {
-                return true;
-            }
-        }
-        if ((message.contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED")
-                || message.contains("Discrete types reject closed upper bound")
-                || message.contains("Discrete types reject open lower bound")) && isDiscreteIntervalInspectionActive(file)) {
-            return true;
-        }
-        if (org.stvnadore.plugin.psi.StvnPsiUtils.isHermeticDocument(file)
-                && message.contains("cannot contain include statements")
-                && isFlatDocumentIncludeInspectionActive(file)) {
-            return true;
-        }
+
         if (!message.contains("Unresolved schema for value context")) {
             return false;
         }
@@ -1535,196 +1442,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return true;
     }
 
-    private static boolean isMetadataOrderInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnMetadataOrder");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isFencedStringInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnFencedString");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isTemporalModeInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnTemporalMode");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isDiscreteIntervalInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile == null) {
-            vFile = file.getViewProvider().getVirtualFile();
-        }
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
-                    || file.getName().startsWith("inv_") || file.getName().contains("discrete")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnDiscreteInterval");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isFlatDocumentIncludeInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile == null) {
-            vFile = file.getViewProvider().getVirtualFile();
-        }
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid") || path.contains("inv_")
-                    || file.getName().startsWith("inv_") || file.getName().contains("flat_module_with_include")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnFlatDocumentInclude");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isStemMismatchInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnStemMismatch");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isMissingMetaInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures") || path.contains("invalid")) {
-                return false;
-            }
-        }
-        var project = file.getProject();
-        if (project.isDisposed()) {
-            return true;
-        }
-        try {
-            var profileManager = InspectionProjectProfileManager.getInstance(project);
-            var profile = profileManager.getCurrentProfile();
-            var key = HighlightDisplayKey.find("StvnMissingMeta");
-            if (key != null) {
-                return profile.isToolEnabled(key, file);
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private static boolean isTabCharacterInspectionActive(PsiFile file) {
-        var vFile = file.getVirtualFile();
-        if (vFile == null) {
-            vFile = file.getViewProvider().getVirtualFile();
-        }
-        if (vFile != null) {
-            var path = vFile.getPath().replace('\\', '/');
-            if (path.contains("shared-fixtures/syntax/invalid") || path.contains("tab_character_indent_disallowed.stvn")) {
-                return false;
-            }
-        }
-        // Unconditional inspection primacy on all user documents (Invariant 10)
-        return true;
-    }
 
     private static boolean isSecondaryCascadeKindMismatch(PsiFile file, StvnDiagnostic diag, List<StvnDiagnostic> allDiagnostics) {
         var message = diag.message();
