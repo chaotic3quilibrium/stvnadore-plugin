@@ -48,6 +48,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Validates STVN String Capacity Governance invariants.
@@ -66,7 +67,13 @@ import java.util.Set;
  * @since 1.3.0
  */
 @NullMarked
-public final class StvnStringCapacityInspection extends LocalInspectionTool {
+public class StvnStringCapacityInspection extends LocalInspectionTool {
+
+    /**
+     * Lexical fallback regex pattern matching capacity facets (#size, #maxSize, #minSize, etc.).
+     */
+    private static final Pattern CAPACITY_LEXICAL_PATTERN =
+        Pattern.compile("#[a-zA-Z0-9_]*size", Pattern.CASE_INSENSITIVE);
 
     /**
      * Default capacity threshold in characters for schema and diagnostic analyzers (4,096 characters).
@@ -190,6 +197,11 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 String declaredName = target.getText().trim();
                 var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
 
+                // 1. Guard against broken ASTs: abort inspection if metadata block contains error elements
+                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
+                    return;
+                }
+
                 boolean hasDirectCapacityFacet = false;
                 int directCapacity = -1;
                 if (metaMap != null) {
@@ -204,6 +216,12 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                                 } catch (Exception ignored) {}
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                            hasDirectCapacityFacet = true;
+                        }
+                    }
+                    if (!hasDirectCapacityFacet) {
+                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
+                        if (containsCapacityFacetLexically(sanitizedText)) {
                             hasDirectCapacityFacet = true;
                         }
                     }
@@ -255,6 +273,12 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 boolean hasDirectCapacityFacet = false;
                 int directCapacity = -1;
                 var metaMap = schemaType.getMetadataMap();
+
+                // 1. Guard against broken ASTs: abort inspection if metadata block contains error elements
+                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
+                    return;
+                }
+
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var text = entry.getText();
@@ -265,6 +289,12 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                                 try { directCapacity = Integer.parseInt(intLit.getText()); } catch (Exception ignored) {}
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                            hasDirectCapacityFacet = true;
+                        }
+                    }
+                    if (!hasDirectCapacityFacet) {
+                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
+                        if (containsCapacityFacetLexically(sanitizedText)) {
                             hasDirectCapacityFacet = true;
                         }
                     }
@@ -410,6 +440,33 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
             this.capacity = capacity;
             this.hasExplicitCapacity = hasExplicitCapacity;
         }
+    }
+
+    /**
+     * Sanitizes metadata map text by stripping single-line comments and string literals.
+     *
+     * @param rawText the raw metadata map text
+     * @return sanitized text containing only active tokens
+     */
+    public static String sanitizeMetadataText(@Nullable String rawText) {
+        if (rawText == null || rawText.isEmpty()) {
+            return "";
+        }
+        String noComments = rawText.replaceAll("(?m)//.*$", "");
+        return noComments.replaceAll("\"(\\\\.|[^\"\\\\])*\"", "");
+    }
+
+    /**
+     * Determines whether sanitized metadata text contains a capacity facet keyword.
+     *
+     * @param sanitizedText text free of comments and string literals
+     * @return true if a capacity facet keyword is detected
+     */
+    public static boolean containsCapacityFacetLexically(String sanitizedText) {
+        return CAPACITY_LEXICAL_PATTERN.matcher(sanitizedText).find()
+            || sanitizedText.contains(StvnVocabulary.FACET_KW_SIZE)
+            || sanitizedText.contains(StvnVocabulary.FACET_KW_MAX_SIZE)
+            || sanitizedText.contains(StvnVocabulary.FACET_KW_MIN_SIZE);
     }
 
     public static @Nullable EffectiveTypeCapacity resolveEffectiveTypeCapacity(SchemaType schemaType, PsiFile file, Set<String> visited) {
@@ -662,7 +719,7 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
     /**
      * Structural QuickFix injecting explicit capacity facets immediately before the type constructor.
      */
-    public static final class ApplyNominalCapacityQuickFix implements LocalQuickFix, PriorityAction {
+    public static class ApplyNominalCapacityQuickFix implements LocalQuickFix, PriorityAction {
         private final String actionName;
         private final String facetSnippet;
         private final Priority priority;
@@ -730,6 +787,9 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
 
             if (metaMap != null) {
                 var entries = metaMap.getMetadataEntryList();
+                String sanitized = sanitizeMetadataText(metaMap.getText());
+                boolean hasLexicalCap = containsCapacityFacetLexically(sanitized);
+
                 boolean allCapacity = entries.isEmpty() || entries.stream().allMatch(ApplyNominalCapacityQuickFix::isCapacityFacet);
                 if (allCapacity) {
                     // Replace the entire metadata map text range with the new snippet
@@ -741,6 +801,11 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                         .filter(ApplyNominalCapacityQuickFix::isCapacityFacet)
                         .sorted((a, b) -> Integer.compare(b.getTextRange().getStartOffset(), a.getTextRange().getStartOffset()))
                         .toList();
+
+                    if (hasLexicalCap && capacityEntries.isEmpty()) {
+                        // Capacity facet is already present lexically but degraded in AST; do not append duplicate facet
+                        return;
+                    }
 
                     for (var capEntry : capacityEntries) {
                         int start = capEntry.getTextRange().getStartOffset();
@@ -770,9 +835,27 @@ public final class StvnStringCapacityInspection extends LocalInspectionTool {
                 } else {
                     startOffset = element.getTextRange().getStartOffset();
                 }
+                String prefix = doc.getText().substring(0, startOffset).trim();
+                if (prefix.endsWith("}")) {
+                    // Preceding metadata map exists: abort insertion to prevent adjacent duplicate blocks
+                    return;
+                }
                 doc.insertString(startOffset, facetSnippet + " ");
             }
             docManager.commitDocument(doc);
+        }
+    }
+
+    /**
+     * Canonical quick-fix alias conforming to specification naming directives.
+     */
+    public static class SetNominalCapacityQuickFix extends ApplyNominalCapacityQuickFix {
+        public SetNominalCapacityQuickFix(String actionName, String facetSnippet, Priority priority) {
+            super(actionName, facetSnippet, priority);
+        }
+
+        public SetNominalCapacityQuickFix(String actionName, String facetSnippet) {
+            super(actionName, facetSnippet, Priority.NORMAL);
         }
     }
 
