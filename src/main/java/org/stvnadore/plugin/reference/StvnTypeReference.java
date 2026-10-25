@@ -573,7 +573,15 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
                     if (!nextTypeName.isEmpty()) {
                         if (isPrimitiveTypeName(nextTypeName) || nextTypeName.equals(StvnVocabulary.TYPE_ENUM)) {
-                            trace.add(nextTypeName);
+                            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(nextTypeName)) {
+                                var scale = StvnTypeResolver.extractScaleFlagFromSchemaType(schemaType);
+                                trace.add(scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH);
+                            } else if (StvnVocabulary.TYPE_DATE_TIME.equals(nextTypeName)) {
+                                var mode = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
+                                trace.add(mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME);
+                            } else {
+                                trace.add(nextTypeName);
+                            }
                             break;
                         }
 

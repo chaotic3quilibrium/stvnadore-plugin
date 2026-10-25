@@ -304,7 +304,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             var underlying = subset != null
                 ? StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants())
-                : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown");
+                : (schemaType != null ? StvnTypeResolver.formatSchemaType(schemaType) : "Unknown");
 
             var sb = new StringBuilder();
             if (keyword != null) {
@@ -412,7 +412,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (subset != null) {
                 underlying = StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants());
             } else if (remTypeDef != null && remTypeDef.getSchemaType() != null) {
-                underlying = StvnSchemaFormatter.formatCleanSchema(remTypeDef.getSchemaType());
+                underlying = StvnTypeResolver.formatSchemaType(remTypeDef.getSchemaType());
             }
             sb.append("<hr/>");
             if (remTypeDef != null) {

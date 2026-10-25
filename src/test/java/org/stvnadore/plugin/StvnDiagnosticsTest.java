@@ -2893,7 +2893,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 :AppDateTimeOffset { #offset } :DateTime
               }
               :type :Seq( :AppDateTimeOffset )
-              :body [ "2026-03-06T15:53:08Z"<hint text=":AppDateTimeOffset (-> :DateTime)"/> "2026-03-06T15:53:08-06:00"<hint text=":AppDateTimeOffset (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeOffset )"/>
+              :body [ "2026-03-06T15:53:08Z"<hint text=":AppDateTimeOffset (-> { #offset } :DateTime)"/> "2026-03-06T15:53:08-06:00"<hint text=":AppDateTimeOffset (-> { #offset } :DateTime)"/> ]<hint text=":Seq( :AppDateTimeOffset )"/>
             }
             """;
         assertRootInlayHints(validCode);
@@ -2932,7 +2932,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 :AppDateTimeZoned { #zoned } :DateTime
               }
               :type :Seq( :AppDateTimeZoned )
-              :body [ "2026-03-15T08:00:00[America/Chicago]"<hint text=":AppDateTimeZoned (-> :DateTime)"/> "2026-08-18T18:30:00[Europe/London]"<hint text=":AppDateTimeZoned (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeZoned )"/>
+              :body [ "2026-03-15T08:00:00[America/Chicago]"<hint text=":AppDateTimeZoned (-> { #zoned } :DateTime)"/> "2026-08-18T18:30:00[Europe/London]"<hint text=":AppDateTimeZoned (-> { #zoned } :DateTime)"/> ]<hint text=":Seq( :AppDateTimeZoned )"/>
             }
             """;
         assertRootInlayHints(validCode);
@@ -2979,7 +2979,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 :AppDateTimeAudited { #audited } :DateTime
               }
               :type :Seq( :AppDateTimeAudited )
-              :body [ "2026-03-15T08:00:00-05:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> :DateTime)"/> "2026-01-15T08:00:00-06:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> :DateTime)"/> ]<hint text=":Seq( :AppDateTimeAudited )"/>
+              :body [ "2026-03-15T08:00:00-05:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> { #audited } :DateTime)"/> "2026-01-15T08:00:00-06:00[America/Chicago]"<hint text=":AppDateTimeAudited (-> { #audited } :DateTime)"/> ]<hint text=":Seq( :AppDateTimeAudited )"/>
             }
             """;
         assertRootInlayHints(validCode);

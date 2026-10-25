@@ -6,6 +6,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.settings.StvnSettings;
 
 import java.math.BigInteger;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -23,8 +24,8 @@ public final class StvnTimeEpochFormatter {
     private static final BigInteger MILLION = BigInteger.valueOf(1_000_000L);
     private static final BigInteger BILLION = BigInteger.valueOf(1_000_000_000L);
 
-    private static final BigInteger LONG_MAX_BI = BigInteger.valueOf(Long.MAX_VALUE);
-    private static final BigInteger LONG_MIN_BI = BigInteger.valueOf(Long.MIN_VALUE);
+    private static final BigInteger INSTANT_MAX_SECONDS = BigInteger.valueOf(31556889864403199L);
+    private static final BigInteger INSTANT_MIN_SECONDS = BigInteger.valueOf(-31557014167219200L);
 
     private static final DateTimeFormatter DATE_PART_FORMATTER =
         DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy, 'at' ", Locale.US);
@@ -130,19 +131,24 @@ public final class StvnTimeEpochFormatter {
 
         long nanos = rem.multiply(BigInteger.valueOf(nanoMultiplier)).longValue();
 
-        boolean astronomical = sec.compareTo(LONG_MAX_BI) > 0 || sec.compareTo(LONG_MIN_BI) < 0;
+        boolean astronomical = sec.compareTo(INSTANT_MAX_SECONDS) > 0 || sec.compareTo(INSTANT_MIN_SECONDS) < 0;
         Integer year = null;
         boolean civilWindowViolation = true;
         String formattedTime;
 
         if (astronomical) {
-            formattedTime = "Astronomical (> 292 billion years AD)";
+            formattedTime = "Astronomical (> 1 billion years)";
         } else {
-            Instant instant = Instant.ofEpochSecond(sec.longValue(), nanos);
-            ZonedDateTime zdt = instant.atZone(ZoneOffset.UTC);
-            year = zdt.getYear();
-            civilWindowViolation = (year < 1900 || year > 2100);
-            formattedTime = formatZdt(zdt, fractionDigits, hourFormat);
+            try {
+                Instant instant = Instant.ofEpochSecond(sec.longValue(), nanos);
+                ZonedDateTime zdt = instant.atZone(ZoneOffset.UTC);
+                year = zdt.getYear();
+                civilWindowViolation = (year < 1900 || year > 2100);
+                formattedTime = formatZdt(zdt, fractionDigits, hourFormat);
+            } catch (DateTimeException e) {
+                astronomical = true;
+                formattedTime = "Astronomical (> 1 billion years)";
+            }
         }
 
         // Magnitude band evaluation

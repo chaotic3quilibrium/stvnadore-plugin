@@ -37,7 +37,7 @@ public final class StvnTimeEpochHoverTest extends BasePlatformTestCase {
         var offset = text.indexOf("1704067200");
         var doc = getDocAtOffset(text, offset);
 
-        assertTrue("Expected Value Type: :TimeEpoch", doc.contains("<b>Value Type:</b> :TimeEpoch"));
+        assertTrue("Expected Value Type: { #s } :TimeEpoch", doc.contains("<b>Value Type:</b> { #s } :TimeEpoch"));
         assertTrue("Expected Expression: 1704067200", doc.contains("<b>Expression:</b> 1704067200"));
         assertTrue("Expected 12-hour UTC timestamp", doc.contains("Monday, January 1, 2024, at 12:00:00 AM UTC"));
         assertFalse("Clean timestamp must NOT contain warning banner", doc.contains("Suspicious Epoch Magnitude Warning"));
@@ -96,5 +96,43 @@ public final class StvnTimeEpochHoverTest extends BasePlatformTestCase {
         assertFalse("Warning banner must be suppressed when showEpochMagnitudeWarnings is false",
             doc.contains("Suspicious Epoch Magnitude Warning"));
         assertTrue("UTC time must still render", doc.contains("<b>UTC Time:</b>"));
+    }
+
+    public void testHoverCardAstronomicalBoundsAndWarning() {
+        var text = """
+            {
+              :type { #s } :TimeEpoch
+              :body 1789241400000000006
+            }
+            """;
+        myFixture.configureByText("astronomical.stvn", text);
+        StvnSettings.getInstance(getProject()).getState().timeEpochHourFormat = StvnSettings.TimeEpochHourFormat.HOUR_24;
+        StvnSettings.getInstance(getProject()).getState().showEpochMagnitudeWarnings = true;
+
+        var offset = text.indexOf("1789241400000000006");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Expected qualified Value Type: { #s } :TimeEpoch", doc.contains("<b>Value Type:</b> { #s } :TimeEpoch"));
+        assertTrue("Expected Astronomical fallback without exception", doc.contains("<b>UTC Time:</b> Astronomical (> 1 billion years)"));
+        assertTrue("Expected amber magnitude warning", doc.contains("Suspicious Epoch Magnitude Warning"));
+        assertTrue("Expected suggestion for #ns", doc.contains("suggesting #ns"));
+    }
+
+    public void testNominalEpochAliasHoverCard() {
+        var text = """
+            {
+              :defs {
+                :CreatedTime { #ns } :TimeEpoch
+              }
+              :type :CreatedTime
+              :body 1704067200000000000
+            }
+            """;
+        myFixture.configureByText("epoch_alias.stvn", text);
+        var offset = text.indexOf("1704067200000000000");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Expected nominal alias with qualified terminal trace",
+            doc.contains("<b>Value Type:</b> :CreatedTime (-> { #ns } :TimeEpoch)"));
     }
 }

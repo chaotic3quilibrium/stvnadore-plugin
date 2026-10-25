@@ -426,12 +426,155 @@ public final class StvnTypeResolver {
         }
 
         if (schema.node() != null) {
+            var baseType = org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(schema.node());
+            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+                var scale = schema.constraints().scale().map(s -> "#" + s).orElseGet(() -> extractScaleFromAntlr(schema.node()));
+                return scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH;
+            }
+            if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+                String mode = null;
+                if (schema.constraints().offset()) mode = StvnVocabulary.FACET_KW_OFFSET;
+                else if (schema.constraints().zoned()) mode = StvnVocabulary.FACET_KW_ZONED;
+                else if (schema.constraints().audited()) mode = StvnVocabulary.FACET_KW_AUDITED;
+                else mode = extractModeFromAntlr(schema.node());
+                return mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME;
+            }
             var formatted = StvnSchemaFormatter.formatCleanAntlrSchema(schema.node());
             if (!formatted.isEmpty()) {
                 return formatted;
             }
         }
         return "";
+    }
+
+    /**
+     * Extracts the qualified type label for a schema type, ensuring temporal types
+     * include their mandatory Tier 1 scale or mode qualifiers.
+     *
+     * @param schemaType the schema type to format
+     * @return the qualified type string, or empty string if null
+     */
+    public static String getTypeLabel(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return "";
+        }
+        var keyword = schemaType.getTypeKeyword();
+        if (keyword != null) {
+            var trace = StvnTypeReference.extractResolutionTrace(keyword);
+            return formatTrace(trace);
+        }
+        return formatSchemaType(schemaType);
+    }
+
+    /**
+     * Formats a concrete schema type, extracting qualifying metadata facets for temporal primitives.
+     *
+     * @param schemaType the schema type to format
+     * @return the formatted schema type string with qualifying facets
+     */
+    public static String formatSchemaType(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return "";
+        }
+        var constructor = schemaType.getSchemaConstructor();
+        if (constructor != null && constructor.getAtomicType() != null) {
+            var atomicText = constructor.getAtomicType().getText().trim();
+            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(atomicText)) {
+                var scale = extractScaleFlagFromSchemaType(schemaType);
+                return scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH;
+            }
+            if (StvnVocabulary.TYPE_DATE_TIME.equals(atomicText)) {
+                var mode = extractDateTimeModeFlagFromSchemaType(schemaType);
+                return mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME;
+            }
+        }
+        return StvnSchemaFormatter.formatCleanSchema(schemaType);
+    }
+
+    /**
+     * Extracts the declared scale flag (#s, #ms, #us, #ns) from a SchemaType.
+     *
+     * @param schemaType the schema type to inspect
+     * @return the extracted scale flag or null
+     */
+    public static @Nullable String extractScaleFlagFromSchemaType(SchemaType schemaType) {
+        var metaMap = schemaType.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                    || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                    return text;
+                }
+            }
+        }
+        var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        if (parentDef != null && parentDef.getMetadataMap() != null) {
+            for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                    || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the declared mode flag (#offset, #zoned, #audited) from a SchemaType.
+     *
+     * @param schemaType the schema type to inspect
+     * @return the extracted datetime mode flag or null
+     */
+    public static @Nullable String extractDateTimeModeFlagFromSchemaType(SchemaType schemaType) {
+        var metaMap = schemaType.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_OFFSET) || text.equals(StvnVocabulary.FACET_KW_ZONED)
+                    || text.equals(StvnVocabulary.FACET_KW_AUDITED)) {
+                    return text;
+                }
+            }
+        }
+        var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        if (parentDef != null && parentDef.getMetadataMap() != null) {
+            for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_OFFSET) || text.equals(StvnVocabulary.FACET_KW_ZONED)
+                    || text.equals(StvnVocabulary.FACET_KW_AUDITED)) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String extractScaleFromAntlr(org.antlr.v4.runtime.tree.ParseTree node) {
+        if (node instanceof org.stvnadore.core.parser.StvnParser.SchemaTypeContext sc && sc.metadataMap() != null) {
+            for (var entry : sc.metadataMap().metadataEntry()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                    || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String extractModeFromAntlr(org.antlr.v4.runtime.tree.ParseTree node) {
+        if (node instanceof org.stvnadore.core.parser.StvnParser.SchemaTypeContext sc && sc.metadataMap() != null) {
+            for (var entry : sc.metadataMap().metadataEntry()) {
+                var text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_OFFSET) || text.equals(StvnVocabulary.FACET_KW_ZONED)
+                    || text.equals(StvnVocabulary.FACET_KW_AUDITED)) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -1527,7 +1670,7 @@ public final class StvnTypeResolver {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
             finalLabel = formatTrace(trace);
         } else {
-            finalLabel = StvnSchemaFormatter.formatSchema(currentSchema);
+            finalLabel = formatSchemaType(currentSchema);
         }
 
         if (finalLabel.isEmpty()) {
