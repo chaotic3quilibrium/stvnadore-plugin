@@ -9,11 +9,16 @@ import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.ui.ColorUtil;
+import com.intellij.ui.JBColor;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.ResolvedType;
+import org.stvnadore.plugin.metadata.StvnFacetMetadata;
+import org.stvnadore.plugin.metadata.StvnMetadataRegistry;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -43,11 +48,16 @@ import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -287,79 +297,35 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private @Nullable String buildTargetDocumentation(PsiElement target, @Nullable PsiElement originalElement) {
+        if (target != null) {
+            var targetText = target.getText().trim();
+            if (targetText.startsWith(":org/stvnadore/prelude/DateTime") || targetText.startsWith(":org/stvnadore/prelude/TimeEpoch")) {
+                return null;
+            }
+        }
+
+        // 1. Contextual Section Routing: Check if target is RHS base type in :defs
+        if ((target instanceof TypeKeyword || target instanceof AtomicType) && originalElement != null) {
+            var enclosingDef = PsiTreeUtil.getParentOfType(originalElement, TypeDefinition.class);
+            if (enclosingDef != null && enclosingDef.getTypeKeyword() != target) {
+                return renderRhsBaseTypeCard(target.getText().trim(), enclosingDef);
+            }
+        }
+
+        // 2. Contextual Section Routing: Check if hovering in :type root clause on an alias
+        if (originalElement != null) {
+            var typeEntry = PsiTreeUtil.getParentOfType(originalElement, TypeEntry.class);
+            if (typeEntry != null && target instanceof TypeDefinition) {
+                var rootSchema = typeEntry.getSchemaType();
+                var elemSchema = PsiTreeUtil.getParentOfType(originalElement, SchemaType.class);
+                if (rootSchema != null && elemSchema == rootSchema) {
+                    return renderRootPayloadSchemaCard(rootSchema, typeEntry);
+                }
+            }
+        }
+
         if (target instanceof TypeDefinition typeDef) {
-            var keyword = typeDef.getTypeKeyword();
-            if (keyword != null) {
-                var kwText = keyword.getText();
-                if (kwText.startsWith(":org/stvnadore/prelude/")) {
-                    kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
-                }
-                var specDoc = getBuiltInSpecificationDoc(kwText);
-                if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
-                    return specDoc;
-                }
-            }
-            var schemaType = typeDef.getSchemaType();
-            var subset = StvnTypeResolver.resolveEnumSubset(typeDef);
-
-            var underlying = subset != null
-                ? StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants())
-                : (schemaType != null ? StvnTypeResolver.formatSchemaType(schemaType) : "Unknown");
-
-            var sb = new StringBuilder();
-            if (keyword != null) {
-                sb.append("<b>Type Alias:</b> ").append(keyword.getText()).append("<br/>");
-
-                var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
-                if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
-                    var pkgPath = enclosingPkg.getPackagePath().getText().trim();
-                    var localName = keyword.getText().startsWith(":") ? keyword.getText().substring(1) : keyword.getText();
-                    var fqni = pkgPath + "/" + localName;
-                    sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
-                    sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
-                }
-
-                var containingFile = typeDef.getContainingFile();
-                if (containingFile != null) {
-                    var fileName = containingFile.getName();
-                    if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_di")) {
-                        sb.append("<b>Imported From:</b> <code>\"").append(fileName).append("\"</code><br/>");
-                    } else if (enclosingPkg == null) {
-                        sb.append("<b>Declared In:</b> Local Definitions (<code>:defs</code>)<br/>");
-                    }
-                }
-
-                var trace = StvnTypeReference.extractResolutionTrace(keyword);
-                if (trace.size() > 1) {
-                    sb.append("<b>Resolution Path:</b> ");
-                    for (var i = 0; i < trace.size(); i++) {
-                        if (i > 0) sb.append(" &rarr; ");
-                        sb.append(trace.get(i));
-                    }
-                    sb.append("<br/>");
-                }
-            }
-
-            var metricHtml = extractStructuralMetricHtml(typeDef);
-            if (metricHtml != null) {
-                sb.append(metricHtml).append("<br/>");
-            }
-
-
-            if (subset != null) {
-                var lineage = formatDerivationLineage(typeDef, subset);
-                if (lineage != null) {
-                    sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
-                }
-            }
-
-            sb.append("<hr/>");
-            var facetsTable = buildEffectiveFacetsTable(typeDef);
-            if (facetsTable != null) {
-                sb.append(facetsTable).append("<br/>");
-            }
-            sb.append("<b>Underlying Structure:</b> ").append(underlying);
-            return sb.toString();
+            return renderLhsTypeAliasCard(typeDef, originalElement);
         }
 
         if (target instanceof IncludeMapAlias alias) {
@@ -629,47 +595,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof ProductType productType) {
-            int arity = productType.getSchemaTypeList().size();
-            return String.format("""
-                <b>Product Type Constructor:</b> :Tuple( ... )<br/>
-                <b>Arity:</b> %d<br/>
-                <hr/>
-                Defines a fixed-length, heterogeneous positional product type.<br/>
-                <b>Payload Syntax:</b> Parenthesized values: <code>( val1 val2 ... )</code>.
-                """, arity);
+            return renderProductTypeCard(productType, originalElement);
         }
 
         if (target instanceof SumType sumType) {
-            if (sumType.getEnumDef() != null) {
-                int variantCount = sumType.getEnumDef().getValueKeywordList().size();
-                return String.format("""
-                    <b>Enumeration Constructor:</b> :Enum [ ... ]<br/>
-                    <b>Variant Count:</b> %d<br/>
-                    <hr/>
-                    Defines a closed set of symbolic value keywords.<br/>
-                    <b>Payload Syntax:</b> <code>#val1</code>.
-                    """, variantCount);
-            }
-            if (isUnionSumType(sumType)) {
-                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                int branchCount = branches.size();
-                return String.format("""
-                    <b>Algebraic Union Constructor:</b> :Union( ... )<br/>
-                    <b>Branch Count:</b> %d<br/>
-                    <hr/>
-                    Defines an n-ary tagged algebraic union.<br/>
-                    <b>Variants:</b> Explicit tag prefix <code>#1 val</code>, <code>#2 val</code>, or compiler-inferred disambiguation.
-                    """, branchCount);
-            }
-            var firstChild = sumType.getFirstChild();
-            var text = firstChild != null ? firstChild.getText().trim() : sumType.getText().trim();
-            var doc = getBuiltInSpecificationDoc(text);
-            if (doc != null) {
-                return doc;
-            }
+            return renderSumTypeCard(sumType, originalElement);
         }
 
         if (target instanceof EnumDef enumDef) {
+            var parentSum = PsiTreeUtil.getParentOfType(enumDef, SumType.class);
+            if (parentSum != null) {
+                return renderSumTypeCard(parentSum, originalElement);
+            }
             int variantCount = enumDef.getValueKeywordList().size();
             return String.format("""
                 <b>Enumeration Constructor:</b> :Enum [ ... ]<br/>
@@ -683,37 +620,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (target instanceof TypeKeyword typeKw) {
             var parent = typeKw.getParent();
             if (parent instanceof ProductType productType) {
-                int arity = productType.getSchemaTypeList().size();
-                return String.format("""
-                    <b>Product Type Constructor:</b> :Tuple( ... )<br/>
-                    <b>Arity:</b> %d<br/>
-                    <hr/>
-                    Defines a fixed-length, heterogeneous positional product type.<br/>
-                    <b>Payload Syntax:</b> Parenthesized values: <code>( val1 val2 ... )</code>.
-                    """, arity);
+                return renderProductTypeCard(productType, originalElement);
             }
             if (parent instanceof SumType sumType) {
-                if (sumType.getEnumDef() != null) {
-                    int variantCount = sumType.getEnumDef().getValueKeywordList().size();
-                    return String.format("""
-                        <b>Enumeration Constructor:</b> :Enum [ ... ]<br/>
-                        <b>Variant Count:</b> %d<br/>
-                        <hr/>
-                        Defines a closed set of symbolic value keywords.<br/>
-                        <b>Payload Syntax:</b> <code>#val1</code>.
-                        """, variantCount);
-                }
-                if (isUnionSumType(sumType)) {
-                    var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    int branchCount = branches.size();
-                    return String.format("""
-                        <b>Algebraic Union Constructor:</b> :Union( ... )<br/>
-                        <b>Branch Count:</b> %d<br/>
-                        <hr/>
-                        Defines an n-ary tagged algebraic union.<br/>
-                        <b>Variants:</b> Explicit tag prefix <code>#1 val</code>, <code>#2 val</code>, or compiler-inferred disambiguation.
-                        """, branchCount);
-                }
+                return renderSumTypeCard(sumType, originalElement);
             }
             var text = typeKw.getText().trim();
             var doc = getBuiltInSpecificationDoc(text);
@@ -731,27 +641,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof CollectionType collType) {
-            var firstChild = collType.getFirstChild();
-            var text = firstChild != null ? firstChild.getText().trim() : collType.getText().trim();
-            var doc = getBuiltInSpecificationDoc(text);
-            if (doc != null) {
-                return doc;
+            var typeEntry = PsiTreeUtil.getParentOfType(collType, TypeEntry.class);
+            if (typeEntry != null && typeEntry.getSchemaType() != null
+                && typeEntry.getSchemaType().getSchemaConstructor() != null
+                && typeEntry.getSchemaType().getSchemaConstructor().getCollectionType() == collType) {
+                return renderRootPayloadSchemaCard(typeEntry.getSchemaType(), typeEntry);
             }
+            return renderCollectionTypeCard(collType, originalElement);
         }
 
         if (target instanceof Value value) {
-            var typeLabel = StvnTypeResolver.resolveValueType(value);
-            if (typeLabel != null) {
-                var sb = new StringBuilder();
-                sb.append("<b>Value Type:</b> ").append(typeLabel).append("<br/>");
-                sb.append("<hr/>");
-                sb.append("<b>Expression:</b> ").append(value.getText());
-                var epochDoc = buildTimeEpochValueHoverDoc(value, typeLabel);
-                if (epochDoc != null) {
-                    sb.append(epochDoc);
-                }
-                return sb.toString();
-            }
+            return renderPayloadValueCard(value, originalElement);
         }
 
         return null;
@@ -1045,15 +945,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var html = new StringBuilder();
         html.append("<b>Effective Facets &amp; Traits:</b><br/>");
         html.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
-        html.append("<thead><tr style=\"border-bottom: 1px solid #555; text-align: left;\">");
-        html.append("<th style=\"padding: 2px 4px;\">Facet Tag</th>");
-        html.append("<th style=\"padding: 2px 4px;\">Effective Value</th>");
-        html.append("<th style=\"padding: 2px 4px;\">Origin</th>");
-        html.append("<th style=\"padding: 2px 4px;\">Status</th>");
+        html.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+        html.append("<th width=\"28%\" style=\"padding: 2px 4px;\">Facet Tag</th>");
+        html.append("<th width=\"28%\" style=\"padding: 2px 4px;\">Effective Value</th>");
+        html.append("<th width=\"24%\" style=\"padding: 2px 4px;\">Origin</th>");
+        html.append("<th width=\"20%\" style=\"padding: 2px 4px;\">Status</th>");
         html.append("</tr></thead><tbody>");
 
         for (var row : rows) {
-            String statusColor = "Active Override".equals(row.status()) ? "#4CAF50" : ("Inherited".equals(row.status()) ? "#2196F3" : "#9E9E9E");
+            String statusColor = "Active Override".equals(row.status()) ? ("#" + getActiveOverrideColorHex()) : ("Inherited".equals(row.status()) ? ("#" + getInheritedColorHex()) : "#9E9E9E");
             html.append("<tr>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.tag()).append("</code></td>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.effectiveValue()).append("</code></td>");
@@ -2471,4 +2371,860 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             default -> null;
         };
     }
+
+    // ============================================================================
+    // THEME INVARIANCE & SEMANTIC COLOR RESOLUTION
+    // ============================================================================
+
+    private static String getBorderColorHex() {
+        return ColorUtil.toHex(JBColor.border());
+    }
+
+    private static String getSatisfiedBadgeColorHex() {
+        return ColorUtil.toHex(new JBColor(new java.awt.Color(0x388E3C), new java.awt.Color(0x81C784)));
+    }
+
+    private static String getViolationBadgeColorHex() {
+        return ColorUtil.toHex(new JBColor(new java.awt.Color(0xD32F2F), new java.awt.Color(0xE57373)));
+    }
+
+    private static String getActiveOverrideColorHex() {
+        return ColorUtil.toHex(new JBColor(new java.awt.Color(0x388E3C), new java.awt.Color(0x81C784)));
+    }
+
+    private static String getInheritedColorHex() {
+        return ColorUtil.toHex(new JBColor(new java.awt.Color(0x1976D2), new java.awt.Color(0x64B5F6)));
+    }
+
+    private static String getDefaultColorHex() {
+        return ColorUtil.toHex(UIUtil.getContextHelpForeground());
+    }
+
+    // ============================================================================
+    // ZONE RENDERERS: :defs RHS BASE TYPE & LHS TYPE ALIAS
+    // ============================================================================
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for an RHS Base Type in :defs.
+     */
+    private @NotNull String renderRhsBaseTypeCard(String baseName, TypeDefinition enclosingDef) {
+        var aliasKw = enclosingDef.getTypeKeyword();
+        var aliasName = aliasKw != null ? aliasKw.getText().trim() : ":Anonymous";
+
+        var sb = new StringBuilder();
+        // Zone 1: Identity & Structural Trace
+        sb.append("<div class='definition'>");
+        String typeTitle = switch (baseName) {
+            case StvnVocabulary.TYPE_INT -> "<b>Built-in Numeric:</b> :Int<br/>";
+            case StvnVocabulary.TYPE_STRING -> "<b>Built-in String Type:</b> :String<br/>";
+            case StvnVocabulary.TYPE_BOOLEAN -> "<b>Built-in Primitive:</b> :Boolean<br/>";
+            case StvnVocabulary.TYPE_FLOAT -> "<b>Built-in Floating-Point:</b> :Float<br/>";
+            case StvnVocabulary.TYPE_TIME_EPOCH -> "<b>Built-in Temporal:</b> :TimeEpoch<br/>";
+            case StvnVocabulary.TYPE_DATE_TIME -> "<b>Built-in Temporal:</b> :DateTime<br/>";
+            default -> "";
+        };
+        sb.append(typeTitle);
+        sb.append("<b>Base Type:</b> <code>").append(baseName).append("</code><br/>");
+        sb.append("<b>Declared For:</b> Type Alias <code>").append(aliasName).append("</code> in <code>:defs</code><br/>");
+        sb.append("</div><hr/>");
+
+        // Zone 2: Effective Semantic Contract
+        sb.append("<div class='content'>");
+        var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+        if (facetsTable != null) {
+            sb.append(facetsTable).append("<br/>");
+        } else {
+            sb.append("<b>Active Constraints:</b> <i>None (defaults active)</i><br/>");
+        }
+        sb.append("</div><hr/>");
+
+        // Zone 3: Authoring Capabilities & Context
+        sb.append("<div class='content'>");
+        sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+        var activeTags = extractActiveFacetTags(enclosingDef);
+        var unsetFacets = StvnMetadataRegistry.getUnsetFacets(baseName, activeTags);
+        if (!unsetFacets.isEmpty()) {
+            sb.append("<b>Configurable Options (Unset):</b> ");
+            var list = new ArrayList<String>();
+            for (var f : unsetFacets) {
+                list.add("<code>" + f.facetTag() + "</code>");
+            }
+            sb.append(String.join(", ", list)).append("<br/>");
+        }
+        appendValidLexicalForms(sb, baseName);
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for an LHS Type Alias in :defs.
+     */
+    private @NotNull String renderLhsTypeAliasCard(TypeDefinition typeDef, @Nullable PsiElement originalElement) {
+        var keyword = typeDef.getTypeKeyword();
+        if (keyword != null) {
+            var kwText = keyword.getText();
+            if (kwText.startsWith(":org/stvnadore/prelude/")) {
+                kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
+            }
+            var specDoc = getBuiltInSpecificationDoc(kwText);
+            if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
+                return specDoc;
+            }
+        }
+
+        var schemaType = typeDef.getSchemaType();
+        var subset = StvnTypeResolver.resolveEnumSubset(typeDef);
+        var underlying = subset != null
+            ? StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants())
+            : (schemaType != null ? StvnTypeResolver.formatSchemaType(schemaType) : "Unknown");
+
+        var sb = new StringBuilder();
+        // Zone 1: Identity & Structural Trace
+        sb.append("<div class='definition'>");
+        if (keyword != null) {
+            sb.append("<b>Type Alias:</b> ").append(keyword.getText()).append("<br/>");
+
+            var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
+            if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
+                var pkgPath = enclosingPkg.getPackagePath().getText().trim();
+                var localName = keyword.getText().startsWith(":") ? keyword.getText().substring(1) : keyword.getText();
+                var fqni = pkgPath + "/" + localName;
+                sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
+                sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
+            }
+
+            var containingFile = typeDef.getContainingFile();
+            if (containingFile != null) {
+                var fileName = containingFile.getName();
+                if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_di")) {
+                    sb.append("<b>Imported From:</b> <code>\"").append(fileName).append("\"</code><br/>");
+                } else if (enclosingPkg == null) {
+                    sb.append("<b>Declared In:</b> Local Definitions (<code>:defs</code>)<br/>");
+                }
+            }
+
+            var trace = StvnTypeReference.extractResolutionTrace(keyword);
+            if (trace.size() > 1) {
+                sb.append("<b>Resolution Path:</b> ");
+                for (var i = 0; i < trace.size(); i++) {
+                    if (i > 0) sb.append(" &rarr; ");
+                    sb.append(trace.get(i));
+                }
+                sb.append("<br/>");
+            }
+        }
+
+        var metricHtml = extractStructuralMetricHtml(typeDef);
+        if (metricHtml != null) {
+            sb.append(metricHtml).append("<br/>");
+        }
+
+        if (subset != null) {
+            var lineage = formatDerivationLineage(typeDef, subset);
+            if (lineage != null) {
+                sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
+            }
+            sb.append("<b>Variant Count:</b> ").append(subset.allowedVariants().size()).append("<br/>");
+        }
+        sb.append("</div><hr/>");
+
+        // Zone 2: Effective Semantic Contract
+        sb.append("<div class='content'>");
+        var facetsTable = buildEffectiveFacetsTable(typeDef);
+        if (facetsTable != null) {
+            sb.append(facetsTable).append("<br/>");
+        }
+        sb.append("<b>Underlying Structure:</b> ").append(underlying);
+        sb.append("</div><hr/>");
+
+        // Zone 3: Authoring Capabilities & Context
+        sb.append("<div class='content'>");
+        sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+        var rs = StvnTypeResolver.resolveNominalResolvedSchema(typeDef);
+        var baseType = rs != null ? getResolvedBaseTypeString(rs) : ":Value";
+        var activeTags = extractActiveFacetTags(typeDef);
+        var unsetFacets = StvnMetadataRegistry.getUnsetFacets(baseType, activeTags);
+        if (!unsetFacets.isEmpty()) {
+            sb.append("<b>Configurable Options (Unset):</b> ");
+            var list = new ArrayList<String>();
+            for (var f : unsetFacets) {
+                list.add("<code>" + f.facetTag() + "</code>");
+            }
+            sb.append(String.join(", ", list)).append("<br/>");
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    // ============================================================================
+    // ZONE RENDERERS: COMPOSITE CONSTRUCTORS (:Tuple, :Map, :Union, :Enum)
+    // ============================================================================
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for a ProductType (:Tuple).
+     */
+    private @NotNull String renderProductTypeCard(ProductType productType, @Nullable PsiElement originalElement) {
+        var slots = productType.getSchemaTypeList();
+        int arity = slots.size();
+        var sb = new StringBuilder();
+
+        // Zone 1: Identity & Structural Trace
+        sb.append("<div class='definition'>");
+        sb.append("<b>Product Type Constructor:</b> :Tuple( ... )<br/>");
+        sb.append("<b>Positional Arity:</b> ").append(arity).append("<br/>");
+        sb.append("</div><hr/>");
+
+        // Zone 2: Effective Semantic Contract (Slot Breakdown Table with explicit column widths)
+        sb.append("<div class='content'>");
+        sb.append("<b>Positional Slot Projection:</b><br/>");
+        sb.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+        sb.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+        sb.append("<th width=\"15%\" style=\"padding: 2px 4px;\">Slot</th>");
+        sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Declared Schema</th>");
+        sb.append("<th width=\"25%\" style=\"padding: 2px 4px;\">Base Type</th>");
+        sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Constraints</th>");
+        sb.append("</tr></thead><tbody>");
+
+        for (int i = 0; i < slots.size(); i++) {
+            var slotSchema = slots.get(i);
+            var declStr = StvnSchemaFormatter.formatSchema(slotSchema);
+            var resolved = StvnTypeResolver.resolveNominalSchema(slotSchema);
+            var baseStr = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(slotSchema);
+            var constraintsStr = extractConstraintsSummary(slotSchema);
+
+            sb.append("<tr>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>(").append(i).append(")</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(declStr).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(baseStr).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\">").append(constraintsStr).append("</td>");
+            sb.append("</tr>");
+        }
+        sb.append("</tbody></table></div><hr/>");
+
+        // Zone 3: Authoring Capabilities & Context
+        sb.append("<div class='content'>");
+        sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+        sb.append("<b>Payload Syntax:</b> Parenthesized values: <code>( val0 val1 ... )</code>.<br/>");
+        sb.append("<b>Trait Bubbling:</b> <code>#equatable</code> and <code>#comparable</code> require all child slots to satisfy capability.");
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for a CollectionType (:Seq, :Set, :Map).
+     */
+    private @NotNull String renderCollectionTypeCard(CollectionType collType, @Nullable PsiElement originalElement) {
+        var first = collType.getFirstChild();
+        var collName = first != null ? first.getText().trim() : ":Collection";
+        var innerSchemas = collType.getSchemaTypeList();
+        var sb = new StringBuilder();
+
+        sb.append("<div class='definition'>");
+        if (StvnVocabulary.TYPE_MAP.equals(collName)) {
+            sb.append("<b>Collection Constructor:</b> :Map( :KeyType :ValType )<br/>");
+        } else if (StvnVocabulary.TYPE_SET.equals(collName)) {
+            sb.append("<b>Collection Constructor:</b> :Set( :ElemType )<br/>");
+        } else {
+            sb.append("<b>Collection Constructor:</b> :Seq( :ElemType )<br/>");
+        }
+        sb.append("</div><hr/>");
+
+        sb.append("<div class='content'>");
+        if (StvnVocabulary.TYPE_MAP.equals(collName) && innerSchemas.size() >= 2) {
+            sb.append("<b>Key-Value Component Projection:</b><br/>");
+            sb.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+            sb.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+            sb.append("<th width=\"18%\" style=\"padding: 2px 4px;\">Component</th>");
+            sb.append("<th width=\"28%\" style=\"padding: 2px 4px;\">Declared Schema</th>");
+            sb.append("<th width=\"24%\" style=\"padding: 2px 4px;\">Base Type</th>");
+            sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Constraints</th>");
+            sb.append("</tr></thead><tbody>");
+
+            var keySchema = innerSchemas.get(0);
+            var valSchema = innerSchemas.get(1);
+            sb.append("<tr><td style=\"padding: 2px 4px;\"><code>Key (Unique)</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatSchema(keySchema)).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatCleanSchema(keySchema)).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\">").append(extractConstraintsSummary(keySchema)).append("</td></tr>");
+
+            sb.append("<tr><td style=\"padding: 2px 4px;\"><code>Value</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatSchema(valSchema)).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatCleanSchema(valSchema)).append("</code></td>");
+            sb.append("<td style=\"padding: 2px 4px;\">").append(extractConstraintsSummary(valSchema)).append("</td></tr>");
+            sb.append("</tbody></table>");
+        } else if (!innerSchemas.isEmpty()) {
+            var elemSchema = innerSchemas.get(0);
+            sb.append("<b>Element Schema:</b> <code>").append(StvnSchemaFormatter.formatSchema(elemSchema)).append("</code><br/>");
+            sb.append("<b>Element Base Type:</b> <code>").append(StvnSchemaFormatter.formatCleanSchema(elemSchema)).append("</code><br/>");
+        }
+        sb.append("</div><hr/>");
+
+        sb.append("<div class='content'>");
+        sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+        if (StvnVocabulary.TYPE_MAP.equals(collName)) {
+            sb.append("Defines a key-value mapping with strictly unique keys.<br/>");
+            sb.append("<b>Payload Syntax:</b> <code>{ [ key1 val1 ] [ key2 val2 ] }</code>.<br/>");
+            sb.append("<b>Supported Facets:</b> <code>#invertible</code>, <code>#minSize</code>, <code>#maxSize</code>.");
+        } else {
+            sb.append("<b>Payload Syntax:</b> <code>[ elem1 elem2 ... ]</code>.<br/>");
+            sb.append("<b>Supported Facets:</b> <code>#minSize</code>, <code>#maxSize</code>.");
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for a SumType (:Union, :Option, :Either, :Enum).
+     */
+    private @NotNull String renderSumTypeCard(SumType sumType, @Nullable PsiElement originalElement) {
+        var sb = new StringBuilder();
+        if (sumType.getEnumDef() != null) {
+            var variants = sumType.getEnumDef().getValueKeywordList();
+            sb.append("<div class='definition'>");
+            sb.append("<b>Enumeration Constructor:</b> :Enum [ ... ]<br/>");
+            sb.append("<b>Variant Count:</b> ").append(variants.size()).append("<br/>");
+            sb.append("</div><hr/>");
+
+            sb.append("<div class='content'>");
+            sb.append("<b>Variant Ledger:</b><br/>");
+            sb.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+            sb.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+            sb.append("<th width=\"15%\" style=\"padding: 2px 4px;\">Index</th>");
+            sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Variant Tag</th>");
+            sb.append("<th width=\"25%\" style=\"padding: 2px 4px;\">Status</th>");
+            sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Origin</th>");
+            sb.append("</tr></thead><tbody>");
+
+            for (int i = 0; i < variants.size(); i++) {
+                sb.append("<tr>");
+                sb.append("<td style=\"padding: 2px 4px;\">").append(i).append("</td>");
+                sb.append("<td style=\"padding: 2px 4px;\"><code>").append(variants.get(i).getText()).append("</code></td>");
+                sb.append("<td style=\"padding: 2px 4px;\"><b style=\"color: #").append(getActiveOverrideColorHex()).append(";\">Active</b></td>");
+                sb.append("<td style=\"padding: 2px 4px;\">Declared</td>");
+                sb.append("</tr>");
+            }
+            sb.append("</tbody></table></div><hr/>");
+
+            sb.append("<div class='content'>");
+            sb.append("<b>Payload Syntax:</b> <code>#variant</code>.<br/>");
+            sb.append("<b>Subsetting:</b> Derivations support <code>#filterIncl</code> and <code>#filterExcl</code>.");
+            sb.append("</div>");
+            return sb.toString();
+        }
+
+        if (isUnionSumType(sumType)) {
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+            sb.append("<div class='definition'>");
+            sb.append("<b>Algebraic Union Constructor:</b> :Union( ... )<br/>");
+            sb.append("<b>Branch Count:</b> ").append(branches.size()).append("<br/>");
+            sb.append("</div><hr/>");
+
+            sb.append("<div class='content'>");
+            sb.append("<b>Tagged Branch Ledger:</b><br/>");
+            sb.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+            sb.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+            sb.append("<th width=\"15%\" style=\"padding: 2px 4px;\">Branch Tag</th>");
+            sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Declared Schema</th>");
+            sb.append("<th width=\"25%\" style=\"padding: 2px 4px;\">Base Type</th>");
+            sb.append("<th width=\"30%\" style=\"padding: 2px 4px;\">Inference</th>");
+            sb.append("</tr></thead><tbody>");
+
+            for (int i = 0; i < branches.size(); i++) {
+                var branchSchema = branches.get(i);
+                sb.append("<tr>");
+                sb.append("<td style=\"padding: 2px 4px;\"><code>#").append(i + 1).append("</code></td>");
+                sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatSchema(branchSchema)).append("</code></td>");
+                sb.append("<td style=\"padding: 2px 4px;\"><code>").append(StvnSchemaFormatter.formatCleanSchema(branchSchema)).append("</code></td>");
+                sb.append("<td style=\"padding: 2px 4px;\">Implied Rule C</td>");
+                sb.append("</tr>");
+            }
+            sb.append("</tbody></table></div><hr/>");
+
+            sb.append("<div class='content'>");
+            sb.append("<b>Payload Syntax:</b> Explicit tag <code>#1 val</code>, <code>#2 val</code>, or unambiguous compiler inference.");
+            sb.append("</div>");
+            return sb.toString();
+        }
+
+        var text = sumType.getText().trim();
+        var doc = getBuiltInSpecificationDoc(text);
+        return doc != null ? doc : "<b>Sum Type Constructor:</b> " + text;
+    }
+
+    // ============================================================================
+    // ZONE RENDERERS: :type ROOT SCHEMA & :body PAYLOAD VALUE
+    // ============================================================================
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for Root Payload Schema in :type.
+     */
+    private @NotNull String renderRootPayloadSchemaCard(SchemaType rootSchema, TypeEntry typeEntry) {
+        var sb = new StringBuilder();
+
+        TypeDefinition typeDef = null;
+        var kw = rootSchema.getTypeKeyword();
+        if (kw != null) {
+            var file = rootSchema.getContainingFile();
+            if (file != null) {
+                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                typeDef = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
+            }
+        }
+
+        // Zone 1: Identity & Structural Trace
+        sb.append("<div class='definition'>");
+        sb.append("<b>Document Root Payload Schema:</b> <code>").append(StvnSchemaFormatter.formatSchema(rootSchema)).append("</code><br/>");
+        if (typeDef != null && typeDef.getTypeKeyword() != null) {
+            sb.append("<b>Type Alias:</b> ").append(typeDef.getTypeKeyword().getText()).append("<br/>");
+        }
+        sb.append("<b>Locus:</b> Document Root (<code>:type</code> clause)<br/>");
+        var structuralTrace = extractRootStructuralTrace(rootSchema, 0, new HashSet<>());
+        if (structuralTrace.size() > 1) {
+            sb.append("<b>Structural Resolution Trace:</b><br/>");
+            for (int i = 0; i < structuralTrace.size(); i++) {
+                sb.append("&nbsp;&nbsp;").append(i > 0 ? "&rarr; " : "&bull; ").append("<code>").append(structuralTrace.get(i)).append("</code><br/>");
+            }
+        }
+
+        var subset = typeDef != null ? StvnTypeResolver.resolveEnumSubset(typeDef) : null;
+        if (subset != null && typeDef != null) {
+            var lineage = formatDerivationLineage(typeDef, subset);
+            if (lineage != null) {
+                sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
+            }
+            sb.append("<b>Variant Count:</b> ").append(subset.allowedVariants().size()).append("<br/>");
+        }
+        sb.append("</div><hr/>");
+
+        // Zone 2: Effective Semantic Contract
+        sb.append("<div class='content'>");
+        sb.append("<b>Governing Payload Contract:</b><br/>");
+        if (typeDef != null) {
+            var facetsTable = buildEffectiveFacetsTable(typeDef);
+            if (facetsTable != null) {
+                sb.append(facetsTable).append("<br/>");
+            }
+            var underlying = subset != null
+                ? StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants())
+                : (typeDef.getSchemaType() != null ? StvnSchemaFormatter.formatSchema(typeDef.getSchemaType()) : "Unknown");
+            sb.append("<b>Underlying Structure:</b> ").append(underlying).append("<br/>");
+        } else {
+            var metaMap = rootSchema.getMetadataMap();
+            int minSize = 0;
+            int maxSize = StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY;
+            if (metaMap != null) {
+                for (var entry : metaMap.getMetadataEntryList()) {
+                    var txt = entry.getText().trim();
+                    if (txt.startsWith("#minSize")) {
+                        var parts = txt.split("\\s+");
+                        if (parts.length >= 2) try { minSize = Integer.parseInt(parts[1]); } catch (Exception ignored) {}
+                    } else if (txt.startsWith("#maxSize")) {
+                        var parts = txt.split("\\s+");
+                        if (parts.length >= 2) try { maxSize = Integer.parseInt(parts[1]); } catch (Exception ignored) {}
+                    }
+                }
+            }
+            sb.append("<b>Payload Sizing:</b> Capacity bounds <code>[#minSize ").append(minSize)
+              .append(", #maxSize ").append(maxSize).append("]</code><br/>");
+        }
+        sb.append("</div><hr/>");
+
+        // Zone 3: Authoring Capabilities & Context
+        sb.append("<div class='content'>");
+        sb.append("<b>Document Payload Authoring Rules:</b><br/>");
+        sb.append("&bull; Body clause (<code>:body</code>) must supply root payload matching this schema.<br/>");
+        sb.append("&bull; Collections enforce delimiter matching: <code>[ ... ]</code> for sequences and sets, <code>{ ... }</code> for maps.<br/>");
+        sb.append("&bull; Empty payload representation: <code>[]</code>.");
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    /**
+     * Renders Zone 1, Zone 2, and Zone 3 for a Payload Value in :body.
+     */
+    private @NotNull String renderPayloadValueCard(Value value, @Nullable PsiElement originalElement) {
+        var sb = new StringBuilder();
+        var info = StvnTypeResolver.resolveBaseTypeInfo(value);
+        var schemaType = info != null ? info.getSchema() : null;
+        var resolvedType = StvnTypeResolver.resolveValueType(value);
+        var displayType = resolvedType != null ? resolvedType : (info != null ? info.getLabel() : "Unknown");
+
+        // Zone 1: Identity & Structural Trace
+        sb.append("<div class='definition'>");
+        sb.append("<b>Payload Value:</b> <code>").append(value.getText()).append("</code><br/>");
+        sb.append("<b>Value Type:</b> ").append(displayType).append("<br/>");
+        sb.append("<b>Expression:</b> ").append(value.getText()).append("<br/>");
+        sb.append("<b>Locus:</b> Document Payload Body (<code>:body</code> clause)<br/>");
+        sb.append("<b>Governing Schema:</b> <code>").append(displayType).append("</code><br/>");
+        sb.append("</div><hr/>");
+
+        // Zone 2: Effective Semantic Contract (Dynamic Constraint Evaluation)
+        sb.append("<div class='content'>");
+        var compliance = evaluateValueCompliance(value, schemaType);
+        String badgeColor = compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
+        String badgeText = compliance.isSatisfied() ? "Satisfied" : "In Violation";
+        sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(badgeColor).append(";\">").append(badgeText).append("</b><br/>");
+        sb.append(compliance.detailExplanation()).append("<br/>");
+
+        var epochDoc = buildTimeEpochValueHoverDoc(value, displayType);
+        if (epochDoc != null) {
+            sb.append(epochDoc);
+        }
+        sb.append("</div><hr/>");
+
+        // Zone 3: Authoring Capabilities & Context
+        sb.append("<div class='content'>");
+        sb.append("<b>Valid Lexical &amp; Syntax Forms:</b><br/>");
+        for (var form : compliance.validLexicalForms()) {
+            sb.append("&bull; ").append(form).append("<br/>");
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    // ============================================================================
+    // COMPLETE HELPER IMPLEMENTATIONS
+    // ============================================================================
+
+    /**
+     * Evaluates a payload value against governing schema constraints, computing compliance status,
+     * explanation text, and valid alternative lexical representations.
+     */
+    private static @NotNull StvnValueComplianceResult evaluateValueCompliance(Value value, @Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return new StvnValueComplianceResult(true, "Unchecked", "No governing schema identified", Collections.emptyMap(), Collections.emptyList());
+        }
+
+        var baseType = resolveBaseTypeString(schemaType, new HashSet<>());
+        if (baseType == null) baseType = ":Value";
+
+        // Resolve nominal constraints if nominal alias (Mandatory Technical Amendments 1 & 3)
+        org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints constraints = null;
+        TypeDefinition td = null;
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                td = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
+            }
+        }
+        if (td == null) {
+            td = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        }
+        if (td != null) {
+            var rs = StvnTypeResolver.resolveNominalResolvedSchema(td);
+            if (rs != null) {
+                constraints = rs.constraints();
+            }
+        }
+
+        // 1. Numeric integer literal evaluation
+        if (value.getIntegerLiteral() != null) {
+            try {
+                var text = value.getIntegerLiteral().getText().trim();
+                var valBI = org.stvnadore.core.ir.StvnLiteralParser.parseBigInteger(text);
+
+                boolean isUnsigned = false;
+                int bitWidth = 32;
+                java.math.BigInteger minVal = null;
+                java.math.BigInteger maxVal = null;
+
+                if (constraints != null) {
+                    isUnsigned = constraints.unsigned();
+                    bitWidth = constraints.size().orElse(32);
+                    if (constraints.minIncl().isPresent()) minVal = constraints.minIncl().get().toBigIntegerExact();
+                    if (constraints.maxExcl().isPresent()) maxVal = constraints.maxExcl().get().toBigIntegerExact().subtract(java.math.BigInteger.ONE);
+                    if (constraints.minExcl().isPresent()) {
+                        var excl = constraints.minExcl().get().toBigIntegerExact().add(java.math.BigInteger.ONE);
+                        minVal = minVal != null ? minVal.max(excl) : excl;
+                    }
+                    if (constraints.maxIncl().isPresent()) {
+                        var incl = constraints.maxIncl().get().toBigIntegerExact();
+                        maxVal = maxVal != null ? maxVal.min(incl) : incl;
+                    }
+                }
+
+                // Local metadata override inspect
+                var metaMap = schemaType.getMetadataMap();
+                if (metaMap != null) {
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        var t = entry.getText().trim();
+                        if (t.equals("#unsigned") || t.startsWith("#unsigned ")) isUnsigned = true;
+                        if (t.startsWith("#size")) {
+                            var p = t.split("\\s+");
+                            if (p.length >= 2) try { bitWidth = Integer.parseInt(p[1]); } catch (Exception ignored) {}
+                        }
+                        if (t.startsWith("#minIncl")) {
+                            var p = t.split("\\s+");
+                            if (p.length >= 2) try { minVal = new java.math.BigInteger(p[1]); } catch (Exception ignored) {}
+                        }
+                        if (t.startsWith("#maxExcl")) {
+                            var p = t.split("\\s+");
+                            if (p.length >= 2) try { maxVal = new java.math.BigInteger(p[1]).subtract(java.math.BigInteger.ONE); } catch (Exception ignored) {}
+                        }
+                        if (t.startsWith("#minExcl")) {
+                            var p = t.split("\\s+");
+                            if (p.length >= 2) try {
+                                var excl = new java.math.BigInteger(p[1]).add(java.math.BigInteger.ONE);
+                                minVal = minVal != null ? minVal.max(excl) : excl;
+                            } catch (Exception ignored) {}
+                        }
+                        if (t.startsWith("#maxIncl")) {
+                            var p = t.split("\\s+");
+                            if (p.length >= 2) try {
+                                var incl = new java.math.BigInteger(p[1]);
+                                maxVal = maxVal != null ? maxVal.min(incl) : incl;
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                var bitMin = isUnsigned ? java.math.BigInteger.ZERO : java.math.BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
+                var bitMax = isUnsigned ? java.math.BigInteger.ONE.shiftLeft(bitWidth).subtract(java.math.BigInteger.ONE) : java.math.BigInteger.ONE.shiftLeft(bitWidth - 1).subtract(java.math.BigInteger.ONE);
+
+                var effMin = minVal != null ? minVal.max(bitMin) : bitMin;
+                var effMax = maxVal != null ? maxVal.min(bitMax) : bitMax;
+
+                boolean satisfied = valBI.compareTo(effMin) >= 0 && valBI.compareTo(effMax) <= 0;
+                String explanation;
+                if (satisfied) {
+                    explanation = String.format("Value %s conforms to interval [%s, %s) and %d-bit representation",
+                        valBI, effMin, effMax.add(java.math.BigInteger.ONE), bitWidth);
+                } else if (valBI.compareTo(effMin) < 0) {
+                    explanation = String.format("Value %s is below minimum allowable bound %s", valBI, effMin);
+                } else {
+                    explanation = String.format("Value %s exceeds upper bound %s", valBI, effMax);
+                }
+
+                int hexDigits = Math.max(1, (bitWidth + 3) / 4);
+                String hexStr = valBI.compareTo(java.math.BigInteger.ZERO) >= 0
+                    ? String.format("%0" + hexDigits + "X", valBI)
+                    : valBI.toString(16).toUpperCase();
+                String binStr = valBI.compareTo(java.math.BigInteger.ZERO) >= 0
+                    ? String.format("%" + bitWidth + "s", valBI.toString(2)).replace(' ', '0')
+                    : valBI.toString(2);
+
+                var forms = new ArrayList<String>();
+                forms.add("Decimal: <code>" + valBI.toString(10) + "</code>");
+                forms.add("Hex: <code>0x" + hexStr + "</code>");
+                forms.add("Binary: <code>0b" + binStr + "</code>");
+                forms.add("Octal: <code>0o" + valBI.toString(8) + "</code>");
+
+                return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+            } catch (Exception e) {
+                return new StvnValueComplianceResult(false, "In Violation", "Invalid integer literal representation: " + e.getMessage(), Collections.emptyMap(), Collections.emptyList());
+            }
+        }
+
+        // 2. String literal evaluation
+        if (value.getStringLiteral() != null) {
+            var rawText = value.getText();
+            int len = rawText.startsWith("\"\"\"") ? Math.max(0, rawText.length() - 8) : Math.max(0, rawText.length() - 2);
+
+            int minSize = 0;
+            int maxSize = StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY;
+            String regex = null;
+
+            if (constraints != null) {
+                minSize = constraints.minSize().orElse(0);
+                maxSize = constraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                regex = constraints.regex().orElse(null);
+            }
+
+            var metaMap = schemaType.getMetadataMap();
+            if (metaMap != null) {
+                for (var entry : metaMap.getMetadataEntryList()) {
+                    var t = entry.getText().trim();
+                    if (t.startsWith("#minSize")) {
+                        var p = t.split("\\s+");
+                        if (p.length >= 2) try { minSize = Integer.parseInt(p[1]); } catch (Exception ignored) {}
+                    }
+                    if (t.startsWith("#maxSize")) {
+                        var p = t.split("\\s+");
+                        if (p.length >= 2) try { maxSize = Integer.parseInt(p[1]); } catch (Exception ignored) {}
+                    }
+                    if (t.startsWith("#regex")) {
+                        var p = t.split("\\s+", 2);
+                        if (p.length >= 2) regex = p[1].replaceAll("^\"|\"$", "");
+                    }
+                }
+            }
+
+            boolean satisfied = len >= minSize && len <= maxSize;
+            String explanation;
+            if (!satisfied) {
+                explanation = len < minSize
+                    ? String.format("String length %d is below minimum required size %d", len, minSize)
+                    : String.format("String length %d exceeds maximum capacity %d", len, maxSize);
+            } else if (regex != null) {
+                var cleanContent = rawText.replaceAll("^\"|\"$", "");
+                if (!cleanContent.matches(regex)) {
+                    satisfied = false;
+                    explanation = "String does not match required regex pattern: <code>" + regex + "</code>";
+                } else {
+                    explanation = String.format("String length %d satisfies bounds [%d, %d] and regex pattern", len, minSize, maxSize);
+                }
+            } else {
+                explanation = String.format("String length %d satisfies capacity bounds [%d, %d]", len, minSize, maxSize);
+            }
+
+            var forms = List.of(
+                "Simple Quoted: <code>\"...\"</code>",
+                "Verbatim Fenced: <code>\"\"\"[TAG]\\n...\\n[TAG]\"\"\"</code>"
+            );
+            return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+        }
+
+        return new StvnValueComplianceResult(true, "Satisfied", "Payload value conforms to schema shape", Collections.emptyMap(), Collections.emptyList());
+    }
+
+    /**
+     * Extracts full structural resolution trace from root down to primitive representations,
+     * strictly enforcing a depth ceiling (<= 16) and cycle detection to eliminate recursion risks.
+     */
+    private static @NotNull List<String> extractRootStructuralTrace(SchemaType rootSchema, int depth, Set<String> visited) {
+        var trace = new ArrayList<String>();
+        if (depth > 16) {
+            trace.add(StvnSchemaFormatter.formatSchema(rootSchema) + " (Max Depth Reached)");
+            return trace;
+        }
+
+        var currentSig = StvnSchemaFormatter.formatSchema(rootSchema);
+        trace.add(currentSig);
+
+        var kw = rootSchema.getTypeKeyword();
+        if (kw != null) {
+            var typeName = kw.getText().trim();
+            if (visited.contains(typeName)) {
+                trace.add(typeName + " (Recursive Nominal Type)");
+                return trace;
+            }
+            visited.add(typeName);
+            var file = rootSchema.getContainingFile();
+            if (file != null) {
+                var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+                var td = PsiTreeUtil.getParentOfType(targetDef, TypeDefinition.class);
+                if (td != null && td.getSchemaType() != null) {
+                    var childTrace = extractRootStructuralTrace(td.getSchemaType(), depth + 1, new HashSet<>(visited));
+                    trace.addAll(childTrace);
+                }
+            }
+            return trace;
+        }
+
+        var constructor = rootSchema.getSchemaConstructor();
+        if (constructor != null && constructor.getCollectionType() != null) {
+            var coll = constructor.getCollectionType();
+            var inner = coll.getSchemaTypeList();
+            if (!inner.isEmpty()) {
+                var first = coll.getFirstChild();
+                var collName = first != null ? first.getText().trim() : ":Seq";
+                var childTrace = extractRootStructuralTrace(inner.get(0), depth + 1, new HashSet<>(visited));
+                for (int i = 1; i < childTrace.size(); i++) {
+                    trace.add(collName + "( " + childTrace.get(i) + " )");
+                }
+            }
+        }
+        return trace;
+    }
+
+    /**
+     * Extracts human-readable constraint summaries for composite slot projections.
+     */
+    private static @NotNull String extractConstraintsSummary(SchemaType schema) {
+        var metaMap = schema.getMetadataMap();
+        var facets = new ArrayList<String>();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                facets.add("<code>" + entry.getText().trim() + "</code>");
+            }
+        }
+        var kw = schema.getTypeKeyword();
+        if (kw != null) {
+            var file = schema.getContainingFile();
+            if (file != null) {
+                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                var td = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
+                if (td != null && td.getMetadataMap() != null) {
+                    for (var entry : td.getMetadataMap().getMetadataEntryList()) {
+                        facets.add("<code>" + entry.getText().trim() + "</code>");
+                    }
+                }
+            }
+        }
+        return facets.isEmpty() ? "<i>None</i>" : String.join(" ", facets);
+    }
+
+    /**
+     * Extracts all active facet tags from a type definition's local metadata and resolved constraints.
+     */
+    private static @NotNull Set<String> extractActiveFacetTags(TypeDefinition typeDef) {
+        var tags = new HashSet<String>();
+        var metaMap = typeDef.getMetadataMap();
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var txt = entry.getText().trim();
+                var parts = txt.split("\\s+");
+                if (parts.length > 0) tags.add(parts[0]);
+            }
+        }
+        var rs = StvnTypeResolver.resolveNominalResolvedSchema(typeDef);
+        if (rs != null) {
+            var c = rs.constraints();
+            if (c.unsigned()) tags.add(StvnVocabulary.FACET_KW_UNSIGNED);
+            if (c.size().isPresent()) tags.add(StvnVocabulary.FACET_KW_SIZE);
+            if (c.exact()) tags.add(StvnVocabulary.FACET_KW_EXACT);
+            if (c.invertible()) tags.add(StvnVocabulary.FACET_KW_INVERTIBLE);
+            if (c.scale().isPresent()) tags.add("#" + c.scale().get());
+            if (c.offset()) tags.add(StvnVocabulary.FACET_KW_OFFSET);
+            if (c.zoned()) tags.add(StvnVocabulary.FACET_KW_ZONED);
+            if (c.audited()) tags.add(StvnVocabulary.FACET_KW_AUDITED);
+            if (c.minIncl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MIN_INCL);
+            if (c.maxExcl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_EXCL);
+            if (c.minExcl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MIN_EXCL);
+            if (c.maxIncl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_INCL);
+            if (c.minSize().isPresent()) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+            if (c.maxSize().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+            if (c.regex().isPresent()) tags.add(StvnVocabulary.FACET_KW_REGEX);
+            if (c.preserveIndent()) tags.add(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
+            if (c.equatable().isPresent()) tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
+            if (c.comparable().isPresent()) tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
+        }
+        return tags;
+    }
+
+    /**
+     * Appends valid canonical alternative lexical representations to Zone 3 content.
+     */
+    private static void appendValidLexicalForms(StringBuilder sb, String baseType) {
+        if (StvnVocabulary.TYPE_INT.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> Decimal (<code>42</code>), Hex (<code>0x2A</code>), Binary (<code>0b101010</code>), Octal (<code>0o52</code>).<br/>");
+        } else if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> Standard decimal (<code>3.14159</code>), Negative (<code>-0.5</code>), Scientific (<code>1.0e-5</code>).<br/>");
+        } else if (StvnVocabulary.TYPE_STRING.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> Simple quoted (<code>\"text\"</code>), Verbatim fenced (<code>\"\"\"[TAG]...[TAG]\"\"\"</code>).<br/>");
+        } else if (StvnVocabulary.TYPE_BOOLEAN.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> <code>#TRUE</code>, <code>#FALSE</code>, <code>#T</code>, <code>#F</code>.<br/>");
+        } else if (StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> Integer ticks matching scale flag (e.g. <code>1704067200</code> for <code>#s</code>).<br/>");
+        } else if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+            sb.append("<b>Valid Lexical Forms:</b> ISO-8601 timestamps (e.g. <code>\"2026-03-15T08:00:00Z\"</code>).<br/>");
+        }
+    }
+
+    public record StvnSlotProjection(
+        int index,
+        String declaredSchema,
+        String baseType,
+        String constraintsSummary
+    ) {}
+
+    public record StvnValueComplianceResult(
+        boolean isSatisfied,
+        String statusLabel,
+        String detailExplanation,
+        Map<String, String> evaluatedConstraints,
+        List<String> validLexicalForms
+    ) {}
 }
