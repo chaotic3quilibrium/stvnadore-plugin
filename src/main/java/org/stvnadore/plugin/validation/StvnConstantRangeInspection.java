@@ -45,37 +45,61 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
 
                 var meta = schemaType.getMetadataMap();
                 var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
-                if (meta == null || !StvnVocabulary.TYPE_INT.equals(cleanType)) {
-                    var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
+                boolean isInt = StvnVocabulary.TYPE_INT.equals(cleanType);
+                boolean isEpoch = StvnVocabulary.TYPE_TIME_EPOCH.equals(cleanType);
+                org.stvnadore.psi.SchemaType resolved = null;
+                if (meta == null || (!isInt && !isEpoch)) {
+                    resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
                     if (resolved != null) {
                         if (meta == null) {
                             meta = resolved.getMetadataMap();
                         }
                         cleanType = StvnSchemaFormatter.formatCleanSchema(resolved).trim();
+                        isInt = StvnVocabulary.TYPE_INT.equals(cleanType);
+                        isEpoch = StvnVocabulary.TYPE_TIME_EPOCH.equals(cleanType);
                     }
                 }
 
-                if (meta != null) {
-                    for (var entry : meta.getMetadataEntryList()) {
-                        var txt = entry.getText().trim();
-                        if (txt.equals("#unsigned") || txt.startsWith("#unsigned ")) {
-                            isUnsigned = true;
-                        } else if (txt.startsWith("#size")) {
-                            var parts = txt.split("\\s+");
-                            if (parts.length >= 2) {
-                                try {
-                                    bitWidth = Integer.parseInt(parts[1]);
-                                } catch (NumberFormatException ignored) {}
-                            }
-                        }
-                    }
-                }
-
-                if (!StvnVocabulary.TYPE_INT.equals(cleanType)) {
+                if (!isInt && !isEpoch) {
                     return;
                 }
 
-                if (bitWidth == null) {
+                var entries = new java.util.ArrayList<org.stvnadore.psi.MetadataEntry>();
+                if (meta != null) {
+                    entries.addAll(meta.getMetadataEntryList());
+                }
+                if (resolved != null && resolved.getMetadataMap() != null && resolved.getMetadataMap() != meta) {
+                    entries.addAll(resolved.getMetadataMap().getMetadataEntryList());
+                }
+
+                String epochScale = null;
+                for (var entry : entries) {
+                    var txt = entry.getText().trim();
+                    if (txt.equals("#unsigned") || txt.startsWith("#unsigned ")) {
+                        isUnsigned = true;
+                    } else if (txt.startsWith("#size")) {
+                        var parts = txt.split("\\s+");
+                        if (parts.length >= 2 && bitWidth == null) {
+                            try {
+                                bitWidth = Integer.parseInt(parts[1]);
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    } else if (txt.equals("#ns") || txt.startsWith("#ns ")) {
+                        if (epochScale == null) epochScale = "ns";
+                    } else if (txt.equals("#s") || txt.startsWith("#s ")
+                            || txt.equals("#ms") || txt.startsWith("#ms ")
+                            || txt.equals("#us") || txt.startsWith("#us ")) {
+                        if (epochScale == null) epochScale = "standard";
+                    }
+                }
+
+                if (isEpoch) {
+                    if (bitWidth == null) {
+                        bitWidth = "ns".equals(epochScale) ? 128 : 64;
+                    }
+                }
+
+                if (bitWidth == null || bitWidth <= 0) {
                     return;
                 }
 

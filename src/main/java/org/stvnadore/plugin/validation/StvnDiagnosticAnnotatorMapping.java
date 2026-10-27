@@ -311,6 +311,16 @@ public final class StvnDiagnosticAnnotatorMapping {
                 }
             }
 
+            // Guard: Schema facet bound capacity violations are ungoverned by StvnConstantRange
+            if (DiagnosticBag.ERR_INTEGER_OVERFLOW.equals(errorCode)
+                    || "E009".equals(errorCode)
+                    || StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW.equals(errorCode)) {
+                var msg = diag.message();
+                if (msg.contains("Constraint violation (") || msg.contains("is out of bounds for physical capacity")) {
+                    return false;
+                }
+            }
+
             var shortName = CODE_TO_INSPECTION_MAP.get(errorCode);
             if (shortName != null) {
                 if (!ApplicationManager.getApplication().isUnitTestMode()) {
@@ -323,6 +333,9 @@ public final class StvnDiagnosticAnnotatorMapping {
         // Defensive fallback: inspect prose message content against known inspection domains
         var message = diag.message();
         if (message.contains("cannot declare ':type'") || message.contains("cannot declare ':body'") || message.contains("Structural violation:")) {
+            return false;
+        }
+        if (message.contains("Constraint violation (") || message.contains("is out of bounds for physical capacity")) {
             return false;
         }
 

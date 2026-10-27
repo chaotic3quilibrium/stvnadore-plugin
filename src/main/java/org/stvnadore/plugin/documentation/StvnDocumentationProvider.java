@@ -16,6 +16,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnLiteralParser;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.metadata.StvnFacetMetadata;
 import org.stvnadore.plugin.metadata.StvnMetadataRegistry;
@@ -145,7 +147,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), alias)) {
                     var schemaType = typeDef.getSchemaType();
                     var resolved = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
-                    var base = resolved != null ? StvnSchemaFormatter.formatSchema(resolved) : (schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType) : ":Value");
+                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -158,7 +160,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (td != null && td.getSchemaType() != null) {
                     var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                     if (resolved != null) {
-                        fallbackBase = StvnSchemaFormatter.formatSchema(resolved);
+                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
+                    } else {
+                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(td.getSchemaType());
                     }
                 }
                 return new DegradedSchemaInfo(alias, fallbackBase);
@@ -171,7 +175,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var alias = kw != null ? kw.getText() : null;
                 if (alias != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), alias)) {
                     var resolved = StvnTypeResolver.resolveNominalSchema(schema);
-                    var base = resolved != null ? StvnSchemaFormatter.formatSchema(resolved) : StvnSchemaFormatter.formatSchema(schema);
+                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(schema);
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -843,6 +847,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         record FacetRow(String tag, String effectiveValue, String origin, String status) {}
         var rows = new java.util.ArrayList<FacetRow>();
 
+        var file = typeDef.getContainingFile();
+        var diagnostics = StvnTypeResolver.getCompilationDiagnostics(file);
+        var invalidFacetTags = new java.util.HashSet<String>();
+        if (diagnostics != null) {
+            var bareAlias = currentAlias.startsWith(":") ? currentAlias.substring(1) : currentAlias;
+            for (var d : diagnostics) {
+                var code = d.errorCode().orElse("");
+                if (StvnTypeResolver.FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(code)
+                        || DiagnosticBag.ERR_INTEGER_OVERFLOW.equals(code)
+                        || "E009".equals(code)) {
+                    var msg = d.message();
+                    if (msg.contains("Constraint violation (" + currentAlias + "):")
+                            || msg.contains("Constraint violation (:" + bareAlias + "):")
+                            || msg.contains("Constraint violation (" + bareAlias + "):")) {
+                        for (var tag : java.util.List.of("#minIncl", "#minExcl", "#maxIncl", "#maxExcl", "#size", "#minSize", "#maxSize", "#regex")) {
+                            if (msg.contains(tag) || msg.contains(tag.substring(1))) {
+                                invalidFacetTags.add(tag);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         var constraints = rs.constraints();
 
         // Tier 1: Definition Facets
@@ -867,10 +895,33 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (constraints.audited()) {
             rows.add(new FacetRow("#audited", "#TRUE", "Declared", "Active"));
         }
-        if (constraints.size().isPresent()) {
-            int eff = constraints.size().get();
+        var declaredMeta = typeDef.getMetadataMap();
+        if (declaredMeta == null && typeDef.getSchemaType() != null) {
+            declaredMeta = typeDef.getSchemaType().getMetadataMap();
+        }
+        String declaredMinSize = null;
+        String declaredMaxSize = null;
+        String declaredSize = null;
+        if (declaredMeta != null) {
+            for (var entry : declaredMeta.getMetadataEntryList()) {
+                var txt = entry.getText().trim();
+                if (txt.startsWith("#minSize")) {
+                    var parts = txt.split("\\s+");
+                    if (parts.length >= 2) declaredMinSize = parts[1];
+                } else if (txt.startsWith("#maxSize")) {
+                    var parts = txt.split("\\s+");
+                    if (parts.length >= 2) declaredMaxSize = parts[1];
+                } else if (txt.startsWith("#size")) {
+                    var parts = txt.split("\\s+");
+                    if (parts.length >= 2) declaredSize = parts[1];
+                }
+            }
+        }
+
+        if (constraints.size().isPresent() || declaredSize != null) {
+            String eff = declaredSize != null ? declaredSize : String.valueOf(constraints.size().get());
             var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_SIZE);
-            rows.add(new FacetRow("#size", String.valueOf(eff), originInfo.origin(), originInfo.status()));
+            rows.add(new FacetRow("#size", eff, originInfo.origin(), originInfo.status()));
         }
 
         // 1. #preserveIndent (for String types)
@@ -881,17 +932,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         // 2. #minSize
-        if (constraints.minSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
-            int eff = constraints.minSize().orElse(0);
+        if (declaredMinSize != null || constraints.minSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+            String eff = declaredMinSize != null ? declaredMinSize : (constraints.minSize().isPresent() ? String.valueOf(constraints.minSize().get()) : "0");
             var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
-            rows.add(new FacetRow("#minSize", String.valueOf(eff), originInfo.origin(), originInfo.status()));
+            rows.add(new FacetRow("#minSize", eff, originInfo.origin(), originInfo.status()));
         }
 
         // 3. #maxSize
-        if (constraints.maxSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
-            int eff = constraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
+        if (declaredMaxSize != null || constraints.maxSize().isPresent() || ":String".equals(baseType) || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+            String eff = declaredMaxSize != null ? declaredMaxSize : (constraints.maxSize().isPresent() ? String.valueOf(constraints.maxSize().get()) : String.valueOf(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY));
             var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-            rows.add(new FacetRow("#maxSize", String.valueOf(eff), originInfo.origin(), originInfo.status()));
+            rows.add(new FacetRow("#maxSize", eff, originInfo.origin(), originInfo.status()));
         }
 
         // 4. #regex
@@ -903,22 +954,46 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // Tier 3: Bounds Facets
         if (constraints.minIncl().isPresent()) {
-            rows.add(new FacetRow("#minIncl", constraints.minIncl().get().toPlainString(), "Declared", "Active"));
+            String status = invalidFacetTags.contains("#minIncl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#minIncl", constraints.minIncl().get().toPlainString(), "Declared", status));
         }
         if (constraints.minExcl().isPresent()) {
-            rows.add(new FacetRow("#minExcl", constraints.minExcl().get().toPlainString(), "Declared", "Active"));
+            String status = invalidFacetTags.contains("#minExcl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#minExcl", constraints.minExcl().get().toPlainString(), "Declared", status));
         }
         if (constraints.maxIncl().isPresent()) {
-            rows.add(new FacetRow("#maxIncl", constraints.maxIncl().get().toPlainString(), "Declared", "Active"));
+            String status = invalidFacetTags.contains("#maxIncl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#maxIncl", constraints.maxIncl().get().toPlainString(), "Declared", status));
         }
         if (constraints.maxExcl().isPresent()) {
-            rows.add(new FacetRow("#maxExcl", constraints.maxExcl().get().toPlainString(), "Declared", "Active"));
+            String status = invalidFacetTags.contains("#maxExcl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#maxExcl", constraints.maxExcl().get().toPlainString(), "Declared", status));
         }
         if (constraints.dateMinIncl().isPresent()) {
-            rows.add(new FacetRow("#dateMinIncl", "\"" + constraints.dateMinIncl().get() + "\"", "Declared", "Active"));
+            String status = invalidFacetTags.contains("#dateMinIncl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#dateMinIncl", "\"" + constraints.dateMinIncl().get() + "\"", "Declared", status));
         }
         if (constraints.dateMaxExcl().isPresent()) {
-            rows.add(new FacetRow("#dateMaxExcl", "\"" + constraints.dateMaxExcl().get() + "\"", "Declared", "Active"));
+            String status = invalidFacetTags.contains("#dateMaxExcl") ? "Invalid" : "Active";
+            rows.add(new FacetRow("#dateMaxExcl", "\"" + constraints.dateMaxExcl().get() + "\"", "Declared", status));
+        }
+
+        // Recover declared facets stripped by core during degraded schema sanitization
+        if (declaredMeta != null) {
+            for (var entry : declaredMeta.getMetadataEntryList()) {
+                var entryText = entry.getText().trim();
+                for (var tag : java.util.List.of("#minIncl", "#minExcl", "#maxIncl", "#maxExcl", "#size", "#regex", "#minSize", "#maxSize")) {
+                    if (entryText.startsWith(tag)) {
+                        boolean alreadyPresent = rows.stream().anyMatch(r -> r.tag().equals(tag));
+                        if (!alreadyPresent) {
+                            var parts = entryText.split("\\s+", 2);
+                            var val = parts.length > 1 ? parts[1].trim() : "";
+                            String status = invalidFacetTags.contains(tag) ? "Invalid" : "Active";
+                            rows.add(new FacetRow(tag, val, "Declared", status));
+                        }
+                    }
+                }
+            }
         }
 
         boolean isComposite = isCompositeOrCollectionType(baseType);
@@ -953,7 +1028,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         html.append("</tr></thead><tbody>");
 
         for (var row : rows) {
-            String statusColor = "Active Override".equals(row.status()) ? ("#" + getActiveOverrideColorHex()) : ("Inherited".equals(row.status()) ? ("#" + getInheritedColorHex()) : "#9E9E9E");
+            String statusColor = "Invalid".equals(row.status()) ? ("#" + getViolationBadgeColorHex())
+                : ("Active Override".equals(row.status()) ? ("#" + getActiveOverrideColorHex())
+                : ("Inherited".equals(row.status()) ? ("#" + getInheritedColorHex()) : "#9E9E9E"));
             html.append("<tr>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.tag()).append("</code></td>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.effectiveValue()).append("</code></td>");
@@ -2810,17 +2887,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("<b>Underlying Structure:</b> ").append(underlying).append("<br/>");
         } else {
             var metaMap = rootSchema.getMetadataMap();
-            int minSize = 0;
-            int maxSize = StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY;
+            var minSize = java.math.BigInteger.ZERO;
+            var maxSize = java.math.BigInteger.valueOf(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var txt = entry.getText().trim();
                     if (txt.startsWith("#minSize")) {
                         var parts = txt.split("\\s+");
-                        if (parts.length >= 2) try { minSize = Integer.parseInt(parts[1]); } catch (Exception ignored) {}
+                        if (parts.length >= 2) try { minSize = StvnLiteralParser.parseBigInteger(parts[1]); } catch (Exception ignored) {}
                     } else if (txt.startsWith("#maxSize")) {
                         var parts = txt.split("\\s+");
-                        if (parts.length >= 2) try { maxSize = Integer.parseInt(parts[1]); } catch (Exception ignored) {}
+                        if (parts.length >= 2) try { maxSize = StvnLiteralParser.parseBigInteger(parts[1]); } catch (Exception ignored) {}
                     }
                 }
             }
@@ -3022,13 +3099,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawText = value.getText();
             int len = rawText.startsWith("\"\"\"") ? Math.max(0, rawText.length() - 8) : Math.max(0, rawText.length() - 2);
 
-            int minSize = 0;
-            int maxSize = StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY;
+            var minSize = java.math.BigInteger.ZERO;
+            var maxSize = java.math.BigInteger.valueOf(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
             String regex = null;
 
             if (constraints != null) {
-                minSize = constraints.minSize().orElse(0);
-                maxSize = constraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                minSize = constraints.minSize().map(java.math.BigInteger::valueOf).orElse(java.math.BigInteger.ZERO);
+                maxSize = constraints.maxSize().map(java.math.BigInteger::valueOf).orElse(java.math.BigInteger.valueOf(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY));
                 regex = constraints.regex().orElse(null);
             }
 
@@ -3038,11 +3115,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var t = entry.getText().trim();
                     if (t.startsWith("#minSize")) {
                         var p = t.split("\\s+");
-                        if (p.length >= 2) try { minSize = Integer.parseInt(p[1]); } catch (Exception ignored) {}
+                        if (p.length >= 2) try { minSize = StvnLiteralParser.parseBigInteger(p[1]); } catch (Exception ignored) {}
                     }
                     if (t.startsWith("#maxSize")) {
                         var p = t.split("\\s+");
-                        if (p.length >= 2) try { maxSize = Integer.parseInt(p[1]); } catch (Exception ignored) {}
+                        if (p.length >= 2) try { maxSize = StvnLiteralParser.parseBigInteger(p[1]); } catch (Exception ignored) {}
                     }
                     if (t.startsWith("#regex")) {
                         var p = t.split("\\s+", 2);
@@ -3051,22 +3128,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
 
-            boolean satisfied = len >= minSize && len <= maxSize;
+            var lenBI = java.math.BigInteger.valueOf(len);
+            boolean satisfied = lenBI.compareTo(minSize) >= 0 && lenBI.compareTo(maxSize) <= 0;
             String explanation;
             if (!satisfied) {
-                explanation = len < minSize
-                    ? String.format("String length %d is below minimum required size %d", len, minSize)
-                    : String.format("String length %d exceeds maximum capacity %d", len, maxSize);
+                explanation = lenBI.compareTo(minSize) < 0
+                    ? String.format("String length %d is below minimum required size %s", len, minSize)
+                    : String.format("String length %d exceeds maximum capacity %s", len, maxSize);
             } else if (regex != null) {
                 var cleanContent = rawText.replaceAll("^\"|\"$", "");
                 if (!cleanContent.matches(regex)) {
                     satisfied = false;
                     explanation = "String does not match required regex pattern: <code>" + regex + "</code>";
                 } else {
-                    explanation = String.format("String length %d satisfies bounds [%d, %d] and regex pattern", len, minSize, maxSize);
+                    explanation = String.format("String length %d satisfies bounds [%s, %s] and regex pattern", len, minSize, maxSize);
                 }
             } else {
-                explanation = String.format("String length %d satisfies capacity bounds [%d, %d]", len, minSize, maxSize);
+                explanation = String.format("String length %d satisfies capacity bounds [%s, %s]", len, minSize, maxSize);
             }
 
             var forms = List.of(

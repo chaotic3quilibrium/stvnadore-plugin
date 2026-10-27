@@ -20,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnLiteralParser;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.AtomicType;
@@ -44,6 +45,7 @@ import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 import java.awt.FlowLayout;
+import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.OptionalInt;
@@ -203,7 +205,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
 
                 boolean hasDirectCapacityFacet = false;
-                int directCapacity = -1;
+                BigInteger directCapacity = null;
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var text = entry.getText();
@@ -212,7 +214,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
                                 try {
-                                    directCapacity = Integer.parseInt(intLit.getText());
+                                    directCapacity = StvnLiteralParser.parseBigInteger(intLit.getText());
                                 } catch (Exception ignored) {}
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
@@ -233,10 +235,13 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
 
                 boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
-                int effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
+                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
+                if (effectiveCapacity == null) {
+                    effectiveCapacity = BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                }
 
                 boolean isUnadorned = !hasCapacityFacet;
-                boolean exceedsThreshold = effectiveCapacity > thresholdCapacity;
+                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
 
                 if (isUnadorned || exceedsThreshold) {
                     boolean isError = isErrorSeverity(holder);
@@ -271,7 +276,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) return;
 
                 boolean hasDirectCapacityFacet = false;
-                int directCapacity = -1;
+                BigInteger directCapacity = null;
                 var metaMap = schemaType.getMetadataMap();
 
                 // 1. Guard against broken ASTs: abort inspection if metadata block contains error elements
@@ -286,7 +291,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             hasDirectCapacityFacet = true;
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
-                                try { directCapacity = Integer.parseInt(intLit.getText()); } catch (Exception ignored) {}
+                                try { directCapacity = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -300,9 +305,12 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     }
                 }
                 boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
-                int effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
+                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
+                if (effectiveCapacity == null) {
+                    effectiveCapacity = BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                }
                 boolean isUnadorned = !hasCapacityFacet;
-                boolean exceedsThreshold = effectiveCapacity > thresholdCapacity;
+                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
 
                 if (isUnadorned || exceedsThreshold) {
                     boolean isError = isErrorSeverity(holder);
@@ -356,21 +364,23 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                int capacityBound = resolveCapacityBound(schemaType, literal.getContainingFile());
-                if (capacityBound <= 0) {
+                var capBI = resolveCapacityBoundBigInteger(schemaType, literal.getContainingFile());
+                if (capBI == null || capBI.signum() <= 0) {
                     return;
                 }
 
                 String content = extractLiteralContent(literal.getText());
-                if (content.length() > capacityBound) {
+                var contentLenBI = BigInteger.valueOf(content.length());
+                if (contentLenBI.compareTo(capBI) > 0) {
+                    int capInt = capBI.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0 ? Integer.MAX_VALUE : capBI.intValue();
                     holder.registerProblem(
                         literal,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "String literal length (" + content.length() + ") exceeds declared schema capacity (" + capacityBound + ")",
+                            "String literal length (" + content.length() + ") exceeds declared schema capacity (" + capBI + ")",
                             StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW
                         ),
                         ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                        new TruncateStringLiteralQuickFix(capacityBound),
+                        new TruncateStringLiteralQuickFix(capInt),
                         new WidenSchemaCapacityQuickFix(schemaType, content.length())
                     );
                 }
@@ -431,14 +441,18 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
     public static final class EffectiveTypeCapacity {
         public final boolean isString;
         public final boolean isCollection;
-        public final int capacity;
+        public final BigInteger capacity;
         public final boolean hasExplicitCapacity;
 
-        public EffectiveTypeCapacity(boolean isString, boolean isCollection, int capacity, boolean hasExplicitCapacity) {
+        public EffectiveTypeCapacity(boolean isString, boolean isCollection, BigInteger capacity, boolean hasExplicitCapacity) {
             this.isString = isString;
             this.isCollection = isCollection;
             this.capacity = capacity;
             this.hasExplicitCapacity = hasExplicitCapacity;
+        }
+
+        public EffectiveTypeCapacity(boolean isString, boolean isCollection, int capacity, boolean hasExplicitCapacity) {
+            this(isString, isCollection, BigInteger.valueOf(capacity), hasExplicitCapacity);
         }
     }
 
@@ -576,7 +590,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             var target = def.getTypeDefTarget();
             if (target != null && target.getText().equals(targetName)) {
                 var metaMap = def.getMetadataMap() != null ? def.getMetadataMap() : (def.getSchemaType() != null ? def.getSchemaType().getMetadataMap() : null);
-                int explicitCap = -1;
+                BigInteger explicitCap = null;
                 boolean hasCap = false;
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
@@ -585,7 +599,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             hasCap = true;
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
-                                try { explicitCap = Integer.parseInt(intLit.getText()); } catch (Exception ignored) {}
+                                try { explicitCap = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasCap = true;
@@ -596,7 +610,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     var downstream = resolveEffectiveTypeCapacity(def.getSchemaType(), file, visited);
                     if (downstream != null) {
                         if (hasCap) {
-                            return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap, true);
+                            return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY), true);
                         }
                         return downstream;
                     }
@@ -608,7 +622,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), targetName);
         if (preludeDef != null && preludeDef.getSchemaType() != null) {
             var metaMap = preludeDef.getMetadataMap() != null ? preludeDef.getMetadataMap() : preludeDef.getSchemaType().getMetadataMap();
-            int explicitCap = -1;
+            BigInteger explicitCap = null;
             boolean hasCap = false;
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
@@ -617,7 +631,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         hasCap = true;
                         var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                         if (intLit != null) {
-                            try { explicitCap = Integer.parseInt(intLit.getText()); } catch (Exception ignored) {}
+                            try { explicitCap = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
                         }
                     }
                 }
@@ -625,7 +639,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             var downstream = resolveEffectiveTypeCapacity(preludeDef.getSchemaType(), preludeDef.getContainingFile(), visited);
             if (downstream != null) {
                 if (hasCap) {
-                    return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap, true);
+                    return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY), true);
                 }
                 return downstream;
             }
@@ -656,6 +670,18 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
+     * Resolves the effective capacity bound for the given schema type element as a BigInteger.
+     *
+     * @param schemaType the schema type AST element
+     * @param file the containing PSI file
+     * @return the resolved capacity bound, or null if unresolvable
+     */
+    public static @Nullable BigInteger resolveCapacityBoundBigInteger(SchemaType schemaType, PsiFile file) {
+        var info = resolveEffectiveTypeCapacity(schemaType, file, new HashSet<>());
+        return info != null ? info.capacity : null;
+    }
+
+    /**
      * Resolves the effective capacity bound for the given schema type element.
      *
      * @param schemaType the schema type AST element
@@ -663,8 +689,12 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * @return the resolved capacity bound, or -1 if unresolvable
      */
     public static int resolveCapacityBound(SchemaType schemaType, PsiFile file) {
-        var info = resolveEffectiveTypeCapacity(schemaType, file, new HashSet<>());
-        return info != null ? info.capacity : -1;
+        var cap = resolveCapacityBoundBigInteger(schemaType, file);
+        if (cap == null) return -1;
+        if (cap.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            return Integer.MAX_VALUE;
+        }
+        return cap.intValue();
     }
 
     /**

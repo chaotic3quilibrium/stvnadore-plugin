@@ -57,7 +57,9 @@ public final class StvnTypeResolver {
     private static final java.util.regex.Pattern CONSTRAINT_VIOLATION_TARGET_PATTERN =
         java.util.regex.Pattern.compile("^Constraint violation \\(([^)]+)\\):");
 
-    private static final Set<String> FATAL_SCHEMA_DIAGNOSTIC_CODES = Set.of(
+    public static final Set<String> FATAL_SCHEMA_DIAGNOSTIC_CODES = Set.of(
+        DiagnosticBag.ERR_INTEGER_OVERFLOW,              // "ERR_INTEGER_OVERFLOW"
+        "E009",                                          // "E009"
         DiagnosticBag.ERR_INVALID_REGEX,                 // "INVALID_REGEX_PATTERN"
         DiagnosticBag.ERR_INVERTED_RANGE,                // "INVALID_NUMERIC_RANGE"
         DiagnosticBag.ERR_CAPACITY_OVERFLOW,             // "CAPACITY_OVERFLOW"

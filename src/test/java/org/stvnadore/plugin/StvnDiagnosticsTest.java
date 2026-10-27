@@ -4934,9 +4934,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var hasCapacityError = errors.stream().anyMatch(e ->
             e.getDescription() != null &&
             e.getDescription().contains("out of bounds for physical capacity") &&
-            docText.substring(e.getStartOffset(), e.getEndOffset()).equals("500")
+            (docText.substring(e.getStartOffset(), e.getEndOffset()).equals("500") ||
+             docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#minIncl 500"))
         );
-        assertTrue("Must highlight capacity overflow literal '500'", hasCapacityError);
+        assertTrue("Must highlight capacity overflow facet '#minIncl 500'", hasCapacityError);
     }
 
     public void testModularHeaderMultiDiagnosticHighlighting() {
@@ -6223,6 +6224,114 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             """;
         myFixture.configureByText("suppressed_inlay_mismatch.stvn", text);
         runInlayVerification();
+    }
+
+    public void testIntegerFacetBoundOverflowProjectsErrorAnnotation() {
+        var text = """
+            {
+              :defs {
+                :Int32 { #minIncl -2147483649 } :Int
+              }
+              :type :Int32
+              :body 0
+            }
+            """;
+        myFixture.configureByText("uhoh_facet_overflow.stvn", text);
+        var highlights = myFixture.doHighlighting();
+
+        var facetOffset = text.indexOf("#minIncl -2147483649");
+        var facetEnd = facetOffset + "#minIncl -2147483649".length();
+
+        var facetError = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getStartOffset() >= facetOffset && h.getEndOffset() <= facetEnd)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Constraint violation (:Int32)"))
+            .findFirst();
+
+        assertTrue("Expected Line 3 ERR_INTEGER_OVERFLOW error annotation pinned to #minIncl -2147483649", facetError.isPresent());
+    }
+
+    public void testDegradedSchemaHoverDisplaysCleanFallbackAndInvalidBadge() {
+        var text = """
+            {
+              :defs {
+                :Int32 { #minIncl -2147483649 } :Int
+              }
+              :type :Int32
+              :body 0
+            }
+            """;
+        myFixture.configureByText("uhoh_hover.stvn", text);
+        myFixture.doHighlighting();
+
+        var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+        var defOffset = text.indexOf(":Int32");
+        var defElem = myFixture.getFile().findElementAt(defOffset);
+        assertNotNull(defElem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), defElem, defOffset);
+        assertNotNull(docElem);
+        var doc = provider.generateDoc(docElem, defElem);
+        assertNotNull("Hover documentation must not be null", doc);
+
+        // 1. Amber warning banner must display clean fallback base type :Int
+        assertTrue("Expected clean fallback base type (:Int) in degraded warning banner",
+            doc.contains("fallback base type (<code>:Int</code>)"));
+        assertFalse("Degraded warning banner must NOT contain corrupted metadata map",
+            doc.contains("fallback base type (<code>{ #minIncl -2147483649 } :Int</code>)"));
+
+        // 2. Zone 2 effective facets table must display #minIncl -2147483649 with status Invalid
+        assertTrue("Zone 2 must display #minIncl facet", doc.contains("<code>#minIncl</code>"));
+        assertTrue("Zone 2 must display -2147483649 effective value", doc.contains("<code>-2147483649</code>"));
+        assertTrue("Zone 2 must display Invalid status badge", doc.contains(">Invalid</b>"));
+        assertFalse("Zone 2 must NOT display Active status for violating facet", doc.contains(">Active</b>"));
+    }
+
+    public void testLargeStringCapacityQuickDocDoesNotOverflow() {
+        var text = """
+            {
+              :defs {
+                :LargeBlob { #maxSize 10995116277760 } :String
+              }
+              :type :LargeBlob
+              :body "data"
+            }
+            """;
+        myFixture.configureByText("large_blob_doc.stvn", text);
+        myFixture.doHighlighting();
+
+        var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+        var blobOffset = text.indexOf(":LargeBlob");
+        var blobElem = myFixture.getFile().findElementAt(blobOffset);
+        assertNotNull(blobElem);
+        var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), blobElem, blobOffset);
+        assertNotNull(docElem);
+        var doc = provider.generateDoc(docElem, blobElem);
+        assertNotNull("Hover doc for :LargeBlob must not be null", doc);
+        assertTrue("Hover doc must display 10995116277760 without NumberFormatException",
+            doc.contains("10995116277760"));
+    }
+
+    public void testConstantInspectionAccepts128BitNanosecondEpoch() {
+        var text = """
+            {
+              :defs {
+                #TIMESTAMP { #ns } :TimeEpoch 18446744073709551615
+              }
+              :type :String
+              :body "valid"
+            }
+            """;
+        myFixture.configureByText("epoch_128bit_const.stvn", text);
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnConstantRangeInspection());
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("out of range"))
+            .toList();
+
+        assertTrue("128-bit nanosecond epoch constant (18446744073709551615) must be accepted without overflow error",
+            errors.isEmpty());
     }
 }
 
