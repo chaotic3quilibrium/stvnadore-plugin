@@ -50,6 +50,7 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_NOMINAL_STRING_CAPACITY_OVERFLOW = "WARN_NOMINAL_STRING_CAPACITY_OVERFLOW";
     public static final String WARN_STRING_LITERAL_CAPACITY_OVERFLOW = "WARN_STRING_LITERAL_CAPACITY_OVERFLOW";
     public static final String WARN_EXCESSIVE_EXACT_PRECISION = "WARN_EXCESSIVE_EXACT_PRECISION";
+    public static final String WARN_FLOAT_PRECISION_LOSS = "WARN_FLOAT_PRECISION_LOSS";
 
     // Metadata Facets & Ordering
     public static final String ERR_FACET_ORDER_VIOLATION = "ERR_FACET_ORDER_VIOLATION";

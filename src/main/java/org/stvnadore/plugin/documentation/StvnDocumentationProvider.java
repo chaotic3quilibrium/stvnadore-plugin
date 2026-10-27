@@ -34,6 +34,7 @@ import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsElement;
 import org.stvnadore.psi.EnumDef;
+import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MetaDomainFacet;
@@ -2514,6 +2515,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return ColorUtil.toHex(new JBColor(new java.awt.Color(0xD32F2F), new java.awt.Color(0xE57373)));
     }
 
+    private static String getWarningBadgeColorHex() {
+        return ColorUtil.toHex(new JBColor(new java.awt.Color(0xF57C00), new java.awt.Color(0xFFB74D)));
+    }
+
     private static String getActiveOverrideColorHex() {
         return ColorUtil.toHex(new JBColor(new java.awt.Color(0x388E3C), new java.awt.Color(0x81C784)));
     }
@@ -2975,24 +2980,36 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var resolvedType = StvnTypeResolver.resolveValueType(value);
         var displayType = resolvedType != null ? resolvedType : (info != null ? info.getLabel() : "Unknown");
 
+        // Resolve union variant context if value resides in or is an ExplicitUnionValue
+        var unionContext = resolveUnionVariantHoverContext(value, originalElement);
+        var governingSchema = (unionContext != null) ? unionContext.governingSchema() : displayType;
+        var targetSchemaForCompliance = (unionContext != null && unionContext.branchSchema() != null)
+            ? unionContext.branchSchema()
+            : schemaType;
+        var targetValueForCompliance = (unionContext != null && unionContext.payloadValue() != null)
+            ? unionContext.payloadValue()
+            : value;
+
         // Zone 1: Identity & Structural Trace
         sb.append("<div class='definition'>");
         sb.append("<b>Payload Value:</b> <code>").append(value.getText()).append("</code><br/>");
         sb.append("<b>Value Type:</b> ").append(displayType).append("<br/>");
         sb.append("<b>Expression:</b> ").append(value.getText()).append("<br/>");
         sb.append("<b>Locus:</b> Document Payload Body (<code>:body</code> clause)<br/>");
-        sb.append("<b>Governing Schema:</b> <code>").append(displayType).append("</code><br/>");
+        sb.append("<b>Governing Schema:</b> <code>").append(governingSchema).append("</code><br/>");
         sb.append("</div><hr/>");
 
         // Zone 2: Effective Semantic Contract (Dynamic Constraint Evaluation)
         sb.append("<div class='content'>");
-        var compliance = evaluateValueCompliance(value, schemaType);
-        String badgeColor = compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
-        String badgeText = compliance.isSatisfied() ? "Satisfied" : "In Violation";
+        var compliance = evaluateValueCompliance(targetValueForCompliance, targetSchemaForCompliance);
+        String badgeColor = "Satisfied (Precision Loss)".equals(compliance.statusLabel())
+            ? getWarningBadgeColorHex()
+            : (compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex());
+        String badgeText = compliance.statusLabel();
         sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(badgeColor).append(";\">").append(badgeText).append("</b><br/>");
         sb.append(compliance.detailExplanation()).append("<br/>");
 
-        var epochDoc = buildTimeEpochValueHoverDoc(value, displayType);
+        var epochDoc = buildTimeEpochValueHoverDoc(targetValueForCompliance, displayType);
         if (epochDoc != null) {
             sb.append(epochDoc);
         }
@@ -3292,21 +3309,42 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     BigDecimal capMax = (bitWidth == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
 
                     boolean capOk = valBD.compareTo(capMin) >= 0 && valBD.compareTo(capMax) <= 0;
-                    boolean satisfied = capOk;
                     String explanation;
+                    String statusLabel = capOk ? "Satisfied" : "In Violation";
+                    int precision = valBD.precision();
+                    int safeDigits = (bitWidth == 32) ? 7 : 17;
+                    boolean precisionLoss = capOk && (precision > safeDigits);
+
+                    String roundedStr = (bitWidth == 32)
+                        ? Float.toString(valBD.floatValue())
+                        : Double.toString(valBD.doubleValue());
+
                     if (!capOk) {
                         explanation = String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
                             valBD.toString(), capMin, capMax, bitWidth);
+                    } else if (precisionLoss) {
+                        statusLabel = "Satisfied (Precision Loss)";
+                        explanation = String.format(
+                            "Floating-point literal precision (%d digits) exceeds IEEE-754 %s capacity (~%d digits); binary encoding truncates and rounds value to %s",
+                            precision,
+                            (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)"),
+                            (bitWidth == 32 ? 7 : 16),
+                            roundedStr
+                        );
                     } else {
                         explanation = String.format("Value %s conforms to %d-bit continuous float representation",
                             valBD.toString(), bitWidth);
                     }
 
                     var forms = new ArrayList<String>();
+                    if (precisionLoss) {
+                        forms.add("Authored Literal: <code>" + text + "</code>");
+                        forms.add("Encoded Binary Float: <code>" + roundedStr + "</code>");
+                    }
                     forms.add("Decimal: <code>" + valBD.toPlainString() + "</code>");
                     forms.add("Scientific: <code>" + valBD.toString() + "</code>");
                     forms.add("Format: <code>IEEE-754 " + (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)") + "</code>");
-                    return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+                    return new StvnValueComplianceResult(capOk, statusLabel, explanation, Collections.emptyMap(), forms);
                 }
             } catch (Exception e) {
                 return new StvnValueComplianceResult(false, "In Violation", "Invalid float literal representation: " + e.getMessage(), Collections.emptyMap(), Collections.emptyList());
@@ -3456,6 +3494,93 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         } else if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
             sb.append("<b>Valid Lexical Forms:</b> ISO-8601 timestamps (e.g. <code>\"2026-03-15T08:00:00Z\"</code>).<br/>");
         }
+    }
+
+    private record UnionVariantHoverContext(
+        String governingSchema,
+        @Nullable SchemaType branchSchema,
+        @Nullable Value payloadValue
+    ) {}
+
+    private static @Nullable UnionVariantHoverContext resolveUnionVariantHoverContext(Value value, @Nullable PsiElement originalElement) {
+        ExplicitUnionValue union = value.getExplicitUnionValue();
+        Value payloadVal = null;
+        if (union != null) {
+            payloadVal = union.getValue();
+        } else if (value.getParent() instanceof ExplicitUnionValue pUnion) {
+            union = pUnion;
+            payloadVal = value;
+        } else if (originalElement != null) {
+            var origUnion = PsiTreeUtil.getParentOfType(originalElement, ExplicitUnionValue.class);
+            if (origUnion != null) {
+                union = origUnion;
+                payloadVal = origUnion.getValue();
+            }
+        }
+
+        if (union == null) {
+            return null;
+        }
+
+        var outerVal = PsiTreeUtil.getParentOfType(union, Value.class);
+        if (outerVal == null && union.getParent() instanceof Value pVal) {
+            outerVal = pVal;
+        }
+        if (outerVal == null) {
+            return null;
+        }
+
+        var info = StvnTypeResolver.resolveBaseTypeInfo(outerVal);
+        if (info == null || info.getSchema() == null) {
+            return null;
+        }
+
+        var unionSchema = info.getSchema();
+        var nominalUnion = StvnTypeResolver.resolveNominalSchema(unionSchema);
+        var schemaToInspect = (nominalUnion != null) ? nominalUnion : unionSchema;
+        var ctor = schemaToInspect.getSchemaConstructor();
+        if (ctor == null || ctor.getSumType() == null) {
+            return null;
+        }
+
+        var branches = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
+        var tagPrefix = union.getUnionTagPrefix();
+        if (tagPrefix == null || !tagPrefix.getText().startsWith("#")) {
+            return null;
+        }
+
+        int branchIdx;
+        try {
+            branchIdx = Integer.parseInt(tagPrefix.getText().substring(1)) - 1;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+
+        if (branchIdx < 0 || branchIdx >= branches.size()) {
+            return null;
+        }
+
+        var branchSchema = branches.get(branchIdx);
+        var nominalName = "";
+        if (unionSchema.getTypeKeyword() != null) {
+            nominalName = unionSchema.getTypeKeyword().getText().trim();
+        } else {
+            var parentDef = PsiTreeUtil.getParentOfType(unionSchema, TypeDefinition.class);
+            if (parentDef != null && parentDef.getTypeKeyword() != null) {
+                nominalName = parentDef.getTypeKeyword().getText().trim();
+            } else {
+                nominalName = ":Union";
+            }
+        }
+
+        // Format branch representation: ({ #size 32 } :Float) or (:Float)
+        var branchRepr = StvnSchemaFormatter.formatSchema(branchSchema);
+        if (branchRepr.isEmpty()) {
+            branchRepr = ":Value";
+        }
+        var governingSchemaStr = nominalName + " " + tagPrefix.getText().trim() + " (" + branchRepr + ")";
+
+        return new UnionVariantHoverContext(governingSchemaStr, branchSchema, payloadVal);
     }
 
     public record StvnSlotProjection(

@@ -791,4 +791,92 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Must report exact decimal representation", doc.contains("Exact Decimal: <code>" + fiftyDigits + "</code>"));
         assertTrue("Must report precision (50 or 51 digits)", doc.contains("Precision (Digits): <code>51</code>") || doc.contains("Precision (Digits): <code>50</code>"));
     }
+
+    /**
+     * TC-DOC-UNION-01: Branch 1 of nominal union resolves with qualified header and metadata block.
+     */
+    public void testUnionVariant1QualifiedHeader() {
+        var text = """
+            {
+              :defs {
+                :Measurement :Union( { #size 32 } :Float :Float { #exact } :Float )
+              }
+              :type :Measurement
+              :body #1 42.0
+            }
+            """;
+        myFixture.configureByText("union_var1.stvn", text);
+        var offset = text.indexOf("42.0");
+        var doc = getDocAtOffset(text, offset);
+        assertTrue("Governing Schema must reflect variant #1 with #size 32: " + doc,
+            doc.contains("<b>Governing Schema:</b> <code>:Measurement #1 ({ #size 32 } :Float)</code>"));
+    }
+
+    /**
+     * TC-DOC-UNION-02: Branch 2 of nominal union resolves with qualified header and naked :Float.
+     */
+    public void testUnionVariant2QualifiedHeader() {
+        var text = """
+            {
+              :defs {
+                :Measurement :Union( { #size 32 } :Float :Float { #exact } :Float )
+              }
+              :type :Measurement
+              :body #2 42.0
+            }
+            """;
+        myFixture.configureByText("union_var2.stvn", text);
+        var offset = text.indexOf("42.0");
+        var doc = getDocAtOffset(text, offset);
+        assertTrue("Governing Schema must reflect variant #2 with naked :Float: " + doc,
+            doc.contains("<b>Governing Schema:</b> <code>:Measurement #2 (:Float)</code>"));
+    }
+
+    /**
+     * TC-DOC-UNION-03: Branch 3 of nominal union resolves with qualified header and #exact :Float.
+     */
+    public void testUnionVariant3QualifiedHeader() {
+        var text = """
+            {
+              :defs {
+                :Measurement :Union( { #size 32 } :Float :Float { #exact } :Float )
+              }
+              :type :Measurement
+              :body #3 42.0
+            }
+            """;
+        myFixture.configureByText("union_var3.stvn", text);
+        var offset = text.indexOf("42.0");
+        var doc = getDocAtOffset(text, offset);
+        assertTrue("Governing Schema must reflect variant #3 with #exact :Float: " + doc,
+            doc.contains("<b>Governing Schema:</b> <code>:Measurement #3 ({ #exact } :Float)</code>"));
+    }
+
+    /**
+     * TC-DOC-FPL-01: Continuous float precision loss documentation card presentation.
+     */
+    public void testContinuousFloatPrecisionLossDocCard() {
+        var fiftyDigits = "3.14159265358979323846264338327950288419716939937510";
+        var text = """
+            {
+              :defs {
+                :ContinuousPi :Float
+              }
+              :type :ContinuousPi
+              :body %s
+            }
+            """.formatted(fiftyDigits);
+        myFixture.configureByText("continuous_pi.stvn", text);
+        var offset = text.indexOf(fiftyDigits);
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Compliance status must be Satisfied (Precision Loss): " + doc,
+            doc.contains("Satisfied (Precision Loss)"));
+        assertTrue("Must include warning badge color #F57C00: " + doc,
+            doc.toLowerCase().contains("f57c00"));
+        assertTrue("Must report Authored Literal: " + doc,
+            doc.contains("Authored Literal: <code>" + fiftyDigits + "</code>"));
+        assertTrue("Must report Encoded Binary Float: " + doc,
+            doc.contains("Encoded Binary Float: <code>3.141592653589793</code>"));
+    }
 }

@@ -1,0 +1,40 @@
+<html>
+<body>
+<p>Reports floating-point literals whose decimal precision exceeds the physical mantissa capacity of continuous IEEE-754 Single (32-bit) or Double (64-bit) floating-point types.</p>
+
+<p>Under STVN Language Specification &sect; 5.1.3:</p>
+<ul>
+  <li>Continuous 32-bit floats (<code>{ #size 32 } :Float</code>) possess 24 bits of mantissa (&sim;7.22 significant decimal digits). Literals exceeding 7 decimal digits suffer truncation and rounding during binary encoding.</li>
+  <li>Continuous 64-bit floats (<code>:Float</code> / <code>{ #size 64 } :Float</code>) possess 53 bits of mantissa (&sim;15.95 significant decimal digits). Literals exceeding 17 decimal digits suffer truncation and rounding during binary encoding.</li>
+  <li>Discrete exact floats (<code>{ #exact } :Float</code>) implement arbitrary-precision decimal representations (&le; 16,777,216 digits) and remain completely unaffected by this inspection.</li>
+</ul>
+
+<p><b>Compliant Examples:</b></p>
+<pre><code>// Compliant: Fits within Single (32-bit) precision (&le; 7 digits)
+:Speed { #size 32 } :Float
+#1 42.12345
+
+// Compliant: Fits within Double (64-bit) precision (&le; 17 digits)
+:Coordinates :Float
+#2 3.141592653589793
+
+// Compliant: Arbitrary precision decimal arithmetic
+:PreciseValue { #exact } :Float
+#3 3.1415926535897932384626433832795028841971
+</code></pre>
+
+<p><b>Warning Examples:</b></p>
+<pre><code>// Warning: 20 digits written to 32-bit float; truncates to 42.123455
+#1 42.1234567890123456789
+
+// Warning: 22 digits written to 64-bit float; truncates to 3.141592653589793
+3.1415926535897932384626
+</code></pre>
+
+<p><b>Available Quick-Fixes:</b></p>
+<ul>
+  <li><b>Round literal to nearest IEEE-754 representation:</b> Replaces the authored literal with the exact truncated and rounded IEEE-754 value that binary encoding produces.</li>
+  <li><b>Switch variant to exact float branch:</b> When the literal resides within a tagged union variant with a sibling declaring <code>{ #exact } :Float</code>, switches the variant tag to select the exact arbitrary-precision branch.</li>
+</ul>
+</body>
+</html>

@@ -445,6 +445,16 @@
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnExcessiveExactFloatPrecisionInspection"/>
 
+        <!-- 12k3. Local Inspection for Continuous Float Precision Loss -->
+        <localInspection language="STVN"
+                         shortName="StvnFloatPrecisionLoss"
+                         displayName="Continuous float precision loss inspection"
+                         groupPath="STVN"
+                         groupName="Numeric &amp; Floating-Point"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnFloatPrecisionLossInspection"/>
+
         <!-- 12l. Local Inspection for Metadata Facet & Empty Block Governance -->
         <localInspection language="STVN"
                          shortName="StvnMetadataFacet"
