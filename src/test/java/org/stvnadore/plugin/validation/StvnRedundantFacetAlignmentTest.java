@@ -380,6 +380,31 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
   }
 
   /**
+   * Asserts that hover documentation on #size 64 in :ConflictedRate { #exact #size 64 } :Float
+   * does NOT render the Warning W003 card.
+   */
+  public void testConflictedExactSize64HoverSuppressesW003Card() {
+    var text = """
+        {
+          :defs {
+            :ConflictedRate { #exact #size 64 } :Float
+          }
+          :type :ConflictedRate
+          :body 1.0
+        }
+        """;
+    myFixture.configureByText("conflicted_rate_hover.stvn", text);
+    int offset = text.indexOf("#size 64");
+    var element = myFixture.getFile().findElementAt(offset);
+    assertNotNull("Must locate PSI element at '#size 64'", element);
+
+    var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+    var doc = provider.generateDoc(element, element);
+    assertFalse("Hover documentation must NOT render Warning W003 on exact float",
+        doc != null && doc.contains("Warning W003"));
+  }
+
+  /**
    * Asserts that declaring valid non-default bit-width #unsigned #size 16 on :Int compiles cleanly with zero error annotations.
    */
   public void testUnsignedIntSizeSixteenPermittedWithoutError() {

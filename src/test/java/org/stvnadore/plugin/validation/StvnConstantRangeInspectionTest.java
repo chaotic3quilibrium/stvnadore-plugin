@@ -36,7 +36,7 @@ public final class StvnConstantRangeInspectionTest extends BasePlatformTestCase 
             .toList();
 
         assertEquals("Expected 1 float overflow error for 3.5e38", 1, errors.size());
-        assertTrue(errors.get(0).getDescription().contains("Float literal 3.5e38 out of range for :Float"));
+        assertTrue(errors.get(0).getDescription().contains("Float literal 3.5e38 out of range for { #size 32 } :Float"));
     }
 
     public void testFloat64ConstantExtremeExponentWithoutCrash() {

@@ -542,8 +542,12 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 if (val == 32 && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
                     return true;
                 }
-                if (val == 64 && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && !hasLocalExactFacet(metaMap)) {
-                    return true;
+                if (val == 64 && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
+                    boolean isExact = hasLocalExactFacet(metaMap)
+                        || (rs != null && !rs.isPoisonedSentinel() && rs.constraints().exact());
+                    if (!isExact) {
+                        return true;
+                    }
                 }
             }
         }

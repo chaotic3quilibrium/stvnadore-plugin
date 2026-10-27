@@ -126,13 +126,14 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     }
 
                     if (floatVal.compareTo(minBound) < 0 || floatVal.compareTo(maxBound) > 0) {
+                        String targetType = (bitWidth != null) ? "{ #size " + bitWidth + " } " + cleanType : cleanType;
                         holder.registerProblem(
                             value.getFloatLiteral(),
                             StvnDiagnosticFormatter.formatPlugin(
-                                "Float literal " + litText + " out of range for " + cleanType + " [" + minBound + ", " + maxBound + "]",
+                                "Float literal " + litText + " out of range for " + targetType + " [" + minBound + ", " + maxBound + "]",
                                 StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW
                             ),
-                            ProblemHighlightType.ERROR
+                            ProblemHighlightType.GENERIC_ERROR
                         );
                     }
                     return;
@@ -166,7 +167,7 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                             "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
                             StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
                         ),
-                        ProblemHighlightType.ERROR
+                        ProblemHighlightType.GENERIC_ERROR
                     );
                 }
             }

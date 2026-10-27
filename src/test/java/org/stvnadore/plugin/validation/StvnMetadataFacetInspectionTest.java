@@ -103,6 +103,37 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         assertTrue("Converted text must retain #exact", result.contains("#exact"));
     }
 
+    /**
+     * Asserts that declaring :ConflictedRate { #exact #size 64 } :Float emits strictly
+     * ERR_MUTUALLY_EXCLUSIVE and zero redundant metadata facet warnings (Rule W003).
+     */
+    public void testConflictedExactAndSize64SuppressesRedundancyWarning() {
+        var text = """
+            {
+              :defs {
+                :ConflictedRate { #exact #size 64 } :Float
+              }
+              :type :ConflictedRate
+              :body 1.23
+            }
+            """;
+        myFixture.configureByText("conflicted_rate.stvn", text);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_MUTUALLY_EXCLUSIVE"))
+            .toList();
+        assertFalse("Expected ERR_MUTUALLY_EXCLUSIVE on #size 64", errors.isEmpty());
+        assertTrue(errors.get(0).getDescription().contains("facet '#size' is mutually exclusive with '#exact'"));
+
+        var redundancyWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("is redundant"))
+            .toList();
+        assertTrue("Redundancy warning W003 must be suppressed on exact float: " + redundancyWarnings, redundancyWarnings.isEmpty());
+    }
+
     public void testInvalidStripFacetOnTypeQuickFix() {
         var text = """
             {

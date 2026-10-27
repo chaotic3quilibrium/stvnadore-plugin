@@ -2360,6 +2360,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         boolean isUnsigned = false;
         int bitWidth = 32;
+        boolean isExact = false;
         for (var e : metaMap.getMetadataEntryList()) {
             var et = e.getText().trim();
             if (et.startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
@@ -2371,6 +2372,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         bitWidth = Integer.parseInt(parts[1]);
                     } catch (NumberFormatException ignored) {}
                 }
+            } else if (et.startsWith(StvnVocabulary.FACET_KW_EXACT)) {
+                isExact = true;
             }
         }
 
@@ -2416,7 +2419,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if ("32".equals(valStr) && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
                     String desc = isUnsigned ? "unsigned integer <code>{ #unsigned } :Int</code>" : "signed integer <code>:Int</code>";
                     reason = desc + " intrinsically defaults to 32-bit storage.";
-                } else if ("64".equals(valStr) && (baseType.endsWith(":Float") || baseType.equals(":Float"))) {
+                } else if ("64".equals(valStr) && (baseType.endsWith(":Float") || baseType.equals(":Float")) && !isExact) {
                     reason = "continuous <code>:Float</code> intrinsically defaults to 64-bit IEEE-754 double precision.";
                 }
             }
