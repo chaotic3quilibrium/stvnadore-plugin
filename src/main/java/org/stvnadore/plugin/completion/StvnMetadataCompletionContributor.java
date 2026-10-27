@@ -22,6 +22,7 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.StvnStringCapacityInspection;
 import org.stvnadore.psi.*;
 
+import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -91,6 +92,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             boolean isExact = false;
             Set<String> declaredFacets = new HashSet<>();
             InsertHandler<LookupElement> insertHandler;
+            SchemaType schemaType = null;
 
             if (metaMap == null) {
               // Branch B: Pre-Schema Whitespace Auto-Wrapping Completion
@@ -104,7 +106,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             } else {
               // Branch A: In-Map Facet Completion
               insertHandler = StvnMetadataFacetInsertHandler.INSTANCE;
-              var schemaType = PsiTreeUtil.getParentOfType(metaMap, SchemaType.class);
+              schemaType = PsiTreeUtil.getParentOfType(metaMap, SchemaType.class);
               if (schemaType == null) {
                 var typeDef = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class);
                 if (typeDef != null) {
@@ -123,10 +125,9 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
 
               // Track facets already present to eliminate duplicate facet proposals (§ 5.1.4)
               for (var entry : metaMap.getMetadataEntryList()) {
-                var text = entry.getText().trim();
-                if (!text.isEmpty()) {
-                  var tag = text.split("\\s+")[0];
-                  declaredFacets.add(tag);
+                var root = extractRootFacetKeyword(entry);
+                if (root != null) {
+                  declaredFacets.add(root);
                 }
               }
 
@@ -152,7 +153,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     StvnVocabulary.FACET_KW_UNSIGNED,
                     isAutoWrap,
                     "Definition Facet",
-                    " (bounds domain to [0, \\infty))",
+                    " (bounds domain to [0, ∞))",
                     insertHandler
                 ));
               }
@@ -194,7 +195,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                       StvnVocabulary.FACET_KW_MIN_INCL + " 1",
                       isAutoWrap,
                       "Lower Bound",
-                      " (domain: [1, \\infty))",
+                      " (domain: [1, ∞))",
                       insertHandler
                   ));
                 } else {
@@ -202,21 +203,24 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                       StvnVocabulary.FACET_KW_MIN_INCL + " 0",
                       isAutoWrap,
                       "Lower Bound",
-                      " (domain: [0, \\infty))",
+                      " (domain: [0, ∞))",
                       insertHandler
                   ));
                   targetResult.addElement(createFacetLookup(
                       StvnVocabulary.FACET_KW_MIN_INCL + " 1",
                       isAutoWrap,
                       "Lower Bound",
-                      " (domain: [1, \\infty))",
+                      " (domain: [1, ∞))",
                       insertHandler
                   ));
                 }
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                int bitWidth = resolveActiveBitWidth(metaMap, schemaType);
+                int exponent = isUnsigned ? bitWidth : bitWidth - 1;
+                String maxExclValue = BigInteger.ONE.shiftLeft(exponent).toString();
                 targetResult.addElement(createFacetLookup(
-                    StvnVocabulary.FACET_KW_MAX_EXCL + " 65536",
+                    StvnVocabulary.FACET_KW_MAX_EXCL + " " + maxExclValue,
                     isAutoWrap,
                     "Exclusive Upper Bound",
                     null,
@@ -539,7 +543,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     StvnVocabulary.FACET_KW_MIN_INCL + " 0",
                     isAutoWrap,
                     "Lower Bound",
-                    " (domain: [0, \\infty))",
+                    " (domain: [0, ∞))",
                     insertHandler
                 ));
               }
@@ -730,8 +734,102 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     return "";
   }
 
+  public static @Nullable String extractRootFacetKeyword(@Nullable MetadataEntry entry) {
+    if (entry == null) return null;
+    var node = entry.getNode();
+    if (node != null) {
+      if (node.findChildByType(StvnTypes.KW_SIZE) != null) return StvnVocabulary.FACET_KW_SIZE;
+      if (node.findChildByType(StvnTypes.KW_MIN_SIZE) != null) return StvnVocabulary.FACET_KW_MIN_SIZE;
+      if (node.findChildByType(StvnTypes.KW_MAX_SIZE) != null) return StvnVocabulary.FACET_KW_MAX_SIZE;
+      if (node.findChildByType(StvnTypes.KW_MIN_INCL) != null) return StvnVocabulary.FACET_KW_MIN_INCL;
+      if (node.findChildByType(StvnTypes.KW_MAX_EXCL) != null) return StvnVocabulary.FACET_KW_MAX_EXCL;
+      if (node.findChildByType(StvnTypes.KW_MIN_EXCL) != null) return StvnVocabulary.FACET_KW_MIN_EXCL;
+      if (node.findChildByType(StvnTypes.KW_MAX_INCL) != null) return StvnVocabulary.FACET_KW_MAX_INCL;
+      if (node.findChildByType(StvnTypes.KW_UNSIGNED) != null) return StvnVocabulary.FACET_KW_UNSIGNED;
+      if (node.findChildByType(StvnTypes.KW_EXACT) != null) return StvnVocabulary.FACET_KW_EXACT;
+      if (node.findChildByType(StvnTypes.KW_INVERTIBLE) != null) return StvnVocabulary.FACET_KW_INVERTIBLE;
+      if (node.findChildByType(StvnTypes.KW_SCALE_S) != null) return StvnVocabulary.FACET_KW_SCALE_S;
+      if (node.findChildByType(StvnTypes.KW_SCALE_MS) != null) return StvnVocabulary.FACET_KW_SCALE_MS;
+      if (node.findChildByType(StvnTypes.KW_SCALE_US) != null) return StvnVocabulary.FACET_KW_SCALE_US;
+      if (node.findChildByType(StvnTypes.KW_SCALE_NS) != null) return StvnVocabulary.FACET_KW_SCALE_NS;
+      if (node.findChildByType(StvnTypes.KW_OFFSET) != null) return StvnVocabulary.FACET_KW_OFFSET;
+      if (node.findChildByType(StvnTypes.KW_ZONED) != null) return StvnVocabulary.FACET_KW_ZONED;
+      if (node.findChildByType(StvnTypes.KW_AUDITED) != null) return StvnVocabulary.FACET_KW_AUDITED;
+      if (node.findChildByType(StvnTypes.KW_EQUATABLE) != null) return StvnVocabulary.FACET_KW_EQUATABLE;
+      if (node.findChildByType(StvnTypes.KW_COMPARABLE) != null) return StvnVocabulary.FACET_KW_COMPARABLE;
+      if (node.findChildByType(StvnTypes.KW_PRESERVE_INDENT) != null) return StvnVocabulary.FACET_KW_PRESERVE_INDENT;
+      if (node.findChildByType(StvnTypes.KW_REGEX) != null) return StvnVocabulary.FACET_KW_REGEX;
+      if (node.findChildByType(StvnTypes.KW_FILTER_INCL) != null) return StvnVocabulary.FACET_KW_FILTER_INCL;
+      if (node.findChildByType(StvnTypes.KW_FILTER_EXCL) != null) return StvnVocabulary.FACET_KW_FILTER_EXCL;
+      if (node.findChildByType(StvnTypes.KW_STRIP) != null) return StvnVocabulary.FACET_KW_STRIP;
+    }
+    var text = entry.getText().trim();
+    var matcher = FACET_TAG_PATTERN.matcher(text);
+    if (matcher.find()) {
+      return matcher.group();
+    }
+    return null;
+  }
+
+  private static int resolveActiveBitWidth(@Nullable MetadataMap metaMap, @Nullable SchemaType schemaType) {
+    if (metaMap != null) {
+      for (var entry : metaMap.getMetadataEntryList()) {
+        var root = extractRootFacetKeyword(entry);
+        if (StvnVocabulary.FACET_KW_SIZE.equals(root)) {
+          var val = extractIntegerArgument(entry);
+          if (val != null) {
+            return val;
+          }
+        }
+      }
+      var sanitized = StvnStringCapacityInspection.sanitizeMetadataText(metaMap.getText());
+      var m = Pattern.compile("#size\\s+(\\d+)").matcher(sanitized);
+      if (m.find()) {
+        try {
+          return Integer.parseInt(m.group(1));
+        } catch (NumberFormatException ignored) {}
+      }
+    }
+    if (schemaType != null) {
+      var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
+      if (resolved != null && resolved.getMetadataMap() != null) {
+        for (var entry : resolved.getMetadataMap().getMetadataEntryList()) {
+          var root = extractRootFacetKeyword(entry);
+          if (StvnVocabulary.FACET_KW_SIZE.equals(root)) {
+            var val = extractIntegerArgument(entry);
+            if (val != null) {
+              return val;
+            }
+          }
+        }
+      }
+    }
+    return 32;
+  }
+
+  private static @Nullable Integer extractIntegerArgument(MetadataEntry entry) {
+    var intLit = PsiTreeUtil.findChildOfType(entry, IntegerLiteral.class);
+    if (intLit != null) {
+      try {
+        return Integer.parseInt(intLit.getText().trim());
+      } catch (NumberFormatException ignored) {}
+    }
+    var text = entry.getText().trim();
+    var parts = text.split("\\s+");
+    if (parts.length >= 2) {
+      try {
+        return Integer.parseInt(parts[1]);
+      } catch (NumberFormatException ignored) {}
+    }
+    return null;
+  }
+
   private static boolean isUnsignedActive(MetadataMap metaMap, @Nullable SchemaType schemaType) {
     for (var entry : metaMap.getMetadataEntryList()) {
+      var root = extractRootFacetKeyword(entry);
+      if (StvnVocabulary.FACET_KW_UNSIGNED.equals(root)) {
+        return true;
+      }
       var flag = entry.getMetadataBareFlag();
       if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
         return true;
@@ -741,6 +839,10 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
       var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
       if (resolved != null && resolved.getMetadataMap() != null) {
         for (var entry : resolved.getMetadataMap().getMetadataEntryList()) {
+          var root = extractRootFacetKeyword(entry);
+          if (StvnVocabulary.FACET_KW_UNSIGNED.equals(root)) {
+            return true;
+          }
           var flag = entry.getMetadataBareFlag();
           if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
             return true;
@@ -753,6 +855,10 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
 
   private static boolean isExactActive(MetadataMap metaMap, @Nullable SchemaType schemaType) {
     for (var entry : metaMap.getMetadataEntryList()) {
+      var root = extractRootFacetKeyword(entry);
+      if (StvnVocabulary.FACET_KW_EXACT.equals(root)) {
+        return true;
+      }
       var flag = entry.getMetadataBareFlag();
       if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_EXACT)) {
         return true;
@@ -762,6 +868,10 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
       var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
       if (resolved != null && resolved.getMetadataMap() != null) {
         for (var entry : resolved.getMetadataMap().getMetadataEntryList()) {
+          var root = extractRootFacetKeyword(entry);
+          if (StvnVocabulary.FACET_KW_EXACT.equals(root)) {
+            return true;
+          }
           var flag = entry.getMetadataBareFlag();
           if (flag != null && flag.getText().startsWith(StvnVocabulary.FACET_KW_EXACT)) {
             return true;

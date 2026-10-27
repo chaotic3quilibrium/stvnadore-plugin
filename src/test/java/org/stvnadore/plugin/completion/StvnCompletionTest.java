@@ -1618,6 +1618,280 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
             }
         }
     }
+
+    /**
+     * Verifies TC-PAD-01:
+     * Chained insert inside a metadata block touching an existing token (e.g. '#size 8<caret>')
+     * injects a leading space before the inserted facet, avoiding '8#maxExcl' token smashing.
+     */
+    public void testChainedInsertPaddingInsideMetadataMap() {
+        myFixture.configureByText(
+            "chained_pad_01.stvn_d",
+            """
+            {
+              :defs {
+                :Type { #size 8<caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 128");
+        assertNotNull("Must offer #maxExcl 128 for 8-bit signed int", maxExclElement);
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+        var resultText = myFixture.getFile().getText();
+        assertFalse("Must never produce '8#' token smashing:\n" + resultText, resultText.contains("8#"));
+        assertTrue("Must inject leading space before chained facet:\n" + resultText,
+            resultText.contains(":Type { #size 8 #maxExcl 128 } :Int"));
+    }
+
+    /**
+     * Verifies TC-PAD-02:
+     * Chained insert inside a metadata block with a trailing sigil touching an existing token
+     * (e.g. '#size 8#<caret>') consumes the sigil and ensures a single leading space.
+     */
+    public void testChainedInsertPaddingWithSigilInsideMetadataMap() {
+        myFixture.configureByText(
+            "chained_pad_02.stvn_d",
+            """
+            {
+              :defs {
+                :Type { #size 8#<caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 128");
+        assertNotNull("Must offer #maxExcl 128 for 8-bit signed int", maxExclElement);
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+        var resultText = myFixture.getFile().getText();
+        assertFalse("Must never produce '8#' or '##':\n" + resultText, resultText.contains("8#") || resultText.contains("##"));
+        assertTrue("Must cleanly insert '#maxExcl 128' with single space:\n" + resultText,
+            resultText.contains(":Type { #size 8 #maxExcl 128 } :Int"));
+    }
+
+    /**
+     * Verifies TC-PAD-03:
+     * Auto-wrapping pre-schema completion preceding :Int wraps cleanly in braces with proper spacing.
+     */
+    public void testPreSchemaAutoWrappingLeadingWhitespace() {
+        myFixture.configureByText(
+            "pre_schema_pad_03.stvn_d",
+            """
+            {
+              :defs {
+                :Age <caret> :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var unsElement = findLookupElement(elements, "#unsigned");
+        assertNotNull("Must offer #unsigned", unsElement);
+        myFixture.getLookup().setCurrentItem(unsElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must wrap cleanly in '{ #unsigned }':\n" + resultText,
+            resultText.contains(":Age { #unsigned } :Int"));
+    }
+
+    /**
+     * Verifies TC-DEDUP-01:
+     * When '#size 8' is declared in the metadata block, all #size variants
+     * (#size 16, #size 64, #size 128) are suppressed from completion proposals.
+     */
+    public void testParameterizedSizeFacetDeduplication() {
+        myFixture.configureByText(
+            "dedup_size_01.stvn_d",
+            """
+            {
+              :defs {
+                :Type { #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertFalse("Must NOT propose #size 16 when #size 8 declared", lookupStrings.contains("#size 16"));
+        assertFalse("Must NOT propose #size 64 when #size 8 declared", lookupStrings.contains("#size 64"));
+        assertFalse("Must NOT propose #size 128 when #size 8 declared", lookupStrings.contains("#size 128"));
+        assertFalse("Must NOT propose duplicate #size 8", lookupStrings.contains("#size 8"));
+    }
+
+    /**
+     * Verifies TC-BOUND-01:
+     * Signed 8-bit integer ({ #size 8 }) proposes #maxExcl 128 and strictly prohibits #maxIncl and #minExcl.
+     */
+    public void testSigned8BitIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_01.stvn_d",
+            """
+            {
+              :defs {
+                :Byte { #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 128 for signed 8-bit integer", lookupStrings.contains("#maxExcl 128"));
+        assertFalse("Must NOT propose #maxExcl 65536 on 8-bit integer", lookupStrings.contains("#maxExcl 65536"));
+        // Discrete domain invariant: strictly no #maxIncl or #minExcl for :Int
+        for (var str : lookupStrings) {
+            assertFalse("Must NEVER propose #maxIncl for :Int: " + str, str.startsWith("#maxIncl"));
+            assertFalse("Must NEVER propose #minExcl for :Int: " + str, str.startsWith("#minExcl"));
+        }
+    }
+
+    /**
+     * Verifies TC-BOUND-02:
+     * Unsigned 8-bit integer ({ #unsigned #size 8 }) proposes #maxExcl 256.
+     */
+    public void testUnsigned8BitIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_02.stvn_d",
+            """
+            {
+              :defs {
+                :UByte { #unsigned #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 256 for unsigned 8-bit integer", lookupStrings.contains("#maxExcl 256"));
+        assertFalse("Must NOT propose signed #maxExcl 128 for unsigned integer", lookupStrings.contains("#maxExcl 128"));
+        assertFalse("Must NOT propose #maxExcl 65536 on 8-bit integer", lookupStrings.contains("#maxExcl 65536"));
+    }
+
+    /**
+     * Verifies TC-BOUND-03:
+     * Signed 16-bit integer ({ #size 16 }) proposes #maxExcl 32768.
+     */
+    public void testSigned16BitIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_03.stvn_d",
+            """
+            {
+              :defs {
+                :Short { #size 16 <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 32768 for signed 16-bit integer", lookupStrings.contains("#maxExcl 32768"));
+        assertFalse("Must NOT propose #maxExcl 65536 for signed 16-bit integer", lookupStrings.contains("#maxExcl 65536"));
+    }
+
+    /**
+     * Verifies TC-BOUND-04:
+     * Unsigned 16-bit integer ({ #unsigned #size 16 }) proposes #maxExcl 65536.
+     */
+    public void testUnsigned16BitIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_04.stvn_d",
+            """
+            {
+              :defs {
+                :UShort { #unsigned #size 16 <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 65536 for unsigned 16-bit integer", lookupStrings.contains("#maxExcl 65536"));
+    }
+
+    /**
+     * Verifies TC-BOUND-05:
+     * Default 32-bit signed integer proposes #maxExcl 2147483648.
+     */
+    public void testDefault32BitSignedIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_05.stvn_d",
+            """
+            {
+              :defs {
+                :StandardInt { <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 2147483648 for default 32-bit signed integer",
+            lookupStrings.contains("#maxExcl 2147483648"));
+        assertFalse("Must NOT propose #maxExcl 65536 for 32-bit integer", lookupStrings.contains("#maxExcl 65536"));
+    }
+
+    /**
+     * Verifies TC-BOUND-06:
+     * Default 32-bit unsigned integer ({ #unsigned }) proposes #maxExcl 4294967296.
+     */
+    public void testDefault32BitUnsignedIntegerUpperBoundsProposal() {
+        myFixture.configureByText(
+            "bound_06.stvn_d",
+            """
+            {
+              :defs {
+                :UInt { #unsigned <caret> } :Int
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+        assertTrue("Must propose #maxExcl 4294967296 for default 32-bit unsigned integer",
+            lookupStrings.contains("#maxExcl 4294967296"));
+        assertFalse("Must NOT propose #maxExcl 2147483648 for unsigned integer",
+            lookupStrings.contains("#maxExcl 2147483648"));
+    }
+
+    /**
+     * Verifies TC-UNICODE-01:
+     * Presentation tail text for bounds facets displays Unicode '∞' instead of literal '\\infty'.
+     */
+    public void testUnicodeInfinityInCompletionPresentation() {
+        myFixture.configureByText(
+            "unicode_01.stvn_d",
+            """
+            {
+              :defs {
+                :Value { <caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var unsElement = findLookupElement(elements, "#unsigned");
+        assertNotNull("Must offer #unsigned", unsElement);
+        var presentation = new LookupElementPresentation();
+        unsElement.renderElement(presentation);
+        var tailText = presentation.getTailText();
+        assertNotNull("Tail text must exist on #unsigned", tailText);
+        assertTrue("Tail text must contain Unicode '∞': " + tailText, tailText.contains("∞"));
+        assertFalse("Tail text must NOT contain literal '\\infty': " + tailText, tailText.contains("\\infty"));
+    }
 }
 
 

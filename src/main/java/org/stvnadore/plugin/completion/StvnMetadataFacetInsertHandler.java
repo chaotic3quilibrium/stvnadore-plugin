@@ -43,12 +43,18 @@ public final class StvnMetadataFacetInsertHandler implements InsertHandler<Looku
             if (startOffset >= 2 && chars.charAt(startOffset - 2) == '{') {
                 // '{#' without space: replace '#' with a single space to yield '{ #facet'
                 document.replaceString(startOffset - 1, startOffset, " ");
+            } else if (startOffset >= 2 && !Character.isWhitespace(chars.charAt(startOffset - 2))) {
+                // Preceded by non-whitespace character without space (e.g. '8#'): replace '#' with a single space
+                document.replaceString(startOffset - 1, startOffset, " ");
             } else {
                 // Delete the preceding bare '#' character
                 document.deleteString(startOffset - 1, startOffset);
             }
         } else if (startOffset > 0 && chars.charAt(startOffset - 1) == '{') {
             // '{' touching insertion site without space: ensure leading space
+            document.insertString(startOffset, " ");
+        } else if (startOffset > 0 && !Character.isWhitespace(chars.charAt(startOffset - 1)) && chars.charAt(startOffset - 1) != '{') {
+            // Token touching insertion site without space (e.g. '8<caret>'): ensure leading space
             document.insertString(startOffset, " ");
         }
 
@@ -76,7 +82,7 @@ public final class StvnMetadataFacetInsertHandler implements InsertHandler<Looku
 
         // 2. Prepend '{ ' with proper leading whitespace
         String prefix = "{ ";
-        if (startOffset > 0 && !Character.isWhitespace(chars.charAt(startOffset - 1))) {
+        if (startOffset > 0 && !Character.isWhitespace(chars.charAt(startOffset - 1)) && chars.charAt(startOffset - 1) != '{') {
             prefix = " { ";
         }
         document.insertString(startOffset, prefix);
