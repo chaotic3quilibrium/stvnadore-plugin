@@ -161,16 +161,51 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
+                        var constName = def.getValueKeyword() != null ? def.getValueKeyword().getText() : "#CONST";
                         for (var entry : metaMap.getMetadataEntryList()) {
-                            holder.registerProblem(
-                                entry,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Metadata facets are not permitted on constants; permitted facets: []",
-                                    StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
-                                ),
-                                ProblemHighlightType.ERROR,
-                                new RemoveElementQuickFix("Remove invalid facet")
-                            );
+                            String facetName = extractFacetName(entry);
+                            if (facetName == null) continue;
+
+                            // Tier 5 Directives: Prohibited on constants
+                            if (entry.getMetadataDirective() != null || "strip".equals(facetName)) {
+                                holder.registerProblem(
+                                    entry,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Directive facet '#strip' is not permitted on constant definitions; directive facets are valid strictly in :use and :include blocks",
+                                        StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
+                                    ),
+                                    ProblemHighlightType.ERROR,
+                                    new RemoveElementQuickFix("Remove invalid facet")
+                                );
+                            }
+                            // Tier 2 Trait Overrides: Prohibited on constants
+                            else if ("equatable".equals(facetName) || "comparable".equals(facetName)) {
+                                holder.registerProblem(
+                                    entry,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Trait overrides are not permitted on constants; permitted facets: [Definition, Bounds, Constraints]",
+                                        StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
+                                    ),
+                                    ProblemHighlightType.ERROR,
+                                    new RemoveElementQuickFix("Remove invalid facet")
+                                );
+                            }
+                            // Enum Subsets: Prohibited on constants
+                            else if (entry.getMetadataFilter() != null || "filterIncl".equals(facetName) || "filterExcl".equals(facetName)) {
+                                holder.registerProblem(
+                                    entry,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Constraint violation (" + constName + "): filter facets are not allowed on constants",
+                                        StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
+                                    ),
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    new RemoveElementQuickFix("Remove invalid facet")
+                                );
+                            }
+                        }
+                        // Validate permitted Definition (Tier 1), Bounds (Tier 3), and Constraint (Tier 4) facets
+                        if (def.getSchemaType() != null) {
+                            validateMetadataEntries(metaMap, def.getSchemaType(), holder);
                         }
                     }
                 }
@@ -249,6 +284,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 continue;
             }
             if (entry.getMetadataDirective() != null) {
+                if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
+                    continue; // Handled by visitConstantDefinition
+                }
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -347,6 +385,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     new RemoveElementQuickFix("Remove invalid facet")
                 );
             } else if (entry.getMetadataFilter() != null && !isEnum) {
+                if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
+                    continue; // Handled by visitConstantDefinition
+                }
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -701,6 +742,19 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
             if (element != null && element.isValid()) {
+                var metaMap = PsiTreeUtil.getParentOfType(element, MetadataMap.class, false);
+                var targetEntry = element instanceof MetadataEntry me ? me : PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false);
+                if (metaMap != null && targetEntry != null) {
+                    var entries = metaMap.getMetadataEntryList();
+                    if (entries.size() <= 1) {
+                        var prev = metaMap.getPrevSibling();
+                        if (prev instanceof PsiWhiteSpace) {
+                            prev.delete();
+                        }
+                        metaMap.delete();
+                        return;
+                    }
+                }
                 var prev = element.getPrevSibling();
                 if (prev instanceof PsiWhiteSpace) {
                     if (!(element instanceof MetadataEntry) || prev.getPrevSibling() instanceof MetadataEntry) {

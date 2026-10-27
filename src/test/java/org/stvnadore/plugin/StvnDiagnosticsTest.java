@@ -6284,6 +6284,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Zone 2 must display -2147483649 effective value", doc.contains("<code>-2147483649</code>"));
         assertTrue("Zone 2 must display Invalid status badge", doc.contains(">Invalid</b>"));
         assertFalse("Zone 2 must NOT display Active status for violating facet", doc.contains(">Active</b>"));
+
+        // 3. Zone 2 must restore default traits #equatable and #comparable
+        assertTrue("Zone 2 must display #equatable trait row", doc.contains("<code>#equatable</code>"));
+        assertTrue("Zone 2 must display #comparable trait row", doc.contains("<code>#comparable</code>"));
+
+        // 4. Zone 3 must NOT display #equatable or #comparable as unset options
+        var zone3Start = doc.indexOf("<b>Authoring Capabilities &amp; Context:</b>");
+        var zone3 = zone3Start >= 0 ? doc.substring(zone3Start) : "";
+        assertFalse("Zone 3 Configurable Options must NOT contain #equatable", zone3.contains("<code>#equatable</code>"));
+        assertFalse("Zone 3 Configurable Options must NOT contain #comparable", zone3.contains("<code>#comparable</code>"));
     }
 
     public void testLargeStringCapacityQuickDocDoesNotOverflow() {

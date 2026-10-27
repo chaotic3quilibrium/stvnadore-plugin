@@ -999,18 +999,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         boolean isComposite = isCompositeOrCollectionType(baseType);
 
         // 5. #equatable
+        boolean effEquatable;
+        OriginInfo equatableOrigin;
         if (constraints.equatable().isPresent()) {
-            boolean eff = constraints.equatable().get();
-            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, eff, isComposite);
-            rows.add(new FacetRow("#equatable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
+            effEquatable = constraints.equatable().get();
+            equatableOrigin = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, effEquatable, isComposite);
+        } else {
+            effEquatable = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE)
+                    .orElseGet(() -> resolveDefaultEquatable(baseType, constraints.exact()));
+            equatableOrigin = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, effEquatable, isComposite);
         }
+        rows.add(new FacetRow("#equatable", effEquatable ? "#TRUE" : "#FALSE", equatableOrigin.origin(), equatableOrigin.status()));
 
         // 6. #comparable
+        boolean effComparable;
+        OriginInfo comparableOrigin;
         if (constraints.comparable().isPresent()) {
-            boolean eff = constraints.comparable().get();
-            var originInfo = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, eff, isComposite);
-            rows.add(new FacetRow("#comparable", eff ? "#TRUE" : "#FALSE", originInfo.origin(), originInfo.status()));
+            effComparable = constraints.comparable().get();
+            comparableOrigin = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
+        } else {
+            effComparable = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_COMPARABLE)
+                    .orElseGet(() -> resolveDefaultComparable(baseType));
+            comparableOrigin = resolveFacetOrigin(typeDef, trace, rs, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
         }
+        rows.add(new FacetRow("#comparable", effComparable ? "#TRUE" : "#FALSE", comparableOrigin.origin(), comparableOrigin.status()));
 
         if (rows.isEmpty()) return null;
 
@@ -1040,6 +1052,39 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         html.append("</tbody></table>");
         return html.toString();
+    }
+
+    private static java.util.Optional<Boolean> resolveExplicitTraitFromPsi(@Nullable MetadataMap declaredMeta, String facetTag) {
+        if (declaredMeta == null) return java.util.Optional.empty();
+        for (var entry : declaredMeta.getMetadataEntryList()) {
+            var text = entry.getText().trim();
+            if (text.startsWith(facetTag)) {
+                var parts = text.split("\\s+");
+                if (parts.length > 1) {
+                    var val = parts[1].trim();
+                    if ("#TRUE".equalsIgnoreCase(val) || "#T".equalsIgnoreCase(val)) {
+                        return java.util.Optional.of(true);
+                    } else if ("#FALSE".equalsIgnoreCase(val) || "#F".equalsIgnoreCase(val)) {
+                        return java.util.Optional.of(false);
+                    }
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private static boolean resolveDefaultEquatable(String baseType, boolean isExact) {
+        if (StvnVocabulary.TYPE_FLOAT.equals(baseType) && !isExact) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean resolveDefaultComparable(String baseType) {
+        if (baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+            return false;
+        }
+        return true;
     }
 
     private static boolean isCompositeOrCollectionType(String baseType) {
@@ -3268,6 +3313,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (c.preserveIndent()) tags.add(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
             if (c.equatable().isPresent()) tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
             if (c.comparable().isPresent()) tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
+        }
+        var baseType = rs != null ? getResolvedBaseTypeString(rs) : null;
+        if (baseType == null && typeDef.getSchemaType() != null) {
+            baseType = StvnTypeResolver.formatSchemaType(typeDef.getSchemaType());
+        }
+        if (baseType != null && !StvnMetadataRegistry.getSupportedFacets(baseType).isEmpty()) {
+            tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
+            tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
         }
         return tags;
     }

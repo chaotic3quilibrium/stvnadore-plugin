@@ -93,9 +93,82 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.checkResult("""
             {
               :defs {
-                :IllegalType { } :Int32
+                :IllegalType :Int32
               }
               :type :IllegalType
+              :body 42
+            }
+            """);
+    }
+
+    public void testConstantDefinitionPermitsDefinitionBoundsAndConstraintFacets() {
+        var text = """
+            {
+              :defs {
+                #EPOCH     { #ns } :TimeEpoch 18446744073709551615
+                #DATE      { #offset } :DateTime "2026-10-27T07:00:00Z"
+                #MAX_RETRY { #unsigned #size 8 } :Int 3
+                #API_HOST  { #regex "^[a-z.]+$" } :String "api.internal.net"
+                #BOUNDED   { #minIncl 0 #maxExcl 100 } :Int 42
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        myFixture.configureByText("constant_valid_facets.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Constant definitions must permit Tier 1, 3, and 4 facets without error: " + errors, errors.isEmpty());
+    }
+
+    public void testConstantDefinitionProhibitsTraitOverridesAndDirectives() {
+        var text = """
+            {
+              :defs {
+                #INVALID_TRAIT { #equatable #TRUE } :Int 42
+                #INVALID_STRIP { #strip } :String "data"
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("constant_invalid_facets.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var traitErr = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Trait overrides are not permitted on constants"))
+            .findFirst();
+        var stripErr = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Directive facet '#strip' is not permitted"))
+            .findFirst();
+        assertTrue("Expected trait override error on constant", traitErr.isPresent());
+        assertTrue("Expected strip directive error on constant", stripErr.isPresent());
+    }
+
+    public void testConstantTraitQuickFixRemovesEnclosingBlockCleanly() {
+        var text = """
+            {
+              :defs {
+                #INVALID_TRAIT { #equatable #TRUE } :Int 42
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("constant_fix.stvn", text);
+        int offset = text.indexOf("#equatable");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        myFixture.doHighlighting();
+        var actions = myFixture.filterAvailableIntentions("Remove invalid facet");
+        assertFalse("Expected quick fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+        myFixture.checkResult("""
+            {
+              :defs {
+                #INVALID_TRAIT :Int 42
+              }
+              :type :Int
               :body 42
             }
             """);
