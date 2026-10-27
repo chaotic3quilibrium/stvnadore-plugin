@@ -944,6 +944,174 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         assertTrue("Completion must offer candidate #minSize 1", lookupStrings.contains("#minSize 1"));
         assertFalse("Completion must NOT offer duplicate #maxSize 256", lookupStrings.contains("#maxSize 256"));
     }
+
+    /**
+     * Verifies TC-CMP-CTOR-01:
+     * Completion in a :Tuple metadata block proposes Tier 2 trait overrides (#equatable, #comparable)
+     * and strictly excludes #strip and non-applicable facets.
+     */
+    public void testTupleConstructorMetadataCompletion() {
+        myFixture.configureByText(
+            "tuple_meta.stvn",
+            """
+            {
+              :defs {
+                :Values {<caret>} :Tuple ( :Int :String )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertTrue("Must propose #equatable #TRUE", lookupStrings.contains("#equatable #TRUE"));
+        assertTrue("Must propose #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertTrue("Must propose #comparable #TRUE", lookupStrings.contains("#comparable #TRUE"));
+        assertFalse("Must NOT propose #strip", lookupStrings.contains("#strip"));
+        assertFalse("Must NOT propose #minSize 1", lookupStrings.contains("#minSize 1"));
+    }
+
+    /**
+     * Verifies TC-CMP-CTOR-02:
+     * Completion in a :Seq collection constructor metadata block proposes Tier 1 size bounds
+     * and Tier 2 trait overrides, while strictly excluding #strip.
+     */
+    public void testSeqConstructorMetadataCompletion() {
+        myFixture.configureByText(
+            "seq_meta.stvn",
+            """
+            {
+              :defs {
+                :List {<caret>} :Seq ( :Int )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #minSize 1", lookupStrings.contains("#minSize 1"));
+        assertTrue("Must propose #maxSize 100", lookupStrings.contains("#maxSize 100"));
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertTrue("Must propose #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertFalse("Must NOT propose #strip", lookupStrings.contains("#strip"));
+        assertFalse("Must NOT propose #invertible", lookupStrings.contains("#invertible"));
+    }
+
+    /**
+     * Verifies TC-CMP-CTOR-03:
+     * Completion in a :Map collection constructor metadata block proposes #invertible,
+     * size bounds, and trait overrides, while strictly excluding #strip.
+     */
+    public void testMapConstructorMetadataCompletion() {
+        myFixture.configureByText(
+            "map_meta.stvn",
+            """
+            {
+              :defs {
+                :Dictionary {<caret>} :Map ( :String :Int )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #invertible", lookupStrings.contains("#invertible"));
+        assertTrue("Must propose #minSize 1", lookupStrings.contains("#minSize 1"));
+        assertTrue("Must propose #maxSize 100", lookupStrings.contains("#maxSize 100"));
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertTrue("Must propose #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertFalse("Must NOT propose #strip", lookupStrings.contains("#strip"));
+    }
+
+    /**
+     * Verifies TC-CMP-CTOR-04:
+     * Completion in a :Union constructor metadata block proposes Tier 2 trait overrides,
+     * while strictly excluding #strip.
+     */
+    public void testUnionConstructorMetadataCompletion() {
+        myFixture.configureByText(
+            "union_meta.stvn",
+            """
+            {
+              :defs {
+                :EitherOr {<caret>} :Union ( :Int :String )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertTrue("Must propose #equatable #TRUE", lookupStrings.contains("#equatable #TRUE"));
+        assertTrue("Must propose #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertTrue("Must propose #comparable #TRUE", lookupStrings.contains("#comparable #TRUE"));
+        assertFalse("Must NOT propose #strip", lookupStrings.contains("#strip"));
+    }
+
+    /**
+     * Verifies TC-CMP-CTOR-05:
+     * Sigil consumption on constructor metadata completion:
+     * Selecting #equatable #FALSE with caret at {#<caret>} leaves zero double ## tokens.
+     */
+    public void testConstructorSigilConsumption() {
+        myFixture.configureByText(
+            "sigil_ctor.stvn",
+            """
+            {
+              :defs {
+                :Values {#<caret>} :Tuple ( :Int :String )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must offer #equatable #FALSE", eqElement);
+
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertFalse("Completion must never produce '##' tokens", resultText.contains("##"));
+        assertTrue("Completion must cleanly insert '#equatable #FALSE':\n" + resultText,
+            resultText.contains(":Values { #equatable #FALSE} :Tuple") || resultText.contains(":Values { #equatable #FALSE } :Tuple"));
+    }
+
+    /**
+     * Verifies TC-CMP-CTOR-06:
+     * Lexical deduplication on constructor metadata completion:
+     * When #equatable #FALSE is already declared, #equatable proposals are strictly excluded.
+     */
+    public void testConstructorLexicalDeduplication() {
+        myFixture.configureByText(
+            "dedup_ctor.stvn",
+            """
+            {
+              :defs {
+                :Values { #equatable #FALSE <caret>} :Tuple ( :Int :String )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertFalse("Must NOT offer duplicate #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertFalse("Must NOT offer duplicate #equatable #TRUE", lookupStrings.contains("#equatable #TRUE"));
+        assertTrue("Must offer candidate #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertTrue("Must offer candidate #comparable #TRUE", lookupStrings.contains("#comparable #TRUE"));
+    }
 }
 
 

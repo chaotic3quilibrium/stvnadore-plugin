@@ -79,7 +79,8 @@ public final class StvnMetadataRegistry {
                 StvnVocabulary.TYPE_BOOLEAN, StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT,
                 StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME,
                 StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP,
-                StvnVocabulary.TYPE_TUPLE, StvnVocabulary.TYPE_UNION, StvnVocabulary.TYPE_ENUM
+                StvnVocabulary.TYPE_TUPLE, StvnVocabulary.TYPE_UNION, StvnVocabulary.TYPE_ENUM,
+                StvnVocabulary.TYPE_EITHER, StvnVocabulary.TYPE_OPTION
             ),
             "#equatable #TRUE"
         ));
@@ -90,7 +91,8 @@ public final class StvnMetadataRegistry {
                 StvnVocabulary.TYPE_BOOLEAN, StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT,
                 StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME,
                 StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP,
-                StvnVocabulary.TYPE_TUPLE, StvnVocabulary.TYPE_UNION, StvnVocabulary.TYPE_ENUM
+                StvnVocabulary.TYPE_TUPLE, StvnVocabulary.TYPE_UNION, StvnVocabulary.TYPE_ENUM,
+                StvnVocabulary.TYPE_EITHER, StvnVocabulary.TYPE_OPTION
             ),
             "#comparable #TRUE"
         ));
@@ -176,6 +178,8 @@ public final class StvnMetadataRegistry {
         else if (cleanBase.startsWith(":Set")) cleanBase = StvnVocabulary.TYPE_SET;
         else if (cleanBase.startsWith(":Map")) cleanBase = StvnVocabulary.TYPE_MAP;
         else if (cleanBase.startsWith(":Union")) cleanBase = StvnVocabulary.TYPE_UNION;
+        else if (cleanBase.startsWith(":Either")) cleanBase = StvnVocabulary.TYPE_EITHER;
+        else if (cleanBase.startsWith(":Option")) cleanBase = StvnVocabulary.TYPE_OPTION;
         else if (cleanBase.startsWith(":Enum")) cleanBase = StvnVocabulary.TYPE_ENUM;
 
         return DOMAIN_FACETS.getOrDefault(cleanBase, Collections.emptyList());

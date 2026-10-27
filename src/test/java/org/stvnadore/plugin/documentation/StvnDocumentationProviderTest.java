@@ -929,4 +929,114 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Must report conformation to 32-bit continuous float: " + doc,
             doc.contains("conforms to 32-bit continuous float representation"));
     }
+
+    /**
+     * Verifies TC-DOC-CTOR-01, TC-DOC-CTOR-02, TC-DOC-CTOR-03:
+     * Quick documentation on a :Tuple constructor with declared metadata override {#equatable #FALSE}
+     * renders Zone 2 Effective Semantic Contract table (with #equatable #FALSE [Declared / Active Override]
+     * and default #comparable #TRUE [Derived / Default]), and renders Zone 3 Configurable Options (Unset) (#comparable).
+     */
+    public void testTupleConstructorZone2AndZone3Hover() {
+        var text = """
+            {
+              :defs {
+                :Values { #equatable #FALSE } :Tuple ( :Int :String )
+              }
+              :type :Values
+              :body ( 42 "hello" )
+            }
+            """;
+        myFixture.configureByText("tuple_doc.stvn", text);
+        var offset = text.indexOf(":Tuple");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must contain 'Effective Facets & Traits:' header: " + doc, doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must contain '#equatable' row: " + doc, doc.contains("<code>#equatable</code>"));
+        assertTrue("Doc must display '#FALSE' for equatable: " + doc, doc.contains("<code>#FALSE</code>"));
+        assertTrue("Doc must display 'Active Override' for equatable: " + doc, doc.contains("Active Override"));
+        assertTrue("Doc must contain '#comparable' row: " + doc, doc.contains("<code>#comparable</code>"));
+        assertTrue("Doc must display '#TRUE' for comparable: " + doc, doc.contains("<code>#TRUE</code>"));
+        assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
+        assertTrue("Zone 3 unset options must include #comparable: " + doc, doc.contains("<code>#comparable</code>"));
+    }
+
+    /**
+     * Verifies TC-DOC-CTOR-04:
+     * Quick documentation on a :Seq collection constructor with declared size bounds
+     * renders Zone 2 Effective Semantic Contract table with #minSize and #maxSize.
+     */
+    public void testSeqConstructorZone2AndZone3Hover() {
+        var text = """
+            {
+              :defs {
+                :List { #minSize 2 #maxSize 10 } :Seq ( :Int )
+              }
+              :type :List
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("seq_doc.stvn", text);
+        var offset = text.indexOf(":Seq");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must contain 'Effective Facets & Traits:' header: " + doc, doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must contain '#minSize' row: " + doc, doc.contains("<code>#minSize</code>"));
+        assertTrue("Doc must display '2' for minSize: " + doc, doc.contains("<code>2</code>"));
+        assertTrue("Doc must contain '#maxSize' row: " + doc, doc.contains("<code>#maxSize</code>"));
+        assertTrue("Doc must display '10' for maxSize: " + doc, doc.contains("<code>10</code>"));
+        assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
+    }
+
+    /**
+     * Verifies TC-DOC-CTOR-05:
+     * Quick documentation on a :Map collection constructor with #invertible
+     * renders Zone 2 Effective Semantic Contract table with #invertible Active.
+     */
+    public void testMapConstructorZone2AndZone3Hover() {
+        var text = """
+            {
+              :defs {
+                :Dict { #invertible } :Map ( :String :Int )
+              }
+              :type :Dict
+              :body { [ "key" 10 ] }
+            }
+            """;
+        myFixture.configureByText("map_doc.stvn", text);
+        var offset = text.indexOf(":Map");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must contain 'Effective Facets & Traits:' header: " + doc, doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must contain '#invertible' row: " + doc, doc.contains("<code>#invertible</code>"));
+        assertTrue("Doc must display 'Active' for invertible: " + doc, doc.contains("Active"));
+        assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
+        assertTrue("Zone 3 unset options must include #minSize: " + doc, doc.contains("<code>#minSize</code>"));
+        assertTrue("Zone 3 unset options must include #maxSize: " + doc, doc.contains("<code>#maxSize</code>"));
+    }
+
+    /**
+     * Verifies TC-DOC-CTOR-06:
+     * Quick documentation on a :Union sum constructor with trait override {#comparable #FALSE}
+     * renders Zone 2 Effective Semantic Contract table and Zone 3 Unset Facets list.
+     */
+    public void testUnionConstructorZone2AndZone3Hover() {
+        var text = """
+            {
+              :defs {
+                :Branch { #comparable #FALSE } :Union ( :Int :String )
+              }
+              :type :Branch
+              :body #1 42
+            }
+            """;
+        myFixture.configureByText("union_doc.stvn", text);
+        var offset = text.indexOf(":Union");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Doc must contain 'Effective Facets & Traits:' header: " + doc, doc.contains("<b>Effective Facets &amp; Traits:</b>"));
+        assertTrue("Doc must contain '#comparable' row: " + doc, doc.contains("<code>#comparable</code>"));
+        assertTrue("Doc must display '#FALSE' for comparable: " + doc, doc.contains("<code>#FALSE</code>"));
+        assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
+        assertTrue("Zone 3 unset options must include #equatable: " + doc, doc.contains("<code>#equatable</code>"));
+    }
 }

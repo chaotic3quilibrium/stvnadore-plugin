@@ -233,6 +233,12 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
 
             // Collections (:Seq, :Set, :Map)
             if (isCollectionType(targetBaseType)) {
+              if (StvnVocabulary.TYPE_MAP.equals(targetBaseType) && !declaredFacets.contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
+                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_INVERTIBLE)
+                    .withIcon(AllIcons.Nodes.Property)
+                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
+                    .withTypeText("Bijective Map", true));
+              }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                 // Rule W003: Suppress '#minSize 0'; propose '#minSize 1'
                 targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_SIZE + " 1")
@@ -246,12 +252,17 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                     .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
                     .withTypeText("Container Capacity", true));
               }
-              if (StvnVocabulary.TYPE_MAP.equals(targetBaseType) && !declaredFacets.contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_INVERTIBLE)
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Bijective Map", true));
-              }
+              addTraitOverrideCompletions(targetResult, declaredFacets);
+            }
+
+            // Product Types (:Tuple)
+            if (StvnVocabulary.TYPE_TUPLE.equals(targetBaseType)) {
+              addTraitOverrideCompletions(targetResult, declaredFacets);
+            }
+
+            // Sum Types (:Union, :Either, :Option)
+            if (isSumConstructorType(targetBaseType)) {
+              addTraitOverrideCompletions(targetResult, declaredFacets);
             }
 
             // Floating-Point (:Float)
@@ -335,6 +346,12 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
       if (atom != null) return atom.getText().trim();
       var coll = ctor.getCollectionType();
       if (coll != null) {
+        var node = coll.getNode();
+        if (node != null) {
+          if (node.findChildByType(StvnTypes.COLL_SEQ) != null) return StvnVocabulary.TYPE_SEQ;
+          if (node.findChildByType(StvnTypes.COLL_SET) != null) return StvnVocabulary.TYPE_SET;
+          if (node.findChildByType(StvnTypes.COLL_MAP) != null) return StvnVocabulary.TYPE_MAP;
+        }
         var first = coll.getFirstChild();
         return first != null ? first.getText().trim() : "";
       }
@@ -342,6 +359,15 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
       if (prod != null) return StvnVocabulary.TYPE_TUPLE;
       var sum = ctor.getSumType();
       if (sum != null) {
+        var node = sum.getNode();
+        if (sum.getEnumDef() != null || (node != null && node.findChildByType(StvnTypes.KW_ENUM) != null)) {
+          return StvnVocabulary.TYPE_ENUM;
+        }
+        if (node != null) {
+          if (node.findChildByType(StvnTypes.KW_OPTION) != null) return StvnVocabulary.TYPE_OPTION;
+          if (node.findChildByType(StvnTypes.KW_EITHER) != null) return StvnVocabulary.TYPE_EITHER;
+          if (node.findChildByType(StvnTypes.KW_UNION) != null) return StvnVocabulary.TYPE_UNION;
+        }
         var first = sum.getFirstChild();
         return first != null ? first.getText().trim() : "";
       }
@@ -412,6 +438,35 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     return StvnVocabulary.TYPE_SEQ.equals(targetBaseType)
         || StvnVocabulary.TYPE_SET.equals(targetBaseType)
         || StvnVocabulary.TYPE_MAP.equals(targetBaseType);
+  }
+
+  private static boolean isSumConstructorType(String targetBaseType) {
+    return StvnVocabulary.TYPE_UNION.equals(targetBaseType)
+        || StvnVocabulary.TYPE_EITHER.equals(targetBaseType)
+        || StvnVocabulary.TYPE_OPTION.equals(targetBaseType);
+  }
+
+  private static void addTraitOverrideCompletions(CompletionResultSet targetResult, Set<String> declaredFacets) {
+    if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
+      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
+          .withIcon(AllIcons.Nodes.Property)
+          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
+          .withTypeText("Trait Override", true));
+      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #TRUE")
+          .withIcon(AllIcons.Nodes.Property)
+          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
+          .withTypeText("Trait Override", true));
+    }
+    if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
+      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE")
+          .withIcon(AllIcons.Nodes.Property)
+          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
+          .withTypeText("Trait Override", true));
+      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #TRUE")
+          .withIcon(AllIcons.Nodes.Property)
+          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
+          .withTypeText("Trait Override", true));
+    }
   }
 
   private static boolean isCaretInDomainFacet(PsiElement position) {

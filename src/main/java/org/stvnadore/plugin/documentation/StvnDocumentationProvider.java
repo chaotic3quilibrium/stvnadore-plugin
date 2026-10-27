@@ -1090,7 +1090,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static boolean isCompositeOrCollectionType(String baseType) {
-        return baseType.startsWith(":Tuple") || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map");
+        return baseType.startsWith(":Tuple") || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")
+                || baseType.startsWith(":Union") || baseType.startsWith(":Either") || baseType.startsWith(":Option");
     }
 
     private static String getResolvedBaseTypeString(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
@@ -1195,6 +1196,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             constituents = ctor.getProductType().getSchemaTypeList();
         } else if (ctor.getCollectionType() != null) {
             constituents = ctor.getCollectionType().getSchemaTypeList();
+        } else if (ctor.getSumType() != null) {
+            constituents = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
         }
 
         var file = typeDef.getContainingFile();
@@ -2289,6 +2292,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_UNION);
     }
 
+    private static boolean isOptionSumType(SumType sumType) {
+        if (sumType.getEnumDef() != null) {
+            return false;
+        }
+        var node = sumType.getNode();
+        if (node != null && node.findChildByType(StvnTypes.KW_OPTION) != null) {
+            return true;
+        }
+        var firstChild = sumType.getFirstChild();
+        return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_OPTION);
+    }
+
+    private static boolean isEitherSumType(SumType sumType) {
+        if (sumType.getEnumDef() != null) {
+            return false;
+        }
+        var node = sumType.getNode();
+        if (node != null && node.findChildByType(StvnTypes.KW_EITHER) != null) {
+            return true;
+        }
+        var firstChild = sumType.getFirstChild();
+        return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_EITHER);
+    }
+
     private static boolean isContainerDocumentationSuppressionTarget(@Nullable PsiElement element) {
         if (element != null) {
             var rawSigil = element.getText().trim();
@@ -2732,11 +2759,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         sb.append("</tbody></table></div><hr/>");
 
+        // Zone 2: Effective Semantic Contract
+        var enclosingDef = PsiTreeUtil.getParentOfType(productType, TypeDefinition.class);
+        if (enclosingDef != null) {
+            var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+            }
+        }
+
         // Zone 3: Authoring Capabilities & Context
         sb.append("<div class='content'>");
         sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
         sb.append("<b>Payload Syntax:</b> Parenthesized values: <code>( val0 val1 ... )</code>.<br/>");
         sb.append("<b>Trait Bubbling:</b> <code>#equatable</code> and <code>#comparable</code> require all child slots to satisfy capability.");
+        appendUnsetFacetsForConstructor(sb, enclosingDef, StvnVocabulary.TYPE_TUPLE);
         sb.append("</div>");
         return sb.toString();
     }
@@ -2790,6 +2827,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         sb.append("</div><hr/>");
 
+        // Zone 2: Effective Semantic Contract
+        var enclosingDef = PsiTreeUtil.getParentOfType(collType, TypeDefinition.class);
+        if (enclosingDef != null) {
+            var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+            }
+        }
+
         sb.append("<div class='content'>");
         sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
         if (StvnVocabulary.TYPE_MAP.equals(collName)) {
@@ -2800,6 +2846,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("<b>Payload Syntax:</b> <code>[ elem1 elem2 ... ]</code>.<br/>");
             sb.append("<b>Supported Facets:</b> <code>#minSize</code>, <code>#maxSize</code>.");
         }
+        appendUnsetFacetsForConstructor(sb, enclosingDef, collName);
         sb.append("</div>");
         return sb.toString();
     }
@@ -2836,9 +2883,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             sb.append("</tbody></table></div><hr/>");
 
+            // Zone 2: Effective Semantic Contract
+            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            if (enclosingDef != null) {
+                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+                if (facetsTable != null) {
+                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+                }
+            }
+
             sb.append("<div class='content'>");
             sb.append("<b>Payload Syntax:</b> <code>#variant</code>.<br/>");
             sb.append("<b>Subsetting:</b> Derivations support <code>#filterIncl</code> and <code>#filterExcl</code>.");
+            appendUnsetFacetsForConstructor(sb, enclosingDef, StvnVocabulary.TYPE_ENUM);
             sb.append("</div>");
             return sb.toString();
         }
@@ -2871,8 +2928,86 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             sb.append("</tbody></table></div><hr/>");
 
+            // Zone 2: Effective Semantic Contract
+            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            if (enclosingDef != null) {
+                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+                if (facetsTable != null) {
+                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+                }
+            }
+
+            // Zone 3: Authoring Capabilities & Context
             sb.append("<div class='content'>");
             sb.append("<b>Payload Syntax:</b> Explicit tag <code>#1 val</code>, <code>#2 val</code>, or unambiguous compiler inference.");
+            appendUnsetFacetsForConstructor(sb, enclosingDef, StvnVocabulary.TYPE_UNION);
+            sb.append("</div>");
+            return sb.toString();
+        }
+
+        if (isOptionSumType(sumType)) {
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+            sb.append("<div class='definition'>");
+            sb.append("<b>Optional Value Constructor:</b> :Option( :ElemType )<br/>");
+            sb.append("</div><hr/>");
+
+            sb.append("<div class='content'>");
+            if (!branches.isEmpty()) {
+                var elemSchema = branches.get(0);
+                sb.append("<b>Element Schema:</b> <code>").append(StvnSchemaFormatter.formatSchema(elemSchema)).append("</code><br/>");
+                sb.append("<b>Element Base Type:</b> <code>").append(StvnSchemaFormatter.formatCleanSchema(elemSchema)).append("</code><br/>");
+            }
+            sb.append("</div><hr/>");
+
+            // Zone 2: Effective Semantic Contract
+            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            if (enclosingDef != null) {
+                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+                if (facetsTable != null) {
+                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+                }
+            }
+
+            // Zone 3: Authoring Capabilities & Context
+            sb.append("<div class='content'>");
+            sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+            sb.append("<b>Payload Syntax:</b> <code>#NONE</code> or <code>#SOME val</code>.<br/>");
+            sb.append("<b>Trait Bubbling:</b> <code>#equatable</code> and <code>#comparable</code> require inner element to satisfy capability.");
+            appendUnsetFacetsForConstructor(sb, enclosingDef, StvnVocabulary.TYPE_OPTION);
+            sb.append("</div>");
+            return sb.toString();
+        }
+
+        if (isEitherSumType(sumType)) {
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+            sb.append("<div class='definition'>");
+            sb.append("<b>Disjoint Union Constructor:</b> :Either( :LeftType :RightType )<br/>");
+            sb.append("</div><hr/>");
+
+            sb.append("<div class='content'>");
+            if (branches.size() >= 2) {
+                var leftSchema = branches.get(0);
+                var rightSchema = branches.get(1);
+                sb.append("<b>Left Schema:</b> <code>").append(StvnSchemaFormatter.formatSchema(leftSchema)).append("</code><br/>");
+                sb.append("<b>Right Schema:</b> <code>").append(StvnSchemaFormatter.formatSchema(rightSchema)).append("</code><br/>");
+            }
+            sb.append("</div><hr/>");
+
+            // Zone 2: Effective Semantic Contract
+            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            if (enclosingDef != null) {
+                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+                if (facetsTable != null) {
+                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
+                }
+            }
+
+            // Zone 3: Authoring Capabilities & Context
+            sb.append("<div class='content'>");
+            sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
+            sb.append("<b>Payload Syntax:</b> <code>#LEFT leftVal</code> or <code>#RIGHT rightVal</code>.<br/>");
+            sb.append("<b>Trait Bubbling:</b> <code>#equatable</code> and <code>#comparable</code> require both branches to satisfy capability.");
+            appendUnsetFacetsForConstructor(sb, enclosingDef, StvnVocabulary.TYPE_EITHER);
             sb.append("</div>");
             return sb.toString();
         }
@@ -2880,6 +3015,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var text = sumType.getText().trim();
         var doc = getBuiltInSpecificationDoc(text);
         return doc != null ? doc : "<b>Sum Type Constructor:</b> " + text;
+    }
+
+    private static void appendUnsetFacetsForConstructor(StringBuilder sb, @Nullable TypeDefinition enclosingDef, String baseType) {
+        if (enclosingDef == null) return;
+        var activeTags = extractActiveFacetTags(enclosingDef);
+        var unsetFacets = StvnMetadataRegistry.getUnsetFacets(baseType, activeTags);
+        if (!unsetFacets.isEmpty()) {
+            sb.append("<br/><b>Configurable Options (Unset):</b> ");
+            var list = new ArrayList<String>();
+            for (var f : unsetFacets) {
+                list.add("<code>" + f.facetTag() + "</code>");
+            }
+            sb.append(String.join(", ", list)).append("<br/>");
+        }
     }
 
     // ============================================================================
@@ -3443,6 +3592,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private static @NotNull Set<String> extractActiveFacetTags(TypeDefinition typeDef) {
         var tags = new HashSet<String>();
         var metaMap = typeDef.getMetadataMap();
+        if (metaMap == null && typeDef.getSchemaType() != null) {
+            metaMap = typeDef.getSchemaType().getMetadataMap();
+        }
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
                 var txt = entry.getText().trim();
@@ -3451,6 +3603,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         var rs = StvnTypeResolver.resolveNominalResolvedSchema(typeDef);
+        var baseType = rs != null ? getResolvedBaseTypeString(rs) : null;
+        if (baseType == null && typeDef.getSchemaType() != null) {
+            baseType = StvnTypeResolver.formatSchemaType(typeDef.getSchemaType());
+        }
+        boolean isCtor = isConstructorBaseType(baseType);
+
         if (rs != null) {
             var c = rs.constraints();
             if (c.unsigned()) tags.add(StvnVocabulary.FACET_KW_UNSIGNED);
@@ -3469,18 +3627,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (c.maxSize().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
             if (c.regex().isPresent()) tags.add(StvnVocabulary.FACET_KW_REGEX);
             if (c.preserveIndent()) tags.add(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
-            if (c.equatable().isPresent()) tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
-            if (c.comparable().isPresent()) tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
+            if (c.equatable().isPresent() && (!isCtor || c.explicitOverrides().contains("equatable"))) {
+                tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
+            }
+            if (c.comparable().isPresent() && (!isCtor || c.explicitOverrides().contains("comparable"))) {
+                tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
+            }
         }
-        var baseType = rs != null ? getResolvedBaseTypeString(rs) : null;
-        if (baseType == null && typeDef.getSchemaType() != null) {
-            baseType = StvnTypeResolver.formatSchemaType(typeDef.getSchemaType());
-        }
-        if (baseType != null && !StvnMetadataRegistry.getSupportedFacets(baseType).isEmpty()) {
+        if (baseType != null && !StvnMetadataRegistry.getSupportedFacets(baseType).isEmpty() && !isCtor) {
             tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
             tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
         }
         return tags;
+    }
+
+    private static boolean isConstructorBaseType(@Nullable String baseType) {
+        if (baseType == null) return false;
+        return baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
+                || baseType.startsWith(StvnVocabulary.TYPE_SEQ)
+                || baseType.startsWith(StvnVocabulary.TYPE_SET)
+                || baseType.startsWith(StvnVocabulary.TYPE_MAP)
+                || baseType.startsWith(StvnVocabulary.TYPE_UNION)
+                || baseType.startsWith(StvnVocabulary.TYPE_EITHER)
+                || baseType.startsWith(StvnVocabulary.TYPE_OPTION)
+                || baseType.startsWith(StvnVocabulary.TYPE_ENUM);
     }
 
     /**
