@@ -197,4 +197,64 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
             .toList();
         assertTrue("{ #offset #minIncl ... #maxExcl ... } on :DateTime must produce zero discrete interval errors", errors.isEmpty());
     }
+
+    public void testScaleDivergentEmptyIntervalDomain() {
+        var text = """
+            {
+              :defs {
+                :ScaleDivergentEmpty { #exact #minIncl 0.1 #maxExcl 0.10 } :Float
+              }
+              :type :ScaleDivergentEmpty
+              :body 0.1
+            }
+            """;
+        myFixture.configureByText("scale_divergent_empty.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_EMPTY_INTERVAL_DOMAIN"))
+            .toList();
+        assertEquals("Expected 1 empty interval domain error for 0.1 vs 0.10", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Discrete interval defines an empty domain [0.1, 0.10)"));
+    }
+
+    public void testInvertedIntervalRange() {
+        var text = """
+            {
+              :defs {
+                :InvertedFloat { #exact #minIncl 0.11 #maxExcl 0.10 } :Float
+              }
+              :type :InvertedFloat
+              :body 0.105
+            }
+            """;
+        myFixture.configureByText("inverted_float.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVERTED_RANGE"))
+            .toList();
+        assertEquals("Expected 1 inverted range error for 0.11 vs 0.10", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("Discrete interval lower bound 0.11 is greater than upper bound 0.10"));
+    }
+
+    public void testNominalExactFloatIntervalInheritance() {
+        var text = """
+            {
+              :defs {
+                :BaseExact { #exact } :Float
+                :ProductPrice { #minIncl 10.0 #maxExcl 10.00 } :BaseExact
+              }
+              :type :ProductPrice
+              :body 10.0
+            }
+            """;
+        myFixture.configureByText("nominal_exact_interval.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_EMPTY_INTERVAL_DOMAIN"))
+            .toList();
+        assertEquals("Expected 1 empty interval domain error on nominal exact float", 1, errors.size());
+    }
 }

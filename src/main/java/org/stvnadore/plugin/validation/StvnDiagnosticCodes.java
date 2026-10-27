@@ -41,7 +41,10 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_RESERVED_KEYWORD_ON_LHS = "ERR_RESERVED_KEYWORD_ON_LHS";
     public static final String ERR_UNRESOLVED_TYPE = "ERR_UNRESOLVED_TYPE";
     public static final String ERR_CONSTANT_INTEGER_OVERFLOW = "ERR_CONSTANT_INTEGER_OVERFLOW";
+    public static final String ERR_CONSTANT_FLOAT_OVERFLOW = "ERR_CONSTANT_FLOAT_OVERFLOW";
     public static final String ERR_DISCRETE_BOUND_KIND_PROHIBITED = "ERR_DISCRETE_BOUND_KIND_PROHIBITED";
+    public static final String ERR_EMPTY_INTERVAL_DOMAIN = "ERR_EMPTY_INTERVAL_DOMAIN";
+    public static final String ERR_INVERTED_RANGE = "ERR_INVERTED_RANGE";
     public static final String ERR_STRING_CARDINALITY_PROHIBITED = "ERR_STRING_CARDINALITY_PROHIBITED";
     public static final String WARN_NOMINAL_STRING_UNADORNED = "WARN_NOMINAL_STRING_UNADORNED";
     public static final String WARN_NOMINAL_STRING_CAPACITY_OVERFLOW = "WARN_NOMINAL_STRING_CAPACITY_OVERFLOW";
@@ -51,6 +54,7 @@ public final class StvnDiagnosticCodes {
     // Metadata Facets & Ordering
     public static final String ERR_FACET_ORDER_VIOLATION = "ERR_FACET_ORDER_VIOLATION";
     public static final String ERR_DUPLICATE_METADATA_FACET = "ERR_DUPLICATE_METADATA_FACET";
+    public static final String ERR_MUTUALLY_EXCLUSIVE = "ERR_MUTUALLY_EXCLUSIVE";
     public static final String ERR_INCOMPLETE_TRAIT_FACET = "ERR_INCOMPLETE_TRAIT_FACET";
     /** Error code emitted when an empty type or constant metadata constraint annotation block '{}' is encountered (SPEC § 3.5.1, E003). */
     public static final String ERR_EMPTY_METADATA_BLOCK = "ERR_EMPTY_METADATA_BLOCK";

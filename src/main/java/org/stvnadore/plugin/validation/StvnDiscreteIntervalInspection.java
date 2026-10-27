@@ -12,11 +12,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnLiteralParser;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
+import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Validates STVN 2.0.0 discrete interval rules.
@@ -71,6 +77,11 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     return;
                 }
 
+                MetadataEntry minInclEntry = null;
+                MetadataEntry maxExclEntry = null;
+                BigDecimal minVal = null;
+                BigDecimal maxVal = null;
+
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var entryText = entry.getText();
                     if (entryText.startsWith("#maxIncl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
@@ -99,6 +110,36 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             quickFixes
                         );
+                    } else if (entryText.startsWith("#minIncl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
+                        minInclEntry = entry;
+                        minVal = extractBoundBigDecimal(entry);
+                    } else if (entryText.startsWith("#maxExcl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
+                        maxExclEntry = entry;
+                        maxVal = extractBoundBigDecimal(entry);
+                    }
+                }
+
+                // Evaluate discrete interval domain using BigDecimal.compareTo(...) == 0
+                if (minVal != null && maxVal != null && maxExclEntry != null) {
+                    int cmp = minVal.compareTo(maxVal);
+                    if (cmp == 0) {
+                        holder.registerProblem(
+                            maxExclEntry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Discrete interval defines an empty domain [" + minVal.toPlainString() + ", " + maxVal.toPlainString() + ")",
+                                StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    } else if (cmp > 0) {
+                        holder.registerProblem(
+                            maxExclEntry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
+                                StvnDiagnosticCodes.ERR_INVERTED_RANGE
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
                     }
                 }
             }
@@ -107,21 +148,77 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
     private static boolean isDiscreteType(@Nullable SchemaType schemaType) {
         if (schemaType == null) return false;
+        var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
         var baseType = resolveBaseTypeString(schemaType);
         if (baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return true;
         }
-        if (baseType.equals(StvnVocabulary.TYPE_FLOAT)) {
-            var metaMap = schemaType.getMetadataMap();
-            if (metaMap != null) {
-                for (var e : metaMap.getMetadataEntryList()) {
-                    if (e.getText().startsWith(StvnVocabulary.FACET_KW_EXACT) || e.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
-                        return true;
+        if (cleanType.equals(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_FLOAT)) {
+            return hasExactFacet(schemaType, new HashSet<>());
+        }
+        return false;
+    }
+
+    private static boolean hasExactFacet(@NotNull SchemaType schemaType, Set<String> visited) {
+        var metaMap = schemaType.getMetadataMap();
+        if (metaMap != null) {
+            for (var e : metaMap.getMetadataEntryList()) {
+                if (e.getText().startsWith(StvnVocabulary.FACET_KW_EXACT)
+                    || e.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
+                    return true;
+                }
+            }
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var text = kw.getText().trim();
+            if (!visited.add(text)) {
+                return false;
+            }
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
+                if (resolved != null) {
+                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+                    if (parentDef != null && parentDef.getSchemaType() != null) {
+                        return hasExactFacet(parentDef.getSchemaType(), visited);
                     }
                 }
             }
         }
+        var resolvedNominal = StvnTypeResolver.resolveNominalSchema(schemaType);
+        if (resolvedNominal != null && resolvedNominal != schemaType) {
+            var resKw = resolvedNominal.getTypeKeyword();
+            String resText = resKw != null ? resKw.getText().trim() : resolvedNominal.getText().trim();
+            if (visited.add(resText)) {
+                return hasExactFacet(resolvedNominal, visited);
+            }
+        }
         return false;
+    }
+
+    private static @Nullable BigDecimal extractBoundBigDecimal(MetadataEntry entry) {
+        var val = entry.getMetadataValue();
+        if (val == null) return null;
+        try {
+            var intLit = val.getIntegerLiteral();
+            if (intLit != null) {
+                return new BigDecimal(StvnLiteralParser.parseBigInteger(intLit.getText()));
+            }
+            var floatLit = val.getFloatLiteral();
+            if (floatLit != null) {
+                return StvnLiteralParser.parseBigDecimal(floatLit.getText());
+            }
+            var text = val.getText().trim();
+            if (!text.isEmpty()) {
+                if (text.contains(".") || text.contains("e") || text.contains("E")) {
+                    return StvnLiteralParser.parseBigDecimal(text);
+                } else {
+                    return new BigDecimal(StvnLiteralParser.parseBigInteger(text));
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private static String resolveBaseTypeString(SchemaType schemaType) {

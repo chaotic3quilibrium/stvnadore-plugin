@@ -279,6 +279,29 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         boolean isBoolean = baseType != null && isBooleanType(baseType);
         boolean isEnum = baseType != null && isEnumConstructor(baseType);
 
+        // Local Trap 12 enforcement: #exact and #size co-declared on :Float
+        if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+            boolean hasLocalExact = hasLocalExactFacet(metaMap);
+            MetadataEntry localSizeEntry = null;
+            for (var entry : metaMap.getMetadataEntryList()) {
+                if (hasToken(entry, TokenSet.create(StvnTypes.KW_SIZE))) {
+                    localSizeEntry = entry;
+                    break;
+                }
+            }
+            if (hasLocalExact && localSizeEntry != null) {
+                holder.registerProblem(
+                    localSizeEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Constraint violation: facet '#size' is mutually exclusive with '#exact'",
+                        StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    new RemoveElementQuickFix("Remove mutually exclusive facet")
+                );
+            }
+        }
+
         for (var entry : metaMap.getMetadataEntryList()) {
             if (entry.getMetadataUnknownEntry() != null) {
                 continue;

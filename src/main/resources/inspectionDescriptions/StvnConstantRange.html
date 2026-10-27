@@ -1,13 +1,16 @@
 <html>
 <body>
-<p>Validates that integer literals assigned to typed constant declarations fit within the physical bit-width boundaries of their declared integer types.</p>
+<p>Validates that integer and continuous floating-point literals assigned to typed constant declarations fit within the physical bit-width boundaries of their declared schema types.</p>
 <!-- tooltip end -->
-<p>Derives capacity bounds using arbitrary-precision integers for <code>:Int</code> qualified with <code>#size &lt;N&gt;</code> and <code>#unsigned</code> facets, flagging any constant literal whose value falls out of range.</p>
+<p>Derives capacity bounds using arbitrary-precision integers for <code>:Int</code> and IEEE-754 boundaries for continuous <code>:Float</code> (32-bit single precision or 64-bit double precision), flagging any constant literal whose value falls out of physical range.</p>
 
 <p><b>Example (Range Violation):</b></p>
 <pre><code>:defs {
   // Error: Integer literal 300 out of range for { #size 8 } :Int [-128, 127]
   #MAX_VAL { #size 8 } :Int 300
+
+  // Error: Float literal 3.5e38 out of range for { #size 32 } :Float [-3.4028235E+38, 3.4028235E+38]
+  #MAX_FLOAT { #size 32 } :Float 3.5e38
 }
 </code></pre>
 </body>

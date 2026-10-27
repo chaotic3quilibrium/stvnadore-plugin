@@ -55,6 +55,7 @@ import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -3197,6 +3198,116 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 "Verbatim Fenced: <code>\"\"\"[TAG]\\n...\\n[TAG]\"\"\"</code>"
             );
             return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+        }
+
+        // 3. Floating-point literal evaluation (continuous and exact)
+        if (value.getFloatLiteral() != null) {
+            try {
+                var text = value.getFloatLiteral().getText().trim();
+                var valBD = StvnLiteralParser.parseBigDecimal(text);
+                boolean isExact = constraints != null && constraints.exact();
+                if (!isExact && schemaType.getMetadataMap() != null) {
+                    for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
+                        if (entry.getText().trim().startsWith("#exact")) isExact = true;
+                    }
+                }
+
+                if (isExact) {
+                    int precision = valBD.precision();
+                    int maxSize = constraints != null ? constraints.maxSize().orElse(StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE) : StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE;
+                    if (schemaType.getMetadataMap() != null) {
+                        for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
+                            var t = entry.getText().trim();
+                            if (t.startsWith("#maxSize")) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    try {
+                                        maxSize = StvnLiteralParser.parseBigInteger(p[1]).intValue();
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+                    }
+
+                    BigDecimal minVal = constraints != null ? constraints.minIncl().orElse(null) : null;
+                    BigDecimal maxVal = constraints != null ? constraints.maxExcl().orElse(null) : null;
+                    if (schemaType.getMetadataMap() != null) {
+                        for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
+                            var t = entry.getText().trim();
+                            if (t.startsWith("#minIncl")) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    try { minVal = StvnLiteralParser.parseBigDecimal(p[1]); } catch (Exception ignored) {}
+                                }
+                            } else if (t.startsWith("#maxExcl")) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    try { maxVal = StvnLiteralParser.parseBigDecimal(p[1]); } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+                    }
+
+                    boolean precOk = precision <= maxSize;
+                    boolean minOk = minVal == null || valBD.compareTo(minVal) >= 0;
+                    boolean maxOk = maxVal == null || valBD.compareTo(maxVal) < 0;
+                    boolean satisfied = precOk && minOk && maxOk;
+
+                    String explanation;
+                    if (!precOk) {
+                        explanation = String.format("Mantissa precision %d exceeds maximum allowable significant digits %d", precision, maxSize);
+                    } else if (!minOk) {
+                        explanation = String.format("Value %s is below minimum allowable bound %s", valBD.toPlainString(), minVal.toPlainString());
+                    } else if (!maxOk) {
+                        explanation = String.format("Value %s meets or exceeds exclusive upper bound %s", valBD.toPlainString(), maxVal.toPlainString());
+                    } else {
+                        explanation = String.format("Value %s conforms to discrete decimal interval and mantissa precision (%d digits <= %d)",
+                            valBD.toPlainString(), precision, maxSize);
+                    }
+
+                    var forms = new ArrayList<String>();
+                    forms.add("Exact Decimal: <code>" + valBD.toPlainString() + "</code>");
+                    forms.add("Scientific: <code>" + valBD.toString() + "</code>");
+                    forms.add("Precision (Digits): <code>" + precision + "</code>");
+                    forms.add("Scale: <code>" + valBD.scale() + "</code>");
+                    return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+                } else {
+                    int bitWidth = constraints != null ? constraints.size().orElse(64) : 64;
+                    if (schemaType.getMetadataMap() != null) {
+                        for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
+                            var t = entry.getText().trim();
+                            if (t.startsWith("#size")) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    try { bitWidth = StvnLiteralParser.parseBigInteger(p[1]).intValue(); } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+                    }
+
+                    BigDecimal capMin = (bitWidth == 32) ? StvnVocabulary.FLOAT32_MIN : StvnVocabulary.FLOAT64_MIN;
+                    BigDecimal capMax = (bitWidth == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
+
+                    boolean capOk = valBD.compareTo(capMin) >= 0 && valBD.compareTo(capMax) <= 0;
+                    boolean satisfied = capOk;
+                    String explanation;
+                    if (!capOk) {
+                        explanation = String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
+                            valBD.toString(), capMin, capMax, bitWidth);
+                    } else {
+                        explanation = String.format("Value %s conforms to %d-bit continuous float representation",
+                            valBD.toString(), bitWidth);
+                    }
+
+                    var forms = new ArrayList<String>();
+                    forms.add("Decimal: <code>" + valBD.toPlainString() + "</code>");
+                    forms.add("Scientific: <code>" + valBD.toString() + "</code>");
+                    forms.add("Format: <code>IEEE-754 " + (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)") + "</code>");
+                    return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
+                }
+            } catch (Exception e) {
+                return new StvnValueComplianceResult(false, "In Violation", "Invalid float literal representation: " + e.getMessage(), Collections.emptyMap(), Collections.emptyList());
+            }
         }
 
         return new StvnValueComplianceResult(true, "Satisfied", "Payload value conforms to schema shape", Collections.emptyMap(), Collections.emptyList());

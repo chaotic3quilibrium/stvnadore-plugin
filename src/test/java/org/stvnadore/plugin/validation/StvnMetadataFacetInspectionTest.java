@@ -73,6 +73,36 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             """);
     }
 
+    public void testExactAndSizeMutuallyExclusiveOnFloat() {
+        var text = """
+            {
+              :defs {
+                :InvalidFloat { #exact #size 64 } :Float
+              }
+              :type :InvalidFloat
+              :body 1.23
+            }
+            """;
+        myFixture.configureByText("exact_size_mutex.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_MUTUALLY_EXCLUSIVE"))
+            .toList();
+        assertFalse("Expected ERR_MUTUALLY_EXCLUSIVE for #exact and #size on :Float", errors.isEmpty());
+        assertTrue(errors.get(0).getDescription().contains("facet '#size' is mutually exclusive with '#exact'"));
+
+        int offset = text.indexOf("#size");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Remove mutually exclusive facet");
+        assertFalse("Expected 'Remove mutually exclusive facet' quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        assertFalse("Converted text must not contain #size", result.contains("#size"));
+        assertTrue("Converted text must retain #exact", result.contains("#exact"));
+    }
+
     public void testInvalidStripFacetOnTypeQuickFix() {
         var text = """
             {

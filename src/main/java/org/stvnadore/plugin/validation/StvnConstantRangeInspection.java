@@ -13,11 +13,12 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.Visitor;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 
 /**
- * Validates that integer literals assigned to typed constants fit within the physical
- * bit-width boundaries of their declared integer schema types.
+ * Validates that integer and continuous floating-point literals assigned to typed constants
+ * fit within the physical bit-width boundaries of their declared schema types.
  */
 @NullMarked
 public final class StvnConstantRangeInspection extends LocalInspectionTool {
@@ -35,7 +36,7 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
             public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
                 var schemaType = constDef.getSchemaType();
                 var value = constDef.getValue();
-                if (schemaType == null || value == null || value.getIntegerLiteral() == null) {
+                if (schemaType == null || value == null) {
                     return;
                 }
 
@@ -47,8 +48,9 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                 var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
                 boolean isInt = StvnVocabulary.TYPE_INT.equals(cleanType);
                 boolean isEpoch = StvnVocabulary.TYPE_TIME_EPOCH.equals(cleanType);
+                boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(cleanType);
                 org.stvnadore.psi.SchemaType resolved = null;
-                if (meta == null || (!isInt && !isEpoch)) {
+                if (meta == null || (!isInt && !isEpoch && !isFloat)) {
                     resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
                     if (resolved != null) {
                         if (meta == null) {
@@ -57,10 +59,11 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                         cleanType = StvnSchemaFormatter.formatCleanSchema(resolved).trim();
                         isInt = StvnVocabulary.TYPE_INT.equals(cleanType);
                         isEpoch = StvnVocabulary.TYPE_TIME_EPOCH.equals(cleanType);
+                        isFloat = StvnVocabulary.TYPE_FLOAT.equals(cleanType);
                     }
                 }
 
-                if (!isInt && !isEpoch) {
+                if (!isInt && !isEpoch && !isFloat) {
                     return;
                 }
 
@@ -73,6 +76,7 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                 }
 
                 String epochScale = null;
+                boolean isExact = false;
                 for (var entry : entries) {
                     var txt = entry.getText().trim();
                     if (txt.equals("#unsigned") || txt.startsWith("#unsigned ")) {
@@ -84,6 +88,8 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                                 bitWidth = Integer.parseInt(parts[1]);
                             } catch (NumberFormatException ignored) {}
                         }
+                    } else if (txt.equals("#exact") || txt.startsWith("#exact ")) {
+                        isExact = true;
                     } else if (txt.equals("#ns") || txt.startsWith("#ns ")) {
                         if (epochScale == null) epochScale = "ns";
                     } else if (txt.equals("#s") || txt.startsWith("#s ")
@@ -97,6 +103,43 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     if (bitWidth == null) {
                         bitWidth = "ns".equals(epochScale) ? 128 : 64;
                     }
+                }
+
+                // Continuous float evaluation branch
+                if (isFloat) {
+                    if (isExact) {
+                        return; // Discrete exact float has arbitrary capacity; governed by #maxSize
+                    }
+                    if (value.getFloatLiteral() == null) {
+                        return;
+                    }
+                    int floatBits = bitWidth != null ? bitWidth : 64;
+                    BigDecimal minBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MIN : StvnVocabulary.FLOAT64_MIN;
+                    BigDecimal maxBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
+
+                    var litText = value.getFloatLiteral().getText();
+                    BigDecimal floatVal;
+                    try {
+                        floatVal = StvnLiteralParser.parseBigDecimal(litText);
+                    } catch (Exception e) {
+                        return;
+                    }
+
+                    if (floatVal.compareTo(minBound) < 0 || floatVal.compareTo(maxBound) > 0) {
+                        holder.registerProblem(
+                            value.getFloatLiteral(),
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Float literal " + litText + " out of range for " + cleanType + " [" + minBound + ", " + maxBound + "]",
+                                StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW
+                            ),
+                            ProblemHighlightType.ERROR
+                        );
+                    }
+                    return;
+                }
+
+                if (value.getIntegerLiteral() == null) {
+                    return;
                 }
 
                 if (bitWidth == null || bitWidth <= 0) {

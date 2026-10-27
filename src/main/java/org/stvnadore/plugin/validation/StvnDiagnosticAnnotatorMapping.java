@@ -100,6 +100,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK, "StvnMetadataFacet");
+        map.put(StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
@@ -127,6 +128,8 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_EMPTY_INTERVAL_DOMAIN, "StvnDiscreteInterval");
         map.put(DiagnosticBag.ERR_INVERTED_RANGE, "StvnDiscreteInterval");
         map.put(DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE, "StvnDiscreteInterval");
+        map.put(StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN, "StvnDiscreteInterval");
+        map.put(StvnDiagnosticCodes.ERR_INVERTED_RANGE, "StvnDiscreteInterval");
         map.put("FLOAT_EXACT_RANGE_CONFLICT", "StvnDiscreteInterval");
         map.put("E011", "StvnDiscreteInterval");
 
@@ -178,9 +181,10 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
         map.put(StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
 
-        // 16. Constant Integer Range Inspection
+        // 16. Constant Range Inspection
         map.put(DiagnosticBag.ERR_INTEGER_OVERFLOW, "StvnConstantRange");
         map.put(StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW, "StvnConstantRange");
+        map.put(StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW, "StvnConstantRange");
         map.put("INT_OVERFLOW", "StvnConstantRange");
         map.put("E009", "StvnConstantRange");
 

@@ -738,4 +738,57 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Must display variant name #DEFS", doc.contains("<b>Document Kind Variant:</b> <code>#DEFS</code>"));
         assertTrue("Must display enclosing enum", doc.contains(":StvnDocumentKind"));
     }
+
+    public void testContinuousFloatZone2Defaults() {
+        var text = """
+            {
+              :defs {
+                :ContinuousWeight :Float
+              }
+              :type :ContinuousWeight
+              :body 123.45
+            }
+            """;
+        myFixture.configureByText("continuous_weight.stvn", text);
+        var offset = text.indexOf(":ContinuousWeight");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Continuous float must default #equatable to #FALSE in Zone 2",
+            doc.contains("#equatable") && doc.contains("#FALSE") && doc.contains("Default (:Float)"));
+        assertTrue("Continuous float must default #comparable to #TRUE in Zone 2",
+            doc.contains("#comparable") && doc.contains("#TRUE") && doc.contains("Default (:Float)"));
+    }
+
+    public void testExactFloatZone2Defaults() {
+        var text = """
+            {
+              :defs {
+                :ExactPrice { #exact } :Float
+              }
+              :type :ExactPrice
+              :body 19.99
+            }
+            """;
+        myFixture.configureByText("exact_price.stvn", text);
+        var offset = text.indexOf(":ExactPrice");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Exact float must default #equatable to #TRUE in Zone 2",
+            doc.contains("#equatable") && doc.contains("#TRUE") && doc.contains("Default (:Float)"));
+        assertTrue("Exact float must default #comparable to #TRUE in Zone 2",
+            doc.contains("#comparable") && doc.contains("#TRUE") && doc.contains("Default (:Float)"));
+    }
+
+    public void testExactFloat50DigitMantissaFidelityDoc() {
+        var fiftyDigits = "3.14159265358979323846264338327950288419716939937510";
+        var text = "{\n  :defs {\n    :Pi { #exact } :Float\n  }\n  :type :Pi\n  :body " + fiftyDigits + "\n}\n";
+        myFixture.configureByText("exact_pi.stvn", text);
+        var offset = text.indexOf(fiftyDigits);
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Must contain full 50 digits without truncation", doc.contains(fiftyDigits));
+        assertTrue("Compliance status must be Satisfied", doc.contains("Satisfied"));
+        assertTrue("Must report exact decimal representation", doc.contains("Exact Decimal: <code>" + fiftyDigits + "</code>"));
+        assertTrue("Must report precision (50 or 51 digits)", doc.contains("Precision (Digits): <code>51</code>") || doc.contains("Precision (Digits): <code>50</code>"));
+    }
 }
