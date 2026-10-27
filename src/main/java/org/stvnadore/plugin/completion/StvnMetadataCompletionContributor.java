@@ -1,9 +1,11 @@
 package org.stvnadore.plugin.completion;
 
 import com.intellij.codeInsight.completion.*;
+import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.patterns.PlatformPatterns;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.search.FileTypeIndex;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -15,6 +17,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.StvnLanguage;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.StvnStringCapacityInspection;
 import org.stvnadore.psi.*;
@@ -24,13 +27,15 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Intelligent code completion contributor for metadata facet blocks ({ ... }).
+ * Intelligent code completion contributor for metadata facet blocks ({ ... })
+ * and pre-schema whitespace auto-wrapping completion.
  * <p>
  * Enforces Core Rule W003 and Minimal Canonical Forms (VOP Invariant 1):
  * 1. Suppresses '#minIncl 0' on unsigned :Int domains (proposes '#minIncl 1').
  * 2. Suppresses '#minSize 0' on strings and collections (proposes '#minSize 1').
  * 3. Suppresses redundant default trait assertions ('#equatable #TRUE', '#comparable #TRUE' on primitives).
  * 4. Filters out duplicate facets already declared in the local metadata block (§ 5.1.4).
+ * 5. Auto-wraps facets in '{ <facet> }' when completion is invoked in pre-schema whitespace.
  */
 @NullMarked
 public final class StvnMetadataCompletionContributor extends CompletionContributor {
@@ -72,44 +77,65 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
               return;
             }
 
-            // Ensure caret is inside a metadata map and not inside a variant list
-            var metaMap = PsiTreeUtil.getParentOfType(position, MetadataMap.class);
-            if (metaMap == null || PsiTreeUtil.getParentOfType(position, VariantList.class) != null) {
+            // Suppress inside comments and enum variant lists
+            if (position instanceof PsiComment
+                || PsiTreeUtil.getParentOfType(position, PsiComment.class) != null
+                || PsiTreeUtil.getParentOfType(position, VariantList.class) != null) {
               return;
             }
 
-            var schemaType = PsiTreeUtil.getParentOfType(metaMap, SchemaType.class);
-            if (schemaType == null) {
-              var typeDef = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class);
-              if (typeDef != null) {
-                schemaType = typeDef.getSchemaType();
-              }
-            }
-
-            String targetBaseType = resolveTargetBaseType(schemaType);
-            boolean isUnsigned = isUnsignedActive(metaMap, schemaType);
-            boolean isExact = isExactActive(metaMap, schemaType);
-
-            // Infer targetBaseType as :Float when in-flight definition declares #exact
-            if (targetBaseType.isEmpty() && isExact) {
-              targetBaseType = StvnVocabulary.TYPE_FLOAT;
-            }
-
-            // Track facets already present to eliminate duplicate facet proposals (§ 5.1.4)
+            var metaMap = PsiTreeUtil.getParentOfType(position, MetadataMap.class);
+            boolean isAutoWrap = false;
+            String targetBaseType = "";
+            boolean isUnsigned = false;
+            boolean isExact = false;
             Set<String> declaredFacets = new HashSet<>();
-            for (var entry : metaMap.getMetadataEntryList()) {
-              var text = entry.getText().trim();
-              if (!text.isEmpty()) {
-                var tag = text.split("\\s+")[0];
-                declaredFacets.add(tag);
-              }
-            }
+            InsertHandler<LookupElement> insertHandler;
 
-            // Lexical deduplication fallback (§ 5.1.4): scan sanitized text for unparsed or in-flight facet tags
-            var sanitizedMetaText = StvnStringCapacityInspection.sanitizeMetadataText(metaMap.getText());
-            var tagMatcher = FACET_TAG_PATTERN.matcher(sanitizedMetaText);
-            while (tagMatcher.find()) {
-              declaredFacets.add(tagMatcher.group());
+            if (metaMap == null) {
+              // Branch B: Pre-Schema Whitespace Auto-Wrapping Completion
+              var preSchemaContext = resolvePreSchemaContext(position, parameters);
+              if (preSchemaContext == null) {
+                return;
+              }
+              isAutoWrap = true;
+              targetBaseType = preSchemaContext.targetBaseType();
+              insertHandler = StvnMetadataFacetInsertHandler.AUTO_WRAPPING_INSTANCE;
+            } else {
+              // Branch A: In-Map Facet Completion
+              insertHandler = StvnMetadataFacetInsertHandler.INSTANCE;
+              var schemaType = PsiTreeUtil.getParentOfType(metaMap, SchemaType.class);
+              if (schemaType == null) {
+                var typeDef = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class);
+                if (typeDef != null) {
+                  schemaType = typeDef.getSchemaType();
+                }
+              }
+
+              targetBaseType = resolveTargetBaseType(schemaType);
+              isUnsigned = isUnsignedActive(metaMap, schemaType);
+              isExact = isExactActive(metaMap, schemaType);
+
+              // Infer targetBaseType as :Float when in-flight definition declares #exact
+              if (targetBaseType.isEmpty() && isExact) {
+                targetBaseType = StvnVocabulary.TYPE_FLOAT;
+              }
+
+              // Track facets already present to eliminate duplicate facet proposals (§ 5.1.4)
+              for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (!text.isEmpty()) {
+                  var tag = text.split("\\s+")[0];
+                  declaredFacets.add(tag);
+                }
+              }
+
+              // Lexical deduplication fallback (§ 5.1.4): scan sanitized text for unparsed or in-flight facet tags
+              var sanitizedMetaText = StvnStringCapacityInspection.sanitizeMetadataText(metaMap.getText());
+              var tagMatcher = FACET_TAG_PATTERN.matcher(sanitizedMetaText);
+              while (tagMatcher.find()) {
+                declaredFacets.add(tagMatcher.group());
+              }
             }
 
             var prefix = result.getPrefixMatcher().getPrefix();
@@ -120,72 +146,101 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             var targetResult = result.withPrefixMatcher(matcher);
 
             // Numeric Primitives (:Int)
-            if (StvnVocabulary.TYPE_INT.equals(targetBaseType) || targetBaseType.isEmpty()) {
+            if (StvnVocabulary.TYPE_INT.equals(targetBaseType) || (!isAutoWrap && targetBaseType.isEmpty())) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_UNSIGNED)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_UNSIGNED)
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withTypeText("Definition Facet", true)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTailText(" (bounds domain to [0, \\infty))", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_UNSIGNED,
+                    isAutoWrap,
+                    "Definition Facet",
+                    " (bounds domain to [0, \\infty))",
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
                 // Rule W003: Propose non-default integer bit-widths (valid widenings and narrowings)
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 64")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Storage Width", true));
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 16")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Storage Width", true));
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 8")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Storage Width", true));
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 128")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Storage Width", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SIZE + " 64",
+                    isAutoWrap,
+                    "Storage Width",
+                    null,
+                    insertHandler
+                ));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SIZE + " 16",
+                    isAutoWrap,
+                    "Storage Width",
+                    null,
+                    insertHandler
+                ));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SIZE + " 8",
+                    isAutoWrap,
+                    "Storage Width",
+                    null,
+                    insertHandler
+                ));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SIZE + " 128",
+                    isAutoWrap,
+                    "Storage Width",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_INCL)) {
                 if (isUnsigned) {
                   // Rule W003: Suppress '#minIncl 0' on unsigned :Int; propose '#minIncl 1'
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_INCL + " 1")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Lower Bound", true)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTailText(" (domain: [1, \\infty))", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_MIN_INCL + " 1",
+                      isAutoWrap,
+                      "Lower Bound",
+                      " (domain: [1, \\infty))",
+                      insertHandler
+                  ));
                 } else {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_INCL + " 0")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Lower Bound", true)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTailText(" (domain: [0, \\infty))", true));
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_INCL + " 1")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Lower Bound", true)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTailText(" (domain: [1, \\infty))", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_MIN_INCL + " 0",
+                      isAutoWrap,
+                      "Lower Bound",
+                      " (domain: [0, \\infty))",
+                      insertHandler
+                  ));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_MIN_INCL + " 1",
+                      isAutoWrap,
+                      "Lower Bound",
+                      " (domain: [1, \\infty))",
+                      insertHandler
+                  ));
                 }
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_EXCL)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_EXCL + " 65536")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Exclusive Upper Bound", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MAX_EXCL + " 65536",
+                    isAutoWrap,
+                    "Exclusive Upper Bound",
+                    null,
+                    insertHandler
+                ));
               }
               // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE)
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Trait Override", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Trait Override", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
               }
             }
 
@@ -193,149 +248,432 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             if (StvnVocabulary.TYPE_STRING.equals(targetBaseType)) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                 // Rule W003: Suppress '#minSize 0'; propose non-empty '#minSize 1'
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_SIZE + " 1")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Non-Empty Bound", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MIN_SIZE + " 1",
+                    isAutoWrap,
+                    "Non-Empty Bound",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 256")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Max Capacity", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MAX_SIZE + " 256",
+                    isAutoWrap,
+                    "Max Capacity",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_REGEX)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_REGEX + " \"^[A-Za-z0-9]+$\"")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Regex Constraint", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_REGEX + " \"^[A-Za-z0-9]+$\"",
+                    isAutoWrap,
+                    "Regex Constraint",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_PRESERVE_INDENT + " #TRUE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Formatting Trait", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_PRESERVE_INDENT + " #TRUE",
+                    isAutoWrap,
+                    "Formatting Trait",
+                    null,
+                    insertHandler
+                ));
               }
               // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE)
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Trait Override", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Trait Override", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
               }
             }
 
             // Collections (:Seq, :Set, :Map)
             if (isCollectionType(targetBaseType)) {
               if (StvnVocabulary.TYPE_MAP.equals(targetBaseType) && !declaredFacets.contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_INVERTIBLE)
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Bijective Map", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_INVERTIBLE,
+                    isAutoWrap,
+                    "Bijective Map",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                 // Rule W003: Suppress '#minSize 0'; propose '#minSize 1'
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_SIZE + " 1")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Container Bound", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MIN_SIZE + " 1",
+                    isAutoWrap,
+                    "Container Bound",
+                    null,
+                    insertHandler
+                ));
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 100")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Container Capacity", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MAX_SIZE + " 100",
+                    isAutoWrap,
+                    "Container Capacity",
+                    null,
+                    insertHandler
+                ));
               }
-              addTraitOverrideCompletions(targetResult, declaredFacets);
+              addTraitOverrideCompletions(targetResult, declaredFacets, isAutoWrap, insertHandler);
             }
 
             // Product Types (:Tuple)
             if (StvnVocabulary.TYPE_TUPLE.equals(targetBaseType)) {
-              addTraitOverrideCompletions(targetResult, declaredFacets);
+              addTraitOverrideCompletions(targetResult, declaredFacets, isAutoWrap, insertHandler);
             }
 
             // Sum Types (:Union, :Either, :Option)
             if (isSumConstructorType(targetBaseType)) {
-              addTraitOverrideCompletions(targetResult, declaredFacets);
+              addTraitOverrideCompletions(targetResult, declaredFacets, isAutoWrap, insertHandler);
+            }
+
+            // Enum Constructor (:Enum)
+            if (StvnVocabulary.TYPE_ENUM.equals(targetBaseType)) {
+              addTraitOverrideCompletions(targetResult, declaredFacets, isAutoWrap, insertHandler);
             }
 
             // Floating-Point (:Float)
             if (StvnVocabulary.TYPE_FLOAT.equals(targetBaseType)) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EXACT) && !isExact) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EXACT)
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Exact Decimal", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EXACT,
+                    isAutoWrap,
+                    "Exact Decimal",
+                    null,
+                    insertHandler
+                ));
                 // Rule E008: Strictly suppress #maxSize on continuous :Float
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SIZE)) {
                   // Rule W003: Suppress #size 64 on continuous :Float; propose single-precision #size 32
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_SIZE + " 32")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTypeText("Storage Width", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_SIZE + " 32",
+                      isAutoWrap,
+                      "Storage Width",
+                      null,
+                      insertHandler
+                  ));
                 }
                 // Continuous float allows opt-in equality (suppress #FALSE and comparable #TRUE)
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #TRUE")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTypeText("Opt-In Equality", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_EQUATABLE + " #TRUE",
+                      isAutoWrap,
+                      "Opt-In Equality",
+                      null,
+                      insertHandler
+                  ));
                 }
               } else {
                 // Exact decimal float: propose domain-specific #maxSize narrowings (§ 5.1.3)
                 // Rule W003: Strictly suppress #maxSize 16777216 (intrinsic default ceiling tautology)
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 18")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Mantissa Precision", true)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTailText(" (Significant Digits: Currency / Int64 decimal)", true));
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MAX_SIZE + " 38")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withTypeText("Mantissa Precision", true)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTailText(" (Significant Digits: Financial / Int128 decimal)", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_MAX_SIZE + " 18",
+                      isAutoWrap,
+                      "Mantissa Precision",
+                      " (Significant Digits: Currency / Int64 decimal)",
+                      insertHandler
+                  ));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_MAX_SIZE + " 38",
+                      isAutoWrap,
+                      "Mantissa Precision",
+                      " (Significant Digits: Financial / Int128 decimal)",
+                      insertHandler
+                  ));
                 }
                 // Exact decimal float: suppress #TRUE (intrinsically equatable and comparable)
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTypeText("Trait Override", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                      isAutoWrap,
+                      "Trait Override",
+                      null,
+                      insertHandler
+                  ));
                 }
                 if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
-                  targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE")
-                      .withIcon(AllIcons.Nodes.Property)
-                      .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                      .withTypeText("Trait Override", true));
+                  targetResult.addElement(createFacetLookup(
+                      StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+                      isAutoWrap,
+                      "Trait Override",
+                      null,
+                      insertHandler
+                  ));
                 }
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_INCL)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_MIN_INCL + " 0.0")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Lower Bound", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MIN_INCL + " 0.0",
+                    isAutoWrap,
+                    "Lower Bound",
+                    null,
+                    insertHandler
+                ));
               }
             }
 
             // Boolean Domain (:Boolean)
             if (StvnVocabulary.TYPE_BOOLEAN.equals(targetBaseType)) {
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
-                    .withIcon(AllIcons.Nodes.Property)
-                    .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-                    .withTypeText("Trait Override", true));
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
+              }
+            }
+
+            // Date-Time Domain (:DateTime)
+            if (StvnVocabulary.TYPE_DATE_TIME.equals(targetBaseType)) {
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_ZONED)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_ZONED,
+                    isAutoWrap,
+                    "Temporal Trait",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_AUDITED)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_AUDITED,
+                    isAutoWrap,
+                    "Temporal Trait",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_OFFSET)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_OFFSET,
+                    isAutoWrap,
+                    "Temporal Trait",
+                    null,
+                    insertHandler
+                ));
+              }
+              // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE on primitives)
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
+              }
+            }
+
+            // Epoch Millis / Duration Domain (:TimeEpoch)
+            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(targetBaseType)) {
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SCALE_S)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SCALE_S,
+                    isAutoWrap,
+                    "Temporal Scale",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SCALE_MS)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SCALE_MS,
+                    isAutoWrap,
+                    "Temporal Scale",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SCALE_US)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SCALE_US,
+                    isAutoWrap,
+                    "Temporal Scale",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_SCALE_NS,
+                    isAutoWrap,
+                    "Temporal Scale",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_MIN_INCL + " 0",
+                    isAutoWrap,
+                    "Lower Bound",
+                    " (domain: [0, \\infty))",
+                    insertHandler
+                ));
+              }
+              // Intrinsic trait override opt-outs only (Rule W003 suppresses #TRUE on primitives)
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
+              }
+              if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
+                targetResult.addElement(createFacetLookup(
+                    StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+                    isAutoWrap,
+                    "Trait Override",
+                    null,
+                    insertHandler
+                ));
               }
             }
           }
         }
     );
+  }
+
+  private static LookupElementBuilder createFacetLookup(
+      String lookupString,
+      boolean isAutoWrap,
+      String defaultTypeText,
+      @Nullable String tailText,
+      InsertHandler<LookupElement> insertHandler
+  ) {
+    var builder = LookupElementBuilder.create(lookupString)
+        .withIcon(AllIcons.Nodes.Property)
+        .withInsertHandler(insertHandler)
+        .withTypeText(isAutoWrap ? "Wrap in { ... }" : defaultTypeText, true);
+    if (tailText != null) {
+      builder = builder.withTailText(tailText, true);
+    }
+    return builder;
+  }
+
+  private record PreSchemaContext(String targetBaseType) {}
+
+  private static @Nullable PreSchemaContext resolvePreSchemaContext(
+      PsiElement position,
+      CompletionParameters parameters
+  ) {
+    var prevLeaf = PsiTreeUtil.prevVisibleLeaf(position);
+    var nextLeaf = PsiTreeUtil.nextVisibleLeaf(position);
+
+    if (prevLeaf != null && "}".equals(prevLeaf.getText())) {
+      return null; // Metadata map already exists immediately before
+    }
+    if (nextLeaf == null) {
+      return null;
+    }
+
+    var nextText = nextLeaf.getText().trim();
+    if (!nextText.startsWith(":")) {
+      return null;
+    }
+
+    // Validate that preceding context is a valid schema site
+    boolean isValidPreceding = false;
+    if (prevLeaf != null) {
+      var prevText = prevLeaf.getText().trim();
+      if (prevText.startsWith(":") || "(".equals(prevText) || ")".equals(prevText) || StvnVocabulary.KEYWORD_TYPE.equals(prevText)) {
+        isValidPreceding = true;
+      }
+    }
+    if (!isValidPreceding) {
+      var typeDef = PsiTreeUtil.getParentOfType(position, TypeDefinition.class);
+      if (typeDef == null && parameters.getOriginalPosition() != null) {
+        typeDef = PsiTreeUtil.getParentOfType(parameters.getOriginalPosition(), TypeDefinition.class);
+      }
+      if (typeDef != null) {
+        isValidPreceding = true;
+      }
+    }
+    if (!isValidPreceding) {
+      return null;
+    }
+
+    String targetBaseType = resolveTargetBaseTypeFromKeyword(nextText);
+    if (targetBaseType.isEmpty()) {
+      var baseName = nextText.replaceAll("[^A-Za-z0-9_:]", "");
+      var file = position.getContainingFile();
+      if (file != null) {
+        var resolved = StvnTypeReference.resolveTypeInFile(file, baseName, new HashSet<>());
+        if (resolved != null) {
+          var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+          if (parentDef != null && parentDef.getSchemaType() != null) {
+            targetBaseType = resolveTargetBaseType(parentDef.getSchemaType());
+          }
+        }
+      }
+    }
+    if (targetBaseType.isEmpty()) {
+      return null;
+    }
+    return new PreSchemaContext(targetBaseType);
+  }
+
+  private static String resolveTargetBaseTypeFromKeyword(String keyword) {
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_TUPLE)) return StvnVocabulary.TYPE_TUPLE;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_SEQ)) return StvnVocabulary.TYPE_SEQ;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_SET)) return StvnVocabulary.TYPE_SET;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_MAP)) return StvnVocabulary.TYPE_MAP;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_UNION)) return StvnVocabulary.TYPE_UNION;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_EITHER)) return StvnVocabulary.TYPE_EITHER;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_OPTION)) return StvnVocabulary.TYPE_OPTION;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_ENUM)) return StvnVocabulary.TYPE_ENUM;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_INT)) return StvnVocabulary.TYPE_INT;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_STRING)) return StvnVocabulary.TYPE_STRING;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_FLOAT)) return StvnVocabulary.TYPE_FLOAT;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_BOOLEAN)) return StvnVocabulary.TYPE_BOOLEAN;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_DATE_TIME)) return StvnVocabulary.TYPE_DATE_TIME;
+    if (matchesTypeKeyword(keyword, StvnVocabulary.TYPE_TIME_EPOCH)) return StvnVocabulary.TYPE_TIME_EPOCH;
+    return "";
+  }
+
+  private static boolean matchesTypeKeyword(String tokenText, String typeKeyword) {
+    if (tokenText.equals(typeKeyword)) {
+      return true;
+    }
+    if (tokenText.startsWith(typeKeyword)) {
+      char nextChar = tokenText.charAt(typeKeyword.length());
+      return nextChar == '(' || nextChar == ')' || nextChar == ' ' || nextChar == '\t' || nextChar == '\n' || nextChar == '\r' || nextChar == '{' || nextChar == '}';
+    }
+    return false;
   }
 
   private static String resolveTargetBaseType(@Nullable SchemaType schemaType) {
@@ -446,26 +784,43 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
         || StvnVocabulary.TYPE_OPTION.equals(targetBaseType);
   }
 
-  private static void addTraitOverrideCompletions(CompletionResultSet targetResult, Set<String> declaredFacets) {
+  private static void addTraitOverrideCompletions(
+      CompletionResultSet targetResult,
+      Set<String> declaredFacets,
+      boolean isAutoWrap,
+      InsertHandler<LookupElement> insertHandler
+  ) {
     if (!declaredFacets.contains(StvnVocabulary.FACET_KW_EQUATABLE)) {
-      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE")
-          .withIcon(AllIcons.Nodes.Property)
-          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-          .withTypeText("Trait Override", true));
-      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_EQUATABLE + " #TRUE")
-          .withIcon(AllIcons.Nodes.Property)
-          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-          .withTypeText("Trait Override", true));
+      targetResult.addElement(createFacetLookup(
+          StvnVocabulary.FACET_KW_EQUATABLE + " #FALSE",
+          isAutoWrap,
+          "Trait Override",
+          null,
+          insertHandler
+      ));
+      targetResult.addElement(createFacetLookup(
+          StvnVocabulary.FACET_KW_EQUATABLE + " #TRUE",
+          isAutoWrap,
+          "Trait Override",
+          null,
+          insertHandler
+      ));
     }
     if (!declaredFacets.contains(StvnVocabulary.FACET_KW_COMPARABLE)) {
-      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE")
-          .withIcon(AllIcons.Nodes.Property)
-          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-          .withTypeText("Trait Override", true));
-      targetResult.addElement(LookupElementBuilder.create(StvnVocabulary.FACET_KW_COMPARABLE + " #TRUE")
-          .withIcon(AllIcons.Nodes.Property)
-          .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE)
-          .withTypeText("Trait Override", true));
+      targetResult.addElement(createFacetLookup(
+          StvnVocabulary.FACET_KW_COMPARABLE + " #FALSE",
+          isAutoWrap,
+          "Trait Override",
+          null,
+          insertHandler
+      ));
+      targetResult.addElement(createFacetLookup(
+          StvnVocabulary.FACET_KW_COMPARABLE + " #TRUE",
+          isAutoWrap,
+          "Trait Override",
+          null,
+          insertHandler
+      ));
     }
   }
 

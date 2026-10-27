@@ -1112,6 +1112,512 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         assertTrue("Must offer candidate #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
         assertTrue("Must offer candidate #comparable #TRUE", lookupStrings.contains("#comparable #TRUE"));
     }
+
+    /**
+     * Verifies TC-AW-CMP-01:
+     * Pre-schema completion preceding a :Tuple constructor proposes trait overrides
+     * with type text 'Wrap in { ... }', and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingTupleConstructorCompletion() {
+        myFixture.configureByText(
+            "aw_tuple.stvn",
+            """
+            {
+              :defs {
+                :Values <caret> :Tuple ( :Int :String )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+        assertTrue("Must propose #equatable #TRUE", lookupStrings.contains("#equatable #TRUE"));
+        assertTrue("Must propose #comparable #FALSE", lookupStrings.contains("#comparable #FALSE"));
+        assertTrue("Must propose #comparable #TRUE", lookupStrings.contains("#comparable #TRUE"));
+        assertFalse("Must NOT propose #strip", lookupStrings.contains("#strip"));
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must find #equatable #FALSE element", eqElement);
+        var presentation = new LookupElementPresentation();
+        eqElement.renderElement(presentation);
+        assertEquals("Wrap in { ... }", presentation.getTypeText());
+
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Values { #equatable #FALSE } :Tuple ( :Int :String )"));
+        int caretOffset = myFixture.getEditor().getCaretModel().getOffset();
+        int expectedCaretOffset = resultText.indexOf("#equatable #FALSE") + "#equatable #FALSE".length();
+        assertEquals("Caret must be immediately after inserted facet inside braces", expectedCaretOffset, caretOffset);
+    }
+
+    /**
+     * Verifies TC-AW-CMP-02:
+     * Pre-schema completion preceding a :Seq collection constructor proposes bounds and overrides,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingSeqConstructorCompletion() {
+        myFixture.configureByText(
+            "aw_seq.stvn",
+            """
+            {
+              :defs {
+                :List <caret> :Seq ( :Int )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #minSize 1", lookupStrings.contains("#minSize 1"));
+        assertTrue("Must propose #maxSize 100", lookupStrings.contains("#maxSize 100"));
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+
+        var minSizeElement = findLookupElement(elements, "#minSize 1");
+        assertNotNull("Must find #minSize 1 element", minSizeElement);
+        myFixture.getLookup().setCurrentItem(minSizeElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":List { #minSize 1 } :Seq ( :Int )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-03:
+     * Pre-schema completion preceding a :Map constructor proposes #invertible and size bounds,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingMapConstructorCompletion() {
+        myFixture.configureByText(
+            "aw_map.stvn",
+            """
+            {
+              :defs {
+                :Dictionary <caret> :Map ( :String :Int )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #invertible", lookupStrings.contains("#invertible"));
+        assertTrue("Must propose #minSize 1", lookupStrings.contains("#minSize 1"));
+
+        var invElement = findLookupElement(elements, "#invertible");
+        assertNotNull("Must find #invertible element", invElement);
+        myFixture.getLookup().setCurrentItem(invElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Dictionary { #invertible } :Map ( :String :Int )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-04:
+     * Pre-schema completion preceding a :Union constructor proposes trait overrides,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingUnionConstructorCompletion() {
+        myFixture.configureByText(
+            "aw_union.stvn",
+            """
+            {
+              :defs {
+                :EitherOr <caret> :Union ( :Int :String )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must find #equatable #FALSE element", eqElement);
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":EitherOr { #equatable #FALSE } :Union ( :Int :String )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-05:
+     * Pre-schema completion preceding :Int scalar proposes numeric facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingIntScalarCompletion() {
+        myFixture.configureByText(
+            "aw_int.stvn",
+            """
+            {
+              :defs {
+                :Age <caret> :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #unsigned", lookupStrings.contains("#unsigned"));
+        assertTrue("Must propose #size 64", lookupStrings.contains("#size 64"));
+        assertTrue("Must propose #minIncl 1", lookupStrings.contains("#minIncl 1"));
+
+        var unsElement = findLookupElement(elements, "#unsigned");
+        assertNotNull("Must find #unsigned element", unsElement);
+        myFixture.getLookup().setCurrentItem(unsElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Age { #unsigned } :Int"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-06:
+     * Pre-schema completion preceding :String scalar proposes string facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingStringScalarCompletion() {
+        myFixture.configureByText(
+            "aw_string.stvn",
+            """
+            {
+              :defs {
+                :Name <caret> :String
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #minSize 1", lookupStrings.contains("#minSize 1"));
+        assertTrue("Must propose #maxSize 256", lookupStrings.contains("#maxSize 256"));
+        assertTrue("Must propose #regex", lookupStrings.contains("#regex \"^[A-Za-z0-9]+$\""));
+
+        var minElement = findLookupElement(elements, "#minSize 1");
+        assertNotNull("Must find #minSize 1 element", minElement);
+        myFixture.getLookup().setCurrentItem(minElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Name { #minSize 1 } :String"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-07:
+     * Pre-schema completion preceding :Float scalar proposes continuous float facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingFloatScalarCompletion() {
+        myFixture.configureByText(
+            "aw_float.stvn",
+            """
+            {
+              :defs {
+                :Weight <caret> :Float
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #exact", lookupStrings.contains("#exact"));
+        assertTrue("Must propose #size 32", lookupStrings.contains("#size 32"));
+        assertTrue("Must propose #equatable #TRUE", lookupStrings.contains("#equatable #TRUE"));
+
+        var exactElement = findLookupElement(elements, "#exact");
+        assertNotNull("Must find #exact element", exactElement);
+        myFixture.getLookup().setCurrentItem(exactElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Weight { #exact } :Float"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-08:
+     * Pre-schema completion preceding :Boolean scalar proposes boolean facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingBooleanScalarCompletion() {
+        myFixture.configureByText(
+            "aw_bool.stvn",
+            """
+            {
+              :defs {
+                :Flag <caret> :Boolean
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must find #equatable #FALSE element", eqElement);
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Flag { #equatable #FALSE } :Boolean"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-09:
+     * Pre-schema completion preceding :DateTime scalar proposes temporal facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingDateTimeScalarCompletion() {
+        myFixture.configureByText(
+            "aw_datetime.stvn",
+            """
+            {
+              :defs {
+                :Timestamp <caret> :DateTime
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #zoned", lookupStrings.contains("#zoned"));
+        assertTrue("Must propose #audited", lookupStrings.contains("#audited"));
+        assertTrue("Must propose #offset", lookupStrings.contains("#offset"));
+
+        var zonedElement = findLookupElement(elements, "#zoned");
+        assertNotNull("Must find #zoned element", zonedElement);
+        myFixture.getLookup().setCurrentItem(zonedElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Timestamp { #zoned } :DateTime"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-10:
+     * Pre-schema completion preceding :TimeEpoch scalar proposes epoch scale facets,
+     * and wraps selection in a canonical metadata block.
+     */
+    public void testAutoWrappingTimeEpochScalarCompletion() {
+        myFixture.configureByText(
+            "aw_epoch.stvn",
+            """
+            {
+              :defs {
+                :Ticks <caret> :TimeEpoch
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #s", lookupStrings.contains("#s"));
+        assertTrue("Must propose #ms", lookupStrings.contains("#ms"));
+        assertTrue("Must propose #us", lookupStrings.contains("#us"));
+        assertTrue("Must propose #ns", lookupStrings.contains("#ns"));
+        assertTrue("Must propose #minIncl 0", lookupStrings.contains("#minIncl 0"));
+
+        var sElement = findLookupElement(elements, "#s");
+        assertNotNull("Must find #s element", sElement);
+        myFixture.getLookup().setCurrentItem(sElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Result must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Ticks { #s } :TimeEpoch"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-11:
+     * Pre-schema completion when the user has already typed '#' sigil:
+     * The insert handler consumes the bare '#' and produces zero '##' tokens.
+     */
+    public void testAutoWrappingPrecedingHashSigilConsumption() {
+        myFixture.configureByText(
+            "aw_sigil.stvn",
+            """
+            {
+              :defs {
+                :Values #<caret> :Tuple ( :Int :String )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must offer #equatable #FALSE", eqElement);
+
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertFalse("Must never produce double hash ##:\n" + resultText, resultText.contains("##"));
+        assertTrue("Must wrap cleanly in braces without extra hashes:\n" + resultText,
+            resultText.contains(":Values { #equatable #FALSE } :Tuple ( :Int :String )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-12:
+     * Pre-schema completion on root document envelope schema (:type <caret> :Tuple (...)).
+     */
+    public void testAutoWrappingRootEnvelopeHeaderCompletion() {
+        myFixture.configureByText(
+            "aw_root.stvn",
+            """
+            {
+              :type <caret> :Tuple ( :Int )
+              :body ( 42 )
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #equatable #FALSE", lookupStrings.contains("#equatable #FALSE"));
+
+        var eqElement = findLookupElement(elements, "#equatable #FALSE");
+        assertNotNull("Must offer #equatable #FALSE", eqElement);
+
+        myFixture.getLookup().setCurrentItem(eqElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must wrap root schema cleanly:\n" + resultText,
+            resultText.contains(":type { #equatable #FALSE } :Tuple ( :Int )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-13:
+     * Pre-schema completion inside a constituent constructor slot (:Tuple ( <caret> :Int )).
+     */
+    public void testAutoWrappingConstituentSlotCompletion() {
+        myFixture.configureByText(
+            "aw_slot.stvn",
+            """
+            {
+              :defs {
+                :Pair :Tuple ( <caret> :Int :String )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull("Completion elements must exist", elements);
+        var lookupStrings = myFixture.getLookupElementStrings();
+        assertNotNull("Lookup strings must exist", lookupStrings);
+
+        assertTrue("Must propose #minIncl 1", lookupStrings.contains("#minIncl 1"));
+
+        var minElement = findLookupElement(elements, "#minIncl 1");
+        assertNotNull("Must offer #minIncl 1", minElement);
+
+        myFixture.getLookup().setCurrentItem(minElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Must wrap constituent slot schema cleanly:\n" + resultText,
+            resultText.contains(":Pair :Tuple ( { #minIncl 1 } :Int :String )"));
+    }
+
+    /**
+     * Verifies TC-AW-CMP-14:
+     * Pre-schema auto-wrapping suppression when a metadata block already exists immediately before.
+     */
+    public void testAutoWrappingPreSchemaSuppressionWhenMetadataBlockExists() {
+        myFixture.configureByText(
+            "aw_suppress.stvn",
+            """
+            {
+              :defs {
+                :Values { #minSize 1 } <caret> :Tuple ( :Int )
+              }
+            }
+            """
+        );
+        myFixture.completeBasic();
+        var lookupStrings = myFixture.getLookupElementStrings();
+        if (lookupStrings != null) {
+            assertFalse("Must NOT propose #equatable in whitespace after existing block",
+                lookupStrings.contains("#equatable #FALSE"));
+            assertFalse("Must NOT propose #comparable in whitespace after existing block",
+                lookupStrings.contains("#comparable #FALSE"));
+        }
+    }
+
+    /**
+     * Verifies TC-AW-CMP-15:
+     * Directive #strip is strictly excluded from all pre-schema completion proposals.
+     */
+    public void testAutoWrappingStripDirectiveStrictExclusion() {
+        String[] testSnippets = {
+            "{ :defs { :T <caret> :Tuple ( :Int ) } }",
+            "{ :defs { :S <caret> :Seq ( :Int ) } }",
+            "{ :defs { :M <caret> :Map ( :String :Int ) } }",
+            "{ :defs { :U <caret> :Union ( :Int :String ) } }",
+            "{ :defs { :I <caret> :Int } }",
+            "{ :defs { :Str <caret> :String } }",
+            "{ :defs { :D <caret> :DateTime } }",
+            "{ :defs { :E <caret> :TimeEpoch } }"
+        };
+
+        for (int i = 0; i < testSnippets.length; i++) {
+            myFixture.configureByText("strip_excl_" + i + ".stvn", testSnippets[i]);
+            myFixture.completeBasic();
+            var lookupStrings = myFixture.getLookupElementStrings();
+            if (lookupStrings != null) {
+                assertFalse("Must NEVER propose #strip on type definition: " + testSnippets[i],
+                    lookupStrings.contains("#strip"));
+            }
+        }
+    }
 }
 
 
