@@ -3312,12 +3312,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     String explanation;
                     String statusLabel = capOk ? "Satisfied" : "In Violation";
                     int precision = valBD.precision();
-                    int safeDigits = (bitWidth == 32) ? 7 : 17;
-                    boolean precisionLoss = capOk && (precision > safeDigits);
+                    int safeDigits = (bitWidth == 32) ? 8 : 17;
 
                     String roundedStr = (bitWidth == 32)
                         ? Float.toString(valBD.floatValue())
                         : Double.toString(valBD.doubleValue());
+
+                    boolean selfEquivalent = false;
+                    try {
+                        selfEquivalent = new BigDecimal(roundedStr).compareTo(valBD) == 0;
+                    } catch (Exception ignored) {}
+
+                    boolean precisionLoss = capOk && (precision > safeDigits) && !selfEquivalent;
 
                     if (!capOk) {
                         explanation = String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
@@ -3328,7 +3334,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                             "Floating-point literal precision (%d digits) exceeds IEEE-754 %s capacity (~%d digits); binary encoding truncates and rounds value to %s",
                             precision,
                             (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)"),
-                            (bitWidth == 32 ? 7 : 16),
+                            (bitWidth == 32 ? 8 : 16),
                             roundedStr
                         );
                     } else {

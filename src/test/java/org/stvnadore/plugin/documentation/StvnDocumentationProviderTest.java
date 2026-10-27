@@ -879,4 +879,54 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Must report Encoded Binary Float: " + doc,
             doc.contains("Encoded Binary Float: <code>3.141592653589793</code>"));
     }
+
+    /**
+     * TC-DOC-FPL-02: Continuous 32-bit float precision loss documentation presentation with ~8 digits.
+     */
+    public void testContinuous32BitFloatPrecisionLossDocCard() {
+        var literal = "42.1234567890123456789";
+        var text = """
+            {
+              :defs {
+                :Weight { #size 32 } :Float
+              }
+              :type :Weight
+              :body %s
+            }
+            """.formatted(literal);
+        myFixture.configureByText("continuous_32bit_doc.stvn", text);
+        var offset = text.indexOf(literal);
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Compliance status must be Satisfied (Precision Loss): " + doc,
+            doc.contains("Satisfied (Precision Loss)"));
+        assertTrue("Must report Single (32-bit) capacity (~8 digits): " + doc,
+            doc.contains("Single (32-bit) capacity (~8 digits)"));
+        assertTrue("Must report Encoded Binary Float 42.123455: " + doc,
+            doc.contains("Encoded Binary Float: <code>42.123455</code>"));
+    }
+
+    /**
+     * TC-DOC-FPL-03: Compliant 8-digit continuous 32-bit float produces Satisfied status without precision loss warning.
+     */
+    public void testContinuous32BitFloatCompliantDocCard() {
+        var literal = "42.123455";
+        var text = """
+            {
+              :defs {
+                :Weight { #size 32 } :Float
+              }
+              :type :Weight
+              :body %s
+            }
+            """.formatted(literal);
+        myFixture.configureByText("continuous_32bit_clean_doc.stvn", text);
+        var offset = text.indexOf(literal);
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Compliance status must be Satisfied: " + doc, doc.contains("Satisfied"));
+        assertFalse("Must not report Precision Loss: " + doc, doc.contains("Precision Loss"));
+        assertTrue("Must report conformation to 32-bit continuous float: " + doc,
+            doc.contains("conforms to 32-bit continuous float representation"));
+    }
 }

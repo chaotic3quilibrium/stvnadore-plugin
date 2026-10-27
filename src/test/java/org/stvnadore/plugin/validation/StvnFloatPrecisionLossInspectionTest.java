@@ -6,16 +6,17 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 /**
  * Platform integration test suite for StvnFloatPrecisionLossInspection.
  * <p>
- * Validates TC-FPL-01 through TC-FPL-08:
+ * Validates TC-FPL-01 through TC-FPL-09:
  * <ul>
- *   <li>TC-FPL-01: Clean compilation on 32-bit float with &le; 7 digits.</li>
- *   <li>TC-FPL-02: Warning on 32-bit float with &gt; 7 digits.</li>
+ *   <li>TC-FPL-01: Clean compilation on 32-bit float with &le; 8 digits.</li>
+ *   <li>TC-FPL-02: Warning on 32-bit float with &gt; 8 digits.</li>
  *   <li>TC-FPL-03: Clean compilation on 64-bit float with &le; 17 digits.</li>
  *   <li>TC-FPL-04: Warning on 64-bit float with &gt; 17 digits.</li>
  *   <li>TC-FPL-05: Discrete exact float { #exact } :Float bypass.</li>
  *   <li>TC-FPL-06: Automated Quick-Fix 1 (Round to nearest IEEE-754).</li>
  *   <li>TC-FPL-07: Automated Quick-Fix 2 (Switch variant to exact float branch).</li>
  *   <li>TC-FPL-08: Quick-Fix 2 suppression when no exact sibling branch exists.</li>
+ *   <li>TC-FPL-09: Self-equivalence convergence guard on literals matching binary encoding.</li>
  * </ul>
  */
 public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTestCase {
@@ -27,7 +28,7 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
     }
 
     /**
-     * TC-FPL-01: Continuous 32-bit float with &le; 7 digits produces 0 precision loss warnings.
+     * TC-FPL-01: Continuous 32-bit float with &le; 8 digits produces 0 precision loss warnings.
      */
     public void testClean32BitFloat() {
         var text = """
@@ -36,7 +37,7 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
                 :Weight { #size 32 } :Float
               }
               :type :Weight
-              :body 42.12345
+              :body 42.123455
             }
             """;
         myFixture.configureByText("clean_32bit.stvn", text);
@@ -45,11 +46,11 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_FLOAT_PRECISION_LOSS"))
             .toList();
-        assertTrue("Expected 0 precision loss warnings for 7 digits, but found: " + warnings, warnings.isEmpty());
+        assertTrue("Expected 0 precision loss warnings for 8 digits, but found: " + warnings, warnings.isEmpty());
     }
 
     /**
-     * TC-FPL-02: Continuous 32-bit float with &gt; 7 digits emits warning pinned to FloatLiteral.
+     * TC-FPL-02: Continuous 32-bit float with &gt; 8 digits emits warning pinned to FloatLiteral.
      */
     public void testPrecisionLossOn32BitFloat() {
         var literal = "42.1234567890123456789";
@@ -71,8 +72,8 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
 
         assertEquals("Expected exactly 1 precision loss warning", 1, warnings.size());
         var warn = warnings.get(0);
-        assertTrue("Warning message must mention Single (32-bit) capacity (~7 digits)",
-            warn.getDescription().contains("Single (32-bit) capacity (~7 digits)"));
+        assertTrue("Warning message must mention Single (32-bit) capacity (~8 digits)",
+            warn.getDescription().contains("Single (32-bit) capacity (~8 digits)"));
         assertTrue("Warning message must mention binary encoding truncation",
             warn.getDescription().contains("binary encoding truncates value to 42.123455"));
 
@@ -190,6 +191,13 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
         assertTrue("File text must be replaced with rounded 42.123455:\n" + result,
             result.contains(":body 42.123455"));
         assertFalse("Old 20-digit literal must be replaced", result.contains(literal));
+
+        var postHighlights = myFixture.doHighlighting();
+        var postWarnings = postHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_FLOAT_PRECISION_LOSS"))
+            .toList();
+        assertTrue("Post-fix highlighting must converge to 0 precision loss warnings, but found: " + postWarnings, postWarnings.isEmpty());
     }
 
     /**
@@ -248,5 +256,27 @@ public final class StvnFloatPrecisionLossInspectionTest extends BasePlatformTest
 
         var roundActions = myFixture.filterAvailableIntentions("Round literal to nearest IEEE-754 representation");
         assertFalse("Round literal quick-fix must still be offered", roundActions.isEmpty());
+    }
+
+    /**
+     * TC-FPL-09: Self-equivalence convergence guard suppresses warnings when literal matches binary encoding.
+     */
+    public void testSelfEquivalenceConvergenceGuard() {
+        var text = """
+            {
+              :defs {
+                :Weight { #size 32 } :Float
+              }
+              :type :Weight
+              :body 42.1234550000000000
+            }
+            """;
+        myFixture.configureByText("self_equiv.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_FLOAT_PRECISION_LOSS"))
+            .toList();
+        assertTrue("Self-equivalent literal must produce 0 warnings: " + warnings, warnings.isEmpty());
     }
 }

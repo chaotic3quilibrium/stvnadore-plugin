@@ -46,7 +46,7 @@ import java.util.HashSet;
 @NullMarked
 public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool {
 
-    public static final int IEEE754_SINGLE_MAX_DIGITS = 7;
+    public static final int IEEE754_SINGLE_MAX_DIGITS = 8;
     public static final int IEEE754_DOUBLE_MAX_DIGITS = 17;
 
     public StvnFloatPrecisionLossInspection() {
@@ -139,7 +139,7 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
                         float f = valBD.floatValue();
                         roundedStr = Float.toString(f);
                         msg = String.format(
-                            "Floating-point literal precision (%d digits) exceeds IEEE-754 Single (32-bit) capacity (~7 digits); binary encoding truncates value to %s",
+                            "Floating-point literal precision (%d digits) exceeds IEEE-754 Single (32-bit) capacity (~8 digits); binary encoding truncates value to %s",
                             precision, roundedStr
                         );
                     } else {
@@ -149,6 +149,14 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
                             "Floating-point literal precision (%d digits) exceeds IEEE-754 Double (64-bit) capacity (~16 digits); binary encoding truncates value to %s",
                             precision, roundedStr
                         );
+                    }
+
+                    try {
+                        if (new BigDecimal(roundedStr).compareTo(valBD) == 0) {
+                            return;
+                        }
+                    } catch (Exception ignored) {
+                        return;
                     }
 
                     var formattedMsg = StvnDiagnosticFormatter.formatPlugin(

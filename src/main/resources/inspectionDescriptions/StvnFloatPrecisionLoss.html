@@ -4,15 +4,15 @@
 
 <p>Under STVN Language Specification &sect; 5.1.3:</p>
 <ul>
-  <li>Continuous 32-bit floats (<code>{ #size 32 } :Float</code>) possess 24 bits of mantissa (&sim;7.22 significant decimal digits). Literals exceeding 7 decimal digits suffer truncation and rounding during binary encoding.</li>
+  <li>Continuous 32-bit floats (<code>{ #size 32 } :Float</code>) possess 24 bits of mantissa (&sim;7.22 significant decimal digits). Literals exceeding 8 decimal digits suffer truncation and rounding during binary encoding.</li>
   <li>Continuous 64-bit floats (<code>:Float</code> / <code>{ #size 64 } :Float</code>) possess 53 bits of mantissa (&sim;15.95 significant decimal digits). Literals exceeding 17 decimal digits suffer truncation and rounding during binary encoding.</li>
   <li>Discrete exact floats (<code>{ #exact } :Float</code>) implement arbitrary-precision decimal representations (&le; 16,777,216 digits) and remain completely unaffected by this inspection.</li>
 </ul>
 
 <p><b>Compliant Examples:</b></p>
-<pre><code>// Compliant: Fits within Single (32-bit) precision (&le; 7 digits)
+<pre><code>// Compliant: Fits within Single (32-bit) precision (&le; 8 digits)
 :Speed { #size 32 } :Float
-#1 42.12345
+#1 42.123455
 
 // Compliant: Fits within Double (64-bit) precision (&le; 17 digits)
 :Coordinates :Float
