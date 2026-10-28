@@ -5,6 +5,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.impl.source.tree.LeafPsiElement;
@@ -21,6 +22,7 @@ import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.core.validation.ResolvedType;
 import org.stvnadore.plugin.metadata.StvnFacetMetadata;
 import org.stvnadore.plugin.metadata.StvnMetadataRegistry;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -28,6 +30,7 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.CollectionType;
@@ -79,6 +82,34 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     @Override
     public @Nullable String generateHoverDoc(PsiElement element, @Nullable PsiElement originalElement) {
         return generateDoc(element, originalElement);
+    }
+
+    @Override
+    public @Nullable PsiElement getDocumentationElementForLink(PsiManager psiManager, String link, PsiElement context) {
+        if (context == null || link == null) {
+            return null;
+        }
+        if (link.startsWith("TypeDefinition/")) {
+            var typeName = link.substring("TypeDefinition/".length()).trim();
+            var file = context.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+                if (resolved != null) {
+                    var typeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                    return (typeDef != null) ? typeDef : resolved;
+                }
+            }
+        } else if (link.startsWith("offset/")) {
+            try {
+                int offset = Integer.parseInt(link.substring("offset/".length()).trim());
+                var file = context.getContainingFile();
+                if (file != null && offset >= 0 && offset < file.getTextLength()) {
+                    return file.findElementAt(offset);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return null;
     }
 
     @Override
@@ -1053,6 +1084,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             html.append("</tr>");
         }
         html.append("</tbody></table>");
+
+        // Render Non-Conforming Constituents section if equatability failed due to constituent bubbling breakdown
+        if (!effEquatable && isComposite && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)) {
+            var nonConforming = StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
+            if (!nonConforming.isEmpty()) {
+                html.append("<br/><b>Non-Conforming Constituents:</b><br/>");
+                html.append("<span style=\"font-size: 0.9em; color: #").append(getViolationBadgeColorHex()).append(";\">");
+                html.append("Constituent fields breaking inductive trait bubbling:</span><ul style=\"margin-top: 2px; margin-bottom: 4px; padding-left: 18px;\">");
+                for (var info : nonConforming) {
+                    html.append("<li>Field #").append(info.index()).append(": ");
+                    html.append("<a href=\"psi_element://offset/").append(info.schema().getTextOffset()).append("\">");
+                    html.append("<code>").append(info.label()).append("</code></a></li>");
+                }
+                html.append("</ul>");
+            }
+        }
+
         return html.toString();
     }
 
@@ -1122,7 +1170,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             boolean isComposite
     ) {
         if (hasExplicitFacetInPsi(rootTypeDef, facetKey) || isFacetExplicitlyOverridden(currentSchema.localConstraints().orElse(null), facetKey)) {
-            return new OriginInfo("Declared on " + currentAlias, "Active Override");
+            return new OriginInfo("Declared on <a href=\"psi_element://TypeDefinition/" + currentAlias + "\">" + currentAlias + "</a>", "Active Override");
         }
 
         var file = rootTypeDef.getContainingFile();

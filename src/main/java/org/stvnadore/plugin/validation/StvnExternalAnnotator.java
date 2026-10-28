@@ -46,6 +46,7 @@ import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.*;
 
@@ -793,6 +794,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     }
 
                     annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
+
+                    // Intercept ERR_TRAIT_VIOLATION and attach diagnostic navigation intentions and paired healing quick-fixes
+                    if ((diag.errorCode().isPresent() && "TRAIT_VIOLATION".equals(diag.errorCode().get()))
+                            || message.contains("require types to be #equatable #TRUE")) {
+                        annotationBuilder = StvnTraitViolationQuickFixProvider.registerActions(annotationBuilder, file, range, message);
+                    }
 
                     annotationBuilder.create();
                     continue;
