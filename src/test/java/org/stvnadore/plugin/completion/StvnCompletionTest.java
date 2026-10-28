@@ -1637,14 +1637,14 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         );
         var elements = myFixture.completeBasic();
         assertNotNull("Completion elements must exist", elements);
-        var maxExclElement = findLookupElement(elements, "#maxExcl 128");
-        assertNotNull("Must offer #maxExcl 128 for 8-bit signed int", maxExclElement);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull("Must offer #maxExcl 100 for 8-bit signed int", maxExclElement);
         myFixture.getLookup().setCurrentItem(maxExclElement);
         myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
         var resultText = myFixture.getFile().getText();
         assertFalse("Must never produce '8#' token smashing:\n" + resultText, resultText.contains("8#"));
         assertTrue("Must inject leading space before chained facet:\n" + resultText,
-            resultText.contains(":Type { #size 8 #maxExcl 128 } :Int"));
+            resultText.contains(":Type { #size 8 #maxExcl 100 } :Int"));
     }
 
     /**
@@ -1665,14 +1665,14 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         );
         var elements = myFixture.completeBasic();
         assertNotNull("Completion elements must exist", elements);
-        var maxExclElement = findLookupElement(elements, "#maxExcl 128");
-        assertNotNull("Must offer #maxExcl 128 for 8-bit signed int", maxExclElement);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull("Must offer #maxExcl 100 for 8-bit signed int", maxExclElement);
         myFixture.getLookup().setCurrentItem(maxExclElement);
         myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
         var resultText = myFixture.getFile().getText();
         assertFalse("Must never produce '8#' or '##':\n" + resultText, resultText.contains("8#") || resultText.contains("##"));
-        assertTrue("Must cleanly insert '#maxExcl 128' with single space:\n" + resultText,
-            resultText.contains(":Type { #size 8 #maxExcl 128 } :Int"));
+        assertTrue("Must cleanly insert '#maxExcl 100' with single space:\n" + resultText,
+            resultText.contains(":Type { #size 8 #maxExcl 100 } :Int"));
     }
 
     /**
@@ -1728,7 +1728,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
 
     /**
      * Verifies TC-BOUND-01:
-     * Signed 8-bit integer ({ #size 8 }) proposes #maxExcl 128 and strictly prohibits #maxIncl and #minExcl.
+     * Signed 8-bit integer ({ #size 8 }) proposes non-redundant #maxExcl 100 and strictly prohibits #maxIncl and #minExcl.
      */
     public void testSigned8BitIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1744,7 +1744,8 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 128 for signed 8-bit integer", lookupStrings.contains("#maxExcl 128"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for signed 8-bit integer", lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 128", lookupStrings.contains("#maxExcl 128"));
         assertFalse("Must NOT propose #maxExcl 65536 on 8-bit integer", lookupStrings.contains("#maxExcl 65536"));
         // Discrete domain invariant: strictly no #maxIncl or #minExcl for :Int
         for (var str : lookupStrings) {
@@ -1755,7 +1756,7 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
 
     /**
      * Verifies TC-BOUND-02:
-     * Unsigned 8-bit integer ({ #unsigned #size 8 }) proposes #maxExcl 256.
+     * Unsigned 8-bit integer ({ #unsigned #size 8 }) proposes non-redundant #maxExcl 100.
      */
     public void testUnsigned8BitIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1771,14 +1772,15 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 256 for unsigned 8-bit integer", lookupStrings.contains("#maxExcl 256"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for unsigned 8-bit integer", lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 256", lookupStrings.contains("#maxExcl 256"));
         assertFalse("Must NOT propose signed #maxExcl 128 for unsigned integer", lookupStrings.contains("#maxExcl 128"));
         assertFalse("Must NOT propose #maxExcl 65536 on 8-bit integer", lookupStrings.contains("#maxExcl 65536"));
     }
 
     /**
      * Verifies TC-BOUND-03:
-     * Signed 16-bit integer ({ #size 16 }) proposes #maxExcl 32768.
+     * Signed 16-bit integer ({ #size 16 }) proposes non-redundant #maxExcl 100.
      */
     public void testSigned16BitIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1794,13 +1796,14 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 32768 for signed 16-bit integer", lookupStrings.contains("#maxExcl 32768"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for signed 16-bit integer", lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 32768", lookupStrings.contains("#maxExcl 32768"));
         assertFalse("Must NOT propose #maxExcl 65536 for signed 16-bit integer", lookupStrings.contains("#maxExcl 65536"));
     }
 
     /**
      * Verifies TC-BOUND-04:
-     * Unsigned 16-bit integer ({ #unsigned #size 16 }) proposes #maxExcl 65536.
+     * Unsigned 16-bit integer ({ #unsigned #size 16 }) proposes non-redundant #maxExcl 100.
      */
     public void testUnsigned16BitIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1816,12 +1819,13 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 65536 for unsigned 16-bit integer", lookupStrings.contains("#maxExcl 65536"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for unsigned 16-bit integer", lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 65536", lookupStrings.contains("#maxExcl 65536"));
     }
 
     /**
      * Verifies TC-BOUND-05:
-     * Default 32-bit signed integer proposes #maxExcl 2147483648.
+     * Default 32-bit signed integer proposes non-redundant #maxExcl 100.
      */
     public void testDefault32BitSignedIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1837,14 +1841,15 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 2147483648 for default 32-bit signed integer",
-            lookupStrings.contains("#maxExcl 2147483648"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for default 32-bit signed integer",
+            lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 2147483648", lookupStrings.contains("#maxExcl 2147483648"));
         assertFalse("Must NOT propose #maxExcl 65536 for 32-bit integer", lookupStrings.contains("#maxExcl 65536"));
     }
 
     /**
      * Verifies TC-BOUND-06:
-     * Default 32-bit unsigned integer ({ #unsigned }) proposes #maxExcl 4294967296.
+     * Default 32-bit unsigned integer ({ #unsigned }) proposes non-redundant #maxExcl 100.
      */
     public void testDefault32BitUnsignedIntegerUpperBoundsProposal() {
         myFixture.configureByText(
@@ -1860,10 +1865,273 @@ public final class StvnCompletionTest extends BasePlatformTestCase {
         myFixture.completeBasic();
         var lookupStrings = myFixture.getLookupElementStrings();
         assertNotNull("Lookup strings must exist", lookupStrings);
-        assertTrue("Must propose #maxExcl 4294967296 for default 32-bit unsigned integer",
-            lookupStrings.contains("#maxExcl 4294967296"));
+        assertTrue("Must propose non-redundant #maxExcl 100 for default 32-bit unsigned integer",
+            lookupStrings.contains("#maxExcl 100"));
+        assertFalse("Must NOT propose redundant #maxExcl 4294967296", lookupStrings.contains("#maxExcl 4294967296"));
         assertFalse("Must NOT propose #maxExcl 2147483648 for unsigned integer",
             lookupStrings.contains("#maxExcl 2147483648"));
+    }
+
+    /**
+     * Verifies TC-BOUND-SCALE-01 through TC-BOUND-SCALE-08:
+     * Stepped scaling across signed and unsigned bit widths and discrete domain bounds.
+     */
+    public void testSteppedBoundsScalingAcrossWidths() {
+        // 1. Signed s=7 (Vmax = 64 in (10, 100] => proposes 10)
+        myFixture.configureByText("scale_s7.stvn_d", "{ :defs { :T { #size 7 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s7Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s7Strings);
+        assertTrue("Signed s=7 (Vmax=64) must propose #maxExcl 10", s7Strings.contains("#maxExcl 10"));
+        assertFalse("Signed s=7 must NOT propose #maxExcl 64", s7Strings.contains("#maxExcl 64"));
+
+        // 2. Signed s=6 (Vmax = 32 in (10, 100] => proposes 10)
+        myFixture.configureByText("scale_s6.stvn_d", "{ :defs { :T { #size 6 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s6Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s6Strings);
+        assertTrue("Signed s=6 (Vmax=32) must propose #maxExcl 10", s6Strings.contains("#maxExcl 10"));
+
+        // 3. Signed s=5 (Vmax = 16 in (10, 100] => proposes 10)
+        myFixture.configureByText("scale_s5.stvn_d", "{ :defs { :T { #size 5 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s5Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s5Strings);
+        assertTrue("Signed s=5 (Vmax=16) must propose #maxExcl 10", s5Strings.contains("#maxExcl 10"));
+
+        // 4. Unsigned s=6 (Vmax = 64 in (10, 100] => proposes 10)
+        myFixture.configureByText("scale_u6.stvn_d", "{ :defs { :T { #unsigned #size 6 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var u6Strings = myFixture.getLookupElementStrings();
+        assertNotNull(u6Strings);
+        assertTrue("Unsigned s=6 (Vmax=64) must propose #maxExcl 10", u6Strings.contains("#maxExcl 10"));
+
+        // 5. Unsigned s=4 (Vmax = 16 in (10, 100] => proposes 10)
+        myFixture.configureByText("scale_u4.stvn_d", "{ :defs { :T { #unsigned #size 4 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var u4Strings = myFixture.getLookupElementStrings();
+        assertNotNull(u4Strings);
+        assertTrue("Unsigned s=4 (Vmax=16) must propose #maxExcl 10", u4Strings.contains("#maxExcl 10"));
+
+        // 6. Signed micro-widths s <= 4 (Vmax <= 10 => Vmax - 1)
+        myFixture.configureByText("scale_s4.stvn_d", "{ :defs { :T { #size 4 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s4Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s4Strings);
+        assertTrue("Signed s=4 (Vmax=8) must propose #maxExcl 7", s4Strings.contains("#maxExcl 7"));
+
+        myFixture.configureByText("scale_s3.stvn_d", "{ :defs { :T { #size 3 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s3Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s3Strings);
+        assertTrue("Signed s=3 (Vmax=4) must propose #maxExcl 3", s3Strings.contains("#maxExcl 3"));
+
+        myFixture.configureByText("scale_s2.stvn_d", "{ :defs { :T { #size 2 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var s2Strings = myFixture.getLookupElementStrings();
+        assertNotNull(s2Strings);
+        assertTrue("Signed s=2 (Vmax=2) must propose #maxExcl 1", s2Strings.contains("#maxExcl 1"));
+
+        // 7. Unsigned micro-widths s <= 3 (Vmax <= 10 => Vmax - 1)
+        myFixture.configureByText("scale_u3.stvn_d", "{ :defs { :T { #unsigned #size 3 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var u3Strings = myFixture.getLookupElementStrings();
+        assertNotNull(u3Strings);
+        assertTrue("Unsigned s=3 (Vmax=8) must propose #maxExcl 7", u3Strings.contains("#maxExcl 7"));
+
+        myFixture.configureByText("scale_u2.stvn_d", "{ :defs { :T { #unsigned #size 2 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var u2Strings = myFixture.getLookupElementStrings();
+        assertNotNull(u2Strings);
+        assertTrue("Unsigned s=2 (Vmax=4) must propose #maxExcl 3", u2Strings.contains("#maxExcl 3"));
+
+        myFixture.configureByText("scale_u1.stvn_d", "{ :defs { :T { #unsigned #size 1 <caret> } :Int } }");
+        myFixture.completeBasic();
+        var u1Strings = myFixture.getLookupElementStrings();
+        assertNotNull(u1Strings);
+        assertTrue("Unsigned s=1 (Vmax=2) must propose #maxExcl 1", u1Strings.contains("#maxExcl 1"));
+
+        // 8. Auto-wrapping pre-schema context (:Type <caret> :Int)
+        myFixture.configureByText("scale_aw.stvn_d", "{ :defs { :Age <caret> :Int } }");
+        myFixture.completeBasic();
+        var awStrings = myFixture.getLookupElementStrings();
+        assertNotNull(awStrings);
+        assertTrue("Pre-schema completion must propose #maxExcl 100", awStrings.contains("#maxExcl 100"));
+    }
+
+    /**
+     * Verifies TC-ARG-SEL-01:
+     * In-map template insertion pre-selects trailing numeric argument and positions caret at argEnd.
+     */
+    public void testInMapTemplateArgumentPreSelection() {
+        myFixture.configureByText(
+            "sel_in_map.stvn_d",
+            """
+            {
+              :defs {
+                :Age { #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull(maxExclElement);
+
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var editor = myFixture.getEditor();
+        var selectionModel = editor.getSelectionModel();
+        assertTrue("Argument '100' must be pre-selected", selectionModel.hasSelection());
+        assertEquals("100", selectionModel.getSelectedText());
+        assertEquals("Caret must be placed at end of selection",
+            selectionModel.getSelectionEnd(), editor.getCaretModel().getOffset());
+    }
+
+    /**
+     * Verifies TC-ARG-SEL-02:
+     * Pre-schema auto-wrapping template insertion pre-selects trailing numeric argument.
+     */
+    public void testAutoWrappingTemplateArgumentPreSelection() {
+        myFixture.configureByText(
+            "sel_auto_wrap.stvn_d",
+            """
+            {
+              :defs {
+                :Age <caret> :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull(maxExclElement);
+
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var editor = myFixture.getEditor();
+        var selectionModel = editor.getSelectionModel();
+        assertTrue("Argument '100' must be pre-selected in auto-wrapping envelope", selectionModel.hasSelection());
+        assertEquals("100", selectionModel.getSelectedText());
+        assertEquals("Caret must be placed at end of selection",
+            selectionModel.getSelectionEnd(), editor.getCaretModel().getOffset());
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Document must contain wrapped metadata block:\n" + resultText,
+            resultText.contains(":Age { #maxExcl 100 } :Int"));
+    }
+
+    /**
+     * Verifies TC-ARG-SEL-03:
+     * Immediate keystroke typing overwrites the pre-selected template argument.
+     */
+    public void testTemplateArgumentImmediateOverwrite() {
+        myFixture.configureByText(
+            "sel_overwrite.stvn_d",
+            """
+            {
+              :defs {
+                :Age { #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull(maxExclElement);
+
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var editor = myFixture.getEditor();
+        var selectionModel = editor.getSelectionModel();
+        assertTrue("Template argument '100' must be selected for immediate overwrite",
+            selectionModel.hasSelection());
+        assertEquals("100", selectionModel.getSelectedText());
+
+        // Overwrite pre-selected argument with '65'
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            editor.getDocument().replaceString(
+                selectionModel.getSelectionStart(),
+                selectionModel.getSelectionEnd(),
+                "65"
+            );
+            selectionModel.removeSelection();
+        });
+        com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+
+        var resultText = editor.getDocument().getText();
+        assertTrue("Overwriting selection with '65' must produce clean syntax:\n" + resultText,
+            resultText.contains(":Age { #size 8 #maxExcl 65 } :Int"));
+        assertFalse("Must not leave residual digits from '100':\n" + resultText,
+            resultText.contains("100"));
+    }
+
+    /**
+     * Verifies TC-ARG-SEL-04:
+     * Navigating away or pressing Tab preserves the template value without W003 compiler warnings.
+     */
+    public void testTemplateArgumentPreservationWithoutWarnings() {
+        myFixture.configureByText(
+            "sel_preserve.stvn_d",
+            """
+            {
+              :defs {
+                :Age { #size 8 <caret> } :Int
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+        var maxExclElement = findLookupElement(elements, "#maxExcl 100");
+        assertNotNull(maxExclElement);
+
+        myFixture.getLookup().setCurrentItem(maxExclElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        // Clear selection (simulating navigation away or tab)
+        myFixture.getEditor().getSelectionModel().removeSelection();
+
+        var resultText = myFixture.getFile().getText();
+        assertTrue("Template '#maxExcl 100' must be preserved:\n" + resultText,
+            resultText.contains(":Age { #size 8 #maxExcl 100 } :Int"));
+    }
+
+    /**
+     * Verifies TC-ARG-SEL-05:
+     * Pre-selection functions across collection cardinality templates (#maxSize 100, #minSize 1).
+     */
+    public void testCollectionCapacityTemplateArgumentPreSelection() {
+        myFixture.configureByText(
+            "sel_coll.stvn_d",
+            """
+            {
+              :defs {
+                :Items { <caret> } :Seq( :Int )
+              }
+            }
+            """
+        );
+        var elements = myFixture.completeBasic();
+        assertNotNull(elements);
+
+        var maxSizeElement = findLookupElement(elements, "#maxSize 100");
+        assertNotNull("Must offer #maxSize 100 for :Seq", maxSizeElement);
+
+        myFixture.getLookup().setCurrentItem(maxSizeElement);
+        myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR);
+
+        var editor = myFixture.getEditor();
+        assertEquals("Argument '100' must be pre-selected for #maxSize",
+            "100", editor.getSelectionModel().getSelectedText());
+        assertEquals("Caret must be placed at end of selection",
+            editor.getSelectionModel().getSelectionEnd(), editor.getCaretModel().getOffset());
     }
 
     /**

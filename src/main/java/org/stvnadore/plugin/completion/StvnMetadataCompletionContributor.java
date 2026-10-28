@@ -217,8 +217,23 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_EXCL)) {
                 int bitWidth = resolveActiveBitWidth(metaMap, schemaType);
+                if (bitWidth < 1) {
+                  bitWidth = 32;
+                }
                 int exponent = isUnsigned ? bitWidth : bitWidth - 1;
-                String maxExclValue = BigInteger.ONE.shiftLeft(exponent).toString();
+                if (exponent < 0) {
+                  exponent = 0;
+                }
+                BigInteger vMax = BigInteger.ONE.shiftLeft(exponent);
+                BigInteger templateVal;
+                if (vMax.compareTo(BigInteger.valueOf(100)) > 0) {
+                  templateVal = BigInteger.valueOf(100);
+                } else if (vMax.compareTo(BigInteger.TEN) > 0) {
+                  templateVal = BigInteger.TEN;
+                } else {
+                  templateVal = vMax.subtract(BigInteger.ONE);
+                }
+                String maxExclValue = templateVal.toString();
                 targetResult.addElement(createFacetLookup(
                     StvnVocabulary.FACET_KW_MAX_EXCL + " " + maxExclValue,
                     isAutoWrap,

@@ -4,14 +4,19 @@ import com.intellij.codeInsight.completion.InsertHandler;
 import com.intellij.codeInsight.completion.InsertionContext;
 import com.intellij.codeInsight.lookup.LookupElement;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 
+import java.util.regex.Pattern;
+
 /**
- * Handles insertion of metadata facet items, enforcing the Sigil Symmetrical Consumption Invariant
- * and proper whitespace separation before subsequent facets.
+ * Handles insertion of metadata facet items, enforcing the Sigil Symmetrical Consumption Invariant,
+ * proper whitespace separation before subsequent facets, and template argument pre-selection.
  */
 @NullMarked
 public final class StvnMetadataFacetInsertHandler implements InsertHandler<LookupElement> {
+
+    private static final Pattern NUMERIC_ARGUMENT_PATTERN = Pattern.compile("^\\d+(?:\\.\\d+)?$");
 
     /** Centralized singleton instance for standard in-map completions. */
     public static final StvnMetadataFacetInsertHandler INSTANCE = new StvnMetadataFacetInsertHandler(false);
@@ -67,6 +72,17 @@ public final class StvnMetadataFacetInsertHandler implements InsertHandler<Looku
                 document.insertString(tailOffset, " ");
             }
         }
+
+        // 3. Template Argument Pre-Selection:
+        var numericArg = extractTrailingNumericArgument(item.getLookupString());
+        if (numericArg != null) {
+            int argEnd = tailOffset;
+            int argStart = tailOffset - numericArg.length();
+            if (argStart >= 0 && argEnd <= document.getTextLength()) {
+                context.getEditor().getSelectionModel().setSelection(argStart, argEnd);
+                context.getEditor().getCaretModel().moveToOffset(argEnd);
+            }
+        }
     }
 
     private void handleAutoWrappingInsert(@NotNull InsertionContext context, @NotNull LookupElement item) {
@@ -103,7 +119,31 @@ public final class StvnMetadataFacetInsertHandler implements InsertHandler<Looku
         }
         document.insertString(facetEndOffset, suffix);
 
-        // 5. Position the editor caret immediately after the inserted facet text inside the closing brace
+        // 5. Template Argument Pre-Selection or Caret Placement
+        var numericArg = extractTrailingNumericArgument(item.getLookupString());
+        if (numericArg != null) {
+            int argEnd = facetEndOffset;
+            int argStart = facetEndOffset - numericArg.length();
+            if (argStart >= 0 && argEnd <= document.getTextLength()) {
+                context.getEditor().getSelectionModel().setSelection(argStart, argEnd);
+                context.getEditor().getCaretModel().moveToOffset(argEnd);
+                return;
+            }
+        }
+
+        // Position the editor caret immediately after the inserted facet text inside the closing brace
         context.getEditor().getCaretModel().moveToOffset(facetEndOffset);
+    }
+
+    private static @Nullable String extractTrailingNumericArgument(String lookupString) {
+        int lastSpace = lookupString.lastIndexOf(' ');
+        if (lastSpace == -1) {
+            return null;
+        }
+        String candidate = lookupString.substring(lastSpace + 1);
+        if (NUMERIC_ARGUMENT_PATTERN.matcher(candidate).matches()) {
+            return candidate;
+        }
+        return null;
     }
 }
