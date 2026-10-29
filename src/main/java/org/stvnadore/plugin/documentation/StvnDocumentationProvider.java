@@ -1142,6 +1142,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || baseType.startsWith(":Union") || baseType.startsWith(":Either") || baseType.startsWith(":Option");
     }
 
+    private static boolean isScalarPrimitiveType(String baseType) {
+        return StvnVocabulary.TYPE_INT.equals(baseType)
+                || StvnVocabulary.TYPE_STRING.equals(baseType)
+                || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)
+                || StvnVocabulary.TYPE_FLOAT.equals(baseType)
+                || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
+                || StvnVocabulary.TYPE_DATE_TIME.equals(baseType);
+    }
+
+    private static String resolveTypeCategoryNoun(String baseType) {
+        if (isCompositeOrCollectionType(baseType)) {
+            return "composite schema";
+        }
+        if (isScalarPrimitiveType(baseType)) {
+            return "scalar primitive";
+        }
+        return "type alias";
+    }
+
     private static String getResolvedBaseTypeString(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
         return StvnSchemaFormatter.formatCleanAntlrSchema(rs.node());
     }
@@ -1269,6 +1288,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         nonConforming.add(fieldName);
                     }
                     continue;
+                } else if (checkComparable && (typeName.equals(":Set") || typeName.equals(":Map"))) {
+                    nonConforming.add(fieldName);
+                    continue;
                 } else if (typeName.equals(":Int") || typeName.equals(":String") || typeName.equals(":Boolean") || typeName.equals(":TimeEpoch") || typeName.equals(":DateTime")) {
                     continue;
                 }
@@ -1291,6 +1313,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             } else if (constituent.getSchemaConstructor() != null) {
                 var inlineText = constituent.getText();
                 if (!checkComparable && inlineText.contains(":Float") && !inlineText.contains("#exact")) {
+                    nonConforming.add(fieldName);
+                } else if (checkComparable && (inlineText.startsWith(":Set") || inlineText.startsWith(":Map"))) {
                     nonConforming.add(fieldName);
                 }
             }
@@ -2526,12 +2550,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 reason = targetDesc;
             }
         }
-        // 6. Primitive default traits
+        // 6. Primitive and composite default traits
         else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2 && ("#TRUE".equals(parts[1].trim()) || "#T".equals(parts[1].trim()))) {
                 boolean isEq = text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
-                reason = "scalar primitive <code>" + baseType + "</code> is intrinsically " + (isEq ? "equatable" : "comparable") + ".";
+                boolean isIntrinsicallyConforming = isEq
+                        ? StvnTraitViolationQuickFixProvider.isUnderlyingIntrinsicallyEquatable(typeDef)
+                        : StvnTraitViolationQuickFixProvider.isUnderlyingIntrinsicallyComparable(typeDef);
+                if (isIntrinsicallyConforming) {
+                    String category = resolveTypeCategoryNoun(baseType);
+                    reason = category + " <code>" + baseType + "</code> is intrinsically " + (isEq ? "equatable" : "comparable") + ".";
+                }
             }
         }
 

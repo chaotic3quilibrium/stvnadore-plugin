@@ -47,6 +47,11 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
 
         var localFixes = myFixture.filterAvailableIntentions("Override '#equatable #TRUE' on :Set(:Values)");
         assertTrue("Local in-place override fix must NOT be registered per SPEC § 6.1 and § 9.1", localFixes.isEmpty());
+
+        // 3. Launch navigation intention and verify exact text selection
+        myFixture.launchAction(navIntentions.get(0));
+        assertEquals("Invoking NavigateToExplicitOverrideIntention must select exact '#equatable #FALSE' span",
+                "#equatable #FALSE", myFixture.getEditor().getSelectionModel().getSelectedText());
     }
 
     public void testRemoveIncompatibleOverrideExcisesSoleMetadataMap() {
@@ -131,6 +136,8 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         int floatOffset = text.indexOf(":Float");
         assertEquals("Caret must navigate directly to offending constituent token in :defs",
                 floatOffset, myFixture.getEditor().getCaretModel().getOffset());
+        assertEquals("Invoking JumpToNonConformingConstituentIntention must select exact ':Float' span",
+                ":Float", myFixture.getEditor().getSelectionModel().getSelectedText());
     }
 
     public void testQuickDocumentationOriginAndConstituentHyperlinks() {

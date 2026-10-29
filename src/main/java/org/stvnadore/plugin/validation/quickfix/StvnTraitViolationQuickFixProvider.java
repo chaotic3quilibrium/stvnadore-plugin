@@ -207,6 +207,99 @@ public final class StvnTraitViolationQuickFixProvider {
         return nonConforming.isEmpty() ? null : nonConforming.get(0);
     }
 
+    public static @Nullable ConstituentInfo findFirstNonComparableConstituent(TypeDefinition typeDef) {
+        var nonConforming = extractNonComparableConstituents(typeDef);
+        return nonConforming.isEmpty() ? null : nonConforming.get(0);
+    }
+
+    public static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef) {
+        var result = new ArrayList<ConstituentInfo>();
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null) {
+            return result;
+        }
+
+        var file = typeDef.getContainingFile();
+        if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
+            var aliasTarget = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
+            var aliasDef = StvnPsiUtils.getParentTypeDefinition(aliasTarget);
+            if (aliasDef != null && aliasDef != typeDef) {
+                return extractNonComparableConstituents(aliasDef);
+            }
+        }
+
+        if (schemaType.getSchemaConstructor() == null) {
+            return result;
+        }
+
+        var ctor = schemaType.getSchemaConstructor();
+        List<SchemaType> constituents = List.of();
+        if (ctor.getProductType() != null) {
+            constituents = ctor.getProductType().getSchemaTypeList();
+        } else if (ctor.getCollectionType() != null) {
+            var coll = ctor.getCollectionType();
+            var collText = coll.getText().trim();
+            if (collText.startsWith(StvnVocabulary.TYPE_SET) || collText.startsWith(StvnVocabulary.TYPE_MAP)) {
+                result.add(new ConstituentInfo(1, collText, schemaType));
+                return result;
+            }
+            constituents = coll.getSchemaTypeList();
+        } else if (ctor.getSumType() != null) {
+            var sum = ctor.getSumType();
+            if (sum.getEnumDef() != null) {
+                return result;
+            }
+            constituents = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+        }
+
+        int slotIndex = 1;
+        for (var constituent : constituents) {
+            var kw = constituent.getTypeKeyword();
+            String fieldLabel = (constituent.getMetadataMap() != null)
+                    ? constituent.getText().trim()
+                    : (kw != null ? kw.getText().trim() : constituent.getText().trim());
+
+            if (kw != null) {
+                var name = kw.getText().trim();
+                if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
+                    result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
+                    slotIndex++;
+                    continue;
+                } else if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
+                        || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_FLOAT.equals(name)
+                        || StvnVocabulary.TYPE_TIME_EPOCH.equals(name) || StvnVocabulary.TYPE_DATE_TIME.equals(name)) {
+                    slotIndex++;
+                    continue;
+                }
+
+                if (file != null) {
+                    var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
+                    var targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                    if (targetDef != null) {
+                        var rs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
+                        if (rs != null && rs.constraints().comparable().isPresent()) {
+                            if (!rs.constraints().comparable().get()) {
+                                result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
+                            }
+                        } else if (!isUnderlyingIntrinsicallyComparable(targetDef)) {
+                            result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
+                        }
+                    }
+                }
+            } else if (constituent.getSchemaConstructor() != null) {
+                var ctorInner = constituent.getSchemaConstructor();
+                if (ctorInner.getCollectionType() != null) {
+                    var txt = ctorInner.getCollectionType().getText().trim();
+                    if (txt.startsWith(StvnVocabulary.TYPE_SET) || txt.startsWith(StvnVocabulary.TYPE_MAP)) {
+                        result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
+                    }
+                }
+            }
+            slotIndex++;
+        }
+        return result;
+    }
+
     public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef) {
         return isUnderlyingIntrinsicallyEquatable(typeDef, new java.util.HashSet<>());
     }
@@ -241,6 +334,43 @@ public final class StvnTraitViolationQuickFixProvider {
             }
         }
         return findFirstNonEquatableConstituent(typeDef) == null;
+    }
+
+    public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef) {
+        return isUnderlyingIntrinsicallyComparable(typeDef, new java.util.HashSet<>());
+    }
+
+    public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef, java.util.Set<String> visited) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null) return false;
+
+        var kw = typeDef.getTypeKeyword();
+        if (kw != null && !visited.add(kw.getText().trim())) {
+            return true;
+        }
+
+        var schemaKw = schemaType.getTypeKeyword();
+        if (schemaKw != null) {
+            var name = schemaKw.getText().trim();
+            if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
+                return false;
+            }
+            if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_FLOAT.equals(name)
+                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(name) || StvnVocabulary.TYPE_DATE_TIME.equals(name)
+                    || StvnVocabulary.TYPE_ENUM.equals(name)) {
+                return true;
+            }
+            var file = typeDef.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
+                var aliasDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (aliasDef != null && aliasDef != typeDef) {
+                    return isUnderlyingIntrinsicallyComparable(aliasDef, visited);
+                }
+            }
+        }
+        return findFirstNonComparableConstituent(typeDef) == null;
     }
 
     private static boolean hasExactFacet(@Nullable MetadataMap map) {
@@ -321,8 +451,8 @@ public final class StvnTraitViolationQuickFixProvider {
             if (ed != null) {
                 var range = startElement.getTextRange();
                 ed.getCaretModel().moveToOffset(range.getStartOffset());
+                ed.getScrollingModel().scrollToCaret(ScrollType.CENTER);
                 ed.getSelectionModel().setSelection(range.getStartOffset(), range.getEndOffset());
-                ed.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
             }
         }
     }
@@ -378,8 +508,10 @@ public final class StvnTraitViolationQuickFixProvider {
             var descriptor = new OpenFileDescriptor(project, vFile, startElement.getTextOffset());
             var ed = FileEditorManager.getInstance(project).openTextEditor(descriptor, true);
             if (ed != null) {
-                ed.getCaretModel().moveToOffset(startElement.getTextOffset());
-                ed.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
+                var range = startElement.getTextRange();
+                ed.getCaretModel().moveToOffset(range.getStartOffset());
+                ed.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+                ed.getSelectionModel().setSelection(range.getStartOffset(), range.getEndOffset());
             }
         }
     }

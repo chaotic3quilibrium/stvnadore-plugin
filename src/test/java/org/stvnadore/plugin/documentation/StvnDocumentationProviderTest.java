@@ -1045,4 +1045,46 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
         assertTrue("Zone 3 unset options must include #equatable: " + doc, doc.contains("<code>#equatable</code>"));
     }
+
+    public void testCapabilityRestoringTraitOverrideSuppressesW003HoverWarning() {
+        var text = """
+            {
+              :defs {
+                :SensorSample { #equatable #TRUE } :Tuple( :String :Float )
+              }
+              :type :SensorSample
+              :body ( "sensor1" 98.6 )
+            }
+            """;
+        myFixture.configureByText("sensor_sample.stvn", text);
+        var offset = text.indexOf("#equatable #TRUE");
+        var doc = getDocAtOffset(text, offset);
+
+        assertFalse("Capability-restoring trait override must NOT trigger Warning W003 hover banner:\n" + doc,
+                doc.contains("Warning W003: Redundant Metadata Facet"));
+        assertTrue("Must display standard metadata facet documentation for #equatable:\n" + doc,
+                doc.contains("<b>Metadata Facet:</b> <code>#equatable #TRUE</code>"));
+    }
+
+    public void testRedundantTraitOverrideOnCompositeRendersW003WithoutScalarPrimitiveJargon() {
+        var text = """
+            {
+              :defs {
+                :RedundantTuple { #equatable #TRUE } :Tuple( :String :Int )
+              }
+              :type :RedundantTuple
+              :body ( "node1" 8080 )
+            }
+            """;
+        myFixture.configureByText("redundant_tuple.stvn", text);
+        var offset = text.indexOf("#equatable #TRUE");
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Genuinely redundant trait override on composite must render Warning W003 hover banner:\n" + doc,
+                doc.contains("Warning W003: Redundant Metadata Facet"));
+        assertFalse("Warning W003 must NOT mislabel composite tuple as 'scalar primitive':\n" + doc,
+                doc.contains("scalar primitive"));
+        assertTrue("Warning W003 must label composite tuple as 'composite schema':\n" + doc,
+                doc.contains("composite schema <code>:Tuple( :String :Int )</code> is intrinsically equatable"));
+    }
 }
