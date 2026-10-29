@@ -236,6 +236,20 @@ flowchart TD
 - **Diagnostic Codes:** `ERR_VARIANT_NOT_IN_ROOT_ENUM`, `ERR_ORDER_MISMATCH`, `ERR_MUTUALLY_EXCLUSIVE`.
 - **Intention Quick-Fix:** `StvnReorderEnumFilterVariantsQuickFix` automatically sorts variants to match the canonical root enum declaration order.
 
+### 4.6 `RemoveInvertibleFacetQuickFix`
+- **Target Locus:** `#invertible` `MetadataEntry` nodes and non-equatable map values in inverted map declarations.
+- **Defect Detection:** Intercepts `ERR_TRAIT_VIOLATION` with diagnostic message `"Inverted map values require types to be #equatable #TRUE"`.
+- **Resolution Behavior:** Removes the `#invertible` facet from nominal map definitions or anonymous map constructors.
+- **Syntax Hygiene Guard:** If `#invertible` is the sole entry in the metadata block, the fix deletes the entire `{}` block to prevent `ERR_EMPTY_METADATA_BLOCK` (STVN Spec § 3.5.1).
+- **Co-Located Availability:** The action is offered both when the caret is on `#invertible` and when the caret is on the offending value.
+
+### 4.7 `AddExactConstraintQuickFix`
+- **Target Locus:** Built-in continuous `:Float` `SchemaType` nodes in equatability-requiring positions (`#invertible` map values, standard map keys, and set elements).
+- **Defect Detection:** Intercepts `ERR_TRAIT_VIOLATION` targeting continuous `:Float`.
+- **Resolution Behavior:** Replaces unadorned `:Float` with `{ #exact } :Float`, or inserts `#exact` into existing metadata blocks.
+- **Capability Restoration:** Under STVN Spec § 6.2, `#exact` elevates `:Float` to discrete arbitrary-precision decimal representation, restoring `#equatable #TRUE` without requiring nominal wrapping in `:defs`.
+- **Conflict Prevention:** Purges any conflicting `#size` facet per STVN Spec § 6.1 mutual exclusivity rules.
+
 ---
 
 ## 5. Benchmarking & Quality Assurance Gates

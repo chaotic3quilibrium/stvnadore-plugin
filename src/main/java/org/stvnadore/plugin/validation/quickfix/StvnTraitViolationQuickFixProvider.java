@@ -59,10 +59,30 @@ public final class StvnTraitViolationQuickFixProvider {
             String message
     ) {
         var elemAtRange = file.findElementAt(range.getStartOffset());
+        if (elemAtRange == null && range.getStartOffset() > 0) {
+            elemAtRange = file.findElementAt(range.getStartOffset() - 1);
+        }
         if (elemAtRange == null) {
             return builder;
         }
 
+        // Case 1: Inverted Map Values Require Types to be #equatable #TRUE
+        if (message.contains("Inverted map values require types to be #equatable #TRUE")) {
+            return registerInvertibleMapActions(builder, file, elemAtRange, message);
+        }
+
+        // Case 2: Map Keys or Set Elements targeting continuous :Float
+        if (message.contains("require types to be #equatable #TRUE")) {
+            var floatSchema = findFloatSchemaType(elemAtRange);
+            if (floatSchema != null && isContinuousFloat(floatSchema)) {
+                if (file.isWritable() && floatSchema.getContainingFile().isWritable()) {
+                    builder = builder.withFix(new AddExactConstraintQuickFix(floatSchema));
+                }
+                return builder;
+            }
+        }
+
+        // Case 3: Nominal Type Derivations & Explicit Overrides
         var schemaType = (elemAtRange instanceof SchemaType st) ? st
                 : PsiTreeUtil.getParentOfType(elemAtRange, SchemaType.class, false);
         if (schemaType == null) {
@@ -90,6 +110,150 @@ public final class StvnTraitViolationQuickFixProvider {
         }
 
         return builder;
+    }
+
+    private static AnnotationBuilder registerInvertibleMapActions(
+            AnnotationBuilder builder,
+            PsiFile file,
+            PsiElement elemAtRange,
+            String message
+    ) {
+        var invertibleEntry = findInvertibleEntry(elemAtRange);
+        var containerName = (invertibleEntry != null)
+                ? resolveContainerName(invertibleEntry)
+                : StvnVocabulary.TYPE_MAP;
+
+        var floatSchema = findFloatSchemaType(elemAtRange);
+
+        // Subcase 1: Caret is on offending value :Float -> Offer co-located resolution
+        if (floatSchema != null && isContinuousFloat(floatSchema)) {
+            if (file.isWritable() && floatSchema.getContainingFile().isWritable()) {
+                builder = builder.withFix(new AddExactConstraintQuickFix(floatSchema));
+            }
+            if (invertibleEntry != null && file.isWritable() && invertibleEntry.getContainingFile().isWritable()) {
+                builder = builder.withFix(new RemoveInvertibleFacetQuickFix(invertibleEntry, containerName));
+            }
+            return builder;
+        }
+
+        // Subcase 2: Caret is on #invertible (or metadata entry)
+        if (invertibleEntry != null) {
+            if (file.isWritable() && invertibleEntry.getContainingFile().isWritable()) {
+                builder = builder.withFix(new RemoveInvertibleFacetQuickFix(invertibleEntry, containerName));
+            }
+            return builder;
+        }
+
+        // Subcase 3: Caret is on nominal offending value in inverted map
+        var schemaType = (elemAtRange instanceof SchemaType st) ? st
+                : PsiTreeUtil.getParentOfType(elemAtRange, SchemaType.class, false);
+        if (schemaType != null) {
+            var typeKw = schemaType.getTypeKeyword();
+            if (typeKw == null) {
+                typeKw = PsiTreeUtil.findChildOfType(schemaType, TypeKeyword.class);
+            }
+            if (typeKw != null) {
+                var typeName = typeKw.getText().trim();
+                var resolvedDefElem = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
+                var targetTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedDefElem);
+                if (targetTypeDef != null) {
+                    builder = registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
+                }
+            }
+        }
+
+        if (invertibleEntry != null && file.isWritable() && invertibleEntry.getContainingFile().isWritable()) {
+            builder = builder.withFix(new RemoveInvertibleFacetQuickFix(invertibleEntry, containerName));
+        }
+
+        return builder;
+    }
+
+    public static @Nullable SchemaType findFloatSchemaType(PsiElement element) {
+        var schemaType = (element instanceof SchemaType st) ? st
+                : PsiTreeUtil.getParentOfType(element, SchemaType.class, false);
+        if (schemaType != null && schemaType.getText().contains(StvnVocabulary.TYPE_FLOAT)) {
+            return schemaType;
+        }
+        var childSchema = PsiTreeUtil.findChildOfType(element, SchemaType.class);
+        if (childSchema != null && childSchema.getText().contains(StvnVocabulary.TYPE_FLOAT)) {
+            return childSchema;
+        }
+        return null;
+    }
+
+    public static boolean isContinuousFloat(SchemaType schemaType) {
+        var text = schemaType.getText();
+        return text.contains(StvnVocabulary.TYPE_FLOAT) && !hasExactFacet(schemaType.getMetadataMap());
+    }
+
+    public static @Nullable MetadataEntry findInvertibleEntry(PsiElement element) {
+        var entry = (element instanceof MetadataEntry me) ? me
+                : PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false);
+        if (entry != null && entry.getText().contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
+            return entry;
+        }
+
+        var map = (element instanceof MetadataMap mm) ? mm
+                : PsiTreeUtil.getParentOfType(element, MetadataMap.class, false);
+        if (map != null) {
+            for (var e : map.getMetadataEntryList()) {
+                if (e.getText().contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
+                    return e;
+                }
+            }
+        }
+
+        var coll = PsiTreeUtil.getParentOfType(element, CollectionType.class, false);
+        if (coll != null) {
+            var outerSchema = PsiTreeUtil.getParentOfType(coll, SchemaType.class, false);
+            if (outerSchema != null && outerSchema.getMetadataMap() != null) {
+                for (var e : outerSchema.getMetadataMap().getMetadataEntryList()) {
+                    if (e.getText().contains(StvnVocabulary.FACET_KW_INVERTIBLE)) {
+                        return e;
+                    }
+                }
+            }
+            var typeDef = PsiTreeUtil.getParentOfType(coll, TypeDefinition.class, false);
+            if (typeDef != null) {
+                var e = findExplicitTraitEntry(typeDef, StvnVocabulary.FACET_KW_INVERTIBLE);
+                if (e != null) return e;
+            }
+        }
+
+        var typeDef = PsiTreeUtil.getParentOfType(element, TypeDefinition.class, false);
+        if (typeDef != null) {
+            var e = findExplicitTraitEntry(typeDef, StvnVocabulary.FACET_KW_INVERTIBLE);
+            if (e != null) return e;
+        }
+
+        var schemaType = (element instanceof SchemaType st) ? st
+                : PsiTreeUtil.getParentOfType(element, SchemaType.class, false);
+        if (schemaType != null) {
+            var typeKw = schemaType.getTypeKeyword();
+            if (typeKw == null) {
+                typeKw = PsiTreeUtil.findChildOfType(schemaType, TypeKeyword.class);
+            }
+            if (typeKw != null) {
+                var typeName = typeKw.getText().trim();
+                var resolved = StvnTypeReference.resolveTypeInFile(element.getContainingFile(), typeName, new java.util.HashSet<>());
+                var resolvedTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (resolvedTypeDef != null) {
+                    var e = findExplicitTraitEntry(resolvedTypeDef, StvnVocabulary.FACET_KW_INVERTIBLE);
+                    if (e != null) return e;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public static String resolveContainerName(MetadataEntry entry) {
+        var typeDef = PsiTreeUtil.getParentOfType(entry, TypeDefinition.class);
+        if (typeDef != null && typeDef.getTypeKeyword() != null) {
+            return typeDef.getTypeKeyword().getText().trim();
+        }
+        return StvnVocabulary.TYPE_MAP;
     }
 
     private static AnnotationBuilder registerActionsForNominalType(

@@ -364,4 +364,216 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
                     error.getStartOffset() == secondSetOffset);
         }
     }
+
+    public void testRemoveInvertibleFacetQuickFixOnInvertibleToken() {
+        var text = """
+            {
+              :defs {
+                :InvFloatMap { #invertible } :Map( :String :Float )
+              }
+              :type :InvFloatMap
+              :body { [ "pi" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("remove_invertible_token.stvn", text);
+        myFixture.doHighlighting();
+
+        int invertibleOffset = text.indexOf("#invertible");
+        myFixture.getEditor().getCaretModel().moveToOffset(invertibleOffset);
+
+        var fixes = myFixture.filterAvailableIntentions("Remove '#invertible' facet from :InvFloatMap");
+        assertFalse("Expected 'Remove #invertible facet from :InvFloatMap' fix at #invertible token", fixes.isEmpty());
+
+        myFixture.launchAction(fixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertFalse("Must NOT contain #invertible", mutatedText.contains("#invertible"));
+        assertFalse("Must NOT leave empty metadata block '{}' (SPEC § 3.5.1, E003)", mutatedText.contains("{}"));
+        assertTrue("Must cleanly leave unadorned map declaration:\n" + mutatedText,
+                mutatedText.contains(":InvFloatMap :Map( :String :Float )") || mutatedText.contains(":InvFloatMap  :Map( :String :Float )"));
+    }
+
+    public void testRemoveInvertibleFacetQuickFixOnOffendingFloatValueCoLocated() {
+        var text = """
+            {
+              :defs {
+                :InvFloatMap { #invertible } :Map( :String :Float )
+              }
+              :type :InvFloatMap
+              :body { [ "pi" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("colocated_resolution.stvn", text);
+        myFixture.doHighlighting();
+
+        int floatOffset = text.indexOf(":Float");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatOffset);
+
+        // Verify Co-Located Resolution: Both fixes must be available at :Float
+        var addExactFixes = myFixture.filterAvailableIntentions("Add '{ #exact }' constraint to :Float");
+        assertFalse("Expected 'Add { #exact } constraint to :Float' fix at :Float", addExactFixes.isEmpty());
+
+        var removeInvFixes = myFixture.filterAvailableIntentions("Remove '#invertible' facet from :InvFloatMap");
+        assertFalse("Expected 'Remove #invertible facet from :InvFloatMap' co-located fix at :Float", removeInvFixes.isEmpty());
+
+        // Execute remove invertible fix from :Float locus
+        myFixture.launchAction(removeInvFixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertFalse("Must NOT contain #invertible", mutatedText.contains("#invertible"));
+        assertFalse("Must NOT leave empty metadata block '{}'", mutatedText.contains("{}"));
+    }
+
+    public void testAddExactConstraintQuickFixOnInvertibleMapValue() {
+        var text = """
+            {
+              :type { #invertible } :Map( :String :Float )
+              :body { [ "pi" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("add_exact_inv_map.stvn", text);
+        myFixture.doHighlighting();
+
+        int floatOffset = text.indexOf(":Float");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatOffset);
+
+        var addExactFixes = myFixture.filterAvailableIntentions("Add '{ #exact }' constraint to :Float");
+        assertFalse("Expected 'Add { #exact } constraint to :Float' fix", addExactFixes.isEmpty());
+
+        myFixture.launchAction(addExactFixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertTrue("Must replace :Float with '{ #exact } :Float':\n" + mutatedText,
+                mutatedText.contains("{ #exact } :Float") || mutatedText.contains("{#exact} :Float"));
+
+        var postHighlights = myFixture.doHighlighting();
+        var errors = postHighlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertTrue("Document must have zero errors after adding #exact constraint: " + errors, errors.isEmpty());
+    }
+
+    public void testAddExactConstraintQuickFixOnMapKey() {
+        var text = """
+            {
+              :type :Map( :Float :String )
+              :body { [ 3.14 "pi" ] }
+            }
+            """;
+        myFixture.configureByText("add_exact_map_key.stvn", text);
+        myFixture.doHighlighting();
+
+        int floatOffset = text.indexOf(":Float");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatOffset);
+
+        var addExactFixes = myFixture.filterAvailableIntentions("Add '{ #exact }' constraint to :Float");
+        assertFalse("Expected 'Add { #exact } constraint to :Float' on map key", addExactFixes.isEmpty());
+
+        myFixture.launchAction(addExactFixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertTrue("Must convert map key to '{ #exact } :Float':\n" + mutatedText,
+                mutatedText.contains("{ #exact } :Float"));
+    }
+
+    public void testAddExactConstraintQuickFixOnSetElement() {
+        var text = """
+            {
+              :type :Set( :Float )
+              :body [ 3.14 ]
+            }
+            """;
+        myFixture.configureByText("add_exact_set_element.stvn", text);
+        myFixture.doHighlighting();
+
+        int floatOffset = text.indexOf(":Float");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatOffset);
+
+        var addExactFixes = myFixture.filterAvailableIntentions("Add '{ #exact }' constraint to :Float");
+        assertFalse("Expected 'Add { #exact } constraint to :Float' on set element", addExactFixes.isEmpty());
+
+        myFixture.launchAction(addExactFixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertTrue("Must convert set element to '{ #exact } :Float':\n" + mutatedText,
+                mutatedText.contains("{ #exact } :Float"));
+    }
+
+    public void testRemoveInvertibleFacetPreservesMultiEntryMetadataMap() {
+        var text = """
+            {
+              :defs {
+                :InvFloatMap { #invertible #minSize 1 } :Map( :String :Float )
+              }
+              :type :InvFloatMap
+              :body { [ "pi" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("preserve_multi_facet.stvn", text);
+        myFixture.doHighlighting();
+
+        int invertibleOffset = text.indexOf("#invertible");
+        myFixture.getEditor().getCaretModel().moveToOffset(invertibleOffset);
+
+        var fixes = myFixture.filterAvailableIntentions("Remove '#invertible' facet from :InvFloatMap");
+        assertFalse(fixes.isEmpty());
+
+        myFixture.launchAction(fixes.get(0));
+        var mutatedText = myFixture.getFile().getText();
+        assertFalse("Must NOT contain #invertible", mutatedText.contains("#invertible"));
+        assertTrue("Must preserve sibling facet #minSize 1 inside metadata block:\n" + mutatedText,
+                mutatedText.contains("{ #minSize 1 }") || mutatedText.contains("{#minSize 1}"));
+    }
+
+    public void testCrossFileInvertibleMapQuickFix() {
+        myFixture.addFileToProject("remote_map_defs.stvn_d", """
+            {
+              :defs {
+                :SharedInvMap { #invertible } :Map( :String :Float )
+              }
+            }
+            """);
+
+        var consumerText = """
+            {
+              :defs {
+                :include [ "remote_map_defs.stvn_d" ]
+              }
+              :type :SharedInvMap
+              :body { [ "alpha" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("consumer_map.stvn_i", consumerText);
+        myFixture.doHighlighting();
+
+        int sharedMapOffset = consumerText.indexOf(":SharedInvMap", consumerText.indexOf(":type"));
+        myFixture.getEditor().getCaretModel().moveToOffset(sharedMapOffset);
+
+        var fixes = myFixture.filterAvailableIntentions("Remove '#invertible' facet from :SharedInvMap");
+        assertFalse("Expected cross-file 'Remove #invertible facet from :SharedInvMap' fix", fixes.isEmpty());
+
+        myFixture.launchAction(fixes.get(0));
+        var remoteFile = myFixture.findFileInTempDir("remote_map_defs.stvn_d");
+        assertNotNull(remoteFile);
+        var remotePsi = myFixture.getPsiManager().findFile(remoteFile);
+        assertNotNull(remotePsi);
+        var remoteText = remotePsi.getText();
+        assertFalse("Remote file must NOT contain #invertible", remoteText.contains("#invertible"));
+        assertFalse("Remote file must NOT leave empty metadata block '{}'", remoteText.contains("{}"));
+    }
+
+    public void testInvertibleQuickFixIntentionPreviewDiff() {
+        var text = """
+            {
+              :type { #invertible } :Map( :String :Float )
+              :body { [ "pi" 3.14 ] }
+            }
+            """;
+        myFixture.configureByText("preview_invertible.stvn", text);
+        myFixture.doHighlighting();
+
+        int floatOffset = text.indexOf(":Float");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatOffset);
+
+        var addExactFixes = myFixture.filterAvailableIntentions("Add '{ #exact }' constraint to :Float");
+        assertFalse(addExactFixes.isEmpty());
+        var preview = myFixture.getIntentionPreviewText(addExactFixes.get(0));
+        assertNotNull("Intention preview must generate valid textual diff", preview);
+        assertTrue("Preview diff must display '{ #exact } :Float':\n" + preview, preview.contains("{ #exact } :Float"));
+    }
 }
