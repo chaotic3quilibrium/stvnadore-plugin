@@ -260,7 +260,7 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         assertFalse("Expected trait violation error for non-equatable :SensorSample", errors.isEmpty());
         var error = errors.get(0);
         int sensorSampleOffset = consumerText.indexOf(":SensorSample");
-        assertEquals("Diagnostic squiggle must pin strictly to :SensorSample on line 12 (BUG-CLAMP-01)",
+        assertEquals("Diagnostic squiggle must pin strictly to :SensorSample on line 12 (SPEC § 7.3)",
                 sensorSampleOffset, error.getStartOffset());
         assertEquals("Diagnostic squiggle length must match ':SensorSample'",
                 ":SensorSample".length(), error.getEndOffset() - error.getStartOffset());
@@ -289,9 +289,72 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         assertFalse("Expected trait violation error for non-equatable map key :Float", errors.isEmpty());
         var error = errors.get(0);
         int floatKeyOffset = text.indexOf(":Float");
-        assertEquals("Diagnostic squiggle must pin strictly to offending :Float map key (BUG-CLAMP-01)",
+        assertEquals("Diagnostic squiggle must pin strictly to offending :Float map key (SPEC § 7.3)",
                 floatKeyOffset, error.getStartOffset());
         assertEquals("Diagnostic squiggle length must match ':Float'",
                 ":Float".length(), error.getEndOffset() - error.getStartOffset());
+    }
+
+    public void testSimultaneousMultiSetSiblingTraitViolationsHighlighted() {
+        var text = """
+            {
+              :defs {
+                :RemoteNode { #equatable #FALSE } :Tuple( :String :Int )
+                :SensorSample :Tuple( :String :Float )
+              }
+              :type :Tuple(
+                :Set(:RemoteNode)
+                :Set(:SensorSample)
+              )
+              :body (
+                [ ( "node1" 8080 ) ]
+                [ ( "sensor1" 98.6 ) ]
+              )
+            }
+            """;
+        myFixture.configureByText("multi_set_siblings.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .filter(h -> h.getDescription() != null && h.getDescription().contains("Set elements require types to be #equatable #TRUE"))
+                .toList();
+
+        assertEquals("Must simultaneously highlight both offending :Set sibling elements with TRAIT_VIOLATION errors",
+                2, errors.size());
+
+        // Error 1: pinned strictly to :RemoteNode
+        int remoteNodeOffset = text.indexOf(":RemoteNode", text.indexOf(":type"));
+        var remoteError = errors.stream()
+                .filter(e -> e.getStartOffset() == remoteNodeOffset)
+                .findFirst()
+                .orElse(null);
+        assertNotNull("Expected trait violation pinned strictly to :RemoteNode inside :type", remoteError);
+        assertEquals("Diagnostic length must match ':RemoteNode'",
+                ":RemoteNode".length(), remoteError.getEndOffset() - remoteError.getStartOffset());
+
+        // Error 2: pinned strictly to :SensorSample
+        int sensorSampleOffset = text.indexOf(":SensorSample", text.indexOf(":type"));
+        var sensorError = errors.stream()
+                .filter(e -> e.getStartOffset() == sensorSampleOffset)
+                .findFirst()
+                .orElse(null);
+        assertNotNull("Expected trait violation pinned strictly to :SensorSample inside :type", sensorError);
+        assertEquals("Diagnostic length must match ':SensorSample'",
+                ":SensorSample".length(), sensorError.getEndOffset() - sensorError.getStartOffset());
+
+        // Parent delimiter fault isolation verification (SPEC § 7.2, § 7.3):
+        // Parent :Set and :Tuple delimiters must receive zero error diagnostics
+        int tupleKeywordOffset = text.indexOf(":Tuple", text.indexOf(":type"));
+        int firstSetOffset = text.indexOf(":Set(:RemoteNode)");
+        int secondSetOffset = text.indexOf(":Set(:SensorSample)");
+
+        for (var error : errors) {
+            assertFalse("Parent :Tuple keyword must not be highlighted",
+                    error.getStartOffset() == tupleKeywordOffset);
+            assertFalse("Parent first :Set keyword must not be highlighted",
+                    error.getStartOffset() == firstSetOffset);
+            assertFalse("Parent second :Set keyword must not be highlighted",
+                    error.getStartOffset() == secondSetOffset);
+        }
     }
 }
