@@ -117,6 +117,69 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var localTx = findEntryByName(entries, ":LocalTx");
         assertNotNull(localTx);
         assertEquals(1, localTx.useDepth());
+
+        var localEntity = findEntryByName(entries, ":LocalEntity");
+        assertNotNull(localEntity);
+        assertEquals(1, localEntity.useDepth());
+
+        var statusAlias = findEntryByName(entries, ":StatusAlias");
+        assertNotNull(statusAlias);
+        assertEquals(1, statusAlias.useDepth());
+
+        assertNull("Evicted raw symbol :BaseEntity must not appear in defs scope", findEntryByName(entries, ":BaseEntity"));
+        assertNull("Evicted raw symbol :AccountStatus must not appear in defs scope", findEntryByName(entries, ":AccountStatus"));
+    }
+
+    /**
+     * Verifies under STVN_LANGUAGE_SPEC.md § 4.2 Invariant 2 that when an include
+     * directive aliases a remote symbol, the local alias is present and the evicted
+     * raw remote identifier is excluded from the dependency scope table.
+     */
+    public void testAliasedIncludeEvictsRawIdentifiersFromDefsScope() {
+        var remoteSchema = """
+            {
+              :meta {
+                #name "remote_node_schema"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :RemoteNode :Tuple( :Int :String )
+                :OtherNode  :String
+              }
+            }
+            """;
+        var importingDoc = """
+            {
+              :meta {
+                #name "importing_doc"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [
+                  "remote_node_schema.stvn_d" {
+                    :RemoteNode :AliasedNode
+                  }
+                ]
+              }
+            }
+            """;
+        myFixture.addFileToProject("remote_node_schema.stvn_d", remoteSchema);
+        var file = myFixture.configureByText("importing_doc.stvn_d", importingDoc);
+
+        var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
+        assertFalse(entries.isEmpty());
+
+        var aliasedNode = findEntryByName(entries, ":AliasedNode");
+        assertNotNull("Aliased identifier :AliasedNode must be present in defs scope", aliasedNode);
+        assertEquals(1, aliasedNode.useDepth());
+        assertEquals("remote_node_schema.stvn_d", aliasedNode.source());
+
+        var rawRemoteNode = findEntryByName(entries, ":RemoteNode");
+        assertNull("Raw evicted identifier :RemoteNode must NOT appear in defs scope (SPEC § 4.2 Invariant 2)", rawRemoteNode);
+
+        var otherNode = findEntryByName(entries, ":OtherNode");
+        assertNotNull("Un-aliased remote symbol :OtherNode must remain in defs scope", otherNode);
+        assertEquals(1, otherNode.useDepth());
     }
 
     /**

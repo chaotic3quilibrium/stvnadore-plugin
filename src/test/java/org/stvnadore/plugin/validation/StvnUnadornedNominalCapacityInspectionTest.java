@@ -53,9 +53,20 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
 
         assertEquals("Expected exactly 4 unadorned nominal warnings (String, Seq, Set, Map)", 4, warnings.size());
         assertTrue(warnings.get(0).getDescription().contains("Nominal string type ':StrAlias'"));
+        assertTrue("String alias must emit WARN_NOMINAL_STRING_UNADORNED tag",
+            warnings.get(0).getDescription().contains("[stvn-plugin:WARN_NOMINAL_STRING_UNADORNED]"));
+
         assertTrue(warnings.get(1).getDescription().contains("Nominal collection type ':SeqAlias'"));
+        assertTrue("Seq alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
+            warnings.get(1).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
+
         assertTrue(warnings.get(2).getDescription().contains("Nominal collection type ':SetAlias'"));
+        assertTrue("Set alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
+            warnings.get(2).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
+
         assertTrue(warnings.get(3).getDescription().contains("Nominal collection type ':MapAlias'"));
+        assertTrue("Map alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
+            warnings.get(3).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
     }
 
     public void testAllSixIntentionsAvailableOnSeq() {

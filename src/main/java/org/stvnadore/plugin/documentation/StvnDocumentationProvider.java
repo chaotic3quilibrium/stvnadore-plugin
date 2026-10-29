@@ -1170,7 +1170,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             boolean isComposite
     ) {
         if (hasExplicitFacetInPsi(rootTypeDef, facetKey) || isFacetExplicitlyOverridden(currentSchema.localConstraints().orElse(null), facetKey)) {
-            return new OriginInfo("Declared on <a href=\"psi_element://TypeDefinition/" + currentAlias + "\">" + currentAlias + "</a>", "Active Override");
+            String typeNameWithSigil = currentAlias.startsWith(":") ? currentAlias : (":" + currentAlias);
+            return new OriginInfo("Declared on&nbsp;<a href=\"psi_element://TypeDefinition/" + typeNameWithSigil + "\"><code>" + typeNameWithSigil + "</code></a>", "Active Override");
         }
 
         var file = rootTypeDef.getContainingFile();

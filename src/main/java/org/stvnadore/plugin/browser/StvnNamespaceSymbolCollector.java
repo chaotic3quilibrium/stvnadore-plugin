@@ -310,12 +310,16 @@ public final class StvnNamespaceSymbolCollector {
             var includeSource = targetFile != null ? targetFile.getName() : stringLit.getText();
 
             var aliasBlock = incl.getIncludeAliasBlock();
+            var evictedRawNames = new HashSet<String>();
             if (aliasBlock != null) {
                 for (var alias : aliasBlock.getIncludeMapAliasList()) {
                     var list = alias.getTypeKeywordList();
                     if (list.size() >= 2) {
                         var localKw = list.get(1);
                         var remoteKw = list.get(0);
+                        if (remoteKw != null) {
+                            evictedRawNames.add(remoteKw.getText());
+                        }
                         if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
                             results.add(new StvnNamespaceSymbolEntry(
                                 localKw.getText(),
@@ -350,7 +354,7 @@ public final class StvnNamespaceSymbolCollector {
                         continue;
                     }
                     var kw = rDef.getTypeKeyword();
-                    if (kw != null && processedNames.add(kw.getText())) {
+                    if (kw != null && !evictedRawNames.contains(kw.getText()) && processedNames.add(kw.getText())) {
                         var schemaType = rDef.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                         results.add(new StvnNamespaceSymbolEntry(
@@ -371,7 +375,7 @@ public final class StvnNamespaceSymbolCollector {
                         continue;
                     }
                     var kw = rConst.getValueKeyword();
-                    if (kw != null && processedNames.add(kw.getText())) {
+                    if (kw != null && !evictedRawNames.contains(kw.getText()) && processedNames.add(kw.getText())) {
                         var schemaType = rConst.getSchemaType();
                         var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
                         results.add(new StvnNamespaceSymbolEntry(
@@ -1078,6 +1082,20 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         for (var incl : includes) {
+            var aliasBlock = incl.getIncludeAliasBlock();
+            if (aliasBlock != null) {
+                boolean isAliased = false;
+                for (var alias : aliasBlock.getIncludeMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (!list.isEmpty() && name.equals(list.get(0).getText())) {
+                        isAliased = true;
+                        break;
+                    }
+                }
+                if (isAliased) {
+                    continue;
+                }
+            }
             var stringLit = incl.getStringLiteral();
             var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
             if (targetFile != null) {

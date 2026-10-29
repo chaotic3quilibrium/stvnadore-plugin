@@ -160,7 +160,7 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         var docValues = provider.generateDoc(elemValues, elemValues);
         assertNotNull(docValues);
         assertTrue("Origin column must contain PSI hyperlink to TypeDefinition:\n" + docValues,
-                docValues.contains("<a href=\"psi_element://TypeDefinition/:Values\">:Values</a>"));
+                docValues.contains("Declared on&nbsp;<a href=\"psi_element://TypeDefinition/:Values\"><code>:Values</code></a>"));
 
         var targetElem = provider.getDocumentationElementForLink(myFixture.getPsiManager(), "TypeDefinition/:Values", elemValues);
         assertNotNull("Must resolve link TypeDefinition/:Values to target PSI element", targetElem);
@@ -179,5 +179,47 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         int floatOffset = text.indexOf(":Float");
         var targetConstituent = provider.getDocumentationElementForLink(myFixture.getPsiManager(), "offset/" + floatOffset, elemInductive);
         assertNotNull("Must resolve link offset/" + floatOffset + " to :Float constituent element", targetConstituent);
+    }
+
+    public void testIntentionPreviewReturnsEmptyWithoutEdtAssertion() {
+        var text = """
+            {
+              :defs {
+                :Values { #equatable #FALSE } :Tuple ( :Int :String )
+                :InductiveTuple :Tuple ( :Int :Float )
+              }
+              :type :Set(:Values)
+              :body [ ( 1 "test" ) ]
+            }
+            """;
+        myFixture.configureByText("preview_test.stvn", text);
+        myFixture.doHighlighting();
+        int usageOffset = text.indexOf(":Set(:Values)") + ":Set(".length();
+        myFixture.getEditor().getCaretModel().moveToOffset(usageOffset);
+
+        var navigateIntentions = myFixture.filterAvailableIntentions("Navigate to explicit '#equatable #FALSE'");
+        assertFalse("Expected navigate intention to be available", navigateIntentions.isEmpty());
+        var navAction = navigateIntentions.get(0);
+        var navPreview = myFixture.getIntentionPreviewText(navAction);
+        assertNull("Intention preview for pure navigation action must be EMPTY (null diff)", navPreview);
+
+        var text2 = """
+            {
+              :defs {
+                :InductiveTuple :Tuple ( :Int :Float )
+              }
+              :type :Set(:InductiveTuple)
+              :body [ ( 1 3.14 ) ]
+            }
+            """;
+        myFixture.configureByText("preview_jump_test.stvn", text2);
+        myFixture.doHighlighting();
+        int usageOffset2 = text2.indexOf(":Set(:InductiveTuple)") + ":Set(".length();
+        myFixture.getEditor().getCaretModel().moveToOffset(usageOffset2);
+        var jumpIntentions = myFixture.filterAvailableIntentions("Jump to non-equatable constituent");
+        assertFalse("Expected jump intention to be available", jumpIntentions.isEmpty());
+        var jumpAction = jumpIntentions.get(0);
+        var jumpPreview = myFixture.getIntentionPreviewText(jumpAction);
+        assertNull("Intention preview for jump action must be EMPTY (null diff)", jumpPreview);
     }
 }

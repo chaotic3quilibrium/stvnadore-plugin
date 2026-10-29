@@ -159,6 +159,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_CAPACITY_OVERFLOW, "StvnStringCapacity");
         map.put("CAPACITY_OVERFLOW", "StvnStringCapacity");
         map.put(StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED, "StvnStringCapacity");
+        map.put(StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED, "StvnStringCapacity");
         map.put(StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW, "StvnStringCapacity");
         map.put(StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW, "StvnStringCapacity");
 

@@ -253,7 +253,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         msg = "Nominal " + category + " type '" + declaredName + "' is unadorned; default capacity is "
                             + DEFAULT_UNBOUNDED_STRING_CAPACITY
                             + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
-                        diagCode = StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED;
+                        diagCode = resolvedInfo.isCollection
+                            ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED
+                            : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED;
                     } else {
                         msg = "Nominal " + category + " type '" + declaredName + "' specifies capacity " + effectiveCapacity
                             + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
@@ -320,7 +322,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     String msg = isUnadorned
                         ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
                         : "Nominal " + category + " type '" + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
-                    String diagCode = isUnadorned ? StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
+                    String diagCode = isUnadorned
+                        ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
+                        : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
                     registerCapacityProblem(holder, schemaType, StvnDiagnosticFormatter.formatPlugin(msg, diagCode), isError);
                 }
             }

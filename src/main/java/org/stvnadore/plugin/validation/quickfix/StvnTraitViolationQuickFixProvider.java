@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.lang.annotation.AnnotationBuilder;
 import com.intellij.openapi.editor.Editor;
@@ -262,6 +263,11 @@ public final class StvnTraitViolationQuickFixProvider {
         }
 
         @Override
+        public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+
+        @Override
         public void invoke(
                 @NotNull Project project,
                 @NotNull PsiFile file,
@@ -313,6 +319,11 @@ public final class StvnTraitViolationQuickFixProvider {
         @Override
         public @NotNull Priority getPriority() {
             return Priority.HIGH;
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+            return IntentionPreviewInfo.EMPTY;
         }
 
         @Override
