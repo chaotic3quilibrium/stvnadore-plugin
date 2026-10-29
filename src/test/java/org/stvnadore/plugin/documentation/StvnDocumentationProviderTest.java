@@ -477,7 +477,8 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must display 'Active Override' for preserveIndent", doc.contains("Active Override"));
         assertTrue("Doc must contain '#minSize' facet row", doc.contains("<code>#minSize</code>"));
         assertTrue("Doc must display '4' as effective value for minSize", doc.contains("<code>4</code>"));
-        assertTrue("Doc must display 'Inherited from :BlockStringB' for minSize", doc.contains("Inherited from :BlockStringB"));
+        assertTrue("Doc must display 'Inherited from' with bound sigil hyperlink to :BlockStringB for minSize",
+                doc.contains("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/:BlockStringB\"><code>:BlockStringB</code></a>"));
         assertTrue("Doc must contain '#maxSize' facet row", doc.contains("<code>#maxSize</code>"));
         assertTrue("Doc must display '1024' as effective value for maxSize", doc.contains("<code>1024</code>"));
     }
@@ -504,7 +505,8 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must render Effective Facets table", doc.contains("<b>Effective Facets &amp; Traits:</b>"));
         assertTrue("Equatable must report Default (:String)", doc.contains("<code>#equatable</code></td><td style=\"padding: 2px 4px;\"><code>#TRUE</code></td><td style=\"padding: 2px 4px;\">Default (:String)"));
         assertTrue("Comparable must report Default (:String)", doc.contains("<code>#comparable</code></td><td style=\"padding: 2px 4px;\"><code>#TRUE</code></td><td style=\"padding: 2px 4px;\">Default (:String)"));
-        assertFalse("Must NOT attribute equatable to intermediate parent :BlockStringE", doc.contains("Inherited from :BlockStringE"));
+        assertFalse("Must NOT attribute equatable to intermediate parent :BlockStringE",
+                doc.contains("TypeDefinition/:BlockStringE") || doc.contains("Inherited from :BlockStringE"));
     }
 
     public void testMultiTierLineagePreserveIndentInheritedFromAncestor() {
@@ -525,8 +527,10 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var doc = getDocAtOffset(text, offset);
 
         assertTrue("Doc must display effective value #FALSE", doc.contains("<code>#FALSE</code>"));
-        assertTrue("PreserveIndent origin must trace back to :BlockStringA", doc.contains("Inherited from :BlockStringA"));
-        assertFalse("Must NOT misattribute origin to immediate parent :BlockStringC", doc.contains("Inherited from :BlockStringC"));
+        assertTrue("PreserveIndent origin must trace back to :BlockStringA",
+                doc.contains("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/:BlockStringA\"><code>:BlockStringA</code></a>"));
+        assertFalse("Must NOT misattribute origin to immediate parent :BlockStringC",
+                doc.contains("TypeDefinition/:BlockStringC") || doc.contains("Inherited from :BlockStringC"));
     }
 
     public void testMultiTierLineagePreserveIndentStopsAtIntermediatePinningAncestor() {
@@ -547,8 +551,10 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var doc = getDocAtOffset(text, offset);
 
         assertTrue("Doc must display effective value #TRUE", doc.contains("<code>#TRUE</code>"));
-        assertTrue("PreserveIndent origin must stop at pinning ancestor :BlockStringC", doc.contains("Inherited from :BlockStringC"));
-        assertFalse("Must NOT report root ancestor :BlockStringA", doc.contains("Inherited from :BlockStringA"));
+        assertTrue("PreserveIndent origin must stop at pinning ancestor :BlockStringC",
+                doc.contains("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/:BlockStringC\"><code>:BlockStringC</code></a>"));
+        assertFalse("Must NOT report root ancestor :BlockStringA",
+                doc.contains("TypeDefinition/:BlockStringA") || doc.contains("Inherited from :BlockStringA"));
     }
 
     public void testCompositeTupleDerivedNonEquatableOriginDisplaysOffendingFields() {

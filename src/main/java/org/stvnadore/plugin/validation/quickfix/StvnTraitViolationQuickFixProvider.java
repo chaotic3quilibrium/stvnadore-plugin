@@ -81,10 +81,8 @@ public final class StvnTraitViolationQuickFixProvider {
             var resolvedDefElem = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
             var targetTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedDefElem);
             if (targetTypeDef != null) {
-                return registerActionsForNominalType(builder, file, schemaType, targetTypeDef, typeName, message);
+                return registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
             }
-        } else if (file.isWritable()) {
-            builder = builder.withFix(new LocalInPlaceOverrideQuickFix(schemaType));
         }
 
         return builder;
@@ -93,7 +91,6 @@ public final class StvnTraitViolationQuickFixProvider {
     private static AnnotationBuilder registerActionsForNominalType(
             AnnotationBuilder builder,
             PsiFile file,
-            SchemaType usageSchema,
             TypeDefinition typeDef,
             String typeName,
             String message
@@ -105,9 +102,6 @@ public final class StvnTraitViolationQuickFixProvider {
             if (file.isWritable() && typeDef.getContainingFile().isWritable()) {
                 builder = builder.withFix(new RemoveIncompatibleOverrideQuickFix(explicitOverrideEntry, typeName));
                 builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, typeName));
-            }
-            if (file.isWritable()) {
-                builder = builder.withFix(new LocalInPlaceOverrideQuickFix(usageSchema));
             }
             return builder;
         }
@@ -121,9 +115,6 @@ public final class StvnTraitViolationQuickFixProvider {
 
         if (file.isWritable() && typeDef.getContainingFile().isWritable()) {
             builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, typeName));
-        }
-        if (file.isWritable()) {
-            builder = builder.withFix(new LocalInPlaceOverrideQuickFix(usageSchema));
         }
 
         return builder;
@@ -459,62 +450,6 @@ public final class StvnTraitViolationQuickFixProvider {
                         project, "{ #equatable #TRUE } " + typeDef.getSchemaType().getText());
                 typeDef.getSchemaType().replace(newSchema);
             }
-        }
-    }
-
-    // --- QUICK-FIX 3: Local In-Place Override on Target Usage ---
-    public static final class LocalInPlaceOverrideQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
-        public LocalInPlaceOverrideQuickFix(SchemaType schemaType) {
-            super(schemaType);
-        }
-
-        @Override
-        public @Nls @NotNull String getText() {
-            var elem = getStartElement();
-            var coll = PsiTreeUtil.getParentOfType(elem, CollectionType.class);
-            var parentText = (coll != null) ? coll.getText().trim() : (elem != null ? elem.getText().trim() : ":Values");
-            if (parentText.length() > 30) {
-                parentText = parentText.substring(0, 27) + "...";
-            }
-            return "Override '#equatable #TRUE' on " + parentText;
-        }
-
-        @Override
-        public @Nls @NotNull String getFamilyName() {
-            return "Restore capability locally";
-        }
-
-        @Override
-        public void invoke(
-                @NotNull Project project,
-                @NotNull PsiFile file,
-                @Nullable Editor editor,
-                @NotNull PsiElement startElement,
-                @NotNull PsiElement endElement
-        ) {
-            if (!(startElement instanceof SchemaType schemaType) || !schemaType.isValid()) return;
-
-            var existingMap = schemaType.getMetadataMap();
-            if (existingMap != null && existingMap.isValid()) {
-                for (var entry : existingMap.getMetadataEntryList()) {
-                    if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
-                        var newEntry = StvnElementFactory.createMetadataEntry(project, "#equatable #TRUE");
-                        entry.replace(newEntry);
-                        return;
-                    }
-                }
-                var inner = existingMap.getText().trim();
-                if (inner.startsWith("{") && inner.endsWith("}")) {
-                    inner = inner.substring(1, inner.length() - 1).trim();
-                }
-                var newMap = StvnElementFactory.createMetadataMap(project, "#equatable #TRUE " + inner);
-                existingMap.replace(newMap);
-                return;
-            }
-
-            var rewrittenText = "{ #equatable #TRUE } " + schemaType.getText();
-            var newSchema = StvnElementFactory.createSchemaType(project, rewrittenText);
-            schemaType.replace(newSchema);
         }
     }
 }

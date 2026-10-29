@@ -1181,7 +1181,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new java.util.HashSet<>());
                 var ancestorTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
-                    return new OriginInfo("Inherited from " + alias, "Inherited");
+                    String aliasWithSigil = alias.startsWith(":") ? alias : (":" + alias);
+                    return new OriginInfo("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/" + aliasWithSigil + "\"><code>" + aliasWithSigil + "</code></a>", "Inherited");
                 }
             }
         }
@@ -1192,8 +1193,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             curr = curr.underlyingSchema().get();
             var parentLocal = curr.localConstraints().orElse(null);
             if (isFacetExplicitlyOverridden(parentLocal, facetKey)) {
-                String source = (parentAlias != null) ? parentAlias : "Parent";
-                return new OriginInfo("Inherited from " + source, "Inherited");
+                if (parentAlias != null) {
+                    String sourceWithSigil = parentAlias.startsWith(":") ? parentAlias : (":" + parentAlias);
+                    return new OriginInfo("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/" + sourceWithSigil + "\"><code>" + sourceWithSigil + "</code></a>", "Inherited");
+                } else {
+                    return new OriginInfo("Inherited from&nbsp;Parent", "Inherited");
+                }
             }
         }
 

@@ -46,13 +46,7 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         assertFalse("Expected 'Override #equatable #TRUE on :Values in :defs' fix", changeFixes.isEmpty());
 
         var localFixes = myFixture.filterAvailableIntentions("Override '#equatable #TRUE' on :Set(:Values)");
-        assertFalse("Expected 'Override #equatable #TRUE on :Set(:Values)' local fix", localFixes.isEmpty());
-
-        // 3. Test Local Usage Override Execution
-        myFixture.launchAction(localFixes.get(0));
-        var mutatedText = myFixture.getFile().getText();
-        assertTrue("Expected local rewrite into capability restoration envelope:\n" + mutatedText,
-                mutatedText.contains(":Set( { #equatable #TRUE } :Values )") || mutatedText.contains(":Set({ #equatable #TRUE } :Values)"));
+        assertTrue("Local in-place override fix must NOT be registered per SPEC § 6.1 and § 9.1", localFixes.isEmpty());
     }
 
     public void testRemoveIncompatibleOverrideExcisesSoleMetadataMap() {
