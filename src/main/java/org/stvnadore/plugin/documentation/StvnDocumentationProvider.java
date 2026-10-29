@@ -1171,7 +1171,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     ) {
         if (hasExplicitFacetInPsi(rootTypeDef, facetKey) || isFacetExplicitlyOverridden(currentSchema.localConstraints().orElse(null), facetKey)) {
             String typeNameWithSigil = currentAlias.startsWith(":") ? currentAlias : (":" + currentAlias);
-            return new OriginInfo("Declared on&nbsp;<a href=\"psi_element://TypeDefinition/" + typeNameWithSigil + "\"><code>" + typeNameWithSigil + "</code></a>", "Active Override");
+            return new OriginInfo("Declared on<br/><a href=\"psi_element://TypeDefinition/" + typeNameWithSigil + "\"><code>" + typeNameWithSigil + "</code></a>", "Active Override");
         }
 
         var file = rootTypeDef.getContainingFile();
@@ -1182,7 +1182,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var ancestorTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
                     String aliasWithSigil = alias.startsWith(":") ? alias : (":" + alias);
-                    return new OriginInfo("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/" + aliasWithSigil + "\"><code>" + aliasWithSigil + "</code></a>", "Inherited");
+                    return new OriginInfo("Inherited from<br/><a href=\"psi_element://TypeDefinition/" + aliasWithSigil + "\"><code>" + aliasWithSigil + "</code></a>", "Inherited");
                 }
             }
         }
@@ -1195,9 +1195,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (isFacetExplicitlyOverridden(parentLocal, facetKey)) {
                 if (parentAlias != null) {
                     String sourceWithSigil = parentAlias.startsWith(":") ? parentAlias : (":" + parentAlias);
-                    return new OriginInfo("Inherited from&nbsp;<a href=\"psi_element://TypeDefinition/" + sourceWithSigil + "\"><code>" + sourceWithSigil + "</code></a>", "Inherited");
+                    return new OriginInfo("Inherited from<br/><a href=\"psi_element://TypeDefinition/" + sourceWithSigil + "\"><code>" + sourceWithSigil + "</code></a>", "Inherited");
                 } else {
-                    return new OriginInfo("Inherited from&nbsp;Parent", "Inherited");
+                    return new OriginInfo("Inherited from<br/>Parent", "Inherited");
                 }
             }
         }

@@ -1,15 +1,19 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.lang.annotation.AnnotationBuilder;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
@@ -101,7 +105,10 @@ public final class StvnTraitViolationQuickFixProvider {
             builder = builder.withFix(new NavigateToExplicitOverrideIntention(explicitOverrideEntry, typeName));
             if (file.isWritable() && typeDef.getContainingFile().isWritable()) {
                 builder = builder.withFix(new RemoveIncompatibleOverrideQuickFix(explicitOverrideEntry, typeName));
-                builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, typeName));
+                boolean intrinsicallyEquatable = isUnderlyingIntrinsicallyEquatable(typeDef);
+                if (!intrinsicallyEquatable) {
+                    builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, typeName));
+                }
             }
             return builder;
         }
@@ -195,6 +202,47 @@ public final class StvnTraitViolationQuickFixProvider {
         return result;
     }
 
+    public static @Nullable ConstituentInfo findFirstNonEquatableConstituent(TypeDefinition typeDef) {
+        var nonConforming = extractNonConformingConstituents(typeDef);
+        return nonConforming.isEmpty() ? null : nonConforming.get(0);
+    }
+
+    public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef) {
+        return isUnderlyingIntrinsicallyEquatable(typeDef, new java.util.HashSet<>());
+    }
+
+    public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef, java.util.Set<String> visited) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null) return false;
+
+        var kw = typeDef.getTypeKeyword();
+        if (kw != null && !visited.add(kw.getText().trim())) {
+            return true; // Break recursion on cycle
+        }
+
+        var schemaKw = schemaType.getTypeKeyword();
+        if (schemaKw != null) {
+            var name = schemaKw.getText().trim();
+            if (StvnVocabulary.TYPE_FLOAT.equals(name)) {
+                return hasExactFacet(schemaType.getMetadataMap());
+            }
+            if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_TIME_EPOCH.equals(name)
+                    || StvnVocabulary.TYPE_DATE_TIME.equals(name) || StvnVocabulary.TYPE_ENUM.equals(name)) {
+                return true;
+            }
+            var file = typeDef.getContainingFile();
+            if (file != null) {
+                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
+                var aliasDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                if (aliasDef != null && aliasDef != typeDef) {
+                    return isUnderlyingIntrinsicallyEquatable(aliasDef, visited);
+                }
+            }
+        }
+        return findFirstNonEquatableConstituent(typeDef) == null;
+    }
+
     private static boolean hasExactFacet(@Nullable MetadataMap map) {
         if (map == null) return false;
         for (var entry : map.getMetadataEntryList()) {
@@ -205,7 +253,7 @@ public final class StvnTraitViolationQuickFixProvider {
         return false;
     }
 
-    private static @Nullable MetadataEntry findExplicitTraitEntry(TypeDefinition typeDef, String facetKw) {
+    public static @Nullable MetadataEntry findExplicitTraitEntry(TypeDefinition typeDef, String facetKw) {
         var map = typeDef.getMetadataMap();
         if (map == null && typeDef.getSchemaType() != null) {
             map = typeDef.getSchemaType().getMetadataMap();
@@ -219,7 +267,7 @@ public final class StvnTraitViolationQuickFixProvider {
         return null;
     }
 
-    private static boolean isExplicitFalse(MetadataEntry entry) {
+    public static boolean isExplicitFalse(MetadataEntry entry) {
         var txt = entry.getText().trim();
         var parts = txt.split("\\s+");
         if (parts.length > 1) {
@@ -366,6 +414,7 @@ public final class StvnTraitViolationQuickFixProvider {
             var entry = (startElement instanceof MetadataEntry me) ? me
                     : PsiTreeUtil.getParentOfType(startElement, MetadataEntry.class, false);
             if (entry == null || !entry.isValid()) return;
+            var targetFile = entry.getContainingFile();
 
             var map = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
             if (map != null && map.isValid()) {
@@ -378,6 +427,7 @@ public final class StvnTraitViolationQuickFixProvider {
                         next.delete();
                     }
                     map.delete();
+                    postProcessFileMutation(project, file, targetFile);
                     return;
                 }
             }
@@ -394,6 +444,7 @@ public final class StvnTraitViolationQuickFixProvider {
                 next.delete();
             }
             entry.delete();
+            postProcessFileMutation(project, file, targetFile);
         }
     }
 
@@ -425,11 +476,13 @@ public final class StvnTraitViolationQuickFixProvider {
                 @NotNull PsiElement endElement
         ) {
             if (!(startElement instanceof TypeDefinition typeDef) || !typeDef.isValid()) return;
+            var targetFile = typeDef.getContainingFile();
 
             var entry = findExplicitTraitEntry(typeDef, StvnVocabulary.FACET_KW_EQUATABLE);
             if (entry != null && entry.isValid()) {
                 var newEntry = StvnElementFactory.createMetadataEntry(project, "#equatable #TRUE");
                 entry.replace(newEntry);
+                postProcessFileMutation(project, file, targetFile);
                 return;
             }
 
@@ -450,6 +503,23 @@ public final class StvnTraitViolationQuickFixProvider {
                         project, "{ #equatable #TRUE } " + typeDef.getSchemaType().getText());
                 typeDef.getSchemaType().replace(newSchema);
             }
+            postProcessFileMutation(project, file, targetFile);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static void postProcessFileMutation(Project project, PsiFile consumerFile, @Nullable PsiFile targetFile) {
+        if (IntentionPreviewUtils.isIntentionPreviewActive() || !consumerFile.isPhysical()) {
+            return;
+        }
+        if (targetFile != null && targetFile != consumerFile && targetFile.isPhysical()) {
+            var psiDocManager = PsiDocumentManager.getInstance(project);
+            var targetDoc = psiDocManager.getDocument(targetFile);
+            if (targetDoc != null) {
+                psiDocManager.doPostponedOperationsAndUnblockDocument(targetDoc);
+                FileDocumentManager.getInstance().saveDocument(targetDoc);
+            }
+            DaemonCodeAnalyzer.getInstance(project).restart(consumerFile);
         }
     }
 }
