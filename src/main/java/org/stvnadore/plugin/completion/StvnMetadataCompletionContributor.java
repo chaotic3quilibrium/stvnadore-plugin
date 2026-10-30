@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * 2. Suppresses '#minSize 0' on strings and collections (proposes '#minSize 1').
  * 3. Suppresses redundant default trait assertions ('#equatable #TRUE', '#comparable #TRUE' on primitives).
  * 4. Filters out duplicate facets already declared in the local metadata block (§ 5.1.4).
- * 5. Auto-wraps facets in '{ <facet> }' when completion is invoked in pre-schema whitespace.
+ * 5. Auto-wraps facets in '{@code { <facet> }}' when completion is invoked in pre-schema whitespace.
  */
 @NullMarked
 public final class StvnMetadataCompletionContributor extends CompletionContributor {

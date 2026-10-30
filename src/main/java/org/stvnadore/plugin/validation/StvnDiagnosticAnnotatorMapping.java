@@ -93,6 +93,9 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_EMPTY_DEFS_BLOCK, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_EMPTY_DIRECTIVE_BLOCK, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
+        map.put(DiagnosticBag.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
+        map.put(StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
+        map.put("ERR_UNRECOGNIZED_METADATA_FACET", "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPATIBLE_TYPE, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
@@ -426,6 +429,11 @@ public final class StvnDiagnosticAnnotatorMapping {
         }
         if (message.contains("Storage sizing #size is prohibited on :String")) {
             return "StvnStringCardinality";
+        }
+        if (message.contains("Unrecognized constraint facet")
+                || message.contains("Unrecognized metadata facet")
+                || message.contains("unrecognized facet")) {
+            return "StvnMetadataFacet";
         }
         if (message.contains("Prohibited fenced string delimiter arrow")
                 || message.contains("Fenced string closing tag mismatch")) {

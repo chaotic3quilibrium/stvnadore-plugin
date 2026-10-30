@@ -21,7 +21,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Completion contributor for bare-bracket include statements (:include [ <caret> ]).
+ * Completion contributor for bare-bracket include statements ({@code :include [ <caret> ]}).
  * <p>
  * Proposes relative schema files (.stvn_d, .stvn_di, .stvn_bd) and child directories
  * anchored to the active containing file's directory. Employs StvnIncludeQuoteInsertHandler

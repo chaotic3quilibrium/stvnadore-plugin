@@ -261,10 +261,19 @@ metadata_entry            ::= metadata_trait
                             | metadata_unknown_entry
                             { recoverWhile=metadata_entry_recover }
 
-metadata_unknown_entry    ::= value_keyword (value | schema_type)? {
+metadata_unknown_entry    ::= value_keyword unknown_entry_arg? {
   pin=1
   recoverWhile=metadata_entry_recover
 }
+private unknown_entry_arg ::= !metadata_facet_boundary (value | schema_type)
+
+private metadata_facet_boundary ::= RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT
+                                  | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE
+                                  | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED
+                                  | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL
+                                  | KW_REGEX | KW_FILTER_INCL | KW_FILTER_EXCL
+                                  | VALUE_KEYWORD_BASE | UNION_TAG_PREFIX
+
 metadata_trait            ::= KW_PRESERVE_INDENT (boolean_value | value_keyword) {
   pin=1
   recoverWhile=metadata_entry_recover
@@ -282,8 +291,7 @@ private variant_list_recover ::= !(RBRACK | RBRACE)
 
 metadata_value           ::= boolean_value | integer_literal | float_literal | string_literal | value_keyword
 
-private metadata_entry_recover ::= !(RBRACE | KW_STRIP | KW_EQUATABLE | KW_COMPARABLE | KW_PRESERVE_INDENT | KW_SIZE | KW_UNSIGNED | KW_EXACT | KW_MIN_SIZE | KW_MAX_SIZE | KW_INVERTIBLE | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_MIN_INCL | KW_MIN_EXCL | KW_MAX_INCL | KW_MAX_EXCL | KW_REGEX | KW_FILTER_INCL | KW_FILTER_EXCL)
-
+private metadata_entry_recover ::= !metadata_facet_boundary
 // --- TYPE SYSTEM CORE ---
 schema_type             ::= metadata_map? (schema_constructor | type_keyword)
 schema_constructor      ::= atomic_type | collection_type | product_type | sum_type

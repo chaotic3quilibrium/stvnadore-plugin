@@ -2872,6 +2872,12 @@ public final class StvnTypeResolver {
         if (info != null) {
             var resolved = resolveNominalSchema(info.getSchema());
             var toInspect = resolved != null ? resolved : info.getSchema();
+            if (org.stvnadore.plugin.hints.StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+                var ctor = toInspect.getSchemaConstructor();
+                if (ctor != null && (ctor.getProductType() != null || ctor.getCollectionType() != null)) {
+                    return true;
+                }
+            }
             var ctor = toInspect.getSchemaConstructor();
             if (ctor != null && ctor.getSumType() != null) {
                 var sumType = ctor.getSumType();

@@ -327,8 +327,30 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         }
 
         for (var entry : metaMap.getMetadataEntryList()) {
-            if (entry.getMetadataUnknownEntry() != null || entry.getMetadataDirective() != null) {
+            if (entry.getMetadataDirective() != null) {
                 continue;
+            }
+            if (entry.getMetadataUnknownEntry() != null) {
+                var unknownEntry = entry.getMetadataUnknownEntry();
+                var kw = unknownEntry.getValueKeyword();
+                String facetName = kw.getText().trim();
+                holder.registerProblem(
+                    kw,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Unrecognized metadata facet '" + facetName + "'",
+                        StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET
+                    ),
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove unrecognized facet '" + facetName + "'", "Remove unrecognized facet")
+                );
+                continue;
+            }
+
+            // Target B Deconfliction: Yield to StvnStringCardinalityInspection on :String with #size
+            if (isString && hasToken(entry, TokenSet.create(StvnTypes.KW_SIZE))) {
+                if (StvnDiagnosticAnnotatorMapping.isInspectionActive(entry.getContainingFile(), "StvnStringCardinality")) {
+                    continue;
+                }
             }
 
             String facetName = extractFacetName(entry);
@@ -817,16 +839,17 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         return;
                     }
                 }
-                var next = element.getNextSibling();
-                var prev = element.getPrevSibling();
+                var toDelete = targetEntry != null ? targetEntry : element;
+                var next = toDelete.getNextSibling();
+                var prev = toDelete.getPrevSibling();
                 if (next instanceof PsiWhiteSpace && !(prev instanceof PsiWhiteSpace)) {
                     next.delete();
                 } else if (prev instanceof PsiWhiteSpace) {
-                    if (!(element instanceof MetadataEntry) || prev.getPrevSibling() instanceof MetadataEntry) {
+                    if (!(toDelete instanceof MetadataEntry) || prev.getPrevSibling() instanceof MetadataEntry) {
                         prev.delete();
                     }
                 }
-                element.delete();
+                toDelete.delete();
             }
         }
     }

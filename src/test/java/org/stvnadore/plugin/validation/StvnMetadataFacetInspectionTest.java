@@ -529,7 +529,10 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
             .toList();
 
-        assertTrue("Unrecognized facet must suppress empty constraint block diagnostic: " + errors, errors.isEmpty());
+        assertTrue("Empty constraint block diagnostic must be suppressed",
+            errors.stream().noneMatch(h -> h.getDescription() != null && h.getDescription().contains("ERR_EMPTY_METADATA_BLOCK")));
+        assertTrue("Unrecognized facet diagnostic must be reported: " + errors,
+            errors.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("ERR_UNRECOGNIZED_METADATA_FACET")));
     }
 
     public void testUnrecognizedBareFacetSuppressesEmptyConstraintBlockDiagnostic() {
@@ -549,7 +552,10 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
             .toList();
 
-        assertTrue("Unrecognized bare facet must suppress empty constraint block diagnostic: " + errors, errors.isEmpty());
+        assertTrue("Empty constraint block diagnostic must be suppressed",
+            errors.stream().noneMatch(h -> h.getDescription() != null && h.getDescription().contains("ERR_EMPTY_METADATA_BLOCK")));
+        assertTrue("Unrecognized bare facet diagnostic must be reported: " + errors,
+            errors.stream().anyMatch(h -> h.getDescription() != null && h.getDescription().contains("ERR_UNRECOGNIZED_METADATA_FACET")));
     }
 
     public void testEmptyConstraintBlockDiagnosticOnConstant() {

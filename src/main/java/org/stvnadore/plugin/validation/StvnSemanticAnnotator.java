@@ -68,6 +68,13 @@ public final class StvnSemanticAnnotator implements Annotator {
                   .textAttributes(StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE)
                   .create();
         } else if (type.equals(StvnTypes.VALUE_KEYWORD_BASE)) {
+            if (PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.MetadataUnknownEntry.class, false) != null
+                    && PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.MetadataMap.class, false) != null) {
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                      .textAttributes(StvnSyntaxHighlighterColors.STVN_METADATA_TARGET)
+                      .create();
+                return;
+            }
             holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                   .textAttributes(StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD)
                   .create();

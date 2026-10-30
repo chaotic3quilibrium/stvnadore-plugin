@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 
 /**
- * Handles lookup item insertion for bare-bracket include completion (:include [ <caret> ]).
+ * Handles lookup item insertion for bare-bracket include completion ({@code :include [ <caret> ]}).
  * Automatically wraps the selected schema path in double quotes ("...") and positions
  * the caret outside the closing quote (or inside the closing quote for directories).
  */

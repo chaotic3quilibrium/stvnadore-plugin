@@ -14,7 +14,7 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_DOCUMENT_NAME_MISMATCH = "WARN_DOCUMENT_NAME_MISMATCH";
     public static final String WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME = "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME";
     public static final String ERR_DOCUMENT_KIND_MISMATCH = "ERR_DOCUMENT_KIND_MISMATCH";
-    /** Error code emitted when a filename lacks a visible stem or violates stem cardinality (1 <= |stems| <= 2, multi-stem >= 3) (SPEC § 3.10.2, E032). */
+    /** Error code emitted when a filename lacks a visible stem or violates stem cardinality ({@code 1 <= |stems| <= 2}, multi-stem {@code >= 3}) (SPEC § 3.10.2, E032). */
     public static final String ERR_INVALID_FILENAME_STEM = "ERR_INVALID_FILENAME_STEM";
 
     // Syntax & Lexical Invariants
@@ -67,6 +67,7 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_EMPTY_DEFS_BLOCK = "ERR_EMPTY_DEFS_BLOCK";
     public static final String ERR_STRIP_ON_TYPE_DEF = "ERR_STRIP_ON_TYPE_DEF";
     public static final String ERR_INVALID_METADATA_FACET = "ERR_INVALID_METADATA_FACET";
+    public static final String ERR_UNRECOGNIZED_METADATA_FACET = "ERR_UNRECOGNIZED_METADATA_FACET";
     public static final String WARN_REDUNDANT_METADATA_FACET = "WARN_REDUNDANT_METADATA_FACET";
     public static final String WARN_REDUNDANT_FACET_OVERRIDE = "WARN_REDUNDANT_FACET_OVERRIDE";
 

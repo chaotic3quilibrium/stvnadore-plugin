@@ -79,6 +79,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
                 MetadataEntry minInclEntry = null;
                 MetadataEntry maxExclEntry = null;
+                MetadataEntry upperEntry = null;
                 BigDecimal minVal = null;
                 BigDecimal maxVal = null;
 
@@ -97,6 +98,8 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             quickFixes
                         );
+                        maxVal = extractBoundBigDecimal(entry);
+                        upperEntry = entry;
                     } else if (entryText.startsWith("#minExcl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
                         var quickFixes = canIncrementBound(entry)
                             ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry)}
@@ -110,19 +113,21 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             quickFixes
                         );
+                        minVal = extractBoundBigDecimal(entry);
                     } else if (entryText.startsWith("#minIncl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
                         minInclEntry = entry;
                         minVal = extractBoundBigDecimal(entry);
                     } else if (entryText.startsWith("#maxExcl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
                         maxExclEntry = entry;
                         maxVal = extractBoundBigDecimal(entry);
+                        upperEntry = entry;
                     }
                 }
 
                 // Evaluate discrete interval domain using BigDecimal.compareTo(...) == 0
-                if (minVal != null && maxVal != null && maxExclEntry != null) {
+                if (minVal != null && maxVal != null && upperEntry != null) {
                     int cmp = minVal.compareTo(maxVal);
-                    if (cmp == 0) {
+                    if (cmp == 0 && maxExclEntry != null) {
                         holder.registerProblem(
                             maxExclEntry,
                             StvnDiagnosticFormatter.formatPlugin(
@@ -133,7 +138,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                         );
                     } else if (cmp > 0) {
                         holder.registerProblem(
-                            maxExclEntry,
+                            upperEntry,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
                                 StvnDiagnosticCodes.ERR_INVERTED_RANGE

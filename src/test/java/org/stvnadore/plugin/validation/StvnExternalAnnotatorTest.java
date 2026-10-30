@@ -1353,8 +1353,8 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals("Expected strictly single compiler diagnostic for unrecognized facet: " + errorDescriptions,
             1, errorDescriptions.size());
         assertTrue("Expected compiler diagnostic ERR_UNRECOGNIZED_METADATA_FACET: " + errorDescriptions.get(0),
-            errorDescriptions.get(0).contains("Unrecognized constraint facet '#sizex'")
-            && errorDescriptions.get(0).contains("[stvn-core:ERR_UNRECOGNIZED_METADATA_FACET]"));
+            (errorDescriptions.get(0).contains("Unrecognized metadata facet '#sizex'") || errorDescriptions.get(0).contains("Unrecognized constraint facet '#sizex'"))
+            && errorDescriptions.get(0).contains("ERR_UNRECOGNIZED_METADATA_FACET"));
         assertFalse("Spurious ERR_EMPTY_METADATA_BLOCK must be eliminated: " + errorDescriptions,
             errorDescriptions.stream().anyMatch(d -> d.contains("ERR_EMPTY_METADATA_BLOCK")));
     }

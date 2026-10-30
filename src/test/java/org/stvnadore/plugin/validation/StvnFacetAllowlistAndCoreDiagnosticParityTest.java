@@ -235,4 +235,85 @@ public final class StvnFacetAllowlistAndCoreDiagnosticParityTest extends BasePla
             .toList();
         assertFalse("Expected TRAIT_VIOLATION on tuple_sibling_sets_non_equatable", errors.isEmpty());
     }
+
+    /**
+     * Mirrored Shared Fixture: unrecognized_facet_with_conflicting_modes.stvn_d
+     */
+    public void testSharedFixtureUnrecognizedFacetWithConflictingModes() {
+        myFixture.configureByFile("syntax/invalid/temporal/unrecognized_facet_with_conflicting_modes.stvn_d");
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_UNRECOGNIZED_METADATA_FACET"))
+            .toList();
+        assertEquals("Expected 1 ERR_UNRECOGNIZED_METADATA_FACET", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("#milli"));
+    }
+
+    /**
+     * Mirrored Shared Fixture: discrete_max_incl_and_inverted_range.stvn_d
+     */
+    public void testSharedFixtureDiscreteMaxInclAndInvertedRange() {
+        myFixture.configureByFile("syntax/invalid/intervals/discrete_max_incl_and_inverted_range.stvn_d");
+        var highlights = myFixture.doHighlighting();
+
+        var boundErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
+            .toList();
+        assertEquals("Expected 1 ERR_DISCRETE_BOUND_KIND_PROHIBITED", 1, boundErrors.size());
+
+        var rangeErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVERTED_RANGE"))
+            .toList();
+        assertEquals("Expected 1 ERR_INVERTED_RANGE", 1, rangeErrors.size());
+    }
+
+    /**
+     * Mirrored Shared Fixture: invertible_map_dual_trait_violation.stvn
+     */
+    public void testSharedFixtureInvertibleMapDualTraitViolation() {
+        myFixture.configureByFile("syntax/invalid/traits/invertible_map_dual_trait_violation.stvn");
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("TRAIT_VIOLATION") || h.getDescription().contains("ERR_TRAIT_VIOLATION")))
+            .toList();
+        assertFalse("Expected TRAIT_VIOLATION on invertible_map_dual_trait_violation", errors.isEmpty());
+    }
+
+    /**
+     * Mirrored Shared Fixture: defs_composite_sibling_trait_violations.stvn_d
+     */
+    public void testSharedFixtureDefsCompositeSiblingTraitViolations() {
+        myFixture.configureByFile("syntax/invalid/traits/defs_composite_sibling_trait_violations.stvn_d");
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && (h.getDescription().contains("TRAIT_VIOLATION") || h.getDescription().contains("ERR_TRAIT_VIOLATION")))
+            .toList();
+        assertFalse("Expected TRAIT_VIOLATION on defs_composite_sibling_trait_violations", errors.isEmpty());
+    }
+
+    /**
+     * Mirrored Shared Fixture: tuple_arity_underflow_closing_paren.stvn
+     */
+    public void testSharedFixtureTupleArityUnderflowClosingParen() {
+        myFixture.configureByFile("syntax/invalid/containers/tuple_arity_underflow_closing_paren.stvn");
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("TUPLE_ARITY_MISMATCH"))
+            .toList();
+        assertFalse("Expected TUPLE_ARITY_MISMATCH on tuple_arity_underflow_closing_paren", errors.isEmpty());
+        var text = myFixture.getFile().getText();
+        int rparenOffset = text.lastIndexOf(')');
+        assertEquals(rparenOffset, errors.get(0).getStartOffset());
+        assertEquals(rparenOffset + 1, errors.get(0).getEndOffset());
+    }
 }

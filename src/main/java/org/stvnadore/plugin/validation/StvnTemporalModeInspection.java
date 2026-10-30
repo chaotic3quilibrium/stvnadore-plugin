@@ -61,7 +61,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                 if (":TimeEpoch".equals(typeText)) {
                     var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
                     boolean hasScale = false;
-                    int scaleCount = 0;
+                    var scaleEntries = new java.util.ArrayList<MetadataEntry>();
                     if (metaMap != null) {
                         for (var e : metaMap.getMetadataEntryList()) {
                             var text = e.getText().trim();
@@ -70,16 +70,18 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                     || e.getNode().findChildByType(StvnTypes.KW_SCALE_US) != null || "#us".equals(text)
                                     || e.getNode().findChildByType(StvnTypes.KW_SCALE_NS) != null || "#ns".equals(text)) {
                                 hasScale = true;
-                                scaleCount++;
+                                scaleEntries.add(e);
                             }
                         }
                     }
-                    if (scaleCount > 1 && metaMap != null) {
-                        holder.registerProblem(
-                            metaMap,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
+                    if (scaleEntries.size() > 1) {
+                        for (var scaleEntry : scaleEntries) {
+                            holder.registerProblem(
+                                scaleEntry,
+                                StvnDiagnosticFormatter.formatPlugin("Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE),
+                                ProblemHighlightType.GENERIC_ERROR
+                            );
+                        }
                     } else if (!hasScale) {
                         holder.registerProblem(
                             schemaType,
@@ -93,21 +95,33 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     boolean hasOffset = false;
                     boolean hasZoned = false;
                     boolean hasAudited = false;
+                    var modeEntries = new java.util.ArrayList<MetadataEntry>();
                     if (metaMap != null) {
                         for (var e : metaMap.getMetadataEntryList()) {
                             var text = e.getText();
-                            if (text.startsWith("#offset") || e.getNode().findChildByType(StvnTypes.KW_OFFSET) != null) hasOffset = true;
-                            if (text.startsWith("#zoned") || e.getNode().findChildByType(StvnTypes.KW_ZONED) != null) hasZoned = true;
-                            if (text.startsWith("#audited") || e.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) hasAudited = true;
+                            if (text.startsWith("#offset") || e.getNode().findChildByType(StvnTypes.KW_OFFSET) != null) {
+                                hasOffset = true;
+                                modeEntries.add(e);
+                            }
+                            if (text.startsWith("#zoned") || e.getNode().findChildByType(StvnTypes.KW_ZONED) != null) {
+                                hasZoned = true;
+                                modeEntries.add(e);
+                            }
+                            if (text.startsWith("#audited") || e.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) {
+                                hasAudited = true;
+                                modeEntries.add(e);
+                            }
                         }
                     }
                     int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
-                    if (modeCount > 1 && metaMap != null) {
-                        holder.registerProblem(
-                            metaMap,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive", StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
+                    if (modeCount > 1) {
+                        for (var modeEntry : modeEntries) {
+                            holder.registerProblem(
+                                modeEntry,
+                                StvnDiagnosticFormatter.formatPlugin("Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive", StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE),
+                                ProblemHighlightType.GENERIC_ERROR
+                            );
+                        }
                     } else if (modeCount == 0) {
                         holder.registerProblem(
                             schemaType,

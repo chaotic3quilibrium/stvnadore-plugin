@@ -32,7 +32,7 @@ import java.util.Set;
 /**
  * Validates declared mantissa precision on exact decimal float definitions ({@code { #exact } :Float}).
  * <p>
- * Emits a warning when {@code #maxSize <N>} exceeds the configured warning threshold (default: 38 digits,
+ * Emits a warning when {@code #maxSize} &lt;N&gt; exceeds the configured warning threshold (default: 38 digits,
  * corresponding to the ANSI SQL {@code DECIMAL(38, s)} and IEEE 754-2008 {@code decimal128} boundary).
  * <p>
  * Suppresses warnings when {@code #maxSize 16777216} is declared, deferring to Core Rule {@code W003}.
@@ -290,7 +290,7 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
     }
 
     /**
-     * Quick-Fix: Converts '#maxSize <N>' to numeric bound '#maxExcl <N>.0'.
+     * Quick-Fix: Converts '#maxSize [N]' to numeric bound '#maxExcl [N].0'.
      */
     public static final class ConvertToNumericBoundQuickFix implements LocalQuickFix, PriorityAction {
         private final String rawNumericValue;

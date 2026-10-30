@@ -24,7 +24,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Code completion contributor for package paths (:package :<caret>) and module imports (:use [ :<caret> ]).
+ * Code completion contributor for package paths ({@code :package :<caret>}) and module imports ({@code :use [ :<caret> ]}).
  * <p>
  * Enforces STVN Specification § 3.9 Invariant 8:
  * 1. Proactively suppresses reserved package namespace ':org/stvnadore/*' in ':package' declarations.

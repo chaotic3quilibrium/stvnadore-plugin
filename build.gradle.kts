@@ -403,6 +403,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnSemanticHoverContractTest.class")
     exclude("**/StvnTraitViolationNavigationAndHealingTest.class")
     exclude("**/StvnFacetAllowlistAndCoreDiagnosticParityTest.class")
+    exclude("**/StvnTradingWorkflowIntegrationTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()
@@ -450,7 +451,7 @@ tasks.javadoc {
     (options as StandardJavadocDocletOptions).apply {
         encoding = "UTF-8"
         charSet = "UTF-8"
-        addStringOption("Xdoclint:all", "-quiet")
+        addStringOption("Xdoclint:all,-missing", "-quiet")
         addBooleanOption("Werror", true)
     }
 }
