@@ -38,22 +38,22 @@ public final class StvnMetadataRegistry {
             Set.of(StvnVocabulary.TYPE_MAP), "#invertible"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_S, 2, false,
+            StvnVocabulary.FACET_KW_SCALE_S, 1, false,
             "Physical epoch resolution in seconds (64-bit integer ticks)",
             Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#s"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_MS, 2, false,
+            StvnVocabulary.FACET_KW_SCALE_MS, 1, false,
             "Physical epoch resolution in milliseconds (64-bit integer ticks)",
             Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#ms"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_US, 2, false,
+            StvnVocabulary.FACET_KW_SCALE_US, 1, false,
             "Physical epoch resolution in microseconds (64-bit integer ticks)",
             Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#us"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_NS, 2, false,
+            StvnVocabulary.FACET_KW_SCALE_NS, 1, false,
             "Physical epoch resolution in nanoseconds (128-bit integer ticks)",
             Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#ns"
         ));
@@ -99,13 +99,13 @@ public final class StvnMetadataRegistry {
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_MIN_INCL, 3, true,
             "Inclusive lower bound value",
-            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH),
+            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
             "#minIncl 0"
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_MAX_EXCL, 3, true,
             "Exclusive upper bound value (discrete half-open domain [minIncl, maxExcl))",
-            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_TIME_EPOCH),
+            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
             "#maxExcl 100"
         ));
         register(new StvnFacetMetadata(
@@ -121,15 +121,15 @@ public final class StvnMetadataRegistry {
             "#maxIncl 1.0"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_MIN_SIZE, 3, true,
+            StvnVocabulary.FACET_KW_MIN_SIZE, 1, false,
             "Minimum cardinality or character length bound",
             Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP),
             "#minSize 1"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_MAX_SIZE, 3, true,
+            StvnVocabulary.FACET_KW_MAX_SIZE, 1, false,
             "Maximum cardinality or character length bound",
-            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP),
+            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP, StvnVocabulary.TYPE_FLOAT),
             "#maxSize 256"
         ));
         register(new StvnFacetMetadata(
@@ -154,7 +154,7 @@ public final class StvnMetadataRegistry {
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_STRIP, 5, false,
-            "Ingestion option stripping comments or whitespace",
+            "Terminal segment slicing; strips package prefixes from imported identifiers upon ingestion",
             Set.of(StvnVocabulary.KEYWORD_USE, StvnVocabulary.KEYWORD_INCLUDE), "#strip"
         ));
     }

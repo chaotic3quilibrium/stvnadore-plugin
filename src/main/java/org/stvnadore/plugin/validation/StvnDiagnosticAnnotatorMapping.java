@@ -216,6 +216,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_MONOTONIC_NARROWING_VIOLATION, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ROOT_ORDER_VIOLATION, "StvnEnumSubset");
+        map.put(StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_COMPLETE_EXCLUSION_VIOLATION, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION, "StvnEnumSubset");
@@ -326,6 +327,25 @@ public final class StvnDiagnosticAnnotatorMapping {
                 }
             }
 
+            if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(errorCode)
+                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(errorCode)
+                    || "MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode)
+                    || "E011".equals(errorCode)) {
+                var msg = diag.message();
+                String mutexOwner = "StvnDiscreteInterval";
+                if (msg.contains("Temporal scale facets") || msg.contains("Temporal mode facets") || msg.contains("Mutually exclusive temporal")) {
+                    mutexOwner = "StvnTemporalMode";
+                } else if (msg.contains("#exact") || msg.contains("#size")) {
+                    mutexOwner = "StvnMetadataFacet";
+                } else if (msg.contains("#filterIncl") || msg.contains("#filterExcl")) {
+                    mutexOwner = "StvnEnumSubset";
+                }
+                if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                    return true;
+                }
+                return isInspectionActive(file, mutexOwner);
+            }
+
             var shortName = CODE_TO_INSPECTION_MAP.get(errorCode);
             if (shortName != null) {
                 if (!ApplicationManager.getApplication().isUnitTestMode()) {
@@ -340,7 +360,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         if (message.contains("cannot declare ':type'") || message.contains("cannot declare ':body'") || message.contains("Structural violation:")) {
             return false;
         }
-        if (message.contains("Constraint violation (") || message.contains("is out of bounds for physical capacity")) {
+        if (message.contains("is out of bounds for physical capacity")) {
             return false;
         }
 
@@ -371,6 +391,14 @@ public final class StvnDiagnosticAnnotatorMapping {
      * @return the shortName of the governing inspection, or {@code null} if ungoverned
      */
     public static @Nullable String resolveGoverningInspectionByMessageContent(String message) {
+        if (message.contains("Root ordering violation")
+                || message.contains("Monotonic narrowing violation")
+                || message.contains("enum filter variant list cannot be empty")
+                || message.contains("Complete exclusion violation")
+                || message.contains("filter facets cannot be applied")
+                || message.contains("filter facets are not allowed")) {
+            return "StvnEnumSubset";
+        }
         if (message.contains("is omitted from filename stem slot 1")
                 || message.contains("does not match filename stem slot")
                 || message.contains("does not match file stem")

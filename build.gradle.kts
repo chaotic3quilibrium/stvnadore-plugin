@@ -16,6 +16,11 @@ version = "2.0.0-SNAPSHOT"
 repositories {
     mavenLocal() // Prioritize local Maven repository for stvnadore-core SDK
     mavenCentral()
+    configurations.all {
+        resolutionStrategy {
+            cacheChangingModulesFor(0, "seconds")
+        }
+    }
     intellijPlatform {
         defaultRepositories()
         intellijDependencies()
@@ -268,7 +273,25 @@ val syncSiblingCoreToSandbox by tasks.registering(SyncSiblingCoreTask::class) {
 }
 
 tasks.prepareSandbox {
+    doLast {
+        val noisyBundledPlugins = listOf(
+            "com.intellij.kubernetes",
+            "com.intellij.docker",
+            "com.intellij.microservices.jvm",
+            "com.intellij.Clouds.docker.gateway"
+        )
+        val sandboxDir = (this as Sync).destinationDir
+        val disabledFile = sandboxDir.resolve("../config/disabled_plugins.txt").canonicalFile
+        disabledFile.parentFile.mkdirs()
+        val existing = if (disabledFile.exists()) disabledFile.readLines().map { it.trim() } else emptyList()
+        val merged = (existing + noisyBundledPlugins).filter { it.isNotEmpty() }.toSortedSet()
+        disabledFile.writeText(merged.joinToString("\n") + "\n")
+    }
     finalizedBy(syncSiblingCoreToSandbox)
+}
+
+tasks.runIde {
+    jvmArgs("-Didea.log.debug.categories=#org.stvnadore")
 }
 
 tasks.prepareTestSandbox {
@@ -379,6 +402,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnDuplicateDiagnosticsIntegrationTest*.class")
     exclude("**/StvnSemanticHoverContractTest.class")
     exclude("**/StvnTraitViolationNavigationAndHealingTest.class")
+    exclude("**/StvnFacetAllowlistAndCoreDiagnosticParityTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

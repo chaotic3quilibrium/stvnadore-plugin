@@ -66,17 +66,31 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     return;
                 }
 
+                boolean hasIllegalFacets = false;
+                for (MetadataEntry entry : entries) {
+                    if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
+                        hasIllegalFacets = true;
+                        break;
+                    }
+                }
+
                 int currentMaxRank = -1;
                 for (MetadataEntry entry : entries) {
+                    if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
+                        continue;
+                    }
                     String keyword = extractFacetKeyword(entry);
                     int rank = getFacetRank(keyword);
                     if (rank < currentMaxRank) {
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
+                        var fixes = hasIllegalFacets
+                            ? com.intellij.codeInspection.LocalQuickFix.EMPTY_ARRAY
+                            : new com.intellij.codeInspection.LocalQuickFix[]{new StvnReorderMetadataFacetsQuickFix(metadataMap)};
                         holder.registerProblem(
                             target,
                             StvnDiagnosticFormatter.formatPlugin("Metadata facet '" + keyword + "' violates canonical 5-tier order", StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION),
                             ProblemHighlightType.GENERIC_ERROR,
-                            new StvnReorderMetadataFacetsQuickFix(metadataMap)
+                            fixes
                         );
                     } else {
                         currentMaxRank = rank;
@@ -96,6 +110,11 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
         List<MetadataEntry> entries = map.getMetadataEntryList();
         if (entries.size() <= 1) {
             return false;
+        }
+        for (MetadataEntry entry : entries) {
+            if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, map)) {
+                return false;
+            }
         }
         int maxRank = -1;
         for (MetadataEntry entry : entries) {

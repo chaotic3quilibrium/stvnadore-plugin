@@ -34,7 +34,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnStringCardinalityInspection.class, List.of("cardinality", "#size", "#minSize", "#maxSize")),
         Map.entry(StvnDiscreteIntervalInspection.class, List.of("discrete", "interval", "#maxIncl", "#minExcl")),
         Map.entry(StvnTemporalModeInspection.class, List.of("temporal", ":TimeEpoch", ":DateTime", "mode")),
-        Map.entry(StvnMetadataOrderInspection.class, List.of("metadata", "order", "canonical", "7-tier")),
+        Map.entry(StvnMetadataOrderInspection.class, List.of("metadata", "order", "canonical", "5-tier")),
         Map.entry(StvnRedundantFacetOverrideInspection.class, List.of("redundant", "facet", "override", "quick-fix")),
         Map.entry(StvnUnresolvedTypeInspection.class, List.of("unresolved", "type", "prelude", "qualify")),
         Map.entry(StvnTabCharacterInspection.class, List.of("tab", "forbidden", "ascii")),

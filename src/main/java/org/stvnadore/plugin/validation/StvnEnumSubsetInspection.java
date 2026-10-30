@@ -194,15 +194,24 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Constraint violation (" + kw + "): Root ordering violation: variant " + outOfOrderText + " does not match relative declaration order of root :Enum " + rootEnumName,
-                            StvnDiagnosticCodes.ERR_FILTER_ROOT_ORDER_VIOLATION
+                            StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION
                         );
                         for (var vkw : valueKeywords) {
-                            holder.registerProblem(
-                                vkw,
-                                msg,
-                                ProblemHighlightType.GENERIC_ERROR,
-                                quickFix
-                            );
+                            if (outOfOrderText.equals(vkw.getText())) {
+                                holder.registerProblem(
+                                    vkw,
+                                    msg,
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    quickFix
+                                );
+                            } else if (isOnTheFly) {
+                                holder.registerProblem(
+                                    vkw,
+                                    "",
+                                    ProblemHighlightType.INFORMATION,
+                                    quickFix
+                                );
+                            }
                         }
                     }
 

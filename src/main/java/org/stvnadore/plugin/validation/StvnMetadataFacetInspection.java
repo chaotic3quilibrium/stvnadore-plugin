@@ -39,7 +39,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         StvnTypes.KW_MIN_INCL, StvnTypes.KW_MIN_EXCL, StvnTypes.KW_MAX_INCL, StvnTypes.KW_MAX_EXCL
     );
     private static final TokenSet STRING_ONLY_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_REGEX
+        StvnTypes.KW_REGEX, StvnTypes.KW_PRESERVE_INDENT
     );
     private static final TokenSet MIN_SIZE_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_MIN_SIZE
@@ -47,8 +47,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     private static final TokenSet MAX_SIZE_FACET_TOKENS = TokenSet.create(
         StvnTypes.KW_MAX_SIZE
     );
-    private static final TokenSet TEMPORAL_FACET_TOKENS = TokenSet.create(
-        StvnTypes.KW_SCALE_S, StvnTypes.KW_SCALE_MS, StvnTypes.KW_SCALE_US, StvnTypes.KW_SCALE_NS,
+    private static final TokenSet TIME_EPOCH_SCALE_TOKENS = TokenSet.create(
+        StvnTypes.KW_SCALE_S, StvnTypes.KW_SCALE_MS, StvnTypes.KW_SCALE_US, StvnTypes.KW_SCALE_NS
+    );
+    private static final TokenSet DATE_TIME_MODE_TOKENS = TokenSet.create(
         StvnTypes.KW_OFFSET, StvnTypes.KW_ZONED, StvnTypes.KW_AUDITED
     );
     private static final TokenSet MAP_FACET_TOKENS = TokenSet.create(
@@ -175,7 +177,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                                     ),
                                     ProblemHighlightType.ERROR,
-                                    new RemoveElementQuickFix("Remove invalid facet")
+                                    new RemoveElementQuickFix("Remove invalid facet '#strip'", "Remove invalid facet")
                                 );
                             }
                             // Tier 2 Trait Overrides: Prohibited on constants
@@ -187,7 +189,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
                                     ),
                                     ProblemHighlightType.ERROR,
-                                    new RemoveElementQuickFix("Remove invalid facet")
+                                    new RemoveElementQuickFix("Remove invalid facet '#" + facetName + "'", "Remove invalid facet")
                                 );
                             }
                             // Enum Subsets: Prohibited on constants
@@ -199,7 +201,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
-                                    new RemoveElementQuickFix("Remove invalid facet")
+                                    new RemoveElementQuickFix("Remove invalid facet '#" + facetName + "'", "Remove invalid facet")
                                 );
                             }
                         }
@@ -270,14 +272,36 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private void validateMetadataEntries(MetadataMap metaMap, SchemaType schemaType, ProblemsHolder holder) {
-        var baseType = schemaType != null ? resolveBaseTypeString(schemaType, new HashSet<>()) : null;
-        boolean isNumeric = baseType != null && isNumericType(baseType);
-        boolean isString = baseType != null && isStringType(baseType);
-        boolean isTemporal = baseType != null && isTemporalType(baseType);
-        boolean isMap = baseType != null && isMapType(baseType);
-        boolean isCollection = baseType != null && isCollectionType(baseType);
-        boolean isBoolean = baseType != null && isBooleanType(baseType);
-        boolean isEnum = baseType != null && isEnumConstructor(baseType);
+        // Validate directive facets (#strip) first, which are strictly prohibited on type declarations regardless of base type (Spec § 4.8.4)
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getMetadataDirective() != null) {
+                if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
+                    continue; // Handled by visitConstantDefinition
+                }
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
+                        StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
+                    ),
+                    ProblemHighlightType.ERROR,
+                    new RemoveElementQuickFix("Remove invalid facet '#strip'", "Remove invalid facet")
+                );
+            }
+        }
+
+        var baseType = schemaType != null ? StvnMetadataFacetAllowlist.resolveUnderlyingBaseType(schemaType, new HashSet<>()) : null;
+        if (baseType == null) {
+            return;
+        }
+        boolean isExactActive = StvnMetadataFacetAllowlist.isExactActive(metaMap, schemaType);
+        boolean isNumeric = baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_FLOAT);
+        boolean isString = isStringType(baseType);
+        boolean isTimeEpoch = StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType);
+        boolean isDateTime = StvnVocabulary.TYPE_DATE_TIME.equals(baseType);
+        boolean isMap = isMapType(baseType);
+        boolean isCollection = isCollectionType(baseType);
+        boolean isEnum = isEnumConstructor(baseType);
 
         // Local Trap 12 enforcement: #exact and #size co-declared on :Float
         if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
@@ -297,34 +321,47 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    new RemoveElementQuickFix("Remove mutually exclusive facet")
+                    new RemoveElementQuickFix("Remove mutually exclusive facet", "Remove mutually exclusive facet")
                 );
             }
         }
 
         for (var entry : metaMap.getMetadataEntryList()) {
-            if (entry.getMetadataUnknownEntry() != null) {
+            if (entry.getMetadataUnknownEntry() != null || entry.getMetadataDirective() != null) {
                 continue;
             }
-            if (entry.getMetadataDirective() != null) {
-                if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
-                    continue; // Handled by visitConstantDefinition
-                }
+
+            String facetName = extractFacetName(entry);
+            String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
+            var removeFix = new RemoveElementQuickFix("Remove invalid facet '" + kwTag + "'", "Remove invalid facet");
+
+            // Temporal scale facets (#ns, #us, #ms, #s) strictly on :TimeEpoch
+            if (hasToken(entry, TIME_EPOCH_SCALE_TOKENS) && !isTimeEpoch) {
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
-                        StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
+                        "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is not permitted on " + baseType + "; temporal scale facets [#ns, #us, #ms, #s] apply only to :TimeEpoch",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
                 continue;
             }
-            if (baseType == null) {
+            // Temporal mode facets (#offset, #zoned, #audited) strictly on :DateTime
+            if (hasToken(entry, DATE_TIME_MODE_TOKENS) && !isDateTime) {
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is not permitted on " + baseType + "; temporal mode facets [#offset, #zoned, #audited] apply only to :DateTime",
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
+                    ProblemHighlightType.ERROR,
+                    removeFix
+                );
                 continue;
             }
-            if (hasToken(entry, INTERVAL_FACET_TOKENS) && !isNumeric && !isTemporal && !isString) {
+            if (hasToken(entry, INTERVAL_FACET_TOKENS) && !isNumeric && !isTimeEpoch && !isDateTime && !isString) {
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -332,7 +369,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             } else if (hasToken(entry, NUMERIC_FACET_TOKENS) && !isNumeric) {
                 holder.registerProblem(
@@ -342,7 +379,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
                 holder.registerProblem(
@@ -352,7 +389,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             } else if (hasToken(entry, MIN_SIZE_FACET_TOKENS) && !isString && !isCollection) {
                 holder.registerProblem(
@@ -362,18 +399,24 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             } else if (hasToken(entry, MAX_SIZE_FACET_TOKENS)) {
                 boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(baseType);
                 if (isFloat) {
-                    boolean exactActive = isExactActive(metaMap, schemaType);
-                    if (exactActive) {
+                    if (isExactActive) {
                         // When #exact is active, #maxSize is permitted (precision narrowing/widening)
                         continue;
                     }
-                    // Continuous float (#exact absent) is governed strictly by Core Rule E008 via StvnExternalAnnotator.
-                    // Suppress duplicate generic inspection errors on continuous float.
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Facet is not permitted on :Float: facet '#maxSize' is prohibited on continuous ':Float'; declare '#exact' or use value interval bounds",
+                            StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                        ),
+                        ProblemHighlightType.ERROR,
+                        removeFix
+                    );
                     continue;
                 }
                 if (!isString && !isCollection) {
@@ -384,19 +427,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
                         ProblemHighlightType.ERROR,
-                        new RemoveElementQuickFix("Remove invalid facet")
+                        removeFix
                     );
                 }
-            } else if (hasToken(entry, TEMPORAL_FACET_TOKENS) && !isTemporal) {
-                holder.registerProblem(
-                    entry,
-                    StvnDiagnosticFormatter.formatPlugin(
-                        "Facet is not permitted on " + baseType + "; permitted facets for temporal types: [#s, #ms, #us, #ns, #offset, #zoned, #audited]",
-                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
-                    ),
-                    ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
-                );
             } else if (hasToken(entry, MAP_FACET_TOKENS) && !isMap) {
                 holder.registerProblem(
                     entry,
@@ -405,7 +438,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             } else if (entry.getMetadataFilter() != null && !isEnum) {
                 if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
@@ -418,7 +451,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.ERROR,
-                    new RemoveElementQuickFix("Remove invalid facet")
+                    removeFix
                 );
             }
         }
@@ -745,15 +778,21 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     }
 
     private static final class RemoveElementQuickFix implements LocalQuickFix {
+        private final String name;
         private final String familyName;
 
         RemoveElementQuickFix(String familyName) {
+            this(familyName, familyName);
+        }
+
+        RemoveElementQuickFix(String name, String familyName) {
+            this.name = name;
             this.familyName = familyName;
         }
 
         @Override
         public @Nls @NotNull String getName() {
-            return familyName;
+            return name;
         }
 
         @Override
@@ -778,8 +817,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         return;
                     }
                 }
+                var next = element.getNextSibling();
                 var prev = element.getPrevSibling();
-                if (prev instanceof PsiWhiteSpace) {
+                if (next instanceof PsiWhiteSpace && !(prev instanceof PsiWhiteSpace)) {
+                    next.delete();
+                } else if (prev instanceof PsiWhiteSpace) {
                     if (!(element instanceof MetadataEntry) || prev.getPrevSibling() instanceof MetadataEntry) {
                         prev.delete();
                     }

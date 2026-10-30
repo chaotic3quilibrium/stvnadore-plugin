@@ -62,6 +62,12 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
             return;
         }
 
+        for (MetadataEntry entry : entries) {
+            if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, map)) {
+                return;
+            }
+        }
+
         List<MetadataEntry> sorted = new ArrayList<>(entries);
         sorted.sort(Comparator.comparingInt(e -> StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(e))));
 
