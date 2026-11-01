@@ -41,6 +41,7 @@ public final class StvnVocabularyHygieneTest extends TestCase {
         "org.stvnadore.core.parser",
         "org.stvnadore.core.ast",
         "org.stvnadore.core.lowering",
+        "org.stvnadore.core.printer.internal",
         "org.stvnadore.core.validation.StvnTypeResolver",
         "org.stvnadore.core.ir.StvnLiteralParser",
         "org.stvnadore.core.ir.VariantStep",

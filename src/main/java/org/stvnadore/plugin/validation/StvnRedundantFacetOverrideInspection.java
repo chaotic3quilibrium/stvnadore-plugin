@@ -110,7 +110,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
     ) {
         // Suppress inspection warnings on floor tautologies, primitive trait re-assertions,
         // and natural bounds already enforced as W003 warnings by StvnExternalAnnotator.
-        if (isGovernedByCoreRuleW003(entry, metaMap, ultimateBase, irSchema, parentIr)) {
+        if (isGovernedByCoreRuleW003(entry, typeDef, metaMap, ultimateBase, irSchema, parentIr)) {
             return;
         }
 
@@ -153,12 +153,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-            extractBigInteger(text).ifPresent(val -> {
-                BigInteger parentVal = resolveParentMaxSize(parentIr);
-                if (val.compareTo(parentVal) == 0) {
-                    registerRedundantProblem(entry, val.toString(), holder);
-                }
-            });
+            if (supportsMaxSizeFacet(ultimateBase, metaMap, irSchema, parentIr)) {
+                extractBigInteger(text).ifPresent(val -> {
+                    BigInteger parentVal = resolveParentMaxSize(parentIr);
+                    if (val.compareTo(parentVal) == 0) {
+                        registerRedundantProblem(entry, val.toString(), holder);
+                    }
+                });
+            }
         } else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
                 boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, ultimateBase, parentIr);
@@ -518,6 +520,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
     private static boolean isGovernedByCoreRuleW003(
         MetadataEntry entry,
+        TypeDefinition typeDef,
         MetadataMap metaMap,
         String ultimateBase,
         @Nullable StvnSchema irSchema,
@@ -600,19 +603,79 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
-        // 5. Exact Float Precision Ceiling Tautology (Rule W003)
+        // 5. Default Capacity & Exact Float Precision Ceiling Tautologies (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
             var valOpt = extractBigInteger(text);
             if (valOpt.isPresent() && valOpt.get().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
-                boolean isExact = hasLocalExactFacet(metaMap)
-                    || (irSchema instanceof StvnSchema.FloatSchema fs
-                        && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL);
-                if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && isExact) {
-                    return true;
+                if (supportsMaxSizeFacet(ultimateBase, metaMap, irSchema, parentIr)) {
+                    return parentIr == null
+                        || !hasAncestorExplicitFacet(typeDef, StvnVocabulary.FACET_KW_MAX_SIZE);
                 }
             }
         }
 
+        return false;
+    }
+
+    private static boolean supportsMaxSizeFacet(
+        String ultimateBase,
+        @Nullable MetadataMap metaMap,
+        @Nullable StvnSchema irSchema,
+        @Nullable StvnSchema parentIr
+    ) {
+        if (StvnVocabulary.TYPE_STRING.equals(ultimateBase)
+            || StvnVocabulary.TYPE_SEQ.equals(ultimateBase)
+            || StvnVocabulary.TYPE_SET.equals(ultimateBase)
+            || StvnVocabulary.TYPE_MAP.equals(ultimateBase)) {
+            return true;
+        }
+        if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
+            return hasLocalExactFacet(metaMap)
+                || (irSchema instanceof StvnSchema.FloatSchema fs
+                    && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL)
+                || (parentIr instanceof StvnSchema.FloatSchema pfs
+                    && pfs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL);
+        }
+        return false;
+    }
+
+    private static boolean hasAncestorExplicitFacet(TypeDefinition startTypeDef, String facetKeyword) {
+        var visited = new HashSet<TypeDefinition>();
+        visited.add(startTypeDef);
+        TypeDefinition current = startTypeDef;
+        while (current != null) {
+            var schemaType = current.getSchemaType();
+            if (schemaType == null) {
+                return false;
+            }
+            var targetKw = schemaType.getTypeKeyword();
+            if (targetKw == null) {
+                return false;
+            }
+            String parentAlias = targetKw.getText().trim();
+            if (StvnVocabulary.isBaseScalarType(parentAlias)
+                || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(parentAlias)) {
+                return false;
+            }
+            var resolvedElem = StvnTypeReference.resolveTypeInFile(
+                current.getContainingFile(),
+                parentAlias,
+                new HashSet<>()
+            );
+            var parentDef = StvnPsiUtils.getParentTypeDefinition(resolvedElem);
+            if (parentDef == null || !visited.add(parentDef)) {
+                return false;
+            }
+            var parentMeta = parentDef.getMetadataMap();
+            if (parentMeta != null) {
+                for (var entry : parentMeta.getMetadataEntryList()) {
+                    if (entry.getText().trim().startsWith(facetKeyword)) {
+                        return true;
+                    }
+                }
+            }
+            current = parentDef;
+        }
         return false;
     }
 

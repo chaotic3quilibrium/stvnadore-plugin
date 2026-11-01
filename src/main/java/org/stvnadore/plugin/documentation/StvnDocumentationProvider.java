@@ -2658,14 +2658,24 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
         }
-        // 4. Exact float max size
+        // 4. Default capacity and exact float precision ceiling (Rule W003)
         else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(valStr).orElse(null);
-                if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_MAX_SIZE) && (baseType.endsWith(":Float") || baseType.equals(":Float"))) {
-                    reason = "exact decimal float <code>{ #exact } :Float</code> intrinsically defaults to a ceiling of 16,777,216 significant decimal digits.";
+                if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
+                    if ((baseType.endsWith(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_FLOAT)) && isExact) {
+                        reason = "exact decimal float <code>{ #exact } :Float</code> intrinsically defaults to a ceiling of 16,777,216 significant decimal digits.";
+                    } else if (baseType.equals(StvnVocabulary.TYPE_STRING)) {
+                        reason = "<code>:String</code> intrinsically defaults to a maximum cardinality of 16,777,216.";
+                    } else if (baseType.equals(StvnVocabulary.TYPE_SEQ) || baseType.startsWith(StvnVocabulary.TYPE_SEQ + "(")) {
+                        reason = "<code>:Seq</code> intrinsically defaults to a maximum cardinality of 16,777,216.";
+                    } else if (baseType.equals(StvnVocabulary.TYPE_SET) || baseType.startsWith(StvnVocabulary.TYPE_SET + "(")) {
+                        reason = "<code>:Set</code> intrinsically defaults to a maximum cardinality of 16,777,216.";
+                    } else if (baseType.equals(StvnVocabulary.TYPE_MAP) || baseType.startsWith(StvnVocabulary.TYPE_MAP + "(")) {
+                        reason = "<code>:Map</code> intrinsically defaults to a maximum cardinality of 16,777,216.";
+                    }
                 }
             }
         }

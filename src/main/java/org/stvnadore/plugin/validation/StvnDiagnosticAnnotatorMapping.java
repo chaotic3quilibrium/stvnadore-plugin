@@ -354,7 +354,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         if (message.contains("is out of bounds for physical capacity")
                 || message.contains("must be >= 1")
                 || message.contains("must be >= 0")
-                || message.contains("must be in [1, 1024]")
                 || message.contains("must be 32 or 64")
                 || message.contains("cannot exceed #maxSize")
                 || message.contains("lexicographical")

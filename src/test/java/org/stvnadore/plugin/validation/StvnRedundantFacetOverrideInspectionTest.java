@@ -107,9 +107,10 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
         var text = """
             {
               :defs {
-                :Text { #maxSize 16777216 } :String
+                :BoundedText { #maxSize 500 } :String
+                :DerivedText { #maxSize 500 } :BoundedText
               }
-              :type :Text
+              :type :DerivedText
               :body "sample"
             }
             """;
@@ -119,9 +120,69 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
             .toList();
-        assertFalse("Expected warning on redundant #maxSize default", warnings.isEmpty());
-        assertTrue("Warning message must mention effective value '16777216'",
-            warnings.get(0).getDescription().contains("'16777216'"));
+        assertEquals("Expected strictly 1 warning on redundant derived #maxSize override", 1, warnings.size());
+        assertTrue("Warning message must mention effective value '500'",
+            warnings.get(0).getDescription().contains("'500'"));
+    }
+
+    public void testDerivedNominalExplicitDefaultMaxSizeOverrideStillFlagsRedundantOverride() {
+        var text = """
+            {
+              :defs {
+                :BoundedMax { #maxSize 16777216 } :String
+                :DerivedMax { #maxSize 16777216 } :BoundedMax
+              }
+              :type :DerivedMax
+              :body "sample"
+            }
+            """;
+        myFixture.configureByText("derived_explicit_default_maxsize.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var localOverrideWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
+            .toList();
+        assertEquals(
+            "Expected strictly 1 local override warning on :DerivedMax (while :BoundedMax is governed by W003)",
+            1,
+            localOverrideWarnings.size()
+        );
+        assertEquals(
+            "Local override warning must pin to :DerivedMax's #maxSize 16777216",
+            text.lastIndexOf("#maxSize 16777216"),
+            localOverrideWarnings.get(0).getStartOffset()
+        );
+    }
+
+    public void testRootDefaultMaxSizeYieldsToCoreRuleW003WithoutDuplicateLocalWarnings() {
+        var text = """
+            {
+              :defs {
+                :RootStr { #minSize 1 #maxSize 16777216 } :String
+                :RootExact { #exact #maxSize 16777216 } :Float
+                :RootSeq { #minSize 1 #maxSize 16777216 } :Seq(:Int)
+                :RootSet { #minSize 1 #maxSize 16777216 } :Set(:Int)
+                :RootMap { #minSize 1 #maxSize 16777216 } :Map(:String :Int)
+              }
+              :type :RootStr
+              :body "sample"
+            }
+            """;
+        myFixture.configureByText("root_default_maxsize_w003_yield.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var localOverrideWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
+            .toList();
+        assertTrue(
+            "Root #maxSize 16777216 must yield to core rule W003 with zero duplicate local warnings: " + localOverrideWarnings,
+            localOverrideWarnings.isEmpty()
+        );
+        var coreW003Warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_REDUNDANT_METADATA_FACET"))
+            .toList();
+        assertEquals("Expected strictly 5 core W003 warnings across all 5 root declarations", 5, coreW003Warnings.size());
     }
 
     public void testExactFloatWithEquatableTrueEmitsRedundantWarning() {

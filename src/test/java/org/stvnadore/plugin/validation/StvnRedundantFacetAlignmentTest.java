@@ -862,4 +862,148 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
     var doc = customDocElem != null ? provider.generateDoc(customDocElem, element) : null;
     assertNull("Hover doc on bare sigil must be null", doc);
   }
+
+  /**
+   * Asserts that root #maxSize 16777216 across :String, { #exact } :Float, :Seq, :Set, and :Map
+   * emits strictly one W003 warning pinned to [facetStart, facetEnd) with zero duplicate local
+   * inspection warnings, while valid sibling #minSize 1 facets emit zero warnings.
+   */
+  public void testRootDefaultMaxSizeParityAndSiblingIsolationAcrossAllBoundedTypes() {
+    var text = """
+        {
+          :defs {
+            :RootStr { #minSize 1 #maxSize 16777216 } :String
+            :RootExact { #exact #maxSize 16777216 } :Float
+            :RootSeq { #minSize 1 #maxSize 16777216 } :Seq(:Int)
+            :RootSet { #minSize 1 #maxSize 16777216 } :Set(:Int)
+            :RootMap { #minSize 1 #maxSize 16777216 } :Map(:String :Int)
+          }
+          :type :RootStr
+          :body "ok"
+        }
+        """;
+    myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
+    myFixture.configureByText("w003_root_maxsize_parity.stvn", text);
+    var highlights = myFixture.doHighlighting();
+
+    var warnings = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .toList();
+    assertEquals(
+        "Expected strictly 5 W003 warnings (1 per root declaration, 0 duplicate local warnings, 0 sibling warnings): " + warnings,
+        5,
+        warnings.size()
+    );
+
+    String targetFacet = "#maxSize 16777216";
+    int searchFrom = 0;
+    for (int i = 0; i < 5; i++) {
+      int expectedStart = text.indexOf(targetFacet, searchFrom);
+      assertTrue("Expected occurrence " + i + " of #maxSize 16777216", expectedStart >= 0);
+      int expectedEnd = expectedStart + targetFacet.length();
+      searchFrom = expectedEnd;
+
+      var matching = warnings.stream()
+          .filter(w -> w.getStartOffset() == expectedStart && w.getEndOffset() == expectedEnd)
+          .toList();
+      assertEquals(
+          "Expected strictly 1 warning pinned to [" + expectedStart + ", " + expectedEnd + ")",
+          1,
+          matching.size()
+      );
+      var desc = matching.get(0).getDescription();
+      assertNotNull(desc);
+      assertTrue("Warning must be governed by core rule W003: " + desc,
+          desc.contains("WARN_REDUNDANT_METADATA_FACET"));
+      assertFalse("Local inspection must not emit duplicate override warning: " + desc,
+          desc.contains("Redundant facet override"));
+    }
+
+    var minSizeWarnings = warnings.stream()
+        .filter(w -> w.getText().contains("#minSize 1"))
+        .toList();
+    assertTrue("Valid sibling '#minSize 1' facets must receive zero warnings", minSizeWarnings.isEmpty());
+
+    // Verify quick-fix heals :RootStr while preserving sibling '#minSize 1'
+    int firstMaxSizeOffset = text.indexOf(targetFacet);
+    myFixture.getEditor().getCaretModel().moveToOffset(firstMaxSizeOffset + 2);
+    var intentions = myFixture.filterAvailableIntentions("Remove redundant facet '#maxSize 16777216'");
+    assertFalse("Expected RemoveRedundantFacetQuickFix on root :String #maxSize 16777216", intentions.isEmpty());
+    myFixture.launchAction(intentions.get(0));
+    assertTrue(
+        "Quick-fix must preserve sibling #minSize 1 on :RootStr",
+        myFixture.getFile().getText().contains(":RootStr { #minSize 1 } :String")
+    );
+  }
+
+  /**
+   * Asserts that quick-documentation hover over #maxSize 16777216 renders the Warning W003 card
+   * for root :String, { #exact } :Float, :Seq, :Set, and :Map, while suppressing the W003 card
+   * on invalid continuous :Float lacking #exact.
+   */
+  public void testHoverDocOnRootDefaultMaxSizeRendersW003AcrossBoundedTypesAndSuppressesOnContinuousFloat() {
+    var text = """
+        {
+          :defs {
+            :RootStr { #minSize 1 #maxSize 16777216 } :String
+            :RootExact { #exact #maxSize 16777216 } :Float
+            :RootSeq { #maxSize 16777216 } :Seq(:Int)
+            :RootSet { #maxSize 16777216 } :Set(:Int)
+            :RootMap { #maxSize 16777216 } :Map(:String :Int)
+            :InvalidContFloat { #maxSize 16777216 } :Float
+          }
+          :type :RootStr
+          :body "ok"
+        }
+        """;
+    var file = myFixture.configureByText("hover_w003_maxsize_all.stvn", text);
+    var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+
+    String[] expectedReasons = {
+        "<code>:String</code> intrinsically defaults to a maximum cardinality of 16,777,216.",
+        "exact decimal float <code>{ #exact } :Float</code> intrinsically defaults to a ceiling of 16,777,216 significant decimal digits.",
+        "<code>:Seq</code> intrinsically defaults to a maximum cardinality of 16,777,216.",
+        "<code>:Set</code> intrinsically defaults to a maximum cardinality of 16,777,216.",
+        "<code>:Map</code> intrinsically defaults to a maximum cardinality of 16,777,216."
+    };
+    String[] expectedCanonicalForms = {
+        ":RootStr { #minSize 1 } :String",
+        ":RootExact { #exact } :Float",
+        ":RootSeq :Seq( :Int )",
+        ":RootSet :Set( :Int )",
+        ":RootMap :Map( :String :Int )"
+    };
+
+    String targetFacet = "#maxSize 16777216";
+    int searchFrom = 0;
+    for (int i = 0; i < 5; i++) {
+      int offset = text.indexOf(targetFacet, searchFrom);
+      assertTrue(offset >= 0);
+      searchFrom = offset + targetFacet.length();
+
+      var element = file.findElementAt(offset);
+      assertNotNull(element);
+      var customElem = provider.getCustomDocumentationElement(myFixture.getEditor(), file, element, offset);
+      assertNotNull(customElem);
+      var doc = provider.generateDoc(customElem, element);
+      assertNotNull("Expected W003 hover doc for index " + i, doc);
+      assertTrue("Hover doc must display Warning W003 header: " + doc, doc.contains("Warning W003"));
+      assertTrue("Hover doc must display intrinsic 16,777,216 reason: " + doc, doc.contains(expectedReasons[i]));
+      assertTrue("Hover doc must display canonical form: " + doc, doc.contains(expectedCanonicalForms[i]));
+    }
+
+    // 6th occurrence is continuous :Float without #exact (fatal E008) — must NOT render W003 card
+    int invalidOffset = text.indexOf(targetFacet, searchFrom);
+    assertTrue(invalidOffset >= 0);
+    var invalidElem = file.findElementAt(invalidOffset);
+    assertNotNull(invalidElem);
+    var invalidCustomElem = provider.getCustomDocumentationElement(myFixture.getEditor(), file, invalidElem, invalidOffset);
+    assertNotNull(invalidCustomElem);
+    var invalidDoc = provider.generateDoc(invalidCustomElem, invalidElem);
+    assertNotNull(invalidDoc);
+    assertFalse(
+        "Invalid continuous :Float with #maxSize 16777216 must not render Warning W003 card: " + invalidDoc,
+        invalidDoc.contains("Warning W003")
+    );
+  }
 }
