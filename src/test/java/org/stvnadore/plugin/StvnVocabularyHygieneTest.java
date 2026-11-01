@@ -36,6 +36,126 @@ public final class StvnVocabularyHygieneTest extends TestCase {
         "\":Map\""
     );
 
+    private static final List<String> FORBIDDEN_CORE_COUPLING_SYMBOLS = List.of(
+        "org.antlr.v4.runtime",
+        "org.stvnadore.core.parser",
+        "org.stvnadore.core.ast",
+        "org.stvnadore.core.lowering",
+        "org.stvnadore.core.validation.StvnTypeResolver",
+        "org.stvnadore.core.ir.StvnLiteralParser",
+        "org.stvnadore.core.ir.VariantStep",
+        "PRELUDE_STVN_INCLF",
+        "stvnInclfContent",
+        "DEFAULT_UNBOUNDED_STRING_CAPACITY",
+        "StvnStringCapacityUtils"
+    );
+
+    private static final List<String> FORBIDDEN_1X_REMNANTS = List.of(
+        "StvnProduct",
+        ":MapEntry",
+        "KW_MAP_ENTRY",
+        "#strict",
+        "#deprecated",
+        "#nonEmpty",
+        ".stvn_inclf",
+        ".stvn_incl",
+        ".stvn_bin",
+        ".stvn_f",
+        "ERR_UNFENCED_BLOCK_STRING_PROHIBITED"
+    );
+
+    private static final List<String> FORBIDDEN_RAW_ANTLR_JARGON_IN_MAIN = List.of(
+        "token recognition error",
+        "LexerNoViableAltException",
+        "no viable alternative",
+        "mismatched input",
+        "extraneous input"
+    );
+
+    /**
+     * HYGIENE-PLUGIN-02: Verifies zero 1.x tokens/extensions across workspace and zero raw ANTLR jargon in src/main.
+     *
+     * @throws IOException if workspace files cannot be read
+     */
+    public void testZeroOneXRemnantsAndZeroCompilerJargon() throws IOException {
+        var root = findProjectRoot().toPath();
+        var violations = new ArrayList<String>();
+        var scanRoots = List.of(
+            root.resolve("src/main"),
+            root.resolve("src/test/java"),
+            root.resolve("build.gradle.kts"),
+            root.resolve("README.md"),
+            root.resolve("docs")
+        );
+        for (var path : scanRoots) {
+            if (!Files.exists(path)) {
+                continue;
+            }
+            try (Stream<Path> walk = Files.isDirectory(path) ? Files.walk(path) : Stream.of(path)) {
+                for (var file : walk.filter(Files::isRegularFile).toList()) {
+                    if (file.getFileName().toString().equals("StvnVocabularyHygieneTest.java")) {
+                        continue;
+                    }
+                    String fileStr = file.toString().replace('\\', '/');
+                    if (!fileStr.endsWith(".java") && !fileStr.endsWith(".kts") && !fileStr.endsWith(".xml")
+                        && !fileStr.endsWith(".bnf") && !fileStr.endsWith(".flex") && !fileStr.endsWith(".md")) {
+                        continue;
+                    }
+                    var lines = Files.readAllLines(file);
+                    for (int i = 0; i < lines.size(); i++) {
+                        String line = lines.get(i);
+                        for (String banned : FORBIDDEN_1X_REMNANTS) {
+                            if (line.contains(banned)) {
+                                violations.add(fileStr + ":" + (i + 1) + " contains 1.x remnant '" + banned + "'");
+                            }
+                        }
+                        if (line.matches(".*:Product(?![A-Za-z0-9_]).*")) {
+                            violations.add(fileStr + ":" + (i + 1) + " contains 1.x ':Product' token");
+                        }
+                        if (line.matches(".*\\.stvn_cas(?![.A-Za-z0-9_]).*")) {
+                            violations.add(fileStr + ":" + (i + 1) + " contains bare 1.x '.stvn_cas' extension");
+                        }
+                        if (fileStr.contains("/src/main/")) {
+                            for (String jargon : FORBIDDEN_RAW_ANTLR_JARGON_IN_MAIN) {
+                                if (line.contains(jargon)) {
+                                    violations.add(fileStr + ":" + (i + 1) + " contains raw parser jargon '" + jargon + "'");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue("HYGIENE-PLUGIN-02 violations:\n" + String.join("\n", violations), violations.isEmpty());
+    }
+
+    /**
+     * HYGIENE-PLUGIN-03: Verifies zero ANTLR CST, core.parser, core.ast, core.lowering, or core StvnTypeResolver coupling.
+     *
+     * @throws IOException if Java source files cannot be read
+     */
+    public void testZeroAntlrCstAndInternalCoreCoupling() throws IOException {
+        var root = findProjectRoot().toPath().resolve("src");
+        var violations = new ArrayList<String>();
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (var file : walk.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(".java")).toList()) {
+                if (file.getFileName().toString().equals("StvnVocabularyHygieneTest.java")) {
+                    continue;
+                }
+                var lines = Files.readAllLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    String line = lines.get(i);
+                    for (String sym : FORBIDDEN_CORE_COUPLING_SYMBOLS) {
+                        if (line.contains(sym)) {
+                            violations.add(file + ":" + (i + 1) + " references forbidden symbol '" + sym + "'");
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue("HYGIENE-PLUGIN-03 violations:\n" + String.join("\n", violations), violations.isEmpty());
+    }
+
     /**
      * Verifies that all central vocabulary constants on {@link StvnVocabulary} are non-empty.
      */

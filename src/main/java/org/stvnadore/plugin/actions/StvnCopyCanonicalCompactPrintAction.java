@@ -7,21 +7,23 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ast.StvnDocument;
-import org.stvnadore.core.io.CanonicalStvnWriter;
+import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.ir.StvnDocument;
+import org.stvnadore.core.printer.AstCompactPrinter;
 import org.stvnadore.plugin.StvnFile;
+import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 
 import java.awt.datatransfer.StringSelection;
 
 /**
  * Editor context action that compiles active document text and copies canonical compact single-line layout
  * directly to the system clipboard without mutating the editor document buffer.
- * Emits zero-bracket canonical text using CanonicalStvnWriter.
  *
  * @since 1.3.0
  */
@@ -45,9 +47,18 @@ public final class StvnCopyCanonicalCompactPrintAction extends AnAction {
         }
 
         String text = editor.getDocument().getText();
+        VirtualFile vf = psiFile.getVirtualFile();
+        String fileName = vf != null ? vf.getName() : psiFile.getName();
+        String docPath = vf != null
+            ? StvnCompiledDocumentCache.resolvePhysicalPath(vf, project, text)
+            : fileName;
+        StvnParserConfig config = StvnCompiledDocumentCache.isSystemSubstrateFileName(fileName)
+            ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
+            : StvnParserConfig.DEFAULT;
+
         StvnCompilationResult<StvnDocument> result;
         try {
-            result = StvnCompiler.compile(text);
+            result = StvnCompiler.compileToResult(text, docPath, config);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
@@ -57,8 +68,8 @@ public final class StvnCopyCanonicalCompactPrintAction extends AnAction {
             return;
         }
 
-        CanonicalStvnWriter writer = new CanonicalStvnWriter();
-        String compact = writer.printToString(result.document().get());
+        StvnDocument canonicalDoc = result.document().get();
+        String compact = AstCompactPrinter.print(canonicalDoc);
         CopyPasteManager.getInstance().setContents(new StringSelection(compact));
     }
 

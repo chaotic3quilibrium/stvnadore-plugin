@@ -940,7 +940,7 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
      * Verifies TC-DOC-CTOR-01, TC-DOC-CTOR-02, TC-DOC-CTOR-03:
      * Quick documentation on a :Tuple constructor with declared metadata override {#equatable #FALSE}
      * renders Zone 2 Effective Semantic Contract table (with #equatable #FALSE [Declared / Active Override]
-     * and default #comparable #TRUE [Derived / Default]), and renders Zone 3 Configurable Options (Unset) (#comparable).
+     * and derived #comparable #FALSE under STVN 2.0.0 trait implication), and renders Zone 3 Configurable Options (Unset) (#comparable).
      */
     public void testTupleConstructorZone2AndZone3Hover() {
         var text = """
@@ -961,7 +961,8 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Doc must display '#FALSE' for equatable: " + doc, doc.contains("<code>#FALSE</code>"));
         assertTrue("Doc must display 'Active Override' for equatable: " + doc, doc.contains("Active Override"));
         assertTrue("Doc must contain '#comparable' row: " + doc, doc.contains("<code>#comparable</code>"));
-        assertTrue("Doc must display '#TRUE' for comparable: " + doc, doc.contains("<code>#TRUE</code>"));
+        assertTrue("Doc must display derived '#FALSE' for comparable: " + doc,
+            doc.contains("<code>#comparable</code></td><td style=\"padding: 2px 4px;\"><code>#FALSE</code></td>"));
         assertTrue("Doc must contain 'Configurable Options (Unset):': " + doc, doc.contains("<b>Configurable Options (Unset):</b>"));
         assertTrue("Zone 3 unset options must include #comparable: " + doc, doc.contains("<code>#comparable</code>"));
     }

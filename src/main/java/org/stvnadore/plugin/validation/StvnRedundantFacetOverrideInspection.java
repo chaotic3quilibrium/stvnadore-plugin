@@ -1,21 +1,18 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInspection.LocalInspectionTool;
-import com.intellij.codeInspection.LocalQuickFix;
-import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.openapi.project.Project;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
-import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.BooleanValue;
@@ -25,6 +22,12 @@ import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Visitor;
+
+import java.math.BigInteger;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * Validates nominal type definitions in {@code :defs} blocks to detect redundant metadata facet overrides.
@@ -47,42 +50,67 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                     return;
                 }
 
-                var rs = StvnTypeResolver.resolveNominalResolvedSchema(typeDef);
-                if (rs == null || rs.isPoisonedSentinel()) {
-                    return;
-                }
+                var rawIrSchema = StvnTypeResolver.resolveNominalIrSchema(typeDef);
+                StvnSchema irSchema = rawIrSchema instanceof StvnSchema.PoisonedSchema poisoned
+                    ? poisoned.bestEffortFallback().orElse(null)
+                    : rawIrSchema;
 
+                StvnSchema parentIr = null;
                 var targetKw = schemaType.getTypeKeyword();
-                var parentRs = rs.underlyingSchema().orElse(null);
-                if (targetKw != null && parentRs == null) {
-                    return;
+                if (targetKw != null) {
+                    String parentAlias = targetKw.getText().trim();
+                    if (!StvnVocabulary.isBaseScalarType(parentAlias)
+                        && !StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(parentAlias)) {
+                        var resolvedParentElem = StvnTypeReference.resolveTypeInFile(
+                            typeDef.getContainingFile(),
+                            parentAlias,
+                            new HashSet<>()
+                        );
+                        var parentTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedParentElem);
+                        if (parentTypeDef != null && parentTypeDef != typeDef) {
+                            parentIr = StvnTypeResolver.resolveNominalIrSchema(parentTypeDef);
+                        }
+                        if (parentIr == null) {
+                            parentIr = StvnTypeResolver.resolveIrSchemaByAlias(typeDef.getContainingFile(), parentAlias);
+                        }
+                        if (parentIr instanceof StvnSchema.PoisonedSchema poisonedParent) {
+                            parentIr = poisonedParent.bestEffortFallback().orElse(null);
+                        }
+                        if (parentIr == null) {
+                            return;
+                        }
+                    }
                 }
 
-                var parentConstraints = parentRs != null
-                    ? parentRs.constraints()
-                    : org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints.empty();
+                String ultimateBase;
+                if (irSchema != null) {
+                    ultimateBase = StvnSchemaFormatter.getPrimitiveBaseType(irSchema);
+                } else if (parentIr != null) {
+                    ultimateBase = StvnSchemaFormatter.getPrimitiveBaseType(parentIr);
+                } else {
+                    var resolvedPsi = StvnTypeResolver.resolveNominalSchema(schemaType);
+                    ultimateBase = StvnSchemaFormatter.formatCleanSchema(resolvedPsi != null ? resolvedPsi : schemaType).trim();
+                }
 
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    checkRedundantFacet(entry, typeDef, metaMap, rs, parentRs, parentConstraints, holder);
+                    checkRedundantFacet(entry, typeDef, metaMap, ultimateBase, irSchema, parentIr, holder);
                 }
             }
         };
     }
 
     private static void checkRedundantFacet(
-            MetadataEntry entry,
-            TypeDefinition typeDef,
-            MetadataMap metaMap,
-            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
-            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
-            org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints,
-            ProblemsHolder holder
+        MetadataEntry entry,
+        TypeDefinition typeDef,
+        MetadataMap metaMap,
+        String ultimateBase,
+        @Nullable StvnSchema irSchema,
+        @Nullable StvnSchema parentIr,
+        ProblemsHolder holder
     ) {
-        // Core Rule W003 & Non-Overridable Harmonization Gate:
         // Suppress inspection warnings on floor tautologies, primitive trait re-assertions,
-        // and natural bounds that are already enforced as non-blocking compilation warnings
-        // by StvnExternalAnnotator.
-        if (isGovernedByCoreRuleW003(entry, metaMap, rs)) {
+        // and natural bounds already enforced as W003 warnings by StvnExternalAnnotator.
+        if (isGovernedByCoreRuleW003(entry, metaMap, ultimateBase, irSchema, parentIr)) {
             return;
         }
 
@@ -91,7 +119,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             var bVal = trait.getBooleanValue();
             if (bVal != null) {
                 boolean declared = isBooleanTrue(bVal);
-                boolean parentEff = parentConstraints.preserveIndent();
+                boolean parentEff = parentIr instanceof StvnSchema.StringSchema s && s.preserveIndent();
                 if (declared == parentEff) {
                     registerRedundantProblem(entry, declared ? "#TRUE" : "#FALSE", holder);
                 }
@@ -102,11 +130,15 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         var bareFlag = entry.getMetadataBareFlag();
         if (bareFlag != null) {
             var text = bareFlag.getText().trim();
-            if (text.startsWith(StvnVocabulary.FACET_KW_UNSIGNED) && parentConstraints.unsigned()) {
+            if (text.startsWith(StvnVocabulary.FACET_KW_UNSIGNED)
+                && parentIr instanceof StvnSchema.IntSchema i && i.unsigned()) {
                 registerRedundantProblem(entry, "#TRUE", holder);
-            } else if (text.startsWith(StvnVocabulary.FACET_KW_EXACT) && parentConstraints.exact()) {
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_EXACT)
+                && parentIr instanceof StvnSchema.FloatSchema f
+                && f.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
                 registerRedundantProblem(entry, "#TRUE", holder);
-            } else if (text.startsWith(StvnVocabulary.FACET_KW_INVERTIBLE) && parentConstraints.invertible()) {
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_INVERTIBLE)
+                && parentIr instanceof StvnSchema.MapSchema m && m.invertible()) {
                 registerRedundantProblem(entry, "#TRUE", holder);
             }
             return;
@@ -114,29 +146,29 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
         var text = entry.getText().trim();
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-            extractNumericValue(text).ifPresent(val -> {
-                int parentVal = parentConstraints.minSize().orElse(0);
-                if (val == parentVal) {
-                    registerRedundantProblem(entry, String.valueOf(val), holder);
+            extractBigInteger(text).ifPresent(val -> {
+                BigInteger parentVal = resolveParentMinSize(parentIr);
+                if (val.compareTo(parentVal) == 0) {
+                    registerRedundantProblem(entry, val.toString(), holder);
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-            extractNumericValue(text).ifPresent(val -> {
-                int parentVal = parentConstraints.maxSize().orElse(StvnVocabulary.DEFAULT_UNBOUNDED_STRING_CAPACITY);
-                if (val == parentVal) {
-                    registerRedundantProblem(entry, String.valueOf(val), holder);
+            extractBigInteger(text).ifPresent(val -> {
+                BigInteger parentVal = resolveParentMaxSize(parentIr);
+                if (val.compareTo(parentVal) == 0) {
+                    registerRedundantProblem(entry, val.toString(), holder);
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
-                boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, rs, parentRs, parentConstraints);
+                boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, ultimateBase, parentIr);
                 if (val == parentVal) {
                     registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
-                boolean parentVal = resolveParentDefaultComparable(typeDef, metaMap, rs, parentRs, parentConstraints);
+                boolean parentVal = resolveParentDefaultComparable(typeDef, ultimateBase, parentIr);
                 if (val == parentVal) {
                     registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
                 }
@@ -144,52 +176,67 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
     }
 
+    private static BigInteger resolveParentMinSize(@Nullable StvnSchema parentIr) {
+        return switch (parentIr) {
+            case StvnSchema.StringSchema s -> s.minSize();
+            case StvnSchema.SeqSchema sq -> sq.minSize();
+            case StvnSchema.SetSchema st -> st.minSize();
+            case StvnSchema.MapSchema mp -> mp.minSize();
+            case null, default -> BigInteger.ZERO;
+        };
+    }
+
+    private static BigInteger resolveParentMaxSize(@Nullable StvnSchema parentIr) {
+        return switch (parentIr) {
+            case StvnSchema.StringSchema s -> s.maxSize();
+            case StvnSchema.FloatSchema f -> f.exactMaxDigits();
+            case StvnSchema.SeqSchema sq -> sq.maxSize();
+            case StvnSchema.SetSchema st -> st.maxSize();
+            case StvnSchema.MapSchema mp -> mp.maxSize();
+            case null, default -> StvnVocabulary.DEFAULT_MAX_SIZE;
+        };
+    }
+
     private static boolean resolveParentDefaultEquatable(
-            TypeDefinition typeDef,
-            MetadataMap metaMap,
-            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
-            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
-            org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints
+        TypeDefinition typeDef,
+        MetadataMap metaMap,
+        String ultimateBase,
+        @Nullable StvnSchema parentIr
     ) {
-        var ultimateBase = getUltimateBaseType(rs);
         if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
-            // Local co-declared #exact establishes natural equatable baseline as true (§ 6.2).
             if (hasLocalExactFacet(metaMap)) {
                 return true;
             }
-            if (parentConstraints.equatable().isPresent()) {
-                return parentConstraints.equatable().get();
+            if (parentIr != null) {
+                return parentIr.traits().equatable();
             }
-            return parentRs != null && parentRs.constraints().exact();
+            return false;
         }
-        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase) || (ultimateBase != null && ultimateBase.startsWith(StvnVocabulary.TYPE_TUPLE))) {
-            if (parentConstraints.equatable().isPresent()) {
-                return parentConstraints.equatable().get();
+        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase)) {
+            if (parentIr != null) {
+                return parentIr.traits().equatable();
             }
-            return resolveInductiveTupleEquatable(typeDef, new java.util.HashSet<>());
+            return resolveInductiveTupleEquatable(typeDef, new HashSet<>());
         }
-        if (parentConstraints.equatable().isPresent()) {
-            return parentConstraints.equatable().get();
+        if (parentIr != null) {
+            return parentIr.traits().equatable();
         }
         return true;
     }
 
     private static boolean resolveParentDefaultComparable(
-            TypeDefinition typeDef,
-            MetadataMap metaMap,
-            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs,
-            org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema parentRs,
-            org.stvnadore.core.validation.StvnTypeResolver.StvnConstraints parentConstraints
+        TypeDefinition typeDef,
+        String ultimateBase,
+        @Nullable StvnSchema parentIr
     ) {
-        var ultimateBase = getUltimateBaseType(rs);
-        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase) || (ultimateBase != null && ultimateBase.startsWith(StvnVocabulary.TYPE_TUPLE))) {
-            if (parentConstraints.comparable().isPresent()) {
-                return parentConstraints.comparable().get();
+        if (StvnVocabulary.TYPE_TUPLE.equals(ultimateBase)) {
+            if (parentIr != null) {
+                return parentIr.traits().comparable();
             }
-            return resolveInductiveTupleComparable(typeDef, new java.util.HashSet<>());
+            return resolveInductiveTupleComparable(typeDef, new HashSet<>());
         }
-        if (parentConstraints.comparable().isPresent()) {
-            return parentConstraints.comparable().get();
+        if (parentIr != null) {
+            return parentIr.traits().comparable();
         }
         if (StvnVocabulary.TYPE_SET.equals(ultimateBase) || StvnVocabulary.TYPE_MAP.equals(ultimateBase)) {
             return false;
@@ -203,18 +250,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         for (var entry : metaMap.getMetadataEntryList()) {
             var bareFlag = entry.getMetadataBareFlag();
-            if (bareFlag != null) {
-                var text = bareFlag.getText().trim();
-                if (text.startsWith(StvnVocabulary.FACET_KW_EXACT)) {
-                    var bVal = bareFlag.getBooleanValue();
-                    return bVal == null || isBooleanTrue(bVal);
-                }
+            if (bareFlag != null && bareFlag.getText().trim().startsWith(StvnVocabulary.FACET_KW_EXACT)) {
+                return true;
             }
         }
         return false;
     }
 
-    private static boolean resolveInductiveTupleEquatable(@NotNull TypeDefinition typeDef, java.util.Set<String> visited) {
+    private static boolean resolveInductiveTupleEquatable(@NotNull TypeDefinition typeDef, Set<String> visited) {
         var product = findProductType(typeDef);
         if (product == null) {
             return false;
@@ -231,7 +274,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return true;
     }
 
-    private static boolean resolveInductiveTupleComparable(@NotNull TypeDefinition typeDef, java.util.Set<String> visited) {
+    private static boolean resolveInductiveTupleComparable(@NotNull TypeDefinition typeDef, Set<String> visited) {
         var product = findProductType(typeDef);
         if (product == null) {
             return false;
@@ -271,7 +314,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return PsiTreeUtil.findChildOfType(schemaType, ProductType.class);
     }
 
-    private static boolean isFieldEquatable(@NotNull SchemaType field, java.util.Set<String> visited) {
+    private static boolean isFieldEquatable(@NotNull SchemaType field, Set<String> visited) {
         var metaMap = field.getMetadataMap();
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -294,15 +337,19 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             try {
                 var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
                 if (targetDef == null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new java.util.HashSet<>());
+                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new HashSet<>());
                     targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                 }
                 if (targetDef != null) {
-                    var targetRs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
-                    if (targetRs != null && !targetRs.isPoisonedSentinel() && targetRs.constraints().equatable().isPresent()) {
-                        return targetRs.constraints().equatable().get();
+                    var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
+                    if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
+                        return targetIr.traits().equatable();
                     }
                     return resolveFallbackTypeDefEquatable(targetDef, visited);
+                }
+                var aliasIr = StvnTypeResolver.resolveIrSchemaByAlias(field.getContainingFile(), typeName);
+                if (aliasIr != null && !(aliasIr instanceof StvnSchema.PoisonedSchema)) {
+                    return aliasIr.traits().equatable();
                 }
                 return resolvePrimitiveKeywordEquatable(typeName, metaMap);
             } finally {
@@ -322,8 +369,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
             var prod = ctor.getProductType();
             if (prod != null) {
-                var innerFields = prod.getSchemaTypeList();
-                return innerFields.stream().allMatch(f -> isFieldEquatable(f, visited));
+                return prod.getSchemaTypeList().stream().allMatch(f -> isFieldEquatable(f, visited));
             }
             var coll = ctor.getCollectionType();
             if (coll != null) {
@@ -345,7 +391,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return true;
     }
 
-    private static boolean isFieldComparable(@NotNull SchemaType field, java.util.Set<String> visited) {
+    private static boolean isFieldComparable(@NotNull SchemaType field, Set<String> visited) {
         var metaMap = field.getMetadataMap();
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -368,15 +414,19 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             try {
                 var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
                 if (targetDef == null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new java.util.HashSet<>());
+                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new HashSet<>());
                     targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                 }
                 if (targetDef != null) {
-                    var targetRs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
-                    if (targetRs != null && !targetRs.isPoisonedSentinel() && targetRs.constraints().comparable().isPresent()) {
-                        return targetRs.constraints().comparable().get();
+                    var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
+                    if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
+                        return targetIr.traits().comparable();
                     }
                     return resolveFallbackTypeDefComparable(targetDef, visited);
+                }
+                var aliasIr = StvnTypeResolver.resolveIrSchemaByAlias(field.getContainingFile(), typeName);
+                if (aliasIr != null && !(aliasIr instanceof StvnSchema.PoisonedSchema)) {
+                    return aliasIr.traits().comparable();
                 }
                 return resolvePrimitiveKeywordComparable(typeName);
             } finally {
@@ -392,8 +442,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
             var prod = ctor.getProductType();
             if (prod != null) {
-                var innerFields = prod.getSchemaTypeList();
-                return innerFields.stream().allMatch(f -> isFieldComparable(f, visited));
+                return prod.getSchemaTypeList().stream().allMatch(f -> isFieldComparable(f, visited));
             }
             var coll = ctor.getCollectionType();
             if (coll != null) {
@@ -419,7 +468,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return true;
     }
 
-    private static boolean resolveFallbackTypeDefEquatable(@NotNull TypeDefinition targetDef, java.util.Set<String> visited) {
+    private static boolean resolveFallbackTypeDefEquatable(@NotNull TypeDefinition targetDef, Set<String> visited) {
         var metaMap = targetDef.getMetadataMap();
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -436,7 +485,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return targetSchema == null || isFieldEquatable(targetSchema, visited);
     }
 
-    private static boolean resolveFallbackTypeDefComparable(@NotNull TypeDefinition targetDef, java.util.Set<String> visited) {
+    private static boolean resolveFallbackTypeDefComparable(@NotNull TypeDefinition targetDef, Set<String> visited) {
         var metaMap = targetDef.getMetadataMap();
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -467,26 +516,19 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return true;
     }
 
-    private static @Nullable String getUltimateBaseType(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs) {
-        var curr = rs;
-        while (curr.underlyingSchema().isPresent()) {
-            curr = curr.underlyingSchema().get();
-        }
-        return org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(curr.node());
-    }
-
     private static boolean isGovernedByCoreRuleW003(
-            MetadataEntry entry,
-            MetadataMap metaMap,
-            org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema rs
+        MetadataEntry entry,
+        MetadataMap metaMap,
+        String ultimateBase,
+        @Nullable StvnSchema irSchema,
+        @Nullable StvnSchema parentIr
     ) {
         var text = entry.getText().trim();
-        var ultimateBase = getUltimateBaseType(rs);
 
         // 1. #minSize 0 on string or collection is warning W003 in core
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-            var valOpt = extractNumericValue(text);
-            if (valOpt.isPresent() && valOpt.getAsInt() == 0) {
+            var valOpt = extractBigInteger(text);
+            if (valOpt.isPresent() && valOpt.get().signum() == 0) {
                 return StvnVocabulary.TYPE_STRING.equals(ultimateBase)
                     || StvnVocabulary.TYPE_SEQ.equals(ultimateBase)
                     || StvnVocabulary.TYPE_SET.equals(ultimateBase)
@@ -498,13 +540,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
             var biOpt = extractBigInteger(text);
             if (biOpt.isPresent() && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
-                boolean isUnsigned = hasLocalUnsignedFacet(metaMap);
-                if (isUnsigned && biOpt.get().compareTo(java.math.BigInteger.ZERO) == 0) {
+                boolean isUnsigned = hasLocalUnsignedFacet(metaMap)
+                    || (parentIr instanceof StvnSchema.IntSchema pi && pi.unsigned());
+                if (isUnsigned && biOpt.get().signum() == 0) {
                     return true;
                 }
-                int bitWidth = resolveLocalBitWidth(metaMap);
-                if (!isUnsigned) {
-                    var naturalMin = java.math.BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
+                var bitWidthOpt = resolveEffectiveShiftableBitWidth(metaMap, parentIr);
+                if (!isUnsigned && bitWidthOpt.isPresent()) {
+                    var naturalMin = BigInteger.ONE.shiftLeft(bitWidthOpt.getAsInt() - 1).negate();
                     if (biOpt.get().compareTo(naturalMin) == 0) {
                         return true;
                     }
@@ -513,13 +556,17 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
             var biOpt = extractBigInteger(text);
             if (biOpt.isPresent() && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
-                boolean isUnsigned = hasLocalUnsignedFacet(metaMap);
-                int bitWidth = resolveLocalBitWidth(metaMap);
-                var naturalMax = isUnsigned
-                    ? java.math.BigInteger.ONE.shiftLeft(bitWidth)
-                    : java.math.BigInteger.ONE.shiftLeft(bitWidth - 1);
-                if (biOpt.get().compareTo(naturalMax) == 0) {
-                    return true;
+                boolean isUnsigned = hasLocalUnsignedFacet(metaMap)
+                    || (parentIr instanceof StvnSchema.IntSchema pi && pi.unsigned());
+                var bitWidthOpt = resolveEffectiveShiftableBitWidth(metaMap, parentIr);
+                if (bitWidthOpt.isPresent()) {
+                    int bitWidth = bitWidthOpt.getAsInt();
+                    var naturalMax = isUnsigned
+                        ? BigInteger.ONE.shiftLeft(bitWidth)
+                        : BigInteger.ONE.shiftLeft(bitWidth - 1);
+                    if (biOpt.get().compareTo(naturalMax) == 0) {
+                        return true;
+                    }
                 }
             }
         }
@@ -536,15 +583,16 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
         // 4. Primitive Default Sizing Tautologies (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-            var valOpt = extractNumericValue(text);
+            var valOpt = extractBigInteger(text);
             if (valOpt.isPresent()) {
-                int val = valOpt.getAsInt();
-                if (val == 32 && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
+                BigInteger val = valOpt.get();
+                if (val.equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH) && StvnVocabulary.TYPE_INT.equals(ultimateBase)) {
                     return true;
                 }
-                if (val == 64 && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
+                if (val.equals(StvnVocabulary.DEFAULT_FLOAT_BIT_WIDTH) && StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
                     boolean isExact = hasLocalExactFacet(metaMap)
-                        || (rs != null && !rs.isPoisonedSentinel() && rs.constraints().exact());
+                        || (irSchema instanceof StvnSchema.FloatSchema fs
+                            && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL);
                     if (!isExact) {
                         return true;
                     }
@@ -554,10 +602,11 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
         // 5. Exact Float Precision Ceiling Tautology (Rule W003)
         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-            var valOpt = extractNumericValue(text);
-            if (valOpt.isPresent() && valOpt.getAsInt() == StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE) {
+            var valOpt = extractBigInteger(text);
+            if (valOpt.isPresent() && valOpt.get().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
                 boolean isExact = hasLocalExactFacet(metaMap)
-                    || (rs != null && !rs.isPoisonedSentinel() && rs.constraints().exact());
+                    || (irSchema instanceof StvnSchema.FloatSchema fs
+                        && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL);
                 if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase) && isExact) {
                     return true;
                 }
@@ -581,26 +630,37 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return false;
     }
 
-    private static int resolveLocalBitWidth(@Nullable MetadataMap metaMap) {
-        if (metaMap == null) return 32;
-        for (var entry : metaMap.getMetadataEntryList()) {
-            var text = entry.getText().trim();
-            if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                var valOpt = extractNumericValue(text);
-                if (valOpt.isPresent()) return valOpt.getAsInt();
+    private static OptionalInt resolveEffectiveShiftableBitWidth(
+        @Nullable MetadataMap metaMap,
+        @Nullable StvnSchema parentIr
+    ) {
+        BigInteger bw = parentIr instanceof StvnSchema.IntSchema pi
+            ? pi.bitWidth()
+            : StvnVocabulary.DEFAULT_INT_BIT_WIDTH;
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                    var valOpt = extractBigInteger(text);
+                    if (valOpt.isPresent()) {
+                        bw = valOpt.get();
+                    }
+                }
             }
         }
-        return 32;
+        if (bw.compareTo(BigInteger.ONE) >= 0
+            && bw.compareTo(BigInteger.valueOf(StvnPsiLiteralEvaluator.MAX_EAGER_SHIFT_BIT_WIDTH)) <= 0) {
+            return OptionalInt.of(bw.intValueExact());
+        }
+        return OptionalInt.empty();
     }
 
-    private static java.util.Optional<java.math.BigInteger> extractBigInteger(String text) {
+    private static Optional<BigInteger> extractBigInteger(String text) {
         var parts = text.split("\\s+");
         if (parts.length >= 2) {
-            try {
-                return java.util.Optional.of(new java.math.BigInteger(parts[1].trim()));
-            } catch (NumberFormatException ignored) {}
+            return StvnPsiLiteralEvaluator.parseBigInteger(parts[1].trim());
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 
     private static void registerRedundantProblem(MetadataEntry entry, String effectiveValue, ProblemsHolder holder) {
@@ -621,23 +681,13 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return "#TRUE".equals(t) || "#T".equals(t);
     }
 
-    private static java.util.OptionalInt extractNumericValue(String text) {
-        var parts = text.split("\\s+");
-        if (parts.length >= 2) {
-            try {
-                return java.util.OptionalInt.of(Integer.parseInt(parts[1]));
-            } catch (NumberFormatException ignored) {}
-        }
-        return java.util.OptionalInt.empty();
-    }
-
-    private static java.util.Optional<Boolean> extractBooleanLiteral(String text) {
+    private static Optional<Boolean> extractBooleanLiteral(String text) {
         var parts = text.split("\\s+");
         if (parts.length >= 2) {
             var val = parts[1].trim();
-            if ("#TRUE".equals(val) || "#T".equals(val)) return java.util.Optional.of(true);
-            if ("#FALSE".equals(val) || "#F".equals(val)) return java.util.Optional.of(false);
+            if ("#TRUE".equals(val) || "#T".equals(val)) return Optional.of(true);
+            if ("#FALSE".equals(val) || "#F".equals(val)) return Optional.of(false);
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 }

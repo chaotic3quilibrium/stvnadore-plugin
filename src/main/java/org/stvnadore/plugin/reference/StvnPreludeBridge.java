@@ -9,6 +9,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.LightVirtualFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.ConstantDefinition;
@@ -17,8 +18,9 @@ import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.ValueKeyword;
 
 /**
- * Bridge providing an in-memory synthetic AST of the canonical standard library prelude
- * (:org/stvnadore/prelude/*) for navigation, documentation, and reference resolution.
+ * Bridge providing an in-memory synthetic PSI file and pure-IR catalog of the canonical
+ * standard library prelude ({@code :org/stvnadore/prelude/*}) for navigation, documentation,
+ * and reference resolution.
  */
 @NullMarked
 public final class StvnPreludeBridge {
@@ -30,10 +32,19 @@ public final class StvnPreludeBridge {
     }
 
     /**
+     * Returns the immutable pure-IR {@link StvnDefsCatalog} of the standard library prelude.
+     *
+     * @return lowered standard library prelude definitions catalog
+     */
+    public static StvnDefsCatalog getPreludeCatalog() {
+        return StvnPrelude.preludeCatalog();
+    }
+
+    /**
      * Obtains the single canonical in-memory VirtualFile for the standard library prelude.
      *
      * @param project the active IntelliJ project
-     * @return the shared LightVirtualFile representing prelude.stvn_core.stvn_d
+     * @return the shared LightVirtualFile representing {@code prelude.stvn_core.stvn_d}
      */
     public static LightVirtualFile getPreludeVirtualFile(Project project) {
         var file = getPreludeFile(project);
@@ -52,7 +63,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Retrieves the cached synthetic AST file representing the canonical standard library prelude.
+     * Retrieves the cached synthetic PSI file representing the canonical standard library prelude.
      *
      * @param project the active IntelliJ project
      * @return the synthetic prelude PSI file
@@ -77,7 +88,7 @@ public final class StvnPreludeBridge {
     /**
      * Resolves the canonical package namespace path of a prelude type definition.
      *
-     * @param def the TypeDefinition AST node from the prelude
+     * @param def the TypeDefinition PSI node from the prelude
      * @return the package namespace path (for example, {@code ":org/stvnadore/prelude/meta"})
      */
     public static String getPreludePackagePath(TypeDefinition def) {
@@ -85,9 +96,9 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves the canonical package namespace path of a prelude AST element.
+     * Resolves the canonical package namespace path of a prelude PSI element.
      *
-     * @param element the AST node from the prelude (TypeDefinition or ConstantDefinition)
+     * @param element the PSI node from the prelude (TypeDefinition or ConstantDefinition)
      * @return the package namespace path (for example, {@code ":org/stvnadore/prelude"})
      */
     public static String getPreludePackagePath(PsiElement element) {
@@ -124,7 +135,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude type definition AST node by nominal name or fully qualified nominal identifier (FQNI).
+     * Resolves a prelude type definition PSI node by nominal name or fully qualified nominal identifier (FQNI).
      *
      * @param project the active IntelliJ project
      * @param nameOrFqni the type identifier or FQNI to resolve
@@ -136,7 +147,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude type definition AST node directly within the specified file.
+     * Resolves a prelude type definition PSI node directly within the specified file.
      *
      * @param file the target prelude PSI file to scan
      * @param nameOrFqni the type identifier or FQNI to resolve
@@ -147,7 +158,6 @@ public final class StvnPreludeBridge {
         var normName = nameOrFqni.startsWith(":") ? nameOrFqni : ":" + nameOrFqni;
         var bareName = normName.contains("/") ? ":" + normName.substring(normName.lastIndexOf('/') + 1) : normName;
 
-        // Direct search across all TypeDefinition nodes in file (immune to package structure bugs)
         var allDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : allDefs) {
             var kw = def.getTypeKeyword();
@@ -159,7 +169,6 @@ public final class StvnPreludeBridge {
             }
         }
 
-        // Defensive fallback to project prelude cache if file did not contain it
         var project = file.getProject();
         var fallbackFile = project.getUserData(PRELUDE_PSI_FILE_KEY);
         if (fallbackFile != null && fallbackFile != file && fallbackFile.isValid()) {
@@ -193,7 +202,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude enum variant AST node within the specified enum type definition.
+     * Resolves a prelude enum variant PSI node within the specified enum type definition.
      *
      * @param project the active IntelliJ project
      * @param enumFqni the fully qualified nominal identifier of the enum type
@@ -206,7 +215,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude enum variant AST node directly within the specified prelude PSI file.
+     * Resolves a prelude enum variant PSI node directly within the specified prelude PSI file.
      *
      * @param file the target prelude PSI file to scan
      * @param enumFqni the fully qualified nominal identifier of the enum type
@@ -224,7 +233,6 @@ public final class StvnPreludeBridge {
                 }
             }
         }
-        // Direct file scan fallback if def traversal missed it
         var allValKws = PsiTreeUtil.findChildrenOfType(file, ValueKeyword.class);
         for (var valKw : allValKws) {
             if (valKw.getText().equals(variantName) && valKw.getParent() instanceof org.stvnadore.psi.EnumDef) {
@@ -235,7 +243,7 @@ public final class StvnPreludeBridge {
     }
 
     /**
-     * Resolves a prelude constant definition AST node by identifier or fully qualified path.
+     * Resolves a prelude constant definition PSI node by identifier or fully qualified path.
      *
      * @param project the active IntelliJ project
      * @param constName the constant identifier (for example, {@code "#POSIX_ID_REGEX"})

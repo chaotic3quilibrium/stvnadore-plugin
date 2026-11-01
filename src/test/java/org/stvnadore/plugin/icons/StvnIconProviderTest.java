@@ -26,7 +26,7 @@ public final class StvnIconProviderTest extends BasePlatformTestCase {
   public void testCasSubstrateEnclavePatternReturnsCasIcon() {
     var file1 = myFixture.configureByText("envelope.stvn_cas.stvn", "{ :type :Int :body 1 }");
     var file2 = myFixture.configureByText("contract.stvn_cas.stvn_d", "{ :defs {} }");
-    var file3 = myFixture.configureByText("blob.stvn_cas", "{ :body 1 }");
+    var file3 = myFixture.configureByText("sample.stvn_cas.stvn_i", "{ :type :Int :body 1 }");
 
     assertEquals(StvnIcons.STVN_CAS, provider.getIcon(file1, Iconable.ICON_FLAG_VISIBILITY));
     assertEquals(StvnIcons.STVN_CAS, provider.getIcon(file2, Iconable.ICON_FLAG_VISIBILITY));

@@ -33,13 +33,14 @@ public final class StvnSemanticAnnotator implements Annotator {
 
         var type = node.getElementType();
 
-        // 1. Validate in-flight Rule G Union tag bounds
+        // 1. Validate in-flight Rule G Union tag bounds without 32-bit integer truncation
         if (element instanceof ExplicitUnionValue explicitUnion) {
             var prefixElem = explicitUnion.getUnionTagPrefix();
             var prefixText = prefixElem.getText().trim();
-            if (prefixText.startsWith("#")) {
-                try {
-                    int k = Integer.parseInt(prefixText.substring(1));
+            if (prefixText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+                var parsedTag = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.parseBigInteger(prefixText.substring(1));
+                if (parsedTag.isPresent()) {
+                    var k = parsedTag.get();
                     var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(explicitUnion);
                     if (expectedSchema != null) {
                         var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
@@ -50,15 +51,18 @@ public final class StvnSemanticAnnotator implements Annotator {
                             if (isUnionSumType(sumType)) {
                                 var branches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                                 int n = branches.size();
-                                if (k > n) {
-                                    holder.newAnnotation(HighlightSeverity.ERROR, "Union variant tag '#" + k + "' exceeds branch count (" + n + ")")
-                                          .range(prefixElem.getTextRange())
-                                          .create();
+                                if (k.compareTo(java.math.BigInteger.valueOf(n)) > 0) {
+                                    holder.newAnnotation(
+                                        HighlightSeverity.ERROR,
+                                        "Union variant tag '#" + k + "' exceeds branch count (" + n + ")"
+                                    )
+                                        .range(prefixElem.getTextRange())
+                                        .create();
                                 }
                             }
                         }
                     }
-                } catch (NumberFormatException ignored) {}
+                }
             }
         }
 

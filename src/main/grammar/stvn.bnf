@@ -37,7 +37,6 @@
     KW_RIGHT_SHORT                = '#R'
     
     KW_TUPLE                      = ':Tuple'
-    KW_MAP_ENTRY                  = ':MapEntry'
     KW_ENUM                       = ':Enum'
     KW_OPTION                     = ':Option'
     KW_EITHER                     = ':Either'
@@ -186,7 +185,7 @@ type_keyword              ::= type_keyword_start ( FSLASH id_token )* {
   implements="com.intellij.psi.PsiNameIdentifierOwner"
 }
 private type_keyword_start ::= TYPE_KEYWORD_BASE
-                            | KW_TUPLE | KW_MAP_ENTRY | KW_ENUM | KW_OPTION | KW_EITHER | KW_UNION
+                            | KW_TUPLE | KW_ENUM | KW_OPTION | KW_EITHER | KW_UNION
                             | KW_DEFS | KW_TYPE | KW_BODY | KW_INCLUDE | KW_PACKAGE | KW_USE
 
 value_keyword             ::= value_keyword_start ( FSLASH id_token )* {
@@ -278,7 +277,7 @@ metadata_trait            ::= KW_PRESERVE_INDENT (boolean_value | value_keyword)
   pin=1
   recoverWhile=metadata_entry_recover
 }
-metadata_bare_flag        ::= ( KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS ) boolean_value?
+metadata_bare_flag        ::= ( KW_UNSIGNED | KW_EXACT | KW_INVERTIBLE | KW_OFFSET | KW_ZONED | KW_AUDITED | KW_SCALE_S | KW_SCALE_MS | KW_SCALE_US | KW_SCALE_NS )
 metadata_directive        ::= KW_STRIP
 
 private metadata_bool    ::= ( KW_EQUATABLE | KW_COMPARABLE ) metadata_value { pin=1 }

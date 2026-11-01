@@ -27,7 +27,7 @@ public final class StvnIconProvider extends IconProvider {
     if (name.contains(".stvn_ir.") || name.endsWith(".stvn_ir")) {
       return StvnIcons.STVN_IR;
     }
-    if (name.contains(".stvn_cas.") || name.endsWith(".stvn_cas")) {
+    if (name.contains(".stvn_cas.")) {
       return StvnIcons.STVN_CAS;
     }
     return null;

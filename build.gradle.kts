@@ -110,100 +110,16 @@ intellijPlatform {
             type resolution, diagnostics, and test fixture support.
         """.trimIndent())
         changeNotes.set("""
-            <h3>1.3.1 - 2026.09.20</h3>
+            <h3>2.0.0 - 2026.10.31</h3>
             <ul>
-              <li>Integrated changes to <code>stvnadore-core:1.3.1</code>:
+              <li><b>STVN 2.0.0 Pure-IR Architecture Cutover:</b>
                 <ul>
-                  <li>Tolerant grammar recovery for empty <code>{}</code> blocks in directives and metadata.</li>
-                  <li>Normalized token coordinate spans preventing off-by-one clipping on error squiggles.</li>
-                  <li>Enforced package enclave isolation across module boundaries.</li>
-                  <li>Restored recursive inlay hints via bounded depth traversal (<code>maxDepth = 16</code>).</li>
-                  <li>Added <code>StvnMetadataFacetInspection</code> with automated quick-fixes.</li>
+                  <li>Coupled type resolution, hover documentation, inlay hints, code completion, local inspections, and canonical projections directly to the immutable <code>org.stvnadore.core.ir</code> <code>StvnDocument</code>, <code>StvnDefsCatalog</code>, <code>StvnSchema</code>, and <code>StvnValue</code> record graph.</li>
+                  <li>Synchronized Grammar-Kit BNF and JFlex lexical tokens with the 6-file STVN 2.0.0 taxonomy (<code>.stvn</code>, <code>.stvn_i</code>, <code>.stvn_d</code>, <code>.stvn_di</code>, <code>.stvn_b</code>, <code>.stvn_bd</code>) and zero-argument standalone metadata flags.</li>
+                  <li>Routed cross-file <code>:include</code> diagnostics directly via authoritative <code>StvnDiagnostic.sourcePath()</code> provenance and resolved inspection deconfliction via <code>StvnDiagnostic.symbolicId()</code>.</li>
+                  <li>Aligned remote schema repository publishing with <code>application/stvn; charset=utf-8</code> and full 7-field <code>CompileDiagnosticDto</code> / 5-field <code>SchemaMetadataDto</code> wire payloads.</li>
                 </ul>
               </li>
-            </ul>
-            <h3>1.3.0 - 2026.09.17</h3>
-            <ul>
-              <li>Integrated changes to <code>stvnadore-core:1.3.0</code>:
-                <ul>
-                  <li>Enforced strict Zero-Tab Invariant (<code>ERR_TAB_CHARACTER_FORBIDDEN</code>) across all document parsers.</li>
-                  <li>Integrated centralized string capacity bounds (<code>StvnStringCapacityUtils</code>).</li>
-                  <li>Added transitive reachability analysis, dead-code pruning in <code>:defs</code>, and universal alias desugaring to FQNI.</li>
-                  <li>Added deterministic canonical AST formatting via <code>AstPrettyPrinter</code> and <code>AstCompactPrinter</code>.</li>
-                </ul>
-              </li>
-              <li><b>Value-Oriented Programming (VOP) Rename Refactoring (Shift+F6):</b>
-                <ul>
-                  <li>Decoupled mutable bare identifiers from immutable syntax kinds, initializing the rename text field with bare names (e.g. <code>AccountHolder</code>, <code>DefaultPort</code>).</li>
-                  <li>Projected canonical syntax in dialog headers (<code>Rename Type Declaration ':AccountHolder' and its usages to:</code>), Find Usages trees, and Structure View.</li>
-                  <li>Added real-time dialog input validation via <code>StvnRenameInputValidator</code> (<code>RenameInputValidatorEx</code>) rejecting leading <code>:</code> and <code>#</code> with explicit footer guidance and disabling the Refactor button.</li>
-                  <li>Established a fail-closed mutator perimeter: invoking <code>setName()</code> or <code>handleElementRename()</code> with leading sigils throws <code>IncorrectOperationException</code>.</li>
-                  <li>Implemented dual Search Everywhere indexing for bare and canonical symbols (<code>Ctrl+N</code> / <code>Shift+Shift</code>).</li>
-                </ul>
-              </li>
-              <li><b>Interactive Namespace Dependency Browser (Ctrl+Alt+N / Cmd+Alt+N):</b>
-                <ul>
-                  <li>Added interactive gutter navigation markers on <code>:defs</code>, <code>:type</code>, and <code>:body</code> section headers.</li>
-                  <li>Added a multi-column searchable grid displaying symbol name, namespaced source URI, type structure, and usage resolution depth.</li>
-                  <li>Implemented <code>StvnPrioritizedTableSpeedSearch</code> prioritizing Column 0 (<code>Name</code>) declarations over secondary metadata mentions with clean fallback.</li>
-                  <li>Supported synthetic standard library navigation via read-only <code>LightVirtualFile</code>.</li>
-                </ul>
-              </li>
-              <li><b>String Capacity Governance Inspection (<code>StvnStringCapacity</code>):</b>
-                <ul>
-                  <li>Inspects nominal string declarations in <code>:defs</code> and <code>:type</code> sections.</li>
-                  <li>Audits unadorned <code>:String</code> tokens and explicit capacities exceeding threshold (default: 4,096).</li>
-                  <li>Dual QuickFix Resolution Protocol: rewrites nominal types to configured threshold (<code>:String4096</code>) or default (<code>:String16777216</code>).</li>
-                  <li>Suppresses secondary default upgrade QuickFix under <code>ERROR</code> severity.</li>
-                  <li>Optional payload scope detecting string literals exceeding declared schema capacity bounds with truncation and widening quick-fixes.</li>
-                </ul>
-              </li>
-              <li><b>Native Code Formatter &amp; Dual Projections:</b>
-                <ul>
-                  <li>Added native code formatter (<code>Ctrl+Alt+L</code> / <code>Cmd+Alt+L</code>) enforcing canonical 2-space indentation hierarchy and zero tabs while preserving comments and fenced strings.</li>
-                  <li>Added editor popup actions to canonicalize or copy pretty-printed and compact STVN projections.</li>
-                  <li>Added Authoring Loss Guard dialog intercepting lossy formatting when documents contain comments, package enclaves, or unreferenced definitions.</li>
-                </ul>
-              </li>
-              <li><b>Action Nomenclature &amp; UI Modernization:</b> Harmonized action menu display names and modernized file icons to transparent 2D vector wireframe geometry conforming to JetBrains New UI guidelines.</li>
-            </ul>
-            <h3>1.2.0 - 2026.09.12</h3>
-            <ul>
-              <li>Integrated changes to `stvnadore-core`:
-                <ul>
-                  <li>Standard prelude relocated to namespace <code>:org/stvnadore/prelude/*</code> and out of root, completely clearing the root namespace</li>
-                  <li>Atomic temporal primitives pruned to nominal prelude schemas</li>
-                  <li>Package enclosures (<code>:package</code>) with automatic LHS FQNI expansion</li>
-                  <li>Scoped <code>:use</code> with atomic unary <code>#strip</code> terminal slicing</li>
-                  <li>Hermetic flat payload tier (newly introduced <code>.stvn_f</code>) and flat schema tier (existing <code>.stvn_inclf</code>)</li>
-                  <li>Arbitrary bit-width integer overflow enforcement (BigInteger)</li>
-                  <li>Updated shared conformance test suite</li>
-                </ul>
-              </li>
-              <li><b>STVN 1.2 Namespace &amp; Lexical Scope Architecture:</b> Introduced native grammar and editor support for <code>:package</code> enclaves and lexical import statements (<code>:use</code>) with multi-target maps, aliasing, and <code>#strip</code> modifier.</li>
-              <li><b>Flat Payload Documents (<code>.stvn_f</code>):</b> Registered new <code>.stvn_f</code> file type and parser definition for detached flat payload evaluation without embedded headers.</li>
-              <li><b>Prelude Standard Library Synchronization:</b> Synchronized with <code>stvnadore-core:1.2.0</code>, transitioning temporal atoms (<code>:DateTimeOffset</code>, <code>:DateTimeZoned</code>, <code>:DateTimeAudited</code>, epoch timestamps) to regex-constrained standard library prelude definitions under <code>:org/stvnadore/prelude/*</code>.</li>
-              <li><b>5 New In-Editor Inspections:</b> Implemented real-time inspections for nested package declarations (<code>StvnNestedPackage</code>), trailing slashes in type definitions (<code>StvnTrailingSlash</code>), LHS reserved type keywords (<code>StvnLhsReservedType</code>), <code>:include</code> directives in flat payload documents (<code>StvnFlatDocumentInclude</code>), and out-of-order constant definitions (<code>StvnConstantRange</code>).</li>
-              <li><b>Precise Error Range Clamping:</b> Clamped external compiler diagnostic ranges directly to offending AST elements across file definitions, resolving error displacement and suppressing cascading parser artifacts.</li>
-            </ul>
-            <h3>1.1.1 - 2026.09.07</h3>
-            <ul>
-              <li><b>Rule STR-04 Fenced String Delimiter Modernization:</b> Formalized canonical <code>&quot;&quot;&quot;[TAG]</code> opening delimiter; enforced rejection of legacy <code>&quot;&quot;&quot;-&gt;[TAG]</code> delimiter arrow under Rule STR-04.</li>
-              <li><b>Automated Code Cleanup:</b> Added <code>Remove prohibited '-&gt;' arrow</code> intention quick-fix supporting rapid delimiter repair across files.</li>
-              <li><b>Interactive Tag Renaming (Shift+F6):</b> Implemented live linked editing for opening and closing delimiter tags with bidirectional caret focus retention and delta-aware cursor anchoring.</li>
-              <li><b>AST Fracture & Collision Guard:</b> Intercepts tag renames that collide with delimiter sequences inside the string payload, preventing AST breakage and rolling back invalid commits.</li>
-              <li><b>Core Dependency Alignment:</b> Upgraded compiler and runtime engine to <code>stvnadore-core:1.1.1</code>.</li>
-            </ul>
-            <h3>1.1.0 - 2026.09.06</h3>
-            <ul>
-              <li>Implemented enum subset filtering with transitive chaining.</li>
-              <li>Added Control Byte 4 bitwise partitioning (1:3:4) for CRC-32C, SchemaIdentityStrategy, and BinaryEncodingStrategy.</li>
-            </ul>
-            <h3>1.0.2 - 2026.09.04</h3>
-            <ul>
-              <li>Initial General Availability release of STVN Language Support for IntelliJ 2025.3+.</li>
-              <li>Full syntax highlighting for STVN primitives, compounds, and types.</li>
-              <li>Compile-time diagnostics, parser verification, and test fixture support.</li>
             </ul>
         """.trimIndent())
         vendor {
@@ -311,13 +227,8 @@ val mirrorSharedFixtures by tasks.registering {
     doLast {
         if (siblingDir.exists() && siblingDir.isDirectory) {
             logger.lifecycle("Syncing shared-fixtures from sibling core repository: ${siblingDir.absolutePath}")
-            val syntaxTarget = targetDir.resolve("syntax")
-            if (syntaxTarget.exists()) {
-                syntaxTarget.deleteRecursively()
-            }
-            val metadataTarget = targetDir.resolve("metadata")
-            if (metadataTarget.exists()) {
-                metadataTarget.deleteRecursively()
+            if (targetDir.exists()) {
+                targetDir.deleteRecursively()
             }
             siblingDir.copyRecursively(targetDir, overwrite = true)
         } else {
@@ -336,7 +247,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     useJUnitPlatform()
     dependsOn(mirrorSharedFixtures)
     
-    exclude("**/StvnDiagnosticsTest.class")
+    exclude("**/StvnDiagnosticsTest*.class")
     exclude("**/StvnCommenterTest.class")
     exclude("**/StvnTypeResolverTest.class")
     exclude("**/StvnDegradedSchemaInspectionTest.class")

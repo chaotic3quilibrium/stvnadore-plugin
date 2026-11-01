@@ -623,17 +623,23 @@ public final class StvnNamespaceSymbolCollector {
         String nominalName = null;
         if (coreNode != null) {
             if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union && union.schema().aliasName().isPresent()) {
-                var branchPsi = StvnTypeResolver.getNominalUnionBranchPsi(file, union.schema().aliasName().get(), union.tagIndex());
+                var oneBased = union.oneBasedBranchIndex();
+                int tagIdx = (oneBased.compareTo(java.math.BigInteger.ONE) >= 0
+                    && oneBased.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) <= 0)
+                    ? oneBased.intValue() - 1
+                    : -1;
+                var branchPsi = StvnTypeResolver.getNominalUnionBranchPsi(file, union.schema().aliasName().get(), tagIdx);
                 if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
                     nominalName = branchPsi.getTypeKeyword().getText();
                 }
-            } else if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt && !opt.isNone() && opt.schema().aliasName().isPresent()) {
+            } else if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt && opt.value().isPresent() && opt.schema().aliasName().isPresent()) {
                 var branchPsi = StvnTypeResolver.getNominalOptionBranchPsi(file, opt.schema().aliasName().get());
                 if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
                     nominalName = branchPsi.getTypeKeyword().getText();
                 }
             } else if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnEither either && either.schema().aliasName().isPresent()) {
-                var branchPsi = StvnTypeResolver.getNominalEitherBranchPsi(file, either.schema().aliasName().get(), either.isRight());
+                boolean isRight = either.branch() == org.stvnadore.core.ir.StvnValue.EitherBranch.RIGHT;
+                var branchPsi = StvnTypeResolver.getNominalEitherBranchPsi(file, either.schema().aliasName().get(), isRight);
                 if (branchPsi != null && branchPsi.getTypeKeyword() != null) {
                     nominalName = branchPsi.getTypeKeyword().getText();
                 }
@@ -972,11 +978,10 @@ public final class StvnNamespaceSymbolCollector {
                 if (unionVal != null && unionVal.getValue() != null) {
                     var tagElem = unionVal.getFirstChild();
                     var tagText = tagElem != null ? tagElem.getText() : "";
-                    if (tagText.startsWith("#") && tagText.substring(1).matches("\\d+")) {
-                        int idx = Integer.parseInt(tagText.substring(1)) - 1;
-                        if (idx >= 0 && idx < childSchemas.size()) {
-                            correlateShapeAndValue(childSchemas.get(idx), unionVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
-                        }
+                    var resolvedIdx = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator
+                        .resolveZeroBasedUnionBranchIndex(tagText, childSchemas.size());
+                    if (resolvedIdx.isPresent()) {
+                        correlateShapeAndValue(childSchemas.get(resolvedIdx.getAsInt()), unionVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
                     }
                 }
             }

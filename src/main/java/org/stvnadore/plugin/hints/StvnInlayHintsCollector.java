@@ -43,7 +43,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                         }
 
                         var coreNode = StvnTypeResolver.resolveCoreValue(valueElement);
-                        if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnError err) {
+                        if (coreNode instanceof org.stvnadore.core.ir.StvnValue.StvnErrorValue err) {
                             if (!StvnTypeResolver.isRecoverableCoreError(err, valueElement)) {
                                 return;
                             }

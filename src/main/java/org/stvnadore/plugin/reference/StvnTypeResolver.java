@@ -3,35 +3,48 @@ package org.stvnadore.plugin.reference;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.CachedValue;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
-import org.stvnadore.core.StvnAnalysisResult;
-import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnDefsCatalog;
+import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnValue;
-import org.stvnadore.core.ir.VariantStep;
 import org.stvnadore.core.validation.DiagnosticBag;
-import org.stvnadore.core.validation.ResolvedType;
+import org.stvnadore.plugin.hints.StvnTypeInferenceHelper;
+import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
+import org.stvnadore.plugin.ir.StvnEnumSubsetInfo;
+import org.stvnadore.plugin.ir.StvnSumTrajectory;
+import org.stvnadore.plugin.psi.StvnNamespaceRules;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.*;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
- * Resolves static and semantic types, type aliases, sum type branches, and core values for STVN PSI elements.
+ * Resolves static and semantic types, nominal type aliases, sum-type trajectories,
+ * enum subsets, and lowered pure-IR values for STVN PSI elements.
  */
 @NullMarked
 public final class StvnTypeResolver {
@@ -39,81 +52,73 @@ public final class StvnTypeResolver {
     private StvnTypeResolver() {
     }
 
-    private static final Key<CachedValue<java.util.Map<Integer, StvnValue>>> CORE_VALUES_KEY =
+    private static final Key<CachedValue<Map<Integer, StvnValue>>> CORE_VALUES_KEY =
         Key.create("org.stvnadore.plugin.CORE_VALUES");
 
-    private static final Key<CachedValue<List<org.stvnadore.core.StvnDiagnostic>>> CORE_DIAGNOSTICS_KEY =
-        Key.create("org.stvnadore.plugin.CORE_DIAGNOSTICS");
+    private static final Pattern EXPLICIT_UNION_TAG_PATTERN =
+        Pattern.compile("^#[1-9][0-9]*(\\s+|$)");
 
-    private static final Key<CachedValue<java.util.Map<String, org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema>>> RESOLVED_SCHEMAS_KEY =
-        Key.create("org.stvnadore.plugin.RESOLVED_SCHEMAS");
+    private static final Pattern CONSTRAINT_VIOLATION_TARGET_PATTERN =
+        Pattern.compile("^Constraint violation \\(([^)]+)\\):");
 
-    private static final Key<java.nio.file.Path> VFS_TEMP_DIR_KEY =
-        Key.create("org.stvnadore.plugin.VFS_TEMP_DIR");
-
-    private static final java.util.regex.Pattern EXPLICIT_UNION_TAG_PATTERN =
-        java.util.regex.Pattern.compile("^#[1-9][0-9]*(\\s+|$)");
-
-    private static final java.util.regex.Pattern CONSTRAINT_VIOLATION_TARGET_PATTERN =
-        java.util.regex.Pattern.compile("^Constraint violation \\(([^)]+)\\):");
-
+    /** Diagnostic symbolic and canonical codes indicating a degraded or poisoned schema definition. */
     public static final Set<String> FATAL_SCHEMA_DIAGNOSTIC_CODES = Set.of(
-        DiagnosticBag.ERR_INTEGER_OVERFLOW,              // "ERR_INTEGER_OVERFLOW"
-        "E009",                                          // "E009"
-        DiagnosticBag.ERR_INVALID_REGEX,                 // "INVALID_REGEX_PATTERN"
-        DiagnosticBag.ERR_INVERTED_RANGE,                // "INVALID_NUMERIC_RANGE"
-        DiagnosticBag.ERR_CAPACITY_OVERFLOW,             // "CAPACITY_OVERFLOW"
-        DiagnosticBag.ERR_INCOMPATIBLE_TYPE,             // "INCOMPATIBLE_METADATA_TYPE"
-        DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE,            // "MUTUALLY_EXCLUSIVE_BOUNDS"
-        DiagnosticBag.ERR_NON_OVERRIDABLE_FACET,         // "ERR_NON_OVERRIDABLE_FACET"
-        DiagnosticBag.ERR_INVALID_METADATA_FACET,        // "ERR_INVALID_METADATA_FACET"
-        DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED, // "ERR_STRING_CARDINALITY_PROHIBITED"
-        DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED,// "ERR_DISCRETE_BOUND_KIND_PROHIBITED"
-        DiagnosticBag.ERR_UNDEFINED_TYPE,                // "UNDEFINED_TYPE"
-        DiagnosticBag.ERR_CIRCULAR_TYPE                  // "CIRCULAR_TYPE_DEFINITION"
+        DiagnosticBag.ERR_INTEGER_OVERFLOW,
+        "E009",
+        DiagnosticBag.ERR_INVALID_REGEX,
+        "E012",
+        DiagnosticBag.ERR_INVERTED_RANGE,
+        "E010",
+        DiagnosticBag.ERR_CAPACITY_OVERFLOW,
+        "E011",
+        DiagnosticBag.ERR_INCOMPATIBLE_TYPE,
+        DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE,
+        "E013",
+        DiagnosticBag.ERR_NON_OVERRIDABLE_FACET,
+        "E035",
+        DiagnosticBag.ERR_INVALID_METADATA_FACET,
+        "E036",
+        DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED,
+        DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED,
+        DiagnosticBag.ERR_ENUM_SUBSET_EMPTY,
+        DiagnosticBag.ERR_UNDEFINED_TYPE,
+        "E014",
+        DiagnosticBag.ERR_CIRCULAR_TYPE,
+        "E015"
     );
 
     /**
      * Returns cached compiler diagnostics for the given STVN PSI file.
      *
      * @param file the PSI file to compile and inspect
-     * @return list of diagnostics, or {@code null} if file is null
+     * @return immutable list of diagnostics, or {@code null} if {@code file} is {@code null}
      */
-    public static @Nullable List<org.stvnadore.core.StvnDiagnostic> getCompilationDiagnostics(@Nullable PsiFile file) {
+    public static @Nullable List<StvnDiagnostic> getCompilationDiagnostics(@Nullable PsiFile file) {
         if (file == null) {
             return null;
         }
-        var manager = CachedValuesManager.getManager(file.getProject());
-        return manager.getCachedValue(file, CORE_DIAGNOSTICS_KEY, () -> {
-            List<org.stvnadore.core.StvnDiagnostic> list = new java.util.ArrayList<>();
-            try {
-                var text = file.getText();
-                var virtualFile = file.getVirtualFile();
-                if (virtualFile != null) {
-                    var path = resolvePhysicalPath(virtualFile, file.getProject(), text);
-                    var result = StvnCompiler.compileToResult(text, path, StvnParserConfig.DEFAULT);
-                    list.addAll(result.diagnostics());
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            return CachedValueProvider.Result.create(list, file);
-        }, false);
+        return StvnCompiledDocumentCache.getSnapshot(file).diagnostics();
     }
 
     /**
-     * Resolves the authoritative {@link org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema} record
-     * for the given type definition, including folded constraints across its nominal alias chain.
+     * Resolves the pure-IR {@link StvnSchema} record for the given nominal type definition,
+     * including folded constraints and algebraic traits across its nominal alias chain.
      *
      * @param typeDef the type definition PSI element
-     * @return the resolved schema record, or {@code null} if unresolvable
+     * @return the lowered pure-IR {@link StvnSchema}, or {@code null} if unresolvable
      */
-    public static org.stvnadore.core.validation.StvnTypeResolver.@Nullable ResolvedSchema resolveNominalResolvedSchema(@Nullable TypeDefinition typeDef) {
-        if (typeDef == null) return null;
+    public static @Nullable StvnSchema resolveNominalIrSchema(@Nullable TypeDefinition typeDef) {
+        if (typeDef == null) {
+            return null;
+        }
         var file = typeDef.getContainingFile();
-        if (file == null) return null;
+        if (file == null) {
+            return null;
+        }
         var keyword = typeDef.getTypeKeyword();
-        if (keyword == null) return null;
+        if (keyword == null) {
+            return null;
+        }
         var typeName = keyword.getText().trim();
         var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
         String fqniKey = typeName;
@@ -123,51 +128,114 @@ public final class StvnTypeResolver {
             fqniKey = pkgText + "/" + localPart;
         }
 
-        var manager = CachedValuesManager.getManager(file.getProject());
-        var map = manager.getCachedValue(file, RESOLVED_SCHEMAS_KEY, () -> {
-            java.util.Map<String, org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema> resolvedMap = new java.util.HashMap<>();
-            try {
-                var text = file.getText();
-                var virtualFile = file.getVirtualFile();
-                var path = (virtualFile != null) ? resolvePhysicalPath(virtualFile, file.getProject(), text) : null;
-                var lexer = new org.stvnadore.core.parser.StvnLexer(org.antlr.v4.runtime.CharStreams.fromString(text));
-                lexer.removeErrorListeners();
-                var parser = new org.stvnadore.core.parser.StvnParser(new org.antlr.v4.runtime.CommonTokenStream(lexer));
-                parser.removeErrorListeners();
-                var docCtx = parser.stvnDocument();
-                if (path != null) {
-                    org.stvnadore.core.validation.StvnTypeResolver.documentPaths.put(docCtx, path);
-                }
-                var defs = org.stvnadore.core.validation.StvnTypeResolver.getDocumentDefinitions(docCtx);
-                for (var entry : defs.entrySet()) {
-                    var schemaNode = entry.getValue().defNode().schemaType();
-                    var rsOpt = org.stvnadore.core.validation.StvnTypeResolver.resolvePrimitiveSchema(docCtx, schemaNode, new HashSet<>());
-                    rsOpt.ifPresent(rs -> {
-                        resolvedMap.put(entry.getKey(), rs);
-                        var rawKey = entry.getKey();
-                        if (rawKey.contains("/")) {
-                            var slash = rawKey.lastIndexOf('/');
-                            resolvedMap.putIfAbsent(":" + rawKey.substring(slash + 1), rs);
-                        }
-                    });
-                }
-            } catch (Exception ignored) {
-            }
-            return CachedValueProvider.Result.create(resolvedMap, file);
-        }, false);
+        StvnDefsCatalog catalog = StvnPreludeBridge.isPreludeFile(file)
+            ? StvnPreludeBridge.getPreludeCatalog()
+            : StvnCompiledDocumentCache.getSnapshot(file).catalog();
 
-        if (map == null) return null;
-        var rs = map.get(fqniKey);
-        if (rs != null) {
-            return rs;
+        var found = catalog.findType(fqniKey);
+        if (found.isPresent()) {
+            return found.get();
         }
-        return map.get(typeName);
+        var byRaw = catalog.findType(typeName);
+        if (byRaw.isPresent()) {
+            return byRaw.get();
+        }
+        String localSuffix = "/" + (typeName.startsWith(":") ? typeName.substring(1) : typeName);
+        StvnSchema singleMatch = null;
+        for (var entry : catalog.nominalTypes().entrySet()) {
+            if (entry.getKey().endsWith(localSuffix)) {
+                if (singleMatch != null) {
+                    return null;
+                }
+                singleMatch = entry.getValue();
+            }
+        }
+        return singleMatch;
     }
 
     /**
-     * Determines whether the specified nominal alias name refers to a degraded schema definition.
+     * Resolves the effective Tier-2 algebraic {@link StvnSchema.TraitProfile} for a nominal type definition.
      *
-     * @param file the containing PSI file
+     * @param typeDef the type definition PSI element
+     * @return effective trait profile, or {@code null} if unresolvable
+     */
+    public static StvnSchema.@Nullable TraitProfile resolveNominalTraitConstraints(@Nullable TypeDefinition typeDef) {
+        var schema = resolveNominalIrSchema(typeDef);
+        return schema != null ? schema.traits() : null;
+    }
+
+    /**
+     * Resolves a nominal pure-IR {@link StvnSchema} by alias identifier within the context of {@code file}.
+     *
+     * @param file      containing PSI file
+     * @param aliasName local, imported, or fully qualified nominal alias identifier
+     * @return resolved pure-IR {@link StvnSchema}, or {@code null} if unresolvable
+     */
+    public static @Nullable StvnSchema resolveIrSchemaByAlias(@Nullable PsiFile file, @Nullable String aliasName) {
+        if (file == null || aliasName == null || aliasName.isEmpty()) {
+            return null;
+        }
+        var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+        var direct = catalog.findType(aliasName);
+        if (direct.isPresent()) {
+            return direct.get();
+        }
+        var targetElem = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
+        var typeDef = resolveUnderlyingTypeDefinition(targetElem);
+        if (typeDef != null) {
+            var resolved = resolveNominalIrSchema(typeDef);
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+        var preludeCatalog = StvnPreludeBridge.getPreludeCatalog();
+        var preludeDirect = preludeCatalog.findType(aliasName);
+        if (preludeDirect.isPresent()) {
+            return preludeDirect.get();
+        }
+        if (aliasName.startsWith(":") && !aliasName.substring(1).contains("/")) {
+            var preludeFqni = ":org/stvnadore/prelude/" + aliasName.substring(1);
+            var preludeShort = preludeCatalog.findType(preludeFqni);
+            if (preludeShort.isPresent()) {
+                return preludeShort.get();
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable TypeDefinition resolveUnderlyingTypeDefinition(@Nullable PsiElement targetElem) {
+        if (targetElem == null) {
+            return null;
+        }
+        TypeDefinition typeDef = StvnPsiUtils.getParentTypeDefinition(targetElem);
+        if (typeDef != null) {
+            return typeDef;
+        }
+        var inclAlias = targetElem instanceof IncludeMapAlias ima ? ima
+            : targetElem.getParent() instanceof IncludeMapAlias ima ? ima : null;
+        if (inclAlias != null) {
+            var list = inclAlias.getTypeKeywordList();
+            var remoteKw = !list.isEmpty() ? list.get(0) : null;
+            if (remoteKw != null) {
+                return StvnPsiUtils.getParentTypeDefinition(new StvnTypeReference(remoteKw).resolve());
+            }
+        }
+        var useAlias = targetElem instanceof UseMapAlias uma ? uma
+            : targetElem.getParent() instanceof UseMapAlias uma ? uma : null;
+        if (useAlias != null) {
+            var list = useAlias.getTypeKeywordList();
+            var remoteKw = !list.isEmpty() ? list.get(0) : null;
+            if (remoteKw != null) {
+                return StvnPsiUtils.getParentTypeDefinition(new StvnTypeReference(remoteKw).resolve());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Determines whether the specified nominal alias name refers to a degraded or poisoned schema definition.
+     *
+     * @param file      the containing PSI file
      * @param aliasName the nominal alias identifier to test
      * @return {@code true} if degraded, {@code false} otherwise
      */
@@ -176,10 +244,22 @@ public final class StvnTypeResolver {
             return false;
         }
 
-        // 1. Direct PSI check on the TypeDefinition metadata map
+        // 1. Authoritative pure-IR PoisonedSchema check (exclude non-constraint structural warnings such as 1-branch :Union)
+        var irSchema = resolveIrSchemaByAlias(file, aliasName);
+        if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
+                && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisoned.primaryDiagnosticCode())) {
+            return true;
+        }
+
+        // 2. Direct PSI check on the TypeDefinition metadata map for in-flight buffers
         var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
-        var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
+        var typeDef = resolveUnderlyingTypeDefinition(targetDef);
         if (typeDef != null) {
+            var defIr = resolveNominalIrSchema(typeDef);
+            if (defIr instanceof StvnSchema.PoisonedSchema poisonedDef
+                    && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisonedDef.primaryDiagnosticCode())) {
+                return true;
+            }
             var metaMap = typeDef.getMetadataMap();
             if (metaMap != null) {
                 var entries = metaMap.getMetadataEntryList();
@@ -192,35 +272,38 @@ public final class StvnTypeResolver {
 
                 for (var entry : entries) {
                     var entryText = entry.getText();
-                    if (entryText.startsWith("#regex")) {
+                    if (entryText.startsWith(StvnVocabulary.FACET_KW_REGEX)) {
                         var strLit = PsiTreeUtil.findChildOfType(entry, StringLiteral.class);
                         if (strLit != null) {
-                            var raw = strLit.getText();
-                            var content = raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2
-                                ? raw.substring(1, raw.length() - 1) : raw;
+                            var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), false);
+                            var content = decoded.orElseGet(() -> {
+                                var raw = strLit.getText();
+                                return raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2
+                                    ? raw.substring(1, raw.length() - 1) : raw;
+                            });
                             try {
-                                java.util.regex.Pattern.compile(content);
-                            } catch (java.util.regex.PatternSyntaxException e) {
+                                Pattern.compile(content);
+                            } catch (PatternSyntaxException e) {
                                 return true;
                             }
                         }
-                    } else if (entryText.startsWith("#minIncl")) {
+                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
                         hasMinIncl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) minVal = num;
-                    } else if (entryText.startsWith("#minExcl")) {
+                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
                         hasMinExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) minVal = num;
-                    } else if (entryText.startsWith("#maxIncl")) {
+                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
                         hasMaxIncl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
-                    } else if (entryText.startsWith("#maxExcl")) {
+                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
                         hasMaxExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
-                    } else if (entryText.startsWith("#size")) {
+                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                         var schemaType = typeDef.getSchemaType();
                         var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
                         if (schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
@@ -240,9 +323,9 @@ public final class StvnTypeResolver {
                 var hasAudited = false;
                 for (var entry : entries) {
                     var entryText = entry.getText();
-                    if (entryText.startsWith("#offset")) hasOffset = true;
-                    if (entryText.startsWith("#zoned")) hasZoned = true;
-                    if (entryText.startsWith("#audited")) hasAudited = true;
+                    if (entryText.startsWith(StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
+                    if (entryText.startsWith(StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
+                    if (entryText.startsWith(StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
                 }
                 int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
                 if (modeCount > 1) {
@@ -258,28 +341,40 @@ public final class StvnTypeResolver {
             }
         }
 
-        // 2. Check compiler diagnostics accumulated for the file
-        var diagnostics = getCompilationDiagnostics(file);
-        if (diagnostics != null) {
-            for (var diag : diagnostics) {
-                var code = diag.errorCode().orElse("");
-                if (FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(code)) {
-                    var msg = diag.message();
-                    var matcher = CONSTRAINT_VIOLATION_TARGET_PATTERN.matcher(msg);
-                    if (matcher.find()) {
-                        var target = matcher.group(1).trim();
-                        if (matchesTargetTypeName(target, aliasName)) {
-                            return true;
-                        }
-                        // Diagnostic explicitly targets another type; never poison current aliasName
-                        continue;
+        // 3. Check compiler diagnostics accumulated for the defining file
+        PsiFile diagFile = typeDef != null && typeDef.getContainingFile() != null
+            ? typeDef.getContainingFile()
+            : file;
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(diagFile);
+        for (var diag : snapshot.diagnostics()) {
+            if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                continue;
+            }
+            if (diag.sourcePath().isPresent()
+                && !diag.sourcePath().get().equals(snapshot.normalizedDocPath())) {
+                continue;
+            }
+            String symbolic = diag.symbolicId().orElse("");
+            String canonical = diag.canonicalCode().orElse("");
+            String fallback = diag.errorCode().orElse("");
+            boolean isFatal = (!symbolic.isEmpty() && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(symbolic))
+                || (symbolic.isEmpty() && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(canonical))
+                || (symbolic.isEmpty() && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(fallback));
+            if (isFatal) {
+                var msg = diag.message();
+                var matcher = CONSTRAINT_VIOLATION_TARGET_PATTERN.matcher(msg);
+                if (matcher.find()) {
+                    var target = matcher.group(1).trim();
+                    if (matchesTargetTypeName(target, aliasName)) {
+                        return true;
                     }
+                    continue;
+                }
 
-                    if (typeDef != null) {
-                        var range = typeDef.getTextRange();
-                        if (diag.startOffset() >= range.getStartOffset() && diag.endOffset() <= range.getEndOffset()) {
-                            return true;
-                        }
+                if (typeDef != null) {
+                    var range = typeDef.getTextRange();
+                    if (diag.startOffset() >= range.getStartOffset() && diag.endOffset() <= range.getEndOffset()) {
+                        return true;
                     }
                 }
             }
@@ -295,33 +390,29 @@ public final class StvnTypeResolver {
         if (target.endsWith("/" + (aliasName.startsWith(":") ? aliasName.substring(1) : aliasName))) {
             return true;
         }
-        if (aliasName.endsWith("/" + (target.startsWith(":") ? target.substring(1) : target))) {
-            return true;
-        }
-        return false;
+        return aliasName.endsWith("/" + (target.startsWith(":") ? target.substring(1) : target));
     }
 
     private static @Nullable BigDecimal extractNumericValue(MetadataEntry entry) {
         var intLit = PsiTreeUtil.findChildOfType(entry, IntegerLiteral.class);
         if (intLit != null) {
-            try {
-                return new BigDecimal(intLit.getText());
-            } catch (Exception ignored) {}
+            var parsed = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText());
+            if (parsed.isPresent()) {
+                return new BigDecimal(parsed.get());
+            }
         }
         var floatLit = PsiTreeUtil.findChildOfType(entry, FloatLiteral.class);
         if (floatLit != null) {
-            try {
-                return new BigDecimal(floatLit.getText());
-            } catch (Exception ignored) {}
+            return StvnPsiLiteralEvaluator.parseBigDecimal(floatLit.getText()).orElse(null);
         }
         return null;
     }
 
     /**
-     * Resolves the corresponding core IR representation for the specified PSI element.
+     * Resolves the corresponding lowered pure-IR {@link StvnValue} for the specified PSI element.
      *
      * @param value the PSI element to resolve
-     * @return the resolved StvnValue IR node, or {@code null} if unresolvable
+     * @return the resolved {@link StvnValue} IR node, or {@code null} if unresolvable
      */
     public static @Nullable StvnValue resolveCoreValue(PsiElement value) {
         var file = value.getContainingFile();
@@ -331,25 +422,20 @@ public final class StvnTypeResolver {
 
         var manager = CachedValuesManager.getManager(file.getProject());
         var valuesMap = manager.getCachedValue(file, CORE_VALUES_KEY, () -> {
-            java.util.Map<Integer, StvnValue> map = new java.util.HashMap<>();
-            try {
-                var text = file.getText();
-                var virtualFile = file.getVirtualFile();
-                if (virtualFile != null) {
-                    var path = resolvePhysicalPath(virtualFile, file.getProject(), text);
-                    var result = StvnCompiler.compileToResult(text, path, StvnParserConfig.DEFAULT);
-                    var rootOpt = result.document();
-                    if (rootOpt.isPresent() && rootOpt.get().payload().isPresent()) {
-                        var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
-                        if (bodyEntry != null && bodyEntry.getValue() != null) {
-                            mapValues(bodyEntry.getValue(), rootOpt.get().payload().get(), map);
-                        }
-                    }
+            Map<Integer, StvnValue> map = new HashMap<>();
+            var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+            if (snapshot.payload().isPresent()) {
+                var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+                if (bodyEntry != null && bodyEntry.getValue() != null) {
+                    mapValues(bodyEntry.getValue(), snapshot.payload().get(), map);
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
             }
-            return CachedValueProvider.Result.create(map, file);
+            return CachedValueProvider.Result.create(
+                map,
+                file,
+                PsiModificationTracker.MODIFICATION_COUNT,
+                VirtualFileManager.VFS_STRUCTURE_MODIFICATIONS
+            );
         }, false);
 
         int offset = value.getTextRange().getStartOffset();
@@ -385,10 +471,10 @@ public final class StvnTypeResolver {
         private final String label;
 
         /**
-         * Constructs a ResolvedTypeInfo instance.
+         * Constructs a {@link ResolvedTypeInfo} instance.
          *
          * @param schema the underlying schema type PSI element
-         * @param label the formatted type label
+         * @param label  the formatted type label
          */
         public ResolvedTypeInfo(SchemaType schema, String label) {
             this.schema = schema;
@@ -414,12 +500,12 @@ public final class StvnTypeResolver {
         }
     }
 
-    private static String getLabelForSchema(org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema schema, PsiFile containingFile) {
+    private static String getLabelForSchema(StvnSchema schema, PsiFile containingFile) {
         if (schema.aliasName().isPresent()) {
             var alias = schema.aliasName().get();
             var keywordElement = StvnTypeReference.resolveTypeInFile(containingFile, alias, new HashSet<>());
             var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
-                   : keywordElement instanceof TypeKeyword k ? k : null;
+                : keywordElement instanceof TypeKeyword k ? k : null;
             if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
                 return formatTrace(trace);
@@ -427,34 +513,34 @@ public final class StvnTypeResolver {
             return alias;
         }
 
-        if (schema.node() != null) {
-            var baseType = org.stvnadore.core.validation.StvnTypeResolver.getPrimitiveBaseType(schema.node());
-            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
-                var scale = schema.constraints().scale().map(s -> "#" + s).orElseGet(() -> extractScaleFromAntlr(schema.node()));
-                return scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH;
-            }
-            if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
-                String mode = null;
-                if (schema.constraints().offset()) mode = StvnVocabulary.FACET_KW_OFFSET;
-                else if (schema.constraints().zoned()) mode = StvnVocabulary.FACET_KW_ZONED;
-                else if (schema.constraints().audited()) mode = StvnVocabulary.FACET_KW_AUDITED;
-                else mode = extractModeFromAntlr(schema.node());
-                return mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME;
-            }
-            var formatted = StvnSchemaFormatter.formatCleanAntlrSchema(schema.node());
-            if (!formatted.isEmpty()) {
-                return formatted;
-            }
+        if (schema instanceof StvnSchema.TimeEpochSchema te) {
+            String scaleFlag = switch (te.scale()) {
+                case S -> StvnVocabulary.FACET_KW_SCALE_S;
+                case MS -> StvnVocabulary.FACET_KW_SCALE_MS;
+                case US -> StvnVocabulary.FACET_KW_SCALE_US;
+                case NS -> StvnVocabulary.FACET_KW_SCALE_NS;
+            };
+            return "{ " + scaleFlag + " } " + StvnVocabulary.TYPE_TIME_EPOCH;
         }
-        return "";
+
+        if (schema instanceof StvnSchema.DateTimeSchema dt) {
+            String modeFlag = switch (dt.mode()) {
+                case OFFSET -> StvnVocabulary.FACET_KW_OFFSET;
+                case ZONED -> StvnVocabulary.FACET_KW_ZONED;
+                case AUDITED -> StvnVocabulary.FACET_KW_AUDITED;
+            };
+            return "{ " + modeFlag + " } " + StvnVocabulary.TYPE_DATE_TIME;
+        }
+
+        return StvnSchemaFormatter.formatCleanIrSchema(schema);
     }
 
     /**
      * Extracts the qualified type label for a schema type, ensuring temporal types
-     * include their mandatory Tier 1 scale or mode qualifiers.
+     * include their mandatory scale or mode qualifiers.
      *
      * @param schemaType the schema type to format
-     * @return the qualified type string, or empty string if null
+     * @return the qualified type string, or empty string if {@code null}
      */
     public static String getTypeLabel(@Nullable SchemaType schemaType) {
         if (schemaType == null) {
@@ -494,10 +580,10 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Extracts the declared scale flag (#s, #ms, #us, #ns) from a SchemaType.
+     * Extracts the declared scale flag ({@code #s}, {@code #ms}, {@code #us}, {@code #ns}) from a {@link SchemaType}.
      *
      * @param schemaType the schema type to inspect
-     * @return the extracted scale flag or null
+     * @return the extracted scale flag or {@code null}
      */
     public static @Nullable String extractScaleFlagFromSchemaType(SchemaType schemaType) {
         var metaMap = schemaType.getMetadataMap();
@@ -524,10 +610,10 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Extracts the declared mode flag (#offset, #zoned, #audited) from a SchemaType.
+     * Extracts the declared mode flag ({@code #offset}, {@code #zoned}, {@code #audited}) from a {@link SchemaType}.
      *
      * @param schemaType the schema type to inspect
-     * @return the extracted datetime mode flag or null
+     * @return the extracted datetime mode flag or {@code null}
      */
     public static @Nullable String extractDateTimeModeFlagFromSchemaType(SchemaType schemaType) {
         var metaMap = schemaType.getMetadataMap();
@@ -553,46 +639,20 @@ public final class StvnTypeResolver {
         return null;
     }
 
-    private static @Nullable String extractScaleFromAntlr(org.antlr.v4.runtime.tree.ParseTree node) {
-        if (node instanceof org.stvnadore.core.parser.StvnParser.SchemaTypeContext sc && sc.metadataMap() != null) {
-            for (var entry : sc.metadataMap().metadataEntry()) {
-                var text = entry.getText().trim();
-                if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
-                    || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
-                    return text;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static @Nullable String extractModeFromAntlr(org.antlr.v4.runtime.tree.ParseTree node) {
-        if (node instanceof org.stvnadore.core.parser.StvnParser.SchemaTypeContext sc && sc.metadataMap() != null) {
-            for (var entry : sc.metadataMap().metadataEntry()) {
-                var text = entry.getText().trim();
-                if (text.equals(StvnVocabulary.FACET_KW_OFFSET) || text.equals(StvnVocabulary.FACET_KW_ZONED)
-                    || text.equals(StvnVocabulary.FACET_KW_AUDITED)) {
-                    return text;
-                }
-            }
-        }
-        return null;
-    }
-
     /**
      * Resolves the string type representation of a value element.
      *
      * @param value the PSI value element
-     * @return the resolved type representation, or null if resolution fails
+     * @return the resolved type representation, or {@code null} if resolution fails
      */
     public static @Nullable String resolveValueType(Value value) {
         var resolvedNode = resolveCoreValue(value);
-        if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError err) {
+        if (resolvedNode instanceof StvnValue.StvnErrorValue err) {
             if (!isRecoverableCoreError(err, value)) {
                 return null;
             }
         }
-        if (resolvedNode != null && !(resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError)) {
+        if (resolvedNode != null && !(resolvedNode instanceof StvnValue.StvnErrorValue)) {
             var file = value.getContainingFile();
             if (file != null) {
                 var project = value.getProject();
@@ -611,41 +671,34 @@ public final class StvnTypeResolver {
         StvnValue resolvedNode,
         Value value,
         PsiFile file,
-        com.intellij.openapi.project.Project project,
+        Project project,
         boolean useLong
     ) {
         var baseSchema = resolvedNode.schema();
         var rootAliasOpt = baseSchema.aliasName();
+        var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
 
         // 1. Nominal Sum Type Handling
         if (rootAliasOpt.isPresent()) {
             var rootAlias = rootAliasOpt.get();
             var isDegraded = isDegradedNominalAlias(file, rootAlias);
-            var prefix = isDegraded ? "⚠ " : "";
+            var prefix = isDegraded ? "\u26A0 " : "";
 
-            if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
-                var explicitTagIndex = -1;
-                if (value.getExplicitUnionValue() != null) {
-                    var firstChild = value.getExplicitUnionValue().getFirstChild();
-                    if (firstChild != null && firstChild.getText().startsWith("#")) {
-                        try {
-                            explicitTagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                        } catch (NumberFormatException ignored) {}
-                    }
-                }
-                var text = value.getText().trim();
-                var matcher = EXPLICIT_UNION_TAG_PATTERN.matcher(text);
-                if (explicitTagIndex < 0 && matcher.find()) {
-                    try {
-                        explicitTagIndex = Integer.parseInt(matcher.group().substring(1)) - 1;
-                    } catch (NumberFormatException ignored) {}
-                }
-                var activeTagIndex = explicitTagIndex >= 0 ? explicitTagIndex : union.tagIndex();
-                var branchTag = "#" + (activeTagIndex + 1);
-                var isExplicit = explicitTagIndex >= 0 || value.getExplicitUnionValue() != null
+            if (resolvedNode instanceof StvnValue.StvnUnion union) {
+                var trajectory = StvnSumTrajectory.evaluate(value, union, catalog);
+                BigInteger explicitOneBased = extractExplicitUnionOneBasedIndex(value);
+                BigInteger activeOneBased = explicitOneBased != null
+                    ? explicitOneBased
+                    : union.oneBasedBranchIndex();
+                var branchTag = "#" + activeOneBased;
+                boolean isExplicit = trajectory.stoppedAtConstantReference()
+                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
+                    || explicitOneBased != null
+                    || value.getExplicitUnionValue() != null
                     || (value.getParent() instanceof ExplicitUnionValue);
                 var tagText = isExplicit ? branchTag : "[" + branchTag + "]";
-                
+
+                int activeTagIndex = toSafeZeroBasedIndex(activeOneBased);
                 var branchPsi = getNominalUnionBranchPsi(file, rootAlias, activeTagIndex);
                 var innerVal = value.getExplicitUnionValue() != null ? value.getExplicitUnionValue().getValue() : value;
                 var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
@@ -656,19 +709,21 @@ public final class StvnTypeResolver {
                 return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
             }
 
-            if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
-                var isExplicit = opt.trajectory().stream().noneMatch(VariantStep::isInferred)
+            if (resolvedNode instanceof StvnValue.StvnOption opt) {
+                var trajectory = StvnSumTrajectory.evaluate(value, opt, catalog);
+                var isExplicit = trajectory.stoppedAtConstantReference()
+                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
                     || value.getExplicitOptionValue() != null
                     || isExplicitOptionText(value.getText().trim());
 
-                if (opt.isNone()) {
+                if (opt.value().isEmpty()) {
                     var tag = useLong ? "#None" : "#N";
                     return prefix + rootAlias + " " + tag;
                 }
 
                 var tag = useLong ? "#Some" : "#S";
                 var tagText = isExplicit ? tag : "[" + tag + "]";
-                
+
                 var branchPsi = getNominalOptionBranchPsi(file, rootAlias);
                 var innerVal = value.getExplicitOptionValue() != null ? value.getExplicitOptionValue().getValue() : value;
                 var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
@@ -681,62 +736,55 @@ public final class StvnTypeResolver {
                 return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
             }
 
-            if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
-                var isExplicit = either.trajectory().stream().noneMatch(VariantStep::isInferred)
+            if (resolvedNode instanceof StvnValue.StvnEither either) {
+                var trajectory = StvnSumTrajectory.evaluate(value, either, catalog);
+                var isExplicit = trajectory.stoppedAtConstantReference()
+                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
                     || value.getExplicitEitherValue() != null
                     || isExplicitEitherText(value.getText().trim());
-                var isRight = either.isRight();
+                var isRight = either.branch() == StvnValue.EitherBranch.RIGHT;
                 var tag = isRight
                     ? (useLong ? "#Right" : "#R")
                     : (useLong ? "#Left" : "#L");
                 var tagText = isExplicit ? tag : "[" + tag + "]";
-                
+
                 var branchPsi = getNominalEitherBranchPsi(file, rootAlias, isRight);
                 var innerVal = value.getExplicitEitherValue() != null ? value.getExplicitEitherValue().getValue() : value;
                 var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
                 if (branchTrace.isEmpty()) {
                     var childVal = either.value();
-                    if (childVal != null) {
-                        branchTrace = unspoolBranchTrajectory(childVal.schema(), childVal, file, project, useLong);
-                    }
+                    branchTrace = unspoolBranchTrajectory(childVal.schema(), childVal, file, project, useLong);
                 }
                 return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
             }
 
-            if (baseSchema.aliasName().isPresent()) {
-                var alias = baseSchema.aliasName().get();
-                var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
-                    ? ":" + alias.substring(":org/stvnadore/prelude/".length())
-                    : alias;
-                if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
-                    return prefix + shortAlias;
-                }
-                var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                var typeKw = kw instanceof TypeDefinition td ? td.getTypeKeyword()
-                           : kw instanceof TypeKeyword k ? k : null;
-                if (typeKw != null) {
-                    var trace = StvnTypeReference.extractResolutionTrace(typeKw);
-                    if (trace.size() > 1) {
-                        return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
-                    }
-                }
-                return prefix + alias;
+            var alias = rootAlias;
+            var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
+                ? ":" + alias.substring(":org/stvnadore/prelude/".length())
+                : alias;
+            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
+                return prefix + shortAlias;
             }
-
-            return prefix + getLabelForSchema(baseSchema, file);
+            var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+            var typeKw = kw instanceof TypeDefinition td ? td.getTypeKeyword()
+                : kw instanceof TypeKeyword k ? k : null;
+            if (typeKw != null) {
+                var trace = StvnTypeReference.extractResolutionTrace(typeKw);
+                if (trace.size() > 1) {
+                    return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
+                }
+            }
+            return prefix + alias;
         }
 
         // 2. Anonymous Enum Handling
-        if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnEnum) {
-            return ":Enum";
+        if (resolvedNode instanceof StvnValue.StvnEnum) {
+            return StvnVocabulary.TYPE_ENUM;
         }
 
         // 3. Anonymous Deep Sum Trajectory Handling
-        if (resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnSum) {
-            var rootLabel = (baseSchema.node() != null)
-                ? StvnSchemaFormatter.formatCleanAntlrSchema(baseSchema.node())
-                : getLabelForSchema(baseSchema, file);
-
+        if (StvnSumTrajectory.isSumValue(resolvedNode)) {
+            var rootLabel = getLabelForSchema(baseSchema, file);
             var levels = collectSumLevels(resolvedNode, useLong);
             if (levels.isEmpty()) {
                 return rootLabel;
@@ -767,57 +815,99 @@ public final class StvnTypeResolver {
         return getLabelForSchema(baseSchema, file);
     }
 
+    private static @Nullable BigInteger extractExplicitUnionOneBasedIndex(Value value) {
+        if (value.getExplicitUnionValue() != null) {
+            var firstChild = value.getExplicitUnionValue().getFirstChild();
+            if (firstChild != null && firstChild.getText().startsWith("#")) {
+                var parsed = StvnPsiLiteralEvaluator.parseBigInteger(firstChild.getText().substring(1));
+                if (parsed.isPresent() && parsed.get().compareTo(BigInteger.ONE) >= 0) {
+                    return parsed.get();
+                }
+            }
+        }
+        var text = value.getText().trim();
+        var matcher = EXPLICIT_UNION_TAG_PATTERN.matcher(text);
+        if (matcher.find()) {
+            var token = matcher.group().trim();
+            if (token.startsWith("#")) {
+                var parsed = StvnPsiLiteralEvaluator.parseBigInteger(token.substring(1));
+                if (parsed.isPresent() && parsed.get().compareTo(BigInteger.ONE) >= 0) {
+                    return parsed.get();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int toSafeZeroBasedIndex(@Nullable BigInteger oneBased) {
+        if (oneBased == null
+            || oneBased.compareTo(BigInteger.ONE) < 0
+            || oneBased.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            return -1;
+        }
+        return oneBased.intValue() - 1;
+    }
+
+    private static int parseUnionTagZeroBasedIndex(@Nullable String tagText) {
+        if (tagText == null || !tagText.startsWith("#")) {
+            return -1;
+        }
+        var parsed = StvnPsiLiteralEvaluator.parseBigInteger(tagText.trim().substring(1));
+        return toSafeZeroBasedIndex(parsed.orElse(null));
+    }
+
     /**
      * Categorizes algebraic sum type constructors.
      */
     public enum SumKind {
-        /** Option type constructor (#Some / #None). */
+        /** Option type constructor ({@code #Some} / {@code #None}). */
         OPTION,
-        /** Either type constructor (#Left / #Right). */
+        /** Either type constructor ({@code #Left} / {@code #Right}). */
         EITHER,
-        /** Indexed union constructor (#1, #2, etc.). */
+        /** Indexed union constructor ({@code #1}, {@code #2}, and higher indices). */
         UNION
     }
 
     /**
      * Describes an individual nesting level within an algebraic sum hierarchy.
      *
-     * @param kind the algebraic sum kind
-     * @param canonicalTag the canonical tag string for the variant
+     * @param kind                the algebraic sum kind
+     * @param canonicalTag        the canonical tag string for the variant
      * @param validExplicitTokens the set of accepted explicit tokens for this variant
-     * @param isTerminalNone whether this level represents a terminal none/empty branch
+     * @param isTerminalNone      whether this level represents a terminal none or empty branch
      */
     public record SumLevelDescriptor(
         SumKind kind,
         String canonicalTag,
-        java.util.Set<String> validExplicitTokens,
+        Set<String> validExplicitTokens,
         boolean isTerminalNone
-    ) {}
+    ) {
+    }
 
     private static List<SumLevelDescriptor> collectSumLevels(StvnValue rootNode, boolean useLong) {
-        var levels = new java.util.ArrayList<SumLevelDescriptor>();
-        var curr = rootNode;
+        var levels = new ArrayList<SumLevelDescriptor>();
+        StvnValue curr = rootNode;
 
-        while (curr instanceof org.stvnadore.core.ir.StvnValue.StvnSum) {
-            if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
-                if (opt.isNone()) {
+        while (StvnSumTrajectory.isSumValue(curr)) {
+            if (curr instanceof StvnValue.StvnOption opt) {
+                if (opt.value().isEmpty()) {
                     var tag = useLong ? "#None" : "#N";
-                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, java.util.Set.of("#None", "#N"), true));
+                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of("#None", "#N"), true));
                     break;
                 } else {
                     var tag = useLong ? "#Some" : "#S";
-                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, java.util.Set.of("#Some", "#S"), false));
+                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of("#Some", "#S"), false));
                     curr = opt.value().orElse(null);
                 }
-            } else if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
-                var isRight = either.isRight();
+            } else if (curr instanceof StvnValue.StvnEither either) {
+                var isRight = either.branch() == StvnValue.EitherBranch.RIGHT;
                 var tag = isRight ? (useLong ? "#Right" : "#R") : (useLong ? "#Left" : "#L");
-                var tokens = isRight ? java.util.Set.of("#Right", "#R") : java.util.Set.of("#Left", "#L");
+                var tokens = isRight ? Set.of("#Right", "#R") : Set.of("#Left", "#L");
                 levels.add(new SumLevelDescriptor(SumKind.EITHER, tag, tokens, false));
                 curr = either.value();
-            } else if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
-                var tag = "#" + (union.tagIndex() + 1);
-                levels.add(new SumLevelDescriptor(SumKind.UNION, tag, java.util.Set.of(tag), false));
+            } else if (curr instanceof StvnValue.StvnUnion union) {
+                var tag = "#" + union.oneBasedBranchIndex();
+                levels.add(new SumLevelDescriptor(SumKind.UNION, tag, Set.of(tag), false));
                 curr = union.value();
             } else {
                 break;
@@ -828,7 +918,7 @@ public final class StvnTypeResolver {
     }
 
     private static List<String> extractLeadingTagTokens(Value value) {
-        List<String> tokens = new java.util.ArrayList<>();
+        List<String> tokens = new ArrayList<>();
         var curr = (PsiElement) value;
 
         while (curr != null) {
@@ -840,7 +930,6 @@ public final class StvnTypeResolver {
                 } else if (val.getExplicitUnionValue() != null) {
                     curr = val.getExplicitUnionValue();
                 } else {
-                    // Fallback tokenize leading words starting with '#' if tokens is empty
                     if (tokens.isEmpty()) {
                         var text = val.getText().trim();
                         var parts = text.split("\\s+");
@@ -876,9 +965,7 @@ public final class StvnTypeResolver {
                 curr = either.getValue();
             } else if (curr instanceof ExplicitUnionValue union) {
                 var tagPrefix = union.getUnionTagPrefix();
-                if (tagPrefix != null) {
-                    tokens.add(tagPrefix.getText().trim());
-                }
+                tokens.add(tagPrefix.getText().trim());
                 curr = union.getValue();
             } else {
                 break;
@@ -908,17 +995,17 @@ public final class StvnTypeResolver {
     }
 
     private static String unspoolBranchTrajectory(
-        org.stvnadore.core.validation.StvnTypeResolver.ResolvedSchema branchSchema,
+        StvnSchema branchSchema,
         @Nullable StvnValue branchValue,
         PsiFile file,
-        com.intellij.openapi.project.Project project,
+        Project project,
         boolean useLong
     ) {
-        if (branchValue instanceof org.stvnadore.core.ir.StvnValue.StvnSum branchSum) {
-            var innerBase = branchSum.schema();
+        if (StvnSumTrajectory.isSumValue(branchValue) && branchValue != null) {
+            var innerBase = branchValue.schema();
             var innerAlias = innerBase.aliasName().orElse(null);
-            if (branchSum instanceof org.stvnadore.core.ir.StvnValue.StvnUnion innerUnion) {
-                var innerTag = "#" + (innerUnion.tagIndex() + 1);
+            if (branchValue instanceof StvnValue.StvnUnion innerUnion) {
+                var innerTag = "#" + innerUnion.oneBasedBranchIndex();
                 var innerChild = innerUnion.value();
                 var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
                 if (innerAlias != null) {
@@ -926,8 +1013,8 @@ public final class StvnTypeResolver {
                 } else {
                     return !innerChildTrace.isEmpty() ? innerChildTrace + " " + innerTag : innerTag;
                 }
-            } else if (branchSum instanceof org.stvnadore.core.ir.StvnValue.StvnOption innerOpt) {
-                if (innerOpt.isNone()) {
+            } else if (branchValue instanceof StvnValue.StvnOption innerOpt) {
+                if (innerOpt.value().isEmpty()) {
                     var tag = useLong ? "#None" : "#N";
                     return innerAlias != null ? innerAlias + " " + tag : tag;
                 }
@@ -942,8 +1029,8 @@ public final class StvnTypeResolver {
                     }
                 }
                 return innerAlias != null ? innerAlias + " " + innerTag : innerTag;
-            } else if (branchSum instanceof org.stvnadore.core.ir.StvnValue.StvnEither innerEither) {
-                var innerTag = innerEither.isRight()
+            } else if (branchValue instanceof StvnValue.StvnEither innerEither) {
+                var innerTag = innerEither.branch() == StvnValue.EitherBranch.RIGHT
                     ? (useLong ? "#Right" : "#R")
                     : (useLong ? "#Left" : "#L");
                 var innerChild = innerEither.value();
@@ -956,8 +1043,8 @@ public final class StvnTypeResolver {
             }
         }
 
-        if (branchValue instanceof org.stvnadore.core.ir.StvnValue.StvnEnum && branchSchema.aliasName().isEmpty()) {
-            return ":Enum";
+        if (branchValue instanceof StvnValue.StvnEnum && branchSchema.aliasName().isEmpty()) {
+            return StvnVocabulary.TYPE_ENUM;
         }
 
         if (branchSchema.aliasName().isPresent()) {
@@ -970,7 +1057,7 @@ public final class StvnTypeResolver {
             }
             var keywordElement = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
             var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
-                   : keywordElement instanceof TypeKeyword k ? k : null;
+                : keywordElement instanceof TypeKeyword k ? k : null;
             if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
                 if (!trace.isEmpty()) {
@@ -980,22 +1067,16 @@ public final class StvnTypeResolver {
             return alias;
         }
 
-        if (branchSchema.node() != null) {
-            var formatted = StvnSchemaFormatter.formatCleanAntlrSchema(branchSchema.node());
-            if (!formatted.isEmpty()) {
-                return formatted;
-            }
-        }
-        return "";
+        return getLabelForSchema(branchSchema, file);
     }
 
     /**
-     * Resolves the PSI SchemaType for a specific tagged branch of a nominal union alias.
+     * Resolves the PSI {@link SchemaType} for a specific tagged branch of a nominal union alias.
      *
-     * @param file the containing PSI file
-     * @param alias the nominal union alias identifier
+     * @param file     the containing PSI file
+     * @param alias    the nominal union alias identifier
      * @param tagIndex the 0-based index of the union branch
-     * @return the resolved branch SchemaType, or {@code null} if out of bounds or unresolvable
+     * @return the resolved branch {@link SchemaType}, or {@code null} if out of bounds or unresolvable
      */
     public static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
         var typeDef = findTypeDefinition(file, alias);
@@ -1019,11 +1100,11 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Resolves the inner value SchemaType for a nominal option alias.
+     * Resolves the inner value {@link SchemaType} for a nominal option alias.
      *
-     * @param file the containing PSI file
+     * @param file  the containing PSI file
      * @param alias the nominal option alias identifier
-     * @return the resolved inner SchemaType, or {@code null} if unresolvable
+     * @return the resolved inner {@link SchemaType}, or {@code null} if unresolvable
      */
     public static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
         var typeDef = findTypeDefinition(file, alias);
@@ -1047,12 +1128,12 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Resolves the left or right branch SchemaType for a nominal either alias.
+     * Resolves the left or right branch {@link SchemaType} for a nominal either alias.
      *
-     * @param file the containing PSI file
-     * @param alias the nominal either alias identifier
+     * @param file    the containing PSI file
+     * @param alias   the nominal either alias identifier
      * @param isRight {@code true} for the right branch, {@code false} for the left branch
-     * @return the resolved branch SchemaType, or {@code null} if unresolvable
+     * @return the resolved branch {@link SchemaType}, or {@code null} if unresolvable
      */
     public static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
         var typeDef = findTypeDefinition(file, alias);
@@ -1083,7 +1164,7 @@ public final class StvnTypeResolver {
             return null;
         }
 
-        if (!org.stvnadore.plugin.hints.StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+        if (!StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
             return null;
         }
 
@@ -1095,7 +1176,7 @@ public final class StvnTypeResolver {
             if (sumType != null) {
                 var baseLabel = info.getLabel();
                 var useLong = useLongFormSumTypes(value.getProject());
-                if (sumType.getText().startsWith(":Either")) {
+                if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                     var eitherVal = value.getExplicitEitherValue();
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     if (eitherVal != null) {
@@ -1120,7 +1201,7 @@ public final class StvnTypeResolver {
                             return !branchTrace.isEmpty() ? branchTrace + " " + tagText : baseLabel + " " + tagText;
                         }
                     }
-                } else if (sumType.getText().startsWith(":Option")) {
+                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                     var optVal = value.getExplicitOptionValue();
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     var payloadSchema = !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
@@ -1154,19 +1235,14 @@ public final class StvnTypeResolver {
                             }
                         }
                     }
-                } else if (sumType.getText().startsWith(":Union")) {
+                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                     var unionVal = value.getExplicitUnionValue();
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     if (unionVal != null) {
                         var firstChild = unionVal.getFirstChild();
                         var tagText = firstChild != null ? firstChild.getText() : "#1";
-                        var tagIndex = 0;
-                        if (tagText.startsWith("#")) {
-                            try {
-                                tagIndex = Integer.parseInt(tagText.substring(1)) - 1;
-                            } catch (NumberFormatException ignored) {}
-                        }
-                        var branchSchema = (tagIndex >= 0 && tagIndex < innerSchemas.size()) ? innerSchemas.get(tagIndex) : null;
+                        var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
+                        var branchSchema = resolvedIdx.isPresent() ? innerSchemas.get(resolvedIdx.getAsInt()) : null;
                         var innerVal = unionVal.getValue();
                         var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, innerVal, value.getProject()) : "";
                         if (info.getSchema().getTypeKeyword() != null) {
@@ -1201,7 +1277,7 @@ public final class StvnTypeResolver {
                             }
                             return info.getLabel();
                         }
-                        return ":Enum";
+                        return StvnVocabulary.TYPE_ENUM;
                     }
                 }
             }
@@ -1213,7 +1289,7 @@ public final class StvnTypeResolver {
             if (trace.size() > 1 && matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
                 if (!StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(keyword.getText())) {
                     var isDegraded = isDegradedNominalAlias(value.getContainingFile(), keyword.getText());
-                    var prefix = isDegraded ? "⚠ " : "";
+                    var prefix = isDegraded ? "\u26A0 " : "";
                     return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
                 }
                 return info.getLabel();
@@ -1231,7 +1307,7 @@ public final class StvnTypeResolver {
     private static String resolvePsiBranchTrace(
         SchemaType branchSchema,
         @Nullable Value innerValue,
-        com.intellij.openapi.project.Project project
+        Project project
     ) {
         var keyword = branchSchema.getTypeKeyword();
         if (keyword != null) {
@@ -1243,7 +1319,7 @@ public final class StvnTypeResolver {
             }
             var file = keyword.getContainingFile();
             var resolvedTarget = StvnTypeReference.resolveTypeInFile(file, keyword.getText(), new HashSet<>());
-            var targetDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedTarget);
+            var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
             if (targetDef != null) {
                 var targetSchema = targetDef.getSchemaType();
                 if (targetSchema != null && targetSchema.getSchemaConstructor() != null) {
@@ -1252,15 +1328,17 @@ public final class StvnTypeResolver {
                     if (targetSum != null) {
                         var useLong = useLongFormSumTypes(project);
                         var targetAlias = keyword.getText();
-                        if (targetSum.getText().startsWith(":Union")) {
+                        if (targetSum.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
-                            var activeTagIndex = 0;
+                            int activeTagIndex = 0;
+                            String branchTag = null;
                             if (innerValue != null && innerValue.getExplicitUnionValue() != null) {
                                 var firstChild = innerValue.getExplicitUnionValue().getFirstChild();
                                 if (firstChild != null && firstChild.getText().startsWith("#")) {
-                                    try {
-                                        activeTagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                                    } catch (NumberFormatException ignored) {}
+                                    branchTag = firstChild.getText().trim();
+                                    var resolvedIdx = StvnPsiLiteralEvaluator
+                                        .resolveZeroBasedUnionBranchIndex(branchTag, innerSchemas.size());
+                                    activeTagIndex = resolvedIdx.isPresent() ? resolvedIdx.getAsInt() : -1;
                                 }
                             } else if (innerValue != null) {
                                 for (int i = 0; i < innerSchemas.size(); i++) {
@@ -1270,14 +1348,16 @@ public final class StvnTypeResolver {
                                     }
                                 }
                             }
-                            var branchTag = "#" + (activeTagIndex + 1);
+                            if (branchTag == null) {
+                                branchTag = "#" + (activeTagIndex + 1);
+                            }
                             var isExplicit = innerValue != null && (innerValue.getExplicitUnionValue() != null || (innerValue.getParent() instanceof ExplicitUnionValue));
                             var tagText = isExplicit ? branchTag : "[" + branchTag + "]";
                             var nestedBranch = (activeTagIndex >= 0 && activeTagIndex < innerSchemas.size()) ? innerSchemas.get(activeTagIndex) : null;
                             var nestedVal = innerValue != null && innerValue.getExplicitUnionValue() != null ? innerValue.getExplicitUnionValue().getValue() : innerValue;
                             var nestedTrace = nestedBranch != null ? resolvePsiBranchTrace(nestedBranch, nestedVal, project) : "";
                             return targetAlias + " " + tagText + (!nestedTrace.isEmpty() ? " (-> " + nestedTrace + ")" : "");
-                        } else if (targetSum.getText().startsWith(":Either")) {
+                        } else if (targetSum.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
                             var eitherVal = innerValue != null ? innerValue.getExplicitEitherValue() : null;
                             var isLeft = false;
@@ -1294,7 +1374,7 @@ public final class StvnTypeResolver {
                             var nestedVal = eitherVal != null ? eitherVal.getValue() : innerValue;
                             var nestedTrace = nestedBranch != null ? resolvePsiBranchTrace(nestedBranch, nestedVal, project) : "";
                             return targetAlias + " " + tagText + (!nestedTrace.isEmpty() ? " (-> " + nestedTrace + ")" : "");
-                        } else if (targetSum.getText().startsWith(":Option")) {
+                        } else if (targetSum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
                             var optVal = innerValue != null ? innerValue.getExplicitOptionValue() : null;
                             var isNone = false;
@@ -1328,7 +1408,7 @@ public final class StvnTypeResolver {
         }
         if (branchSchema.getSchemaConstructor() != null && branchSchema.getSchemaConstructor().getSumType() != null
             && branchSchema.getSchemaConstructor().getSumType().getEnumDef() != null) {
-            return ":Enum";
+            return StvnVocabulary.TYPE_ENUM;
         }
         return StvnSchemaFormatter.formatSchema(branchSchema);
     }
@@ -1337,9 +1417,9 @@ public final class StvnTypeResolver {
      * Checks whether long-form sum type syntax is enabled in the project settings.
      *
      * @param project the IntelliJ project
-     * @return true if long-form sum type formatting is enabled, false otherwise
+     * @return {@code true} if long-form sum type formatting is enabled, {@code false} otherwise
      */
-    public static boolean useLongFormSumTypes(com.intellij.openapi.project.Project project) {
+    public static boolean useLongFormSumTypes(Project project) {
         var settings = StvnSettings.getInstance(project);
         return settings != null && settings.getState().useLongFormSumTypes;
     }
@@ -1347,7 +1427,7 @@ public final class StvnTypeResolver {
     /**
      * Determines whether a PSI value element conforms to the structure of the specified schema type.
      *
-     * @param value the PSI value element to test
+     * @param value  the PSI value element to test
      * @param schema the expected schema type
      * @return {@code true} if the value matches the schema pattern, {@code false} otherwise
      */
@@ -1367,8 +1447,8 @@ public final class StvnTypeResolver {
         if (stripped.equals(StvnVocabulary.TYPE_FLOAT)) {
             return value.getFloatLiteral() != null;
         }
-        if (stripped.equals(StvnVocabulary.TYPE_STRING) ||
-            stripped.equals(StvnVocabulary.TYPE_DATE_TIME)) {
+        if (stripped.equals(StvnVocabulary.TYPE_STRING)
+            || stripped.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return value.getStringLiteral() != null;
         }
         if (stripped.equals(StvnVocabulary.TYPE_BOOLEAN)) {
@@ -1387,7 +1467,9 @@ public final class StvnTypeResolver {
             return collVal != null && collVal.getMapLiteral() != null;
         }
         if (isConstructorMatch(stripped, StvnVocabulary.TYPE_OPTION)) {
-            if (value.getExplicitOptionValue() != null || value.getText().equals(StvnVocabulary.VAL_NONE) || value.getText().equals(StvnVocabulary.VAL_NONE_SHORT)) {
+            if (value.getExplicitOptionValue() != null
+                || value.getText().equals(StvnVocabulary.VAL_NONE)
+                || value.getText().equals(StvnVocabulary.VAL_NONE_SHORT)) {
                 return true;
             }
             var constructor = schemaToInspect.getSchemaConstructor();
@@ -1417,19 +1499,14 @@ public final class StvnTypeResolver {
                 var expUnion = value.getExplicitUnionValue();
                 var tagElem = expUnion.getUnionTagPrefix();
                 var tagText = tagElem.getText().trim();
-                if (tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
-                    try {
-                        int k = Integer.parseInt(tagText.substring(1));
-                        var constructor = schemaToInspect.getSchemaConstructor();
-                        if (constructor != null && constructor.getSumType() != null) {
-                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
-                            int idx = k - 1;
-                            if (idx >= 0 && idx < innerSchemas.size()) {
-                                var innerVal = expUnion.getValue();
-                                return innerVal == null || matchesSchemaPattern(innerVal, innerSchemas.get(idx));
-                            }
-                        }
-                    } catch (NumberFormatException ignored) {}
+                var constructor = schemaToInspect.getSchemaConstructor();
+                if (constructor != null && constructor.getSumType() != null) {
+                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
+                    var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
+                    if (resolvedIdx.isPresent()) {
+                        var innerVal = expUnion.getValue();
+                        return innerVal == null || matchesSchemaPattern(innerVal, innerSchemas.get(resolvedIdx.getAsInt()));
+                    }
                 }
                 return false;
             }
@@ -1505,21 +1582,15 @@ public final class StvnTypeResolver {
                     path.push(new PathStep(isKey ? StepType.MAP_KEY : StepType.MAP_VALUE, isKey ? 0 : 1));
                     path.push(new PathStep(StepType.MAP, -1));
                 }
-            } else if (parent instanceof org.stvnadore.psi.ExplicitOptionValue) {
+            } else if (parent instanceof ExplicitOptionValue) {
                 path.push(new PathStep(StepType.OPTION, -1));
-            } else if (parent instanceof org.stvnadore.psi.ExplicitEitherValue) {
-                var either = (org.stvnadore.psi.ExplicitEitherValue) parent;
+            } else if (parent instanceof ExplicitEitherValue either) {
                 var text = either.getText().trim();
                 var isLeft = text.startsWith("#Left") || text.startsWith("#L");
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
-            } else if (parent instanceof org.stvnadore.psi.ExplicitUnionValue union) {
+            } else if (parent instanceof ExplicitUnionValue union) {
                 var firstChild = union.getUnionTagPrefix();
-                var tagIndex = 0;
-                if (firstChild != null && firstChild.getText().startsWith("#")) {
-                    try {
-                        tagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                    } catch (NumberFormatException ignored) {}
-                }
+                int tagIndex = parseUnionTagZeroBasedIndex(firstChild.getText());
                 path.push(new PathStep(StepType.UNION, tagIndex));
             }
 
@@ -1540,133 +1611,12 @@ public final class StvnTypeResolver {
             return null;
         }
 
-        var currentSchema = rootSchemaType;
-        while (!path.isEmpty() && currentSchema != null) {
-            var step = path.pop();
-            var resolvedNominal = resolveNominalSchema(currentSchema);
-            var schemaToInspect = resolvedNominal != null ? resolvedNominal : currentSchema;
-
-            var constructor = schemaToInspect.getSchemaConstructor();
-            if (constructor == null) {
-                currentSchema = null;
-                break;
-            }
-
-            if (step.type != StepType.OPTION) {
-                var sum = constructor.getSumType();
-                while (sum != null && sum.getText().startsWith(":Option")) {
-                    var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                    if (optBranches.isEmpty()) break;
-                    var innerSchema = optBranches.get(0);
-                    var res = resolveNominalSchema(innerSchema);
-                    schemaToInspect = (res != null) ? res : innerSchema;
-                    var c = schemaToInspect.getSchemaConstructor();
-                    if (c == null) break;
-                    constructor = c;
-                    sum = c.getSumType();
-                }
-            }
-
-            if (step.type == StepType.LIST) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var innerSchemas = collection.getSchemaTypeList();
-                    if (!innerSchemas.isEmpty()) {
-                        currentSchema = innerSchemas.get(0);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.MAP) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var firstChild = collection.getFirstChild();
-                    if (firstChild != null) {
-                        var tokenText = firstChild.getText();
-                        if (tokenText.equals(StvnVocabulary.TYPE_MAP)) {
-                            // Exclusively validate, do not advance or mutate currentSchema pointer.
-                        } else {
-                            currentSchema = null;
-                        }
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.MAP_KEY || step.type == StepType.MAP_VALUE) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var innerSchemas = collection.getSchemaTypeList();
-                    var targetIndex = (step.type == StepType.MAP_KEY) ? 0 : 1;
-                    if (targetIndex >= 0 && targetIndex < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(targetIndex);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.TUPLE) {
-                var product = constructor.getProductType();
-                if (product != null) {
-                    var innerSchemas = product.getSchemaTypeList();
-                    if (step.index >= 0 && step.index < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(step.index);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.OPTION) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Option")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    if (!innerSchemas.isEmpty()) {
-                        currentSchema = innerSchemas.get(0);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.EITHER) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Either")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    var idx = step.index;
-                    if (idx >= 0 && idx < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(idx);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.UNION) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Union")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    var idx = step.index;
-                    if (idx >= 0 && idx < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(idx);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            }
-        }
-
+        var currentSchema = descendSchemaPath(rootSchemaType, path);
         if (currentSchema == null) {
             return null;
         }
 
-        var finalLabel = "";
+        String finalLabel;
         var keyword = currentSchema.getTypeKeyword();
         if (keyword != null) {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
@@ -1682,11 +1632,105 @@ public final class StvnTypeResolver {
         return new ResolvedTypeInfo(currentSchema, finalLabel);
     }
 
+    private static @Nullable SchemaType descendSchemaPath(SchemaType rootSchema, Stack<PathStep> path) {
+        var currentSchema = rootSchema;
+        while (!path.isEmpty() && currentSchema != null) {
+            var step = path.pop();
+            var resolvedNominal = resolveNominalSchema(currentSchema);
+            var schemaToInspect = resolvedNominal != null ? resolvedNominal : currentSchema;
+
+            var constructor = schemaToInspect.getSchemaConstructor();
+            if (constructor == null) {
+                return null;
+            }
+
+            if (step.type != StepType.OPTION) {
+                var sum = constructor.getSumType();
+                while (sum != null && sum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
+                    var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                    if (optBranches.isEmpty()) break;
+                    var innerSchema = optBranches.get(0);
+                    var res = resolveNominalSchema(innerSchema);
+                    schemaToInspect = (res != null) ? res : innerSchema;
+                    var c = schemaToInspect.getSchemaConstructor();
+                    if (c == null) break;
+                    constructor = c;
+                    sum = c.getSumType();
+                }
+            }
+
+            if (step.type == StepType.LIST) {
+                var collection = constructor.getCollectionType();
+                if (collection != null && !collection.getSchemaTypeList().isEmpty()) {
+                    currentSchema = collection.getSchemaTypeList().get(0);
+                } else {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.MAP) {
+                var collection = constructor.getCollectionType();
+                var firstChild = collection != null ? collection.getFirstChild() : null;
+                if (firstChild == null || !firstChild.getText().equals(StvnVocabulary.TYPE_MAP)) {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.MAP_KEY || step.type == StepType.MAP_VALUE) {
+                var collection = constructor.getCollectionType();
+                if (collection != null) {
+                    var innerSchemas = collection.getSchemaTypeList();
+                    var targetIndex = (step.type == StepType.MAP_KEY) ? 0 : 1;
+                    currentSchema = (targetIndex >= 0 && targetIndex < innerSchemas.size())
+                        ? innerSchemas.get(targetIndex)
+                        : null;
+                } else {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.TUPLE) {
+                var product = constructor.getProductType();
+                if (product != null) {
+                    var innerSchemas = product.getSchemaTypeList();
+                    currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
+                        ? innerSchemas.get(step.index)
+                        : null;
+                } else {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.OPTION) {
+                var sumType = constructor.getSumType();
+                if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
+                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                    currentSchema = !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
+                } else {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.EITHER) {
+                var sumType = constructor.getSumType();
+                if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
+                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                    currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
+                        ? innerSchemas.get(step.index)
+                        : null;
+                } else {
+                    currentSchema = null;
+                }
+            } else if (step.type == StepType.UNION) {
+                var sumType = constructor.getSumType();
+                if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                    currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
+                        ? innerSchemas.get(step.index)
+                        : null;
+                } else {
+                    currentSchema = null;
+                }
+            }
+        }
+        return currentSchema;
+    }
+
     private static @Nullable BodyEntry findBodyEntryParent(PsiElement element) {
         var curr = element;
         while (curr != null) {
-            if (curr instanceof BodyEntry) {
-                return (BodyEntry) curr;
+            if (curr instanceof BodyEntry bodyEntry) {
+                return bodyEntry;
             }
             curr = curr.getParent();
         }
@@ -1697,18 +1741,15 @@ public final class StvnTypeResolver {
      * Resolves the immediate nominal schema without recursively collapsing aliases into underlying primitives.
      *
      * @param schemaType the schema type to inspect
-     * @return the resolved nominal schema type, or null if schemaType is null
+     * @return the resolved nominal schema type, or {@code null} if {@code schemaType} is {@code null}
      */
     public static @Nullable SchemaType resolveNominalSchema(@Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return null;
         }
-        // Enforce Opaque Nominal Resolution Governance (STVN_PLUGIN_SPEC.md § 2.1)
-        // Prohibition of recursive unwrapping: return immediate resolved SchemaType
-        // without collapsing nominal aliases into underlying primitives.
         var keyword = schemaType.getTypeKeyword();
         if (keyword == null) {
-            return schemaType; // Already a concrete constructor
+            return schemaType;
         }
         var typeName = keyword.getText();
         var typeDef = findTypeDefinition(keyword.getContainingFile(), typeName, keyword);
@@ -1718,7 +1759,7 @@ public final class StvnTypeResolver {
         var resolved = StvnTypeReference.resolveTypeInFile(keyword.getContainingFile(), typeName, new HashSet<>());
         if (resolved != null) {
             var alias = resolved instanceof IncludeMapAlias ima ? ima
-                      : resolved.getParent() instanceof IncludeMapAlias ima ? ima : null;
+                : resolved.getParent() instanceof IncludeMapAlias ima ? ima : null;
             if (alias != null) {
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2) {
@@ -1741,13 +1782,13 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Resolves the EnumSubset model for a given schema type if it represents an enum subset,
+     * Resolves the {@link StvnEnumSubsetInfo} model for a given schema type if it represents an enum subset,
      * computing allowed variants transitively across arbitrary chain depths.
      *
      * @param schemaType the schema type to inspect
-     * @return the resolved {@link ResolvedType.EnumSubset}, or {@code null} if not a subset
+     * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if not a subset
      */
-    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable SchemaType schemaType) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable SchemaType schemaType) {
         if (schemaType == null) return null;
         var kw = schemaType.getTypeKeyword();
         if (kw == null) return null;
@@ -1760,9 +1801,9 @@ public final class StvnTypeResolver {
      * Resolves the enum subset declaration from a type definition.
      *
      * @param typeDef the type definition element
-     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
-    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeDefinition typeDef) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable TypeDefinition typeDef) {
         if (typeDef == null) return null;
         var kw = typeDef.getTypeKeyword();
         if (kw == null) return null;
@@ -1775,9 +1816,9 @@ public final class StvnTypeResolver {
      * Resolves the enum subset declaration from a type keyword.
      *
      * @param typeKeyword the type keyword element
-     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
-    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
         if (typeKeyword == null) return null;
 
         var visited = new HashSet<String>();
@@ -1788,12 +1829,12 @@ public final class StvnTypeResolver {
      * Resolves the enum subset declaration referenced by an include map alias.
      *
      * @param alias the include map alias element
-     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
-    public static ResolvedType.@Nullable EnumSubset resolveEnumSubset(@Nullable IncludeMapAlias alias) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable IncludeMapAlias alias) {
         if (alias == null) return null;
         var list = alias.getTypeKeywordList();
-        var localKw = list.size() >= 2 ? list.get(1) : (list.size() >= 1 ? list.get(0) : null);
+        var localKw = list.size() >= 2 ? list.get(1) : (!list.isEmpty() ? list.get(0) : null);
         if (localKw == null) return null;
 
         var visited = new HashSet<String>();
@@ -1803,10 +1844,10 @@ public final class StvnTypeResolver {
     /**
      * Resolves an enum subset model from an arbitrary supported PSI element.
      *
-     * @param element the PSI element (SchemaType, TypeDefinition, TypeKeyword, or IncludeMapAlias)
-     * @return the resolved EnumSubset model, or {@code null} if unresolvable
+     * @param element the PSI element ({@link SchemaType}, {@link TypeDefinition}, {@link TypeKeyword}, or {@link IncludeMapAlias})
+     * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
-    public static ResolvedType.@Nullable EnumSubset resolveEnumSubsetFromElement(@Nullable PsiElement element) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubsetFromElement(@Nullable PsiElement element) {
         if (element == null) return null;
         if (element instanceof SchemaType st) return resolveEnumSubset(st);
         if (element instanceof TypeDefinition td) return resolveEnumSubset(td);
@@ -1815,36 +1856,17 @@ public final class StvnTypeResolver {
         return null;
     }
 
-    private static ResolvedType.@Nullable EnumSubset resolveEnumSubsetInternal(
-            PsiFile file,
-            String typeName,
-            Set<String> visited
+    private static @Nullable StvnEnumSubsetInfo resolveEnumSubsetInternal(
+        PsiFile file,
+        String typeName,
+        Set<String> visited
     ) {
         if (!visited.add(typeName)) return null;
 
         var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
         if (targetDef == null) return null;
 
-        TypeDefinition typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
-        var inclAlias = targetDef instanceof IncludeMapAlias ima ? ima
-                      : targetDef.getParent() instanceof IncludeMapAlias ima ? ima : null;
-        var useAlias = targetDef instanceof org.stvnadore.psi.UseMapAlias uma ? uma
-                     : targetDef.getParent() instanceof org.stvnadore.psi.UseMapAlias uma ? uma : null;
-        if (typeDef == null && inclAlias != null) {
-            var list = inclAlias.getTypeKeywordList();
-            var remoteKw = list.size() >= 1 ? list.get(0) : null;
-            if (remoteKw != null) {
-                var resolved = new StvnTypeReference(remoteKw).resolve();
-                typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-            }
-        } else if (typeDef == null && useAlias != null) {
-            var list = useAlias.getTypeKeywordList();
-            var remoteKw = list.size() >= 1 ? list.get(0) : null;
-            if (remoteKw != null) {
-                var resolved = new StvnTypeReference(remoteKw).resolve();
-                typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-            }
-        }
+        TypeDefinition typeDef = resolveUnderlyingTypeDefinition(targetDef);
         if (typeDef == null) {
             return null;
         }
@@ -1862,17 +1884,17 @@ public final class StvnTypeResolver {
 
         var parentSchema = typeDef.getSchemaType();
         if (filter == null) {
-            // Pass-through: If this type is an alias of an enum subset, inherit parent's subset model
             if (parentSchema != null) {
                 var parentSubset = resolveEnumSubset(parentSchema);
                 if (parentSubset != null) {
-                    return new ResolvedType.EnumSubset(
+                    return new StvnEnumSubsetInfo(
                         typeName,
                         parentSubset.name(),
                         parentSubset.rootEnum(),
                         parentSubset.allowedVariants(),
                         parentSubset.rootVariants(),
-                        parentSubset.isInclusive()
+                        parentSubset.isInclusive(),
+                        parentSubset.declaredFilterList()
                     );
                 }
             }
@@ -1894,15 +1916,15 @@ public final class StvnTypeResolver {
             rootVariants = parentSubset.rootVariants();
         } else {
             var resolvedParent = resolveNominalSchema(parentSchema);
-            if (resolvedParent == null || resolvedParent.getSchemaConstructor() == null ||
-                resolvedParent.getSchemaConstructor().getSumType() == null ||
-                resolvedParent.getSchemaConstructor().getSumType().getEnumDef() == null) {
+            if (resolvedParent == null || resolvedParent.getSchemaConstructor() == null
+                || resolvedParent.getSchemaConstructor().getSumType() == null
+                || resolvedParent.getSchemaConstructor().getSumType().getEnumDef() == null) {
                 return null;
             }
             var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
             rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
             parentAllowed = rootVariants;
-            parentName = parentSchema.getTypeKeyword() != null ? parentSchema.getTypeKeyword().getText() : ":Enum";
+            parentName = parentSchema.getTypeKeyword() != null ? parentSchema.getTypeKeyword().getText() : StvnVocabulary.TYPE_ENUM;
             rootEnumName = parentName;
         }
 
@@ -1916,9 +1938,16 @@ public final class StvnTypeResolver {
             ? facetVariants.stream().filter(parentAllowed::contains).toList()
             : parentAllowed.stream().filter(v -> !facetVariants.contains(v)).toList();
 
-        return new ResolvedType.EnumSubset(typeName, parentName, rootEnumName, computedAllowed, rootVariants, isIncl);
+        return new StvnEnumSubsetInfo(
+            typeName,
+            parentName,
+            rootEnumName,
+            computedAllowed,
+            rootVariants,
+            isIncl,
+            facetVariants
+        );
     }
-
 
     /**
      * Determines whether the target leaf type context of the given value slot resolves to a boolean primitive,
@@ -1936,21 +1965,14 @@ public final class StvnTypeResolver {
             var ctor = toInspect.getSchemaConstructor();
             if (ctor != null && ctor.getSumType() != null) {
                 var sumType = ctor.getSumType();
-                if (sumType.getText().startsWith(":Union")) {
+                if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     var unionVal = value.getExplicitUnionValue();
                     if (unionVal != null) {
                         var firstChild = unionVal.getFirstChild();
-                        var tagIndex = 0;
-                        if (firstChild != null && firstChild.getText().startsWith("#")) {
-                            try {
-                                tagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                            } catch (NumberFormatException ignored) {}
-                        }
-                        if (tagIndex >= 0 && tagIndex < innerSchemas.size()) {
-                            return isBooleanSchema(innerSchemas.get(tagIndex));
-                        }
-                        return false;
+                        String tagText = firstChild != null ? firstChild.getText() : "";
+                        var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
+                        return resolvedIdx.isPresent() && isBooleanSchema(innerSchemas.get(resolvedIdx.getAsInt()));
                     }
                     for (var branch : innerSchemas) {
                         if (matchesSchemaPattern(value, branch)) {
@@ -1958,7 +1980,7 @@ public final class StvnTypeResolver {
                         }
                     }
                     return false;
-                } else if (sumType.getText().startsWith(":Either")) {
+                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     var eitherVal = value.getExplicitEitherValue();
                     if (eitherVal != null) {
@@ -1969,7 +1991,7 @@ public final class StvnTypeResolver {
                         return isBooleanSchema(innerSchemas.get(1));
                     }
                     return false;
-                } else if (sumType.getText().startsWith(":Option")) {
+                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     if (!innerSchemas.isEmpty()) {
                         return isBooleanSchema(innerSchemas.get(0));
@@ -1983,73 +2005,19 @@ public final class StvnTypeResolver {
         }
 
         var resolvedNode = resolveCoreValue(value);
-        if (resolvedNode == null || resolvedNode instanceof org.stvnadore.core.ir.StvnValue.StvnError) {
+        if (resolvedNode == null || resolvedNode instanceof StvnValue.StvnErrorValue) {
             return false;
         }
 
-        var deepest = resolvedNode;
-        var trajectory = java.util.List.<org.stvnadore.core.ir.VariantStep>of();
-        while (deepest instanceof org.stvnadore.core.ir.StvnValue.StvnSum) {
-            if (deepest instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
-                var steps = opt.trajectory();
-                if (steps.size() > trajectory.size()) {
-                    trajectory = steps;
-                }
-                var inner = opt.value().orElse(null);
-                if (inner == null) {
-                    break;
-                }
-                deepest = inner;
-            } else if (deepest instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
-                var steps = either.trajectory();
-                if (steps.size() > trajectory.size()) {
-                    trajectory = steps;
-                }
-                var inner = either.value();
-                if (inner == null) {
-                    break;
-                }
-                deepest = inner;
-            } else if (deepest instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
-                var inner = union.value();
-                if (inner == null) {
-                    break;
-                }
-                deepest = inner;
-            } else {
-                break;
-            }
-        }
+        var file = value.getContainingFile();
+        var catalog = file != null
+            ? StvnCompiledDocumentCache.getSnapshot(file).catalog()
+            : StvnDefsCatalog.EMPTY;
+        var trajectory = StvnSumTrajectory.evaluate(value, resolvedNode, catalog);
+        var deepest = StvnSumTrajectory.unwrapTerminalIrValue(resolvedNode);
 
-        var current = resolvedNode;
-        var stepIdx = 0;
-        while (current instanceof org.stvnadore.core.ir.StvnValue.StvnSum) {
-            if (stepIdx < trajectory.size()) {
-                var step = trajectory.get(stepIdx);
-                if (!step.isInferred()) {
-                    break;
-                }
-            }
-
-            if (current instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
-                var inner = opt.value().orElse(null);
-                if (inner == null) {
-                    break;
-                }
-                current = inner;
-                stepIdx++;
-            } else if (current instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
-                current = either.value();
-                stepIdx++;
-            } else if (current instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
-                current = union.value();
-            } else {
-                break;
-            }
-        }
-
-        return (deepest instanceof org.stvnadore.core.ir.StvnValue.StvnBoolean) ||
-               (current instanceof org.stvnadore.core.ir.StvnValue.StvnBoolean);
+        return (deepest instanceof StvnValue.StvnBoolean)
+            || (trajectory.terminalIrValue() instanceof StvnValue.StvnBoolean);
     }
 
     private static String formatTrace(List<String> trace) {
@@ -2078,7 +2046,8 @@ public final class StvnTypeResolver {
         sb.append(")");
         return sb.toString();
     }
-    private static void mapValues(@Nullable Value psiVal, @Nullable StvnValue irVal, java.util.Map<Integer, StvnValue> map) {
+
+    private static void mapValues(@Nullable Value psiVal, @Nullable StvnValue irVal, Map<Integer, StvnValue> map) {
         if (psiVal == null || irVal == null) {
             return;
         }
@@ -2088,7 +2057,7 @@ public final class StvnTypeResolver {
             map.put(offset, irVal);
         }
 
-        if (irVal instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
+        if (irVal instanceof StvnValue.StvnOption opt) {
             var innerIr = opt.value().orElse(null);
             if (innerIr != null) {
                 var optPsi = psiVal.getExplicitOptionValue();
@@ -2098,63 +2067,55 @@ public final class StvnTypeResolver {
                     mapValues(psiVal, innerIr, map);
                 }
             }
-        } else if (irVal instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
+        } else if (irVal instanceof StvnValue.StvnEither either) {
             var innerIr = either.value();
-            if (innerIr != null) {
-                var eitherPsi = psiVal.getExplicitEitherValue();
-                if (eitherPsi != null) {
-                    mapValues(eitherPsi.getValue(), innerIr, map);
-                } else {
-                    mapValues(psiVal, innerIr, map);
-                }
+            var eitherPsi = psiVal.getExplicitEitherValue();
+            if (eitherPsi != null) {
+                mapValues(eitherPsi.getValue(), innerIr, map);
+            } else {
+                mapValues(psiVal, innerIr, map);
             }
-        } else if (irVal instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
+        } else if (irVal instanceof StvnValue.StvnUnion union) {
             var innerIr = union.value();
-            if (innerIr != null) {
-                var explicitUnion = psiVal.getExplicitUnionValue();
-                if (explicitUnion != null) {
-                    mapValues(explicitUnion.getValue(), innerIr, map);
-                } else {
-                    mapValues(psiVal, innerIr, map);
-                }
+            var explicitUnion = psiVal.getExplicitUnionValue();
+            if (explicitUnion != null) {
+                mapValues(explicitUnion.getValue(), innerIr, map);
+            } else {
+                mapValues(psiVal, innerIr, map);
             }
-        } else if (irVal instanceof org.stvnadore.core.ir.StvnValue.StvnCollection coll) {
+        } else if (irVal instanceof StvnValue.StvnTuple tuple) {
             var collPsi = psiVal.getCollectionValue();
-            if (collPsi != null) {
-                if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnTuple tuple) {
-                    var tuplePsi = collPsi.getTupleLiteral();
-                    if (tuplePsi != null) {
-                        var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(tuplePsi, Value.class);
-                        var irElements = tuple.elements();
-                        mapCollectionElementsWithUnspooling(psiChildren, irElements, map);
-                    }
-                } else if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnSeq seq) {
-                    var listPsi = collPsi.getListLiteral();
-                    if (listPsi != null) {
-                        var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(listPsi, Value.class);
-                        var irElements = seq.elements();
-                        mapCollectionElementsWithUnspooling(psiChildren, irElements, map);
-                    }
-                } else if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnSet set) {
-                    var listPsi = collPsi.getListLiteral();
-                    if (listPsi != null) {
-                        var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(listPsi, Value.class);
-                        var irElements = new java.util.ArrayList<>(set.elements());
-                        mapCollectionElementsWithUnspooling(psiChildren, irElements, map);
-                    }
-                } else if (coll instanceof org.stvnadore.core.ir.StvnValue.StvnMap mapVal) {
-                    var mapPsi = collPsi.getMapLiteral();
-                    if (mapPsi != null) {
-                        var psiChildren = mapPsi.getValueList();
-                        var iterator = mapVal.entries().entrySet().iterator();
-                        for (int i = 0; i < psiChildren.size() / 2 && iterator.hasNext(); i++) {
-                            var entry = iterator.next();
-                            var keyPsi = psiChildren.get(i * 2);
-                            var valPsi = psiChildren.get(i * 2 + 1);
-                            mapValues(keyPsi, entry.getKey(), map);
-                            mapValues(valPsi, entry.getValue(), map);
-                        }
-                    }
+            var tuplePsi = collPsi != null ? collPsi.getTupleLiteral() : null;
+            if (tuplePsi != null) {
+                var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(tuplePsi, Value.class);
+                mapCollectionElementsWithUnspooling(psiChildren, tuple.elements(), map);
+            }
+        } else if (irVal instanceof StvnValue.StvnSeq seq) {
+            var collPsi = psiVal.getCollectionValue();
+            var listPsi = collPsi != null ? collPsi.getListLiteral() : null;
+            if (listPsi != null) {
+                var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(listPsi, Value.class);
+                mapCollectionElementsWithUnspooling(psiChildren, seq.elements(), map);
+            }
+        } else if (irVal instanceof StvnValue.StvnSet set) {
+            var collPsi = psiVal.getCollectionValue();
+            var listPsi = collPsi != null ? collPsi.getListLiteral() : null;
+            if (listPsi != null) {
+                var psiChildren = PsiTreeUtil.getChildrenOfTypeAsList(listPsi, Value.class);
+                mapCollectionElementsWithUnspooling(psiChildren, new ArrayList<>(set.elements()), map);
+            }
+        } else if (irVal instanceof StvnValue.StvnMap mapVal) {
+            var collPsi = psiVal.getCollectionValue();
+            var mapPsi = collPsi != null ? collPsi.getMapLiteral() : null;
+            if (mapPsi != null) {
+                var psiChildren = mapPsi.getValueList();
+                var entries = mapVal.entries();
+                for (int i = 0; i < psiChildren.size() / 2 && i < entries.size(); i++) {
+                    var entry = entries.get(i);
+                    var keyPsi = psiChildren.get(i * 2);
+                    var valPsi = psiChildren.get(i * 2 + 1);
+                    mapValues(keyPsi, entry.key(), map);
+                    mapValues(valPsi, entry.value(), map);
                 }
             }
         }
@@ -2163,7 +2124,7 @@ public final class StvnTypeResolver {
     private static void mapCollectionElementsWithUnspooling(
         List<Value> psiValues,
         List<StvnValue> irElements,
-        java.util.Map<Integer, StvnValue> map
+        Map<Integer, StvnValue> map
     ) {
         int[] irIdx = new int[]{0};
         for (var psiVal : psiValues) {
@@ -2178,7 +2139,7 @@ public final class StvnTypeResolver {
         Value psiVal,
         List<StvnValue> irElements,
         int[] irIdx,
-        java.util.Map<Integer, StvnValue> map
+        Map<Integer, StvnValue> map
     ) {
         if (irIdx[0] >= irElements.size()) {
             return;
@@ -2190,17 +2151,17 @@ public final class StvnTypeResolver {
 
         if (optPsi != null) {
             var targetIr = irElements.get(irIdx[0]);
-            var currentIr = targetIr;
-            while (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnSum && !(currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnOption)) {
-                if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
+            StvnValue currentIr = targetIr;
+            while (StvnSumTrajectory.isSumValue(currentIr) && !(currentIr instanceof StvnValue.StvnOption)) {
+                if (currentIr instanceof StvnValue.StvnEither either) {
                     currentIr = either.value();
-                } else if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
+                } else if (currentIr instanceof StvnValue.StvnUnion union) {
                     currentIr = union.value();
                 } else {
                     break;
                 }
             }
-            if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
+            if (currentIr instanceof StvnValue.StvnOption opt) {
                 map.put(psiVal.getTextRange().getStartOffset(), targetIr);
                 var innerIr = opt.value().orElse(null);
                 if (innerIr != null && optPsi.getValue() != null) {
@@ -2208,7 +2169,6 @@ public final class StvnTypeResolver {
                 }
                 irIdx[0]++;
             } else {
-                // Dimension 2: Target is non-sum product element (Unspooling required)
                 var headTokenOffset = psiVal.getTextRange().getStartOffset();
                 map.put(headTokenOffset, targetIr);
                 irIdx[0]++;
@@ -2223,25 +2183,24 @@ public final class StvnTypeResolver {
 
         if (eitherPsi != null) {
             var targetIr = irElements.get(irIdx[0]);
-            var currentIr = targetIr;
-            while (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnSum && !(currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnEither)) {
-                if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
+            StvnValue currentIr = targetIr;
+            while (StvnSumTrajectory.isSumValue(currentIr) && !(currentIr instanceof StvnValue.StvnEither)) {
+                if (currentIr instanceof StvnValue.StvnOption opt) {
                     currentIr = opt.value().orElse(null);
-                } else if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
+                } else if (currentIr instanceof StvnValue.StvnUnion union) {
                     currentIr = union.value();
                 } else {
                     break;
                 }
             }
-            if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
+            if (currentIr instanceof StvnValue.StvnEither either) {
                 map.put(psiVal.getTextRange().getStartOffset(), targetIr);
                 var innerIr = either.value();
-                if (innerIr != null && eitherPsi.getValue() != null) {
+                if (eitherPsi.getValue() != null) {
                     mapValues(eitherPsi.getValue(), innerIr, map);
                 }
                 irIdx[0]++;
             } else {
-                // Dimension 2: Target is non-sum product element (Unspooling required)
                 var headTokenOffset = psiVal.getTextRange().getStartOffset();
                 map.put(headTokenOffset, targetIr);
                 irIdx[0]++;
@@ -2256,25 +2215,24 @@ public final class StvnTypeResolver {
 
         if (unionPsi != null) {
             var targetIr = irElements.get(irIdx[0]);
-            var currentIr = targetIr;
-            while (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnSum && !(currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion)) {
-                if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
+            StvnValue currentIr = targetIr;
+            while (StvnSumTrajectory.isSumValue(currentIr) && !(currentIr instanceof StvnValue.StvnUnion)) {
+                if (currentIr instanceof StvnValue.StvnOption opt) {
                     currentIr = opt.value().orElse(null);
-                } else if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
+                } else if (currentIr instanceof StvnValue.StvnEither either) {
                     currentIr = either.value();
                 } else {
                     break;
                 }
             }
-            if (currentIr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
+            if (currentIr instanceof StvnValue.StvnUnion union) {
                 map.put(psiVal.getTextRange().getStartOffset(), targetIr);
                 var innerIr = union.value();
-                if (innerIr != null && unionPsi.getValue() != null) {
+                if (unionPsi.getValue() != null) {
                     mapValues(unionPsi.getValue(), innerIr, map);
                 }
                 irIdx[0]++;
             } else {
-                // Dimension 2: Target is non-sum product element (Unspooling required)
                 var headTokenOffset = psiVal.getTextRange().getStartOffset();
                 map.put(headTokenOffset, targetIr);
                 irIdx[0]++;
@@ -2287,7 +2245,6 @@ public final class StvnTypeResolver {
             return;
         }
 
-        // Standard mapping for atomic values, boolean values, value keywords, nested collections
         var targetIr = irElements.get(irIdx[0]);
         mapValues(psiVal, targetIr, map);
         irIdx[0]++;
@@ -2295,15 +2252,15 @@ public final class StvnTypeResolver {
 
     private static boolean hasSumType(@Nullable StvnValue node, Class<?> sumClass) {
         var curr = node;
-        while (curr instanceof org.stvnadore.core.ir.StvnValue.StvnSum) {
+        while (StvnSumTrajectory.isSumValue(curr)) {
             if (sumClass.isInstance(curr)) {
                 return true;
             }
-            if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnOption opt) {
+            if (curr instanceof StvnValue.StvnOption opt) {
                 curr = opt.value().orElse(null);
-            } else if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnEither either) {
+            } else if (curr instanceof StvnValue.StvnEither either) {
                 curr = either.value();
-            } else if (curr instanceof org.stvnadore.core.ir.StvnValue.StvnUnion union) {
+            } else if (curr instanceof StvnValue.StvnUnion union) {
                 curr = union.value();
             } else {
                 break;
@@ -2316,7 +2273,7 @@ public final class StvnTypeResolver {
      * Determines whether an explicit algebraic container is unspooled relative to its core IR node.
      *
      * @param container the container PSI element
-     * @param coreNode the resolved core value representation
+     * @param coreNode  the resolved core value representation
      * @return {@code true} if unspooled, {@code false} otherwise
      */
     public static boolean isUnspooledContainer(PsiElement container, @Nullable StvnValue coreNode) {
@@ -2324,25 +2281,13 @@ public final class StvnTypeResolver {
             return false;
         }
         if (container instanceof ExplicitOptionValue) {
-            return !hasSumType(coreNode, org.stvnadore.core.ir.StvnValue.StvnOption.class);
+            return !hasSumType(coreNode, StvnValue.StvnOption.class);
         }
         if (container instanceof ExplicitEitherValue) {
-            boolean has = hasSumType(coreNode, org.stvnadore.core.ir.StvnValue.StvnEither.class);
-            return !has;
+            return !hasSumType(coreNode, StvnValue.StvnEither.class);
         }
         if (container instanceof ExplicitUnionValue) {
-            return !hasSumType(coreNode, org.stvnadore.core.ir.StvnValue.StvnUnion.class);
-        }
-        return false;
-    }
-
-    private static boolean isInnerChildOfAlgebraicContainer(PsiElement element) {
-        var curr = element.getParent();
-        while (curr != null && !(curr instanceof PsiFile) && !(curr instanceof BodyEntry)) {
-            if (curr instanceof ExplicitOptionValue || curr instanceof ExplicitEitherValue || curr instanceof ExplicitUnionValue) {
-                return true;
-            }
-            curr = curr.getParent();
+            return !hasSumType(coreNode, StvnValue.StvnUnion.class);
         }
         return false;
     }
@@ -2357,14 +2302,14 @@ public final class StvnTypeResolver {
         var stripped = (text.startsWith("{") && text.contains("}"))
             ? text.substring(text.lastIndexOf('}') + 1).trim()
             : text;
-        return stripped.equals(":Boolean") || stripped.equals(":Bool");
+        return stripped.equals(StvnVocabulary.TYPE_BOOLEAN);
     }
 
     /**
      * Resolves the expected schema type at the specified caret position.
      *
      * @param position the PSI element at the caret position
-     * @return the expected schema type, or null if no schema context can be determined
+     * @return the expected schema type, or {@code null} if no schema context can be determined
      */
     public static @Nullable SchemaType resolveExpectedSchemaAtCaret(@Nullable PsiElement position) {
         if (position == null) {
@@ -2374,29 +2319,26 @@ public final class StvnTypeResolver {
         // Unpack explicit union constructor when evaluating an inner payload Value
         var explicitUnion = PsiTreeUtil.getParentOfType(position, ExplicitUnionValue.class);
         if (explicitUnion != null && explicitUnion.getValue() != null
-                && (position == explicitUnion.getValue() || PsiTreeUtil.isAncestor(explicitUnion.getValue(), position, false))) {
+            && (position == explicitUnion.getValue() || PsiTreeUtil.isAncestor(explicitUnion.getValue(), position, false))) {
             var tagElem = explicitUnion.getUnionTagPrefix();
             var tagText = tagElem.getText().trim();
             if (tagText.startsWith("#")) {
-                try {
-                    int k = Integer.parseInt(tagText.substring(1));
-                    var parentExpected = resolveExpectedSchemaAtCaret(explicitUnion);
-                    if (parentExpected != null) {
-                        var resolvedNominal = resolveNominalSchema(parentExpected);
-                        var schemaToInspect = resolvedNominal != null ? resolvedNominal : parentExpected;
-                        var constructor = schemaToInspect.getSchemaConstructor();
-                        if (constructor != null && constructor.getSumType() != null) {
-                            var sumType = constructor.getSumType();
-                            if (sumType.getText().startsWith(":Union")) {
-                                var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                int idx = k - 1;
-                                if (idx >= 0 && idx < innerSchemas.size()) {
-                                    return innerSchemas.get(idx);
-                                }
+                var parentExpected = resolveExpectedSchemaAtCaret(explicitUnion);
+                if (parentExpected != null) {
+                    var resolvedNominal = resolveNominalSchema(parentExpected);
+                    var schemaToInspect = resolvedNominal != null ? resolvedNominal : parentExpected;
+                    var constructor = schemaToInspect.getSchemaConstructor();
+                    if (constructor != null && constructor.getSumType() != null) {
+                        var sumType = constructor.getSumType();
+                        if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                            var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
+                            if (resolvedIdx.isPresent()) {
+                                return innerSchemas.get(resolvedIdx.getAsInt());
                             }
                         }
                     }
-                } catch (NumberFormatException ignored) {}
+                }
             }
         }
 
@@ -2491,12 +2433,7 @@ public final class StvnTypeResolver {
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof ExplicitUnionValue union) {
                 var firstChild = union.getUnionTagPrefix();
-                var tagIndex = 0;
-                if (firstChild != null && firstChild.getText().startsWith("#")) {
-                    try {
-                        tagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                    } catch (NumberFormatException ignored) {}
-                }
+                int tagIndex = parseUnionTagZeroBasedIndex(firstChild.getText());
                 path.push(new PathStep(StepType.UNION, tagIndex));
             }
 
@@ -2504,129 +2441,7 @@ public final class StvnTypeResolver {
         }
 
         // 3. Descend schema AST using recorded path steps
-        var currentSchema = rootSchema;
-        while (!path.isEmpty() && currentSchema != null) {
-            var step = path.pop();
-            var resolvedNominal = resolveNominalSchema(currentSchema);
-            var schemaToInspect = resolvedNominal != null ? resolvedNominal : currentSchema;
-
-            var constructor = schemaToInspect.getSchemaConstructor();
-            if (constructor == null) {
-                currentSchema = null;
-                break;
-            }
-
-            if (step.type != StepType.OPTION) {
-                var sum = constructor.getSumType();
-                while (sum != null && sum.getText().startsWith(":Option")) {
-                    var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                    if (optBranches.isEmpty()) break;
-                    var innerSchema = optBranches.get(0);
-                    var res = resolveNominalSchema(innerSchema);
-                    schemaToInspect = (res != null) ? res : innerSchema;
-                    var c = schemaToInspect.getSchemaConstructor();
-                    if (c == null) break;
-                    constructor = c;
-                    sum = c.getSumType();
-                }
-            }
-
-            if (step.type == StepType.LIST) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var innerSchemas = collection.getSchemaTypeList();
-                    if (!innerSchemas.isEmpty()) {
-                        currentSchema = innerSchemas.get(0);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.MAP) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var firstChild = collection.getFirstChild();
-                    if (firstChild != null) {
-                        var tokenText = firstChild.getText();
-                        if (tokenText.equals(StvnVocabulary.TYPE_MAP)) {
-                            // Valid map collection
-                        } else {
-                            currentSchema = null;
-                        }
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.MAP_KEY || step.type == StepType.MAP_VALUE) {
-                var collection = constructor.getCollectionType();
-                if (collection != null) {
-                    var innerSchemas = collection.getSchemaTypeList();
-                    var targetIndex = (step.type == StepType.MAP_KEY) ? 0 : 1;
-                    if (targetIndex >= 0 && targetIndex < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(targetIndex);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.TUPLE) {
-                var product = constructor.getProductType();
-                if (product != null) {
-                    var innerSchemas = product.getSchemaTypeList();
-                    if (step.index >= 0 && step.index < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(step.index);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.OPTION) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Option")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    if (!innerSchemas.isEmpty()) {
-                        currentSchema = innerSchemas.get(0);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.EITHER) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Either")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    var idx = step.index;
-                    if (idx >= 0 && idx < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(idx);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            } else if (step.type == StepType.UNION) {
-                var sumType = constructor.getSumType();
-                if (sumType != null && sumType.getText().startsWith(":Union")) {
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    var idx = step.index;
-                    if (idx >= 0 && idx < innerSchemas.size()) {
-                        currentSchema = innerSchemas.get(idx);
-                    } else {
-                        currentSchema = null;
-                    }
-                } else {
-                    currentSchema = null;
-                }
-            }
-        }
-
-        return currentSchema;
+        return descendSchemaPath(rootSchema, path);
     }
 
     /**
@@ -2648,7 +2463,7 @@ public final class StvnTypeResolver {
     /**
      * Finds all constants defined in the file or its includes that are assignable to the target schema type.
      *
-     * @param file the PSI file to search within
+     * @param file         the PSI file to search within
      * @param targetSchema the expected target schema type
      * @return list of assignable constant definitions
      */
@@ -2690,24 +2505,24 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Resolves a TypeDefinition by name within a file or context scope,
+     * Resolves a {@link TypeDefinition} by name within a file or context scope,
      * traversing nested package scopes, root definitions, and include hierarchies.
      *
-     * @param file the containing PSI file
+     * @param file     the containing PSI file
      * @param typeName the type name or alias to locate
-     * @param context the optional context element determining the active lexical scope
-     * @return the resolved TypeDefinition, or null if unresolvable
+     * @param context  the optional context element determining the active lexical scope
+     * @return the resolved {@link TypeDefinition}, or {@code null} if unresolvable
      */
     public static @Nullable TypeDefinition findTypeDefinition(
-            @Nullable PsiFile file,
-            @Nullable String typeName,
-            @Nullable PsiElement context
+        @Nullable PsiFile file,
+        @Nullable String typeName,
+        @Nullable PsiElement context
     ) {
         if (file == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
         if (context != null) {
-            var enclosingPkg = PsiTreeUtil.getParentOfType(context, org.stvnadore.psi.PackageEnclosure.class);
+            var enclosingPkg = PsiTreeUtil.getParentOfType(context, PackageEnclosure.class);
             if (enclosingPkg != null && (!typeName.startsWith(":") || !typeName.substring(1).contains("/"))) {
                 for (var elem : enclosingPkg.getPackageElementList()) {
                     var typeDef = elem.getTypeDefinition();
@@ -2721,15 +2536,15 @@ public final class StvnTypeResolver {
             }
         }
         var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        return org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+        return StvnPsiUtils.getParentTypeDefinition(resolved);
     }
 
     /**
-     * Resolves a TypeDefinition by name within a file without context element.
+     * Resolves a {@link TypeDefinition} by name within a file without context element.
      *
-     * @param file the containing PSI file
+     * @param file     the containing PSI file
      * @param typeName the type name or alias to locate
-     * @return the resolved TypeDefinition, or null if unresolvable
+     * @return the resolved {@link TypeDefinition}, or {@code null} if unresolvable
      */
     public static @Nullable TypeDefinition findTypeDefinition(@Nullable PsiFile file, @Nullable String typeName) {
         return findTypeDefinition(file, typeName, null);
@@ -2742,97 +2557,31 @@ public final class StvnTypeResolver {
      * @return {@code true} if reserved fundamental type, {@code false} otherwise
      */
     public static boolean isReservedFundamentalType(String name) {
-        return org.stvnadore.core.validation.StvnTypeResolver.isReservedFundamentalType(name);
+        return StvnNamespaceRules.isReservedFundamentalType(name);
     }
 
     /**
-     * Resolves a physical filesystem path for a virtual file, staging to a temp directory if in-memory.
+     * Resolves a physical filesystem path for a virtual file, staging to a temporary directory if in-memory.
      *
      * @param virtualFile the virtual file being compiled
-     * @param project the active IntelliJ project
-     * @param text the document content string
+     * @param project     the active IntelliJ project
+     * @param text        the document content string
      * @return the resolved physical path string
      */
     public static String resolvePhysicalPath(
-            @Nullable VirtualFile virtualFile,
-            @Nullable Project project,
-            String text) {
-        if (virtualFile == null) {
-            return "dummy.stvn";
-        }
-        if (virtualFile.isInLocalFileSystem() && new java.io.File(virtualFile.getPath()).exists()) {
-            return virtualFile.getPath();
-        }
-        if (!text.contains(":include")) {
-            return virtualFile.getPath();
-        }
-
-        try {
-            var tempDir = project != null ? project.getUserData(VFS_TEMP_DIR_KEY) : null;
-            if (tempDir == null || !java.nio.file.Files.exists(tempDir)) {
-                tempDir = java.nio.file.Files.createTempDirectory("stvn_vfs_");
-                if (project != null) {
-                    project.putUserData(VFS_TEMP_DIR_KEY, tempDir);
-                }
-            }
-
-            var root = virtualFile;
-            while (root.getParent() != null) {
-                root = root.getParent();
-            }
-
-            materializeVirtualTree(root, tempDir);
-
-            var relativePath = getRelativeVirtualPath(root, virtualFile);
-            var targetFile = tempDir.resolve(relativePath);
-            var parent = targetFile.getParent();
-            if (parent != null) {
-                java.nio.file.Files.createDirectories(parent);
-            }
-            java.nio.file.Files.writeString(targetFile, text, java.nio.charset.StandardCharsets.UTF_8);
-
-            return targetFile.toAbsolutePath().toString();
-        } catch (Exception e) {
-            return virtualFile.getPath();
-        }
-    }
-
-    private static void materializeVirtualTree(VirtualFile dir, java.nio.file.Path targetDir) throws java.io.IOException {
-        for (var child : dir.getChildren()) {
-            if (child.isDirectory()) {
-                materializeVirtualTree(child, targetDir.resolve(child.getName()));
-            } else {
-                var targetFile = targetDir.resolve(child.getName());
-                if (!java.nio.file.Files.exists(targetFile) || targetFile.toFile().lastModified() < child.getTimeStamp()) {
-                    var parent = targetFile.getParent();
-                    if (parent != null) {
-                        java.nio.file.Files.createDirectories(parent);
-                    }
-                    java.nio.file.Files.write(targetFile, child.contentsToByteArray());
-                }
-            }
-        }
-    }
-
-    private static String getRelativeVirtualPath(VirtualFile root, VirtualFile target) {
-        var rootPath = root.getPath();
-        var targetPath = target.getPath();
-        if (targetPath.startsWith(rootPath)) {
-            var rel = targetPath.substring(rootPath.length());
-            while (rel.startsWith("/")) {
-                rel = rel.substring(1);
-            }
-            return rel.replace('/', java.io.File.separatorChar);
-        }
-        return target.getName();
+        @Nullable VirtualFile virtualFile,
+        @Nullable Project project,
+        String text
+    ) {
+        return StvnCompiledDocumentCache.resolvePhysicalPath(virtualFile, project, text);
     }
 
     /**
      * Resolves a named constant definition within the specified PSI file.
      *
      * @param file the PSI file containing definitions
-     * @param name the constant name including leading sigil '#'
-     * @return the ConstantDefinition PSI node, or null if not found
+     * @param name the constant name including leading sigil {@code #}
+     * @return the {@link ConstantDefinition} PSI node, or {@code null} if not found
      */
     public static @Nullable ConstantDefinition findConstantDefinition(@Nullable PsiFile file, String name) {
         if (file == null) {
@@ -2849,14 +2598,14 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Determines whether a core IR StvnError can be recovered via PSI fallback,
-     * specifically for untagged union discrimination (Rule C) and keyword constant references.
+     * Determines whether a core IR {@link StvnValue.StvnErrorValue} can be recovered via PSI fallback,
+     * specifically for untagged union discrimination and keyword constant references.
      *
-     * @param err the core IR StvnError
+     * @param err   the core IR {@link StvnValue.StvnErrorValue}
      * @param value the PSI value element
-     * @return true if recoverable via PSI fallback, false otherwise
+     * @return {@code true} if recoverable via PSI fallback, {@code false} otherwise
      */
-    public static boolean isRecoverableCoreError(org.stvnadore.core.ir.StvnValue.StvnError err, Value value) {
+    public static boolean isRecoverableCoreError(StvnValue.StvnErrorValue err, Value value) {
         var file = value.getContainingFile();
         if (file == null) {
             return false;
@@ -2872,7 +2621,10 @@ public final class StvnTypeResolver {
         if (info != null) {
             var resolved = resolveNominalSchema(info.getSchema());
             var toInspect = resolved != null ? resolved : info.getSchema();
-            if (org.stvnadore.plugin.hints.StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+            if (StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+                if (err.schema() instanceof StvnSchema.PoisonedSchema) {
+                    return true;
+                }
                 var ctor = toInspect.getSchemaConstructor();
                 if (ctor != null && (ctor.getProductType() != null || ctor.getCollectionType() != null)) {
                     return true;
@@ -2909,4 +2661,3 @@ public final class StvnTypeResolver {
         return false;
     }
 }
-

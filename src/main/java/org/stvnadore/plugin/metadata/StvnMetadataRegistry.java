@@ -104,8 +104,8 @@ public final class StvnMetadataRegistry {
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_MAX_EXCL, 3, true,
-            "Exclusive upper bound value (discrete half-open domain [minIncl, maxExcl))",
-            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
+            "Exclusive upper bound value",
+            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
             "#maxExcl 100"
         ));
         register(new StvnFacetMetadata(

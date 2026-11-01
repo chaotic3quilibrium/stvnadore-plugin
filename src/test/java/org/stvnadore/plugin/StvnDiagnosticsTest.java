@@ -20,6 +20,7 @@ import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
@@ -49,145 +50,258 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         super.tearDown();
     }
 
+    private static final java.util.List<String> PROHIBITED_COMPILER_JARGON = java.util.List.of(
+        "token recognition error",
+        "LexerNoViableAltException",
+        "no viable alternative",
+        "mismatched input",
+        "extraneous input"
+    );
+
+    private record ErrorExpectation(
+        String canonicalCode,
+        String symbolicId,
+        String severityTag,
+        int line,
+        int column,
+        int startOffset,
+        int endOffset,
+        String messageSubstring
+    ) {}
+
+    private java.util.List<ErrorExpectation> parseErrorContract(Path contractPath, String targetFileName) throws Exception {
+        var contractContent = Files.readString(contractPath);
+        var compileOpt = org.stvnadore.core.StvnCompiler.compile(
+            contractContent,
+            contractPath.toAbsolutePath().toString(),
+            org.stvnadore.core.StvnParserConfig.DEFAULT
+        );
+        assertFalse("Contract produced compilation errors for " + targetFileName + ": " + compileOpt.diagnostics(),
+            compileOpt.hasErrors());
+        assertTrue("Contract failed to produce IR document for " + targetFileName, compileOpt.document().isPresent());
+        var payload = compileOpt.document().get().requirePayload();
+        assertTrue("Contract payload must be StvnSeq for " + targetFileName + ", got: " + payload.getClass().getSimpleName(),
+            payload instanceof org.stvnadore.core.ir.StvnValue.StvnSeq);
+        var seq = (org.stvnadore.core.ir.StvnValue.StvnSeq) payload;
+        assertFalse("Contract expectation sequence must not be empty for " + targetFileName, seq.elements().isEmpty());
+
+        var expectations = new ArrayList<ErrorExpectation>();
+        for (var elem : seq.elements()) {
+            assertTrue("Contract element must be 8-tuple StvnTuple for " + targetFileName,
+                elem instanceof org.stvnadore.core.ir.StvnValue.StvnTuple);
+            var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) elem;
+            assertEquals("Contract tuple must have arity 8 for " + targetFileName, 8, tuple.elements().size());
+
+            var codeTag = ((org.stvnadore.core.ir.StvnValue.StvnEnum) tuple.elements().get(0)).variantTag();
+            var symTag = ((org.stvnadore.core.ir.StvnValue.StvnEnum) tuple.elements().get(1)).variantTag();
+            var sevTag = ((org.stvnadore.core.ir.StvnValue.StvnEnum) tuple.elements().get(2)).variantTag();
+            int line = ((org.stvnadore.core.ir.StvnValue.StvnInt) tuple.elements().get(3)).value().intValueExact();
+            int col = ((org.stvnadore.core.ir.StvnValue.StvnInt) tuple.elements().get(4)).value().intValueExact();
+            int startOff = ((org.stvnadore.core.ir.StvnValue.StvnInt) tuple.elements().get(5)).value().intValueExact();
+            int endOff = ((org.stvnadore.core.ir.StvnValue.StvnInt) tuple.elements().get(6)).value().intValueExact();
+            var msgSub = ((org.stvnadore.core.ir.StvnValue.StvnString) tuple.elements().get(7)).value();
+
+            expectations.add(new ErrorExpectation(
+                codeTag.startsWith("#") ? codeTag.substring(1) : codeTag,
+                symTag.startsWith("#") ? symTag.substring(1) : symTag,
+                sevTag,
+                line,
+                col,
+                startOff,
+                endOff,
+                msgSub
+            ));
+        }
+        return expectations;
+    }
+
+    private static @Nullable Path resolveContractPath(Path fixturePath) {
+        var fileName = fixturePath.getFileName().toString();
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot > 0) {
+            var lastBase = fileName.substring(0, lastDot);
+            var direct = fixturePath.resolveSibling(lastBase + ".contract.stvn_i");
+            if (Files.exists(direct)) {
+                return direct;
+            }
+        }
+        int firstDot = fileName.indexOf('.');
+        if (firstDot > 0) {
+            var firstBase = fileName.substring(0, firstDot);
+            var fallback = fixturePath.resolveSibling(firstBase + ".contract.stvn_i");
+            if (Files.exists(fallback)) {
+                return fallback;
+            }
+        }
+        return null;
+    }
+
+    private void assertZeroRawCompilerJargon(java.util.List<HighlightInfo> highlights, String fileName) {
+        for (var info : highlights) {
+            var desc = info.getDescription();
+            if (desc == null) {
+                continue;
+            }
+            for (var jargon : PROHIBITED_COMPILER_JARGON) {
+                assertFalse("Raw compiler-generator jargon '" + jargon + "' leaked into editor highlight on "
+                    + fileName + ": " + desc, desc.contains(jargon));
+            }
+        }
+    }
+
     public void testInvalidSyntaxFixtures() throws Exception {
         var invalidDir = Paths.get(getTestDataPath(), "syntax", "invalid");
         if (!Files.exists(invalidDir)) {
             fail("Invalid fixtures directory does not exist: " + invalidDir.toAbsolutePath());
         }
 
+        int validatedContracts = 0;
         try (var stream = Files.walk(invalidDir)) {
             var fixtureFiles = stream
-                .filter(p -> (p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i")) && !p.toString().endsWith(".contract.stvn"))
+                .filter(Files::isRegularFile)
+                .filter(p -> {
+                    var s = p.getFileName().toString();
+                    return (s.endsWith(".stvn") || s.endsWith(".stvn_d") || s.endsWith(".stvn_di") || s.endsWith(".stvn_i"))
+                        && !s.endsWith(".contract.stvn_i");
+                })
+                .sorted()
                 .toList();
 
             for (var fixturePath : fixtureFiles) {
                 var fileName = fixturePath.getFileName().toString();
-                var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
-                var contractPath = fixturePath.resolveSibling(baseName + ".contract.stvn");
-                var jsonPath = fixturePath.resolveSibling(baseName + ".json");
-
-                String expectedSubstring = null;
-
-                var categoryStr = "";
-                if (Files.exists(contractPath)) {
-                    var contractContent = Files.readString(contractPath);
-                    var compileOpt = org.stvnadore.core.StvnCompiler.compile(contractContent, contractPath.toAbsolutePath().toString(), org.stvnadore.core.StvnParserConfig.DEFAULT);
-                    assertTrue("Contract failed to compile for " + fileName, compileOpt.document().isPresent());
-                    var contractVal = compileOpt.document().get().requirePayload();
-                    assertTrue("Contract must be a Tuple for " + fileName, contractVal instanceof org.stvnadore.core.ir.StvnValue.StvnTuple);
-                    var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) contractVal;
-                    assertTrue("Contract tuple must have at least 2 elements for " + fileName, tuple.elements().size() >= 2);
-                    var catVal = tuple.elements().get(0);
-                    if (catVal instanceof org.stvnadore.core.ir.StvnValue.StvnEnum enumVal) {
-                        categoryStr = enumVal.keyword();
-                    }
-                    var msgVal = tuple.elements().get(1);
-                    assertTrue("Contract message must be String for " + fileName, msgVal instanceof org.stvnadore.core.ir.StvnValue.StvnString);
-                    expectedSubstring = ((org.stvnadore.core.ir.StvnValue.StvnString) msgVal).value();
-                } else if (Files.exists(jsonPath)) {
-                    var jsonContent = Files.readString(jsonPath);
-                    expectedSubstring = extractJsonField(jsonContent, "errorMessageSubstring");
-                }
-
-                if (expectedSubstring == null) {
+                var contractPath = resolveContractPath(fixturePath);
+                if (contractPath == null) {
                     continue;
                 }
 
-                // Load and configure the file in the IntelliJ test workspace
+                var expectations = parseErrorContract(contractPath, fileName);
+                validatedContracts++;
+
                 var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 
-                // Run highlighting pass
                 var highlights = myFixture.doHighlighting();
-                var found = false;
-                var foundMessages = new ArrayList<String>();
-                for (var info : highlights) {
-                    if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
+                assertZeroRawCompilerJargon(highlights, fileName);
+
+                for (var exp : expectations) {
+                    boolean expectsWarning = "#WARNING".equals(exp.severityTag());
+                    var found = false;
+                    var foundMessages = new ArrayList<String>();
+                    for (var info : highlights) {
+                        boolean severityMatches = expectsWarning
+                            ? (info.getSeverity().equals(HighlightSeverity.WARNING)
+                                || info.getSeverity().equals(HighlightSeverity.WEAK_WARNING))
+                            : info.getSeverity().equals(HighlightSeverity.ERROR);
+                        if (!severityMatches) {
+                            continue;
+                        }
                         var description = info.getDescription();
+                        if (description == null) {
+                            continue;
+                        }
                         foundMessages.add(description);
-                        if (description != null) {
-                            var cleanExpected = expectedSubstring.endsWith(".") ? expectedSubstring.substring(0, expectedSubstring.length() - 1) : expectedSubstring;
-                            if (description.contains(expectedSubstring) || description.contains(cleanExpected)) {
+                        var expectedSubstring = exp.messageSubstring();
+                        var cleanExpected = expectedSubstring.endsWith(".")
+                            ? expectedSubstring.substring(0, expectedSubstring.length() - 1)
+                            : expectedSubstring;
+                        if (description.contains(expectedSubstring)
+                                || description.contains(cleanExpected)
+                                || description.contains(exp.symbolicId())) {
+                            found = true;
+                            break;
+                        }
+                        if (expectedSubstring.startsWith("STVN Syntax Error")
+                                || exp.symbolicId().contains("SYNTAX_ERROR")) {
+                            if (description.contains("expected")
+                                    || description.contains("got")
+                                    || description.contains("Syntax Error")) {
                                 found = true;
                                 break;
                             }
-                            if (categoryStr.equals("ERR_FACET_ORDER_VIOLATION") || expectedSubstring.contains("violates canonical")) {
-                                if (description.contains("ERR_FACET_ORDER_VIOLATION") || description.contains("violates canonical")) {
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if (expectedSubstring.startsWith("STVN Syntax Error") || categoryStr.contains("SYNTAX_ERROR")) {
-                                if (description.contains("expected") || description.contains("got") || description.contains("Syntax Error") || description.contains("Mismatched") || description.contains("mismatched")) {
-                                    found = true;
-                                    break;
-                                }
-                            }
                         }
                     }
-                }
 
-                assertTrue("Expected error matching '" + expectedSubstring + "' not found in " + fileName + 
-                        ". Found errors: " + foundMessages, found);
+                    assertTrue("Expected " + exp.severityTag() + " [" + exp.canonicalCode() + " / " + exp.symbolicId()
+                        + "] matching '" + exp.messageSubstring() + "' not found in " + fileName
+                        + ". Found highlights: " + foundMessages, found);
+                }
             }
         }
+        assertTrue("Must validate non-zero .contract.stvn_i syntax contracts", validatedContracts > 100);
     }
 
     public void testInvalidBinaryFixtures() throws Exception {
         var invalidDir = Paths.get(getTestDataPath(), "syntax", "invalid");
         if (!Files.exists(invalidDir)) {
-            return;
+            fail("Invalid fixtures directory does not exist: " + invalidDir.toAbsolutePath());
         }
 
+        int validatedBinaryContracts = 0;
         try (var stream = Files.walk(invalidDir)) {
-            var binaryFixtures = stream.filter(p -> p.toString().endsWith(".stvn_b") || p.toString().endsWith(".stvn_bd")).toList();
+            var binaryFixtures = stream
+                .filter(Files::isRegularFile)
+                .filter(p -> p.toString().endsWith(".stvn_b") || p.toString().endsWith(".stvn_bd"))
+                .sorted()
+                .toList();
+            assertFalse("Must discover invalid .stvn_b / .stvn_bd fixtures", binaryFixtures.isEmpty());
+
             for (var binPath : binaryFixtures) {
                 var fileName = binPath.getFileName().toString();
-                var baseName = fileName.substring(0, fileName.lastIndexOf('.'));
-                var contractPath = binPath.resolveSibling(baseName + ".contract.stvn");
-                assertTrue("Contract must exist for binary fixture: " + fileName, Files.exists(contractPath));
+                var contractPath = resolveContractPath(binPath);
+                assertNotNull("Contract (.contract.stvn_i) must exist for binary fixture: " + fileName, contractPath);
 
-                var contractContent = Files.readString(contractPath);
-                var compileOpt = org.stvnadore.core.StvnCompiler.compile(contractContent, contractPath.toAbsolutePath().toString(), org.stvnadore.core.StvnParserConfig.DEFAULT);
-                assertTrue("Contract failed to compile for " + fileName, compileOpt.document().isPresent());
-                var tuple = (org.stvnadore.core.ir.StvnValue.StvnTuple) compileOpt.document().get().requirePayload();
-                var expectedSubstring = ((org.stvnadore.core.ir.StvnValue.StvnString) tuple.elements().get(1)).value();
+                var expectations = parseErrorContract(contractPath, fileName);
+                validatedBinaryContracts++;
 
                 var binBytes = Files.readAllBytes(binPath);
-                var buf = java.nio.ByteBuffer.wrap(binBytes);
-                try {
-                    var root = org.stvnadore.core.binary.StvnBinaryDecoder.open(buf);
-                    org.stvnadore.core.binary.StvnBinaryDecoder.unpack(root, java.util.Optional.empty());
-                    fail("Expected decode exception matching '" + expectedSubstring + "' for " + fileName);
-                } catch (Exception e) {
-                    var msg = e.getMessage();
-                    assertTrue("Exception message '" + msg + "' must contain '" + expectedSubstring + "' for " + fileName,
-                        msg != null && msg.contains(expectedSubstring));
+                var result = org.stvnadore.core.StvnCompiler.compile(
+                    binBytes,
+                    binPath.toAbsolutePath().toString(),
+                    org.stvnadore.core.StvnParserConfig.DEFAULT
+                );
+                assertTrue("Expected binary compilation errors for " + fileName, result.hasErrors());
+
+                for (var exp : expectations) {
+                    boolean matched = result.diagnostics().stream().anyMatch(d -> {
+                        boolean msgMatch = d.message().contains(exp.messageSubstring());
+                        boolean codeMatch = d.canonicalCode().map(exp.canonicalCode()::equals).orElse(true);
+                        boolean symMatch = d.symbolicId().map(exp.symbolicId()::equals).orElse(true);
+                        return msgMatch && (codeMatch || symMatch);
+                    });
+                    assertTrue("Binary fixture " + fileName + " missing expected diagnostic ["
+                        + exp.canonicalCode() + " / " + exp.symbolicId() + "] '" + exp.messageSubstring()
+                        + "'. Actual diagnostics: " + result.diagnostics(), matched);
                 }
             }
         }
+        assertTrue("Must validate invalid binary fixtures", validatedBinaryContracts > 0);
     }
 
     public void testValidSyntaxFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "syntax", "valid");
         if (!Files.exists(validDir)) {
-            return;
+            fail("Valid fixtures directory does not exist: " + validDir.toAbsolutePath());
         }
 
         try (var stream = Files.walk(validDir)) {
             var stvnFiles = stream
-                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d") || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
+                .filter(Files::isRegularFile)
+                .filter(p -> p.toString().endsWith(".stvn") || p.toString().endsWith(".stvn_d")
+                    || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
                 .filter(p -> {
                     var name = p.getFileName().toString();
                     return !name.contains(".stvn_ir.") && !name.contains(".stvn_core.") && !name.contains(".stvn_cas.");
                 })
+                .sorted()
                 .toList();
+            assertFalse("Must discover valid syntax fixtures", stvnFiles.isEmpty());
             for (var stvnPath : stvnFiles) {
                 var baseName = stvnPath.getFileName().toString();
                 var relativePath = Paths.get(getTestDataPath()).relativize(stvnPath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 
                 var highlights = myFixture.doHighlighting();
+                assertZeroRawCompilerJargon(highlights, baseName);
                 for (var info : highlights) {
                     if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
                         fail("Unexpected error in valid file " + baseName + ": " + info.getDescription());
@@ -197,7 +311,78 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
-    private static final int METADATA_FIXTURES_VALID_COUNT = 113;
+    public void testValidIrSubstrateSnapshotsAndBinaryFixtures() throws Exception {
+        var validDir = Paths.get(getTestDataPath(), "syntax", "valid");
+        if (!Files.exists(validDir)) {
+            fail("Valid fixtures directory does not exist: " + validDir.toAbsolutePath());
+        }
+
+        int irSnapshotCount = 0;
+        int binaryCount = 0;
+        try (var stream = Files.walk(validDir)) {
+            var allFiles = stream.filter(Files::isRegularFile).sorted().toList();
+            for (var path : allFiles) {
+                var name = path.getFileName().toString();
+                if (name.endsWith(".stvn_ir.stvn_i") || name.endsWith(".stvn_ir.stvn_d")) {
+                    irSnapshotCount++;
+                    var content = Files.readString(path);
+                    var res = org.stvnadore.core.StvnCompiler.compile(
+                        content,
+                        path.toAbsolutePath().toString(),
+                        org.stvnadore.core.StvnParserConfig.SYSTEM
+                    );
+                    assertTrue("Option B2 IR snapshot produced unexpected diagnostics for " + name + ": " + res.diagnostics(),
+                        res.diagnostics().isEmpty());
+                    assertTrue("Option B2 IR snapshot failed to produce IR document for " + name,
+                        res.document().isPresent());
+
+                    var relativePath = Paths.get(getTestDataPath()).relativize(path).toString().replace('\\', '/');
+                    var psiFile = myFixture.configureByFile(relativePath);
+                    var psiErrors = PsiTreeUtil.findChildrenOfType(psiFile, com.intellij.psi.PsiErrorElement.class);
+                    assertTrue("Grammar-Kit PSI parser produced syntax errors on Option B2 IR snapshot "
+                        + name + ": " + psiErrors, psiErrors.isEmpty());
+                } else if (name.endsWith(".stvn_b") || name.endsWith(".stvn_bd")) {
+                    binaryCount++;
+                    var bytes = Files.readAllBytes(path);
+                    var res = org.stvnadore.core.StvnCompiler.compile(
+                        bytes,
+                        path.toAbsolutePath().toString(),
+                        org.stvnadore.core.StvnParserConfig.DEFAULT
+                    );
+                    if (res.hasErrors()
+                            && res.diagnostics().stream().anyMatch(d -> d.message().contains("No schema provided or discovered"))) {
+                        String stem = name.substring(0, name.lastIndexOf('.'));
+                        var siblingStvn = path.resolveSibling(stem + ".stvn");
+                        var siblingStvnI = path.resolveSibling(stem + ".stvn_i");
+                        var siblingPath = Files.exists(siblingStvn) ? siblingStvn : siblingStvnI;
+                        assertTrue("Schemaless binary fixture must have sibling .stvn/.stvn_i schema: " + name,
+                            Files.exists(siblingPath));
+                        var siblingRes = org.stvnadore.core.StvnCompiler.compile(
+                            siblingPath,
+                            org.stvnadore.core.StvnParserConfig.DEFAULT
+                        );
+                        assertFalse("Sibling textual fixture produced errors for " + siblingPath.getFileName() + ": " + siblingRes.diagnostics(),
+                            siblingRes.hasErrors());
+                        var siblingRootSchema = siblingRes.document().orElseThrow().rootType().orElseThrow();
+                        var decodedDoc = org.stvnadore.core.binary.StvnBinaryDecoder.decodeDocument(
+                            java.nio.ByteBuffer.wrap(bytes),
+                            siblingRootSchema
+                        );
+                        assertNotNull("Schemaless binary fixture failed to decode IR document for " + name, decodedDoc);
+                    } else {
+                        assertFalse("Valid binary fixture produced errors for " + name + ": " + res.diagnostics(),
+                            res.hasErrors());
+                        assertTrue("Valid binary fixture failed to decode IR document for " + name,
+                            res.document().isPresent());
+                    }
+                }
+            }
+        }
+        assertTrue("Must validate Option B2 .stvn_ir.stvn_i / .stvn_ir.stvn_d snapshots", irSnapshotCount > 0);
+        assertTrue("Must validate positive .stvn_b / .stvn_bd binary fixtures", binaryCount > 0);
+    }
+
+    private static final int METADATA_FIXTURES_VALID_COUNT = 119;
 
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
@@ -218,6 +403,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 myFixture.configureByFile(relativePath);
 
                 var highlights = myFixture.doHighlighting();
+                assertZeroRawCompilerJargon(highlights, baseName);
                 for (var info : highlights) {
                     if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
                         fail("Unexpected error in valid metadata fixture " + baseName + ": " + info.getDescription());
@@ -255,23 +441,49 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 var tokenMatcher = targetTokenPattern.matcher(content);
                 var targetToken = tokenMatcher.find() ? tokenMatcher.group(1) : null;
 
+                var contractPath = resolveContractPath(fixturePath);
+                assertNotNull("Metadata invalid fixture must have .contract.stvn_i: " + fileName, contractPath);
+                var expectations = parseErrorContract(contractPath, fileName);
+
                 var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
                 myFixture.configureByFile(relativePath);
 
                 var highlights = myFixture.doHighlighting();
+                assertZeroRawCompilerJargon(highlights, fileName);
                 var errors = highlights.stream()
                     .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
                     .toList();
+                var diagnosticsHighlights = highlights.stream()
+                    .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)
+                        || h.getSeverity().equals(HighlightSeverity.WARNING)
+                        || h.getSeverity().equals(HighlightSeverity.WEAK_WARNING))
+                    .toList();
 
-                assertTrue("Expected error matching '" + expectedDiagnostic + "' not found in " + fileName, !errors.isEmpty());
+                boolean expectsError = expectations.stream().anyMatch(e -> "#ERROR".equals(e.severityTag()));
+                if (expectsError) {
+                    assertTrue("Expected error matching '" + expectedDiagnostic + "' not found in " + fileName, !errors.isEmpty());
+                } else {
+                    assertTrue("Expected diagnostic matching '" + expectedDiagnostic + "' not found in " + fileName, !diagnosticsHighlights.isEmpty());
+                }
+
+                for (var exp : expectations) {
+                    var pool = "#WARNING".equals(exp.severityTag()) ? diagnosticsHighlights : errors;
+                    boolean matched = pool.stream().anyMatch(e ->
+                        e.getDescription() != null
+                            && (e.getDescription().contains(exp.messageSubstring())
+                                || e.getDescription().contains(exp.symbolicId())));
+                    assertTrue("Metadata fixture " + fileName + " missing contract diagnostic ["
+                        + exp.canonicalCode() + " / " + exp.symbolicId() + "] '" + exp.messageSubstring()
+                        + "'. Found: " + pool, matched);
+                }
 
                 if (targetToken != null) {
                     var docText = myFixture.getEditor().getDocument().getText();
-                    var tokenPinned = errors.stream().anyMatch(e -> {
+                    var tokenPinned = diagnosticsHighlights.stream().anyMatch(e -> {
                         var span = docText.substring(e.getStartOffset(), e.getEndOffset());
                         return span.equals(targetToken) || span.contains(targetToken);
                     });
-                    assertTrue("Target token '" + targetToken + "' was not pinned in error coordinates for " + fileName + ". Errors: " + errors, tokenPinned);
+                    assertTrue("Target token '" + targetToken + "' was not pinned in diagnostic coordinates for " + fileName + ". Diagnostics: " + diagnosticsHighlights, tokenPinned);
 
                     // VOP Localization Invariant: Delimiters '{' and '}' must maintain zero error squiggles
                     for (var err : errors) {
@@ -954,15 +1166,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         for (var info : highlights) {
             if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
                 var description = info.getDescription();
-                if (description != null && description.contains("is marked as non-empty but contains no elements")) {
+                if (description != null && description.contains("is marked as non-empty") && description.contains("but contains no elements")) {
                     errorCount++;
                     var startOffset = info.getStartOffset();
                     var endOffset = info.getEndOffset();
                     var matchedText = text.substring(startOffset, endOffset);
                     
-                    // Assert the range matches the empty array or empty map token specifically, NOT the parent tuple bounds.
-                    assertTrue("Offending range must be either '[]' or '{}', got: " + matchedText,
-                            matchedText.equals("[]") || matchedText.equals("{}"));
+                    // Assert the range matches the empty array or empty map delimiter specifically, NOT the parent tuple bounds.
+                    assertTrue("Offending range must target empty array/map delimiter ('[]', '{}', ']', or '}'), got: " + matchedText,
+                            matchedText.equals("[]") || matchedText.equals("{}") || matchedText.equals("]") || matchedText.equals("}"));
                 }
             }
         }
@@ -1801,13 +2013,15 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         for (var info : highlights) {
             if (info.getSeverity().equals(HighlightSeverity.ERROR)) {
                 var desc = info.getDescription();
-                if (desc != null && desc.contains("Constraint violation (:MyInt): #minIncl and #minExcl are mutually exclusive")) {
+                if (desc != null
+                        && (desc.contains("prohibits bound '#minExcl'")
+                            || desc.contains("Constraint violation (:MyInt): #minIncl and #minExcl are mutually exclusive"))) {
                     found = true;
                     var start = info.getStartOffset();
                     var end = info.getEndOffset();
                     var matchedText = myFixture.getEditor().getDocument().getText().substring(start, end);
-                    assertTrue("Expected constraint error highlighted on #minExcl or { #minIncl 10 #minExcl 20 }, found: " + matchedText,
-                        matchedText.equals("#minExcl") || matchedText.equals("{ #minIncl 10 #minExcl 20 }"));
+                    assertTrue("Expected constraint error highlighted on #minExcl, #minExcl 20, or { #minIncl 10 #minExcl 20 }, found: " + matchedText,
+                        matchedText.equals("#minExcl") || matchedText.equals("#minExcl 20") || matchedText.equals("{ #minIncl 10 #minExcl 20 }"));
                 }
             }
         }
@@ -2057,7 +2271,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var info = errorHighlights.get(0);
         assertTrue("Error message must indicate integer/float type mismatch",
-            info.getDescription() != null && info.getDescription().contains("Type mismatch: Expected integer, got float"));
+            info.getDescription() != null
+                && (info.getDescription().contains("Type mismatch: expected scalar :Int, found scalar :Float")
+                    || info.getDescription().contains("Type mismatch: Expected integer, got float")));
 
         var start = info.getStartOffset();
         var end = info.getEndOffset();
@@ -2951,7 +3167,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_invalid_offset.stvn", invalidOffsetCode);
         var highlights = myFixture.doHighlighting();
         var error = highlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(error.getDescription() != null && error.getDescription().contains("Explicit offsets (±HH:mm or Z) are prohibited in :DateTimeZoned"));
+        assertTrue(error.getDescription() != null
+            && (error.getDescription().contains("Explicit UTC offsets (+/-HH:mm or Z) are prohibited in {#zoned} :DateTime")
+                || error.getDescription().contains("Explicit offsets (±HH:mm or Z) are prohibited in :DateTimeZoned")));
 
         // 3. Missing Zone Brackets Rejection
         var missingZoneCode = """
@@ -2967,7 +3185,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_gap.stvn", missingZoneCode);
         var gapHighlights = myFixture.doHighlighting();
         var gapError = gapHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(gapError.getDescription() != null && gapError.getDescription().contains("Invalid ZonedDateTime format"));
+        assertTrue(gapError.getDescription() != null
+            && (gapError.getDescription().contains("Invalid {#zoned} :DateTime format")
+                || gapError.getDescription().contains("Invalid ZonedDateTime format")));
     }
 
     public void testDateTimeAuditedHighlightingAndInlays() {
@@ -2998,7 +3218,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_missing_zone.stvn", missingZoneCode);
         var missingZoneHighlights = myFixture.doHighlighting();
         var missingZoneError = missingZoneHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(missingZoneError.getDescription() != null && missingZoneError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID"));
+        assertTrue(missingZoneError.getDescription() != null
+            && (missingZoneError.getDescription().contains("Invalid {#audited} :DateTime format")
+                || missingZoneError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID")));
 
         // 3. Missing Offset Rejection
         var missingOffsetCode = """
@@ -3014,7 +3236,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_contradictory.stvn", missingOffsetCode);
         var contradictoryHighlights = myFixture.doHighlighting();
         var contradictoryError = contradictoryHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(contradictoryError.getDescription() != null && (contradictoryError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID") || contradictoryError.getDescription().contains("Invalid :DateTimeAudited format")));
+        assertTrue(contradictoryError.getDescription() != null
+            && (contradictoryError.getDescription().contains("Invalid {#audited} :DateTime format")
+                || contradictoryError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID")
+                || contradictoryError.getDescription().contains("Invalid :DateTimeAudited format")));
         
         var documentText = myFixture.getEditor().getDocument().getText();
         var targetText = documentText.substring(contradictoryError.getStartOffset(), contradictoryError.getEndOffset());
@@ -3141,13 +3366,17 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         // 2. Verify Error #1 (Float literal)
         var err1 = errors.get(0);
-        assertTrue(err1.getDescription() != null && err1.getDescription().contains("Expected integer, got float"));
+        assertTrue(err1.getDescription() != null
+            && (err1.getDescription().contains("expected scalar :Int, found scalar :Float")
+                || err1.getDescription().contains("Expected integer, got float")));
         var doc = myFixture.getEditor().getDocument().getText();
         assertEquals("20.5", doc.substring(err1.getStartOffset(), err1.getEndOffset()));
 
         // 3. Verify Error #2 (String literal)
         var err2 = errors.get(1);
-        assertTrue(err2.getDescription() != null && err2.getDescription().contains("Expected integer, got string"));
+        assertTrue(err2.getDescription() != null
+            && (err2.getDescription().contains("expected scalar :Int, found scalar :String")
+                || err2.getDescription().contains("Expected integer, got string")));
         assertEquals("\"invalid_string\"", doc.substring(err2.getStartOffset(), err2.getEndOffset()));
 
         // 4. Verify Inlay Hints render on valid sibling elements
@@ -3191,12 +3420,16 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         // Slot 0 error check
         var err0 = errors.get(0);
-        assertTrue(err0.getDescription() != null && err0.getDescription().contains("Expected integer, got string"));
+        assertTrue(err0.getDescription() != null
+            && (err0.getDescription().contains("expected scalar :Int, found scalar :String")
+                || err0.getDescription().contains("Expected integer, got string")));
         assertEquals("\"not_an_int\"", doc.substring(err0.getStartOffset(), err0.getEndOffset()));
 
         // Slot 2 error check
         var err2 = errors.get(1);
-        assertTrue(err2.getDescription() != null && err2.getDescription().contains("Expected boolean, got integer"));
+        assertTrue(err2.getDescription() != null
+            && (err2.getDescription().contains("expected scalar :Boolean, found scalar :Int")
+                || err2.getDescription().contains("Expected boolean, got integer")));
         assertEquals("12345", doc.substring(err2.getStartOffset(), err2.getEndOffset()));
 
         // Verify Inlay Hints on valid slots 1 and 3
@@ -3239,7 +3472,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Duplicate map key detected") &&
                            doc.substring(h.getStartOffset(), h.getEndOffset()).equals("\"alpha\""));
         var hasTypeMismatchError = errors.stream()
-            .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Expected integer, got string") &&
+            .anyMatch(h -> h.getDescription() != null
+                           && (h.getDescription().contains("expected scalar :Int, found scalar :String")
+                               || h.getDescription().contains("Expected integer, got string")) &&
                            doc.substring(h.getStartOffset(), h.getEndOffset()).equals("\"not_an_int\""));
 
         assertTrue("Duplicate key must be highlighted", hasDuplicateKeyError);
@@ -4926,6 +5161,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             e.getDescription() != null &&
             e.getDescription().contains("effective range is invalid") &&
             (docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#maxExcl") ||
+             docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#maxExcl 10") ||
              docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxExcl 10 }"))
         );
         assertTrue("Must highlight inverted range metadata map", hasInvertedRangeError);
@@ -4964,9 +5200,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             e.getDescription() != null && e.getDescription().contains("Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements")
         ));
 
-        // 2. Mutually Exclusive Bounds
-        assertTrue("Must report mutually exclusive bounds", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("are mutually exclusive")
+        // 2. Mutually Exclusive / Prohibited Discrete Bounds
+        assertTrue("Must report mutually exclusive or prohibited discrete bounds", errors.stream().anyMatch(e ->
+            e.getDescription() != null
+                && (e.getDescription().contains("are mutually exclusive")
+                    || e.getDescription().contains("prohibits bound '#minExcl'"))
         ));
 
         // 3. Incompatible Metadata on Int
@@ -6195,9 +6433,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var sanitizedHighlight = highlights.stream()
             .filter(h -> h.getStartOffset() == hashOffset)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Incomplete variant tag '#'"))
+            .filter(h -> h.getDescription() != null
+                && (h.getDescription().contains("Standalone hash '#' is prohibited in STVN syntax")
+                    || h.getDescription().contains("Incomplete variant tag '#'")))
             .findFirst();
-        assertTrue("Bare '#' highlight must display sanitized domain message 'Incomplete variant tag '#''",
+        assertTrue("Bare '#' highlight must display sanitized domain message",
             sanitizedHighlight.isPresent());
 
         var quickFixes = myFixture.getAllQuickFixes();
@@ -6214,7 +6454,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :String0 { #minSize 0 #maxSize 0 } :String
+                :String0 :String
               }
               :type :Map( :String0 :Set( :String0 ) )
               :body {

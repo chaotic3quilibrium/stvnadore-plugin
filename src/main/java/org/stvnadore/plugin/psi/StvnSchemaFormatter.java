@@ -2,21 +2,26 @@ package org.stvnadore.plugin.psi;
 
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.core.parser.StvnParser;
-import org.stvnadore.psi.*;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.SchemaConstructor;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.TypeDefinition;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Utility for extracting sanitized, comment-free, canonically formatted schema representations
- * from both IntelliJ PSI trees and ANTLR4 parse trees.
+ * from IntelliJ PSI trees and STVN 2.0.0 pure-IR {@link StvnSchema} records.
  */
 @NullMarked
 public final class StvnSchemaFormatter {
@@ -24,7 +29,8 @@ public final class StvnSchemaFormatter {
     private static final Pattern COMMENT_PATTERN = Pattern.compile("//[^\\r\\n]*");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
-    private StvnSchemaFormatter() {}
+    private StvnSchemaFormatter() {
+    }
 
     /**
      * Extracts a clean, canonically formatted schema type string from a PSI element,
@@ -89,11 +95,105 @@ public final class StvnSchemaFormatter {
         return formatFallbackPsi(element);
     }
 
+    /**
+     * Formats a pure-IR {@link StvnSchema} preserving nominal alias identity when present.
+     *
+     * @param schema pure-IR schema record, or {@code null}
+     * @return nominal alias name when branded, or canonical structural signature
+     */
+    public static @NotNull String formatIrSchema(@Nullable StvnSchema schema) {
+        if (schema == null) {
+            return "";
+        }
+        if (schema.aliasName().isPresent()) {
+            return schema.aliasName().get();
+        }
+        return formatCleanIrSchema(schema);
+    }
+
+    /**
+     * Formats the underlying structural shape of a pure-IR {@link StvnSchema} without its outer alias name.
+     *
+     * @param schema pure-IR schema record, or {@code null}
+     * @return canonical structural schema signature
+     */
+    public static @NotNull String formatCleanIrSchema(@Nullable StvnSchema schema) {
+        if (schema == null) {
+            return "";
+        }
+        return switch (schema) {
+            case StvnSchema.BooleanSchema ignored -> StvnVocabulary.TYPE_BOOLEAN;
+            case StvnSchema.IntSchema ignored -> StvnVocabulary.TYPE_INT;
+            case StvnSchema.FloatSchema ignored -> StvnVocabulary.TYPE_FLOAT;
+            case StvnSchema.StringSchema ignored -> StvnVocabulary.TYPE_STRING;
+            case StvnSchema.TimeEpochSchema ignored -> StvnVocabulary.TYPE_TIME_EPOCH;
+            case StvnSchema.DateTimeSchema ignored -> StvnVocabulary.TYPE_DATE_TIME;
+            case StvnSchema.EnumSchema e -> formatEnumVariants(e.rootVariants());
+            case StvnSchema.EnumSubsetSchema es -> formatEnumVariants(es.activeVariants());
+            case StvnSchema.SeqSchema s ->
+                StvnVocabulary.TYPE_SEQ + "( " + formatIrSchema(s.elementSchema()) + " )";
+            case StvnSchema.SetSchema s ->
+                StvnVocabulary.TYPE_SET + "( " + formatIrSchema(s.elementSchema()) + " )";
+            case StvnSchema.MapSchema m ->
+                StvnVocabulary.TYPE_MAP + "( " + formatIrSchema(m.keySchema()) + " " + formatIrSchema(m.valueSchema()) + " )";
+            case StvnSchema.TupleSchema t ->
+                t.fieldSchemas().isEmpty()
+                    ? StvnVocabulary.TYPE_TUPLE + "()"
+                    : StvnVocabulary.TYPE_TUPLE + "( " + t.fieldSchemas().stream()
+                        .map(StvnSchemaFormatter::formatIrSchema)
+                        .collect(Collectors.joining(" ")) + " )";
+            case StvnSchema.OptionSchema o ->
+                StvnVocabulary.TYPE_OPTION + "( " + formatIrSchema(o.valueSchema()) + " )";
+            case StvnSchema.EitherSchema e ->
+                StvnVocabulary.TYPE_EITHER + "( " + formatIrSchema(e.leftSchema()) + " " + formatIrSchema(e.rightSchema()) + " )";
+            case StvnSchema.UnionSchema u ->
+                u.branchSchemas().isEmpty()
+                    ? StvnVocabulary.TYPE_UNION + "()"
+                    : StvnVocabulary.TYPE_UNION + "( " + u.branchSchemas().stream()
+                        .map(StvnSchemaFormatter::formatIrSchema)
+                        .collect(Collectors.joining(" ")) + " )";
+            case StvnSchema.PoisonedSchema p ->
+                p.bestEffortFallback()
+                    .map(StvnSchemaFormatter::formatCleanIrSchema)
+                    .orElseGet(() -> p.aliasName().orElse("<poisoned>"));
+        };
+    }
+
+    /**
+     * Returns the canonical base constructor keyword for a pure-IR {@link StvnSchema}.
+     *
+     * @param schema pure-IR schema record
+     * @return canonical base constructor keyword (for example, {@code ":Int"} or {@code ":Tuple"})
+     */
+    public static @NotNull String getPrimitiveBaseType(StvnSchema schema) {
+        return switch (schema) {
+            case StvnSchema.BooleanSchema ignored -> StvnVocabulary.TYPE_BOOLEAN;
+            case StvnSchema.IntSchema ignored -> StvnVocabulary.TYPE_INT;
+            case StvnSchema.FloatSchema ignored -> StvnVocabulary.TYPE_FLOAT;
+            case StvnSchema.StringSchema ignored -> StvnVocabulary.TYPE_STRING;
+            case StvnSchema.TimeEpochSchema ignored -> StvnVocabulary.TYPE_TIME_EPOCH;
+            case StvnSchema.DateTimeSchema ignored -> StvnVocabulary.TYPE_DATE_TIME;
+            case StvnSchema.EnumSchema ignored -> StvnVocabulary.TYPE_ENUM;
+            case StvnSchema.EnumSubsetSchema ignored -> StvnVocabulary.TYPE_ENUM;
+            case StvnSchema.SeqSchema ignored -> StvnVocabulary.TYPE_SEQ;
+            case StvnSchema.SetSchema ignored -> StvnVocabulary.TYPE_SET;
+            case StvnSchema.MapSchema ignored -> StvnVocabulary.TYPE_MAP;
+            case StvnSchema.TupleSchema ignored -> StvnVocabulary.TYPE_TUPLE;
+            case StvnSchema.OptionSchema ignored -> StvnVocabulary.TYPE_OPTION;
+            case StvnSchema.EitherSchema ignored -> StvnVocabulary.TYPE_EITHER;
+            case StvnSchema.UnionSchema ignored -> StvnVocabulary.TYPE_UNION;
+            case StvnSchema.PoisonedSchema p ->
+                p.bestEffortFallback()
+                    .map(StvnSchemaFormatter::getPrimitiveBaseType)
+                    .orElseGet(() -> p.aliasName().orElse(""));
+        };
+    }
+
     private static String formatPsiSchemaType(SchemaType schemaType) {
         var meta = schemaType.getMetadataMap();
         var metaPrefix = meta != null ? formatMetadataMap(meta) + " " : "";
 
-        String body = "";
+        String body;
         var keyword = schemaType.getTypeKeyword();
         if (keyword != null) {
             body = keyword.getText().trim();
@@ -117,15 +217,15 @@ public final class StvnSchemaFormatter {
         if (sum != null) {
             if (sum.getNode().findChildByType(StvnTypes.KW_OPTION) != null) {
                 var children = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                return ":Option( " + formatPsiChildren(children) + " )";
+                return formatParenthesizedCtor(StvnVocabulary.TYPE_OPTION, children);
             }
             if (sum.getNode().findChildByType(StvnTypes.KW_EITHER) != null) {
                 var children = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                return ":Either( " + formatPsiChildren(children) + " )";
+                return formatParenthesizedCtor(StvnVocabulary.TYPE_EITHER, children);
             }
             if (sum.getNode().findChildByType(StvnTypes.KW_UNION) != null) {
                 var children = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                return ":Union( " + formatPsiChildren(children) + " )";
+                return formatParenthesizedCtor(StvnVocabulary.TYPE_UNION, children);
             }
             if (sum.getNode().findChildByType(StvnTypes.KW_ENUM) != null) {
                 var enumDef = sum.getEnumDef();
@@ -135,23 +235,28 @@ public final class StvnSchemaFormatter {
                     for (var kw : kws) {
                         list.add(kw.getText().trim());
                     }
-                    return ":Enum [ " + String.join(" ", list) + " ]";
+                    return formatEnumVariants(list);
                 }
             }
         }
         var prod = ctor.getProductType();
         if (prod != null) {
-            var children = prod.getSchemaTypeList();
-            return ":Tuple( " + formatPsiChildren(children) + " )";
+            return formatParenthesizedCtor(StvnVocabulary.TYPE_TUPLE, prod.getSchemaTypeList());
         }
         var coll = ctor.getCollectionType();
         if (coll != null) {
             var first = coll.getFirstChild();
-            var collName = first != null ? first.getText().trim() : ":Seq";
-            var children = coll.getSchemaTypeList();
-            return collName + "( " + formatPsiChildren(children) + " )";
+            var collName = first != null ? first.getText().trim() : StvnVocabulary.TYPE_SEQ;
+            return formatParenthesizedCtor(collName, coll.getSchemaTypeList());
         }
         return formatFallbackPsi(ctor);
+    }
+
+    private static String formatParenthesizedCtor(String ctorName, List<SchemaType> children) {
+        if (children.isEmpty()) {
+            return ctorName + "()";
+        }
+        return ctorName + "( " + formatPsiChildren(children) + " )";
     }
 
     private static String formatPsiChildren(List<SchemaType> children) {
@@ -160,67 +265,6 @@ public final class StvnSchemaFormatter {
             list.add(formatPsiSchemaType(child));
         }
         return String.join(" ", list);
-    }
-
-    /**
-     * Extracts a clean, canonically formatted schema type string from an ANTLR parse tree,
-     * preserving child metadata maps and enforcing standard delimiter padding.
-     *
-     * @param tree the ANTLR parse tree (typically SchemaTypeContext or ParserRuleContext)
-     * @return the cleanly formatted canonical schema signature, or an empty string if null
-     */
-    public static @NotNull String formatAntlrSchema(@Nullable ParseTree tree) {
-        if (tree == null) {
-            return "";
-        }
-        if (tree instanceof StvnParser.SchemaTypeContext schemaCtx) {
-            return formatAntlrSchemaType(schemaCtx);
-        }
-        if (tree instanceof StvnParser.SchemaConstructorContext ctorCtx) {
-            return formatAntlrSchemaConstructor(ctorCtx);
-        }
-        return formatFallbackAntlr(tree);
-    }
-
-    /**
-     * Extracts a clean, canonically formatted schema type string from an ANTLR parse tree,
-     * enforcing standard whitespace padding around delimiters and stripping comments.
-     *
-     * @param tree the ANTLR parse tree (typically SchemaTypeContext or ParserRuleContext)
-     * @return the cleanly formatted canonical schema signature, or an empty string if null
-     */
-    public static @NotNull String formatCleanAntlrSchema(@Nullable ParseTree tree) {
-        if (tree == null) {
-            return "";
-        }
-        if (tree instanceof StvnParser.SchemaTypeContext schemaCtx) {
-            if (schemaCtx.typeKeyword() != null) {
-                return schemaCtx.typeKeyword().getText().trim();
-            } else if (schemaCtx.schemaConstructor() != null) {
-                return formatAntlrSchemaConstructor(schemaCtx.schemaConstructor());
-            } else {
-                return formatFallbackAntlr(schemaCtx);
-            }
-        }
-        if (tree instanceof StvnParser.SchemaConstructorContext ctorCtx) {
-            return formatAntlrSchemaConstructor(ctorCtx);
-        }
-        return formatFallbackAntlr(tree);
-    }
-
-    private static String formatAntlrSchemaType(StvnParser.SchemaTypeContext ctx) {
-        var meta = ctx.metadataMap();
-        var metaPrefix = meta != null ? formatAntlrMetadataMap(meta) + " " : "";
-
-        String body = "";
-        if (ctx.typeKeyword() != null) {
-            body = ctx.typeKeyword().getText().trim();
-        } else if (ctx.schemaConstructor() != null) {
-            body = formatAntlrSchemaConstructor(ctx.schemaConstructor());
-        } else {
-            body = formatFallbackAntlr(ctx);
-        }
-        return (metaPrefix + body).trim();
     }
 
     private static String formatMetadataMap(MetadataMap metaMap) {
@@ -240,86 +284,8 @@ public final class StvnSchemaFormatter {
         return "{ " + String.join(" ", list) + " }";
     }
 
-    private static String formatAntlrMetadataMap(StvnParser.MetadataMapContext ctx) {
-        var entries = ctx.metadataEntry();
-        if (entries == null || entries.isEmpty()) {
-            return "{}";
-        }
-        var list = new ArrayList<String>();
-        for (var entry : entries) {
-            var clean = formatFallbackAntlr(entry);
-            if (!clean.isEmpty()) {
-                list.add(clean);
-            }
-        }
-        return "{ " + String.join(" ", list) + " }";
-    }
-
-    private static String formatAntlrSchemaConstructor(StvnParser.SchemaConstructorContext ctx) {
-        if (ctx.atomicType() != null) {
-            return ctx.atomicType().getText().trim();
-        }
-        if (ctx.sumType() != null) {
-            var sum = ctx.sumType();
-            if (sum.KW_OPTION() != null) {
-                return ":Option( " + formatAntlrChildren(sum.schemaType()) + " )";
-            }
-            if (sum.KW_EITHER() != null) {
-                return ":Either( " + formatAntlrChildren(sum.schemaType()) + " )";
-            }
-            if (sum.KW_UNION() != null) {
-                return ":Union( " + formatAntlrChildren(sum.schemaType()) + " )";
-            }
-            if (sum.KW_ENUM() != null && sum.enumDef() != null) {
-                var list = new ArrayList<String>();
-                for (var kw : sum.enumDef().valueKeyword()) {
-                    list.add(kw.getText().trim());
-                }
-                return ":Enum [ " + String.join(" ", list) + " ]";
-            }
-        }
-        if (ctx.productType() != null) {
-            if (ctx.productType() instanceof StvnParser.TupleTypeContext tupleCtx) {
-                return ":Tuple( " + formatAntlrChildren(tupleCtx.schemaType()) + " )";
-            }
-            return ":Tuple";
-        }
-        if (ctx.collectionType() != null) {
-            var coll = ctx.collectionType();
-            var collName = coll.getChild(0).getText().trim();
-            return collName + "( " + formatAntlrChildren(coll.schemaType()) + " )";
-        }
-        return formatFallbackAntlr(ctx);
-    }
-
-    private static String formatAntlrChildren(List<StvnParser.SchemaTypeContext> children) {
-        var list = new ArrayList<String>();
-        for (var child : children) {
-            list.add(formatAntlrSchemaType(child));
-        }
-        return String.join(" ", list);
-    }
-
     private static String formatFallbackPsi(PsiElement element) {
         var raw = element.getText();
-        if (raw == null || raw.isEmpty()) {
-            return "";
-        }
-        var stripped = COMMENT_PATTERN.matcher(raw).replaceAll("");
-        return WHITESPACE_PATTERN.matcher(stripped).replaceAll(" ").trim();
-    }
-
-    private static String formatFallbackAntlr(ParseTree tree) {
-        if (tree instanceof ParserRuleContext ctx && ctx.start != null && ctx.stop != null) {
-            var charStream = ctx.start.getInputStream();
-            if (charStream != null) {
-                var interval = new org.antlr.v4.runtime.misc.Interval(ctx.start.getStartIndex(), ctx.stop.getStopIndex());
-                var raw = charStream.getText(interval);
-                var stripped = COMMENT_PATTERN.matcher(raw).replaceAll("");
-                return WHITESPACE_PATTERN.matcher(stripped).replaceAll(" ").trim();
-            }
-        }
-        var raw = tree.getText();
         if (raw == null || raw.isEmpty()) {
             return "";
         }
@@ -330,13 +296,13 @@ public final class StvnSchemaFormatter {
     /**
      * Formats an enum structure from an explicit list of variant keywords.
      *
-     * @param variants the list of variant keywords (e.g. ["#KNIGHT", "#BISHOP"])
-     * @return canonical formatted enum string, e.g. ":Enum [ #KNIGHT #BISHOP ]" or ":Enum []" if empty
+     * @param variants the list of variant keywords (for example, {@code ["#KNIGHT", "#BISHOP"]})
+     * @return canonical formatted enum string, e.g. {@code ":Enum [ #KNIGHT #BISHOP ]"} or {@code ":Enum []"} if empty
      */
     public static @NotNull String formatEnumVariants(List<String> variants) {
         if (variants.isEmpty()) {
-            return ":Enum []";
+            return StvnVocabulary.TYPE_ENUM + " []";
         }
-        return ":Enum [ " + String.join(" ", variants) + " ]";
+        return StvnVocabulary.TYPE_ENUM + " [ " + String.join(" ", variants) + " ]";
     }
 }

@@ -90,8 +90,11 @@ public final class PublishSchemaAction extends AnAction {
 
         // 2b. Ensure root :meta block presence for repository Gate 2 compliance
         if (!schemaContent.contains(":meta")) {
-            String[] parts = schemaName.split("\\.");
-            String name = parts.length > 0 ? parts[0] : schemaName;
+            String stem = schemaName.endsWith(".stvn_d")
+                ? schemaName.substring(0, schemaName.length() - ".stvn_d".length())
+                : schemaName;
+            String[] parts = stem.split("\\.");
+            String name = parts.length > 0 ? parts[parts.length - 1] : stem;
             String meta = "  :meta {\n    #name \"" + name + "\"\n    #domain \"default\"\n    #kind #DEFS\n  }\n";
             int idx = schemaContent.indexOf('{');
             if (idx >= 0) {
@@ -138,14 +141,15 @@ public final class PublishSchemaAction extends AnAction {
         return ActionUpdateThread.BGT;
     }
 
-    private static String deriveSchemaName(String fileName) {
-        if (fileName.endsWith(".stvn_d")) {
-            return fileName.substring(0, fileName.length() - ".stvn_d".length());
-        }
-        if (fileName.endsWith(".stvn_di")) {
-            return fileName.substring(0, fileName.length() - ".stvn_di".length());
-        }
-        return fileName;
+    /**
+     * Derives the canonical STVN 2.0.0 repository schema artifact name preserving the {@code .stvn_d}
+     * or {@code .stvn_bd} suffix and mapping flattened {@code .stvn_di} modules to {@code .stvn_d}.
+     *
+     * @param fileName active source file name
+     * @return canonical target schema name for repository publication
+     */
+    public static String deriveSchemaName(String fileName) {
+        return StvnRepositoryClient.deriveSchemaName(fileName);
     }
 
     private static String getLatestContent(Project project, VirtualFile file) {

@@ -20,8 +20,9 @@ import java.util.Set;
  * Customized FileReferenceSet for STVN include statements (:include [ "path" ]).
  * <p>
  * Anchors resolution strictly to the parent directory of the active containing file.
- * Filters completion candidates to valid schema files (.stvn_d, .stvn_di, .stvn_bd),
- * excluding payload documents (.stvn, .stvn_i), self-inclusion, and non-project directories.
+ * Filters completion candidates to valid textual definitions files (.stvn_d, .stvn_di),
+ * excluding payload documents (.stvn, .stvn_i), binary files (.stvn_b, .stvn_bd),
+ * self-inclusion, and non-project directories.
  */
 @NullMarked
 public final class StvnIncludeFileReferenceSet extends FileReferenceSet {
@@ -130,7 +131,6 @@ public final class StvnIncludeFileReferenceSet extends FileReferenceSet {
      */
     public static boolean isAllowedSchemaFile(String fileName) {
         return fileName.endsWith(".stvn_d")
-            || fileName.endsWith(".stvn_di")
-            || fileName.endsWith(".stvn_bd");
+            || fileName.endsWith(".stvn_di");
     }
 }

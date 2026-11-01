@@ -7,7 +7,7 @@ import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnLiteralParser;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
@@ -42,7 +42,7 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
 
                 var baseType = StvnSchemaFormatter.formatSchema(schemaType).trim();
                 boolean isUnsigned = false;
-                Integer bitWidth = null;
+                BigInteger rawBitWidth = null;
 
                 var meta = schemaType.getMetadataMap();
                 var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
@@ -83,10 +83,8 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                         isUnsigned = true;
                     } else if (txt.startsWith("#size")) {
                         var parts = txt.split("\\s+");
-                        if (parts.length >= 2 && bitWidth == null) {
-                            try {
-                                bitWidth = Integer.parseInt(parts[1]);
-                            } catch (NumberFormatException ignored) {}
+                        if (parts.length >= 2 && rawBitWidth == null) {
+                            rawBitWidth = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
                         }
                     } else if (txt.equals("#exact") || txt.startsWith("#exact ")) {
                         isExact = true;
@@ -100,8 +98,8 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                 }
 
                 if (isEpoch) {
-                    if (bitWidth == null) {
-                        bitWidth = "ns".equals(epochScale) ? 128 : 64;
+                    if (rawBitWidth == null) {
+                        rawBitWidth = BigInteger.valueOf("ns".equals(epochScale) ? 128L : 64L);
                     }
                 }
 
@@ -113,20 +111,24 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     if (value.getFloatLiteral() == null) {
                         return;
                     }
-                    int floatBits = bitWidth != null ? bitWidth : 64;
+                    if (rawBitWidth != null
+                        && !rawBitWidth.equals(BigInteger.valueOf(32L))
+                        && !rawBitWidth.equals(BigInteger.valueOf(64L))) {
+                        return;
+                    }
+                    int floatBits = (rawBitWidth != null && rawBitWidth.intValue() == 32) ? 32 : 64;
                     BigDecimal minBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MIN : StvnVocabulary.FLOAT64_MIN;
                     BigDecimal maxBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
 
                     var litText = value.getFloatLiteral().getText();
-                    BigDecimal floatVal;
-                    try {
-                        floatVal = StvnLiteralParser.parseBigDecimal(litText);
-                    } catch (Exception e) {
+                    var floatValOpt = StvnPsiLiteralEvaluator.parseBigDecimal(litText);
+                    if (floatValOpt.isEmpty()) {
                         return;
                     }
+                    BigDecimal floatVal = floatValOpt.get();
 
                     if (floatVal.compareTo(minBound) < 0 || floatVal.compareTo(maxBound) > 0) {
-                        String targetType = (bitWidth != null) ? "{ #size " + bitWidth + " } " + cleanType : cleanType;
+                        String targetType = (rawBitWidth != null) ? "{ #size " + rawBitWidth + " } " + cleanType : cleanType;
                         holder.registerProblem(
                             value.getFloatLiteral(),
                             StvnDiagnosticFormatter.formatPlugin(
@@ -143,32 +145,51 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     return;
                 }
 
-                if (bitWidth == null || bitWidth <= 0) {
+                if (rawBitWidth == null || rawBitWidth.compareTo(BigInteger.ONE) < 0) {
                     return;
                 }
 
                 var litText = value.getIntegerLiteral().getText();
-                BigInteger val;
-                try {
-                    val = StvnLiteralParser.parseBigInteger(litText);
-                } catch (Exception e) {
+                var valOpt = StvnPsiLiteralEvaluator.parseBigInteger(litText);
+                if (valOpt.isEmpty()) {
                     return;
                 }
+                BigInteger val = valOpt.get();
 
-                var min = isUnsigned ? BigInteger.ZERO : BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
-                var max = isUnsigned 
-                    ? BigInteger.ONE.shiftLeft(bitWidth).subtract(BigInteger.ONE)
-                    : BigInteger.ONE.shiftLeft(bitWidth - 1).subtract(BigInteger.ONE);
+                if (rawBitWidth.compareTo(BigInteger.valueOf(StvnPsiLiteralEvaluator.MAX_EAGER_SHIFT_BIT_WIDTH)) <= 0) {
+                    int bitWidth = rawBitWidth.intValueExact();
+                    var min = isUnsigned ? BigInteger.ZERO : BigInteger.ONE.shiftLeft(bitWidth - 1).negate();
+                    var max = isUnsigned
+                        ? BigInteger.ONE.shiftLeft(bitWidth).subtract(BigInteger.ONE)
+                        : BigInteger.ONE.shiftLeft(bitWidth - 1).subtract(BigInteger.ONE);
 
-                if (val.compareTo(min) < 0 || val.compareTo(max) > 0) {
-                    holder.registerProblem(
-                        value.getIntegerLiteral(),
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
-                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR
-                    );
+                    if (val.compareTo(min) < 0 || val.compareTo(max) > 0) {
+                        holder.registerProblem(
+                            value.getIntegerLiteral(),
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
+                                StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    }
+                } else {
+                    boolean outOfRange = isUnsigned
+                        ? (val.signum() < 0 || BigInteger.valueOf(val.bitLength()).compareTo(rawBitWidth) > 0)
+                        : (BigInteger.valueOf(val.bitLength()).compareTo(rawBitWidth.subtract(BigInteger.ONE)) > 0);
+                    if (outOfRange) {
+                        String rangeStr = isUnsigned
+                            ? "[0, 2^" + rawBitWidth + " - 1]"
+                            : "[-2^" + rawBitWidth.subtract(BigInteger.ONE) + ", 2^" + rawBitWidth.subtract(BigInteger.ONE) + " - 1]";
+                        holder.registerProblem(
+                            value.getIntegerLiteral(),
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Integer literal " + val + " out of range for " + baseType + " " + rangeStr,
+                                StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    }
                 }
             }
         };

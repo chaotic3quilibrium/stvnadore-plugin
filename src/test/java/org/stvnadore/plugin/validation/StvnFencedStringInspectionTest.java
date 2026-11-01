@@ -383,7 +383,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Must report exactly 1 error highlight for unfenced block string (zero duplication)", 1, errorHighlights.size());
         var errorHighlight = errorHighlights.get(0);
-        assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:STVN_SYNTAX_ERROR]"));
+        assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:FENCE_DELIMITER_MISMATCH]"));
 
         int expectedStart = code.indexOf("\"\"\"");
         assertEquals("Error highlight must pin strictly to opening triple-quote delimiter [startOffset, startOffset + 3)",

@@ -78,7 +78,6 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.COLL_SEQ) ||
                type.equals(StvnTypes.COLL_SET) ||
                type.equals(StvnTypes.KW_TUPLE) ||
-               type.equals(StvnTypes.KW_MAP_ENTRY) ||
                type.equals(StvnTypes.KW_ENUM) ||
                type.equals(StvnTypes.KW_OPTION) ||
                type.equals(StvnTypes.KW_EITHER) ||

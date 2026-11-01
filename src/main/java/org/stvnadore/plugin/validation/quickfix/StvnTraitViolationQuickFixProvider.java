@@ -349,8 +349,12 @@ public final class StvnTraitViolationQuickFixProvider {
                     var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
                     var targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                     if (targetDef != null) {
-                        var rs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
-                        if (rs != null && !rs.constraints().equatable().orElse(false)) {
+                        var traits = StvnTypeResolver.resolveNominalTraitConstraints(targetDef);
+                        if (traits != null) {
+                            if (!traits.equatable()) {
+                                result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
+                            }
+                        } else if (!isUnderlyingIntrinsicallyEquatable(targetDef)) {
                             result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                         }
                     }
@@ -440,9 +444,9 @@ public final class StvnTraitViolationQuickFixProvider {
                     var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
                     var targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                     if (targetDef != null) {
-                        var rs = StvnTypeResolver.resolveNominalResolvedSchema(targetDef);
-                        if (rs != null && rs.constraints().comparable().isPresent()) {
-                            if (!rs.constraints().comparable().get()) {
+                        var traits = StvnTypeResolver.resolveNominalTraitConstraints(targetDef);
+                        if (traits != null) {
+                            if (!traits.comparable()) {
                                 result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                             }
                         } else if (!isUnderlyingIntrinsicallyComparable(targetDef)) {

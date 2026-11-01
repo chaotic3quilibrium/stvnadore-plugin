@@ -12,8 +12,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnLiteralParser;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -77,7 +77,6 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     return;
                 }
 
-                MetadataEntry minInclEntry = null;
                 MetadataEntry maxExclEntry = null;
                 MetadataEntry upperEntry = null;
                 BigDecimal minVal = null;
@@ -115,7 +114,6 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                         );
                         minVal = extractBoundBigDecimal(entry);
                     } else if (entryText.startsWith("#minIncl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
-                        minInclEntry = entry;
                         minVal = extractBoundBigDecimal(entry);
                     } else if (entryText.startsWith("#maxExcl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
                         maxExclEntry = entry;
@@ -205,24 +203,25 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     private static @Nullable BigDecimal extractBoundBigDecimal(MetadataEntry entry) {
         var val = entry.getMetadataValue();
         if (val == null) return null;
-        try {
-            var intLit = val.getIntegerLiteral();
-            if (intLit != null) {
-                return new BigDecimal(StvnLiteralParser.parseBigInteger(intLit.getText()));
+        var intLit = val.getIntegerLiteral();
+        if (intLit != null) {
+            return StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText())
+                .map(BigDecimal::new)
+                .orElse(null);
+        }
+        var floatLit = val.getFloatLiteral();
+        if (floatLit != null) {
+            return StvnPsiLiteralEvaluator.parseBigDecimal(floatLit.getText()).orElse(null);
+        }
+        var text = val.getText().trim();
+        if (!text.isEmpty()) {
+            if (text.contains(".") || text.contains("e") || text.contains("E")) {
+                return StvnPsiLiteralEvaluator.parseBigDecimal(text).orElse(null);
             }
-            var floatLit = val.getFloatLiteral();
-            if (floatLit != null) {
-                return StvnLiteralParser.parseBigDecimal(floatLit.getText());
-            }
-            var text = val.getText().trim();
-            if (!text.isEmpty()) {
-                if (text.contains(".") || text.contains("e") || text.contains("E")) {
-                    return StvnLiteralParser.parseBigDecimal(text);
-                } else {
-                    return new BigDecimal(StvnLiteralParser.parseBigInteger(text));
-                }
-            }
-        } catch (Exception ignored) {}
+            return StvnPsiLiteralEvaluator.parseBigInteger(text)
+                .map(BigDecimal::new)
+                .orElse(null);
+        }
         return null;
     }
 
@@ -255,43 +254,28 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     private static boolean canIncrementBound(MetadataEntry entry) {
         var val = entry.getMetadataValue();
         if (val == null) return false;
-        var valText = val.getText().trim();
-        try {
-            if (valText.startsWith("0x") || valText.startsWith("0X")) {
-                new BigInteger(valText.substring(2), 16);
-                return true;
-            } else if (valText.startsWith("0b") || valText.startsWith("0B")) {
-                new BigInteger(valText.substring(2), 2);
-                return true;
-            } else if (valText.startsWith("0o") || valText.startsWith("0O")) {
-                new BigInteger(valText.substring(2), 8);
-                return true;
-            } else {
-                new BigInteger(valText);
-                return true;
-            }
-        } catch (Exception e) {
-            return false;
-        }
+        return StvnPsiLiteralEvaluator.parseBigInteger(val.getText().trim()).isPresent();
     }
 
     private static String incrementBound(String valText) {
-        try {
-            if (valText.startsWith("0x") || valText.startsWith("0X")) {
-                var bi = new BigInteger(valText.substring(2), 16).add(BigInteger.ONE);
-                return "0x" + bi.toString(16);
-            } else if (valText.startsWith("0b") || valText.startsWith("0B")) {
-                var bi = new BigInteger(valText.substring(2), 2).add(BigInteger.ONE);
-                return "0b" + bi.toString(2);
-            } else if (valText.startsWith("0o") || valText.startsWith("0O")) {
-                var bi = new BigInteger(valText.substring(2), 8).add(BigInteger.ONE);
-                return "0o" + bi.toString(8);
-            } else {
-                return new BigInteger(valText).add(BigInteger.ONE).toString();
-            }
-        } catch (Exception e) {
-            return valText;
+        if (valText.startsWith("0x") || valText.startsWith("0X")) {
+            return StvnPsiLiteralEvaluator.parseBigInteger(valText)
+                .map(bi -> "0x" + bi.add(BigInteger.ONE).toString(16))
+                .orElse(valText);
         }
+        if (valText.startsWith("0b") || valText.startsWith("0B")) {
+            return StvnPsiLiteralEvaluator.parseBigInteger(valText)
+                .map(bi -> "0b" + bi.add(BigInteger.ONE).toString(2))
+                .orElse(valText);
+        }
+        if (valText.startsWith("0o") || valText.startsWith("0O")) {
+            return StvnPsiLiteralEvaluator.parseBigInteger(valText)
+                .map(bi -> "0o" + bi.add(BigInteger.ONE).toString(8))
+                .orElse(valText);
+        }
+        return StvnPsiLiteralEvaluator.parseBigInteger(valText)
+            .map(bi -> bi.add(BigInteger.ONE).toString())
+            .orElse(valText);
     }
 
     private static final class ConvertMaxInclToMaxExclQuickFix implements LocalQuickFix {

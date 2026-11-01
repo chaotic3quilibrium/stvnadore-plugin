@@ -7,15 +7,17 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
-import org.stvnadore.core.ast.StvnDocument;
-import org.stvnadore.core.io.CanonicalStvnWriter;
+import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.ir.StvnDocument;
 import org.stvnadore.core.printer.AstPrettyPrinter;
 import org.stvnadore.plugin.StvnFile;
+import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 
 import java.awt.datatransfer.StringSelection;
 
@@ -45,9 +47,18 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
         }
 
         String text = editor.getDocument().getText();
+        VirtualFile vf = psiFile.getVirtualFile();
+        String fileName = vf != null ? vf.getName() : psiFile.getName();
+        String docPath = vf != null
+            ? StvnCompiledDocumentCache.resolvePhysicalPath(vf, project, text)
+            : fileName;
+        StvnParserConfig config = StvnCompiledDocumentCache.isSystemSubstrateFileName(fileName)
+            ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
+            : StvnParserConfig.DEFAULT;
+
         StvnCompilationResult<StvnDocument> result;
         try {
-            result = StvnCompiler.compile(text);
+            result = StvnCompiler.compileToResult(text, docPath, config);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;
@@ -57,14 +68,8 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
             return;
         }
 
-        StvnDocument doc = result.document().get();
-        String formatted;
-        if (doc.payload().isPresent()) {
-            formatted = AstPrettyPrinter.print(doc.payload().get());
-        } else {
-            formatted = new CanonicalStvnWriter().printToString(doc);
-        }
-
+        StvnDocument canonicalDoc = result.document().get();
+        String formatted = AstPrettyPrinter.print(canonicalDoc);
         CopyPasteManager.getInstance().setContents(new StringSelection(formatted));
     }
 

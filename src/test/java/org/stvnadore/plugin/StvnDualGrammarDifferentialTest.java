@@ -478,19 +478,44 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
     }
 
     /**
-     * V30: Metadata Flag with Explicit Boolean
-     * Assert '{ #unsigned #TRUE }' parses as valid metadata entry with boolean value.
+     * V30: Standalone bare flag '#unsigned' rejects trailing boolean argument '#TRUE' in both ANTLR4 and Grammar-Kit.
      */
-    public void testV30_MetadataFlagWithExplicitBoolean() {
-        var input = "{:defs { :Port { #unsigned #TRUE } :Int } :type :Port :body 8080}";
-        var file = myFixture.configureByText("v30.stvn", input);
-        assertNoSyntaxErrors(file);
+    public void testV30_BareFlagRejectsTrailingBooleanArgument() {
+        var doc = """
+            {
+              :defs {
+                :InvalidFlag { #unsigned #TRUE } :Int
+              }
+              :type :InvalidFlag
+              :body 8080
+            }
+            """;
+        var coreRes = org.stvnadore.core.StvnCompiler.compileToResult(doc);
+        assertTrue("V30: ANTLR4 core compiler must reject trailing boolean argument after '#unsigned'", coreRes.hasErrors());
 
-        var bareFlags = PsiTreeUtil.findChildrenOfType(file, MetadataBareFlag.class);
-        assertFalse("V30: MetadataBareFlag element must exist", bareFlags.isEmpty());
-        var flag = bareFlags.iterator().next();
-        assertNotNull("V30: MetadataBareFlag must have boolean value", flag.getBooleanValue());
-        assertEquals("#TRUE", flag.getBooleanValue().getText());
+        var file = myFixture.configureByText("v30.stvn", doc);
+        var psiErrors = PsiTreeUtil.findChildrenOfType(file, PsiErrorElement.class);
+        assertFalse("V30: Grammar-Kit PSI parser must reject trailing boolean argument after '#unsigned'", psiErrors.isEmpty());
+    }
+
+    /**
+     * Verifies that the retired 1.x map-entry constructor token is lexed as an ordinary nominal TYPE_KEYWORD_BASE
+     * and rejected as a composite type constructor in both ANTLR4 and Grammar-Kit.
+     */
+    public void testRetiredMapEntryConstructorRejectedByBothGrammars() {
+        String retiredToken = ":" + "Map" + "Entry";
+        var lexed = tokenize(retiredToken);
+        assertEquals(1, lexed.size());
+        assertEquals("Retired map-entry identifier must lex as ordinary TYPE_KEYWORD_BASE",
+            StvnTypes.TYPE_KEYWORD_BASE, lexed.get(0).type());
+
+        var docAsConstructor = "{\n  :type " + retiredToken + "(:String :Int)\n  :body ( \"k\" 1 )\n}";
+        var coreRes = org.stvnadore.core.StvnCompiler.compileToResult(docAsConstructor);
+        assertTrue("ANTLR4 core compiler must reject retired map-entry constructor invocation", coreRes.hasErrors());
+
+        var file = myFixture.configureByText("retired_map_entry.stvn", docAsConstructor);
+        var psiErrors = PsiTreeUtil.findChildrenOfType(file, PsiErrorElement.class);
+        assertFalse("Grammar-Kit PSI parser must reject retired map-entry constructor invocation", psiErrors.isEmpty());
     }
 
     /**

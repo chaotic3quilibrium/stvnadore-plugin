@@ -12,6 +12,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.MetadataTrait;
@@ -166,30 +168,34 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
             return fixes;
         }
 
-        // Nominal ancestor resolution
+        // Nominal ancestor resolution via pure-IR StvnSchema
+        StvnSchema parentIr = null;
         var resolvedParent = StvnTypeReference.resolveTypeInFile(typeDef.getContainingFile(), parentAlias, new HashSet<>());
-        var parentTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedParent);
+        var parentTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedParent);
         if (parentTypeDef != null) {
-            var parentRs = StvnTypeResolver.resolveNominalResolvedSchema(parentTypeDef);
-            if (parentRs != null && !parentRs.isPoisonedSentinel()) {
-                boolean parentEff = parentRs.constraints().preserveIndent();
-                if (!parentEff) {
-                    fixes.add(new CompleteTraitFacetQuickFix(
-                        anchor,
-                        "#TRUE",
-                        "Complete trait with '#TRUE' (overrides parent " + parentAlias + ")",
-                        Priority.HIGH
-                    ));
-                } else {
-                    fixes.add(new CompleteTraitFacetQuickFix(
-                        anchor,
-                        "#FALSE",
-                        "Complete trait with '#FALSE' (overrides parent " + parentAlias + ")",
-                        Priority.HIGH
-                    ));
-                }
-                return fixes;
+            parentIr = StvnTypeResolver.resolveNominalIrSchema(parentTypeDef);
+        }
+        if (parentIr == null) {
+            parentIr = StvnTypeResolver.resolveIrSchemaByAlias(typeDef.getContainingFile(), parentAlias);
+        }
+        if (parentIr instanceof StvnSchema.StringSchema strSchema) {
+            boolean parentEff = strSchema.preserveIndent();
+            if (!parentEff) {
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    "#TRUE",
+                    "Complete trait with '#TRUE' (overrides parent " + parentAlias + ")",
+                    Priority.HIGH
+                ));
+            } else {
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    "#FALSE",
+                    "Complete trait with '#FALSE' (overrides parent " + parentAlias + ")",
+                    Priority.HIGH
+                ));
             }
+            return fixes;
         }
 
         // Unresolvable parent fallback

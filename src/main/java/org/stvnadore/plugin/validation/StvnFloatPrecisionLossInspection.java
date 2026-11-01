@@ -17,10 +17,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnLiteralParser;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.psi.BooleanValue;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.FloatLiteral;
@@ -32,6 +31,7 @@ import org.stvnadore.psi.Value;
 import org.stvnadore.psi.Visitor;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
 
@@ -91,12 +91,11 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
                 super.visitFloatLiteral(literal);
 
                 var rawText = literal.getText().trim();
-                BigDecimal valBD;
-                try {
-                    valBD = StvnLiteralParser.parseBigDecimal(rawText);
-                } catch (Exception ignored) {
+                var valOpt = StvnPsiLiteralEvaluator.parseBigDecimal(rawText);
+                if (valOpt.isEmpty()) {
                     return;
                 }
+                BigDecimal valBD = valOpt.get();
 
                 var value = PsiTreeUtil.getParentOfType(literal, Value.class);
                 if (value == null) {
@@ -200,13 +199,11 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
                     if (ctor != null && ctor.getSumType() != null) {
                         var branches = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
                         var tagPrefix = parentUnion.getUnionTagPrefix();
-                        if (tagPrefix != null && tagPrefix.getText().startsWith("#")) {
-                            try {
-                                int idx = Integer.parseInt(tagPrefix.getText().substring(1)) - 1;
-                                if (idx >= 0 && idx < branches.size()) {
-                                    return branches.get(idx);
-                                }
-                            } catch (NumberFormatException ignored) {}
+                        if (tagPrefix != null) {
+                            var idxOpt = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagPrefix.getText(), branches.size());
+                            if (idxOpt.isPresent()) {
+                                return branches.get(idxOpt.getAsInt());
+                            }
                         }
                     }
                 }
@@ -224,9 +221,16 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
                 if (txt.startsWith("#size")) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) {
-                        try {
-                            return Integer.parseInt(parts[1]);
-                        } catch (NumberFormatException ignored) {}
+                        var bwOpt = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]);
+                        if (bwOpt.isPresent()) {
+                            BigInteger bw = bwOpt.get();
+                            if (bw.equals(BigInteger.valueOf(32L))) {
+                                return 32;
+                            }
+                            if (bw.equals(BigInteger.valueOf(64L))) {
+                                return 64;
+                            }
+                        }
                     }
                 }
             }
@@ -278,17 +282,10 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
         for (var entry : metaMap.getMetadataEntryList()) {
             var bare = entry.getMetadataBareFlag();
             if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
-                var bVal = bare.getBooleanValue();
-                return bVal == null || isBooleanTrue(bVal);
+                return true;
             }
         }
         return false;
-    }
-
-    private static boolean isBooleanTrue(@Nullable BooleanValue bVal) {
-        if (bVal == null) return false;
-        var t = bVal.getText().trim();
-        return "#TRUE".equals(t) || "#T".equals(t);
     }
 
     private static @Nullable String findExactSiblingBranchTag(ExplicitUnionValue union) {

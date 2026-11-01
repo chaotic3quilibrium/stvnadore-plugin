@@ -1,26 +1,26 @@
 package org.stvnadore.plugin.validation;
 
-import com.intellij.codeInsight.daemon.HighlightDisplayKey;
-import com.intellij.codeInsight.problems.ProblemImpl;
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.problems.ProblemImpl;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.lang.annotation.AnnotationBuilder;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.problems.Problem;
 import com.intellij.problems.WolfTheProblemSolver;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -30,14 +30,17 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 import org.stvnadore.core.StvnParserConfig;
+import org.stvnadore.core.StvnSchemaFlattener;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
@@ -48,77 +51,59 @@ import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
-import org.stvnadore.psi.*;
+import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.CollectionType;
+import org.stvnadore.psi.IncludeElement;
+import org.stvnadore.psi.IncludeStmt;
+import org.stvnadore.psi.ListLiteral;
+import org.stvnadore.psi.ProductType;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.SumType;
+import org.stvnadore.psi.TypeEntry;
+import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.Value;
+import org.stvnadore.psi.ValueKeyword;
 
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.regex.Matcher;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Executes full ANTLR parsing and semantic schema check stages on a background thread,
- * mapping compile-time diagnostic exceptions back to the active editor workspace with
- * strict WolfTheProblemSolver synchronization.
+ * Executes background STVN 2.0.0 compilation and pure-IR semantic validation,
+ * routing compiler diagnostics to exact half-open coordinates in the active editor
+ * buffer or to originating {@code :include} statements via {@link StvnDiagnostic#sourcePath()}.
  */
 @NullMarked
-public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalAnnotator.CollectedInfo, StvnExternalAnnotator.AnnotationResult> {
+public final class StvnExternalAnnotator
+    extends ExternalAnnotator<StvnExternalAnnotator.CollectedInfo, StvnExternalAnnotator.AnnotationResult> {
 
-    private static final Logger LOG = Logger.getInstance(StvnExternalAnnotator.class);
-
-    private static final Pattern QUOTED_TOKEN_PATTERN = Pattern.compile(
-        "':?([^'\\r\\n]+)'|" +
-        "(?<=Undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
-        "(?<=Unknown or undefined type:\\s)(:[A-Za-z0-9_/#]+)|" +
-        "(?<=Constraint violation \\()(:?[A-Za-z0-9_/#]+)(?=\\))"
+    private static final Set<String> CANONICAL_STVN_EXTENSIONS = Set.of(
+        ".stvn", ".stvn_i", ".stvn_d", ".stvn_di", ".stvn_b", ".stvn_bd"
     );
 
-    private static List<String> extractCitedTokens(String message) {
-        var tokens = new java.util.ArrayList<String>();
-        var matcher = QUOTED_TOKEN_PATTERN.matcher(message);
-        while (matcher.find()) {
-            for (int i = 1; i <= matcher.groupCount(); i++) {
-                var g = matcher.group(i);
-                if (g != null && !g.isEmpty()) {
-                    tokens.add(g);
-                    break;
-                }
-            }
-        }
-        return tokens;
-    }
-
-    private static String extractCitedTypeToken(String msg) {
-        var tokens = extractCitedTokens(msg);
-        if (!tokens.isEmpty()) {
-            return tokens.get(0);
-        }
-        var prefix = msg.startsWith("Undefined type: ") ? "Undefined type: "
-            : (msg.startsWith("Unknown or undefined type: ") ? "Unknown or undefined type: "
-            : (msg.startsWith("Unresolved type alias: ") ? "Unresolved type alias: " : null));
-        if (prefix != null && msg.length() > prefix.length()) {
-            var raw = msg.substring(prefix.length()).trim();
-            var candidate = raw.split("[\\s,;\\)\\}\\]]")[0].trim();
-            return candidate.startsWith(":") ? candidate : (":" + candidate);
-        }
-        return "";
-    }
-
-    private static String extractPrimaryToken(String msg) {
-        return extractCitedTypeToken(msg);
-    }
+    private static final Pattern TUPLE_ARITY_PATTERN =
+        Pattern.compile("Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+)");
 
     /**
-     * Constructs a new StvnExternalAnnotator instance.
+     * Constructs a new {@link StvnExternalAnnotator} instance.
      */
     public StvnExternalAnnotator() {
     }
 
     /**
-     * Document context information collected on the EDT for background annotation.
+     * Document context information collected on the EDT for background compilation.
      *
-     * @param text document text content
-     * @param path physical or virtual file path
+     * @param text        document text content
+     * @param path        physical or virtual file path
      * @param virtualFile underlying virtual file
-     * @param project active project context
+     * @param project     active project context
+     * @param systemMode  {@code true} when system substrate compilation rules apply
      */
     public record CollectedInfo(
         String text,
@@ -128,22 +113,22 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         boolean systemMode
     ) {
         /**
-         * Constructs a CollectedInfo instance with default systemMode of false.
+         * Constructs a {@link CollectedInfo} instance with {@code systemMode} set to {@code false}.
          *
-         * @param text document text content
-         * @param path physical or virtual file path
+         * @param text        document text content
+         * @param path        physical or virtual file path
          * @param virtualFile underlying virtual file
-         * @param project active project context
+         * @param project     active project context
          */
         public CollectedInfo(String text, String path, VirtualFile virtualFile, @Nullable Project project) {
             this(text, path, virtualFile, project, false);
         }
 
         /**
-         * Constructs a CollectedInfo instance without an explicit project context.
+         * Constructs a {@link CollectedInfo} instance without an explicit project context.
          *
-         * @param text document text content
-         * @param path physical or virtual file path
+         * @param text        document text content
+         * @param path        physical or virtual file path
          * @param virtualFile underlying virtual file
          */
         public CollectedInfo(String text, String path, VirtualFile virtualFile) {
@@ -152,11 +137,22 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     /**
-     * Annotation result encapsulating compiler diagnostics.
+     * Immutable background compilation output containing diagnostics and the POSIX-normalized
+     * active compilation unit path.
      *
-     * @param diagnostics list of compiler diagnostics
+     * @param diagnostics          compiler diagnostics accumulated for the compilation unit
+     * @param activeNormalizedPath POSIX-normalized path passed to the compiler for the active unit
      */
-    public record AnnotationResult(List<StvnDiagnostic> diagnostics) {}
+    public record AnnotationResult(List<StvnDiagnostic> diagnostics, String activeNormalizedPath) {
+        /**
+         * Constructs an {@link AnnotationResult} without an explicit normalized unit path.
+         *
+         * @param diagnostics compiler diagnostics accumulated for the compilation unit
+         */
+        public AnnotationResult(List<StvnDiagnostic> diagnostics) {
+            this(diagnostics, "");
+        }
+    }
 
     @Override
     public @Nullable CollectedInfo collectInformation(PsiFile file) {
@@ -164,8 +160,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         if (virtualFile == null) {
             return null;
         }
-        // Flush all unsaved editor document buffers to physical storage on EDT
-        // to guarantee that external compiler (stvn-core) reads latest included module content.
         var app = ApplicationManager.getApplication();
         if (app != null && app.isDispatchThread()) {
             FileDocumentManager.getInstance().saveAllDocuments();
@@ -175,57 +169,65 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     @Override
-    public @Nullable CollectedInfo collectInformation(PsiFile file, com.intellij.openapi.editor.Editor editor, boolean hasErrors) {
+    public @Nullable CollectedInfo collectInformation(PsiFile file, Editor editor, boolean hasErrors) {
         return collectInformation(file);
     }
 
     @Override
     public @Nullable AnnotationResult doAnnotate(CollectedInfo info) {
-        // Concurrency Guard: Thread isolation per file path identifier
         synchronized (info.path().intern()) {
-            String fileName;
-            if (info.virtualFile() != null) {
-                fileName = info.virtualFile().getName();
-            } else {
-                int lastSlash = Math.max(info.path().lastIndexOf('/'), info.path().lastIndexOf('\\'));
-                fileName = lastSlash >= 0 ? info.path().substring(lastSlash + 1) : info.path();
-            }
+            String fileName = info.virtualFile() != null
+                ? info.virtualFile().getName()
+                : extractFileName(info.path());
 
-            // Layer 1: File Identity Ingress validation (unconditional)
             var layer1Diag = validateLayer1Identity(fileName, info.systemMode());
-
-            // If buffer is blank (0-byte or whitespace-only)
             if (info.text().isBlank()) {
-                if (layer1Diag != null) {
-                    return new AnnotationResult(List.of(layer1Diag));
-                }
-                // Clean canvas: Zero content diagnostics on valid empty files
-                return new AnnotationResult(List.of());
+                return layer1Diag != null
+                    ? new AnnotationResult(List.of(layer1Diag), "")
+                    : new AnnotationResult(List.of(), "");
             }
 
-            var resolvedPath = StvnTypeResolver.resolvePhysicalPath(info.virtualFile(), info.project(), info.text());
+            var resolvedPath = StvnCompiledDocumentCache.resolvePhysicalPath(
+                info.virtualFile(),
+                info.project(),
+                info.text()
+            );
+            var activeNormalizedPath = StvnSchemaFlattener.normalizePath(resolvedPath);
             try {
                 var config = info.systemMode()
                     ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
                     : StvnParserConfig.DEFAULT;
                 var compilationResult = StvnCompiler.compileToResult(info.text(), resolvedPath, config);
-                var diags = new java.util.ArrayList<>(compilationResult.diagnostics());
+                var diags = new ArrayList<>(compilationResult.diagnostics());
                 if (layer1Diag != null) {
                     boolean alreadyEmitted = diags.stream().anyMatch(d ->
-                        d.errorCode().isPresent() && d.errorCode().get().equals(layer1Diag.errorCode().orElse(null)));
+                        (d.symbolicId().isPresent() && d.symbolicId().equals(layer1Diag.symbolicId()))
+                            || (d.errorCode().isPresent() && d.errorCode().equals(layer1Diag.errorCode())));
                     if (!alreadyEmitted) {
-                        diags.add(0, layer1Diag);
+                        diags.add(0, layer1Diag.withSourcePath(activeNormalizedPath));
                     }
                 }
-                return new AnnotationResult(diags);
+                return new AnnotationResult(diags, activeNormalizedPath);
             } catch (Exception e) {
-                return new AnnotationResult(List.of(new StvnDiagnostic(
-                    "Internal Compilation Exception: " + e.getMessage(),
-                    DiagnosticSeverity.ERROR,
-                    -1, -1, 0, info.text().length(), e
-                )));
+                return new AnnotationResult(
+                    List.of(new StvnDiagnostic(
+                        "Internal Compilation Exception: " + e.getMessage(),
+                        DiagnosticSeverity.ERROR,
+                        -1,
+                        -1,
+                        0,
+                        info.text().length(),
+                        e
+                    ).withSourcePath(activeNormalizedPath)),
+                    activeNormalizedPath
+                );
             }
         }
+    }
+
+    private static String extractFileName(String path) {
+        int lastSlash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
     }
 
     private static @Nullable StvnDiagnostic validateLayer1Identity(String fileName, boolean systemMode) {
@@ -233,9 +235,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return new StvnDiagnostic(
                 "Filename '" + fileName + "' lacks a visible non-empty stem segment before extension; bare dotfiles are prohibited",
                 DiagnosticSeverity.ERROR,
-                1, 0, 0, 0,
+                1,
+                0,
+                0,
+                0,
                 null,
-                java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+                Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
             );
         }
         int lastDot = fileName.lastIndexOf('.');
@@ -243,27 +248,26 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return new StvnDiagnostic(
                 "Filename '" + fileName + "' lacks a visible non-empty stem segment before extension; bare dotfiles are prohibited",
                 DiagnosticSeverity.ERROR,
-                1, 0, 0, 0,
+                1,
+                0,
+                0,
+                0,
                 null,
-                java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+                Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
             );
         }
-        String[] legacyExts = {
-            ".stvn_incl", ".stvn_inclf", ".stvn_cas", ".stvn_bin",
-            ".stvn_f", ".stvn_df", ".stvn_bf", ".stvn_bdf"
-        };
-        for (String legacyExt : legacyExts) {
-            if (fileName.endsWith(legacyExt)) {
-                int dotIdx = fileName.indexOf('.');
-                String matchedExt = dotIdx >= 0 ? fileName.substring(dotIdx) : fileName;
-                return new StvnDiagnostic(
-                    "Excised legacy file extension '" + matchedExt + "' is permanently prohibited",
-                    DiagnosticSeverity.ERROR,
-                    1, 0, 0, 0,
-                    null,
-                    java.util.Optional.of(DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED)
-                );
-            }
+        String ext = fileName.substring(lastDot);
+        if (!CANONICAL_STVN_EXTENSIONS.contains(ext)) {
+            return new StvnDiagnostic(
+                "Unrecognized STVN file extension '" + ext + "'; permitted extensions are [.stvn, .stvn_i, .stvn_d, .stvn_di, .stvn_b, .stvn_bd]",
+                DiagnosticSeverity.ERROR,
+                1,
+                0,
+                0,
+                0,
+                null,
+                Optional.of(DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED)
+            );
         }
         if (!systemMode) {
             String stem = fileName.substring(0, lastDot);
@@ -272,9 +276,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 return new StvnDiagnostic(
                     "Invalid filename stem '" + fileName + "'; filename must contain exactly one or two dot-separated stem segments (<name>.<ext> or <name>.<domain>.<ext>)",
                     DiagnosticSeverity.ERROR,
-                    1, 0, 0, 0,
+                    1,
+                    0,
+                    0,
+                    0,
                     null,
-                    java.util.Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
+                    Optional.of(DiagnosticBag.ERR_INVALID_FILENAME_STEM)
                 );
             }
             if (dotParts.length > 1 && !dotParts[1].isEmpty()) {
@@ -283,9 +290,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     return new StvnDiagnostic(
                         "Reserved system domain prohibited: '" + slot1 + "' is reserved for internal compiler substrates and CAS envelopes",
                         DiagnosticSeverity.ERROR,
-                        1, 0, 0, 0,
+                        1,
+                        0,
+                        0,
+                        0,
                         null,
-                        java.util.Optional.of(DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED)
+                        Optional.of(DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED)
                     );
                 }
             }
@@ -302,16 +312,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             } catch (Exception ignored) {
             }
         }
-        if (file.isPhysical()) {
+        if (file.isPhysical() || virtualFile.isWritable()) {
             return false;
-        }
-        if (virtualFile.isWritable()) {
-            return false;
-        }
-        if (virtualFile instanceof LightVirtualFile lvf) {
-            if ("stvn://prelude/org_stvnadore_prelude.stvn_d".equals(lvf.getUrl())) {
-                return true;
-            }
         }
         if (project != null && file == StvnPreludeBridge.getPreludeFile(project)) {
             return true;
@@ -323,12 +325,11 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     public void apply(PsiFile file, AnnotationResult result, AnnotationHolder holder) {
         var virtualFile = file.getVirtualFile();
         var project = file.getProject();
+        var activeNormalizedPath = result.activeNormalizedPath();
 
-        // 1. Pre-filter diagnostics to eliminate verified false-positive diagnostics
         var rawDiagnostics = result.diagnostics();
         var activeDiagnostics = rawDiagnostics.stream()
-            .filter(d -> !isDiagnosticSuppressed(file, d, rawDiagnostics))
-            .filter(d -> !isDuplicateOrCascadingMismatchedInput(rawDiagnostics, d))
+            .filter(d -> !isDiagnosticSuppressed(file, d, rawDiagnostics, activeNormalizedPath))
             .toList();
 
         var activeErrorDiagnostics = activeDiagnostics.stream()
@@ -343,55 +344,32 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             return;
         }
 
-        // 2. Aggregate all problems (active local errors + pinned include errors)
-        var problems = new java.util.ArrayList<Problem>();
+        var problems = new ArrayList<Problem>();
         WolfTheProblemSolver wolf = null;
         if (virtualFile != null && virtualFile.isValid() && !project.isDisposed()) {
             wolf = WolfTheProblemSolver.getInstance(project);
         }
 
-        // Render pinned annotations for included file errors and register in problems list
-        renderPinnedIncludeDiagnostics(file, rawDiagnostics, holder, problems, wolf, virtualFile);
+        renderPinnedIncludeDiagnostics(file, rawDiagnostics, activeNormalizedPath, holder, problems, wolf, virtualFile);
 
         if (wolf != null && virtualFile != null) {
-            // Notify Wolf of all active local errors, including missing :meta even if visual annotation is deduplicated
-            var wolfErrors = new java.util.ArrayList<StvnDiagnostic>(activeErrorDiagnostics);
+            var wolfErrors = new ArrayList<>(activeErrorDiagnostics);
             for (var diag : rawDiagnostics) {
-                if (diag.severity() == DiagnosticSeverity.ERROR && !isDiagnosticFromIncludedFile(file, diag)) {
-                    boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-                        || diag.message().contains("Mandatory :meta block missing")
-                        || diag.message().contains("ERR_DOCUMENT_KIND_MISMATCH");
-                    boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
-                        || diag.message().contains("ERR_TAB_CHARACTER_FORBIDDEN")
-                        || diag.message().contains("Tab character");
-                    // Suppress secondary cascade kind mismatches from Wolf tracking (Spec § 7.3.1)
-                    if (isSecondaryCascadeKindMismatch(file, diag, rawDiagnostics)) {
-                        continue;
-                    }
-                    if ((isKindMismatch || isTabError) && !wolfErrors.contains(diag)) {
-                        wolfErrors.add(diag);
-                    }
+                if (diag.severity() == DiagnosticSeverity.ERROR
+                        && !isDiagnosticFromIncludedFile(file, diag, activeNormalizedPath)
+                        && !wolfErrors.contains(diag)) {
+                    wolfErrors.add(diag);
                 }
             }
             for (var diag : wolfErrors) {
-                boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-                    || diag.message().contains("Mandatory :meta block missing")
-                    || diag.message().contains("does not match file extension");
-                if (isKindMismatch) {
-                    var expectedExt = extractExtensionFromMessage(diag.message());
-                    if (expectedExt != null && !file.getName().endsWith(expectedExt)) {
-                        continue;
-                    }
-                }
                 var line = Math.max(0, diag.line() - 1);
                 var col = Math.max(0, diag.column());
-                var rawMsg = sanitizeCompilerJargon(diag.message());
-                var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
-                var diagMsg = StvnDiagnosticFormatter.formatCore(rawMsg, errorCode);
-                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ diagMsg });
+                var diagnosticId = resolvePrimaryDiagnosticId(diag);
+                var diagMsg = StvnDiagnosticFormatter.formatCore(diag.message(), diagnosticId);
+                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{diagMsg});
                 if (problem == null) {
-                    var highlightInfo = com.intellij.codeInsight.daemon.impl.HighlightInfo.newHighlightInfo(com.intellij.codeInsight.daemon.impl.HighlightInfoType.ERROR)
-                        .range(new com.intellij.openapi.util.TextRange(0, 0))
+                    var highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                        .range(new TextRange(0, 0))
                         .descriptionAndTooltip(diagMsg)
                         .create();
                     if (highlightInfo != null) {
@@ -407,11 +385,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 wolf.reportProblems(virtualFile, problems);
             } else if (!activeErrorDiagnostics.isEmpty()) {
                 var firstDiag = activeErrorDiagnostics.get(0);
-                var rawMsg = sanitizeCompilerJargon(firstDiag.message());
-                var errorCode = firstDiag.errorCode().orElse("ERR_COMPILATION_ERROR");
-                var diagMsg = StvnDiagnosticFormatter.formatCore(rawMsg, errorCode);
-                var highlightInfo = com.intellij.codeInsight.daemon.impl.HighlightInfo.newHighlightInfo(com.intellij.codeInsight.daemon.impl.HighlightInfoType.ERROR)
-                    .range(new com.intellij.openapi.util.TextRange(0, 0))
+                var diagnosticId = resolvePrimaryDiagnosticId(firstDiag);
+                var diagMsg = StvnDiagnosticFormatter.formatCore(firstDiag.message(), diagnosticId);
+                var highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                    .range(new TextRange(0, 0))
                     .descriptionAndTooltip(diagMsg)
                     .create();
                 if (highlightInfo != null) {
@@ -436,47 +413,38 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }, ModalityState.defaultModalityState());
         }
 
-        // 3. Render annotations in AnnotationHolder for all active diagnostics
-        var registeredRanges = new java.util.HashSet<com.intellij.openapi.util.TextRange>();
-        var registeredStartOffsets = new java.util.HashSet<Integer>();
+        var registeredExactAnnotations = new HashSet<String>();
+        var registeredSyntaxStartOffsets = new HashSet<Integer>();
+        var expandedEmptyCompositeRanges = new ArrayList<TextRange>();
 
         for (var diag : activeDiagnostics) {
-            var rawMessage = sanitizeCompilerJargon(diag.message());
-            var errorCode = diag.errorCode().orElse("ERR_COMPILATION_ERROR");
-            var message = StvnDiagnosticFormatter.formatCore(rawMessage, errorCode);
+            var rawMessage = diag.message()
+                .replace("<schema type>", "schema type")
+                .replace("<value keyword>", "variant keyword");
+            var diagnosticId = resolvePrimaryDiagnosticId(diag);
+            var message = StvnDiagnosticFormatter.formatCore(rawMessage, diagnosticId);
             var severity = mapSeverity(diag.severity());
             var start = diag.startOffset();
             var end = diag.endOffset();
 
-            boolean isBareSigil = (diag.errorCode().isPresent() && ("ERR_BARE_COLON_PROHIBITED".equals(diag.errorCode().get()) || "ERR_BARE_HASH_PROHIBITED".equals(diag.errorCode().get())))
-                    || message.contains("ERR_BARE_COLON_PROHIBITED") || message.contains("ERR_BARE_HASH_PROHIBITED")
-                    || message.contains("trap7") || message.contains("trap6");
+            boolean isBareSigil = DiagnosticBag.ERR_BARE_COLON_PROHIBITED.equals(diagnosticId)
+                || DiagnosticBag.ERR_BARE_HASH_PROHIBITED.equals(diagnosticId)
+                || message.contains("ERR_BARE_COLON_PROHIBITED")
+                || message.contains("ERR_BARE_HASH_PROHIBITED")
+                || message.contains("trap7")
+                || message.contains("trap6");
 
-            if (isBareSigil) {
-                if (start >= 0 && start < textLength) {
-                    end = start + 1;
-                }
+            if (isBareSigil && start >= 0 && start < textLength) {
+                end = start + 1;
             }
 
-            boolean isLayer1Identity = (diag.errorCode().isPresent() && (
-                DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
-                || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
-                || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
-                || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get())
-            )) || message.contains("Reserved system domain prohibited")
-               || message.contains("bare dotfiles are prohibited")
-               || message.contains("Invalid filename stem")
-               || message.contains("prohibited legacy extension");
-
-            if (file.getTextLength() == 0 || (isLayer1Identity && start == end)) {
+            boolean isLayer1Identity = isLayer1IdentityDiagnostic(diagnosticId, rawMessage);
+            if (textLength == 0 || (isLayer1Identity && start == 0 && end == 0)) {
                 var builder = holder.newAnnotation(HighlightSeverity.ERROR, message)
-                      .fileLevel();
-                boolean isReservedDomain = (diag.errorCode().isPresent() && (
-                    DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                    || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                )) || message.contains("Reserved system domain");
+                    .fileLevel();
+                boolean isReservedDomain = DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                    || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                    || rawMessage.contains("Reserved system domain");
 
                 if (isReservedDomain) {
                     var omitFix = StvnOmitDomainQuickFix.create(file);
@@ -495,850 +463,531 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 continue;
             }
 
-            if (diag.errorCode().isPresent() && diag.errorCode().get().equals("DUPLICATE_MAP_KEY") && start >= 0 && end > start && end <= textLength) {
+            if (DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(diagnosticId)
+                    && start >= 0
+                    && end > start
+                    && end <= textLength) {
                 var rawKey = file.getText().substring(start, end).trim();
                 if (rawKey.startsWith("\"") && rawKey.endsWith("\"") && rawKey.length() >= 2) {
                     rawKey = rawKey.substring(1, rawKey.length() - 1);
                 }
-                message = StvnDiagnosticFormatter.formatCore("Duplicate map key detected: '" + rawKey + "'", "DUPLICATE_MAP_KEY");
+                message = StvnDiagnosticFormatter.formatCore(
+                    "Duplicate map key detected: '" + rawKey + "'",
+                    DiagnosticBag.ERR_DUPLICATE_MAP_KEY
+                );
             }
 
-            // Align Tuple arity mismatch display message and enforce container-level coordinate pinning
-            if ((diag.errorCode().isPresent() && "TUPLE_ARITY_MISMATCH".equals(diag.errorCode().get()))
-                || message.startsWith("Tuple arity mismatch")) {
-                if (!message.contains("missing") && message.matches(".*Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+).*")) {
-                    var matcher = java.util.regex.Pattern.compile("Expected\\s+(\\d+)\\s+elements?,\\s+got\\s+(\\d+)").matcher(message);
+            if (DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH.equals(diagnosticId)
+                    || rawMessage.startsWith("Tuple arity mismatch")) {
+                if (!rawMessage.contains("missing")) {
+                    var matcher = TUPLE_ARITY_PATTERN.matcher(rawMessage);
                     if (matcher.find()) {
                         int exp = Integer.parseInt(matcher.group(1));
                         int got = Integer.parseInt(matcher.group(2));
                         if (exp > got) {
                             int missing = exp - got;
-                            message = StvnDiagnosticFormatter.formatCore("Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)", "TUPLE_ARITY_MISMATCH");
+                            message = StvnDiagnosticFormatter.formatCore(
+                                "Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)",
+                                DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH
+                            );
                         }
                     }
                 }
             }
 
-            // 1. Direct Coordinate Range Highlighting with Defensive Clamping
-            // startOffset and endOffset from stvnadore-core:2.0.0 are 0-based half-open [start, end)
-            if (start >= 0 && end >= start) {
-                var hasIncludes = !PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).isEmpty();
-                boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-                    || rawMessage.contains("Mandatory :meta block missing")
-                    || rawMessage.contains("does not match file extension");
-                if (hasIncludes && isKindMismatch) {
-                    var expectedExt = extractExtensionFromMessage(rawMessage);
-                    if (expectedExt != null && !file.getName().endsWith(expectedExt)) {
-                        LOG.debug("Diagnostic extension does not match active file; skipping: " + message);
+            // Unlocated cyclic dependency trace fallback (rotates trace to start at active file name)
+            if ((start < 0 || end < start) && rawMessage.startsWith("Cycle detected: ")) {
+                renderCyclicIncludeDiagnostic(file, holder, severity, rawMessage, diagnosticId);
+                continue;
+            }
+
+            var s = start >= 0 ? Math.max(0, Math.min(start, textLength)) : 0;
+            var e = end >= start && start >= 0 ? Math.max(s, Math.min(end, textLength)) : Math.min(1, textLength);
+
+            if (s == e) {
+                if (s < textLength) {
+                    e = s + 1;
+                } else if (s > 0) {
+                    s = s - 1;
+                }
+            }
+
+            if (s < e) {
+                var range = new TextRange(s, e);
+                if (!isBareSigil) {
+                    var expanded = expandEmptyCompositeRange(file, range);
+                    if (!expanded.equals(range)) {
+                        expandedEmptyCompositeRanges.add(expanded);
+                        range = expanded;
+                    }
+                    if (rawMessage.startsWith("STVN Syntax Error")) {
+                        var canonicalEmptyMsg = canonicalEmptyCompositeSyntaxMessage(
+                            file.getText().substring(range.getStartOffset(), range.getEndOffset())
+                        );
+                        if (canonicalEmptyMsg != null) {
+                            rawMessage = canonicalEmptyMsg;
+                            message = StvnDiagnosticFormatter.formatCore(rawMessage, diagnosticId);
+                        }
+                    }
+                }
+                if (rawMessage.startsWith("STVN Syntax Error")
+                        && rawMessage.contains("unexpected token '}'")
+                        && !expandedEmptyCompositeRanges.isEmpty()) {
+                    var lastEmpty = expandedEmptyCompositeRanges.get(expandedEmptyCompositeRanges.size() - 1);
+                    if (lastEmpty.getEndOffset() <= range.getStartOffset()
+                            && file.getText().substring(lastEmpty.getEndOffset(), range.getStartOffset()).isBlank()) {
                         continue;
                     }
                 }
-                if (hasIncludes && !isLocalAstMatch(file, diag, start, end)) {
-                    LOG.debug("Diagnostic coordinates do not match active file AST element; treating as included file: " + message);
+                if (DiagnosticBag.ERR_INVALID_REGEX.equals(diagnosticId)
+                        || rawMessage.contains("Invalid regex pattern")) {
+                    var elemAtStart = file.findElementAt(range.getStartOffset());
+                    var metaEntry = PsiTreeUtil.getParentOfType(elemAtStart, org.stvnadore.psi.MetadataEntry.class, false);
+                    if (metaEntry != null) {
+                        var regexLit = PsiTreeUtil.findChildOfType(metaEntry, org.stvnadore.psi.StringLiteral.class);
+                        if (regexLit != null) {
+                            range = regexLit.getTextRange();
+                        }
+                    }
+                }
+                if (rawMessage.contains("Unfenced block strings are prohibited")) {
+                    range = new TextRange(s, Math.min(s + 3, textLength));
+                }
+                if (DiagnosticBag.ERR_EMPTY_METADATA_BLOCK.equals(diagnosticId)
+                        || DiagnosticBag.ERR_EMPTY_META_BLOCK.equals(diagnosticId)
+                        || DiagnosticBag.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)
+                        || rawMessage.contains("must not be empty")
+                        || rawMessage.contains("requires at least one type definition inside ':defs { ... }'")
+                        || rawMessage.contains("Empty definition block ':defs {}' is redundant")) {
+                    if (s >= 0 && s + 2 <= textLength && "{}".equals(file.getText().substring(s, s + 2))) {
+                        range = new TextRange(s, s + 2);
+                    }
+                }
+
+                // Prevent IntelliJ HighlightInfoUpdater from dropping warnings whose range is identical to or inside an error range
+                if (severity.equals(HighlightSeverity.WARNING) || severity.equals(HighlightSeverity.WEAK_WARNING)) {
+                    final TextRange candidateWarnRange = range;
+                    boolean coveredByError = activeErrorDiagnostics.stream().anyMatch(ed ->
+                        ed.startOffset() >= 0
+                            && ed.startOffset() <= candidateWarnRange.getStartOffset()
+                            && candidateWarnRange.getEndOffset() <= ed.endOffset()
+                    );
+                    if (coveredByError) {
+                        var elemAtWarn = file.findElementAt(range.getStartOffset());
+                        PsiElement enclosingFacet = PsiTreeUtil.getParentOfType(
+                            elemAtWarn,
+                            org.stvnadore.psi.MetaDomainFacet.class,
+                            false
+                        );
+                        if (enclosingFacet == null) {
+                            enclosingFacet = PsiTreeUtil.getParentOfType(
+                                elemAtWarn,
+                                org.stvnadore.psi.MetaNameFacet.class,
+                                false
+                            );
+                        }
+                        if (enclosingFacet == null) {
+                            enclosingFacet = PsiTreeUtil.getParentOfType(
+                                elemAtWarn,
+                                org.stvnadore.psi.MetadataEntry.class,
+                                false
+                            );
+                        }
+                        if (enclosingFacet != null && enclosingFacet.getTextRange().getLength() > range.getLength()) {
+                            range = enclosingFacet.getTextRange();
+                        }
+                    }
+                }
+
+                boolean isSyntaxError = rawMessage.startsWith("STVN Syntax Error");
+                String exactKey = range.getStartOffset() + ":" + range.getEndOffset() + ":" + message;
+                if (registeredExactAnnotations.contains(exactKey)
+                        || (isSyntaxError && registeredSyntaxStartOffsets.contains(range.getStartOffset()))) {
                     continue;
                 }
+                registeredExactAnnotations.add(exactKey);
+                if (isSyntaxError) {
+                    registeredSyntaxStartOffsets.add(range.getStartOffset());
+                }
 
-                var s = Math.max(0, Math.min(start, textLength));
-                var e = Math.max(s, Math.min(end, textLength));
+                var annotationBuilder = holder.newAnnotation(severity, message)
+                    .range(range);
 
-                if (s == e) {
-                    if (s < textLength) {
-                        e = s + 1;
-                    } else if (s > 0) {
-                        s = s - 1;
+                var listLit = findMapTargetListLiteral(file, range);
+                if (listLit != null) {
+                    annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
+                }
+
+                // Illegal structural sections (:type or :body inside .stvn_d / .stvn_di)
+                if (rawMessage.contains("cannot declare ':type'")
+                        || rawMessage.contains("cannot declare ':body'")
+                        || rawMessage.contains("Structural violation:")) {
+                    if (rawMessage.contains("cannot declare ':type'")) {
+                        var typeEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeEntry.class);
+                        if (typeEntry == null) {
+                            var elem = file.findElementAt(s);
+                            if (elem != null) {
+                                typeEntry = PsiTreeUtil.getParentOfType(elem, TypeEntry.class, false);
+                            }
+                        }
+                        if (typeEntry == null) {
+                            typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
+                        }
+                        if (typeEntry != null) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new RemoveIllegalStructuralSectionQuickFix(typeEntry, ":type")
+                            );
+                        }
+                    } else if (rawMessage.contains("cannot declare ':body'")) {
+                        var bodyEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, BodyEntry.class);
+                        if (bodyEntry == null) {
+                            var elem = file.findElementAt(s);
+                            if (elem != null) {
+                                bodyEntry = PsiTreeUtil.getParentOfType(elem, BodyEntry.class, false);
+                            }
+                        }
+                        if (bodyEntry == null) {
+                            bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+                        }
+                        if (bodyEntry != null) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new RemoveIllegalStructuralSectionQuickFix(bodyEntry, ":body")
+                            );
+                        }
                     }
                 }
 
-                if (s < e) {
-                    var range = new TextRange(s, e);
-                    if (!isBareSigil) {
-                        range = expandEmptyCompositeRange(file, range, message);
-                        var clampedTypeDef = clampToOffendingChildIfTypeDef(file, range, message);
-                        if (clampedTypeDef != null) {
-                            range = clampedTypeDef;
-                        } else {
-                            var clampedMeta = clampToOffendingMetadataFacet(file, range, message, diag.errorCode().orElse(null));
-                            if (clampedMeta != null) {
-                                range = clampedMeta;
-                            }
+                // Undefined type or constant quick-fixes
+                if (rawMessage.contains("Undefined type: ")
+                        || rawMessage.contains("Unresolved type alias: ")
+                        || rawMessage.contains("Undefined constant: ")
+                        || rawMessage.contains("Unresolved constant: ")
+                        || rawMessage.contains("Undeclared value keyword or constant: ")) {
+                    var offendingTypeKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeKeyword.class);
+                    if (offendingTypeKw == null) {
+                        var elemAtRange = file.findElementAt(s);
+                        if (elemAtRange != null) {
+                            offendingTypeKw = PsiTreeUtil.getParentOfType(elemAtRange, TypeKeyword.class, false);
                         }
                     }
-                    // Enforce Rule STR-04 Coordinate Pinning: pin unfenced block strings strictly to opening """
-                    if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
-                            || message.contains("Unfenced block strings are prohibited")) {
-                        range = new TextRange(s, Math.min(s + 3, textLength));
-                    }
-                    // Pin empty block diagnostics strictly to '{}' tokens [s, s + 2) (§ 7.3, § 3.5.1, § 3.8.0, § 3.10.1)
-                    if ((diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get())
-                            || "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
-                            || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
-                            || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())))
-                            || message.contains("ERR_EMPTY_METADATA_BLOCK")
-                            || message.contains("ERR_EMPTY_META_BLOCK")
-                            || message.contains("ERR_EMPTY_DEFS_BLOCK")
-                            || message.contains("must not be empty")
-                            || message.contains("requires at least one type definition inside ':defs { ... }'")
-                            || message.contains("Empty definition block ':defs {}' is redundant")) {
-                        if (s >= 0 && s + 2 <= textLength && "{}".equals(file.getText().substring(s, s + 2))) {
-                            range = new TextRange(s, s + 2);
+                    if (offendingTypeKw != null) {
+                        var kwText = offendingTypeKw.getText().trim();
+                        var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, kwText);
+                        var isPrelude = !isLocalPkg
+                            && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), kwText) != null;
+                        if (!isPrelude) {
+                            annotationBuilder = StvnUnresolvedTypeQuickFixProvider.registerFixes(
+                                annotationBuilder,
+                                offendingTypeKw
+                            );
                         }
-                    }
-                    // Prevent tooltip stacking on identical ranges or overlapping start offsets
-                    if (registeredRanges.contains(range) || registeredStartOffsets.contains(range.getStartOffset())) {
-                        continue;
-                    }
-                    registeredRanges.add(range);
-                    registeredStartOffsets.add(range.getStartOffset());
-
-                    var annotationBuilder = holder.newAnnotation(severity, message)
-                          .range(range);
-                    var listLit = findMapTargetListLiteral(file, range);
-                    if (listLit != null) {
-                        annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
-                    }
-
-                    // Attach InsertMissingMetaBlockQuickFix when missing root :meta is rendered as fail-safe or when :meta {} is empty
-                    boolean isEmptyMeta = (diag.errorCode().isPresent() && (
-                        "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
-                        || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
-                    )) || message.contains("ERR_EMPTY_META_BLOCK")
-                       || message.contains("Metadata block ':meta {}' must not be empty");
-
-
-                    // Attach RemoveIllegalStructuralSectionQuickFix when definitions schema contains illegal :type or :body
-                    if (isKindMismatch && (rawMessage.contains("cannot declare ':type'") || rawMessage.contains("cannot declare ':body'") || rawMessage.contains("Structural violation:"))) {
-                        if (rawMessage.contains("cannot declare ':type'")) {
-                            var typeEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeEntry.class);
-                            if (typeEntry == null) {
-                                var elem = file.findElementAt(s);
-                                if (elem != null) {
-                                    typeEntry = PsiTreeUtil.getParentOfType(elem, TypeEntry.class, false);
-                                }
-                            }
-                            if (typeEntry == null) {
-                                typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
-                            }
-                            if (typeEntry != null) {
-                                annotationBuilder = annotationBuilder.withFix(new RemoveIllegalStructuralSectionQuickFix(typeEntry, ":type"));
-                            }
-                        } else if (rawMessage.contains("cannot declare ':body'")) {
-                            var bodyEntry = PsiTreeUtil.findElementOfClassAtRange(file, s, e, BodyEntry.class);
-                            if (bodyEntry == null) {
-                                var elem = file.findElementAt(s);
-                                if (elem != null) {
-                                    bodyEntry = PsiTreeUtil.getParentOfType(elem, BodyEntry.class, false);
-                                }
-                            }
-                            if (bodyEntry == null) {
-                                bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
-                            }
-                            if (bodyEntry != null) {
-                                annotationBuilder = annotationBuilder.withFix(new RemoveIllegalStructuralSectionQuickFix(bodyEntry, ":body"));
-                            }
-                        }
-                    }
-
-                    if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
-                        || message.contains("Undefined constant: ") || message.contains("Unresolved constant: ")
-                        || message.contains("Undeclared value keyword or constant: ")) {
-                        var offendingTypeKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeKeyword.class);
-                        if (offendingTypeKw == null) {
+                    } else {
+                        var offendingValKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, ValueKeyword.class);
+                        if (offendingValKw == null) {
                             var elemAtRange = file.findElementAt(s);
                             if (elemAtRange != null) {
-                                offendingTypeKw = PsiTreeUtil.getParentOfType(elemAtRange, TypeKeyword.class, false);
+                                offendingValKw = PsiTreeUtil.getParentOfType(elemAtRange, ValueKeyword.class, false);
                             }
                         }
-                        if (offendingTypeKw != null) {
-                            var kwText = offendingTypeKw.getText().trim();
-                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, kwText);
-                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), kwText) != null;
-                            if (!isPrelude) {
-                                annotationBuilder = StvnUnresolvedTypeQuickFixProvider.registerFixes(annotationBuilder, offendingTypeKw);
-                            }
-                        } else {
-                            var offendingValKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, ValueKeyword.class);
-                            if (offendingValKw == null) {
-                                var elemAtRange = file.findElementAt(s);
-                                if (elemAtRange != null) {
-                                    offendingValKw = PsiTreeUtil.getParentOfType(elemAtRange, ValueKeyword.class, false);
-                                }
-                            }
-                            if (offendingValKw != null && offendingValKw.getText().startsWith("#")) {
-                                annotationBuilder = annotationBuilder.withFix(new StvnDeclareConstantQuickFix(offendingValKw, StvnVocabulary.TYPE_INT, "0"));
-                            }
-                        }
-                    }
-
-                    // Intercept bare '#' token in value position and attach CompleteSumVariantQuickFix actions
-                    var elemAtStart = file.findElementAt(s);
-                    var tokenText = (elemAtStart != null) ? elemAtStart.getText().trim() : "";
-                    if ("#".equals(tokenText) || (s < e && "#".equals(file.getText().substring(s, e).trim()))) {
-                        var targetElem = (elemAtStart != null) ? elemAtStart : file.findElementAt(s);
-                        if (targetElem != null) {
-                            var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(targetElem);
-                            if (expectedSchema != null) {
-                                var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
-                                var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
-                                var constructor = schemaToInspect.getSchemaConstructor();
-                                if (constructor != null && constructor.getSumType() != null) {
-                                    var sumType = constructor.getSumType();
-                                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                    if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-                                        // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
-                                        if (innerSchemas.size() >= 2) {
-                                            var rightBranch = innerSchemas.get(1);
-                                            var leftBranch = innerSchemas.get(0);
-                                            var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
-                                            var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
-                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH));
-                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
-                                        }
-                                    } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                                        for (int i = 0; i < innerSchemas.size(); i++) {
-                                            var branch = innerSchemas.get(i);
-                                            var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
-                                            var tag = "#" + (i + 1);
-                                            annotationBuilder = annotationBuilder.withFix(new CompleteSumVariantQuickFix(targetElem, tag, branchLabel, PriorityAction.Priority.NORMAL));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Intercept bare #preserveIndent trait syntax errors and attach predictive quick-fixes
-                    if (message.contains("Metadata facet #preserveIndent requires an explicit boolean value")
-                        || (diag.errorCode().isPresent() && "ERR_INVALID_METADATA_FACET".equals(diag.errorCode().get()) && message.contains("#preserveIndent"))) {
-                        var targetElem = file.findElementAt(range.getStartOffset());
-                        if (targetElem != null) {
-                            for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
-                                annotationBuilder = annotationBuilder.withFix(fix);
-                            }
-                        }
-                    }
-
-                    // Intercept WARN_REDUNDANT_METADATA_FACET (W003) and attach RemoveRedundantFacetQuickFix
-                    if ((diag.errorCode().isPresent() && (
-                        DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get())
-                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diag.errorCode().get())
-                    )) || message.contains("is redundant")) {
-                        var targetElem = file.findElementAt(range.getStartOffset());
-                        var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
-                        if (entry == null && range.getStartOffset() > 0) {
-                            entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(file.findElementAt(range.getStartOffset() + 1));
-                        }
-                        if (entry != null) {
-                            annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
-                        }
-                    }
-
-                    // Intercept ERR_RESERVED_PACKAGE_PROHIBITED (E037) and attach RenameReservedPackageQuickFix
-                    if ((diag.errorCode().isPresent() && StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get()))
-                        || message.contains("Reserved package namespace prohibited")) {
-                        var targetElem = file.findElementAt(range.getStartOffset());
-                        if (targetElem != null) {
-                            annotationBuilder = annotationBuilder.withFix(new StvnRenameReservedPackageQuickFix(targetElem));
-                        }
-                    }
-
-                    // Intercept ERR_RESERVED_DOMAIN_PROHIBITED (E038) and attach ChangeReservedDomainQuickFix
-                    if ((diag.errorCode().isPresent() && (
-                        DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                        || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-                    )) || message.contains("Reserved system domain")) {
-                        var targetElem = file.findElementAt(range.getStartOffset());
-                        if (targetElem != null) {
-                            annotationBuilder = annotationBuilder.withFix(new StvnChangeReservedDomainQuickFix(targetElem));
-                        }
-                        var omitFix = StvnOmitDomainQuickFix.create(file);
-                        if (omitFix != null) {
-                            annotationBuilder = annotationBuilder.withFix(omitFix);
-                        }
-                        var renameFix = StvnRenameDomainQuickFix.create(file);
-                        if (renameFix != null) {
-                            annotationBuilder = annotationBuilder.withFix(renameFix);
-                        }
-                        annotationBuilder = annotationBuilder.withFix(new StvnInteractiveRenameQuickFix());
-                    }
-
-
-                    // Attach ConvertToFencedStringIntentionAction for unfenced block strings (Rule STR-04)
-                    if (message.contains("Rule STR-04 violation: Unfenced block strings are prohibited")
-                            || message.contains("Unfenced block strings are prohibited")) {
-                        annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
-                    }
-
-                    // Attach interactive bootstrapping intention actions for incomplete clauses
-                    if (message.contains("clause ':meta' requires a metadata block") || message.contains("':meta' requires a metadata block")) {
-                        annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
-                    }
-                    if (message.contains("clause ':defs' requires definition block") || message.contains("':defs' requires definition block")) {
-                        annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
-                    }
-                    if (message.contains("clause ':type' requires a schema type") || message.contains("':type' requires a schema type")) {
-                        annotationBuilder = annotationBuilder.withFix(new InsertSchemaTypeIntentionAction(range));
-                    }
-                    if (message.contains("clause ':body' requires a value payload") || message.contains("':body' requires a value payload")) {
-                        annotationBuilder = annotationBuilder.withFix(new InsertDefaultBodyValueIntentionAction(range));
-                    }
-                    if (diag.errorCode().isPresent() && "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())
-                            || message.contains("ERR_EMPTY_DEFS_BLOCK")
-                            || message.contains("requires at least one type definition inside ':defs { ... }'")
-                            || message.contains("Empty definition block ':defs {}' is redundant")) {
-                        var fileName = file.getName();
-                        if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
-                            annotationBuilder = annotationBuilder.withFix(new InsertTypeDefinitionIntentionAction(range));
-                        } else {
-                            annotationBuilder = annotationBuilder.withFix(new RemoveRedundantDefsBlockIntentionAction(range));
-                        }
-                    }
-
-                    annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diag, message);
-
-                    // Intercept ERR_TRAIT_VIOLATION and attach diagnostic navigation intentions and paired healing quick-fixes
-                    if ((diag.errorCode().isPresent() && "TRAIT_VIOLATION".equals(diag.errorCode().get()))
-                            || message.contains("require types to be #equatable #TRUE")) {
-                        annotationBuilder = StvnTraitViolationQuickFixProvider.registerActions(annotationBuilder, file, range, message);
-                    }
-
-                    annotationBuilder.create();
-                    continue;
-                }
-            }
-
-            var registered = false;
-
-            // 1. Zero-Shadowing fallback
-            if (message.startsWith("Zero-Shadowing constraint violated: ")) {
-                var offendingName = message.substring("Zero-Shadowing constraint violated: ".length()).trim();
-                if (offendingName.startsWith("#")) {
-                    var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
-                    for (var def : constDefs) {
-                        if (def.getValueKeyword() != null && def.getValueKeyword().getText().equals(offendingName)) {
-                            holder.newAnnotation(severity, message)
-                                  .range(def.getValueKeyword().getTextRange())
-                                  .create();
-                            registered = true;
-                        }
-                    }
-                } else {
-                    var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-                    for (var def : typeDefs) {
-                        if (def.getTypeKeyword() != null && def.getTypeKeyword().getText().equals(offendingName)) {
-                            holder.newAnnotation(severity, message)
-                                  .range(def.getTypeKeyword().getTextRange())
-                                  .create();
-                            registered = true;
-                        }
-                    }
-                }
-            }
-
-            // 2. Circular constant definition fallback
-            if (!registered && message.startsWith("Circular constant definition detected: ")) {
-                var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
-                for (var def : constDefs) {
-                    var kw = def.getValueKeyword();
-                    if (kw != null && message.contains(kw.getText())) {
-                        holder.newAnnotation(severity, message)
-                              .range(kw.getTextRange())
-                              .create();
-                        registered = true;
-                    }
-                }
-            }
-
-            // 3. Duplicate module import exception fallback
-            if (!registered && message.contains("path: ")) {
-                var pathVal = message.substring(message.indexOf("path: ") + 6).trim();
-                var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-                for (var elem : includes) {
-                    var stringLit = elem.getStringLiteral();
-                    if (stringLit != null) {
-                        var rawPath = org.stvnadore.core.ir.StvnLiteralParser.parseString(stringLit.getText(), true);
-                        if (rawPath.equals(pathVal)) {
-                            holder.newAnnotation(severity, message)
-                                  .range(elem.getTextRange())
-                                  .create();
-                            registered = true;
-                        }
-                    }
-                }
-            }
-
-            // 4. Namespace collision exception fallback
-            if (!registered && message.contains("detected: ")) {
-                var collisionsPart = message.substring(message.indexOf("detected: ") + 10).trim();
-                if (collisionsPart.startsWith("[") && collisionsPart.endsWith("]")) {
-                    collisionsPart = collisionsPart.substring(1, collisionsPart.length() - 1);
-                }
-                var names = collisionsPart.split(",\\s*");
-                var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-                for (var typeDef : typeDefs) {
-                    var typeKeyword = typeDef.getTypeKeyword();
-                    if (typeKeyword != null) {
-                        var typeName = typeKeyword.getText();
-                        for (var name : names) {
-                            if (typeName.equals(name.trim())) {
-                                holder.newAnnotation(severity, message)
-                                      .range(typeKeyword.getTextRange())
-                                      .create();
-                                registered = true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 5. Cyclic dependency exception fallback with trace rotation
-            if (!registered && (rawMessage.startsWith("Cycle detected: ") || message.startsWith("Cycle detected: "))) {
-                var rotatedMessage = message;
-                var traceStr = rawMessage.startsWith("Cycle detected: ")
-                    ? rawMessage.substring("Cycle detected: ".length())
-                    : message.substring("Cycle detected: ".length());
-                var parts = traceStr.split(" -> ");
-                if (parts.length > 0) {
-                    var mainName = file.getName();
-                    int startIdx = -1;
-                    for (int i = 0; i < parts.length - 1; i++) {
-                        if (parts[i].equals(mainName)) {
-                            startIdx = i;
-                            break;
-                        }
-                    }
-                    if (startIdx != -1) {
-                        var rotated = new java.util.ArrayList<String>();
-                        for (int i = startIdx; i < parts.length - 1; i++) {
-                            rotated.add(parts[i]);
-                        }
-                        for (int i = 0; i < startIdx; i++) {
-                            rotated.add(parts[i]);
-                        }
-                        rotated.add(parts[startIdx]);
-                        rotatedMessage = StvnDiagnosticFormatter.formatCore("Cycle detected: " + String.join(" -> ", rotated), errorCode);
-                    }
-                }
-
-                var cause = diag.cause();
-                java.util.List<String> rawPaths = java.util.List.of();
-                if (cause instanceof org.stvnadore.core.validation.CyclicDependencyException cycleEx) {
-                    rawPaths = cycleEx.getOffendingIncludePathsRaw();
-                }
-
-                var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-                for (var elem : includes) {
-                    var stringLit = elem.getStringLiteral();
-                    if (stringLit != null) {
-                        var rawPath = org.stvnadore.core.ir.StvnLiteralParser.parseString(stringLit.getText(), true);
-                        var matches = false;
-
-                        if (!rawPaths.isEmpty()) {
-                            for (var rp : rawPaths) {
-                                if (rawPath.equals(rp)) {
-                                    matches = true;
-                                    break;
-                                }
-                            }
-                        } else {
-                            var fileName = new java.io.File(rawPath).getName();
-                            if (message.contains(fileName)) {
-                                matches = true;
-                            }
-                        }
-
-                        if (matches) {
-                            holder.newAnnotation(severity, rotatedMessage)
-                                  .range(elem.getTextRange())
-                                  .create();
-                            registered = true;
-                        }
-                    }
-                }
-            }
-
-            // 6. Track 5: Identity-Dependent Collections Fallback
-            if (!registered && message.contains("require types to be #equatable #TRUE")) {
-                var collections = PsiTreeUtil.findChildrenOfType(file, CollectionType.class);
-                for (var coll : collections) {
-                    var firstChild = coll.getFirstChild();
-                    if (firstChild == null) continue;
-
-                    var tokenText = firstChild.getText();
-                    var innerSchemas = coll.getSchemaTypeList();
-                    if (innerSchemas.isEmpty()) continue;
-
-                    var isMatch = false;
-                    SchemaType targetSchema = null;
-
-                    if (message.contains("Set elements") && tokenText.equals(StvnVocabulary.TYPE_SET)) {
-                        targetSchema = innerSchemas.get(0);
-                        isMatch = (targetSchema != null);
-                    } else if (message.contains("Map keys") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
-                        targetSchema = innerSchemas.get(0);
-                        isMatch = (targetSchema != null);
-                    } else if (message.contains("Inverted map values") && tokenText.equals(StvnVocabulary.TYPE_MAP)) {
-                        if (innerSchemas.size() >= 2) {
-                            targetSchema = innerSchemas.get(1);
-                            isMatch = (targetSchema != null);
-                        }
-                    }
-
-                    if (isMatch && targetSchema != null) {
-                        holder.newAnnotation(severity, message)
-                              .range(targetSchema.getTextRange())
-                              .create();
-                        registered = true;
-                        break;
-                    }
-                }
-            }
-
-            // 7. Track 6A, 6B, 6C: Nominal Constraints Fallback
-            if (!registered && message.contains("Constraint violation (") && message.contains("): ")) {
-                var startIdx = message.indexOf("Constraint violation (") + "Constraint violation (".length();
-                var endIdx = message.indexOf("):", startIdx);
-                if (startIdx >= "Constraint violation (".length() && endIdx > startIdx) {
-                    var nominalTypeName = message.substring(startIdx, endIdx).trim();
-                    var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, nominalTypeName, new java.util.HashSet<>());
-                    if (resolved != null && resolved.getContainingFile() == file) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getTypeKeyword() != null) {
-                            var range = parentDef.getTypeKeyword().getTextRange();
-                            var metaMap = parentDef.getMetadataMap();
-                            if (metaMap != null) {
-                                var remainder = message.substring(endIdx + 2).trim();
-                                var constraintName = extractConstraintName(remainder);
-                                if (constraintName != null) {
-                                    for (var entry : PsiTreeUtil.getChildrenOfTypeAsList(metaMap, MetadataEntry.class)) {
-                                        var first = entry.getFirstChild();
-                                        if (first != null && (first.getText().equals(constraintName) || first.getText().equals("#" + constraintName))) {
-                                            range = entry.getTextRange();
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            holder.newAnnotation(severity, message)
-                                  .range(range)
-                                  .create();
-                            registered = true;
-                        }
-                    }
-                }
-            }
-
-
-            // 9. Undefined / Unresolved Type Alias Fallback
-            if (!registered && (message.contains("Undefined type: ") || message.contains("Unresolved type alias: "))) {
-                var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
-                var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
-                if (!typeName.startsWith(":")) {
-                    typeName = ":" + typeName;
-                }
-
-                var typeKeywords = PsiTreeUtil.findChildrenOfType(file, TypeKeyword.class);
-                for (var typeKw : typeKeywords) {
-                    if (typeKw.getText().equals(typeName)) {
-                        var isLhsDef = org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(typeKw);
-                        if (!isLhsDef) {
-                            var ab = holder.newAnnotation(severity, message)
-                                  .range(typeKw.getTextRange());
-                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, typeKw.getText().trim());
-                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
-                            if (!isPrelude) {
-                                ab = StvnUnresolvedTypeQuickFixProvider.registerFixes(ab, typeKw);
-                            }
-                            ab.create();
-                            registered = true;
+                        if (offendingValKw != null && offendingValKw.getText().startsWith("#")) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnDeclareConstantQuickFix(offendingValKw, StvnVocabulary.TYPE_INT, "0")
+                            );
                         }
                     }
                 }
 
-                if (!registered) {
-                    for (var typeKw : typeKeywords) {
-                        if (typeKw.getText().equals(typeName)) {
-                            var ab = holder.newAnnotation(severity, message)
-                                  .range(typeKw.getTextRange());
-                            var isLocalPkg = StvnPsiUtils.isTypeDeclaredInLocalPackage(file, typeKw.getText().trim());
-                            var isPrelude = !isLocalPkg && StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeKw.getText().trim()) != null;
-                            if (!isPrelude) {
-                                ab = StvnUnresolvedTypeQuickFixProvider.registerFixes(ab, typeKw);
-                            }
-                            ab.create();
-                            registered = true;
+                // Bare '#' token in sum-type value position
+                var elemAtStart = file.findElementAt(s);
+                var tokenText = elemAtStart != null ? elemAtStart.getText().trim() : "";
+                if ("#".equals(tokenText) || "#".equals(file.getText().substring(s, e).trim())) {
+                    if (elemAtStart != null) {
+                        annotationBuilder = attachCompleteSumVariantQuickFixes(annotationBuilder, elemAtStart);
+                    }
+                }
+
+                // Incomplete #preserveIndent trait quick-fixes
+                if (rawMessage.contains("Metadata facet #preserveIndent requires an explicit boolean value")
+                        || (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
+                            && rawMessage.contains("#preserveIndent"))) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    if (targetElem != null) {
+                        for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
+                            annotationBuilder = annotationBuilder.withFix(fix);
                         }
                     }
                 }
 
-                if (!registered) {
-                    var typeEntry = PsiTreeUtil.findChildOfType(file, SchemaType.class);
-                    if (typeEntry != null) {
-                        holder.newAnnotation(severity, message)
-                              .range(typeEntry.getTextRange())
-                              .create();
-                        registered = true;
+                // Redundant metadata facet quick-fix (W003)
+                if (DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
+                        || rawMessage.contains("is redundant")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (entry == null && range.getStartOffset() + 1 < textLength) {
+                        entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(
+                            file.findElementAt(range.getStartOffset() + 1)
+                        );
+                    }
+                    if (entry != null) {
+                        annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
                     }
                 }
-            }
 
-            // 9b. Undefined / Unresolved Constant Fallback
-            if (!registered && (message.contains("Undefined constant: ") || message.contains("Unresolved constant: ")
-                || message.contains("Undefined type: #") || message.contains("Undeclared value keyword or constant: "))) {
-                var prefix = message.contains("Undefined constant: ") ? "Undefined constant: "
-                    : (message.contains("Unresolved constant: ") ? "Unresolved constant: "
-                    : (message.contains("Undeclared value keyword or constant: ") ? "Undeclared value keyword or constant: " : "Undefined type: "));
-                var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                if (rawName.startsWith("'")) {
-                    rawName = rawName.substring(1);
-                }
-                var constName = rawName.split("['\\s,;\\)\\}\\]]")[0].trim();
-                if (!constName.startsWith("#")) {
-                    constName = "#" + constName;
-                }
-                var valKeywords = PsiTreeUtil.findChildrenOfType(file, ValueKeyword.class);
-                for (var valKw : valKeywords) {
-                    if (valKw.getText().equals(constName)) {
-                        var ab = holder.newAnnotation(severity, message)
-                              .range(valKw.getTextRange());
-                        ab = ab.withFix(new StvnDeclareConstantQuickFix(valKw, StvnVocabulary.TYPE_INT, "0"));
-                        ab.create();
-                        registered = true;
+                // Reserved package namespace quick-fix (E037)
+                if (DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
+                        || rawMessage.contains("Reserved package namespace prohibited")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    if (targetElem != null) {
+                        annotationBuilder = annotationBuilder.withFix(new StvnRenameReservedPackageQuickFix(targetElem));
                     }
                 }
-            }
 
-            // 10. Localized AST Fallback (Defs & Type Immunity Guarantee)
-            if (!registered) {
-                var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
-                var bodyValue = bodyEntry != null ? bodyEntry.getValue() : null;
-
-                if (bodyValue != null) {
-                    TextRange targetRange = null;
-
-                    var coll = bodyValue.getCollectionValue();
-                    if (coll != null) {
-                        List<Value> items = coll.getTupleLiteral() != null 
-                            ? coll.getTupleLiteral().getValueList() 
-                            : (coll.getListLiteral() != null ? coll.getListLiteral().getValueList() : List.of());
-
-                        for (var item : items) {
-                            var info = StvnTypeResolver.resolveBaseTypeInfo(item);
-                            if (info == null || !StvnTypeResolver.matchesSchemaPattern(item, info.getSchema())) {
-                                targetRange = item.getTextRange();
-                                break;
-                            }
-                        }
+                // Reserved domain quick-fixes (E038)
+                if (DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                        || rawMessage.contains("Reserved system domain")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    if (targetElem != null) {
+                        annotationBuilder = annotationBuilder.withFix(new StvnChangeReservedDomainQuickFix(targetElem));
                     }
-
-                    if (targetRange == null) {
-                        if (message.contains("Expected integer, got float") || message.contains("got float")) {
-                            var floats = PsiTreeUtil.findChildrenOfType(bodyValue, FloatLiteral.class);
-                            if (!floats.isEmpty()) {
-                                targetRange = floats.iterator().next().getTextRange();
-                            }
-                        } else if (message.contains("Expected float, got integer") || message.contains("got integer")) {
-                            var ints = PsiTreeUtil.findChildrenOfType(bodyValue, IntegerLiteral.class);
-                            if (!ints.isEmpty()) {
-                                targetRange = ints.iterator().next().getTextRange();
-                            }
-                        } else if (message.contains("Expected string") || message.contains("String")) {
-                            var strings = PsiTreeUtil.findChildrenOfType(bodyValue, StringLiteral.class);
-                            if (!strings.isEmpty()) {
-                                targetRange = strings.iterator().next().getTextRange();
-                            }
-                        } else if (message.contains("Expected Map") || message.contains("got List") || message.contains("MapLiteralContext")) {
-                            var lists = PsiTreeUtil.findChildrenOfType(bodyValue, ListLiteral.class);
-                            if (!lists.isEmpty()) {
-                                targetRange = lists.iterator().next().getTextRange();
-                            }
-                        }
+                    var omitFix = StvnOmitDomainQuickFix.create(file);
+                    if (omitFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(omitFix);
                     }
-
-                    if (targetRange == null) {
-                        targetRange = bodyValue.getTextRange();
+                    var renameFix = StvnRenameDomainQuickFix.create(file);
+                    if (renameFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(renameFix);
                     }
-
-                    LOG.debug("Unlocated diagnostic anchored to body fallback range [" + targetRange + "]: " + message);
-                    var annotationBuilder = holder.newAnnotation(severity, message)
-                          .range(targetRange);
-                    var listLit = findMapTargetListLiteral(file, targetRange);
-                    if (listLit != null) {
-                        annotationBuilder = annotationBuilder.withFix(new StvnMapAutoHealerQuickFix(listLit));
-                    }
-                    annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, targetRange, diag, message);
-                    annotationBuilder.create();
-                } else if (bodyEntry != null) {
-                    LOG.debug("Unlocated diagnostic anchored to bodyEntry range: " + message);
-                    holder.newAnnotation(severity, message)
-                          .range(bodyEntry.getTextRange())
-                          .create();
-                } else {
-                    LOG.debug("Unlocated diagnostic anchored to whole-document range: " + message);
-                    holder.newAnnotation(severity, message)
-                          .range(new TextRange(0, textLength))
-                          .create();
+                    annotationBuilder = annotationBuilder.withFix(new StvnInteractiveRenameQuickFix());
                 }
+
+                // Unfenced block string quick-fix (Rule STR-04)
+                if (rawMessage.contains("Unfenced block strings are prohibited")) {
+                    annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
+                }
+
+                // Interactive bootstrapping intention actions for incomplete clauses
+                if (rawMessage.contains("':meta' requires a metadata block")) {
+                    annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
+                }
+                if (rawMessage.contains("':defs' requires definition block")) {
+                    annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
+                }
+                if (rawMessage.contains("':type' requires a schema type")) {
+                    annotationBuilder = annotationBuilder.withFix(new InsertSchemaTypeIntentionAction(range));
+                }
+                if (rawMessage.contains("':body' requires a value payload")) {
+                    annotationBuilder = annotationBuilder.withFix(new InsertDefaultBodyValueIntentionAction(range));
+                }
+                if (DiagnosticBag.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)
+                        || rawMessage.contains("requires at least one type definition inside ':defs { ... }'")
+                        || rawMessage.contains("Empty definition block ':defs {}' is redundant")) {
+                    var fileName = file.getName();
+                    if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertTypeDefinitionIntentionAction(range));
+                    } else {
+                        annotationBuilder = annotationBuilder.withFix(new RemoveRedundantDefsBlockIntentionAction(range));
+                    }
+                }
+
+                annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diagnosticId, rawMessage);
+
+                // Trait violation navigation and paired healing quick-fixes (ERR_TRAIT_VIOLATION)
+                if (DiagnosticBag.ERR_TRAIT_VIOLATION.equals(diagnosticId)
+                        || "ERR_TRAIT_VIOLATION".equals(diagnosticId)
+                        || rawMessage.contains("require types to be #equatable")
+                        || rawMessage.contains("requires equatable")
+                        || rawMessage.contains("requires comparable")) {
+                    annotationBuilder = StvnTraitViolationQuickFixProvider.registerActions(
+                        annotationBuilder,
+                        file,
+                        range,
+                        message
+                    );
+                }
+
+                annotationBuilder.create();
             }
         }
 
-        // Anchor Warning on :type when the nominal schema is degraded
+        // Anchor warning on :type when a referenced nominal schema is poisoned or degraded
+        boolean hasCrossFileInvertibleError = rawDiagnostics.stream()
+            .anyMatch(d -> isDiagnosticFromIncludedFile(file, d, activeNormalizedPath)
+                && d.message().contains("Inverted map values require types to be #equatable #TRUE"));
         var typeEntry = PsiTreeUtil.findChildOfType(file, TypeEntry.class);
         if (typeEntry != null) {
             var typeKeywords = PsiTreeUtil.findChildrenOfType(typeEntry, TypeKeyword.class);
             for (var typeKw : typeKeywords) {
                 var aliasName = typeKw.getText();
-                if (StvnTypeResolver.isDegradedNominalAlias(file, aliasName)) {
-                    var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new java.util.HashSet<>());
+                boolean isDegraded = StvnTypeResolver.isDegradedNominalAlias(file, aliasName);
+                if (isDegraded || hasCrossFileInvertibleError) {
                     var fallbackBase = ":Value";
-                    var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(targetDef);
-                    if (td != null && td.getSchemaType() != null) {
-                        var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
-                        if (resolved != null) {
-                            fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
+                    var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasName);
+                    if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
+                            && poisoned.bestEffortFallback().isPresent()) {
+                        fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
+                    } else {
+                        var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
+                        var td = StvnPsiUtils.getParentTypeDefinition(targetDef);
+                        if (td != null && td.getSchemaType() != null) {
+                            var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
+                            if (resolved != null) {
+                                fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
+                            }
                         }
                     }
-                    var message = "Schema '" + aliasName + "' has constraint errors at definition site in :defs. Operating on fallback base ('" + fallbackBase + "').";
-                    holder.newAnnotation(HighlightSeverity.WARNING, message)
-                          .range(typeKw.getTextRange())
-                          .create();
+                    var degradedMsg = "Schema '" + aliasName
+                        + "' has constraint errors at definition site in :defs. Operating on fallback base ('"
+                        + fallbackBase + "').";
+                    var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, degradedMsg)
+                        .range(typeKw.getTextRange());
+                    if (hasCrossFileInvertibleError
+                            || (irSchema instanceof StvnSchema.PoisonedSchema p
+                                && DiagnosticBag.ERR_TRAIT_VIOLATION.equals(p.primaryDiagnosticCode()))) {
+                        warnBuilder = StvnTraitViolationQuickFixProvider.registerActions(
+                            warnBuilder,
+                            file,
+                            typeKw.getTextRange(),
+                            "Inverted map values require types to be #equatable #TRUE"
+                        );
+                    }
+                    warnBuilder.create();
                 }
             }
         }
     }
 
+    private static String resolvePrimaryDiagnosticId(StvnDiagnostic diag) {
+        return diag.symbolicId()
+            .or(diag::canonicalCode)
+            .or(diag::errorCode)
+            .orElse("ERR_COMPILATION_ERROR");
+    }
+
+    private static boolean isLayer1IdentityDiagnostic(String diagnosticId, String rawMessage) {
+        return DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diagnosticId)
+            || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diagnosticId)
+            || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diagnosticId)
+            || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+            || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+            || (DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH.equals(diagnosticId)
+                && rawMessage.startsWith("Unrecognized STVN file extension"))
+            || rawMessage.contains("Reserved system domain prohibited")
+            || rawMessage.contains("bare dotfiles are prohibited")
+            || rawMessage.contains("Invalid filename stem")
+            || rawMessage.startsWith("Unrecognized STVN file extension");
+    }
+
+    private static void renderCyclicIncludeDiagnostic(
+        PsiFile file,
+        AnnotationHolder holder,
+        HighlightSeverity severity,
+        String rawMessage,
+        String diagnosticId
+    ) {
+        String rotatedRaw = rotateCycleTrace(rawMessage, file.getName());
+        String formatted = StvnDiagnosticFormatter.formatCore(rotatedRaw, diagnosticId);
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        boolean matched = false;
+        for (var elem : includes) {
+            var stringLit = elem.getStringLiteral();
+            if (stringLit != null) {
+                var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true).orElse("");
+                if (!decoded.isEmpty()) {
+                    var baseName = extractFileName(decoded);
+                    if (rotatedRaw.contains(decoded) || rotatedRaw.contains(baseName)) {
+                        holder.newAnnotation(severity, formatted)
+                            .range(elem.getTextRange())
+                            .create();
+                        matched = true;
+                    }
+                }
+            }
+        }
+        if (!matched) {
+            holder.newAnnotation(severity, formatted)
+                .fileLevel()
+                .create();
+        }
+    }
+
+    private static String rotateCycleTrace(String rawMessage, String mainFileName) {
+        String prefix = "Cycle detected: ";
+        if (!rawMessage.startsWith(prefix)) {
+            return rawMessage;
+        }
+        String traceStr = rawMessage.substring(prefix.length());
+        String[] parts = traceStr.split(" -> ");
+        int startIdx = -1;
+        for (int i = 0; i < parts.length - 1; i++) {
+            if (parts[i].equals(mainFileName)) {
+                startIdx = i;
+                break;
+            }
+        }
+        if (startIdx == -1) {
+            return rawMessage;
+        }
+        var rotated = new ArrayList<String>();
+        for (int i = startIdx; i < parts.length - 1; i++) {
+            rotated.add(parts[i]);
+        }
+        for (int i = 0; i < startIdx; i++) {
+            rotated.add(parts[i]);
+        }
+        rotated.add(parts[startIdx]);
+        return prefix + String.join(" -> ", rotated);
+    }
+
     boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag) {
-        return isDiagnosticSuppressed(file, diag, java.util.List.of());
+        return isDiagnosticSuppressed(file, diag, List.of(), "");
     }
 
     boolean isDiagnosticSuppressed(PsiFile file, StvnDiagnostic diag, List<StvnDiagnostic> allDiagnostics) {
-        var message = diag.message();
+        return isDiagnosticSuppressed(file, diag, allDiagnostics, "");
+    }
 
-        // 1. Cross-File Diagnostic Filtering: verify diagnostic origin against active file buffer
-        if (isDiagnosticFromIncludedFile(file, diag)) {
+    private boolean isDiagnosticSuppressed(
+        PsiFile file,
+        StvnDiagnostic diag,
+        List<StvnDiagnostic> allDiagnostics,
+        String activeNormalizedPath
+    ) {
+        // 1. Cross-File Diagnostic Filtering via authoritative ESC-CORE-01 diag.sourcePath()
+        if (isDiagnosticFromIncludedFile(file, diag, activeNormalizedPath)) {
             return true;
         }
 
-        // Spec § 7.3.1: Suppress secondary cascade ERR_DOCUMENT_KIND_MISMATCH on root '{'
-        // when fatal syntax errors (e.g. ERR_TAB_CHARACTER_FORBIDDEN) truncate the parse tree.
-        if (isSecondaryCascadeKindMismatch(file, diag, allDiagnostics)) {
-            return true;
-        }
-
-        // Deconfliction Gate: Suppress external annotator diagnostics when condition is governed by an active inspection
+        // 2. Deconfliction Gate: suppress compiler diagnostics governed by an active local PSI inspection
         if (StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive(file, diag)) {
             return true;
         }
 
-        // 1b. Coordinate Mismatch Verification: active buffer slice at coordinates must match cited symbol
-        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
+        var message = diag.message();
+        var diagnosticId = resolvePrimaryDiagnosticId(diag);
+
+        // 3. StvnSemanticAnnotator owns in-flight and committed :Union tag overflow checks
+        if (DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW.equals(diagnosticId)
+                || (message.startsWith("Union variant tag '") && message.contains("exceeds branch count"))) {
             return true;
         }
 
-        // 1c. Structural Empty Metadata Facet Map Protection:
-        // If diagnostic reports empty metadata map but active buffer at coordinates is not a metadata map
-        if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
-            return true;
-        }
-
-        // 2. Buffer Token Existence Verification:
-        // Extract quoted and cited tokens from compiler messages.
-        // If a diagnostic message contains a cited token that does not exist in file.getText(), suppress it immediately.
-        // If cited tokens exist in the buffer, confirm that the diagnostic coordinates actually contain at least one of them.
+        // 4. Universal Comment & Whitespace Locus Protection (except forbidden tab characters)
+        boolean isTabError = DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN.equals(diagnosticId)
+            || message.contains("Tab character");
         var text = file.getText();
         var textLength = file.getTextLength();
-
         var start = diag.startOffset();
         var end = diag.endOffset();
-        var s = Math.max(0, Math.min(start, textLength));
-        var e = Math.max(s, Math.min(end, textLength));
-        var slice = (s < e) ? text.substring(s, e) : "";
 
-        var quotedTokens = extractCitedTokens(message);
-
-        boolean isTabError = (diag.errorCode().isPresent() && "ERR_TAB_CHARACTER_FORBIDDEN".equals(diag.errorCode().get()))
-            || message.contains("ERR_TAB_CHARACTER_FORBIDDEN")
-            || message.contains("Tab character");
-
-
-        boolean isAntlrSyntaxError = (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
-            || message.contains("mismatched input")
-            || message.contains("no viable alternative")
-            || message.contains("extraneous input")
-            || message.startsWith("STVN Syntax Error");
-
-        boolean isConstraintViolation = (diag.errorCode().isPresent() && "ERR_CONSTRAINT_VIOLATION".equals(diag.errorCode().get()))
-            || message.contains("Constraint violation (")
-            || message.contains("violates #")
-            || message.contains("violates canonical");
-
-        boolean isLayer1Identity = diag.errorCode().isPresent() && (
-            DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
-            || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diag.errorCode().get())
-            || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diag.errorCode().get())
-            || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-            || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diag.errorCode().get())
-            || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diag.errorCode().get())
-        );
-
-        boolean isExemptFromSliceCheck = isConstraintViolation
-            || isLayer1Identity
-            || isTabError
-            || textLength == 0
-            || (diag.errorCode().isPresent() && (
-                "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get())
-                || "ERR_EMPTY_DEFS_BLOCK".equals(diag.errorCode().get())
-                || "ERR_EMPTY_META_BLOCK".equals(diag.errorCode().get())
-                || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diag.errorCode().get())
-            ))
-            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
-            || message.contains("ERR_EMPTY_DEFS_BLOCK")
-            || message.contains("ERR_EMPTY_META_BLOCK")
-            || message.contains("Metadata block ':meta {}' must not be empty")
-            || message.contains("clause ':meta' requires a metadata block")
-            || message.contains("Definitions schema requires root :meta block")
-            || message.contains("Mandatory :meta block missing")
-            || message.contains("requires at least one type definition inside ':defs { ... }'")
-            || message.contains("Empty definition block ':defs {}' is redundant");
-
-        if (!isAntlrSyntaxError && !quotedTokens.isEmpty()) {
-            // Check if any cited token exists in the active buffer
-            boolean anyTokenInText = false;
-            for (var t : quotedTokens) {
-                if (text.contains(t)) {
-                    anyTokenInText = true;
-                    break;
-                }
-            }
-            if (!isExemptFromSliceCheck && !anyTokenInText) {
+        if (!isTabError && start >= 0 && start <= textLength) {
+            var s = Math.max(0, Math.min(start, textLength));
+            var e = Math.max(s, Math.min(end, textLength));
+            if (s < e && text.substring(s, e).isBlank()) {
                 return true;
             }
-
-            // If the message cites quoted tokens, and a slice exists, verify that
-            // at least one quoted token appears in the target range slice (preventing offset drift onto comments).
-            // Skip slice check for constraint violations and exempt bootstrap diagnostics.
-            if (!slice.isEmpty() && !isExemptFromSliceCheck) {
-                boolean anyTokenInSlice = false;
-                for (var t : quotedTokens) {
-                    if (slice.contains(t) || t.contains(slice)) {
-                        anyTokenInSlice = true;
-                        break;
-                    }
-                }
-                if (!anyTokenInSlice) {
-                    return true;
-                }
-            }
-        }
-
-        // 3. Universal Comment & Whitespace Locus Protection:
-        // Compiler diagnostics across all severities must never land on comments or blank spans,
-        // unless reporting forbidden tab characters.
-        if (start >= 0 && start <= textLength) {
-            if (!isTabError && s < e && text.substring(s, e).isBlank()) {
-                return true;
-            }
-
             int checkOffset = s;
             int limitOffset = Math.max(s + 1, e);
             while (checkOffset < limitOffset && checkOffset < textLength) {
@@ -1346,8 +995,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (leaf == null) {
                     break;
                 }
-                if (!isTabError && (leaf instanceof com.intellij.psi.PsiComment
-                    || PsiTreeUtil.getParentOfType(leaf, com.intellij.psi.PsiComment.class, false) != null)) {
+                if (leaf instanceof PsiComment || PsiTreeUtil.getParentOfType(leaf, PsiComment.class, false) != null) {
                     return true;
                 }
                 var nextOffset = leaf.getTextRange().getEndOffset();
@@ -1358,490 +1006,29 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
-        // Suppress external compiler Rule G diagnostics; StvnSemanticAnnotator handles Rule G in-flight and at commit
-        if (diag.errorCode().isPresent() && "UNION_BRANCH_OVERFLOW".equals(diag.errorCode().get())) {
-            return true;
-        }
-        if (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")) {
-            return true;
-        }
-
-        if (!message.contains("Unresolved schema for value context")) {
-            return false;
-        }
-
-        var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
-        if (bodyEntry == null || bodyEntry.getValue() == null) {
-            return false;
-        }
-
-        var bodyValue = bodyEntry.getValue();
-        var coll = bodyValue.getCollectionValue();
-        List<Value> childValues = null;
-        if (coll != null) {
-            if (coll.getTupleLiteral() != null) {
-                childValues = coll.getTupleLiteral().getValueList();
-            } else if (coll.getListLiteral() != null) {
-                childValues = coll.getListLiteral().getValueList();
-            } else if (coll.getMapLiteral() != null) {
-                childValues = coll.getMapLiteral().getValueList();
-            }
-        } else {
-            childValues = List.of(bodyValue);
-        }
-
-        if (childValues == null || childValues.isEmpty()) {
-            return false;
-        }
-
-        for (var child : childValues) {
-            var info = StvnTypeResolver.resolveBaseTypeInfo(child);
-            if (info == null) {
-                return false;
-            }
-
-            var resolved = StvnTypeResolver.resolveNominalSchema(info.getSchema());
-            var toInspect = resolved != null ? resolved : info.getSchema();
-            var ctor = toInspect.getSchemaConstructor();
-
-            if (ctor != null && ctor.getSumType() != null) {
-                var sumType = ctor.getSumType();
-                if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                    var inner = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    int matchCount = 0;
-                    var expUnion = child.getExplicitUnionValue();
-                    if (expUnion != null) {
-                        var firstChild = expUnion.getFirstChild();
-                        int tagIndex = -1;
-                        if (firstChild != null && firstChild.getText().startsWith("#")) {
-                            try {
-                                tagIndex = Integer.parseInt(firstChild.getText().substring(1)) - 1;
-                            } catch (NumberFormatException ignored) {}
-                        }
-                        if (tagIndex >= 0 && tagIndex < inner.size()) {
-                            var innerVal = expUnion.getValue();
-                            if (innerVal == null || StvnTypeResolver.matchesSchemaPattern(innerVal, inner.get(tagIndex))) {
-                                matchCount = 1;
-                            }
-                        }
-                    } else {
-                        for (var branch : inner) {
-                            if (StvnTypeResolver.matchesSchemaPattern(child, branch)) {
-                                matchCount++;
-                            }
-                        }
-                    }
-                    if (matchCount != 1) {
-                        return false;
-                    }
-                } else {
-                    if (!StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                        return false;
-                    }
-                }
-            } else {
-                if (!StvnTypeResolver.matchesSchemaPattern(child, info.getSchema())) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-
-    private static boolean isSecondaryCascadeKindMismatch(PsiFile file, StvnDiagnostic diag, List<StvnDiagnostic> allDiagnostics) {
-        var message = diag.message();
-        boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-            || message.contains("ERR_DOCUMENT_KIND_MISMATCH")
-            || message.contains("Mandatory ':type' and ':body' sections missing");
-        if (!isKindMismatch) {
-            return false;
-        }
-        // Spec § 7.3.1: Blame pinning to root brace
-        if (diag.startOffset() != 0 && (diag.line() != 1 || diag.column() != 0)) {
-            return false;
-        }
-
-        // Check if fatal syntax errors exist in compilation diagnostics bag
-        boolean hasFatalSyntaxError = allDiagnostics.stream().anyMatch(StvnExternalAnnotator::isFatalSyntaxDiagnostic);
-        if (!hasFatalSyntaxError && allDiagnostics.isEmpty()) {
-            // Fallback buffer inspection for standalone contract checks
-            hasFatalSyntaxError = hasBufferFatalSyntaxError(file);
-        }
-        return hasFatalSyntaxError;
-    }
-
-    private static boolean isFatalSyntaxDiagnostic(StvnDiagnostic d) {
-        if (d.errorCode().isPresent()) {
-            var code = d.errorCode().get();
-            if ("ERR_TAB_CHARACTER_FORBIDDEN".equals(code) || "STVN_SYNTAX_ERROR".equals(code)
-                    || "STVN_SYNTAX_CANCELLATION".equals(code) || "STVN_PARSE_CANCELLATION".equals(code)) {
-                return true;
-            }
-        }
-        var msg = d.message();
-        return msg.contains("ERR_TAB_CHARACTER_FORBIDDEN")
-            || msg.contains("Tab character")
-            || msg.contains("mismatched input")
-            || msg.contains("no viable alternative")
-            || msg.contains("extraneous input")
-            || msg.startsWith("STVN Syntax Error");
-    }
-
-    private static boolean hasBufferFatalSyntaxError(PsiFile file) {
-        CharSequence text = file.getViewProvider().getContents();
-        int len = text.length();
-        for (int i = 0; i < len; i++) {
-            if (text.charAt(i) == '\t') {
-                PsiElement leaf = file.findElementAt(i);
-                if (leaf != null && leaf.getNode() != null && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
-                    int end = leaf.getTextRange().getEndOffset();
-                    if (end > i) {
-                        i = end - 1;
-                    }
-                    continue;
-                }
-                return true;
-            }
-        }
         return false;
     }
 
-    private static boolean isDiagnosticFromIncludedFile(PsiFile file, StvnDiagnostic diag) {
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        if (includes.isEmpty()) {
+    private static boolean isDiagnosticFromIncludedFile(
+        PsiFile file,
+        StvnDiagnostic diag,
+        String activeNormalizedPath
+    ) {
+        if (diag.sourcePath().isEmpty()) {
             return false;
         }
-
-        // 1. Strict Diagnostic Source Path Pinning Invariant (§ 7.3):
-        // If diag.sourcePath() is present, route strictly by matching sourcePath against active file / includes.
-        String sourcePath = getDiagnosticSourcePath(diag);
-        if (sourcePath != null && !sourcePath.isEmpty()) {
-            var virtualFile = file.getVirtualFile();
-            if (virtualFile == null) {
-                return false;
-            }
-            var activePath = virtualFile.getPath().replace('\\', '/');
-            var normalizedSource = sourcePath.replace('\\', '/');
-
-            // If sourcePath matches the active file path or name, the diagnostic is strictly local
-            if (activePath.equals(normalizedSource) || activePath.endsWith("/" + normalizedSource)
-                || normalizedSource.endsWith("/" + virtualFile.getName()) || normalizedSource.equals(virtualFile.getName())) {
-                return false;
-            }
-            // Confirm that sourcePath matches an actual entry in the include graph
-            return isPathInIncludeGraph(file, normalizedSource);
+        String diagPath = diag.sourcePath().get();
+        if (!activeNormalizedPath.isEmpty()) {
+            return !diagPath.equals(activeNormalizedPath);
         }
-
-        // 2. Fallback Semantic Isolation (when sourcePath method is not present on core record):
-        var doc = file.getViewProvider().getDocument();
-
-        // 2a. Active buffer syntax error isolation:
-        // Syntax errors occurring within the active buffer bounds are strictly local and NEVER leak to includes.
-        if (isAntlrSyntaxError(diag)) {
-            if (diag.startOffset() >= 0 && diag.endOffset() <= file.getTextLength()
-                    && (doc == null || diag.line() <= doc.getLineCount())) {
-                if (!isCoordinateMismatchInActiveBuffer(file, diag)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        var msg = diag.message();
-        if (msg.startsWith("Cycle detected: ")) {
+        var virtualFile = file.getVirtualFile();
+        if (virtualFile == null) {
             return false;
         }
-
-        // 2b. Extension-aware origin routing for missing :meta / document kind mismatch diagnostics:
-        boolean isKindMismatchOrMissingMeta = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-            || msg.contains("Mandatory :meta block missing")
-            || msg.contains("ERR_DOCUMENT_KIND_MISMATCH")
-            || msg.contains("does not match file extension");
-        if (isKindMismatchOrMissingMeta) {
-            var expectedExt = extractExtensionFromMessage(msg);
-            if (expectedExt != null) {
-                var activeName = file.getName();
-                if (!activeName.endsWith(expectedExt)) {
-                    return true;
-                }
-                // If extensions match (e.g. parent .stvn_d includes child .stvn_d),
-                // verify if the active buffer already possesses a root :meta block.
-                if (msg.contains("Mandatory :meta block missing")) {
-                    if (StvnMetaTemplateUtil.hasMetaHeader(file)
-                        || PsiTreeUtil.findChildOfType(file, MetaEntry.class) != null) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-            return false;
-        }
-
-        // 2c. Included file origin check: if diagnostic reports constraint violation for a type declared in an include
-        if (msg.startsWith("Constraint violation (") || msg.startsWith("Metadata violation (") || msg.startsWith("Zero-Shadowing constraint violated: ")) {
-            var openParen = msg.indexOf('(');
-            var closeParen = msg.indexOf(')', openParen);
-            if (openParen >= 0 && closeParen > openParen) {
-                var typeName = msg.substring(openParen + 1, closeParen).trim();
-                if (!typeName.isEmpty() && !file.getText().contains(typeName)) {
-                    return true;
-                }
-                var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
-                if (resolved != null && isUserIncludedFile(file, resolved.getContainingFile())) {
-                    return true;
-                }
-            }
-        }
-
-        // 2d. Child module detection for undefined / unresolved types:
-        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ") || msg.startsWith("Unresolved type alias: ")) {
-            var typeName = extractCitedTypeToken(msg);
-            if (!typeName.isEmpty() && !file.getText().contains(typeName)) {
-                return true;
-            }
-        }
-
-        // 2e. Invalid metadata facet tag in :meta block:
-        if (msg.contains("Invalid metadata facet tag") || (diag.errorCode().isPresent() && "ERR_INVALID_METADATA_FACET".equals(diag.errorCode().get()))) {
-            var quoted = extractCitedTokens(msg);
-            if (!quoted.isEmpty()) {
-                var tag = quoted.get(0);
-                if (!file.getText().contains(tag)) {
-                    return true;
-                }
-            }
-        }
-
-        // 2f. Strict AST element verification at target coordinates:
-        if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
-            return true;
-        }
-
-        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
-            return true;
-        }
-
-        // 2f. Active buffer boundary clamp: coordinates outside active file text length belong to child
-        if (diag.endOffset() > file.getTextLength() || diag.startOffset() < 0) {
-            return true;
-        }
-
-        if (doc != null && diag.line() > doc.getLineCount()) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static @Nullable String getDiagnosticSourcePath(StvnDiagnostic diag) {
-        try {
-            var method = diag.getClass().getMethod("sourcePath");
-            var pathObj = method.invoke(diag);
-            if (pathObj instanceof java.util.Optional<?> opt) {
-                var val = opt.orElse(null);
-                return val instanceof String s ? s : null;
-            }
-            if (pathObj instanceof String sourcePath) {
-                return sourcePath;
-            }
-        } catch (Throwable ignored) {
-            // Reflection fallback when sourcePath method is not present on core record
-        }
-        return null;
-    }
-
-    private static boolean isPathInIncludeGraph(PsiFile file, String normalizedSourcePath) {
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        for (var incl : includes) {
-            var stringLit = incl.getStringLiteral();
-            if (stringLit == null) continue;
-            var pathText = stringLit.getText().replace("\"", "").replace('\\', '/');
-            if (normalizedSourcePath.endsWith(pathText) || pathText.endsWith(normalizedSourcePath)) {
-                return true;
-            }
-            var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-            if (targetFile != null && targetFile.getVirtualFile() != null) {
-                var targetPath = targetFile.getVirtualFile().getPath().replace('\\', '/');
-                if (targetPath.equals(normalizedSourcePath) || targetPath.endsWith("/" + normalizedSourcePath)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean isAntlrSyntaxError(StvnDiagnostic diag) {
-        var msg = diag.message();
-        return (diag.errorCode().isPresent() && "STVN_SYNTAX_ERROR".equals(diag.errorCode().get()))
-            || msg.contains("mismatched input")
-            || msg.contains("no viable alternative")
-            || msg.contains("extraneous input")
-            || msg.startsWith("STVN Syntax Error");
-    }
-
-    private static boolean hasLocalSyntaxErrorAt(PsiFile file, StvnDiagnostic diag) {
-        var psiErrors = PsiTreeUtil.findChildrenOfType(file, com.intellij.psi.PsiErrorElement.class);
-        if (psiErrors.isEmpty()) {
-            return false;
-        }
-        var s = Math.max(0, Math.min(diag.startOffset(), file.getTextLength()));
-        var e = Math.max(s, Math.min(diag.endOffset(), file.getTextLength()));
-        var range = new TextRange(s, e);
-        for (var err : psiErrors) {
-            var errRange = err.getTextRange();
-            if (errRange.intersects(range)
-                    || (errRange.getEndOffset() <= s && s - errRange.getEndOffset() <= 10)
-                    || (errRange.getStartOffset() >= e && errRange.getStartOffset() - e <= 10)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isStructuralKeyword(String token) {
-        return switch (token) {
-            case ":meta", ":defs", ":include", ":package", ":use",
-                 "#name", "#domain", "#kind", "#version", "#schemaVersion", "#formatVersion",
-                 "#CANONICAL_HERMETIC", "#DEFINITION", "#DEFS_INCLUDE", "#BODY", "#BODY_INCLUDE",
-                 "#strip" -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean isGenericNoiseToken(String token) {
-        if (token.isEmpty() || isStructuralKeyword(token)) {
-            return true;
-        }
-        if (token.equals("}") || token.equals("{") || token.equals("]") || token.equals("[")
-                || token.equals(")") || token.equals("(") || token.equals(":") || token.equals("#")
-                || token.equals(",") || token.equals(";") || token.equals("\"") || token.equals("'")) {
-            return true;
-        }
-        if (token.equals(StvnVocabulary.TYPE_STRING) || token.equals(StvnVocabulary.TYPE_INT) || token.equals(StvnVocabulary.TYPE_FLOAT)
-                || token.equals(StvnVocabulary.TYPE_BOOLEAN) || token.equals(StvnVocabulary.TYPE_DATE_TIME) || token.equals(StvnVocabulary.TYPE_TIME_EPOCH)
-                || token.equals(StvnVocabulary.TYPE_TUPLE) || token.equals(StvnVocabulary.TYPE_SEQ)
-                || token.equals(StvnVocabulary.TYPE_SET) || token.equals(StvnVocabulary.TYPE_MAP) || token.equals(StvnVocabulary.TYPE_EITHER)
-                || token.equals(StvnVocabulary.TYPE_ENUM) || token.equals(StvnVocabulary.TYPE_OPTION) || token.equals(StvnVocabulary.TYPE_UNION)) {
-            return true;
-        }
-        return token.matches("^[0-9]+$");
-    }
-
-    private static boolean isLocalAstMatch(PsiFile file, StvnDiagnostic diag, int start, int end) {
-        var textLength = file.getTextLength();
-        var s = Math.max(0, Math.min(start, textLength));
-        var e = Math.max(s, Math.min(end, textLength));
-        if (s >= e) return false;
-
-        if (isAntlrSyntaxError(diag)) {
-            return hasLocalSyntaxErrorAt(file, diag);
-        }
-
-        boolean isKindMismatch = (diag.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(diag.errorCode().get()))
-            || diag.message().contains("Mandatory :meta block missing")
-            || diag.message().contains("does not match file extension");
-        if (isKindMismatch) {
-            var expectedExt = extractExtensionFromMessage(diag.message());
-            if (expectedExt != null && !file.getName().endsWith(expectedExt)) {
-                return false;
-            }
-        }
-
-        var msg = diag.message();
-        if (msg.contains("Undefined type: ") || msg.contains("Unknown or undefined type: ") || msg.contains("Unresolved type alias: ")) {
-            var typeName = extractCitedTypeToken(msg);
-            if (!typeName.isEmpty()) {
-                var typeKw = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeKeyword.class);
-                return typeKw != null && typeKw.getText().trim().equals(typeName);
-            }
-        }
-        if (isStructuralMetadataMismatchInActiveBuffer(file, diag)) {
-            return false;
-        }
-        if (isCoordinateMismatchInActiveBuffer(file, diag)) {
-            return false;
-        }
-        if (msg.contains("cannot be used on left-hand side of type definition")) {
-            var typeDef = PsiTreeUtil.findElementOfClassAtRange(file, s, e, TypeDefinition.class);
-            if (typeDef == null) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isStructuralMetadataMismatchInActiveBuffer(PsiFile file, StvnDiagnostic diag) {
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        if (includes.isEmpty()) {
-            return false;
-        }
-        var start = diag.startOffset();
-        var end = diag.endOffset();
-        var textLength = file.getTextLength();
-        if (start < 0 || end > textLength || start >= end) {
-            return false;
-        }
-        var msg = diag.message();
-        if (msg.contains("Empty metadata facet map is invalid")
-            || msg.contains("Empty metadata block is invalid")
-            || msg.contains("Empty type constraint block is invalid")
-            || (diag.errorCode().isPresent() && ("ERR_EMPTY_METADATA_MAP".equals(diag.errorCode().get()) || "ERR_EMPTY_METADATA_BLOCK".equals(diag.errorCode().get())))) {
-            var metaMap = PsiTreeUtil.findElementOfClassAtRange(file, start, end, MetadataMap.class);
-            if (metaMap == null) {
-                return true;
-            }
-        }
-        if ((msg.contains("facet '") && (msg.contains("is not permitted on") || msg.contains("is prohibited on")))
-            || msg.contains("Unrecognized constraint facet")) {
-            var metaEntry = PsiTreeUtil.findElementOfClassAtRange(file, start, end, MetadataEntry.class);
-            if (metaEntry == null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isCoordinateMismatchInActiveBuffer(PsiFile file, StvnDiagnostic diag) {
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        if (includes.isEmpty()) {
-            return false;
-        }
-        var start = diag.startOffset();
-        var end = diag.endOffset();
-        var textLength = file.getTextLength();
-        if (start < 0 || end > textLength || start >= end) {
-            return false;
-        }
-        var msg = diag.message();
-        var text = file.getText();
-        var slice = text.substring(start, end).trim();
-
-        // 1. Undefined or unknown type diagnostics: slice must match cited type
-        if (msg.startsWith("Undefined type: ") || msg.startsWith("Unknown or undefined type: ") || msg.startsWith("Unresolved type alias: ")) {
-            var typeName = extractCitedTypeToken(msg);
-            if (!typeName.isEmpty()) {
-                if (!slice.equals(typeName) && !slice.contains(typeName) && !slice.endsWith(typeName)) {
-                    return true;
-                }
-            }
-        }
-
-        if (isAntlrSyntaxError(diag)) {
-            var quoted = extractCitedTokens(msg);
-            if (!quoted.isEmpty()) {
-                var token = quoted.get(0);
-                var unquoted = (token.startsWith("\"") && token.endsWith("\"") && token.length() >= 2)
-                    ? token.substring(1, token.length() - 1)
-                    : token;
-                if (!slice.contains(token) && !token.contains(slice) && !slice.contains(unquoted) && !unquoted.contains(slice)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        String vfPath = StvnSchemaFlattener.normalizePath(virtualFile.getPath());
+        String strippedVf = vfPath.replaceFirst("^/+", "");
+        return !diagPath.equals(vfPath)
+            && (strippedVf.isEmpty() || !diagPath.endsWith("/" + strippedVf));
     }
 
     private record IncludeNode(
@@ -1851,32 +1038,49 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         List<String> pathChain,
         String targetPath,
         PsiFile targetFile,
-        String fileName,
-        String extension
+        String expectedCompilerPath,
+        String targetVfPath
     ) {}
 
     private static void renderPinnedIncludeDiagnostics(
-            PsiFile file,
-            List<StvnDiagnostic> diagnostics,
-            AnnotationHolder holder,
-            @Nullable List<Problem> problems,
-            @Nullable WolfTheProblemSolver wolf,
-            @Nullable VirtualFile virtualFile
+        PsiFile file,
+        List<StvnDiagnostic> diagnostics,
+        String activeNormalizedPath,
+        AnnotationHolder holder,
+        @Nullable List<Problem> problems,
+        @Nullable WolfTheProblemSolver wolf,
+        @Nullable VirtualFile virtualFile
     ) {
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        if (includes.isEmpty()) return;
+        if (includes.isEmpty()) {
+            return;
+        }
 
         var document = file.getViewProvider().getDocument();
+        String baseCompilerPath = !activeNormalizedPath.isEmpty()
+            ? activeNormalizedPath
+            : (file.getVirtualFile() != null
+                ? StvnSchemaFlattener.normalizePath(file.getVirtualFile().getPath())
+                : "");
 
-        var includeNodes = new java.util.ArrayList<IncludeNode>();
+        var includeNodes = new ArrayList<IncludeNode>();
         for (var incl : includes) {
             var stringLit = incl.getStringLiteral();
-            if (stringLit == null) continue;
-            var directPath = stringLit.getText().replace("\"", "");
+            if (stringLit == null) {
+                continue;
+            }
+            var directPath = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true)
+                .orElseGet(() -> stringLit.getText().replace("\"", ""));
             var resolvedDirect = StvnTypeReference.resolveIncludeFile(stringLit);
-            if (resolvedDirect == null) continue;
+            if (resolvedDirect == null) {
+                continue;
+            }
+            String expectedChildPath = resolveRelativeNormalizedPath(baseCompilerPath, directPath);
+            String targetVfPath = resolvedDirect.getVirtualFile() != null
+                ? StvnSchemaFlattener.normalizePath(resolvedDirect.getVirtualFile().getPath())
+                : "";
 
-            var directChain = new java.util.ArrayList<String>();
+            var directChain = new ArrayList<String>();
             directChain.add(directPath);
             includeNodes.add(new IncludeNode(
                 incl,
@@ -1885,10 +1089,23 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 directChain,
                 directPath,
                 resolvedDirect,
-                resolvedDirect.getName(),
-                getExtension(resolvedDirect.getName())
+                expectedChildPath,
+                targetVfPath
             ));
-            collectTransitiveIncludes(incl, directPath, resolvedDirect, directChain, resolvedDirect, includeNodes, new java.util.HashSet<>());
+            collectTransitiveIncludes(
+                incl,
+                directPath,
+                resolvedDirect,
+                directChain,
+                resolvedDirect,
+                expectedChildPath,
+                includeNodes,
+                new HashSet<>()
+            );
+        }
+
+        if (includeNodes.isEmpty()) {
+            return;
         }
 
         record GroupedIncludeDiag(
@@ -1902,140 +1119,59 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             int depth,
             boolean isRootCause
         ) {}
-        var groupedMap = new java.util.LinkedHashMap<PsiElement, List<GroupedIncludeDiag>>();
-        var seenMessageKeys = new java.util.HashSet<String>();
 
-        // Sort include nodes by depth descending so that leaf/deepest dependencies match first
-        var sortedNodes = new java.util.ArrayList<>(includeNodes);
+        var groupedMap = new LinkedHashMap<PsiElement, List<GroupedIncludeDiag>>();
+        var seenMessageKeys = new HashSet<String>();
+
+        var sortedNodes = new ArrayList<>(includeNodes);
         sortedNodes.sort((a, b) -> Integer.compare(b.pathChain().size(), a.pathChain().size()));
 
         for (var diag : diagnostics) {
-            if (diag.severity() != DiagnosticSeverity.ERROR) continue;
-            if (!isDiagnosticFromIncludedFile(file, diag)) continue;
-
-            var msg = sanitizeCompilerJargon(diag.message());
-            var primaryToken = extractPrimaryToken(msg);
-            var expectedExt = extractExtensionFromMessage(msg);
-
-            IncludeNode matchedNode = null;
-            // Route strictly by explicit sourcePath matching the include graph node
-            String diagSourcePath = getDiagnosticSourcePath(diag);
-            if (diagSourcePath != null && !diagSourcePath.isEmpty()) {
-                var normalizedSource = diagSourcePath.replace('\\', '/');
-                for (var node : sortedNodes) {
-                    var targetVf = node.targetFile().getVirtualFile();
-                    if (targetVf != null) {
-                        var targetPath = targetVf.getPath().replace('\\', '/');
-                        if (targetPath.equals(normalizedSource) || targetPath.endsWith("/" + normalizedSource)
-                                || normalizedSource.endsWith(node.directPath())) {
-                            matchedNode = node;
-                            break;
-                        }
-                    }
-                }
+            if (diag.severity() != DiagnosticSeverity.ERROR) {
+                continue;
+            }
+            if (!isDiagnosticFromIncludedFile(file, diag, activeNormalizedPath)) {
+                continue;
+            }
+            String diagSourcePath = diag.sourcePath().orElse("");
+            if (diagSourcePath.isEmpty()) {
+                continue;
             }
 
-            if (matchedNode == null && expectedExt != null) {
-                for (var node : sortedNodes) {
-                    if (node.extension().equalsIgnoreCase(expectedExt)) {
-                        if (msg.contains("Mandatory :meta block missing")) {
-                            if (PsiTreeUtil.findChildOfType(node.targetFile(), MetaEntry.class) == null
-                                && !StvnMetaTemplateUtil.hasMetaHeader(node.targetFile())) {
-                                matchedNode = node;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (matchedNode == null) {
-                    for (var node : sortedNodes) {
-                        if (node.extension().equalsIgnoreCase(expectedExt)) {
-                            matchedNode = node;
-                            break;
-                        }
-                    }
-                }
+            IncludeNode matchedNode = findMatchingIncludeNode(sortedNodes, diagSourcePath);
+            if (matchedNode == null) {
+                continue;
             }
 
-            boolean isUndefinedType = msg.contains("Undefined type:")
-                || msg.contains("Unknown or undefined type:")
-                || msg.contains("Unresolved type alias:");
+            var msg = diag.message();
+            var chainStr = matchedNode.pathChain().size() > 1
+                ? String.join(" -> ", matchedNode.pathChain())
+                : matchedNode.directPath();
+            String attributedMsg = matchedNode.pathChain().size() > 1
+                ? "In included module '" + chainStr + "': " + msg
+                : "Included file '" + matchedNode.directPath() + "' contains compilation errors: " + msg;
 
-            if (matchedNode == null && isUndefinedType && !primaryToken.isEmpty()) {
-                for (var node : sortedNodes) {
-                    if (declaresTypeDefinition(node.targetFile(), primaryToken)) {
-                        continue;
-                    }
-                    if (referencesTypeKeyword(node.targetFile(), primaryToken)) {
-                        matchedNode = node;
-                        break;
-                    }
-                }
-                if (matchedNode == null) {
-                    for (var node : sortedNodes) {
-                        if (node.targetFile().getText().contains(primaryToken)) {
-                            matchedNode = node;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 4. Token matching for specific child module tokens (excluding generic words like :String, }, 4096):
-            if (matchedNode == null && !isGenericNoiseToken(primaryToken)) {
-                for (var node : sortedNodes) {
-                    if (node.targetFile().getText().contains(primaryToken)) {
-                        matchedNode = node;
-                        break;
-                    }
-                }
-            }
-
-            if (matchedNode != null) {
-                var chainStr = matchedNode.pathChain().size() > 1
-                    ? String.join(" -> ", matchedNode.pathChain())
-                    : matchedNode.directPath();
-                String attributedMsg;
-                if (matchedNode.pathChain().size() > 1) {
-                    attributedMsg = "In included module '" + chainStr + "': " + msg;
-                } else {
-                    attributedMsg = "Included file '" + matchedNode.directPath() + "' contains compilation errors: " + msg;
-                }
-
-                boolean isRootCause = !msg.contains("Undefined type:") && !msg.contains("Unresolved type alias:") && !msg.contains("Unknown or undefined type:");
-                var parentStmt = PsiTreeUtil.getParentOfType(matchedNode.directInclude(), IncludeStmt.class, false);
-                var targetRangeElement = parentStmt != null ? parentStmt : matchedNode.directInclude();
-                var dedupKey = targetRangeElement.getTextOffset() + ":" + attributedMsg;
-                if (seenMessageKeys.add(dedupKey)) {
-                    var directVf = matchedNode.directFile().getVirtualFile();
-                    if (directVf == null) {
-                        var activeVf = file.getVirtualFile();
-                        if (activeVf != null && activeVf.getParent() != null) {
-                            directVf = activeVf.getParent().findFileByRelativePath(matchedNode.directPath());
-                        }
-                    }
-
-                    var targetVf = matchedNode.targetFile().getVirtualFile();
-                    if (targetVf == null) {
-                        var activeVf = file.getVirtualFile();
-                        if (activeVf != null && activeVf.getParent() != null) {
-                            targetVf = activeVf.getParent().findFileByRelativePath(matchedNode.targetPath());
-                        }
-                    }
-
-                    groupedMap.computeIfAbsent(targetRangeElement, k -> new java.util.ArrayList<>())
-                        .add(new GroupedIncludeDiag(
-                            msg,
-                            attributedMsg,
-                            matchedNode.directPath(),
-                            directVf,
-                            matchedNode.targetPath(),
-                            targetVf,
-                            chainStr,
-                            matchedNode.pathChain().size(),
-                            isRootCause
-                        ));
-                }
+            boolean isRootCause = !msg.contains("Undefined type:")
+                && !msg.contains("Unresolved type alias:")
+                && !msg.contains("Unknown or undefined type:");
+            var parentStmt = PsiTreeUtil.getParentOfType(matchedNode.directInclude(), IncludeStmt.class, false);
+            var targetRangeElement = parentStmt != null ? parentStmt : matchedNode.directInclude();
+            var dedupKey = targetRangeElement.getTextOffset() + ":" + attributedMsg;
+            if (seenMessageKeys.add(dedupKey)) {
+                var directVf = resolveIncludeVirtualFile(file, matchedNode.directFile(), matchedNode.directPath());
+                var targetVf = resolveIncludeVirtualFile(file, matchedNode.targetFile(), matchedNode.targetPath());
+                groupedMap.computeIfAbsent(targetRangeElement, k -> new ArrayList<>())
+                    .add(new GroupedIncludeDiag(
+                        msg,
+                        attributedMsg,
+                        matchedNode.directPath(),
+                        directVf,
+                        matchedNode.targetPath(),
+                        targetVf,
+                        chainStr,
+                        matchedNode.pathChain().size(),
+                        isRootCause
+                    ));
             }
         }
 
@@ -2044,7 +1180,6 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var diagList = entry.getValue();
             var targetRange = element.getTextRange();
 
-            // Sort diagnostics: root cause errors first, then deepest dependencies
             diagList.sort((a, b) -> {
                 if (a.isRootCause() != b.isRootCause()) {
                     return a.isRootCause() ? -1 : 1;
@@ -2065,14 +1200,14 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 var single = diagList.get(0);
                 finalMessage = StvnDiagnosticFormatter.formatCore(single.attributedMessage(), "ERR_MODULE_IMPORT");
                 if (single.depth() > 1) {
-                    htmlTooltip = "<html>In included module '" + escapeHtml(single.chainStr()) + "':<br/>" +
-                                  "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
+                    htmlTooltip = "<html>In included module '" + escapeHtml(single.chainStr()) + "':<br/>"
+                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
                 } else {
-                    htmlTooltip = "<html>Included file '" + escapeHtml(single.directPath()) + "' contains compilation errors:<br/>" +
-                                  "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
+                    htmlTooltip = "<html>Included file '" + escapeHtml(single.directPath())
+                        + "' contains compilation errors:<br/>"
+                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
                 }
             } else if (collapseNoise) {
-                // Vector 3 Remediation: Collapse cascading undefined-type warnings to isolate root cause
                 var primaryRoot = rootCauses.get(0);
                 var count = cascadingErrors.size();
                 var summarySuffix = "\n(+" + count + " secondary cascading undefined type errors suppressed)";
@@ -2088,10 +1223,12 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     if (primaryRoot.depth() > 1) {
                         htmlSb.append("<html>In included module '").append(escapeHtml(primaryRoot.chainStr())).append("':<br/>");
                     } else {
-                        htmlSb.append("<html>Included file '").append(escapeHtml(primaryRoot.directPath())).append("' contains compilation errors:<br/>");
+                        htmlSb.append("<html>Included file '").append(escapeHtml(primaryRoot.directPath()))
+                            .append("' contains compilation errors:<br/>");
                     }
                     htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(primaryRoot.rawMessage())).append("<br/><br/>");
-                    htmlSb.append("<font color=\"#888888\"><i>(+").append(count).append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                    htmlSb.append("<font color=\"#888888\"><i>(+").append(count)
+                        .append(" secondary cascading undefined type errors suppressed)</i></font></html>");
                     htmlTooltip = htmlSb.toString();
                 } else {
                     var sb = new StringBuilder();
@@ -2103,7 +1240,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                     } else {
                         sb.append("Included module hierarchy contains compilation errors:\n");
                         for (var r : rootCauses) {
-                            sb.append("• [").append(r.depth() > 1 ? r.chainStr() : r.directPath()).append("] ").append(r.rawMessage()).append("\n");
+                            sb.append("• [").append(r.depth() > 1 ? r.chainStr() : r.directPath()).append("] ")
+                                .append(r.rawMessage()).append("\n");
                         }
                     }
                     sb.append("(+").append(count).append(" secondary cascading undefined type errors suppressed)");
@@ -2111,17 +1249,21 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
 
                     var htmlSb = new StringBuilder();
                     if (!isHierarchy) {
-                        htmlSb.append("<html>Included file '").append(escapeHtml(directPath)).append("' contains compilation errors:<br/>");
+                        htmlSb.append("<html>Included file '").append(escapeHtml(directPath))
+                            .append("' contains compilation errors:<br/>");
                         for (var r : rootCauses) {
                             htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(r.rawMessage())).append("<br/>");
                         }
                     } else {
                         htmlSb.append("<html>Included module hierarchy contains compilation errors:<br/>");
                         for (var r : rootCauses) {
-                            htmlSb.append("&nbsp;&nbsp;&bull; <i>[").append(escapeHtml(r.depth() > 1 ? r.chainStr() : r.directPath())).append("]</i> ").append(escapeHtml(r.rawMessage())).append("<br/>");
+                            htmlSb.append("&nbsp;&nbsp;&bull; <i>[")
+                                .append(escapeHtml(r.depth() > 1 ? r.chainStr() : r.directPath()))
+                                .append("]</i> ").append(escapeHtml(r.rawMessage())).append("<br/>");
                         }
                     }
-                    htmlSb.append("<br/><font color=\"#888888\"><i>(+").append(count).append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                    htmlSb.append("<br/><font color=\"#888888\"><i>(+").append(count)
+                        .append(" secondary cascading undefined type errors suppressed)</i></font></html>");
                     htmlTooltip = htmlSb.toString();
                 }
             } else if (!isHierarchy) {
@@ -2133,7 +1275,8 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
 
                 var htmlSb = new StringBuilder();
-                htmlSb.append("<html>Included file '").append(escapeHtml(directPath)).append("' contains compilation errors:<br/>");
+                htmlSb.append("<html>Included file '").append(escapeHtml(directPath))
+                    .append("' contains compilation errors:<br/>");
                 for (var d : diagList) {
                     htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(d.rawMessage())).append("<br/>");
                 }
@@ -2143,26 +1286,17 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 var sb = new StringBuilder();
                 sb.append("Included module hierarchy contains compilation errors:\n");
                 for (var d : diagList) {
-                    sb.append("• ");
-                    if (d.depth() > 1) {
-                        sb.append("[").append(d.chainStr()).append("] ");
-                    } else {
-                        sb.append("[").append(d.directPath()).append("] ");
-                    }
-                    sb.append(d.rawMessage()).append("\n");
+                    sb.append("• [").append(d.depth() > 1 ? d.chainStr() : d.directPath()).append("] ")
+                        .append(d.rawMessage()).append("\n");
                 }
                 finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
 
                 var htmlSb = new StringBuilder();
                 htmlSb.append("<html>Included module hierarchy contains compilation errors:<br/>");
                 for (var d : diagList) {
-                    htmlSb.append("&nbsp;&nbsp;&bull; ");
-                    if (d.depth() > 1) {
-                        htmlSb.append("<i>[").append(escapeHtml(d.chainStr())).append("]</i> ");
-                    } else {
-                        htmlSb.append("<i>[").append(escapeHtml(d.directPath())).append("]</i> ");
-                    }
-                    htmlSb.append(escapeHtml(d.rawMessage())).append("<br/>");
+                    htmlSb.append("&nbsp;&nbsp;&bull; <i>[")
+                        .append(escapeHtml(d.depth() > 1 ? d.chainStr() : d.directPath()))
+                        .append("]</i> ").append(escapeHtml(d.rawMessage())).append("<br/>");
                 }
                 htmlSb.append("</html>");
                 htmlTooltip = htmlSb.toString();
@@ -2171,7 +1305,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             var builder = holder.newAnnotation(HighlightSeverity.ERROR, finalMessage)
                 .tooltip(htmlTooltip)
                 .range(targetRange);
-            var attachedFixPaths = new java.util.HashSet<String>();
+            var attachedFixPaths = new HashSet<String>();
             for (var d : diagList) {
                 if (d.directVirtualFile() != null && d.directVirtualFile().isValid() && attachedFixPaths.add(d.directPath())) {
                     builder = builder.withFix(new OpenIncludedFileQuickFix(d.directPath(), d.directVirtualFile()));
@@ -2185,11 +1319,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             if (problems != null && wolf != null && virtualFile != null) {
                 int line = 0;
                 int col = 0;
-                if (document != null && targetRange.getStartOffset() >= 0 && targetRange.getStartOffset() <= document.getTextLength()) {
+                if (document != null
+                        && targetRange.getStartOffset() >= 0
+                        && targetRange.getStartOffset() <= document.getTextLength()) {
                     line = document.getLineNumber(targetRange.getStartOffset());
                     col = targetRange.getStartOffset() - document.getLineStartOffset(line);
                 }
-                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{ finalMessage });
+                var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{finalMessage});
                 if (problem != null) {
                     problems.add(problem);
                 }
@@ -2197,82 +1333,99 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
     }
 
-    private static boolean declaresTypeDefinition(PsiFile file, String typeName) {
-        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var def : typeDefs) {
-            var kw = def.getTypeKeyword();
-            if (kw != null && kw.getText().trim().equals(typeName)) {
-                return true;
+    private static @Nullable IncludeNode findMatchingIncludeNode(
+        List<IncludeNode> sortedNodes,
+        String diagSourcePath
+    ) {
+        // Pass 1: exact normalized compiler path or exact VFS path match
+        for (var node : sortedNodes) {
+            if ((!node.expectedCompilerPath().isEmpty() && diagSourcePath.equals(node.expectedCompilerPath()))
+                    || (!node.targetVfPath().isEmpty() && diagSourcePath.equals(node.targetVfPath()))) {
+                return node;
             }
         }
-        return false;
-    }
-
-    private static boolean referencesTypeKeyword(PsiFile file, String typeName) {
-        var typeKeywords = PsiTreeUtil.findChildrenOfType(file, TypeKeyword.class);
-        for (var kw : typeKeywords) {
-            if (kw.getText().trim().equals(typeName) && !org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(kw)) {
-                return true;
+        // Pass 2: staged VFS relative suffix match
+        for (var node : sortedNodes) {
+            String strippedVf = node.targetVfPath().replaceFirst("^/+", "");
+            if (!strippedVf.isEmpty() && diagSourcePath.endsWith("/" + strippedVf)) {
+                return node;
             }
-        }
-        return false;
-    }
-
-    private static String getExtension(String name) {
-        int idx = name.lastIndexOf('.');
-        return idx >= 0 ? name.substring(idx) : "";
-    }
-
-    private static String escapeHtml(String text) {
-        if (text == null) return "";
-        return text.replace("&", "&amp;")
-                   .replace("<", "&lt;")
-                   .replace(">", "&gt;")
-                   .replace("\"", "&quot;")
-                   .replace("'", "&#39;");
-    }
-
-    private static @Nullable String extractExtensionFromMessage(String msg) {
-        int extIdx = msg.indexOf("for extension '");
-        if (extIdx >= 0) {
-            int start = extIdx + "for extension '".length();
-            int end = msg.indexOf('\'', start);
-            if (end > start) {
-                return msg.substring(start, end);
-            }
-        }
-        extIdx = msg.indexOf("file extension '");
-        if (extIdx >= 0) {
-            int start = extIdx + "file extension '".length();
-            int end = msg.indexOf('\'', start);
-            if (end > start) {
-                return msg.substring(start, end);
+            String normTarget = StvnSchemaFlattener.normalizePath(node.targetPath()).replaceFirst("^\\./", "");
+            if (!normTarget.isEmpty() && (diagSourcePath.equals(normTarget) || diagSourcePath.endsWith("/" + normTarget))) {
+                return node;
             }
         }
         return null;
     }
 
-    private static void collectTransitiveIncludes(
-            IncludeElement directInclude,
-            String directPath,
-            PsiFile directFile,
-            List<String> currentChain,
-            PsiFile currentFile,
-            List<IncludeNode> accumulator,
-            java.util.Set<String> visited
+    private static @Nullable VirtualFile resolveIncludeVirtualFile(
+        PsiFile activeFile,
+        PsiFile resolvedTarget,
+        String relativePath
     ) {
-        if (currentChain.size() > 10) return;
+        var vf = resolvedTarget.getVirtualFile();
+        if (vf != null) {
+            return vf;
+        }
+        var activeVf = activeFile.getVirtualFile();
+        if (activeVf != null && activeVf.getParent() != null) {
+            return activeVf.getParent().findFileByRelativePath(relativePath);
+        }
+        return null;
+    }
+
+    private static String resolveRelativeNormalizedPath(String baseFilePath, String relativeIncludePath) {
+        if (baseFilePath.isEmpty()) {
+            return StvnSchemaFlattener.normalizePath(relativeIncludePath);
+        }
+        try {
+            Path base = Path.of(baseFilePath);
+            Path parent = base.getParent();
+            Path resolved = parent != null
+                ? parent.resolve(relativeIncludePath).normalize()
+                : Path.of(relativeIncludePath).normalize();
+            return StvnSchemaFlattener.normalizePath(resolved.toString());
+        } catch (InvalidPathException ex) {
+            int slash = baseFilePath.lastIndexOf('/');
+            String dir = slash >= 0 ? baseFilePath.substring(0, slash + 1) : "";
+            return StvnSchemaFlattener.normalizePath(dir + relativeIncludePath);
+        }
+    }
+
+    private static void collectTransitiveIncludes(
+        IncludeElement directInclude,
+        String directPath,
+        PsiFile directFile,
+        List<String> currentChain,
+        PsiFile currentFile,
+        String currentExpectedCompilerPath,
+        List<IncludeNode> accumulator,
+        Set<String> visited
+    ) {
+        if (currentChain.size() > 10) {
+            return;
+        }
         var childIncludes = PsiTreeUtil.findChildrenOfType(currentFile, IncludeElement.class);
         for (var child : childIncludes) {
             var strLit = child.getStringLiteral();
-            if (strLit == null) continue;
-            var pathText = strLit.getText().replace("\"", "");
+            if (strLit == null) {
+                continue;
+            }
+            var pathText = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), true)
+                .orElseGet(() -> strLit.getText().replace("\"", ""));
             var resolved = StvnTypeReference.resolveIncludeFile(strLit);
-            if (resolved == null) continue;
-            var resolvedPath = resolved.getVirtualFile() != null ? resolved.getVirtualFile().getPath() : resolved.getName();
-            if (!visited.add(resolvedPath)) continue;
+            if (resolved == null) {
+                continue;
+            }
+            var resolvedVfPath = resolved.getVirtualFile() != null
+                ? StvnSchemaFlattener.normalizePath(resolved.getVirtualFile().getPath())
+                : resolved.getName();
+            if (!visited.add(resolvedVfPath)) {
+                continue;
+            }
 
-            var nextChain = new java.util.ArrayList<>(currentChain);
+            String nextCompilerPath = resolveRelativeNormalizedPath(currentExpectedCompilerPath, pathText);
+            var nextChain = new ArrayList<>(currentChain);
             nextChain.add(pathText);
             accumulator.add(new IncludeNode(
                 directInclude,
@@ -2281,35 +1434,31 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 nextChain,
                 pathText,
                 resolved,
-                resolved.getName(),
-                getExtension(resolved.getName())
+                nextCompilerPath,
+                resolved.getVirtualFile() != null ? resolvedVfPath : ""
             ));
-            collectTransitiveIncludes(directInclude, directPath, directFile, nextChain, resolved, accumulator, visited);
+            collectTransitiveIncludes(
+                directInclude,
+                directPath,
+                directFile,
+                nextChain,
+                resolved,
+                nextCompilerPath,
+                accumulator,
+                visited
+            );
         }
     }
 
-    private static boolean isUserIncludedFile(PsiFile activeFile, @Nullable PsiFile targetFile) {
-        if (targetFile == null || targetFile == activeFile) {
-            return false;
+    private static String escapeHtml(@Nullable String text) {
+        if (text == null) {
+            return "";
         }
-        var name = targetFile.getName();
-        if (name.contains("prelude") || targetFile.getVirtualFile() == null) {
-            return false;
-        }
-        return true;
-    }
-
-    private static boolean isDuplicateOrCascadingMismatchedInput(List<StvnDiagnostic> allDiagnostics, StvnDiagnostic d) {
-        var msg = d.message();
-        if (msg.contains("mismatched input") && (msg.contains("expecting ')'") || msg.contains("expecting <schema type>"))) {
-            for (var other : allDiagnostics) {
-                if (other != d && Math.abs(other.startOffset() - d.startOffset()) <= 15 &&
-                    (other.message().contains("empty composite") || other.message().contains("insufficient composite"))) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;");
     }
 
     private static HighlightSeverity mapSeverity(DiagnosticSeverity severity) {
@@ -2337,194 +1486,7 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         return null;
     }
 
-    private static @Nullable String extractConstraintName(String remainder) {
-        var lower = remainder.toLowerCase();
-        if (lower.contains("preserveindent")) return "#preserveIndent";
-        if (lower.contains("regex")) return "#regex";
-        if (lower.contains("minincl")) return "#minIncl";
-        if (lower.contains("minexcl")) return "#minExcl";
-        if (lower.contains("maxincl")) return "#maxIncl";
-        if (lower.contains("maxexcl")) return "#maxExcl";
-        if (lower.contains("equatable")) return "#equatable";
-        if (lower.contains("comparable")) return "#comparable";
-        return null;
-    }
-
-    /**
-     * Translates raw ANTLR or compiler generator error strings into clean domain concepts.
-     *
-     * @param raw the raw compiler diagnostic message
-     * @return sanitized user-facing error message
-     */
-    public static String sanitizeCompilerJargon(String raw) {
-        if (raw.contains("token recognition error at: '#'")) {
-            return "Incomplete variant tag '#'";
-        }
-        if (raw.contains("token recognition error at: ':'")) {
-            return "Incomplete type sigil ':'";
-        }
-        if (raw.startsWith("no viable alternative at input")) {
-            return raw.replace("no viable alternative at input", "Syntax error at");
-        }
-        return raw;
-    }
-
-    /**
-     * Clamps a wide diagnostic range on a type definition down to the specific offending child element.
-     *
-     * @param file the containing PSI file
-     * @param range the original diagnostic range
-     * @param message the diagnostic message
-     * @return the clamped text range, or null if no clamping applies
-     */
-    private static @Nullable TextRange clampToOffendingChildIfTypeDef(PsiFile file, TextRange range, String message) {
-        // Suppressed legacy 1.x type suffix clamping
-
-        var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var typeDef : typeDefs) {
-            var tr = typeDef.getTextRange();
-            if (tr.contains(range) || range.contains(tr)) {
-                if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")) {
-                    var prefix = message.contains("Undefined type: ") ? "Undefined type: " : "Unresolved type alias: ";
-                    var rawName = message.substring(message.indexOf(prefix) + prefix.length()).trim();
-                    var typeName = rawName.split("[\\s,;\\)\\}\\]]")[0].trim();
-                    if (!typeName.startsWith(":")) {
-                        typeName = ":" + typeName;
-                    }
-                    var typeKeywords = PsiTreeUtil.findChildrenOfType(typeDef, TypeKeyword.class);
-                    // Pass 1: Spatial Intersection - prioritize matching child intersecting the diagnostic range
-                    for (var typeKw : typeKeywords) {
-                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
-                        if (!isLhs && typeKw.getText().equals(typeName)) {
-                            var kwRange = typeKw.getTextRange();
-                            if (kwRange.equals(range) || kwRange.contains(range) || range.contains(kwRange) || range.intersects(kwRange)) {
-                                return kwRange;
-                            }
-                        }
-                    }
-                    // Pass 2: Fallback for wide enclosing ranges
-                    for (var typeKw : typeKeywords) {
-                        var isLhs = (typeDef.getTypeKeyword() == typeKw);
-                        if (!isLhs && typeKw.getText().equals(typeName)) {
-                            return typeKw.getTextRange();
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Clamps wide metadata diagnostic spans down to the exact offending facet token.
-     *
-     * @param file the containing PSI file
-     * @param range the original diagnostic range
-     * @param message the diagnostic message
-     * @param errorCode the optional diagnostic error code
-     * @return the pinned text range on the target token, or null if no clamping applies
-     */
-    private static @Nullable TextRange clampToOffendingMetadataFacet(PsiFile file, TextRange range, String message, @Nullable String errorCode) {
-        // Diagnostic Category Gate: Never clamp type-level errors to metadata facets
-        if (message.contains("Undefined type: ") || message.contains("Unresolved type alias: ")
-            || "ERR_UNDEFINED_TYPE".equals(errorCode) || "UNDEFINED_TYPE".equals(errorCode)) {
-            return null;
-        }
-        var maps = PsiTreeUtil.findChildrenOfType(file, MetadataMap.class);
-        for (var map : maps) {
-            var mapRange = map.getTextRange();
-            if (mapRange.equals(range) || range.contains(mapRange)) {
-                // Pass 1: Inverted range and empty domain faults anchor on the upper bound facet
-                if ("INVALID_NUMERIC_RANGE".equals(errorCode) || "ERR_INVERTED_RANGE".equals(errorCode)
-                    || "ERR_EMPTY_INTERVAL_DOMAIN".equals(errorCode) || message.contains("effective range is invalid")
-                    || message.contains("empty domain") || message.contains("cardinality range is invalid")
-                    || message.contains("inverted")) {
-                    for (var entry : map.getMetadataEntryList()) {
-                        PsiElement leaf = entry.getFirstChild();
-                        if (leaf == null) continue;
-                        while (leaf.getFirstChild() != null) {
-                            leaf = leaf.getFirstChild();
-                        }
-                        var tokenText = leaf.getText().trim();
-                        if (tokenText.equals("#maxExcl") || tokenText.equals("#maxSize") || tokenText.equals("#maxIncl")) {
-                            return leaf.getTextRange();
-                        }
-                    }
-                }
-
-                // Pass 2: Mutually exclusive bounds anchor on the conflicting secondary facet
-                if ("MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode)
-                    || (message.contains("mutually exclusive") && !message.contains("ancestor") && !"ERR_MUTUALLY_EXCLUSIVE".equals(errorCode))) {
-                    for (var entry : map.getMetadataEntryList()) {
-                        PsiElement leaf = entry.getFirstChild();
-                        if (leaf == null) continue;
-                        while (leaf.getFirstChild() != null) {
-                            leaf = leaf.getFirstChild();
-                        }
-                        var tokenText = leaf.getText().trim();
-                        if (tokenText.equals("#maxIncl") || tokenText.equals("#minExcl") || tokenText.equals("#filterExcl")
-                            || tokenText.equals("#zoned") || tokenText.equals("#ms") || tokenText.equals("#audited")
-                            || tokenText.equals("#us") || tokenText.equals("#ns")) {
-                            return leaf.getTextRange();
-                        }
-                    }
-                }
-
-                // Pass 2b: Non-overridable, redundant, and transitive mutually exclusive facets anchor on the child facet entry
-                if ("ERR_NON_OVERRIDABLE_FACET".equals(errorCode) || "ERR_MUTUALLY_EXCLUSIVE".equals(errorCode)
-                    || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(errorCode)
-                    || DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(errorCode) || message.contains("is redundant")
-                    || message.contains("non-overridable") || (message.contains("mutually exclusive") && message.contains("ancestor"))) {
-                    for (var entry : map.getMetadataEntryList()) {
-                        PsiElement leaf = entry.getFirstChild();
-                        if (leaf == null) continue;
-                        while (leaf.getFirstChild() != null) {
-                            leaf = leaf.getFirstChild();
-                        }
-                        var tokenText = leaf.getText().trim();
-                        if (message.contains("facet '" + tokenText) || message.contains("'" + tokenText + "'") || message.contains("'" + tokenText + " ")) {
-                            return entry.getTextRange();
-                        }
-                    }
-                }
-
-                // Pass 3: Check for specifically quoted token in message: e.g. facet '#unsigned'
-                for (var entry : map.getMetadataEntryList()) {
-                    PsiElement leaf = entry.getFirstChild();
-                    if (leaf == null) continue;
-                    while (leaf.getFirstChild() != null) {
-                        leaf = leaf.getFirstChild();
-                    }
-                    var tokenText = leaf.getText().trim();
-                    if (tokenText.startsWith("#") && (message.contains("facet '" + tokenText + "'") || message.contains("'" + tokenText + "'"))) {
-                        return leaf.getTextRange();
-                    }
-                }
-
-                // Pass 4: Incomplete trait facets anchor on the trait keyword token
-                if (message.contains("Metadata facet #preserveIndent requires an explicit boolean value")
-                    || message.contains("#preserveIndent")) {
-                    for (var entry : map.getMetadataEntryList()) {
-                        if (entry.getMetadataTrait() != null) {
-                            return entry.getMetadataTrait().getTextRange();
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Expands a pinpoint diagnostic range anchored on empty parentheses '()' or brackets '[]'
-     * backwards to encompass the enclosing composite keyword token (:Tuple, :Union, :Option, :Either, :Enum, etc.).
-     *
-     * @param file the containing PSI file
-     * @param range the original diagnostic range
-     * @param message the diagnostic message
-     * @return the expanded or original text range
-     */
-    private static TextRange expandEmptyCompositeRange(PsiFile file, TextRange range, String message) {
+    private static TextRange expandEmptyCompositeRange(PsiFile file, TextRange range) {
         var text = file.getText();
         var textLength = text.length();
         if (textLength == 0) {
@@ -2532,16 +1494,13 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
         }
 
         var start = Math.max(0, Math.min(range.getStartOffset(), textLength));
-
-        // 1. PSI AST Node Context Inspection
         var element = file.findElementAt(start);
         if (element != null) {
             var product = PsiTreeUtil.getParentOfType(element, ProductType.class);
-            if (product != null) {
-                var productText = product.getText();
-                if (productText.startsWith(StvnVocabulary.TYPE_TUPLE) && product.getSchemaTypeList().isEmpty()) {
-                    return product.getTextRange();
-                }
+            if (product != null
+                    && product.getText().startsWith(StvnVocabulary.TYPE_TUPLE)
+                    && product.getSchemaTypeList().isEmpty()) {
+                return product.getTextRange();
             }
 
             var sum = PsiTreeUtil.getParentOfType(element, SumType.class);
@@ -2550,13 +1509,10 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
                 if (sum.getEnumDef() != null && sum.getEnumDef().getValueKeywordList().isEmpty()) {
                     return sum.getTextRange();
                 }
-                if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
-                    return sum.getTextRange();
-                }
-                if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
-                    return sum.getTextRange();
-                }
-                if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
+                if ((sumText.startsWith(StvnVocabulary.TYPE_UNION)
+                        || sumText.startsWith(StvnVocabulary.TYPE_OPTION)
+                        || sumText.startsWith(StvnVocabulary.TYPE_EITHER))
+                        && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
                     return sum.getTextRange();
                 }
             }
@@ -2567,86 +1523,71 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
             }
         }
 
-        // 2. Lexical Lookback Heuristic (Fallback when PSI tree contains syntax error elements)
-        var scanStart = start;
-        if (scanStart < textLength && (text.charAt(scanStart) == ')' || text.charAt(scanStart) == ']')) {
-            int openIdx = scanStart - 1;
-            while (openIdx >= 0 && Character.isWhitespace(text.charAt(openIdx))) {
-                openIdx--;
+        if (start < textLength && (text.charAt(start) == ')' || text.charAt(start) == ']')) {
+            return expandClosingDelimiterToCompositeKeyword(text, start);
+        }
+        if (start > 0 && (text.charAt(start - 1) == ')' || text.charAt(start - 1) == ']')) {
+            var expanded = expandClosingDelimiterToCompositeKeyword(text, start - 1);
+            if (!expanded.equals(new TextRange(start - 1, start))) {
+                return expanded;
             }
-            if (openIdx >= 0) {
-                char openChar = text.charAt(openIdx);
-                char closeChar = text.charAt(scanStart);
-                if ((openChar == '(' && closeChar == ')') || (openChar == '[' && closeChar == ']')) {
-                    int kwEnd = openIdx;
-                    while (kwEnd > 0 && Character.isWhitespace(text.charAt(kwEnd - 1))) {
-                        kwEnd--;
-                    }
-                    int kwStart = kwEnd;
-                    while (kwStart > 0 && isCompositeKeywordChar(text.charAt(kwStart - 1))) {
-                        kwStart--;
-                    }
-                    if (kwStart < kwEnd && text.charAt(kwStart) == ':') {
-                        var kw = text.substring(kwStart, kwEnd);
-                        if (isKnownCompositeKeyword(kw)) {
-                            return new TextRange(kwStart, scanStart + 1);
-                        }
-                    }
-                }
-            }
-        } else if (scanStart > 0 && (text.charAt(scanStart - 1) == ')' || text.charAt(scanStart - 1) == ']')) {
-            int closeIdx = scanStart - 1;
-            int openIdx = closeIdx - 1;
-            while (openIdx >= 0 && Character.isWhitespace(text.charAt(openIdx))) {
-                openIdx--;
-            }
-            if (openIdx >= 0) {
-                char openChar = text.charAt(openIdx);
-                char closeChar = text.charAt(closeIdx);
-                if ((openChar == '(' && closeChar == ')') || (openChar == '[' && closeChar == ']')) {
-                    int kwEnd = openIdx;
-                    while (kwEnd > 0 && Character.isWhitespace(text.charAt(kwEnd - 1))) {
-                        kwEnd--;
-                    }
-                    int kwStart = kwEnd;
-                    while (kwStart > 0 && isCompositeKeywordChar(text.charAt(kwStart - 1))) {
-                        kwStart--;
-                    }
-                    if (kwStart < kwEnd && text.charAt(kwStart) == ':') {
-                        var kw = text.substring(kwStart, kwEnd);
-                        if (isKnownCompositeKeyword(kw)) {
-                            return new TextRange(kwStart, closeIdx + 1);
-                        }
-                    }
-                }
-            }
-        } else if (scanStart < textLength && (text.charAt(scanStart) == '(' || text.charAt(scanStart) == '[')) {
-            int openIdx = scanStart;
-            char openChar = text.charAt(openIdx);
+        }
+        if (start < textLength && (text.charAt(start) == '(' || text.charAt(start) == '[')) {
+            char openChar = text.charAt(start);
             char targetClose = openChar == '(' ? ')' : ']';
-            int closeIdx = openIdx + 1;
+            int closeIdx = start + 1;
             while (closeIdx < textLength && Character.isWhitespace(text.charAt(closeIdx))) {
                 closeIdx++;
             }
             if (closeIdx < textLength && text.charAt(closeIdx) == targetClose) {
-                int kwEnd = openIdx;
-                while (kwEnd > 0 && Character.isWhitespace(text.charAt(kwEnd - 1))) {
-                    kwEnd--;
-                }
-                int kwStart = kwEnd;
-                while (kwStart > 0 && isCompositeKeywordChar(text.charAt(kwStart - 1))) {
-                    kwStart--;
-                }
-                if (kwStart < kwEnd && text.charAt(kwStart) == ':') {
-                    var kw = text.substring(kwStart, kwEnd);
-                    if (isKnownCompositeKeyword(kw)) {
-                        return new TextRange(kwStart, closeIdx + 1);
-                    }
-                }
+                return expandOpenClosePairToCompositeKeyword(text, start, closeIdx, range);
             }
         }
 
         return range;
+    }
+
+    private static TextRange expandClosingDelimiterToCompositeKeyword(String text, int closeIdx) {
+        int openIdx = closeIdx - 1;
+        while (openIdx >= 0 && Character.isWhitespace(text.charAt(openIdx))) {
+            openIdx--;
+        }
+        if (openIdx >= 0) {
+            char openChar = text.charAt(openIdx);
+            char closeChar = text.charAt(closeIdx);
+            if ((openChar == '(' && closeChar == ')') || (openChar == '[' && closeChar == ']')) {
+                return expandOpenClosePairToCompositeKeyword(
+                    text,
+                    openIdx,
+                    closeIdx,
+                    new TextRange(closeIdx, closeIdx + 1)
+                );
+            }
+        }
+        return new TextRange(closeIdx, closeIdx + 1);
+    }
+
+    private static TextRange expandOpenClosePairToCompositeKeyword(
+        String text,
+        int openIdx,
+        int closeIdx,
+        TextRange fallback
+    ) {
+        int kwEnd = openIdx;
+        while (kwEnd > 0 && Character.isWhitespace(text.charAt(kwEnd - 1))) {
+            kwEnd--;
+        }
+        int kwStart = kwEnd;
+        while (kwStart > 0 && isCompositeKeywordChar(text.charAt(kwStart - 1))) {
+            kwStart--;
+        }
+        if (kwStart < kwEnd && text.charAt(kwStart) == ':') {
+            var kw = text.substring(kwStart, kwEnd);
+            if (isKnownCompositeKeyword(kw)) {
+                return new TextRange(kwStart, closeIdx + 1);
+            }
+        }
+        return fallback;
     }
 
     private static boolean isCompositeKeywordChar(char c) {
@@ -2654,57 +1595,155 @@ public final class StvnExternalAnnotator extends ExternalAnnotator<StvnExternalA
     }
 
     private static boolean isKnownCompositeKeyword(String kw) {
-        return kw.equals(StvnVocabulary.TYPE_TUPLE) || kw.equals(StvnVocabulary.TYPE_UNION) || kw.equals(StvnVocabulary.TYPE_ENUM) ||
-               kw.equals(StvnVocabulary.TYPE_OPTION) || kw.equals(StvnVocabulary.TYPE_EITHER) || kw.equals(StvnVocabulary.TYPE_SEQ) ||
-               kw.equals(StvnVocabulary.TYPE_SET) ||
-               kw.equals(StvnVocabulary.TYPE_MAP);
+        return kw.equals(StvnVocabulary.TYPE_TUPLE)
+            || kw.equals(StvnVocabulary.TYPE_UNION)
+            || kw.equals(StvnVocabulary.TYPE_ENUM)
+            || kw.equals(StvnVocabulary.TYPE_OPTION)
+            || kw.equals(StvnVocabulary.TYPE_EITHER)
+            || kw.equals(StvnVocabulary.TYPE_SEQ)
+            || kw.equals(StvnVocabulary.TYPE_SET)
+            || kw.equals(StvnVocabulary.TYPE_MAP);
+    }
+
+    private static @Nullable String canonicalEmptyCompositeSyntaxMessage(String spanText) {
+        var trimmed = spanText.trim();
+        int openParen = trimmed.indexOf('(');
+        int openBracket = trimmed.indexOf('[');
+        int openIdx;
+        char openChar;
+        char expectedClose;
+        if (openParen >= 0 && (openBracket < 0 || openParen < openBracket)) {
+            openIdx = openParen;
+            openChar = '(';
+            expectedClose = ')';
+        } else if (openBracket >= 0) {
+            openIdx = openBracket;
+            openChar = '[';
+            expectedClose = ']';
+        } else {
+            return null;
+        }
+        if (trimmed.charAt(trimmed.length() - 1) != expectedClose) {
+            return null;
+        }
+        if (!trimmed.substring(openIdx + 1, trimmed.length() - 1).isBlank()) {
+            return null;
+        }
+        var kw = trimmed.substring(0, openIdx).trim();
+        if (openChar == '[' && StvnVocabulary.TYPE_ENUM.equals(kw)) {
+            return "STVN Syntax Error: empty enum variant list: "
+                + StvnVocabulary.TYPE_ENUM
+                + "[] requires at least one value keyword variant";
+        }
+        if (openChar == '(') {
+            if (StvnVocabulary.TYPE_TUPLE.equals(kw)) {
+                return "STVN Syntax Error: empty composite argument list: "
+                    + StvnVocabulary.TYPE_TUPLE
+                    + "() requires at least one schema type";
+            }
+            if (StvnVocabulary.TYPE_UNION.equals(kw)) {
+                return "STVN Syntax Error: empty composite argument list: "
+                    + StvnVocabulary.TYPE_UNION
+                    + "() requires at least one schema type";
+            }
+            if (StvnVocabulary.TYPE_SEQ.equals(kw)
+                    || StvnVocabulary.TYPE_SET.equals(kw)
+                    || StvnVocabulary.TYPE_OPTION.equals(kw)) {
+                return "STVN Syntax Error: empty composite argument list: collection requires schema type argument";
+            }
+            if (StvnVocabulary.TYPE_MAP.equals(kw) || StvnVocabulary.TYPE_EITHER.equals(kw)) {
+                return "STVN Syntax Error: insufficient composite arguments: expected 2 schema type arguments";
+            }
+        }
+        return null;
+    }
+
+    private static AnnotationBuilder attachCompleteSumVariantQuickFixes(
+        AnnotationBuilder annotationBuilder,
+        PsiElement targetElem
+    ) {
+        var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(targetElem);
+        if (expectedSchema == null) {
+            return annotationBuilder;
+        }
+        var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+        var schemaToInspect = resolvedNominal != null ? resolvedNominal : expectedSchema;
+        var constructor = schemaToInspect.getSchemaConstructor();
+        if (constructor == null || constructor.getSumType() == null) {
+            return annotationBuilder;
+        }
+        var sumType = constructor.getSumType();
+        var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+        if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER) && innerSchemas.size() >= 2) {
+            var rightLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(1));
+            var leftLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0));
+            annotationBuilder = annotationBuilder.withFix(
+                new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH)
+            );
+            annotationBuilder = annotationBuilder.withFix(
+                new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL)
+            );
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+            for (int i = 0; i < innerSchemas.size(); i++) {
+                var branchLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(i));
+                annotationBuilder = annotationBuilder.withFix(
+                    new CompleteSumVariantQuickFix(targetElem, "#" + (i + 1), branchLabel, PriorityAction.Priority.NORMAL)
+                );
+            }
+        }
+        return annotationBuilder;
     }
 
     private static AnnotationBuilder attachWrapSumVariantQuickFixes(
         AnnotationBuilder annotationBuilder,
         PsiFile file,
         TextRange range,
-        StvnDiagnostic diag,
-        String message
+        String diagnosticId,
+        String rawMessage
     ) {
-        if ((diag.errorCode().isPresent() && "ERR_AMBIGUOUS_SUM_INFERENCE".equals(diag.errorCode().get()))
-            || (message.contains("Ambiguous implicit resolution") || message.contains("Ambiguous implicit either") || message.contains("matches multiple candidate branches"))) {
-            var elem = file.findElementAt(range.getStartOffset());
-            if (elem != null) {
-                var valueElement = PsiTreeUtil.getParentOfType(elem, Value.class, false);
-                if (valueElement == null) {
-                    valueElement = PsiTreeUtil.getNonStrictParentOfType(elem, Value.class);
-                }
-                var targetElement = (valueElement != null) ? valueElement : elem;
-                var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(elem);
-                if (expectedSchema != null) {
-                    var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
-                    var schemaToInspect = (resolvedNominal != null) ? resolvedNominal : expectedSchema;
-                    var constructor = schemaToInspect.getSchemaConstructor();
-                    if (constructor != null && constructor.getSumType() != null) {
-                        var sumType = constructor.getSumType();
-                        var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                        if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-                            // Value-Oriented Programming (VOP) Right-First Invariant: R precedes L
-                            if (innerSchemas.size() >= 2) {
-                                var rightBranch = innerSchemas.get(1);
-                                var leftBranch = innerSchemas.get(0);
-                                var rightLabel = StvnSchemaFormatter.formatCleanSchema(rightBranch);
-                                var leftLabel = StvnSchemaFormatter.formatCleanSchema(leftBranch);
-                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH));
-                                annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL));
-                            }
-                        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                            for (int i = 0; i < innerSchemas.size(); i++) {
-                                var branch = innerSchemas.get(i);
-                                if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
-                                    var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
-                                    var tag = "#" + (i + 1);
-                                    annotationBuilder = annotationBuilder.withFix(new WrapSumVariantQuickFix(targetElement, tag, branchLabel));
-                                }
-                            }
-                        }
-                    }
+        if (!DiagnosticBag.ERR_AMBIGUOUS_SUM_INFERENCE.equals(diagnosticId)
+                && !rawMessage.contains("Ambiguous implicit")
+                && !rawMessage.contains("matches multiple candidate branches")) {
+            return annotationBuilder;
+        }
+        var elem = file.findElementAt(range.getStartOffset());
+        if (elem == null) {
+            return annotationBuilder;
+        }
+        var valueElement = PsiTreeUtil.getParentOfType(elem, Value.class, false);
+        if (valueElement == null) {
+            valueElement = PsiTreeUtil.getNonStrictParentOfType(elem, Value.class);
+        }
+        var targetElement = valueElement != null ? valueElement : elem;
+        var expectedSchema = StvnTypeResolver.resolveExpectedSchemaAtCaret(elem);
+        if (expectedSchema == null) {
+            return annotationBuilder;
+        }
+        var resolvedNominal = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+        var schemaToInspect = resolvedNominal != null ? resolvedNominal : expectedSchema;
+        var constructor = schemaToInspect.getSchemaConstructor();
+        if (constructor == null || constructor.getSumType() == null) {
+            return annotationBuilder;
+        }
+        var sumType = constructor.getSumType();
+        var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+        if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER) && innerSchemas.size() >= 2) {
+            var rightLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(1));
+            var leftLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0));
+            annotationBuilder = annotationBuilder.withFix(
+                new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH)
+            );
+            annotationBuilder = annotationBuilder.withFix(
+                new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL)
+            );
+        } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+            for (int i = 0; i < innerSchemas.size(); i++) {
+                var branch = innerSchemas.get(i);
+                if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
+                    var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
+                    annotationBuilder = annotationBuilder.withFix(
+                        new WrapSumVariantQuickFix(targetElement, "#" + (i + 1), branchLabel)
+                    );
                 }
             }
         }

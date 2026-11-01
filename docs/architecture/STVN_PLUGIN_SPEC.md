@@ -2,18 +2,15 @@
 
 **Document ID:** `STVN-SPEC-PLUGIN-01`  
 **Status:** Canonical Architecture Specification  
-**Version:** `1.0.0-PROPOSAL`  
+**Version:** `2.0.0`  
 **Target Repository:** `stvnadore-plugin` (`ij_stvnadore_plugin`)  
-**Target Version Baseline:** `2.0.0-PROPOSAL`  
+**Target Version Baseline:** `2.0.0-SNAPSHOT`  
 **Governing Standard:** Simplified Technical English (STE-01 through STE-07)  
 **Foundational Baselines:**  
-- `STVN_LANGUAGE_SPEC.md` (v1.3.1 baseline)  
+- `STVN_LANGUAGE_SPEC.md` (STVN 2.0.0 baseline)  
 - `STVN-VOP-MANIFESTO.md` (Value-Oriented Programming Canonical Foundations)  
-- [`docs/architecture/STVN_REPOSITORY_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_repository/docs/architecture/STVN_REPOSITORY_SPEC.md) (v1.0.0-PROPOSAL)  
-- [`docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_example_chess/docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md) (v1.0.0-PROPOSAL)  
-- [`IMPLEMENTATION_PROPOSAL_CORE_GRAMMAR_V2.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_core/temp/docs/implementation_proposals/IMPLEMENTATION_PROPOSAL_CORE_GRAMMAR_V2.md)  
-- [`IMPLEMENTATION_PROPOSAL_REPOSITORY_V2.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_repository/temp/docs/implementation_proposals/IMPLEMENTATION_PROPOSAL_REPOSITORY_V2.md)  
-- [`IMPLEMENTATION_PROPOSAL_CHESS_SHOWCASE_V2.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_example_chess/temp/docs/implementation_proposals/IMPLEMENTATION_PROPOSAL_CHESS_SHOWCASE_V2.md)  
+- [`docs/architecture/STVN_REPOSITORY_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_repository/docs/architecture/STVN_REPOSITORY_SPEC.md) (STVN 2.0.0 baseline)  
+- [`docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_example_chess/docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md) (STVN 2.0.0 baseline)  
 **Toolchain:** Java 21 LTS | Gradle 8.x | IntelliJ Platform SDK 2025.3  
 
 ---
@@ -38,10 +35,10 @@ flowchart TD
     classDef plugin fill:#E1F5FE,stroke:#0288D1,stroke-width:2px;
     classDef idea fill:#FFF3E0,stroke:#F57C00,stroke-width:2px;
 
-    Headless["Batch / CLI Ingress"] --> Core["stvnadore-core\n(ANTLR4 Compiler Pipeline)"]:::core
-    Interactive["Interactive Editor Buffer"] --> Plugin["stvnadore-plugin\n(JFlex + Grammar-Kit BNF)"]:::plugin
-    Plugin --> PSI["STVN PSI Tree\n(AST & Reference Graph)"]:::plugin
-    PSI --> IDEA["IntelliJ Platform Engine\n(Inspections / Completion / Rename)"]:::idea
+    Headless["Batch or CLI Ingress"] --> Core["stvnadore-core (Pure-IR Compiler Pipeline)"]:::core
+    Interactive["Interactive Editor Buffer"] --> Plugin["stvnadore-plugin (JFlex and Grammar-Kit BNF)"]:::plugin
+    Plugin --> PSI["STVN PSI Tree and StvnCompiledDocumentCache"]:::plugin
+    PSI --> IDEA["IntelliJ Platform Engine (Inspections, Completion, Rename)"]:::idea
     Core -.->|"Conformance Test Fixtures"| Plugin
 ```
 
@@ -66,8 +63,8 @@ flowchart LR
     classDef grammar fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px;
     classDef check fill:#E8F5E9,stroke:#388E3C,stroke-width:2px;
 
-    ANTLR["ANTLR4 Grammar\n(StvnLexer / StvnParser)"]:::grammar <-->|"Shared Conformance Suite"| JFlex["Grammar-Kit & JFlex\n(stvn.bnf / stvn.flex)"]:::grammar
-    JFlex --> Assert{"Dual-Grammar Invariant\nVerification"}:::check
+    ANTLR["ANTLR4 Grammar (StvnLexer and StvnParser)"]:::grammar <-->|"Shared Conformance Suite"| JFlex["Grammar-Kit and JFlex (stvn.bnf and stvn.flex)"]:::grammar
+    JFlex --> Assert{"Dual-Grammar Invariant Verification"}:::check
     Assert -- "Pass" --> Build["Clean Headless Build"]:::check
     Assert -- "Drift Detected" --> Fail["Compilation Failure (-Werror)"]:::check
 ```
@@ -98,8 +95,8 @@ flowchart TD
 
     Ref["Type Reference: ':UserId'"] --> Resolv{"StvnTypeResolver"}
 
-    Resolv -- "Opaque Resolution (Governed)" --> Shallow["Return TypeDefinition(':UserId')\nPreserves Nominal Brand"]:::allowed
-    Resolv -.->|"Recursive Unwrapping (PROHIBITED)"| Deep["Traverse to Primitive ':String'\nErases Nominal Brand"]:::prohibited
+    Resolv -- "Opaque Resolution (Governed)" --> Shallow["Return TypeDefinition(':UserId') Preserving Nominal Brand"]:::allowed
+    Resolv -.->|"Recursive Unwrapping (PROHIBITED)"| Deep["Traverse to Primitive ':String' Erasing Nominal Brand"]:::prohibited
 ```
 
 ### 2.2 PSI Navigation Contracts & Mixin Taxonomy
@@ -113,6 +110,13 @@ The plugin structures PSI nodes using dedicated mixins and navigation interfaces
 | `StvnConstantDefinitionMixin`| `ConstantDefinition` (`:defs`) | Value constant declaration. | Implements `PsiNameIdentifierOwner`. Enables navigation to constant references in `:body`. |
 | `StvnIncludeMapAliasMixin` | `IncludeMapAlias` (`:include`) | Renaming alias in import block. | Implements `PsiNamedElement`. Connects local alias to remote schema target. |
 | `StvnUseMapAliasMixin` | `UseMapAlias` (`:use`) | Namespace-level import alias. | Implements `PsiNamedElement`. Maps fully qualified namespace identifiers. |
+
+### 2.3 Pure-IR Compilation Cache & Diagnostic Routing Governance
+
+The plugin enforces a strict pure-IR boundary (`HYGIENE-PLUGIN-03`) between IntelliJ PSI services and `stvnadore-core`:
+- **Single-Pass Workspace Snapshot (`StvnCompiledDocumentCache`):** Compiles the active `PsiFile` and unsaved `:include` workspace overlays once per modification stamp into an immutable `StvnCompilationResult<StvnDocument>` snapshot (`StvnDefsCatalog`, `StvnSchema`, `StvnValue`, and `List<StvnDiagnostic>`). Zero ANTLR CST, `core.parser`, `core.ast`, or `core.lowering` classes cross into plugin source sets.
+- **Sum-Type Trajectory (`StvnSumTrajectory`):** Computes explicit and implicit `:Option`, `:Either`, and `:Union` step trajectories directly over pure-IR `StvnValue` (`StvnOption`, `StvnEither`, `StvnUnion`) and `StvnSchema` nodes for inlay badges and hover documentation.
+- **Cross-File Diagnostic Attribution (`StvnDiagnostic.sourcePath()`):** `StvnExternalAnnotator` compares normalized `diag.sourcePath()` against the active editor file path. Diagnostics originating in an included `.stvn_d` or `.stvn_di` module route directly to the matching `:include` `StringLiteral` with `OpenIncludedFileQuickFix`, while `StvnDiagnosticAnnotatorMapping` resolves governing local inspections by prioritizing `diag.symbolicId()` over many-to-one `diag.canonicalCode()` buckets.
 
 ---
 
@@ -130,9 +134,9 @@ flowchart TD
     classDef stop fill:#FFEBEE,stroke:#D32F2F,stroke-width:2px;
     classDef leak fill:#ECEFF1,stroke:#607D8B,stroke-width:2px;
 
-    Caret["Caret at Incomplete Token\n(e.g. '#', ':', '/')"]:::caret --> Check{"Incomplete Token Target?"}
-    Check -- "Yes" --> Suppress["Return null / Immediate Stop\nStrict Upward Traversal Prohibited"]:::stop
-    Check -.->|"Climb to Parent Container"| Parent["Leak Parent Container Doc\n(PROHIBITED)"]:::leak
+    Caret["Caret at Incomplete Token ('#', ':', '/')"]:::caret --> Check{"Incomplete Token Target?"}
+    Check -- "Yes" --> Suppress["Return null Immediately (Upward Climb Prohibited)"]:::stop
+    Check -.->|"Climb to Parent Container"| Parent["Leak Parent Container Doc (PROHIBITED)"]:::leak
 ```
 
 If the element under the caret matches any of the following conditions:
@@ -212,11 +216,11 @@ flowchart TD
 ### 4.3 `StvnTemporalModeInspection`
 - **Target Locus:** Declarations of `:TimeEpoch` and `:DateTime`.
 - **Defect Detection:**
-  - Flags bare `:TimeEpoch` lacking an explicit `#unit` facet (`#ms`, `#s`, `#us`, `#ns`, `#days`).
+  - Flags bare `:TimeEpoch` lacking an explicit standalone scale flag (`#s`, `#ms`, `#us`, `#ns`).
   - Flags bare `:DateTime` lacking an explicit mode facet (`#offset`, `#zoned`, `#audited`).
   - Flags mutually exclusive temporal modes declared simultaneously on the same type.
-- **Diagnostic Codes:** `ERR_MISSING_TEMPORAL_FACET`, `ERR_MUTUALLY_EXCLUSIVE`.
-- **Intention Quick-Fix:** Appends canonical default facets (e.g. `{ #unit #ms } :TimeEpoch` or `{ #offset } :DateTime`).
+- **Diagnostic Codes:** `ERR_TEMPORAL_SCALE_MISSING`, `ERR_DATETIME_MODE_MISSING`, `ERR_MUTUALLY_EXCLUSIVE`.
+- **Intention Quick-Fix:** Appends canonical standalone flags (`{ #ms } :TimeEpoch` or `{ #offset } :DateTime`).
 
 ### 4.4 `StvnMapStructuralInspection`
 - **Target Locus:** Map literals and map collection type declarations.

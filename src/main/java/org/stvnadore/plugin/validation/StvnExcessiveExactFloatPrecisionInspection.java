@@ -8,7 +8,6 @@ import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nls;
@@ -16,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.psi.*;
 
 import javax.swing.BoxLayout;
@@ -41,6 +41,7 @@ import java.util.Set;
 @NullMarked
 public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspectionTool {
 
+    /** Default mantissa precision warning threshold (38 significant decimal digits). */
     public static final int DEFAULT_PRECISION_THRESHOLD = 38;
 
     /**
@@ -113,10 +114,8 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
                     return;
                 }
 
-                BigInteger declaredVal;
-                try {
-                    declaredVal = new BigInteger(intLit.getText().trim());
-                } catch (Exception ignored) {
+                BigInteger declaredVal = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText().trim()).orElse(null);
+                if (declaredVal == null) {
                     return;
                 }
 
@@ -141,7 +140,7 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
                 }
 
                 // 6. Suppress tautology ceiling collision: #maxSize 16777216 is Core Rule W003
-                if (declaredVal.compareTo(BigInteger.valueOf(StvnVocabulary.DEFAULT_EXACT_FLOAT_MAX_SIZE)) == 0) {
+                if (declaredVal.compareTo(StvnVocabulary.DEFAULT_MAX_SIZE) == 0) {
                     return;
                 }
 
@@ -184,7 +183,10 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
                     if (resolved != null) {
                         var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
                         if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return isExactActive(parentDef.getSchemaType().getMetadataMap(), parentDef.getSchemaType());
+                            return isExactActive(
+                                parentDef.getMetadataMap() != null ? parentDef.getMetadataMap() : parentDef.getSchemaType().getMetadataMap(),
+                                parentDef.getSchemaType()
+                            );
                         }
                     }
                 }
@@ -198,17 +200,10 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
         for (var entry : metaMap.getMetadataEntryList()) {
             var bare = entry.getMetadataBareFlag();
             if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
-                var bVal = bare.getBooleanValue();
-                return bVal == null || isBooleanTrue(bVal);
+                return true;
             }
         }
         return false;
-    }
-
-    private static boolean isBooleanTrue(@Nullable BooleanValue bVal) {
-        if (bVal == null) return false;
-        var t = bVal.getText().trim();
-        return "#TRUE".equals(t) || "#T".equals(t);
     }
 
     private static @Nullable String resolveBaseTypeString(@NotNull SchemaType schemaType, Set<String> visited) {
@@ -243,11 +238,16 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
     }
 
     /**
-     * Quick-Fix: Clamps #maxSize to the configured threshold (default: 38).
+     * Quick-Fix: Clamps {@code #maxSize} to the configured threshold (default: 38).
      */
     public static final class ClampExactFloatPrecisionQuickFix implements LocalQuickFix, PriorityAction {
         private final int targetPrecision;
 
+        /**
+         * Creates a quick-fix clamping {@code #maxSize} to {@code targetPrecision}.
+         *
+         * @param targetPrecision target significant decimal digit ceiling
+         */
         public ClampExactFloatPrecisionQuickFix(int targetPrecision) {
             this.targetPrecision = targetPrecision;
         }
@@ -290,11 +290,16 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
     }
 
     /**
-     * Quick-Fix: Converts '#maxSize [N]' to numeric bound '#maxExcl [N].0'.
+     * Quick-Fix: Converts {@code #maxSize [N]} to numeric bound {@code #maxExcl [N].0}.
      */
     public static final class ConvertToNumericBoundQuickFix implements LocalQuickFix, PriorityAction {
         private final String rawNumericValue;
 
+        /**
+         * Creates a quick-fix converting {@code #maxSize} to {@code #maxExcl <rawNumericValue>.0}.
+         *
+         * @param rawNumericValue raw integer token text
+         */
         public ConvertToNumericBoundQuickFix(String rawNumericValue) {
             this.rawNumericValue = rawNumericValue;
         }

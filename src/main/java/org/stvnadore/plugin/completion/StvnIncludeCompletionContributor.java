@@ -23,7 +23,7 @@ import java.util.Set;
 /**
  * Completion contributor for bare-bracket include statements ({@code :include [ <caret> ]}).
  * <p>
- * Proposes relative schema files (.stvn_d, .stvn_di, .stvn_bd) and child directories
+ * Proposes relative textual definitions modules (.stvn_d, .stvn_di) and child directories
  * anchored to the active containing file's directory. Employs StvnIncludeQuoteInsertHandler
  * to wrap selected candidates automatically in double quotation marks.
  */
@@ -106,11 +106,11 @@ public final class StvnIncludeCompletionContributor extends CompletionContributo
                                 if (icon == null) {
                                     icon = fileName.endsWith(".stvn_di")
                                         ? StvnIcons.STVN_DI
-                                        : (fileName.endsWith(".stvn_d") ? StvnIcons.STVN_D : StvnIcons.STVN_BD);
+                                        : StvnIcons.STVN_D;
                                 }
                                 var typeText = fileName.endsWith(".stvn_di")
                                     ? "Modular Schema Module"
-                                    : (fileName.endsWith(".stvn_d") ? "Hermetic Schema" : "Binary Schema");
+                                    : "Hermetic Schema";
 
                                 result.addElement(LookupElementBuilder.create(fileName)
                                     .withIcon(icon)

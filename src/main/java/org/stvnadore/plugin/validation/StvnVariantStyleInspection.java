@@ -10,7 +10,9 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnValue;
+import org.stvnadore.plugin.ir.StvnSumTrajectory;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
@@ -29,12 +31,12 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
     }
 
     @SuppressWarnings("unchecked")
-    private static <T extends StvnValue.StvnSum> @Nullable T findMatchingSumNode(
+    private static <T extends StvnValue> @Nullable T findMatchingSumNode(
         @Nullable StvnValue coreVal,
         Class<T> sumClass
     ) {
         var curr = coreVal;
-        while (curr instanceof StvnValue.StvnSum) {
+        while (StvnSumTrajectory.isSumValue(curr)) {
             if (sumClass.isInstance(curr)) {
                 return (T) curr;
             }
@@ -72,7 +74,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 var optVal = findMatchingSumNode(coreVal, StvnValue.StvnOption.class);
                 if (optVal != null) {
                     var isSomeTag = o.getSomeLiteral() != null || o.getSomeShortLiteral() != null;
-                    var tagElement = o.getSomeLiteral() != null ? o.getSomeLiteral() : 
+                    var tagElement = o.getSomeLiteral() != null ? o.getSomeLiteral() :
                                      (o.getSomeShortLiteral() != null ? o.getSomeShortLiteral() : null);
 
                     // 1. Redundant Tag check (Warning A)
@@ -119,7 +121,6 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 var coreVal = StvnTypeResolver.resolveCoreValue(o);
                 var either = findMatchingSumNode(coreVal, StvnValue.StvnEither.class);
                 if (either != null) {
-                    var isLeftTag = o.getLeftLiteral() != null || o.getLeftShortLiteral() != null;
                     var isRightTag = o.getRightLiteral() != null || o.getRightShortLiteral() != null;
                     var tagElement = o.getLeftLiteral() != null ? o.getLeftLiteral() :
                                      (o.getLeftShortLiteral() != null ? o.getLeftShortLiteral() :
@@ -200,13 +201,6 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                     if (state.enableRedundantTagInspection && state.preferImpliedSumTypes && tagElement != null) {
                         var tagText = tagElement.getText();
                         if (tagText.startsWith("#")) {
-                            int tagIndex;
-                            try {
-                                tagIndex = Integer.parseInt(tagText.substring(1)) - 1;
-                            } catch (NumberFormatException e) {
-                                return;
-                            }
-
                             var child = o.getValue();
                             var valParent = PsiTreeUtil.getParentOfType(o, Value.class);
                             if (child != null && valParent != null) {
@@ -230,7 +224,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                         }
                                         if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                                             var innerBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                            if (!innerBranches.isEmpty() && tagIndex >= 0 && tagIndex < innerBranches.size()) {
+                                            var tagIdxOpt = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerBranches.size());
+                                            if (tagIdxOpt.isPresent()) {
+                                                int tagIndex = tagIdxOpt.getAsInt();
                                                 int matchCount = 0;
                                                 int matchedBranchIndex = -1;
                                                 for (int i = 0; i < innerBranches.size(); i++) {
@@ -302,8 +298,8 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 return;
             }
 
-            var optionValue = element instanceof ExplicitOptionValue 
-                ? (ExplicitOptionValue) element 
+            var optionValue = element instanceof ExplicitOptionValue
+                ? (ExplicitOptionValue) element
                 : PsiTreeUtil.getParentOfType(element, ExplicitOptionValue.class);
             if (optionValue != null) {
                 var coreVal = StvnTypeResolver.resolveCoreValue(optionValue);
@@ -318,8 +314,8 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 return;
             }
 
-            var eitherValue = element instanceof ExplicitEitherValue 
-                ? (ExplicitEitherValue) element 
+            var eitherValue = element instanceof ExplicitEitherValue
+                ? (ExplicitEitherValue) element
                 : PsiTreeUtil.getParentOfType(element, ExplicitEitherValue.class);
             if (eitherValue != null) {
                 var coreVal = StvnTypeResolver.resolveCoreValue(eitherValue);
@@ -334,8 +330,8 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 return;
             }
 
-            var unionValue = element instanceof ExplicitUnionValue 
-                ? (ExplicitUnionValue) element 
+            var unionValue = element instanceof ExplicitUnionValue
+                ? (ExplicitUnionValue) element
                 : PsiTreeUtil.getParentOfType(element, ExplicitUnionValue.class);
             if (unionValue != null) {
                 var coreVal = StvnTypeResolver.resolveCoreValue(unionValue);

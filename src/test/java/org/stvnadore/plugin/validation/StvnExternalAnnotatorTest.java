@@ -680,7 +680,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         myFixture.configureByText("pseudo_prelude_temporal.stvn", content);
         var highlights = myFixture.doHighlighting();
         var error = highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).findFirst().orElseThrow();
-        assertTrue(error.getDescription() != null && error.getDescription().contains("Undefined type: :org/stvnadore/prelude/DateTimeOffset"));
+        assertTrue(
+            error.getDescription() != null
+                && (error.getDescription().contains("Purged legacy prelude alias is no longer available: :org/stvnadore/prelude/DateTimeOffset")
+                    || error.getDescription().contains("Undefined type: :org/stvnadore/prelude/DateTimeOffset"))
+        );
     }
 
     /**
@@ -728,10 +732,12 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errorHighlights = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Undefined type: "))
+            .filter(h -> h.getDescription() != null
+                && (h.getDescription().contains("Undefined type: ")
+                    || h.getDescription().contains("Purged legacy prelude alias is no longer available: ")))
             .toList();
 
-        assertEquals("Must produce exactly 16 undefined type error highlights simultaneously", 16, errorHighlights.size());
+        assertEquals("Must produce exactly 16 undefined/purged type error highlights simultaneously", 16, errorHighlights.size());
 
         var distinctRanges = errorHighlights.stream()
             .map(h -> new com.intellij.openapi.util.TextRange(h.getStartOffset(), h.getEndOffset()))
@@ -748,9 +754,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :String0 { #maxSize 0 } :String
+                :String8 { #maxSize 8 } :String
               }
-              :type :Map( :String0 :Set( :String0 ) )
+              :type :Map( :String8 :Set( :String8 ) )
               :body {
                 [ "" "" ]
               }
@@ -1943,9 +1949,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var reservedIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
         assertTrue("Bootstrap intention must be unavailable on prelude.stvn_core.stvn_d", reservedIntention.isEmpty());
 
-        myFixture.configureByText("test.stvn_incl", "");
-        var legacyIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
-        assertTrue("Bootstrap intention must be unavailable on test.stvn_incl", legacyIntention.isEmpty());
+        myFixture.configureByText("test.stvn_unknown", "");
+        var unrecognizedIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
+        assertTrue("Bootstrap intention must be unavailable on test.stvn_unknown", unrecognizedIntention.isEmpty());
     }
 
     /**
@@ -2093,8 +2099,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies secondary cascade suppression (Spec § 7.3.1):
-     * When a document contains a tab error, ERR_DOCUMENT_KIND_MISMATCH on root brace is suppressed.
+     * Verifies ESC-CORE-02 upstream syntax-cascade suppression:
+     * When a document contains a tab lexical error, the compiler emits ERR_TAB_CHARACTER_FORBIDDEN (E001)
+     * and emits zero secondary cascading ERR_DOCUMENT_KIND_MISMATCH (E031) diagnostics.
      */
     public void testIsDiagnosticSuppressedSuppressesSecondaryCascadeOnRootBrace() {
         var annotator = new StvnExternalAnnotator();
@@ -2104,13 +2111,128 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var result = annotator.doAnnotate(collected);
         assertNotNull(result);
 
+        boolean hasTabError = result.diagnostics().stream()
+            .anyMatch(d -> d.symbolicId().filter(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN::equals).isPresent()
+                || d.canonicalCode().filter("E001"::equals).isPresent()
+                || d.errorCode().filter(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN::equals).isPresent());
+        assertTrue("Compiler must emit primary ERR_TAB_CHARACTER_FORBIDDEN (E001) on tab character", hasTabError);
+
         var kindMismatchOpt = result.diagnostics().stream()
-            .filter(d -> (d.errorCode().isPresent() && "ERR_DOCUMENT_KIND_MISMATCH".equals(d.errorCode().get()))
+            .filter(d -> d.symbolicId().filter(DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH::equals).isPresent()
+                || d.canonicalCode().filter("E031"::equals).isPresent()
+                || d.errorCode().filter(DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH::equals).isPresent()
                 || d.message().contains("Mandatory ':type' and ':body' sections missing"))
             .findFirst();
-        assertTrue("Compiler must produce cascading ERR_DOCUMENT_KIND_MISMATCH on incomplete parse tree", kindMismatchOpt.isPresent());
-        assertTrue("External annotator must suppress cascading ERR_DOCUMENT_KIND_MISMATCH under Spec § 7.3.1",
-            annotator.isDiagnosticSuppressed(file, kindMismatchOpt.get(), result.diagnostics()));
+        assertTrue("ESC-CORE-02: Compiler must emit zero cascading ERR_DOCUMENT_KIND_MISMATCH (E031) on Pass 1 tab syntax error, got: " + result.diagnostics(),
+            kindMismatchOpt.isEmpty());
+    }
+
+    /**
+     * Verifies ESC-CORE-01 cross-file diagnostic provenance via diag.sourcePath() when child error offsets
+     * collide numerically with valid tokens in the active parent buffer.
+     */
+    public void testCrossFileIncludeDiagnosticWithChildOffsetCollisionPinsStrictlyToIncludePath() {
+        var childContent = """
+            {
+              :meta {
+                #name "ledger_types"
+                #domain "billing"
+                #kind #DEFS
+              }
+              :defs {
+                :InvalidPort { #unsigned #minExcl 0 } :Int
+              }
+            }
+            """;
+        myFixture.addFileToProject("ledger_types.billing.stvn_d", childContent);
+
+        var parentContent = """
+            {
+              :meta {
+                #name "invoice_batch"
+                #domain "billing"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :BatchCode { #minSize 3 #maxSize 16 } :String
+                :include [ "ledger_types.billing.stvn_d" ]
+              }
+              :type :BatchCode
+              :body "INV-2026-001"
+            }
+            """;
+        myFixture.configureByText("invoice_batch.billing.stvn_i", parentContent);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected exactly 1 error pinned to the :include statement, got: " + errors, 1, errors.size());
+        int includeStart = parentContent.indexOf(":include");
+        int includeEnd = parentContent.indexOf("]", includeStart) + 1;
+        var err = errors.get(0);
+        assertEquals("Cross-file error must start on :include statement", includeStart, err.getStartOffset());
+        assertEquals("Cross-file error must end at closing bracket of :include statement", includeEnd, err.getEndOffset());
+        assertTrue("Cross-file error description must attribute child file: " + err.getDescription(),
+            err.getDescription() != null && err.getDescription().contains("ledger_types.billing.stvn_d"));
+
+        int batchCodeStart = parentContent.indexOf(":BatchCode");
+        int batchCodeEnd = parentContent.indexOf("\n", batchCodeStart);
+        assertFalse("Valid sibling :BatchCode declaration in parent must have 0 overlapping errors",
+            new com.intellij.openapi.util.TextRange(err.getStartOffset(), err.getEndOffset())
+                .intersects(batchCodeStart, batchCodeEnd));
+    }
+
+    /**
+     * Anti-tautological container isolation test (§ 11.1):
+     * Asserts that an integer overflow at tuple slot K=2 highlights strictly element K=2,
+     * leaves preceding valid siblings K=0 and K=1 with 0 errors, and leaves parent '(' and ')' delimiters with 0 errors.
+     */
+    public void testAntiTautologicalTupleSiblingAndDelimiterIsolationOnElementOverflow() {
+        var docContent = """
+            {
+              :meta {
+                #name "telemetry_packet"
+                #domain "net"
+                #kind #BODY
+              }
+              :defs {
+                :NodeName { #minSize 1 #maxSize 32 } :String
+                :SequenceNo { #unsigned #size 32 } :Int
+                :TcpPort { #unsigned #size 16 #minIncl 1 } :Int
+                :Packet :Tuple( :NodeName :SequenceNo :TcpPort )
+              }
+              :type :Packet
+              :body ( "edge-gateway-01" 4096 70000 )
+            }
+            """;
+        myFixture.configureByText("telemetry_packet.net.stvn", docContent);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected exactly 1 error on overflowing tuple element K=2 ('70000'), got: " + errors, 1, errors.size());
+
+        int bodyIdx = docContent.indexOf(":body");
+        int openParenIdx = docContent.indexOf("(", bodyIdx);
+        int closeParenIdx = docContent.indexOf(")", openParenIdx);
+        int sib0Start = docContent.indexOf("\"edge-gateway-01\"", openParenIdx);
+        int sib0End = sib0Start + "\"edge-gateway-01\"".length();
+        int sib1Start = docContent.indexOf("4096", sib0End);
+        int sib1End = sib1Start + "4096".length();
+        int badStart = docContent.indexOf("70000", sib1End);
+        int badEnd = badStart + "70000".length();
+
+        var err = errors.get(0);
+        assertEquals("Offending element K=2 start offset must match '70000'", badStart, err.getStartOffset());
+        assertEquals("Offending element K=2 end offset must match '70000'", badEnd, err.getEndOffset());
+
+        var errRange = new com.intellij.openapi.util.TextRange(err.getStartOffset(), err.getEndOffset());
+        assertFalse("Valid sibling K=0 must have 0 overlapping errors", errRange.intersectsStrict(sib0Start, sib0End));
+        assertFalse("Valid sibling K=1 must have 0 overlapping errors", errRange.intersectsStrict(sib1Start, sib1End));
+        assertFalse("Opening tuple delimiter '(' must have 0 error highlights", errRange.contains(openParenIdx));
+        assertFalse("Closing tuple delimiter ')' must have 0 error highlights", errRange.contains(closeParenIdx));
     }
 
     /**

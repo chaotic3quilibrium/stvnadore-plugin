@@ -216,22 +216,26 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                 }
               }
               if (!declaredFacets.contains(StvnVocabulary.FACET_KW_MAX_EXCL)) {
-                int bitWidth = resolveActiveBitWidth(metaMap, schemaType);
-                if (bitWidth < 1) {
-                  bitWidth = 32;
+                BigInteger bitWidth = resolveActiveBitWidth(metaMap, schemaType);
+                if (bitWidth.compareTo(BigInteger.ONE) < 0) {
+                  bitWidth = BigInteger.valueOf(32);
                 }
-                int exponent = isUnsigned ? bitWidth : bitWidth - 1;
-                if (exponent < 0) {
-                  exponent = 0;
+                BigInteger exponent = isUnsigned ? bitWidth : bitWidth.subtract(BigInteger.ONE);
+                if (exponent.compareTo(BigInteger.ZERO) < 0) {
+                  exponent = BigInteger.ZERO;
                 }
-                BigInteger vMax = BigInteger.ONE.shiftLeft(exponent);
                 BigInteger templateVal;
-                if (vMax.compareTo(BigInteger.valueOf(100)) > 0) {
+                if (exponent.compareTo(BigInteger.valueOf(8)) >= 0) {
                   templateVal = BigInteger.valueOf(100);
-                } else if (vMax.compareTo(BigInteger.TEN) > 0) {
-                  templateVal = BigInteger.TEN;
                 } else {
-                  templateVal = vMax.subtract(BigInteger.ONE);
+                  BigInteger vMax = BigInteger.ONE.shiftLeft(exponent.intValueExact());
+                  if (vMax.compareTo(BigInteger.valueOf(100)) > 0) {
+                    templateVal = BigInteger.valueOf(100);
+                  } else if (vMax.compareTo(BigInteger.TEN) > 0) {
+                    templateVal = BigInteger.TEN;
+                  } else {
+                    templateVal = vMax.subtract(BigInteger.ONE);
+                  }
                 }
                 String maxExclValue = templateVal.toString();
                 targetResult.addElement(createFacetLookup(
@@ -786,7 +790,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     return null;
   }
 
-  private static int resolveActiveBitWidth(@Nullable MetadataMap metaMap, @Nullable SchemaType schemaType) {
+  private static BigInteger resolveActiveBitWidth(@Nullable MetadataMap metaMap, @Nullable SchemaType schemaType) {
     if (metaMap != null) {
       for (var entry : metaMap.getMetadataEntryList()) {
         var root = extractRootFacetKeyword(entry);
@@ -800,9 +804,10 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
       var sanitized = StvnStringCapacityInspection.sanitizeMetadataText(metaMap.getText());
       var m = Pattern.compile("#size\\s+(\\d+)").matcher(sanitized);
       if (m.find()) {
-        try {
-          return Integer.parseInt(m.group(1));
-        } catch (NumberFormatException ignored) {}
+        var parsed = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.parseBigInteger(m.group(1));
+        if (parsed.isPresent()) {
+          return parsed.get();
+        }
       }
     }
     if (schemaType != null) {
@@ -819,22 +824,21 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
         }
       }
     }
-    return 32;
+    return BigInteger.valueOf(32);
   }
 
-  private static @Nullable Integer extractIntegerArgument(MetadataEntry entry) {
+  private static @Nullable BigInteger extractIntegerArgument(MetadataEntry entry) {
     var intLit = PsiTreeUtil.findChildOfType(entry, IntegerLiteral.class);
     if (intLit != null) {
-      try {
-        return Integer.parseInt(intLit.getText().trim());
-      } catch (NumberFormatException ignored) {}
+      var parsed = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText().trim());
+      if (parsed.isPresent()) {
+        return parsed.get();
+      }
     }
     var text = entry.getText().trim();
     var parts = text.split("\\s+");
     if (parts.length >= 2) {
-      try {
-        return Integer.parseInt(parts[1]);
-      } catch (NumberFormatException ignored) {}
+      return org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
     }
     return null;
   }

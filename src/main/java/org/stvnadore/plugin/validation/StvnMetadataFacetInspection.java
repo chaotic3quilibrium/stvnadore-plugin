@@ -479,45 +479,15 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         }
     }
 
-    private static boolean isExactActive(@Nullable MetadataMap metaMap, @NotNull SchemaType schemaType) {
-        if (hasLocalExactFacet(metaMap)) {
-            return true;
-        }
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            var text = kw.getText().trim();
-            if (!StvnVocabulary.isBaseScalarType(text)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    if (resolved != null) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return isExactActive(parentDef.getSchemaType().getMetadataMap(), parentDef.getSchemaType());
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
     private static boolean hasLocalExactFacet(@Nullable MetadataMap metaMap) {
         if (metaMap == null) return false;
         for (var entry : metaMap.getMetadataEntryList()) {
             var bare = entry.getMetadataBareFlag();
             if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
-                var bVal = bare.getBooleanValue();
-                return bVal == null || isBooleanTrue(bVal);
+                return true;
             }
         }
         return false;
-    }
-
-    private static boolean isBooleanTrue(@Nullable BooleanValue bVal) {
-        if (bVal == null) return false;
-        var t = bVal.getText().trim();
-        return "#TRUE".equals(t) || "#T".equals(t);
     }
 
     private static boolean hasToken(MetadataEntry entry, TokenSet tokenSet) {
@@ -530,130 +500,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         }
         var trait = entry.getMetadataTrait();
         return trait != null && trait.getNode().findChildByType(tokenSet) != null;
-    }
-
-    private static @Nullable String resolveBaseTypeString(SchemaType schemaType, Set<String> visitedTypeNames) {
-        var constructor = schemaType.getSchemaConstructor();
-        if (constructor != null) {
-            var atomic = constructor.getAtomicType();
-            if (atomic != null) {
-                return atomic.getText().trim();
-            }
-            var collection = constructor.getCollectionType();
-            if (collection != null) {
-                return collection.getText().trim();
-            }
-            var product = constructor.getProductType();
-            if (product != null) {
-                return product.getText().trim();
-            }
-            var sum = constructor.getSumType();
-            if (sum != null) {
-                return sum.getText().trim();
-            }
-            return constructor.getText().trim();
-        }
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            var text = kw.getText().trim();
-            if (StvnVocabulary.TYPE_ENUM.equals(text)) {
-                return StvnVocabulary.TYPE_ENUM;
-            }
-            if (StvnVocabulary.isBaseScalarType(text) || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(text)) {
-                return text;
-            }
-            if (!visitedTypeNames.add(text)) {
-                return null;
-            }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType(), visitedTypeNames);
-                    }
-                    if (resolved instanceof IncludeMapAlias || resolved.getParent() instanceof IncludeMapAlias) {
-                        var mapAlias = resolved instanceof IncludeMapAlias ima ? ima : (IncludeMapAlias) resolved.getParent();
-                        var list = mapAlias.getTypeKeywordList();
-                        if (list.size() >= 2) {
-                            var remoteKw = list.get(0);
-                            var includeElement = PsiTreeUtil.getParentOfType(mapAlias, IncludeElement.class);
-                            if (includeElement != null && includeElement.getStringLiteral() != null && remoteKw != null) {
-                                var targetFile = org.stvnadore.plugin.reference.StvnTypeReference.resolveIncludeFile(includeElement.getStringLiteral());
-                                if (targetFile != null) {
-                                    var remoteResolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>());
-                                    if (remoteResolved != null) {
-                                        var remTypeDef = PsiTreeUtil.getParentOfType(remoteResolved, TypeDefinition.class);
-                                        if (remTypeDef != null && remTypeDef.getSchemaType() != null) {
-                                            return resolveBaseTypeString(remTypeDef.getSchemaType(), visitedTypeNames);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (resolved instanceof UseMapAlias || resolved.getParent() instanceof UseMapAlias) {
-                        var mapAlias = resolved instanceof UseMapAlias uma ? uma : (UseMapAlias) resolved.getParent();
-                        var list = mapAlias.getTypeKeywordList();
-                        if (list.size() >= 2) {
-                            var remoteKw = list.get(0);
-                            if (remoteKw != null) {
-                                var remoteResolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, remoteKw.getText(), new HashSet<>());
-                                if (remoteResolved != null) {
-                                    var remTypeDef = PsiTreeUtil.getParentOfType(remoteResolved, TypeDefinition.class);
-                                    if (remTypeDef != null && remTypeDef.getSchemaType() != null) {
-                                        return resolveBaseTypeString(remTypeDef.getSchemaType(), visitedTypeNames);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return null;
-        }
-        var rawText = schemaType.getText().trim();
-        var metaMap = schemaType.getMetadataMap();
-        if (metaMap != null) {
-            var metaText = metaMap.getText().trim();
-            if (rawText.startsWith(metaText)) {
-                rawText = rawText.substring(metaText.length()).trim();
-            }
-        } else if (rawText.startsWith("{")) {
-            int closeIdx = rawText.indexOf('}');
-            if (closeIdx >= 0 && closeIdx + 1 < rawText.length()) {
-                rawText = rawText.substring(closeIdx + 1).trim();
-            }
-        }
-        if (rawText.isEmpty()) {
-            return null;
-        }
-        if (StvnVocabulary.isBaseScalarType(rawText) || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(rawText)
-            || isConstructorMatch(rawText, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(rawText, StvnVocabulary.TYPE_SET)
-            || isConstructorMatch(rawText, StvnVocabulary.TYPE_MAP) || isEnumConstructor(rawText)) {
-            return rawText;
-        }
-        if (rawText.startsWith(":")) {
-            if (!visitedTypeNames.add(rawText)) {
-                return null;
-            }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, rawText, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType(), visitedTypeNames);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private static boolean isNumericType(String baseType) {
-        return baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH);
     }
 
     private static boolean isStringType(String baseType) {
@@ -688,16 +534,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             || baseType.equals(":IPv4");
     }
 
-    private static boolean isBooleanType(String baseType) {
-        return baseType.equals(StvnVocabulary.TYPE_BOOLEAN);
-    }
-
     private static boolean isCollectionType(String baseType) {
         return isConstructorMatch(baseType, StvnVocabulary.TYPE_SEQ) || isConstructorMatch(baseType, StvnVocabulary.TYPE_SET) || isConstructorMatch(baseType, StvnVocabulary.TYPE_MAP);
-    }
-
-    private static boolean isTemporalType(String baseType) {
-        return baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME);
     }
 
     private static boolean isMapType(String baseType) {

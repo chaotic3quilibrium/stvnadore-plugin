@@ -220,15 +220,15 @@ public final class StvnFileIdentityRenameQuickFixTest extends BasePlatformTestCa
 
     /**
      * TC-QUICKFIX-INTERACTIVE-01: Verifies that StvnInteractiveRenameQuickFix is available
-     * on Layer 1 legacy extension errors and reserved domain errors.
+     * on Layer 1 unrecognized extension errors and reserved domain errors.
      */
     public void testInteractiveRenameQuickFixAvailability() throws Exception {
-        var legacyFile = myFixture.configureByText("module.stvn_incl", "");
+        var unrecognizedExtFile = myFixture.configureByText("module.stvn_unknown", "");
         var annotator = new StvnExternalAnnotator();
-        var annotations = computeAnnotations(annotator, legacyFile);
+        var annotations = computeAnnotations(annotator, unrecognizedExtFile);
 
         var fileLevel = annotations.stream().filter(Annotation::isFileLevelAnnotation).findFirst();
-        assertTrue("Legacy file must have file-level annotation", fileLevel.isPresent());
+        assertTrue("Unrecognized extension file must have file-level annotation", fileLevel.isPresent());
 
         assertTrue("Must contain StvnInteractiveRenameQuickFix",
             fileLevel.get().getQuickFixes().stream().anyMatch(q -> q.quickFix instanceof StvnInteractiveRenameQuickFix));

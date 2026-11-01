@@ -287,8 +287,7 @@ public final class StvnMetadataFacetAllowlist {
             for (var entry : metaMap.getMetadataEntryList()) {
                 var bare = entry.getMetadataBareFlag();
                 if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
-                    var bVal = bare.getBooleanValue();
-                    return bVal == null || "#TRUE".equals(bVal.getText().trim()) || "#T".equals(bVal.getText().trim());
+                    return true;
                 }
             }
         }

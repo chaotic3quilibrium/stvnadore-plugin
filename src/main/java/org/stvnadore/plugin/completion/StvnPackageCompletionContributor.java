@@ -12,9 +12,9 @@ import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.validation.StvnTypeResolver;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.StvnLanguage;
+import org.stvnadore.plugin.psi.StvnNamespaceRules;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.UseStmt;
@@ -69,7 +69,7 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
                         var candidatePackages = collectWorkspacePackages(project);
                         for (var pkg : candidatePackages) {
                             // Rule E037: Strictly suppress reserved packages from package declarations
-                            if (!StvnTypeResolver.isReservedPackage(pkg)) {
+                            if (!StvnNamespaceRules.isReservedPackage(pkg)) {
                                 targetResult.addElement(LookupElementBuilder.create(pkg)
                                     .withIcon(AllIcons.Nodes.Package)
                                     .withTypeText("Package Enclosure", true));
@@ -91,7 +91,7 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
                         // Propose workspace user packages
                         var candidatePackages = collectWorkspacePackages(project);
                         for (var pkg : candidatePackages) {
-                            if (!StvnTypeResolver.isReservedPackage(pkg)) {
+                            if (!StvnNamespaceRules.isReservedPackage(pkg)) {
                                 targetResult.addElement(LookupElementBuilder.create(pkg)
                                     .withIcon(AllIcons.Nodes.Package)
                                     .withTypeText("Import Target", true));

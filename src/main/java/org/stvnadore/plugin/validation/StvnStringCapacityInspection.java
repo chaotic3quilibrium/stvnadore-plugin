@@ -9,7 +9,6 @@ import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.TextRange;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
@@ -20,12 +19,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnLiteralParser;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
-import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.IncludeElement;
@@ -35,7 +33,6 @@ import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
-import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Visitor;
 
 import javax.swing.JCheckBox;
@@ -48,7 +45,6 @@ import java.awt.FlowLayout;
 import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -81,11 +77,6 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * Default capacity threshold in characters for schema and diagnostic analyzers (4,096 characters).
      */
     public static final int DEFAULT_INSPECTION_THRESHOLD = 4096;
-
-    /**
-     * Default allocation capacity limit in characters for unadorned :String instances (16,777,216 characters / 16 MiB).
-     */
-    public static final int DEFAULT_UNBOUNDED_STRING_CAPACITY = 16_777_216;
 
     /**
      * Authoritative map of Standard Prelude string types to their canonical #maxSize character capacity.
@@ -213,9 +204,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             hasDirectCapacityFacet = true;
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
-                                try {
-                                    directCapacity = StvnLiteralParser.parseBigInteger(intLit.getText());
-                                } catch (Exception ignored) {}
+                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -237,7 +226,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
                 BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
                 if (effectiveCapacity == null) {
-                    effectiveCapacity = BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
                 }
 
                 boolean isUnadorned = !hasCapacityFacet;
@@ -251,7 +240,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     String diagCode;
                     if (isUnadorned) {
                         msg = "Nominal " + category + " type '" + declaredName + "' is unadorned; default capacity is "
-                            + DEFAULT_UNBOUNDED_STRING_CAPACITY
+                            + StvnVocabulary.DEFAULT_MAX_SIZE
                             + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
                         diagCode = resolvedInfo.isCollection
                             ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED
@@ -265,9 +254,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
 
                     // Blame Attribution Invariant: register problem strictly on LHS TypeDefTarget
                     registerCapacityProblem(holder, target, formattedMsg, isError);
-                    if (schemaType != null) {
-                        registerCapacityIntentions(holder, schemaType, isError);
-                    }
+                    registerCapacityIntentions(holder, schemaType, isError);
                 }
             }
 
@@ -293,7 +280,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             hasDirectCapacityFacet = true;
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
-                                try { directCapacity = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
+                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -309,7 +296,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
                 BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
                 if (effectiveCapacity == null) {
-                    effectiveCapacity = BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY);
+                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
                 }
                 boolean isUnadorned = !hasCapacityFacet;
                 boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
@@ -320,7 +307,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     String category = resolvedInfo.isCollection ? "collection" : "string";
                     String units = resolvedInfo.isCollection ? (typeName.contains(StvnVocabulary.TYPE_MAP) ? "entries" : "elements") : "characters";
                     String msg = isUnadorned
-                        ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
+                        ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + StvnVocabulary.DEFAULT_MAX_SIZE + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
                         : "Nominal " + category + " type '" + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
                     String diagCode = isUnadorned
                         ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
@@ -410,9 +397,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.LOW),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM)
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnVocabulary.DEFAULT_MAX_SIZE + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.LOW),
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM),
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM)
             );
         }
     }
@@ -435,9 +422,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.LOW),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + DEFAULT_UNBOUNDED_STRING_CAPACITY + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + DEFAULT_UNBOUNDED_STRING_CAPACITY + " }", PriorityAction.Priority.BOTTOM)
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnVocabulary.DEFAULT_MAX_SIZE + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.LOW),
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM),
+                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM)
             );
         }
     }
@@ -491,12 +478,12 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         var constructor = schemaType.getSchemaConstructor();
         if (constructor != null) {
             if (constructor.getCollectionType() != null) {
-                return new EffectiveTypeCapacity(false, true, DEFAULT_UNBOUNDED_STRING_CAPACITY, false);
+                return new EffectiveTypeCapacity(false, true, StvnVocabulary.DEFAULT_MAX_SIZE, false);
             }
             if (constructor.getAtomicType() != null) {
                 String text = constructor.getAtomicType().getText().trim();
                 if (StvnVocabulary.TYPE_STRING.equals(text)) {
-                    return new EffectiveTypeCapacity(true, false, DEFAULT_UNBOUNDED_STRING_CAPACITY, false);
+                    return new EffectiveTypeCapacity(true, false, StvnVocabulary.DEFAULT_MAX_SIZE, false);
                 }
                 return null;
             }
@@ -514,10 +501,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             return null;
         }
         if (StvnVocabulary.TYPE_STRING.equals(targetName)) {
-            return new EffectiveTypeCapacity(true, false, DEFAULT_UNBOUNDED_STRING_CAPACITY, false);
+            return new EffectiveTypeCapacity(true, false, StvnVocabulary.DEFAULT_MAX_SIZE, false);
         }
         if (StvnVocabulary.TYPE_SEQ.equals(targetName) || StvnVocabulary.TYPE_SET.equals(targetName) || StvnVocabulary.TYPE_MAP.equals(targetName)) {
-            return new EffectiveTypeCapacity(false, true, DEFAULT_UNBOUNDED_STRING_CAPACITY, false);
+            return new EffectiveTypeCapacity(false, true, StvnVocabulary.DEFAULT_MAX_SIZE, false);
         }
         if (PRELUDE_STRING_CAPACITIES.containsKey(targetName)) {
             return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(targetName), true);
@@ -603,7 +590,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             hasCap = true;
                             var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                             if (intLit != null) {
-                                try { explicitCap = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
+                                explicitCap = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasCap = true;
@@ -614,7 +601,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     var downstream = resolveEffectiveTypeCapacity(def.getSchemaType(), file, visited);
                     if (downstream != null) {
                         if (hasCap) {
-                            return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY), true);
+                            return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : StvnVocabulary.DEFAULT_MAX_SIZE, true);
                         }
                         return downstream;
                     }
@@ -635,7 +622,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         hasCap = true;
                         var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
                         if (intLit != null) {
-                            try { explicitCap = StvnLiteralParser.parseBigInteger(intLit.getText()); } catch (Exception ignored) {}
+                            explicitCap = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
                         }
                     }
                 }
@@ -643,7 +630,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             var downstream = resolveEffectiveTypeCapacity(preludeDef.getSchemaType(), preludeDef.getContainingFile(), visited);
             if (downstream != null) {
                 if (hasCap) {
-                    return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : BigInteger.valueOf(DEFAULT_UNBOUNDED_STRING_CAPACITY), true);
+                    return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : StvnVocabulary.DEFAULT_MAX_SIZE, true);
                 }
                 return downstream;
             }

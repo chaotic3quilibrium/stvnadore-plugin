@@ -80,7 +80,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
         map.put(StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
         map.put("FACET_ORDER_VIOLATION", "StvnMetadataOrder");
-        map.put("E036", "StvnMetadataOrder");
 
         // 6. Redundant Metadata Facet Override Inspection
         map.put(StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE, "StvnRedundantFacetOverride");
@@ -95,6 +94,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
+        map.put("E036", "StvnMetadataFacet");
         map.put("ERR_UNRECOGNIZED_METADATA_FACET", "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPATIBLE_TYPE, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE, "StvnMetadataFacet");
@@ -115,7 +115,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put("FLOAT_INVALID_SIZE", "StvnMetadataFacet");
         map.put("E003", "StvnMetadataFacet");
         map.put("E004", "StvnMetadataFacet");
-        map.put("E008", "StvnMetadataFacet");
         map.put("E010", "StvnMetadataFacet");
         map.put("E039", "StvnMetadataFacet");
 
@@ -145,7 +144,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING, "StvnTemporalMode");
-        map.put(DiagnosticBag.ERR_PRELUDE_ALIAS_PURGED, "StvnTemporalMode");
         map.put("TEMPORAL_OFFSET_IN_ZONED", "StvnTemporalMode");
         map.put("TEMPORAL_ZONE_IN_EPOCH", "StvnTemporalMode");
         map.put("TEMPORAL_AUDITED_MISMATCH", "StvnTemporalMode");
@@ -275,27 +273,50 @@ public final class StvnDiagnosticAnnotatorMapping {
     }
 
     /**
-     * Resolves the primary diagnostic identity string from a compiler diagnostic.
+     * Resolves the governing local inspection shortName for {@code diag}, prioritizing
+     * {@link StvnDiagnostic#symbolicId()} over {@link StvnDiagnostic#canonicalCode()} so
+     * many-to-one canonical buckets (such as {@code E008} containing {@code ERR_TRAIT_VIOLATION})
+     * never suppress diagnostics lacking a local PSI inspection.
      *
-     * @param diag the compiler diagnostic
-     * @return the diagnostic identifier or error code, or {@code null} if unassigned
+     * @param diag compiler diagnostic
+     * @return governing inspection shortName, or {@code null} if ungoverned
      */
-    private static @Nullable String resolveDiagnosticKey(StvnDiagnostic diag) {
-        var errorCode = diag.errorCode().orElse(null);
-        if (errorCode != null && !errorCode.isBlank()) {
-            return errorCode;
-        }
-        try {
-            var idMethod = diag.getClass().getMethod("id");
-            var res = idMethod.invoke(diag);
-            if (res instanceof java.util.Optional<?> opt) {
-                var val = opt.orElse(null);
-                if (val != null) return val.toString();
-            } else if (res instanceof String s && !s.isBlank()) {
-                return s;
+    public static @Nullable String getGoverningInspectionShortName(StvnDiagnostic diag) {
+        if (diag.symbolicId().isPresent()) {
+            String sym = diag.symbolicId().get();
+            if (isExplicitlyUngovernedSymbolicId(sym)) {
+                return null;
             }
-        } catch (ReflectiveOperationException ignored) {}
+            String mapped = CODE_TO_INSPECTION_MAP.get(sym);
+            if (mapped != null) {
+                return mapped;
+            }
+        }
+        if (diag.canonicalCode().isPresent()) {
+            String mapped = CODE_TO_INSPECTION_MAP.get(diag.canonicalCode().get());
+            if (mapped != null) {
+                return mapped;
+            }
+        }
+        if (diag.errorCode().isPresent()) {
+            String err = diag.errorCode().get();
+            if (isExplicitlyUngovernedSymbolicId(err)) {
+                return null;
+            }
+            return CODE_TO_INSPECTION_MAP.get(err);
+        }
         return null;
+    }
+
+    private static boolean isExplicitlyUngovernedSymbolicId(String code) {
+        return DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
+            || "ERR_TRAIT_VIOLATION".equals(code)
+            || DiagnosticBag.ERR_PRELUDE_ALIAS_PURGED.equals(code)
+            || "ERR_PRELUDE_ALIAS_PURGED".equals(code)
+            || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(code)
+            || "ERR_SECTION_PROHIBITED".equals(code)
+            || "ERR_SECTION_REQUIRED".equals(code)
+            || DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL.equals(code);
     }
 
     /**
@@ -310,37 +331,71 @@ public final class StvnDiagnosticAnnotatorMapping {
      * @return {@code true} if the diagnostic must be suppressed; {@code false} otherwise
      */
     public static boolean isDiagnosticGovernedAndActive(PsiFile file, StvnDiagnostic diag) {
-        var errorCode = resolveDiagnosticKey(diag);
-        if (errorCode != null) {
-            // Guard: structural section violations (cannot declare ':type' or ':body') are ungoverned by StvnMissingMeta
-            if (DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH.equals(errorCode) || StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH.equals(errorCode)) {
-                var msg = diag.message();
-                if (msg.contains("cannot declare ':type'") || msg.contains("cannot declare ':body'") || msg.contains("Structural violation:")) {
-                    return false;
-                }
-            }
+        var message = diag.message();
+        var sym = diag.symbolicId().orElse(null);
+        var canon = diag.canonicalCode().orElse(null);
+        var err = diag.errorCode().orElse(null);
 
-            // Guard: Schema facet bound capacity violations are ungoverned by StvnConstantRange
-            if (DiagnosticBag.ERR_INTEGER_OVERFLOW.equals(errorCode)
-                    || "E009".equals(errorCode)
-                    || StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW.equals(errorCode)) {
-                var msg = diag.message();
-                if (msg.contains("Constraint violation (") || msg.contains("is out of bounds for physical capacity")) {
-                    return false;
-                }
-            }
+        if ((sym != null && isExplicitlyUngovernedSymbolicId(sym))
+                || (err != null && isExplicitlyUngovernedSymbolicId(err))) {
+            return false;
+        }
 
-            if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(errorCode)
-                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(errorCode)
-                    || "MUTUALLY_EXCLUSIVE_BOUNDS".equals(errorCode)
-                    || "E011".equals(errorCode)) {
-                var msg = diag.message();
+        // Guard: structural section violations, unfenced block strings, and Layer-1 extension checks are ungoverned
+        if (message.contains("cannot declare ':type'")
+                || message.contains("cannot declare ':body'")
+                || message.contains("Structural violation:")
+                || message.contains("Unfenced block strings are prohibited")
+                || message.startsWith("Unrecognized STVN file extension")) {
+            return false;
+        }
+
+        // Guard: Schema facet numeric/capacity domain violations not covered by PSI inspections remain with core
+        if (message.contains("is out of bounds for physical capacity")
+                || message.contains("must be >= 1")
+                || message.contains("must be >= 0")
+                || message.contains("must be in [1, 1024]")
+                || message.contains("must be 32 or 64")
+                || message.contains("cannot exceed #maxSize")
+                || message.contains("lexicographical")
+                || message.contains("exceeds #maxSize")
+                || message.contains("is below #minSize")) {
+            return false;
+        }
+
+        // Guard: StvnConstantRange only inspects ConstantDefinitions inside :defs, not :body integer literals
+        if (DiagnosticBag.ERR_INTEGER_OVERFLOW.equals(sym)
+                || "INT_OVERFLOW".equals(sym)
+                || ("E009".equals(canon) && sym == null)) {
+            int offset = diag.startOffset();
+            if (offset < 0 || offset >= file.getTextLength()) {
+                return false;
+            }
+            var elem = file.findElementAt(offset);
+            if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ConstantDefinition.class) == null) {
+                return false;
+            }
+        }
+
+        // Route shared mutual-exclusivity diagnostics to the specific domain inspection
+        if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
+                || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)
+                || "E011".equals(canon)
+                || "E011".equals(err)) {
+            if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                    || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
+                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)) {
                 String mutexOwner = "StvnDiscreteInterval";
-                if (msg.contains("Temporal scale facets") || msg.contains("Temporal mode facets") || msg.contains("Mutually exclusive temporal")) {
+                if (message.contains("Temporal scale facets")
+                        || message.contains("Temporal mode facets")
+                        || message.contains("Mutually exclusive temporal")) {
                     mutexOwner = "StvnTemporalMode";
-                } else if (msg.contains("#exact") || msg.contains("#size")) {
+                } else if (message.contains("#exact") || message.contains("#size")) {
                     mutexOwner = "StvnMetadataFacet";
-                } else if (msg.contains("#filterIncl") || msg.contains("#filterExcl")) {
+                } else if (message.contains("#filterIncl") || message.contains("#filterExcl")) {
                     mutexOwner = "StvnEnumSubset";
                 }
                 if (!ApplicationManager.getApplication().isUnitTestMode()) {
@@ -348,23 +403,14 @@ public final class StvnDiagnosticAnnotatorMapping {
                 }
                 return isInspectionActive(file, mutexOwner);
             }
+        }
 
-            var shortName = CODE_TO_INSPECTION_MAP.get(errorCode);
-            if (shortName != null) {
-                if (!ApplicationManager.getApplication().isUnitTestMode()) {
-                    return true;
-                }
-                return isInspectionActive(file, shortName);
+        var shortName = getGoverningInspectionShortName(diag);
+        if (shortName != null) {
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
             }
-        }
-
-        // Defensive fallback: inspect prose message content against known inspection domains
-        var message = diag.message();
-        if (message.contains("cannot declare ':type'") || message.contains("cannot declare ':body'") || message.contains("Structural violation:")) {
-            return false;
-        }
-        if (message.contains("is out of bounds for physical capacity")) {
-            return false;
+            return isInspectionActive(file, shortName);
         }
 
         var proseGoverningShortName = resolveGoverningInspectionByMessageContent(message);
@@ -473,6 +519,13 @@ public final class StvnDiagnosticAnnotatorMapping {
                 return profile.isToolEnabled(key, file);
             }
             if ("StvnMissingMeta".equals(shortName)) {
+                var vf = file.getVirtualFile();
+                if (vf != null) {
+                    var p = vf.getPath().replace('\\', '/');
+                    if (p.contains("/syntax/") || p.contains("/metadata/") || p.contains("/binary/")) {
+                        return false;
+                    }
+                }
                 return true;
             }
             return false;

@@ -65,7 +65,6 @@ LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
   
   // Type track constructors (: namespace)
   ":Tuple"                       { return KW_TUPLE; }
-  ":MapEntry"                    { return KW_MAP_ENTRY; }
   ":Enum"                        { return KW_ENUM; }
   ":Option"                      { return KW_OPTION; }
   ":Either"                      { return KW_EITHER; }
