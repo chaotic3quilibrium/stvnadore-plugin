@@ -2309,4 +2309,89 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .anyMatch(h -> h.getStartOffset() >= brokenTypeOffset && h.getStartOffset() <= brokenTypeOffset + 35);
         assertTrue("Syntax error on line 10 must remain pinned to :BrokenType line", brokenTypeHighlighted);
     }
+
+    /**
+     * Verifies anti-tautological sibling isolation on the 3-tuple {@code date_time.stvn} matrix:
+     * Tuple 1 receives 0 error highlights, while all 6 invalid literals in Tuples 2 and 3
+     * (including both {@code {#zoned} :DateTime} slots on lines 19 and 25) receive exact red error highlights.
+     */
+    public void testDateTimeTripartiteThreeTupleSiblingIsolationAndUnsuppressedE019() {
+        var content = """
+            {
+              :defs {
+                :DateTimes :Tuple (
+                  {#offset} :DateTime
+                  {#zoned} :DateTime
+                  {#audited} :DateTime
+                )
+              }
+              :type { #maxSize 4096 } :Seq(:DateTimes)
+              :body [
+                (
+                  "2026-09-12T15:30:00.001-04:00"
+                  "2026-09-12T15:30:00.002[America/New_York]"
+                  "2026-09-12T15:30:00.003-04:00[America/New_York]"
+                )
+
+                (
+                  "2026-09-12T15:30:00.004-04:00[America/New_York]"
+                  "2026-09-12T15:30:00.005-04:00"
+                  "2026-09-12T15:30:00.006[America/New_York]"
+                )
+
+                (
+                  "2026-09-12T15:30:00.007[America/New_York]"
+                  "2026-09-12T15:30:00.008-04:00[America/New_York]"
+                  "2026-09-12T15:30:00.009-04:00"
+                )
+              ]
+            }
+            """;
+        myFixture.configureByText("date_time.stvn", content);
+        myFixture.enableInspections(new StvnTemporalModeInspection());
+
+        var document = myFixture.getEditor().getDocument();
+        assertEquals(19, document.getLineNumber(content.indexOf("\"2026-09-12T15:30:00.005-04:00\"")) + 1);
+        assertEquals(25, document.getLineNumber(content.indexOf("\"2026-09-12T15:30:00.008-04:00[America/New_York]\"")) + 1);
+
+        var errors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected all 6 invalid literals in Tuples 2 and 3 to render ERROR highlights: " + errors, 6, errors.size());
+
+        var validLiterals = List.of(
+            "\"2026-09-12T15:30:00.001-04:00\"",
+            "\"2026-09-12T15:30:00.002[America/New_York]\"",
+            "\"2026-09-12T15:30:00.003-04:00[America/New_York]\""
+        );
+        for (var validLit : validLiterals) {
+            int start = content.indexOf(validLit);
+            int end = start + validLit.length();
+            boolean overlapsError = errors.stream()
+                .anyMatch(h -> h.getStartOffset() < end && h.getEndOffset() > start);
+            assertFalse("Valid Tuple 1 literal must have 0 error highlights: " + validLit, overlapsError);
+        }
+
+        var invalidExpectations = List.of(
+            List.of("\"2026-09-12T15:30:00.004-04:00[America/New_York]\"", "Invalid { #offset } :DateTime literal: IANA time zone brackets '[...]' are prohibited"),
+            List.of("\"2026-09-12T15:30:00.005-04:00\"", "Invalid { #zoned } :DateTime literal: UTC offset ('Z' or '±HH:mm') is prohibited and missing required IANA time zone '[Region/City]'"),
+            List.of("\"2026-09-12T15:30:00.006[America/New_York]\"", "Invalid { #audited } :DateTime literal: missing required UTC offset ('Z' or '±HH:mm')"),
+            List.of("\"2026-09-12T15:30:00.007[America/New_York]\"", "Invalid { #offset } :DateTime literal: IANA time zone brackets '[...]' are prohibited and missing required UTC offset ('Z' or '±HH:mm')"),
+            List.of("\"2026-09-12T15:30:00.008-04:00[America/New_York]\"", "Invalid { #zoned } :DateTime literal: UTC offset ('Z' or '±HH:mm') is prohibited"),
+            List.of("\"2026-09-12T15:30:00.009-04:00\"", "Invalid { #audited } :DateTime literal: missing required IANA time zone '[Region/City]'")
+        );
+        for (var entry : invalidExpectations) {
+            String literal = entry.get(0);
+            String expectedMsg = entry.get(1);
+            int start = content.indexOf(literal);
+            int end = start + literal.length();
+            var match = errors.stream()
+                .filter(h -> h.getStartOffset() == start && h.getEndOffset() == end)
+                .findFirst();
+            assertTrue("Expected exact error highlight pinned to " + literal + ", found: " + errors, match.isPresent());
+            assertTrue("Expected unified 3-part message '" + expectedMsg + "', got: " + match.get().getDescription(),
+                match.get().getDescription() != null && match.get().getDescription().contains(expectedMsg));
+        }
+    }
 }

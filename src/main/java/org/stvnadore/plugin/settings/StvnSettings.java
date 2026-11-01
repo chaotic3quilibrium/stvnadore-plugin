@@ -44,6 +44,28 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
     }
 
     /**
+     * Formatting engine delegation mode for Reformat Code ({@code Ctrl+Alt+L}).
+     *
+     * @since 2.0.0
+     */
+    public enum ReformatDelegationMode {
+        /**
+         * Uses the native IntelliJ PSI formatter, preserving {@code //} comments,
+         * {@code :package}/{@code :use} authoring sugar, and broken in-flight syntax.
+         */
+        PSI_STRUCTURE_PRESERVING,
+        /**
+         * Delegates whole-file formatting to {@code AstPrettyPrinter} when the document compiles
+         * cleanly without comments or authoring sugar that canonicalization would discard.
+         */
+        CORE_PRETTY_WHEN_LOSSLESS,
+        /**
+         * Delegates whole-file formatting to {@code AstPrettyPrinter} whenever the document compiles cleanly.
+         */
+        CORE_PRETTY_CANONICAL
+    }
+
+    /**
      * Serializable persistent state properties.
      */
     public static final class State {
@@ -65,6 +87,8 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public TimeEpochHourFormat timeEpochHourFormat = TimeEpochHourFormat.HOUR_12;
         /** If true, displays warning banner on suspicious epoch magnitude in hover cards. */
         public boolean showEpochMagnitudeWarnings = true;
+        /** Engine delegation mode for Reformat Code (Ctrl+Alt+L). */
+        public ReformatDelegationMode reformatDelegationMode = ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
         /** Canonical bootstrap template for modular payload documents (.stvn). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
         /** Canonical bootstrap template for isolated payload documents (.stvn_i). */

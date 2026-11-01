@@ -155,6 +155,42 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
+        // Schema-level composite type constructors: :Tuple(...), :Seq(...), :Set(...), :Map(...), :Option(...), :Either(...), :Union(...)
+        if (parentType == StvnTypes.PRODUCT_TYPE
+                || parentType == StvnTypes.COLLECTION_TYPE
+                || parentType == StvnTypes.SUM_TYPE) {
+            if (childType == StvnTypes.KW_TUPLE
+                    || childType == StvnTypes.COLL_SEQ
+                    || childType == StvnTypes.COLL_SET
+                    || childType == StvnTypes.COLL_MAP
+                    || childType == StvnTypes.KW_OPTION
+                    || childType == StvnTypes.KW_EITHER
+                    || childType == StvnTypes.KW_UNION
+                    || childType == StvnTypes.KW_ENUM
+                    || childType == StvnTypes.ENUM_DEF
+                    || childType == StvnTypes.LPAREN
+                    || childType == StvnTypes.RPAREN) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // Enum variant brackets [:Enum[#A #B]] and subset filter variant lists [#filterIncl [#A #B]]
+        if (parentType == StvnTypes.ENUM_DEF || parentType == StvnTypes.VARIANT_LIST) {
+            if (childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
+        // Metadata facet map { #offset ... }: braces never indent; multiline facet entries indent by +2 spaces
+        if (parentType == StvnTypes.METADATA_MAP) {
+            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
         // Use and Include alias block boundaries: { and } never indent; entries indent normally (+2)
         if (parentType == StvnTypes.USE_ALIAS_BLOCK || parentType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
             if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
@@ -228,7 +264,13 @@ public final class StvnBlock implements ASTBlock {
             if (parentType instanceof IFileElementType
                     || parentType == StvnTypes.LIST_LITERAL
                     || parentType == StvnTypes.MAP_LITERAL
-                    || parentType == StvnTypes.TUPLE_LITERAL) {
+                    || parentType == StvnTypes.TUPLE_LITERAL
+                    || parentType == StvnTypes.PRODUCT_TYPE
+                    || parentType == StvnTypes.COLLECTION_TYPE
+                    || parentType == StvnTypes.SUM_TYPE
+                    || parentType == StvnTypes.ENUM_DEF
+                    || parentType == StvnTypes.VARIANT_LIST
+                    || parentType == StvnTypes.METADATA_MAP) {
                 return Indent.getNormalIndent();
             }
         }
@@ -300,6 +342,12 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.INCLUDE_STMT
                 || type == StvnTypes.INCLUDE_ELEMENT
                 || type == StvnTypes.INCLUDE_ALIAS_BLOCK
+                || type == StvnTypes.PRODUCT_TYPE
+                || type == StvnTypes.COLLECTION_TYPE
+                || type == StvnTypes.SUM_TYPE
+                || type == StvnTypes.ENUM_DEF
+                || type == StvnTypes.VARIANT_LIST
+                || type == StvnTypes.METADATA_MAP
                 || type == StvnTypes.LIST_LITERAL
                 || type == StvnTypes.MAP_LITERAL
                 || type == StvnTypes.TUPLE_LITERAL) {
@@ -317,11 +365,17 @@ public final class StvnBlock implements ASTBlock {
         return lastChild.getElementType() == TokenType.ERROR_ELEMENT
                 || (node.getElementType() == StvnTypes.DEFS_ENTRY && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.MAP_LITERAL && lastChild.getElementType() != StvnTypes.RBRACE)
+                || (node.getElementType() == StvnTypes.METADATA_MAP && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.USE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.INCLUDE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.USE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.INCLUDE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
+                || (node.getElementType() == StvnTypes.ENUM_DEF && lastChild.getElementType() != StvnTypes.RBRACK)
+                || (node.getElementType() == StvnTypes.VARIANT_LIST && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.LIST_LITERAL && lastChild.getElementType() != StvnTypes.RBRACK)
+                || (node.getElementType() == StvnTypes.PRODUCT_TYPE && lastChild.getElementType() != StvnTypes.RPAREN)
+                || (node.getElementType() == StvnTypes.COLLECTION_TYPE && lastChild.getElementType() != StvnTypes.RPAREN)
+                || (node.getElementType() == StvnTypes.SUM_TYPE && lastChild.getElementType() != StvnTypes.RPAREN && lastChild.getElementType() != StvnTypes.ENUM_DEF)
                 || (node.getElementType() == StvnTypes.TUPLE_LITERAL && lastChild.getElementType() != StvnTypes.RPAREN)
                 || (node.getElementType() instanceof IFileElementType && lastChild.getElementType() != StvnTypes.RBRACE);
     }

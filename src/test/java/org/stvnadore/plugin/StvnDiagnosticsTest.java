@@ -3132,7 +3132,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .toList();
         assertEquals(1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue(error.getDescription() != null && error.getDescription().contains("Time zone brackets [...] are prohibited"));
+        assertTrue("Expected unified 3-part { #offset } :DateTime error, got: " + error.getDescription(),
+            error.getDescription() != null
+                && error.getDescription().contains("Invalid { #offset } :DateTime literal: IANA time zone brackets '[...]' are prohibited"));
         
         var documentText = myFixture.getEditor().getDocument().getText();
         var targetText = documentText.substring(error.getStartOffset(), error.getEndOffset());
@@ -3167,9 +3169,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_invalid_offset.stvn", invalidOffsetCode);
         var highlights = myFixture.doHighlighting();
         var error = highlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(error.getDescription() != null
-            && (error.getDescription().contains("Explicit UTC offsets (+/-HH:mm or Z) are prohibited in {#zoned} :DateTime")
-                || error.getDescription().contains("Explicit offsets (±HH:mm or Z) are prohibited in :DateTimeZoned")));
+        assertTrue("Expected unified 3-part { #zoned } :DateTime offset prohibition error, got: " + error.getDescription(),
+            error.getDescription() != null
+                && error.getDescription().contains("Invalid { #zoned } :DateTime literal: UTC offset ('Z' or '±HH:mm') is prohibited"));
 
         // 3. Missing Zone Brackets Rejection
         var missingZoneCode = """
@@ -3185,9 +3187,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_zoned_gap.stvn", missingZoneCode);
         var gapHighlights = myFixture.doHighlighting();
         var gapError = gapHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(gapError.getDescription() != null
-            && (gapError.getDescription().contains("Invalid {#zoned} :DateTime format")
-                || gapError.getDescription().contains("Invalid ZonedDateTime format")));
+        assertTrue("Expected unified 3-part { #zoned } :DateTime missing zone error, got: " + gapError.getDescription(),
+            gapError.getDescription() != null
+                && gapError.getDescription().contains("Invalid { #zoned } :DateTime literal: missing required IANA time zone '[Region/City]'"));
     }
 
     public void testDateTimeAuditedHighlightingAndInlays() {
@@ -3218,9 +3220,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_missing_zone.stvn", missingZoneCode);
         var missingZoneHighlights = myFixture.doHighlighting();
         var missingZoneError = missingZoneHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(missingZoneError.getDescription() != null
-            && (missingZoneError.getDescription().contains("Invalid {#audited} :DateTime format")
-                || missingZoneError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID")));
+        assertTrue("Expected unified 3-part { #audited } :DateTime missing zone error, got: " + missingZoneError.getDescription(),
+            missingZoneError.getDescription() != null
+                && missingZoneError.getDescription().contains("Invalid { #audited } :DateTime literal: missing required IANA time zone '[Region/City]'"));
 
         // 3. Missing Offset Rejection
         var missingOffsetCode = """
@@ -3236,10 +3238,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByText("datetime_audited_contradictory.stvn", missingOffsetCode);
         var contradictoryHighlights = myFixture.doHighlighting();
         var contradictoryError = contradictoryHighlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).findFirst().orElseThrow();
-        assertTrue(contradictoryError.getDescription() != null
-            && (contradictoryError.getDescription().contains("Invalid {#audited} :DateTime format")
-                || contradictoryError.getDescription().contains("Mandates both an explicit UTC offset and an IANA zone ID")
-                || contradictoryError.getDescription().contains("Invalid :DateTimeAudited format")));
+        assertTrue("Expected unified 3-part { #audited } :DateTime missing offset error, got: " + contradictoryError.getDescription(),
+            contradictoryError.getDescription() != null
+                && contradictoryError.getDescription().contains("Invalid { #audited } :DateTime literal: missing required UTC offset ('Z' or '±HH:mm')"));
         
         var documentText = myFixture.getEditor().getDocument().getText();
         var targetText = documentText.substring(contradictoryError.getStartOffset(), contradictoryError.getEndOffset());
@@ -6582,6 +6583,37 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         assertTrue("128-bit nanosecond epoch constant (18446744073709551615) must be accepted without overflow error",
             errors.isEmpty());
+    }
+
+    public void testMirroredDateTimeTripartiteModeMatrixMismatchFixtureRendersAllSixErrors() throws Exception {
+        var fixturePath = Paths.get(getTestDataPath(), "syntax", "invalid", "date_time_tripartite_mode_matrix_mismatch.stvn");
+        var contractPath = Paths.get(getTestDataPath(), "syntax", "invalid", "date_time_tripartite_mode_matrix_mismatch.contract.stvn_i");
+        assertTrue("Mirrored fixture must exist: " + fixturePath, Files.isRegularFile(fixturePath));
+        assertTrue("Mirrored contract must exist: " + contractPath, Files.isRegularFile(contractPath));
+
+        var expectations = parseErrorContract(contractPath, fixturePath.getFileName().toString());
+        assertEquals("Contract must specify 6 coordinate-pinned errors", 6, expectations.size());
+
+        myFixture.configureByFile("syntax/invalid/date_time_tripartite_mode_matrix_mismatch.stvn");
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnTemporalModeInspection());
+
+        var errors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Headless editor must render all 6 errors with 0 suppressed E019 diagnostics: " + errors,
+            6, errors.size());
+
+        for (var exp : expectations) {
+            var matched = errors.stream()
+                .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
+                .findFirst();
+            assertTrue("Missing highlight at [" + exp.startOffset() + ", " + exp.endOffset() + "] for "
+                + exp.canonicalCode() + "/" + exp.symbolicId() + "; actual=" + errors, matched.isPresent());
+            assertTrue("Highlight description must contain contract message '" + exp.messageSubstring()
+                + "', got: " + matched.get().getDescription(),
+                matched.get().getDescription() != null && matched.get().getDescription().contains(exp.messageSubstring()));
+        }
     }
 }
 

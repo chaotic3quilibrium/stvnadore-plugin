@@ -144,14 +144,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING, "StvnTemporalMode");
-        map.put("TEMPORAL_OFFSET_IN_ZONED", "StvnTemporalMode");
-        map.put("TEMPORAL_ZONE_IN_EPOCH", "StvnTemporalMode");
-        map.put("TEMPORAL_AUDITED_MISMATCH", "StvnTemporalMode");
-        map.put("TEMPORAL_DST_GAP_LITERAL", "StvnTemporalMode");
-        map.put("E019", "StvnTemporalMode");
-        map.put("E020", "StvnTemporalMode");
-        map.put("E021", "StvnTemporalMode");
-        map.put("E022", "StvnTemporalMode");
 
         // 11. Excessive Exact Float Precision Inspection
         map.put(StvnDiagnosticCodes.WARN_EXCESSIVE_EXACT_PRECISION, "StvnExcessiveExactFloatPrecision");
@@ -293,7 +285,11 @@ public final class StvnDiagnosticAnnotatorMapping {
             }
         }
         if (diag.canonicalCode().isPresent()) {
-            String mapped = CODE_TO_INSPECTION_MAP.get(diag.canonicalCode().get());
+            String canon = diag.canonicalCode().get();
+            if (isExplicitlyUngovernedSymbolicId(canon)) {
+                return null;
+            }
+            String mapped = CODE_TO_INSPECTION_MAP.get(canon);
             if (mapped != null) {
                 return mapped;
             }
@@ -316,7 +312,24 @@ public final class StvnDiagnosticAnnotatorMapping {
             || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(code)
             || "ERR_SECTION_PROHIBITED".equals(code)
             || "ERR_SECTION_REQUIRED".equals(code)
-            || DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL.equals(code);
+            || DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL.equals(code)
+            || DiagnosticBag.ERR_TEMPORAL_OFFSET_IN_ZONED.equals(code)
+            || DiagnosticBag.ERR_TEMPORAL_ZONE_IN_EPOCH.equals(code)
+            || DiagnosticBag.ERR_TEMPORAL_AUDITED_MISMATCH.equals(code)
+            || DiagnosticBag.ERR_TEMPORAL_DST_GAP_LITERAL.equals(code)
+            || DiagnosticBag.ERR_TEMPORAL_ZONE_IN_OFFSET.equals(code)
+            || "TEMPORAL_LITERAL_FORMAT_INVALID".equals(code)
+            || DiagnosticBag.ERR_DATETIME_FENCED_STRING_PROHIBITED.equals(code)
+            || DiagnosticBag.ERR_DATETIME_MISSING_OFFSET.equals(code)
+            || DiagnosticBag.ERR_DATETIME_MISSING_ZONE.equals(code)
+            || DiagnosticBag.ERR_DATETIME_INVALID_FORMAT.equals(code)
+            || DiagnosticBag.ERR_DATETIME_INVALID_CALENDAR.equals(code)
+            || DiagnosticBag.ERR_DATETIME_INVALID_ZONE.equals(code)
+            || "E019".equals(code)
+            || "E020".equals(code)
+            || "E021".equals(code)
+            || "E022".equals(code)
+            || "E028".equals(code);
     }
 
     /**
@@ -337,6 +350,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         var err = diag.errorCode().orElse(null);
 
         if ((sym != null && isExplicitlyUngovernedSymbolicId(sym))
+                || (canon != null && isExplicitlyUngovernedSymbolicId(canon))
                 || (err != null && isExplicitlyUngovernedSymbolicId(err))) {
             return false;
         }

@@ -27,7 +27,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
           :defs {
             :package :org/example/service {
               :Port { #unsigned #size 16 #minIncl 1 } :Int
-              :Status :Enum [ #ACTIVE #SUSPENDED ]
+              :Status :Enum[#ACTIVE #SUSPENDED]
               :ServiceConfig :Tuple(
                 :Port
                 :Status
@@ -62,7 +62,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
           }
           :defs {
             :Port { #unsigned #size 16 } :Int
-            :State :Enum [ #ACTIVE #INACTIVE ]
+            :State :Enum[#ACTIVE #INACTIVE]
             :Endpoint :Tuple(:String :Port)
           }
           :type :Tuple(:Endpoint :State :Option(:String))
@@ -85,7 +85,7 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
           :defs {
             :Port { #unsigned #size 16 } :Int
 
-            :Status :Enum [ #ACTIVE #SUSPENDED ]
+            :Status :Enum[#ACTIVE #SUSPENDED]
 
             :Payload :Tuple(:Port :Status :String)
           }

@@ -3,6 +3,8 @@ package org.stvnadore.plugin.documentation;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 
+import java.util.List;
+
 /**
  * Test suite verifying quick documentation hover pop-up card generation
  * for single-level, transitive, and aliased enum subsets.
@@ -1087,5 +1089,119 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
                 doc.contains("scalar primitive"));
         assertTrue("Warning W003 must label composite tuple as 'composite schema':\n" + doc,
                 doc.contains("composite schema <code>:Tuple( :String :Int )</code> is intrinsically equatable"));
+    }
+
+    public void testDateTimeThreeTupleHoverComplianceSatisfiedAndViolatedWithoutStringCapacityLeak() {
+        var text = """
+            {
+              :defs {
+                :DateTimes :Tuple (
+                  {#offset} :DateTime
+                  {#zoned} :DateTime
+                  {#audited} :DateTime
+                )
+              }
+              :type { #maxSize 4096 } :Seq(:DateTimes)
+              :body [
+                (
+                  "2026-09-12T15:30:00.001-04:00"
+                  "2026-09-12T15:30:00.002[America/New_York]"
+                  "2026-09-12T15:30:00.003-04:00[America/New_York]"
+                )
+
+                (
+                  "2026-09-12T15:30:00.004-04:00[America/New_York]"
+                  "2026-09-12T15:30:00.005-04:00"
+                  "2026-09-12T15:30:00.006[America/New_York]"
+                )
+
+                (
+                  "2026-09-12T15:30:00.007[America/New_York]"
+                  "2026-09-12T15:30:00.008-04:00[America/New_York]"
+                  "2026-09-12T15:30:00.009-04:00"
+                )
+              ]
+            }
+            """;
+        myFixture.configureByText("date_time.stvn", text);
+
+        var validExpectations = List.of(
+            List.of("\"2026-09-12T15:30:00.001-04:00\"", "{ #offset } :DateTime"),
+            List.of("\"2026-09-12T15:30:00.002[America/New_York]\"", "{ #zoned } :DateTime"),
+            List.of("\"2026-09-12T15:30:00.003-04:00[America/New_York]\"", "{ #audited } :DateTime")
+        );
+        for (var entry : validExpectations) {
+            String literal = entry.get(0);
+            String expectedMode = entry.get(1);
+            String doc = getDocAtOffset(text, text.indexOf(literal) + 2);
+            assertTrue("Valid Tuple 1 literal must display Satisfied:\n" + doc,
+                doc.contains(">Satisfied</b>"));
+            assertTrue("Valid Tuple 1 literal must display active mode " + expectedMode + ":\n" + doc,
+                doc.contains(expectedMode));
+            assertTrue("DateTime hover must list Simple Quoted lexical form:\n" + doc,
+                doc.contains("Simple Quoted:"));
+            assertFalse("DateTime hover must NEVER list Verbatim Fenced lexical form:\n" + doc,
+                doc.contains("Verbatim Fenced"));
+            assertFalse("DateTime hover must NEVER leak :String capacity bounds [0, 16777216]:\n" + doc,
+                doc.contains("16777216"));
+        }
+
+        var invalidExpectations = List.of(
+            List.of("\"2026-09-12T15:30:00.004-04:00[America/New_York]\"",
+                "Invalid { #offset } :DateTime literal: IANA time zone brackets '[...]' are prohibited; expected \"YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm)\""),
+            List.of("\"2026-09-12T15:30:00.005-04:00\"",
+                "Invalid { #zoned } :DateTime literal: UTC offset ('Z' or '±HH:mm') is prohibited and missing required IANA time zone '[Region/City]'; expected \"YYYY-MM-DDTHH:mm:ss[.fraction][Region/City]\""),
+            List.of("\"2026-09-12T15:30:00.006[America/New_York]\"",
+                "Invalid { #audited } :DateTime literal: missing required UTC offset ('Z' or '±HH:mm'); expected \"YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm)[Region/City]\""),
+            List.of("\"2026-09-12T15:30:00.007[America/New_York]\"",
+                "Invalid { #offset } :DateTime literal: IANA time zone brackets '[...]' are prohibited and missing required UTC offset ('Z' or '±HH:mm'); expected \"YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm)\""),
+            List.of("\"2026-09-12T15:30:00.008-04:00[America/New_York]\"",
+                "Invalid { #zoned } :DateTime literal: UTC offset ('Z' or '±HH:mm') is prohibited; expected \"YYYY-MM-DDTHH:mm:ss[.fraction][Region/City]\""),
+            List.of("\"2026-09-12T15:30:00.009-04:00\"",
+                "Invalid { #audited } :DateTime literal: missing required IANA time zone '[Region/City]'; expected \"YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm)[Region/City]\"")
+        );
+        for (var entry : invalidExpectations) {
+            String literal = entry.get(0);
+            String expectedThreePartError = entry.get(1);
+            String doc = getDocAtOffset(text, text.indexOf(literal) + 2);
+            assertTrue("Invalid literal " + literal + " must display Violated:\n" + doc,
+                doc.contains(">Violated</b>"));
+            assertTrue("Invalid literal " + literal + " must display unified 3-part Core message:\n" + doc,
+                doc.contains(expectedThreePartError));
+            assertFalse("Invalid DateTime hover must NEVER list Verbatim Fenced:\n" + doc,
+                doc.contains("Verbatim Fenced"));
+            assertFalse("Invalid DateTime hover must NEVER leak :String capacity bounds:\n" + doc,
+                doc.contains("satisfies capacity bounds"));
+        }
+    }
+
+    public void testDateTimeHoverBoundsAndFencedStringProhibition() {
+        var text = """
+            {
+              :defs {
+                :BoundedWindow { #offset #minIncl "2026-01-01T00:00:00Z" #maxExcl "2027-01-01T00:00:00Z" } :DateTime
+              }
+              :type :Tuple(:BoundedWindow :BoundedWindow)
+              :body (
+                "2025-12-31T23:59:59Z"
+                \"\"\"[TS]
+            2026-06-01T00:00:00Z
+            [TS]\"\"\"
+              )
+            }
+            """;
+        myFixture.configureByText("datetime_bounds_hover.stvn", text);
+
+        var outOfBoundsDoc = getDocAtOffset(text, text.indexOf("\"2025-12-31T23:59:59Z\"") + 2);
+        assertTrue("Below-#minIncl timestamp must display Violated:\n" + outOfBoundsDoc, outOfBoundsDoc.contains(">Violated</b>"));
+        assertTrue("Below-#minIncl timestamp must report interval bound failure:\n" + outOfBoundsDoc,
+            outOfBoundsDoc.contains("below minimum inclusive bound '2026-01-01T00:00:00Z'"));
+
+        var fencedDoc = getDocAtOffset(text, text.indexOf("\"\"\"[TS]") + 3);
+        assertTrue("Fenced string on :DateTime must display Violated:\n" + fencedDoc, fencedDoc.contains(">Violated</b>"));
+        assertTrue("Fenced string on :DateTime must display Core prohibition message:\n" + fencedDoc,
+            fencedDoc.contains("fenced multi-line strings are prohibited"));
+        assertFalse("Fenced string on :DateTime must NEVER advertise Verbatim Fenced as valid:\n" + fencedDoc,
+            fencedDoc.contains("Verbatim Fenced"));
     }
 }

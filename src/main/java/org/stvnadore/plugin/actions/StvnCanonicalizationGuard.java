@@ -8,10 +8,12 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
+import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
@@ -65,6 +67,9 @@ public final class StvnCanonicalizationGuard {
      * @return {@code true} if any definition in {@code :defs} is unreferenced in the root contract or payload
      */
     public static boolean hasUnreferencedDefinitions(PsiFile file) {
+        if (isDefinitionsOnlyDocument(file)) {
+            return false;
+        }
         var defsEntry = PsiTreeUtil.findChildOfType(file, DefsEntry.class);
         if (defsEntry == null) {
             return false;
@@ -133,6 +138,20 @@ public final class StvnCanonicalizationGuard {
             }
         }
 
+        return false;
+    }
+
+    private static boolean isDefinitionsOnlyDocument(PsiFile file) {
+        var fileName = file.getName();
+        if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_di")) {
+            return true;
+        }
+        var kindVal = PsiTreeUtil.findChildOfType(file, MetaKindValue.class);
+        if (kindVal != null) {
+            var text = kindVal.getText().trim();
+            return StvnVocabulary.KIND_KW_DEFS.equals(text)
+                    || StvnVocabulary.KIND_KW_DEFS_INCLUDE.equals(text);
+        }
         return false;
     }
 

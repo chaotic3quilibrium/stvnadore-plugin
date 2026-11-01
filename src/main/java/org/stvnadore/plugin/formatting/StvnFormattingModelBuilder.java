@@ -74,30 +74,82 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .after(StvnTypes.KW_PACKAGE).spaces(1)
                 .after(StvnTypes.KW_USE).spaces(1)
                 .after(StvnTypes.KW_INCLUDE).spaces(1)
-                .after(StvnTypes.KW_ENUM).spaces(1)
+                .after(StvnTypes.KW_META_NAME).spaces(1)
+                .after(StvnTypes.KW_META_DOMAIN).spaces(1)
+                .after(StvnTypes.KW_META_KIND).spaces(1)
 
                 // Type definition and constant spacing
                 .between(StvnTypes.TYPE_DEF_TARGET, StvnTypes.SCHEMA_TYPE).spaces(1)
                 .between(StvnTypes.TYPE_DEF_TARGET, StvnTypes.METADATA_MAP).spaces(1)
                 .between(StvnTypes.METADATA_MAP, StvnTypes.SCHEMA_TYPE).spaces(1)
+                .between(StvnTypes.METADATA_MAP, StvnTypes.SCHEMA_CONSTRUCTOR).spaces(1)
+                .between(StvnTypes.METADATA_MAP, StvnTypes.TYPE_KEYWORD).spaces(1)
                 .between(StvnTypes.VALUE_KEYWORD, StvnTypes.SCHEMA_TYPE).spaces(1)
                 .between(StvnTypes.VALUE_KEYWORD, StvnTypes.METADATA_MAP).spaces(1)
                 .between(StvnTypes.SCHEMA_TYPE, StvnTypes.VALUE).spaces(1)
 
-                // Metadata map internal spacing: { #unsigned #size 16 }
-                .afterInside(StvnTypes.LBRACE, StvnTypes.METADATA_MAP).spaces(1)
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.METADATA_MAP).spaces(1)
-                .betweenInside(StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_MAP).spaces(1)
+                // Metadata map internal spacing: { #unsigned #size 16 } or empty {}
+                .betweenInside(StvnTypes.LBRACE, StvnTypes.RBRACE, StvnTypes.METADATA_MAP).spaces(0)
+                .afterInside(StvnTypes.LBRACE, StvnTypes.METADATA_MAP).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.METADATA_MAP).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_MAP).spacing(1, 1, 0, true, 1)
+                .before(StvnTypes.METADATA_VALUE).spaces(1)
+                .after(StvnTypes.KW_PRESERVE_INDENT).spaces(1)
+                .after(StvnTypes.KW_FILTER_INCL).spaces(1)
+                .after(StvnTypes.KW_FILTER_EXCL).spaces(1)
 
-                // Enum brackets spacing: :Enum [ #A #B ]
-                .afterInside(StvnTypes.LBRACK, StvnTypes.ENUM_DEF).spaces(1)
-                .beforeInside(StvnTypes.RBRACK, StvnTypes.ENUM_DEF).spaces(1)
-                .betweenInside(StvnTypes.VALUE_KEYWORD, StvnTypes.VALUE_KEYWORD, StvnTypes.ENUM_DEF).spaces(1)
+                // Enum and subset filter variant list brackets (STVN 2.0.0 § 3.3): :Enum[#A #B], #filterIncl [#A #B]
+                .between(StvnTypes.KW_ENUM, StvnTypes.ENUM_DEF).spaces(0)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.ENUM_DEF).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.ENUM_DEF).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.VALUE_KEYWORD, StvnTypes.VALUE_KEYWORD, StvnTypes.ENUM_DEF).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.LBRACK, StvnTypes.RBRACK, StvnTypes.VARIANT_LIST).spaces(0)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.VARIANT_LIST).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.VARIANT_LIST).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.VALUE_KEYWORD, StvnTypes.VALUE_KEYWORD, StvnTypes.VARIANT_LIST).spacing(1, 1, 0, true, 1)
 
-                // Type constructor spacing: :Tuple( ... ), :Option( ... ), :Seq( ... )
-                .before(StvnTypes.LPAREN).spaces(0)
-                .after(StvnTypes.LPAREN).spaces(0)
-                .before(StvnTypes.RPAREN).spaces(0)
+                // Type constructor spacing (STVN 2.0.0 § 3.3): :Tuple(:Int :String), :Option(:String), :Seq(:DateTimes)
+                .beforeInside(StvnTypes.LPAREN, StvnTypes.PRODUCT_TYPE).spaces(0)
+                .beforeInside(StvnTypes.LPAREN, StvnTypes.COLLECTION_TYPE).spaces(0)
+                .beforeInside(StvnTypes.LPAREN, StvnTypes.SUM_TYPE).spaces(0)
+                .afterInside(StvnTypes.LPAREN, StvnTypes.PRODUCT_TYPE).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RPAREN, StvnTypes.PRODUCT_TYPE).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.SCHEMA_TYPE, StvnTypes.SCHEMA_TYPE, StvnTypes.PRODUCT_TYPE).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LPAREN, StvnTypes.COLLECTION_TYPE).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RPAREN, StvnTypes.COLLECTION_TYPE).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.SCHEMA_TYPE, StvnTypes.SCHEMA_TYPE, StvnTypes.COLLECTION_TYPE).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LPAREN, StvnTypes.SUM_TYPE).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RPAREN, StvnTypes.SUM_TYPE).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.SCHEMA_TYPE, StvnTypes.SCHEMA_TYPE, StvnTypes.SUM_TYPE).spacing(1, 1, 0, true, 1)
+
+                // Explicit sum variant tag spacing: #Some val, #Left val, #Right val, #1 val
+                .between(StvnTypes.SOME_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.SOME_SHORT_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.LEFT_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.LEFT_SHORT_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.RIGHT_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.RIGHT_SHORT_LITERAL, StvnTypes.VALUE).spaces(1)
+                .between(StvnTypes.UNION_TAG_PREFIX, StvnTypes.VALUE).spaces(1)
+
+                // Payload tuple and list literal spacing (STVN 2.0.0 § 3.3): ("host" 8080), [1 2 3], []
+                .afterInside(StvnTypes.LPAREN, StvnTypes.TUPLE_LITERAL).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RPAREN, StvnTypes.TUPLE_LITERAL).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.VALUE, StvnTypes.VALUE, StvnTypes.TUPLE_LITERAL).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.LBRACK, StvnTypes.RBRACK, StvnTypes.LIST_LITERAL).spaces(0)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.LIST_LITERAL).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.LIST_LITERAL).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.VALUE, StvnTypes.VALUE, StvnTypes.LIST_LITERAL).spacing(1, 1, 0, true, 1)
+
+                // Map entries (STVN 2.0.0 § 3.3): ["key" val] inside MAP_LITERAL have 0 bracket padding, 1 key-value space
+                .betweenInside(StvnTypes.LBRACE, StvnTypes.RBRACE, StvnTypes.MAP_LITERAL).spaces(0)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.MAP_LITERAL).spacing(0, 0, 0, true, 1)
+                .betweenInside(StvnTypes.VALUE, StvnTypes.VALUE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
+
+                // Map entries separation: keep line breaks in multiline maps; 0 brace padding on single-line maps
+                .betweenInside(StvnTypes.RBRACK, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACE, StvnTypes.MAP_LITERAL).spacing(0, 0, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.MAP_LITERAL).spacing(0, 0, 0, true, 1)
 
                 // Braces in document root and defs: line break after '{' and before '}'
                 .afterInside(StvnTypes.LBRACE, StvnParserDefinition.FILE).lineBreakInCode()
@@ -137,21 +189,12 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .between(StvnTypes.META_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
                 .between(StvnTypes.META_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
+                .between(StvnTypes.DEFS_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
 
                 // Elements inside defs separated by line breaks
                 .between(StvnTypes.DEFS_ELEMENT, StvnTypes.DEFS_ELEMENT).lineBreakInCode()
                 .between(StvnTypes.PACKAGE_ELEMENT, StvnTypes.PACKAGE_ELEMENT).lineBreakInCode()
-
-                // Brackets: map entries [ key val ] inside MAP_LITERAL have 1 space inside
-                .afterInside(StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spaces(1)
-                .beforeInside(StvnTypes.RBRACK, StvnTypes.MAP_LITERAL).spaces(1)
-                .betweenInside(StvnTypes.VALUE, StvnTypes.VALUE, StvnTypes.MAP_LITERAL).spaces(1)
-
-                // Map entries separation: keep line breaks in multiline maps; 1 space in single line maps
-                .betweenInside(StvnTypes.RBRACK, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
-                .afterInside(StvnTypes.LBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
 
                 // Use and Include alias block spacing: multiline line breaks, single-line 1 space
                 .afterInside(StvnTypes.LBRACE, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)

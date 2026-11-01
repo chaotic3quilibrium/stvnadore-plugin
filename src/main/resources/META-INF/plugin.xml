@@ -122,6 +122,8 @@
 
         <preFormatProcessor implementation="org.stvnadore.plugin.formatting.StvnMetadataOrderPreFormatProcessor"/>
 
+        <postFormatProcessor implementation="org.stvnadore.plugin.formatting.StvnCoreDelegationPostFormatProcessor"/>
+
         <codeStyleSettingsProvider
                 implementation="org.stvnadore.plugin.formatting.StvnCodeStyleSettingsProvider"/>
 

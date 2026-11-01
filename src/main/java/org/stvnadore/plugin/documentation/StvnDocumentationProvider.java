@@ -16,9 +16,12 @@ import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 import org.stvnadore.plugin.ir.StvnEnumSubsetInfo;
 import org.stvnadore.plugin.metadata.StvnFacetMetadata;
 import org.stvnadore.plugin.metadata.StvnMetadataRegistry;
@@ -62,6 +65,12 @@ import org.stvnadore.psi.ValueKeyword;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -360,7 +369,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if ((target instanceof TypeKeyword || target instanceof AtomicType) && originalElement != null) {
             var enclosingDef = PsiTreeUtil.getParentOfType(originalElement, TypeDefinition.class);
             if (enclosingDef != null && enclosingDef.getTypeKeyword() != target) {
-                return renderRhsBaseTypeCard(target.getText().trim(), enclosingDef);
+                return renderRhsBaseTypeCard(target.getText().trim(), enclosingDef, originalElement);
             }
         }
 
@@ -2788,7 +2797,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     /**
      * Renders Zone 1, Zone 2, and Zone 3 for an RHS Base Type in :defs.
      */
-    private @NotNull String renderRhsBaseTypeCard(String baseName, TypeDefinition enclosingDef) {
+    private @NotNull String renderRhsBaseTypeCard(
+            String baseName,
+            TypeDefinition enclosingDef,
+            @Nullable PsiElement originalElement
+    ) {
         var aliasKw = enclosingDef.getTypeKeyword();
         var aliasName = aliasKw != null ? aliasKw.getText().trim() : ":Anonymous";
 
@@ -2811,7 +2824,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // Zone 2: Effective Semantic Contract
         sb.append("<div class='content'>");
-        var facetsTable = buildEffectiveFacetsTable(enclosingDef);
+        var inlineSchema = originalElement != null ? PsiTreeUtil.getParentOfType(originalElement, SchemaType.class) : null;
+        boolean isInlineCompositeChild = inlineSchema != null && inlineSchema != enclosingDef.getSchemaType();
+        var facetsTable = isInlineCompositeChild
+            ? buildInlineSchemaFacetsSummaryHtml(inlineSchema)
+            : buildEffectiveFacetsTable(enclosingDef);
         if (facetsTable != null) {
             sb.append(facetsTable).append("<br/>");
         } else {
@@ -2822,7 +2839,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // Zone 3: Authoring Capabilities & Context
         sb.append("<div class='content'>");
         sb.append("<b>Authoring Capabilities &amp; Context:</b><br/>");
-        var activeTags = extractActiveFacetTags(enclosingDef);
+        var activeTags = isInlineCompositeChild
+            ? extractInlineSchemaFacetTags(inlineSchema, baseName)
+            : extractActiveFacetTags(enclosingDef);
         var unsetFacets = StvnMetadataRegistry.getUnsetFacets(baseName, activeTags);
         if (!unsetFacets.isEmpty()) {
             sb.append("<b>Configurable Options (Unset):</b> ");
@@ -2835,6 +2854,36 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         appendValidLexicalForms(sb, baseName);
         sb.append("</div>");
         return sb.toString();
+    }
+
+    private static @Nullable String buildInlineSchemaFacetsSummaryHtml(SchemaType inlineSchema) {
+        var meta = inlineSchema.getMetadataMap();
+        if (meta == null || meta.getMetadataEntryList().isEmpty()) {
+            return null;
+        }
+        var items = new ArrayList<String>();
+        for (var entry : meta.getMetadataEntryList()) {
+            items.add("<code>" + escapeHtmlBody(entry.getText().trim()) + "</code>");
+        }
+        return "<b>Active Inline Facets:</b> " + String.join(" ", items);
+    }
+
+    private static Set<String> extractInlineSchemaFacetTags(SchemaType inlineSchema, String baseName) {
+        var tags = new HashSet<String>();
+        var meta = inlineSchema.getMetadataMap();
+        if (meta != null) {
+            for (var entry : meta.getMetadataEntryList()) {
+                var parts = entry.getText().trim().split("\\s+");
+                if (parts.length > 0 && !parts[0].isEmpty()) {
+                    tags.add(parts[0]);
+                }
+            }
+        }
+        if (!StvnMetadataRegistry.getSupportedFacets(baseName).isEmpty() && !isConstructorBaseType(baseName)) {
+            tags.add(StvnVocabulary.FACET_KW_EQUATABLE);
+            tags.add(StvnVocabulary.FACET_KW_COMPARABLE);
+        }
+        return tags;
     }
 
     /**
@@ -3421,25 +3470,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var baseType = resolveBaseTypeString(schemaType, new HashSet<>());
         if (baseType == null) baseType = ":Value";
 
-        StvnSchema irSchema = null;
-        TypeDefinition td = null;
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                td = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
-            }
-        }
-        if (td == null) {
-            td = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
-        }
-        if (td != null) {
-            var rawIr = StvnTypeResolver.resolveNominalIrSchema(td);
-            irSchema = (rawIr instanceof StvnSchema.PoisonedSchema p)
-                ? p.bestEffortFallback().orElse(null)
-                : rawIr;
-        }
+        StvnSchema irSchema = resolveEffectiveIrSchemaForCompliance(value, schemaType);
 
         // 1. Numeric integer literal evaluation
         if (value.getIntegerLiteral() != null) {
@@ -3585,8 +3616,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
-        // 2. String literal evaluation
+        // 2. DateTime & String literal evaluation
         if (value.getStringLiteral() != null) {
+            if (irSchema instanceof StvnSchema.DateTimeSchema
+                    || StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+                return evaluateDateTimeLiteralCompliance(value, schemaType, irSchema);
+            }
+
             var rawText = value.getText();
             int len = StvnPsiLiteralEvaluator.evaluateStringContentLength(value.getStringLiteral());
 
@@ -3832,6 +3868,347 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         return new StvnValueComplianceResult(true, "Satisfied", "Payload value conforms to schema shape", Collections.emptyMap(), Collections.emptyList());
+    }
+
+    /**
+     * Resolves the exact leaf pure-IR {@link StvnSchema} governing {@code value} and {@code schemaType}
+     * without climbing from inline composite child schemas to enclosing {@link TypeDefinition} parents.
+     */
+    private static @Nullable StvnSchema resolveEffectiveIrSchemaForCompliance(Value value, SchemaType schemaType) {
+        var coreVal = StvnTypeResolver.resolveCoreValue(value);
+        if (coreVal != null) {
+            var leafSchema = unwrapTerminalValueSchema(coreVal, schemaType);
+            var cleanLeaf = unwrapPoisonedSchema(leafSchema);
+            if (cleanLeaf != null && !(cleanLeaf instanceof StvnSchema.TupleSchema
+                    || cleanLeaf instanceof StvnSchema.SeqSchema
+                    || cleanLeaf instanceof StvnSchema.SetSchema
+                    || cleanLeaf instanceof StvnSchema.MapSchema)) {
+                return cleanLeaf;
+            }
+        }
+
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                var td = StvnPsiUtils.getParentTypeDefinition(target);
+                if (td != null) {
+                    return unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(td));
+                }
+            }
+        }
+
+        var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        if (parentDef != null) {
+            if (parentDef.getSchemaType() == schemaType) {
+                return unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(parentDef));
+            }
+            var rootIr = unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(parentDef));
+            var rootPsi = parentDef.getSchemaType();
+            if (rootIr != null && rootPsi != null) {
+                var descended = descendChildIrSchema(rootPsi, rootIr, schemaType);
+                if (descended != null) {
+                    return unwrapPoisonedSchema(descended);
+                }
+            }
+        }
+
+        var typeEntry = PsiTreeUtil.getParentOfType(schemaType, TypeEntry.class);
+        if (typeEntry != null && typeEntry.getSchemaType() != null) {
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var rootTypeOpt = StvnCompiledDocumentCache.getSnapshot(file).rootType();
+                if (rootTypeOpt.isPresent()) {
+                    var rootIr = unwrapPoisonedSchema(rootTypeOpt.get());
+                    if (rootIr != null) {
+                        if (typeEntry.getSchemaType() == schemaType) {
+                            return rootIr;
+                        }
+                        var descended = descendChildIrSchema(typeEntry.getSchemaType(), rootIr, schemaType);
+                        if (descended != null) {
+                            return unwrapPoisonedSchema(descended);
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable StvnSchema unwrapPoisonedSchema(@Nullable StvnSchema raw) {
+        if (raw instanceof StvnSchema.PoisonedSchema p) {
+            return p.bestEffortFallback().orElse(null);
+        }
+        return raw;
+    }
+
+    private static @Nullable StvnSchema unwrapTerminalValueSchema(StvnValue rootVal, SchemaType targetSchemaType) {
+        var ctor = targetSchemaType.getSchemaConstructor();
+        boolean targetIsSum = ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() == null;
+        if (targetIsSum) {
+            return rootVal.schema();
+        }
+        StvnValue curr = rootVal;
+        while (true) {
+            if (curr instanceof StvnValue.StvnOption opt && opt.value().isPresent()) {
+                curr = opt.value().get();
+            } else if (curr instanceof StvnValue.StvnEither either) {
+                curr = either.value();
+            } else if (curr instanceof StvnValue.StvnUnion union) {
+                curr = union.value();
+            } else {
+                return curr.schema();
+            }
+        }
+    }
+
+    private static @Nullable StvnSchema descendChildIrSchema(
+            SchemaType rootPsi,
+            StvnSchema rootIr,
+            SchemaType targetChildPsi
+    ) {
+        var steps = new ArrayDeque<Integer>();
+        PsiElement curr = targetChildPsi;
+        while (curr != null && curr != rootPsi) {
+            var parent = curr.getParent();
+            if (parent instanceof ProductType pt && curr instanceof SchemaType st) {
+                int idx = pt.getSchemaTypeList().indexOf(st);
+                if (idx < 0) return null;
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(pt, SchemaType.class);
+            } else if (parent instanceof CollectionType ct && curr instanceof SchemaType st) {
+                int idx = ct.getSchemaTypeList().indexOf(st);
+                if (idx < 0) return null;
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(ct, SchemaType.class);
+            } else if (parent instanceof SumType stSum && curr instanceof SchemaType st) {
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(stSum, SchemaType.class);
+                int idx = branches.indexOf(st);
+                if (idx < 0) return null;
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(stSum, SchemaType.class);
+            } else {
+                curr = parent;
+            }
+        }
+        if (curr != rootPsi) {
+            return null;
+        }
+        StvnSchema active = rootIr;
+        while (!steps.isEmpty() && active != null) {
+            int idx = steps.pop();
+            active = unwrapPoisonedSchema(active);
+            active = switch (active) {
+                case StvnSchema.TupleSchema ts -> (idx < ts.fieldSchemas().size()) ? ts.fieldSchemas().get(idx) : null;
+                case StvnSchema.SeqSchema sq -> (idx == 0) ? sq.elementSchema() : null;
+                case StvnSchema.SetSchema st -> (idx == 0) ? st.elementSchema() : null;
+                case StvnSchema.MapSchema mp -> (idx == 0) ? mp.keySchema() : (idx == 1 ? mp.valueSchema() : null);
+                case StvnSchema.OptionSchema op -> (idx == 0) ? op.valueSchema() : null;
+                case StvnSchema.EitherSchema ei -> (idx == 0) ? ei.leftSchema() : (idx == 1 ? ei.rightSchema() : null);
+                case StvnSchema.UnionSchema un -> (idx < un.branchSchemas().size()) ? un.branchSchemas().get(idx) : null;
+                case null, default -> null;
+            };
+        }
+        return active;
+    }
+
+    /**
+     * Evaluates a {@code :DateTime} string literal against Core's unified tripartite validator
+     * and optional {@code [#minIncl, #maxExcl)} instant interval bounds.
+     */
+    private static StvnValueComplianceResult evaluateDateTimeLiteralCompliance(
+            Value value,
+            SchemaType schemaType,
+            @Nullable StvnSchema irSchema
+    ) {
+        var forms = List.of("Simple Quoted: <code>\"...\"</code>");
+        var strLit = value.getStringLiteral();
+        var rawText = strLit != null ? strLit.getText().trim() : value.getText().trim();
+
+        StvnSchema.DateTimeMode mode = null;
+        String minInclIso = null;
+        String maxExclIso = null;
+
+        if (irSchema instanceof StvnSchema.DateTimeSchema dtSchema) {
+            mode = dtSchema.mode();
+            minInclIso = dtSchema.explicitMinInclIso().orElse(null);
+            maxExclIso = dtSchema.explicitMaxExclIso().orElse(null);
+        }
+
+        if (mode == null) {
+            mode = extractDateTimeModeFromPsiChain(schemaType, new HashSet<>());
+        }
+        var localMin = extractStringMetadataBound(schemaType, StvnVocabulary.FACET_KW_MIN_INCL, new HashSet<>());
+        var localMax = extractStringMetadataBound(schemaType, StvnVocabulary.FACET_KW_MAX_EXCL, new HashSet<>());
+        if (minInclIso == null) minInclIso = localMin;
+        if (maxExclIso == null) maxExclIso = localMax;
+
+        if (mode == null) {
+            return new StvnValueComplianceResult(
+                false,
+                "Violated",
+                "Temporal type <code>" + StvnVocabulary.TYPE_DATE_TIME + "</code> requires an explicit mode facet: <code>"
+                    + StvnVocabulary.FACET_KW_OFFSET + "</code>, <code>"
+                    + StvnVocabulary.FACET_KW_ZONED + "</code>, or <code>"
+                    + StvnVocabulary.FACET_KW_AUDITED + "</code>",
+                Collections.emptyMap(),
+                forms
+            );
+        }
+
+        var failureOpt = StvnCompiler.validateDateTimeLiteral(rawText, mode);
+        if (failureOpt.isPresent()) {
+            return new StvnValueComplianceResult(
+                false,
+                "Violated",
+                escapeHtmlBody(failureOpt.get().message()),
+                Collections.emptyMap(),
+                forms
+            );
+        }
+
+        String cleanIso = stripSimpleQuotes(rawText);
+        if (minInclIso != null || maxExclIso != null) {
+            Instant actualInst = parseValidatedDateTimeInstant(cleanIso, mode);
+            if (actualInst != null) {
+                if (minInclIso != null) {
+                    Instant minInst = parseValidatedDateTimeInstant(minInclIso, mode);
+                    if (minInst != null && actualInst.isBefore(minInst)) {
+                        String rangeDesc = "[" + minInclIso + ", " + (maxExclIso != null ? maxExclIso : "+infinity") + ")";
+                        return new StvnValueComplianceResult(
+                            false,
+                            "Violated",
+                            escapeHtmlBody("Timestamp '" + cleanIso + "' is below minimum inclusive bound '" + minInclIso + "' for interval " + rangeDesc),
+                            Collections.emptyMap(),
+                            forms
+                        );
+                    }
+                }
+                if (maxExclIso != null) {
+                    Instant maxInst = parseValidatedDateTimeInstant(maxExclIso, mode);
+                    if (maxInst != null && !actualInst.isBefore(maxInst)) {
+                        String rangeDesc = "[" + (minInclIso != null ? minInclIso : "-infinity") + ", " + maxExclIso + ")";
+                        return new StvnValueComplianceResult(
+                            false,
+                            "Violated",
+                            escapeHtmlBody("Timestamp '" + cleanIso + "' meets or exceeds exclusive upper bound '" + maxExclIso + "' for interval " + rangeDesc),
+                            Collections.emptyMap(),
+                            forms
+                        );
+                    }
+                }
+            }
+        }
+
+        String modeClause = switch (mode) {
+            case OFFSET -> "{ " + StvnVocabulary.FACET_KW_OFFSET + " } " + StvnVocabulary.TYPE_DATE_TIME + " (YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm))";
+            case ZONED -> "{ " + StvnVocabulary.FACET_KW_ZONED + " } " + StvnVocabulary.TYPE_DATE_TIME + " (YYYY-MM-DDTHH:mm:ss[.fraction][Region/City])";
+            case AUDITED -> "{ " + StvnVocabulary.FACET_KW_AUDITED + " } " + StvnVocabulary.TYPE_DATE_TIME + " (YYYY-MM-DDTHH:mm:ss[.fraction](Z|±HH:mm)[Region/City])";
+        };
+        String explanation = (minInclIso != null || maxExclIso != null)
+            ? "Timestamp conforms to <code>" + modeClause + "</code> and interval <code>["
+                + (minInclIso != null ? escapeHtmlBody(minInclIso) : "-infinity") + ", "
+                + (maxExclIso != null ? escapeHtmlBody(maxExclIso) : "+infinity") + ")</code>"
+            : "Timestamp conforms to <code>" + modeClause + "</code>";
+
+        return new StvnValueComplianceResult(true, "Satisfied", explanation, Collections.emptyMap(), forms);
+    }
+
+    private static StvnSchema.@Nullable DateTimeMode extractDateTimeModeFromPsiChain(
+            @Nullable SchemaType schemaType,
+            Set<String> visited
+    ) {
+        if (schemaType == null) return null;
+        var flag = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
+        if (StvnVocabulary.FACET_KW_OFFSET.equals(flag)) return StvnSchema.DateTimeMode.OFFSET;
+        if (StvnVocabulary.FACET_KW_ZONED.equals(flag)) return StvnSchema.DateTimeMode.ZONED;
+        if (StvnVocabulary.FACET_KW_AUDITED.equals(flag)) return StvnSchema.DateTimeMode.AUDITED;
+
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var alias = kw.getText().trim();
+            if (visited.add(alias)) {
+                var file = schemaType.getContainingFile();
+                if (file != null) {
+                    var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+                    var td = StvnPsiUtils.getParentTypeDefinition(target);
+                    if (td != null && td.getSchemaType() != null) {
+                        return extractDateTimeModeFromPsiChain(td.getSchemaType(), visited);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String extractStringMetadataBound(
+            @Nullable SchemaType schemaType,
+            String facetKw,
+            Set<String> visited
+    ) {
+        if (schemaType == null) return null;
+        var meta = schemaType.getMetadataMap();
+        if (meta != null) {
+            for (var entry : meta.getMetadataEntryList()) {
+                var text = entry.getText().trim();
+                if (text.startsWith(facetKw + " ") || text.startsWith(facetKw + "\"")) {
+                    var rest = text.substring(facetKw.length()).trim();
+                    if (rest.length() >= 2 && rest.startsWith("\"") && rest.endsWith("\"")) {
+                        return stripSimpleQuotes(rest);
+                    }
+                }
+            }
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var alias = kw.getText().trim();
+            if (visited.add(alias)) {
+                var file = schemaType.getContainingFile();
+                if (file != null) {
+                    var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+                    var td = StvnPsiUtils.getParentTypeDefinition(target);
+                    if (td != null && td.getSchemaType() != null) {
+                        return extractStringMetadataBound(td.getSchemaType(), facetKw, visited);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable Instant parseValidatedDateTimeInstant(String iso, StvnSchema.DateTimeMode mode) {
+        try {
+            int bracketIdx = iso.indexOf('[');
+            if (bracketIdx < 0) {
+                return OffsetDateTime.parse(iso).toInstant();
+            }
+            if (mode == StvnSchema.DateTimeMode.AUDITED) {
+                return ZonedDateTime.parse(iso).toInstant();
+            }
+            String localPart = iso.substring(0, bracketIdx);
+            String zonePart = iso.substring(bracketIdx + 1, iso.length() - 1);
+            return LocalDateTime.parse(localPart)
+                .atZone(ZoneId.of(zonePart))
+                .withEarlierOffsetAtOverlap()
+                .toInstant();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static String stripSimpleQuotes(String raw) {
+        if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"") && !raw.startsWith("\"\"\"")) {
+            return raw.substring(1, raw.length() - 1);
+        }
+        return raw;
+    }
+
+    private static String escapeHtmlBody(String raw) {
+        return raw
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;");
     }
 
     /**
@@ -4165,7 +4542,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      * Compliance evaluation summary for a payload value against its governing schema.
      *
      * @param isSatisfied          {@code true} when all schema bounds and patterns hold
-     * @param statusLabel          badge label ({@code Satisfied}, {@code Satisfied (Precision Loss)}, or {@code In Violation})
+     * @param statusLabel          badge label ({@code Satisfied}, {@code Satisfied (Precision Loss)}, {@code Violated}, or {@code In Violation})
      * @param detailExplanation    human-readable compliance summary
      * @param evaluatedConstraints evaluated constraint key-value map
      * @param validLexicalForms    HTML list items illustrating valid alternative lexical forms

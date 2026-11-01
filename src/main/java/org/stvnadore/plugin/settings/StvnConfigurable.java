@@ -41,6 +41,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JComboBox<AliasExpansionMode> aliasExpansionModeComboBox;
     private @Nullable JComboBox<StvnSettings.TimeEpochHourFormat> timeEpochHourFormatComboBox;
     private @Nullable JCheckBox showEpochMagnitudeWarningsCheckBox;
+    private @Nullable JComboBox<StvnSettings.ReformatDelegationMode> reformatDelegationModeComboBox;
     private @Nullable JTextArea templateStvnArea;
     private @Nullable JTextArea templateStvnIArea;
     private @Nullable JTextArea templateStvnDArea;
@@ -124,6 +125,30 @@ public final class StvnConfigurable implements SearchableConfigurable {
         styleCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, styleCombo.getPreferredSize().height));
         panel.add(styleCombo);
 
+        panel.add(javax.swing.Box.createVerticalStrut(10));
+        var reformatModeLabel = new JLabel("Reformat Code (Ctrl+Alt+L) engine mode:");
+        reformatModeLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        panel.add(reformatModeLabel);
+
+        var reformatModeCombo = new JComboBox<>(StvnSettings.ReformatDelegationMode.values());
+        reformatModeCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value == StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING) {
+                    setText("PSI Structure-Preserving Formatter (Default: preserves comments & authoring sugar)");
+                } else if (value == StvnSettings.ReformatDelegationMode.CORE_PRETTY_WHEN_LOSSLESS) {
+                    setText("Core Pretty Printer When Lossless (AstPrettyPrinter when no comments/sugar are lost)");
+                } else if (value == StvnSettings.ReformatDelegationMode.CORE_PRETTY_CANONICAL) {
+                    setText("Core Canonical Pretty Printer (AstPrettyPrinter on all valid documents)");
+                }
+                return this;
+            }
+        });
+        reformatModeCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        reformatModeCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, reformatModeCombo.getPreferredSize().height));
+        panel.add(reformatModeCombo);
+
         panel.add(javax.swing.Box.createVerticalStrut(15));
         var epochBorderPanel = new JPanel();
         epochBorderPanel.setLayout(new javax.swing.BoxLayout(epochBorderPanel, javax.swing.BoxLayout.Y_AXIS));
@@ -189,6 +214,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         aliasExpansionModeComboBox = aliasModeCombo;
         timeEpochHourFormatComboBox = epochCombo;
         showEpochMagnitudeWarningsCheckBox = epochWarnCb;
+        reformatDelegationModeComboBox = reformatModeCombo;
         templateStvnArea = areaStvn;
         templateStvnIArea = areaStvnI;
         templateStvnDArea = areaStvnD;
@@ -210,8 +236,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
+        var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return false;
         }
 
@@ -239,6 +266,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
                combo.getSelectedItem() != settings.getState().blockStringEnterStyle ||
                epCombo.getSelectedItem() != settings.getState().timeEpochHourFormat ||
                epWarn.isSelected() != settings.getState().showEpochMagnitudeWarnings ||
+               refCombo.getSelectedItem() != settings.getState().reformatDelegationMode ||
                aliasCombo.getSelectedItem() != projSettings.getState().aliasExpansionMode;
     }
 
@@ -254,8 +282,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
+        var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return;
         }
 
@@ -278,6 +307,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
             settings.getState().timeEpochHourFormat = selectedEpochFormat;
         }
         settings.getState().showEpochMagnitudeWarnings = epWarn.isSelected();
+        var selectedReformatMode = (StvnSettings.ReformatDelegationMode) refCombo.getSelectedItem();
+        if (selectedReformatMode != null) {
+            settings.getState().reformatDelegationMode = selectedReformatMode;
+        }
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -305,8 +338,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
+        var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return;
         }
 
@@ -323,6 +357,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         aliasCombo.setSelectedItem(projSettings.getState().aliasExpansionMode);
         epCombo.setSelectedItem(settings.getState().timeEpochHourFormat);
         epWarn.setSelected(settings.getState().showEpochMagnitudeWarnings);
+        refCombo.setSelectedItem(settings.getState().reformatDelegationMode);
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -349,6 +384,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         aliasExpansionModeComboBox = null;
         timeEpochHourFormatComboBox = null;
         showEpochMagnitudeWarningsCheckBox = null;
+        reformatDelegationModeComboBox = null;
         templateStvnArea = null;
         templateStvnIArea = null;
         templateStvnDArea = null;

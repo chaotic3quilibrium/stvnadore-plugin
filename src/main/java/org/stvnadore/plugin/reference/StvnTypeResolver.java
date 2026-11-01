@@ -597,7 +597,7 @@ public final class StvnTypeResolver {
             }
         }
         var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
-        if (parentDef != null && parentDef.getMetadataMap() != null) {
+        if (parentDef != null && parentDef.getSchemaType() == schemaType && parentDef.getMetadataMap() != null) {
             for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
                 var text = entry.getText().trim();
                 if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
@@ -627,7 +627,7 @@ public final class StvnTypeResolver {
             }
         }
         var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
-        if (parentDef != null && parentDef.getMetadataMap() != null) {
+        if (parentDef != null && parentDef.getSchemaType() == schemaType && parentDef.getMetadataMap() != null) {
             for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
                 var text = entry.getText().trim();
                 if (text.equals(StvnVocabulary.FACET_KW_OFFSET) || text.equals(StvnVocabulary.FACET_KW_ZONED)

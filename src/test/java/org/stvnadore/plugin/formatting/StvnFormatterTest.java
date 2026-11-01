@@ -6,6 +6,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.ir.StvnValue;
+import org.stvnadore.plugin.settings.StvnSettings;
 
 /**
  * Integration test suite verifying native formatting, 2-space indentation hierarchy,
@@ -266,7 +267,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Map entries must indent by 4 spaces (2 relative to :body):\n" + text,
-            text.contains("  :body {\n    [ \"alpha\" 10 ]\n    [ \"beta\" 20 ]\n  }"));
+            text.contains("  :body {\n    [\"alpha\" 10]\n    [\"beta\" 20]\n  }"));
         assertFalse("Formatted output must contain no tabs:\n" + text, text.contains("\t"));
 
         // Mathematical AST equivalence verification
@@ -294,11 +295,11 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Outer map entry must be indented at 4 spaces:\n" + text,
-            text.contains("    [ \"outer\" {\n"));
+            text.contains("    [\"outer\" {\n"));
         assertTrue("Inner map entry must be indented at 6 spaces:\n" + text,
-            text.contains("      [ \"inner\" 99 ]\n"));
+            text.contains("      [\"inner\" 99]\n"));
         assertTrue("Inner map closing brace must be indented at 4 spaces:\n" + text,
-            text.contains("    } ]\n"));
+            text.contains("    }]\n"));
         assertTrue("Outer map closing brace must be indented at 2 spaces:\n" + text,
             text.contains("  }\n"));
     }
@@ -323,9 +324,9 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Entry one comment must be indented at 4 spaces on its own line:\n" + text,
-            text.contains("    // Entry one comment\n    [ \"host\" \"localhost\" ]"));
+            text.contains("    // Entry one comment\n    [\"host\" \"localhost\"]"));
         assertTrue("Entry two comment must be indented at 4 spaces on its own line:\n" + text,
-            text.contains("    // Entry two comment\n    [ \"port\" \"8080\" ]"));
+            text.contains("    // Entry two comment\n    [\"port\" \"8080\"]"));
         assertFalse("Comments must never collapse onto map entry bracket:\n" + text,
             text.contains("localhost\" ]//"));
     }
@@ -372,14 +373,87 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
 
         var text = psiFile.getText();
         assertTrue("Nested list payload on dedicated line must indent by 6 spaces (+2 relative to '['):\n" + text,
-            text.contains("    [ \"features\"\n      [ \"auth\" \"logging\" ]\n    ]"));
+            text.contains("    [\"features\"\n      [\"auth\" \"logging\"]\n    ]"));
         assertFalse("Nested list must not align flush with entry bracket:\n" + text,
-            text.contains("    [ \"features\"\n    [ \"auth\""));
+            text.contains("    [\"features\"\n    [\"auth\""));
 
         // Mathematical AST equivalence verification
         var docOriginal = StvnCompiler.compile(unformatted).document().orElseThrow();
         var docFormatted = StvnCompiler.compile(text).document().orElseThrow();
         assertEquals("Round-trip AST must be mathematically equivalent",
             docOriginal.requirePayload(), docFormatted.requirePayload());
+    }
+
+    public void testMultilineTupleSchemaAndEnumSubsetCanonical200Formatting() {
+        var unformatted = """
+            {
+              :defs {
+                :Role :Enum [ #ADMIN #USER #GUEST ]
+                :ActiveRole { #filterIncl [ #ADMIN #USER ] } :Role
+                :DateTimes :Tuple (
+                {#offset}:DateTime
+                {#zoned}:DateTime
+                {#audited}:DateTime
+                )
+              }
+              :type { #maxSize 4096 } :Seq(:DateTimes)
+              :body []
+            }
+            """;
+        var psiFile = myFixture.configureByText("tuple_schema_indent.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Enum definition must use STVN 2.0.0 zero interior bracket spaces:\n" + text,
+            text.contains(":Role :Enum[#ADMIN #USER #GUEST]"));
+        assertTrue("Subset filter variant list must use single space after keyword and zero interior bracket spaces:\n" + text,
+            text.contains(":ActiveRole { #filterIncl [#ADMIN #USER] } :Role"));
+        assertTrue("Multiline :Tuple schema children must indent by +2 spaces (column 6) with canonical '{ #mode } :DateTime' spacing:\n" + text,
+            text.contains("""
+                    :DateTimes :Tuple(
+                      { #offset } :DateTime
+                      { #zoned } :DateTime
+                      { #audited } :DateTime
+                    )
+                """.stripTrailing()));
+    }
+
+    public void testConfigurableCorePrettyDelegationModeAndCommentLosslessFallback() {
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_PRETTY_WHEN_LOSSLESS;
+
+            var compactClean = "{:meta{#name \"demo\" #kind #BODY}:type :Tuple(:Boolean :Option(:Int)):body(#T #S 42)}\n";
+            var cleanFile = myFixture.configureByText("demo.stvn", compactClean);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(cleanFile);
+            });
+            var cleanFormatted = cleanFile.getText();
+            assertTrue("Lossless Core delegation must expand short-form booleans via AstPrettyPrinter:\n" + cleanFormatted,
+                cleanFormatted.contains("#TRUE"));
+
+            var commented = """
+                {
+                  // Keep this comment intact in lossless mode
+                  :type :Boolean
+                  :body #T
+                }
+                """;
+            var commentedFile = myFixture.configureByText("commented_lossless.stvn", commented);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(commentedFile);
+            });
+            var commentedFormatted = commentedFile.getText();
+            assertTrue("Lossless mode must fall back to PSI formatter and preserve comments:\n" + commentedFormatted,
+                commentedFormatted.contains("// Keep this comment intact in lossless mode"));
+            assertTrue("PSI fallback must retain authored #T token when comments are present:\n" + commentedFormatted,
+                commentedFormatted.contains(":body #T"));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
     }
 }
