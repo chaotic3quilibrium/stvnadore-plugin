@@ -204,6 +204,19 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
                 .betweenInside(StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
 
+                // :use and :include directive and alias pair horizontal spacing
+                .between(StvnTypes.KW_USE, StvnTypes.LBRACK).spaces(1)
+                .between(StvnTypes.USE_TARGET, StvnTypes.USE_OPTIONS_BLOCK).spaces(1)
+                .between(StvnTypes.USE_TARGET, StvnTypes.USE_ALIAS_BLOCK).spaces(1)
+                .between(StvnTypes.USE_OPTIONS_BLOCK, StvnTypes.USE_ALIAS_BLOCK).spaces(1)
+                .betweenInside(StvnTypes.TYPE_KEYWORD, StvnTypes.TYPE_KEYWORD, StvnTypes.USE_MAP_ALIAS).spaces(1)
+                .betweenInside(StvnTypes.VALUE_KEYWORD, StvnTypes.VALUE_KEYWORD, StvnTypes.USE_MAP_ALIAS).spaces(1)
+                .between(StvnTypes.KW_INCLUDE, StvnTypes.LBRACK).spaces(1)
+                .between(StvnTypes.STRING_LITERAL, StvnTypes.INCLUDE_OPTIONS_BLOCK).spaces(1)
+                .between(StvnTypes.STRING_LITERAL, StvnTypes.INCLUDE_ALIAS_BLOCK).spaces(1)
+                .between(StvnTypes.INCLUDE_OPTIONS_BLOCK, StvnTypes.INCLUDE_ALIAS_BLOCK).spaces(1)
+                .betweenInside(StvnTypes.TYPE_KEYWORD, StvnTypes.TYPE_KEYWORD, StvnTypes.INCLUDE_MAP_ALIAS).spaces(1)
+
                 // Comments inside MAP_LITERAL
                 .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).lineBreakInCode()
                 .betweenInside(StvnTypes.COMMENT, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).lineBreakInCode()

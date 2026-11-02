@@ -6615,6 +6615,41 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 matched.get().getDescription() != null && matched.get().getDescription().contains(exp.messageSubstring()));
         }
     }
+
+    public void testMirroredUseNestedAndDomainOmittedInMetaSharedFixtures() {
+        var warnPath = Paths.get(getTestDataPath(), "syntax", "valid", "metadata_warnings", "warn_domain_omitted_in_meta.json.stvn_i");
+        var useNestedPath = Paths.get(getTestDataPath(), "syntax", "valid", "modules", "use_nested.json.stvn_i");
+        assertTrue("Mirrored warn_domain_omitted_in_meta.json.stvn_i must exist", Files.isRegularFile(warnPath));
+        assertTrue("Mirrored use_nested.json.stvn_i must exist", Files.isRegularFile(useNestedPath));
+
+        myFixture.configureByFile("syntax/valid/metadata_warnings/warn_domain_omitted_in_meta.json.stvn_i");
+        var warnHighlights = myFixture.doHighlighting();
+        var warnErrors = warnHighlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+        assertTrue("warn_domain_omitted_in_meta.json.stvn_i must have zero errors: " + warnErrors, warnErrors.isEmpty());
+        var domainWarnings = warnHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_META"))
+            .toList();
+        assertEquals("Expected WARN_DOCUMENT_DOMAIN_OMITTED_IN_META on warn_domain_omitted_in_meta.json.stvn_i", 1, domainWarnings.size());
+
+        myFixture.configureByFile("syntax/valid/modules/use_nested.json.stvn_i");
+        myFixture.enableInspections(new org.stvnadore.plugin.validation.StvnStringCapacityInspection());
+        var useNestedHighlights = myFixture.doHighlighting();
+        var useNestedErrors = useNestedHighlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).toList();
+        assertTrue("use_nested.json.stvn_i must have zero errors (no false-positive trailing slash or unresolved type): " + useNestedErrors,
+            useNestedErrors.isEmpty());
+        var useNestedDomainWarn = useNestedHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_META"))
+            .toList();
+        assertTrue("use_nested.json.stvn_i declares #domain \"json\" and must have zero WARN_DOCUMENT_DOMAIN_OMITTED_IN_META warnings",
+            useNestedDomainWarn.isEmpty());
+        var useNestedCapacityWarn = useNestedHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"))
+            .toList();
+        assertEquals("Expected WARN_NOMINAL_STRING_UNADORNED on inline :String in use_nested.json.stvn_i", 1, useNestedCapacityWarn.size());
+    }
 }
 
 

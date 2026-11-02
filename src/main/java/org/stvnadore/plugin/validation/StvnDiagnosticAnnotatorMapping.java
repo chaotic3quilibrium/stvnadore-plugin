@@ -41,10 +41,13 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // 1. Stem Mismatch Inspection
         map.put(DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME, "StvnStemMismatch");
+        map.put(DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META, "StvnStemMismatch");
         map.put(DiagnosticBag.WARN_DOCUMENT_NAME_MISMATCH, "StvnStemMismatch");
         map.put(StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME, "StvnStemMismatch");
+        map.put(StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META, "StvnStemMismatch");
         map.put(StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH, "StvnStemMismatch");
         map.put("DOCUMENT_DOMAIN_OMITTED_IN_FILENAME", "StvnStemMismatch");
+        map.put("DOCUMENT_DOMAIN_OMITTED_IN_META", "StvnStemMismatch");
         map.put("DOCUMENT_NAME_MISMATCH", "StvnStemMismatch");
         map.put("W001", "StvnStemMismatch");
         map.put("W002", "StvnStemMismatch");
@@ -462,6 +465,7 @@ public final class StvnDiagnosticAnnotatorMapping {
             return "StvnEnumSubset";
         }
         if (message.contains("is omitted from filename stem slot 1")
+                || message.contains("omits #domain")
                 || message.contains("does not match filename stem slot")
                 || message.contains("does not match file stem")
                 || message.contains("Invalid filename stem")

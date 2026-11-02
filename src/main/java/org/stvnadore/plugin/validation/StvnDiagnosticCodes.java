@@ -13,6 +13,7 @@ public final class StvnDiagnosticCodes {
     // Document & Stem Governance
     public static final String WARN_DOCUMENT_NAME_MISMATCH = "WARN_DOCUMENT_NAME_MISMATCH";
     public static final String WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME = "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME";
+    public static final String WARN_DOCUMENT_DOMAIN_OMITTED_IN_META = "WARN_DOCUMENT_DOMAIN_OMITTED_IN_META";
     public static final String ERR_DOCUMENT_KIND_MISMATCH = "ERR_DOCUMENT_KIND_MISMATCH";
     /** Error code emitted when a filename lacks a visible stem or violates stem cardinality ({@code 1 <= |stems| <= 2}, multi-stem {@code >= 3}) (SPEC § 3.10.2, E032). */
     public static final String ERR_INVALID_FILENAME_STEM = "ERR_INVALID_FILENAME_STEM";

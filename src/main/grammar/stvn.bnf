@@ -161,16 +161,17 @@ package_element           ::= use_stmt
 nested_package_illegal    ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 
 use_stmt                  ::= KW_USE LBRACK use_target use_options_block? use_alias_block? RBRACK {pin=1}
-use_target                ::= type_keyword | use_target_illegal
+use_target                ::= use_target_illegal | type_keyword
 use_target_illegal        ::= type_keyword FSLASH+
 use_options_block         ::= LBRACE KW_STRIP* RBRACE
 use_alias_block           ::= LBRACE use_map_alias* RBRACE {pin=1}
-use_map_alias             ::= (type_keyword type_keyword) | (value_keyword value_keyword) {
-  pin=1
+use_map_alias             ::= use_type_alias_pair | use_const_alias_pair {
   recoverWhile=use_alias_recover
   mixin="org.stvnadore.plugin.psi.mixin.StvnUseMapAliasMixin"
   implements="com.intellij.psi.PsiNameIdentifierOwner"
 }
+private use_type_alias_pair  ::= type_keyword type_keyword {pin=1}
+private use_const_alias_pair ::= value_keyword value_keyword {pin=1}
 private use_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
 
 

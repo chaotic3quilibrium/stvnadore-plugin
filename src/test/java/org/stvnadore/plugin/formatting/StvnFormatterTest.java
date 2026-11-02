@@ -348,10 +348,69 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Alias entry must indent by 6 spaces (2 relative to :use):\n" + text,
-            text.contains("    :use [ :org/stvnadore/prelude/meta {\n      :StvnPosixId64 :StvnPosixId64\n    } ]"));
+        assertTrue("Alias entry must indent by 8 spaces (+4 relative to :use) and closing brace by 6 spaces:\n" + text,
+            text.contains("    :use [ :org/stvnadore/prelude/meta {\n        :StvnPosixId64 :StvnPosixId64\n      } ]"));
         assertFalse("Alias entry must not align to opening brace column:\n" + text,
             text.contains("             :StvnPosixId64"));
+    }
+
+    public void testMultilineUseSameLineBraceWithCommentsAndDoubleSpace() {
+        var unformatted = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude  {                   // <-- comment
+                    :Port :Port                                    // <-- comment
+                  #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- comment
+                  }                                                // <-- comment
+                ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_use_same_line_brace.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("Double space before '{' must collapse to 1 space:\n" + text,
+            text.contains("    :use [ :org/stvnadore/prelude { // <-- comment"));
+        assertTrue("Alias pairs must indent at column 8:\n" + text,
+            text.contains("\n        :Port :Port")
+                && text.contains("\n        #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- comment"));
+        assertTrue("Closing '}' must indent at column 6 and closing ']' at column 4:\n" + text,
+            text.contains("\n      }") && text.contains("\n    ]"));
+    }
+
+    public void testMultilineUseNewLineTargetBraceIndentation() {
+        var unformatted = """
+            {
+              :defs {
+                :use [
+                  :org/stvnadore/prelude  {
+                  :Port :Port
+                  #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                }
+                ]
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("format_use_newline_target.stvn", unformatted);
+
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+        });
+
+        var text = psiFile.getText();
+        assertTrue("New-line target ':org/stvnadore/prelude {' must indent at column 6, entries at column 8, '}' at column 6, and ']' at column 4:\n" + text,
+            text.contains("""
+                    :use [
+                      :org/stvnadore/prelude {
+                        :Port :Port
+                        #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                      }
+                    ]
+                """.stripTrailing()));
     }
 
     public void testMultilineMapEntryNestedCollectionIndentation() {

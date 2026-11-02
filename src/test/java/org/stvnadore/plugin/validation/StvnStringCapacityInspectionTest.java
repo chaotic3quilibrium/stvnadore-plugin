@@ -351,4 +351,41 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             new com.intellij.openapi.util.TextRange(myStrOffset, myStrOffset + ":MyStr".length()),
             new com.intellij.openapi.util.TextRange(warning.getStartOffset(), warning.getEndOffset()));
     }
+
+    public void testInlineStringInsideTupleEmitsUnadornedWarningAndQuickFix() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude/meta { :StvnPosixId64 :StvnPosixId64 } ]
+                :use [ :org/stvnadore/prelude { :Port :Port } ]
+                :Values :Tuple( :StvnPosixId64 :Port :String )
+              }
+            }
+            """;
+        myFixture.configureByText("tuple_inline_string.stvn_i", text);
+        int stringOffset = text.indexOf(":String");
+        myFixture.getEditor().getCaretModel().moveToOffset(stringOffset);
+        var highlights = myFixture.doHighlighting();
+
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"))
+            .toList();
+        assertEquals("Expected exactly one unadorned warning for inline :String in :Tuple", 1, warnings.size());
+        assertEquals("Warning must anchor strictly to inline :String", stringOffset, warnings.get(0).getStartOffset());
+
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
+        assertFalse("Expected capacity quick-fix on inline :String", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude/meta { :StvnPosixId64 :StvnPosixId64 } ]
+                :use [ :org/stvnadore/prelude { :Port :Port } ]
+                :Values :Tuple( :StvnPosixId64 :Port { #maxSize 4096 } :String )
+              }
+            }
+            """);
+    }
 }

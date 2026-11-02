@@ -14,16 +14,22 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaElement;
+import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -62,6 +68,45 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
+            @Override
+            public void visitMetaEntry(@NotNull MetaEntry entry) {
+                super.visitMetaEntry(entry);
+                MetaBlock metaBlock = entry.getMetaBlock();
+                if (metaBlock == null || isMetaBlockEmpty(metaBlock)) {
+                    return;
+                }
+                if (hasDomainFacet(metaBlock) || containsInFlightFacetTag(metaBlock, StvnVocabulary.FACET_KW_META_DOMAIN)) {
+                    return;
+                }
+
+                var file = entry.getContainingFile();
+                if (file == null) return;
+                var fileName = file.getName();
+                int lastDot = fileName.lastIndexOf('.');
+                if (lastDot < 0) return;
+                var ext = fileName.substring(lastDot);
+                var stemPart = fileName.substring(0, lastDot);
+                var dotParts = stemPart.split("\\.", -1);
+                if (dotParts.length == 2 && !dotParts[0].isEmpty() && !dotParts[1].isEmpty()) {
+                    String slot0 = dotParts[0];
+                    String slot1 = dotParts[1];
+                    if (!slot1.startsWith("stvn_")) {
+                        holder.registerProblem(
+                            entry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Filename stem slot 1 declares domain '" + slot1 + "', but "
+                                    + StvnVocabulary.KEYWORD_META + " omits "
+                                    + StvnVocabulary.FACET_KW_META_DOMAIN + " \"" + slot1 + "\"",
+                                StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META
+                            ),
+                            ProblemHighlightType.WARNING,
+                            new InsertMetaDomainQuickFix(slot1),
+                            new StvnOmitDomainQuickFix(slot0 + ext)
+                        );
+                    }
+                }
+            }
+
             @Override
             public void visitMetaNameFacet(@NotNull MetaNameFacet facet) {
                 super.visitMetaNameFacet(facet);
@@ -151,6 +196,28 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    private static boolean isMetaBlockEmpty(@NotNull MetaBlock block) {
+        return block.getMetaElementList().isEmpty();
+    }
+
+    private static boolean hasDomainFacet(@NotNull MetaBlock block) {
+        for (MetaElement el : block.getMetaElementList()) {
+            if (el.getMetaDomainFacet() != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsInFlightFacetTag(@NotNull MetaBlock block, @NotNull String tagText) {
+        for (PsiElement child = block.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (child.getText().startsWith(tagText)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String stripQuotes(String s) {
@@ -321,6 +388,80 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             if (metaBlock != null && metaBlock.isValid()) {
                 CodeStyleManager.getInstance(project).reformat(metaBlock);
             }
+        }
+    }
+
+    /**
+     * Quick-fix inserting {@code #domain "<slot1>"} into {@code :meta} in canonical 3-tier order
+     * (after {@code #name} if present, otherwise before {@code #kind}).
+     */
+    public static final class InsertMetaDomainQuickFix implements LocalQuickFix {
+        private final String domainValue;
+
+        public InsertMetaDomainQuickFix(String domainValue) {
+            this.domainValue = domainValue;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            return "Insert '" + StvnVocabulary.FACET_KW_META_DOMAIN + " \"" + domainValue + "\"' in " + StvnVocabulary.KEYWORD_META;
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Insert missing #domain facet in :meta";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            PsiElement element = descriptor.getPsiElement();
+            if (element == null) {
+                return;
+            }
+            MetaEntry metaEntry = element instanceof MetaEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(element, MetaEntry.class, false);
+            if (metaEntry == null) {
+                return;
+            }
+            MetaBlock metaBlock = metaEntry.getMetaBlock();
+            if (metaBlock == null || hasDomainFacet(metaBlock)) {
+                return;
+            }
+
+            var dummyFile = PsiFileFactory.getInstance(project).createFileFromText(
+                "dummy.stvn",
+                StvnFileType.Payload.INSTANCE,
+                "{\n  :meta {\n    #domain \"" + domainValue + "\"\n  }\n}\n"
+            );
+            MetaElement newDomainElement = PsiTreeUtil.findChildOfType(dummyFile, MetaElement.class);
+            if (newDomainElement == null) {
+                return;
+            }
+
+            MetaElement lastNameElement = null;
+            MetaElement firstKindElement = null;
+            for (MetaElement el : metaBlock.getMetaElementList()) {
+                if (el.getMetaNameFacet() != null) {
+                    lastNameElement = el;
+                } else if (el.getMetaKindFacet() != null && firstKindElement == null) {
+                    firstKindElement = el;
+                }
+            }
+
+            if (lastNameElement != null) {
+                metaBlock.addAfter(newDomainElement, lastNameElement);
+            } else if (firstKindElement != null) {
+                metaBlock.addBefore(newDomainElement, firstKindElement);
+            } else {
+                PsiElement rbrace = metaBlock.getLastChild();
+                if (rbrace != null && rbrace.getNode().getElementType() == StvnTypes.RBRACE) {
+                    metaBlock.addBefore(newDomainElement, rbrace);
+                } else {
+                    metaBlock.add(newDomainElement);
+                }
+            }
+            CodeStyleManager.getInstance(project).reformat(metaBlock);
         }
     }
 }

@@ -2,6 +2,8 @@ package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -29,7 +31,7 @@ import java.util.List;
  * the reserved domain segment from the filename and deleting the #domain facet from :meta.
  */
 @NullMarked
-public final class StvnOmitDomainQuickFix implements IntentionAction, PriorityAction {
+public final class StvnOmitDomainQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
 
     private static final Logger LOG = Logger.getInstance(StvnOmitDomainQuickFix.class);
 
@@ -66,6 +68,11 @@ public final class StvnOmitDomainQuickFix implements IntentionAction, PriorityAc
     }
 
     @Override
+    public @NotNull String getName() {
+        return getText();
+    }
+
+    @Override
     public @NotNull String getFamilyName() {
         return "STVN Document Identity";
     }
@@ -83,6 +90,18 @@ public final class StvnOmitDomainQuickFix implements IntentionAction, PriorityAc
         if (file.getName().equals(targetFileName)) return false;
         VirtualFile parent = vFile.getParent();
         return parent == null || parent.findChild(targetFileName) == null;
+    }
+
+    @Override
+    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+        PsiElement element = descriptor.getPsiElement();
+        if (element == null) {
+            return;
+        }
+        PsiFile file = element.getContainingFile();
+        if (file != null) {
+            invoke(project, null, file);
+        }
     }
 
     @Override

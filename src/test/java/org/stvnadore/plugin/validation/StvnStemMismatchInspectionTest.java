@@ -200,4 +200,45 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
 
         assertEquals("rfc8259_json_substrat.json_schema.stvn_d", myFixture.getFile().getName());
     }
+
+    /**
+     * Verifies that a two-stem filename omitting #domain in :meta emits WARN_DOCUMENT_DOMAIN_OMITTED_IN_META
+     * pinned to MetaEntry and offers both InsertMetaDomainQuickFix and StvnOmitDomainQuickFix.
+     */
+    public void testTwoStemFilenameOmittingDomainInMetaEmitsWarningAndQuickFixes() {
+        var content = """
+            {
+              <caret>:meta {
+                #name "use_nested"
+                #kind #BODY_INCLUDE
+              }
+              :body [ 1 2 3 ]
+            }
+            """;
+        myFixture.configureByText("use_nested.json.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_DOMAIN_OMITTED_IN_META"))
+            .toList();
+        assertEquals("Expected exactly 1 WARN_DOCUMENT_DOMAIN_OMITTED_IN_META warning", 1, warnings.size());
+        assertTrue(
+            "Warning message must cite omitted domain 'json'",
+            warnings.get(0).getDescription().contains("Filename stem slot 1 declares domain 'json', but :meta omits #domain \"json\"")
+        );
+
+        var insertActions = myFixture.filterAvailableIntentions("Insert '#domain \"json\"' in :meta");
+        assertFalse("Expected InsertMetaDomainQuickFix intention", insertActions.isEmpty());
+
+        var omitActions = myFixture.filterAvailableIntentions("Omit domain from filename (rename to 'use_nested.stvn_i')");
+        assertFalse("Expected StvnOmitDomainQuickFix intention", omitActions.isEmpty());
+
+        myFixture.launchAction(insertActions.get(0));
+        var updatedText = myFixture.getFile().getText();
+        int nameIdx = updatedText.indexOf("#name \"use_nested\"");
+        int domainIdx = updatedText.indexOf("#domain \"json\"");
+        int kindIdx = updatedText.indexOf("#kind #BODY_INCLUDE");
+        assertTrue("Expected #domain \"json\" to be inserted in canonical 3-tier order between #name and #kind:\n" + updatedText,
+            nameIdx >= 0 && domainIdx > nameIdx && kindIdx > domainIdx);
+    }
 }

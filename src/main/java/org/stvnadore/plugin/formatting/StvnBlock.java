@@ -191,12 +191,16 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
-        // Use and Include alias block boundaries: { and } never indent; entries indent normally (+2)
+        // Use and Include alias block boundaries: context-aware indentation for same-line vs new-line '{'
         if (parentType == StvnTypes.USE_ALIAS_BLOCK || parentType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
-            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+            boolean anchoredToDirective = isAliasBlockAnchoredToDirectiveHeader(node);
+            if (childType == StvnTypes.LBRACE) {
                 return Indent.getNoneIndent();
             }
-            return Indent.getNormalIndent();
+            if (childType == StvnTypes.RBRACE) {
+                return anchoredToDirective ? Indent.getNormalIndent() : Indent.getNoneIndent();
+            }
+            return anchoredToDirective ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
         if (parentType == StvnTypes.USE_MAP_ALIAS || parentType == StvnTypes.INCLUDE_MAP_ALIAS) {
@@ -209,8 +213,7 @@ public final class StvnBlock implements ASTBlock {
 
         if (parentType == StvnTypes.USE_STMT || parentType == StvnTypes.INCLUDE_STMT || parentType == StvnTypes.INCLUDE_ELEMENT) {
             if (childType == StvnTypes.KW_USE || childType == StvnTypes.KW_INCLUDE
-                    || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
-                    || childType == StvnTypes.USE_ALIAS_BLOCK || childType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
+                    || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
                 return Indent.getNoneIndent();
             }
             return Indent.getNormalIndent();
@@ -330,18 +333,46 @@ public final class StvnBlock implements ASTBlock {
         return spacingBuilder.getSpacing(this, child1, child2);
     }
 
+    private static boolean isAliasBlockAnchoredToDirectiveHeader(ASTNode aliasBlockNode) {
+        ASTNode prev = aliasBlockNode.getTreePrev();
+        while (prev != null && prev.getElementType() == TokenType.WHITE_SPACE) {
+            if (prev.getText().indexOf('\n') >= 0) {
+                return false;
+            }
+            prev = prev.getTreePrev();
+        }
+        if (aliasBlockNode.getElementType() == StvnTypes.USE_ALIAS_BLOCK) {
+            return true;
+        }
+        ASTNode parent = aliasBlockNode.getTreeParent();
+        if (parent != null && parent.getElementType() == StvnTypes.INCLUDE_ELEMENT) {
+            ASTNode elemPrev = parent.getTreePrev();
+            while (elemPrev != null && elemPrev.getElementType() == TokenType.WHITE_SPACE) {
+                if (elemPrev.getText().indexOf('\n') >= 0) {
+                    return false;
+                }
+                elemPrev = elemPrev.getTreePrev();
+            }
+        }
+        return true;
+    }
+
     @Override
     public @NotNull ChildAttributes getChildAttributes(int newChildIndex) {
         IElementType type = node.getElementType();
+        if (type == StvnTypes.USE_ALIAS_BLOCK || type == StvnTypes.INCLUDE_ALIAS_BLOCK) {
+            Indent childIndent = isAliasBlockAnchoredToDirectiveHeader(node)
+                ? Indent.getSpaceIndent(4)
+                : Indent.getNormalIndent();
+            return new ChildAttributes(childIndent, null);
+        }
         if (type instanceof IFileElementType
                 || type == StvnTypes.DEFS_ENTRY
                 || type == StvnTypes.META_BLOCK
                 || type == StvnTypes.PACKAGE_ENCLOSURE
                 || type == StvnTypes.USE_STMT
-                || type == StvnTypes.USE_ALIAS_BLOCK
                 || type == StvnTypes.INCLUDE_STMT
                 || type == StvnTypes.INCLUDE_ELEMENT
-                || type == StvnTypes.INCLUDE_ALIAS_BLOCK
                 || type == StvnTypes.PRODUCT_TYPE
                 || type == StvnTypes.COLLECTION_TYPE
                 || type == StvnTypes.SUM_TYPE

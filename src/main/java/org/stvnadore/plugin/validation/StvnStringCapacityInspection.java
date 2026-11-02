@@ -29,8 +29,11 @@ import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.ProductType;
+import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Visitor;
@@ -44,6 +47,7 @@ import javax.swing.SpinnerNumberModel;
 import java.awt.FlowLayout;
 import java.math.BigInteger;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -187,6 +191,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
+                inspectCompositeChildSchemas(schemaType);
+
                 String declaredName = target.getText().trim();
                 var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
 
@@ -261,6 +267,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             private void inspectTypeEntry(@NotNull TypeEntry typeEntry) {
                 var schemaType = typeEntry.getSchemaType();
                 if (schemaType == null) return;
+                inspectCompositeChildSchemas(schemaType);
                 var resolvedInfo = resolveEffectiveTypeCapacity(schemaType, typeEntry.getContainingFile(), new HashSet<>());
                 if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) return;
 
@@ -313,6 +320,89 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
                         : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
                     registerCapacityProblem(holder, schemaType, StvnDiagnosticFormatter.formatPlugin(msg, diagCode), isError);
+                }
+            }
+
+            private void inspectCompositeChildSchemas(@NotNull SchemaType parentSchema) {
+                SchemaConstructor constructor = parentSchema.getSchemaConstructor();
+                if (constructor == null) {
+                    return;
+                }
+                for (SchemaType childSlot : extractDirectChildSchemas(constructor)) {
+                    inspectInlineCompositeSlot(childSlot);
+                    inspectCompositeChildSchemas(childSlot);
+                }
+            }
+
+            private List<SchemaType> extractDirectChildSchemas(@NotNull SchemaConstructor constructor) {
+                ProductType productType = constructor.getProductType();
+                if (productType != null) {
+                    return productType.getSchemaTypeList();
+                }
+                SumType sumType = constructor.getSumType();
+                if (sumType != null) {
+                    return PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
+                }
+                return List.of();
+            }
+
+            private void inspectInlineCompositeSlot(@NotNull SchemaType slotSchema) {
+                SchemaConstructor slotConstructor = slotSchema.getSchemaConstructor();
+                if (slotConstructor == null) {
+                    return;
+                }
+                var resolvedInfo = resolveEffectiveTypeCapacity(slotSchema, slotSchema.getContainingFile(), new HashSet<>());
+                if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) {
+                    return;
+                }
+
+                boolean hasDirectCapacityFacet = false;
+                BigInteger directCapacity = null;
+                var metaMap = slotSchema.getMetadataMap();
+                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
+                    return;
+                }
+                if (metaMap != null) {
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        var text = entry.getText();
+                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                            hasDirectCapacityFacet = true;
+                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
+                            if (intLit != null) {
+                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
+                            }
+                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                            hasDirectCapacityFacet = true;
+                        }
+                    }
+                    if (!hasDirectCapacityFacet) {
+                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
+                        if (containsCapacityFacetLexically(sanitizedText)) {
+                            hasDirectCapacityFacet = true;
+                        }
+                    }
+                }
+
+                boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
+                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
+                if (effectiveCapacity == null) {
+                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
+                }
+                boolean isUnadorned = !hasCapacityFacet;
+                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
+
+                if (isUnadorned || exceedsThreshold) {
+                    boolean isError = isErrorSeverity(holder);
+                    String typeName = slotConstructor.getText().trim();
+                    String category = resolvedInfo.isCollection ? "collection" : "string";
+                    String units = resolvedInfo.isCollection ? (typeName.contains(StvnVocabulary.TYPE_MAP) ? "entries" : "elements") : "characters";
+                    String msg = isUnadorned
+                        ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + StvnVocabulary.DEFAULT_MAX_SIZE + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
+                        : "Nominal " + category + " type '" + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
+                    String diagCode = isUnadorned
+                        ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
+                        : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
+                    registerCapacityProblem(holder, slotSchema, StvnDiagnosticFormatter.formatPlugin(msg, diagCode), isError);
                 }
             }
 
@@ -802,9 +892,12 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
 
             var enclosingSchema = element instanceof SchemaType st ? st : PsiTreeUtil.getParentOfType(element, SchemaType.class);
             var typeDef = element instanceof TypeDefinition td ? td : PsiTreeUtil.getParentOfType(element, TypeDefinition.class);
-            var metaMap = (enclosingSchema != null && enclosingSchema.getMetadataMap() != null)
+            boolean isInlineChildSchema = enclosingSchema != null && (typeDef == null || enclosingSchema != typeDef.getSchemaType());
+            var metaMap = isInlineChildSchema
                 ? enclosingSchema.getMetadataMap()
-                : (typeDef != null ? (typeDef.getMetadataMap() != null ? typeDef.getMetadataMap() : (typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : null)) : null);
+                : (enclosingSchema != null && enclosingSchema.getMetadataMap() != null)
+                    ? enclosingSchema.getMetadataMap()
+                    : (typeDef != null ? (typeDef.getMetadataMap() != null ? typeDef.getMetadataMap() : (typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : null)) : null);
 
             if (metaMap != null) {
                 var entries = metaMap.getMetadataEntryList();
@@ -851,7 +944,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             } else {
                 // Unadorned type constructor: insert metadata map immediately before constructor
                 int startOffset;
-                if (typeDef != null && typeDef.getSchemaType() != null) {
+                if (isInlineChildSchema) {
+                    startOffset = enclosingSchema.getTextRange().getStartOffset();
+                } else if (typeDef != null && typeDef.getSchemaType() != null) {
                     startOffset = typeDef.getSchemaType().getTextRange().getStartOffset();
                 } else {
                     startOffset = element.getTextRange().getStartOffset();

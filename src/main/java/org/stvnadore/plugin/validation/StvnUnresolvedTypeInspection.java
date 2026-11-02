@@ -12,9 +12,13 @@ import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.validation.quickfix.StvnBrandNominalTypeQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnImportUseQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnQualifyTypeQuickFix;
+import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.UseStmt;
+import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -43,7 +47,10 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
 
     private static void inspectTypeKeyword(TypeKeyword typeKw, ProblemsHolder holder) {
         // Skip LHS declaration targets in :defs (they declare a new type, not reference an existing one)
-        if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)) {
+        if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)
+                || typeKw.getParent() instanceof UseTarget
+                || typeKw.getParent() instanceof PackagePath
+                || typeKw.getParent() instanceof IncludeMapAlias) {
             return;
         }
 
@@ -66,6 +73,23 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         var file = typeKw.getContainingFile();
         if (file == null || StvnPreludeBridge.isPreludeFile(file)) {
             return;
+        }
+
+        if (typeKw.getParent() instanceof UseMapAlias useAlias) {
+            var list = useAlias.getTypeKeywordList();
+            if (list.size() >= 2 && list.get(1) == typeKw) {
+                return;
+            }
+            if (!list.isEmpty() && list.get(0) == typeKw) {
+                var enclosingUse = PsiTreeUtil.getParentOfType(useAlias, UseStmt.class);
+                if (enclosingUse != null && enclosingUse.getUseTarget() != null) {
+                    var targetPkg = enclosingUse.getUseTarget().getText().trim();
+                    var expectedPkg = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+                    if (targetPkg.equals(expectedPkg) || !targetPkg.startsWith(":org/stvnadore/prelude")) {
+                        return;
+                    }
+                }
+            }
         }
 
         // Check whether the type is locally shadowed or defined in :defs
