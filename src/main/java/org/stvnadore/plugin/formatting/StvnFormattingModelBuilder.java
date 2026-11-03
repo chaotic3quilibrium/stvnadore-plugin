@@ -177,13 +177,13 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
 
                 // Spacing between section entries and comments
                 .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
-                .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
-                .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
-                .between(StvnTypes.DEFS_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).spacing(1, 1, 0, true, 1)
+                .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).spacing(1, 1, 0, true, 1)
+                .between(StvnTypes.DEFS_ELEMENT, StvnTypes.COMMENT).spacing(1, 1, 0, true, 1)
                 .between(StvnTypes.COMMENT, StvnTypes.DEFS_ELEMENT).lineBreakInCode()
-                .between(StvnTypes.PACKAGE_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.PACKAGE_ELEMENT, StvnTypes.COMMENT).spacing(1, 1, 0, true, 1)
                 .between(StvnTypes.COMMENT, StvnTypes.PACKAGE_ELEMENT).lineBreakInCode()
-                .between(StvnTypes.META_ELEMENT, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.META_ELEMENT, StvnTypes.COMMENT).spacing(1, 1, 0, true, 1)
                 .between(StvnTypes.COMMENT, StvnTypes.META_ELEMENT).lineBreakInCode()
                 .between(StvnTypes.COMMENT, StvnTypes.DEFS_ENTRY).lineBreakInCode()
                 .between(StvnTypes.COMMENT, StvnTypes.TYPE_ENTRY).lineBreakInCode()
@@ -229,7 +229,7 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .betweenInside(StvnTypes.TYPE_KEYWORD, StvnTypes.TYPE_KEYWORD, StvnTypes.INCLUDE_MAP_ALIAS).spaces(1)
 
                 // Comments inside MAP_LITERAL
-                .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).lineBreakInCode()
+                .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).spacing(1, 1, 0, true, 1)
                 .betweenInside(StvnTypes.COMMENT, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).lineBreakInCode()
 
                 // Preservation of comment lines

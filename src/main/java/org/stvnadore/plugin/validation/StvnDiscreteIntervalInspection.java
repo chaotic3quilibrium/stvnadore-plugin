@@ -21,12 +21,16 @@ import org.stvnadore.psi.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Validates STVN 2.0.0 discrete interval rules.
- * Discrete types (:Int and { #exact } :Float) reject closed upper bounds (#maxIncl)
+ * Validates STVN 2.0.0 discrete interval rules and interval bound ordering.
+ * Discrete types (:Int, :TimeEpoch, :DateTime, and { #exact } :Float) reject closed upper bounds (#maxIncl)
  * and open lower bounds (#minExcl) in favor of half-open intervals [minIncl, maxExcl).
  */
 @NullMarked
@@ -64,96 +68,202 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
+                var schemaType = typeDef.getSchemaType();
+                var metaMap = typeDef.getMetadataMap() != null
+                        ? typeDef.getMetadataMap()
+                        : (schemaType != null ? schemaType.getMetadataMap() : null);
+                if (schemaType != null && metaMap != null) {
+                    validateIntervalBounds(schemaType, metaMap, holder);
+                }
+            }
+
+            @Override
+            public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
+                super.visitConstantDefinition(constDef);
+                var schemaType = constDef.getSchemaType();
+                var metaMap = constDef.getMetadataMap() != null
+                        ? constDef.getMetadataMap()
+                        : (schemaType != null ? schemaType.getMetadataMap() : null);
+                if (schemaType != null && metaMap != null) {
+                    validateIntervalBounds(schemaType, metaMap, holder);
+                }
             }
 
             @Override
             public void visitSchemaType(@NotNull SchemaType schemaType) {
                 super.visitSchemaType(schemaType);
+                if (schemaType.getParent() instanceof TypeDefinition
+                        || schemaType.getParent() instanceof ConstantDefinition) {
+                    return;
+                }
                 var metaMap = schemaType.getMetadataMap();
                 if (metaMap == null) {
                     return;
                 }
-                if (!isDiscreteType(schemaType)) {
-                    return;
-                }
-
-                MetadataEntry maxExclEntry = null;
-                MetadataEntry upperEntry = null;
-                BigDecimal minVal = null;
-                BigDecimal maxVal = null;
-
-                for (var entry : metaMap.getMetadataEntryList()) {
-                    var entryText = entry.getText();
-                    if (entryText.startsWith("#maxIncl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
-                        var quickFixes = canIncrementBound(entry)
-                            ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry)}
-                            : LocalQuickFix.EMPTY_ARRAY;
-                        holder.registerProblem(
-                            entry,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Discrete types reject closed upper bound '#maxIncl'; use half-open bound '#maxExcl'",
-                                StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            quickFixes
-                        );
-                        maxVal = extractBoundBigDecimal(entry);
-                        upperEntry = entry;
-                    } else if (entryText.startsWith("#minExcl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
-                        var quickFixes = canIncrementBound(entry)
-                            ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry)}
-                            : LocalQuickFix.EMPTY_ARRAY;
-                        holder.registerProblem(
-                            entry,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Discrete types reject open lower bound '#minExcl'; use half-open bound '#minIncl'",
-                                StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            quickFixes
-                        );
-                        minVal = extractBoundBigDecimal(entry);
-                    } else if (entryText.startsWith("#minIncl") || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
-                        minVal = extractBoundBigDecimal(entry);
-                    } else if (entryText.startsWith("#maxExcl") || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
-                        maxExclEntry = entry;
-                        maxVal = extractBoundBigDecimal(entry);
-                        upperEntry = entry;
-                    }
-                }
-
-                // Evaluate discrete interval domain using BigDecimal.compareTo(...) == 0
-                if (minVal != null && maxVal != null && upperEntry != null) {
-                    int cmp = minVal.compareTo(maxVal);
-                    if (cmp == 0 && maxExclEntry != null) {
-                        holder.registerProblem(
-                            maxExclEntry,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Discrete interval defines an empty domain [" + minVal.toPlainString() + ", " + maxVal.toPlainString() + ")",
-                                StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
-                    } else if (cmp > 0) {
-                        holder.registerProblem(
-                            upperEntry,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
-                                StvnDiagnosticCodes.ERR_INVERTED_RANGE
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
-                    }
-                }
+                validateIntervalBounds(schemaType, metaMap, holder);
             }
         };
+    }
+
+    private static void validateIntervalBounds(
+            @NotNull SchemaType schemaType,
+            @NotNull MetadataMap metaMap,
+            @NotNull ProblemsHolder holder
+    ) {
+        boolean discrete = isDiscreteType(schemaType);
+        var baseType = resolveBaseTypeString(schemaType);
+        boolean isDateTime = StvnVocabulary.TYPE_DATE_TIME.equals(baseType);
+        boolean isString = StvnVocabulary.TYPE_STRING.equals(baseType);
+        boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(baseType);
+
+        if (!discrete && !isDateTime && !isString && !isFloat) {
+            return;
+        }
+
+        MetadataEntry maxExclEntry = null;
+        MetadataEntry upperEntry = null;
+        boolean lowerExcl = false;
+        boolean upperExcl = false;
+        BigDecimal minVal = null;
+        BigDecimal maxVal = null;
+        Instant minInstant = null;
+        Instant maxInstant = null;
+        String minStr = null;
+        String maxStr = null;
+
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var entryText = entry.getText();
+            if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                if (discrete) {
+                    var quickFixes = canIncrementBound(entry)
+                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry)}
+                        : LocalQuickFix.EMPTY_ARRAY;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Discrete types reject closed upper bound '#maxIncl'; use half-open bound '#maxExcl'",
+                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        quickFixes
+                    );
+                }
+                maxVal = extractBoundBigDecimal(entry);
+                maxInstant = isDateTime ? extractBoundInstant(entry) : null;
+                maxStr = extractBoundString(entry);
+                upperEntry = entry;
+                upperExcl = false;
+            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                if (discrete) {
+                    var quickFixes = canIncrementBound(entry)
+                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry)}
+                        : LocalQuickFix.EMPTY_ARRAY;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Discrete types reject open lower bound '#minExcl'; use half-open bound '#minIncl'",
+                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        quickFixes
+                    );
+                }
+                minVal = extractBoundBigDecimal(entry);
+                minInstant = isDateTime ? extractBoundInstant(entry) : null;
+                minStr = extractBoundString(entry);
+                lowerExcl = true;
+            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
+                minVal = extractBoundBigDecimal(entry);
+                minInstant = isDateTime ? extractBoundInstant(entry) : null;
+                minStr = extractBoundString(entry);
+                lowerExcl = false;
+            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
+                maxExclEntry = entry;
+                maxVal = extractBoundBigDecimal(entry);
+                maxInstant = isDateTime ? extractBoundInstant(entry) : null;
+                maxStr = extractBoundString(entry);
+                upperEntry = entry;
+                upperExcl = true;
+            }
+        }
+
+        if (minVal != null && maxVal != null && upperEntry != null) {
+            int cmp = minVal.compareTo(maxVal);
+            if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
+                holder.registerProblem(
+                    maxExclEntry != null ? maxExclEntry : upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Discrete interval defines an empty domain [" + minVal.toPlainString() + ", " + maxVal.toPlainString() + ")",
+                        StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            } else if (cmp > 0) {
+                holder.registerProblem(
+                    upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
+                        StvnDiagnosticCodes.ERR_INVERTED_RANGE
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            }
+        } else if (isDateTime && minInstant != null && maxInstant != null && upperEntry != null) {
+            int cmp = minInstant.compareTo(maxInstant);
+            if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
+                holder.registerProblem(
+                    maxExclEntry != null ? maxExclEntry : upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Temporal interval defines an empty domain [" + minStr + ", " + maxStr + ")",
+                        StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            } else if (cmp > 0) {
+                holder.registerProblem(
+                    upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Temporal interval lower bound " + minStr + " is greater than upper bound " + maxStr,
+                        StvnDiagnosticCodes.ERR_INVERTED_RANGE
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            }
+        } else if (isString && minStr != null && maxStr != null && upperEntry != null) {
+            int cmp = minStr.compareTo(maxStr);
+            if (cmp == 0 && (lowerExcl || upperExcl)) {
+                holder.registerProblem(
+                    upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "String interval defines an empty domain",
+                        StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            } else if (cmp > 0) {
+                holder.registerProblem(
+                    upperEntry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "String interval lower bound '" + minStr + "' is lexicographically greater than upper bound '" + maxStr + "'",
+                        StvnDiagnosticCodes.ERR_INVERTED_RANGE
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+            }
+        }
     }
 
     private static boolean isDiscreteType(@Nullable SchemaType schemaType) {
         if (schemaType == null) return false;
         var cleanType = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
         var baseType = resolveBaseTypeString(schemaType);
-        if (baseType.equals(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH) || baseType.equals(StvnVocabulary.TYPE_DATE_TIME)) {
+        if (baseType.equals(StvnVocabulary.TYPE_INT)
+                || baseType.equals(StvnVocabulary.TYPE_TIME_EPOCH)
+                || baseType.equals(StvnVocabulary.TYPE_DATE_TIME)) {
             return true;
         }
         if (cleanType.equals(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_FLOAT)) {
@@ -223,6 +333,31 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 .orElse(null);
         }
         return null;
+    }
+
+    private static @Nullable String extractBoundString(MetadataEntry entry) {
+        var val = entry.getMetadataValue();
+        if (val == null) return null;
+        var strLit = val.getStringLiteral();
+        if (strLit != null) {
+            return StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), false).orElse(null);
+        }
+        return StvnPsiLiteralEvaluator.decodeStringLiteral(val.getText().trim(), false).orElse(null);
+    }
+
+    private static @Nullable Instant extractBoundInstant(MetadataEntry entry) {
+        String decoded = extractBoundString(entry);
+        if (decoded == null || decoded.isEmpty()) {
+            return null;
+        }
+        try {
+            if (decoded.contains("[")) {
+                return ZonedDateTime.parse(decoded).toInstant();
+            }
+            return OffsetDateTime.parse(decoded).toInstant();
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 
     private static String resolveBaseTypeString(SchemaType schemaType) {

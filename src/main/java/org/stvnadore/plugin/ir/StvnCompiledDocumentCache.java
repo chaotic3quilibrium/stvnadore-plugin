@@ -451,7 +451,11 @@ public final class StvnCompiledDocumentCache {
             for (Path entry : existing.toList()) {
                 String name = entry.getFileName().toString();
                 if (!activeNames.contains(name)) {
-                    deleteRecursively(entry);
+                    try {
+                        deleteRecursively(entry);
+                    } catch (IOException ignored) {
+                        // Stale temporary entry from prior test run; do not abort active staging
+                    }
                 }
             }
         }

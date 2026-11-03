@@ -8,22 +8,26 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
 
+import java.util.ArrayList;
+
 /**
  * Validates STVN 2.0.0 temporal mode and scale facet requirements.
- * Enforces explicit bare scale flags ('#s', '#ms', '#us', '#ns') on ':TimeEpoch'
- * and mode facets ('#offset', '#zoned', '#audited') on ':DateTime',
- * and flags mutually exclusive temporal mode declarations.
+ * Enforces explicit bare scale flags ({@code #s}, {@code #ms}, {@code #us}, {@code #ns}) on {@code :TimeEpoch}
+ * and mode facets ({@code #offset}, {@code #zoned}, {@code #audited}) on {@code :DateTime},
+ * and flags mutually exclusive temporal mode or scale declarations.
  */
 @NullMarked
 public final class StvnTemporalModeInspection extends LocalInspectionTool {
 
     /**
-     * Constructs a new StvnTemporalModeInspection instance.
+     * Constructs a new {@code StvnTemporalModeInspection} instance.
      */
     public StvnTemporalModeInspection() {
     }
@@ -55,82 +59,22 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
                 var schemaType = typeDef.getSchemaType();
-                if (schemaType == null) return;
-                var typeText = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
-
-                if (":TimeEpoch".equals(typeText)) {
-                    var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
-                    boolean hasScale = false;
-                    var scaleEntries = new java.util.ArrayList<MetadataEntry>();
-                    if (metaMap != null) {
-                        for (var e : metaMap.getMetadataEntryList()) {
-                            var text = e.getText().trim();
-                            if (e.getNode().findChildByType(StvnTypes.KW_SCALE_S) != null || "#s".equals(text)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_MS) != null || "#ms".equals(text)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_US) != null || "#us".equals(text)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_NS) != null || "#ns".equals(text)) {
-                                hasScale = true;
-                                scaleEntries.add(e);
-                            }
-                        }
-                    }
-                    if (scaleEntries.size() > 1) {
-                        for (var scaleEntry : scaleEntries) {
-                            holder.registerProblem(
-                                scaleEntry,
-                                StvnDiagnosticFormatter.formatPlugin("Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        }
-                    } else if (!hasScale) {
-                        holder.registerProblem(
-                            schemaType,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new AddDefaultTemporalFacetQuickFix(typeDef, "#ms")
-                        );
-                    }
-                } else if (":DateTime".equals(typeText)) {
-                    var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
-                    boolean hasOffset = false;
-                    boolean hasZoned = false;
-                    boolean hasAudited = false;
-                    var modeEntries = new java.util.ArrayList<MetadataEntry>();
-                    if (metaMap != null) {
-                        for (var e : metaMap.getMetadataEntryList()) {
-                            var text = e.getText();
-                            if (text.startsWith("#offset") || e.getNode().findChildByType(StvnTypes.KW_OFFSET) != null) {
-                                hasOffset = true;
-                                modeEntries.add(e);
-                            }
-                            if (text.startsWith("#zoned") || e.getNode().findChildByType(StvnTypes.KW_ZONED) != null) {
-                                hasZoned = true;
-                                modeEntries.add(e);
-                            }
-                            if (text.startsWith("#audited") || e.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) {
-                                hasAudited = true;
-                                modeEntries.add(e);
-                            }
-                        }
-                    }
-                    int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
-                    if (modeCount > 1) {
-                        for (var modeEntry : modeEntries) {
-                            holder.registerProblem(
-                                modeEntry,
-                                StvnDiagnosticFormatter.formatPlugin("Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive", StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        }
-                    } else if (modeCount == 0) {
-                        holder.registerProblem(
-                            schemaType,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'", StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new AddDefaultTemporalFacetQuickFix(typeDef, "#offset")
-                        );
-                    }
+                if (schemaType == null) {
+                    return;
                 }
+                var metaMap = typeDef.getMetadataMap() != null ? typeDef.getMetadataMap() : schemaType.getMetadataMap();
+                validateTemporalSchema(schemaType, metaMap, holder);
+            }
+
+            @Override
+            public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
+                super.visitConstantDefinition(constDef);
+                var schemaType = constDef.getSchemaType();
+                if (schemaType == null) {
+                    return;
+                }
+                var metaMap = constDef.getMetadataMap() != null ? constDef.getMetadataMap() : schemaType.getMetadataMap();
+                validateTemporalSchema(schemaType, metaMap, holder);
             }
 
             @Override
@@ -142,64 +86,116 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
             @Override
             public void visitSchemaType(@NotNull SchemaType schemaType) {
                 super.visitSchemaType(schemaType);
-                if (schemaType.getParent() instanceof TypeDefinition) {
-                    return; // Handled by visitTypeDefinition with quick-fixes
+                if (schemaType.getParent() instanceof TypeDefinition
+                        || schemaType.getParent() instanceof ConstantDefinition) {
+                    return; // Handled by visitTypeDefinition / visitConstantDefinition
                 }
-                var text = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
-                if (":TimeEpoch".equals(text)) {
-                    var metaMap = schemaType.getMetadataMap();
-                    boolean hasScale = false;
-                    if (metaMap != null) {
-                        for (var e : metaMap.getMetadataEntryList()) {
-                            var t = e.getText().trim();
-                            if (e.getNode().findChildByType(StvnTypes.KW_SCALE_S) != null || "#s".equals(t)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_MS) != null || "#ms".equals(t)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_US) != null || "#us".equals(t)
-                                    || e.getNode().findChildByType(StvnTypes.KW_SCALE_NS) != null || "#ns".equals(t)) {
-                                hasScale = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!hasScale) {
-                        holder.registerProblem(
-                            schemaType,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'", StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
-                    }
-                } else if (":DateTime".equals(text)) {
-                    var metaMap = schemaType.getMetadataMap();
-                    boolean hasMode = false;
-                    if (metaMap != null) {
-                        for (var e : metaMap.getMetadataEntryList()) {
-                            var t = e.getText();
-                            if (t.startsWith("#offset") || e.getNode().findChildByType(StvnTypes.KW_OFFSET) != null
-                                    || t.startsWith("#zoned") || e.getNode().findChildByType(StvnTypes.KW_ZONED) != null
-                                    || t.startsWith("#audited") || e.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) {
-                                hasMode = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!hasMode) {
-                        holder.registerProblem(
-                            schemaType,
-                            StvnDiagnosticFormatter.formatPlugin("Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'", StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
-                    }
-                }
+                validateTemporalSchema(schemaType, schemaType.getMetadataMap(), holder);
             }
         };
     }
 
+    private static void validateTemporalSchema(
+            @NotNull SchemaType schemaType,
+            @Nullable MetadataMap metaMap,
+            @NotNull ProblemsHolder holder
+    ) {
+        var typeText = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
+        if (StvnVocabulary.TYPE_TIME_EPOCH.equals(typeText)) {
+            var scaleEntries = new ArrayList<MetadataEntry>();
+            var scaleKeywords = new ArrayList<String>();
+            if (metaMap != null) {
+                for (var e : metaMap.getMetadataEntryList()) {
+                    if (KeepOnlyTemporalFacetQuickFix.isScaleEntry(e)) {
+                        scaleEntries.add(e);
+                        scaleKeywords.add(KeepOnlyTemporalFacetQuickFix.extractTemporalKeyword(e));
+                    }
+                }
+            }
+            if (scaleEntries.size() > 1) {
+                for (int i = 0; i < scaleEntries.size(); i++) {
+                    var scaleEntry = scaleEntries.get(i);
+                    var clickedKw = scaleKeywords.get(i);
+                    var others = new ArrayList<String>();
+                    for (int j = 0; j < scaleKeywords.size(); j++) {
+                        if (i != j && !others.contains(scaleKeywords.get(j))) {
+                            others.add(scaleKeywords.get(j));
+                        }
+                    }
+                    holder.registerProblem(
+                        scaleEntry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive",
+                            StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new KeepOnlyTemporalFacetQuickFix(scaleEntry, clickedKw, others, false),
+                        new RemoveRedundantFacetQuickFix(scaleEntry, clickedKw)
+                    );
+                }
+            } else if (scaleEntries.isEmpty()) {
+                holder.registerProblem(
+                    schemaType,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'",
+                        StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_MS)
+                );
+            }
+        } else if (StvnVocabulary.TYPE_DATE_TIME.equals(typeText)) {
+            var modeEntries = new ArrayList<MetadataEntry>();
+            var modeKeywords = new ArrayList<String>();
+            if (metaMap != null) {
+                for (var e : metaMap.getMetadataEntryList()) {
+                    if (KeepOnlyTemporalFacetQuickFix.isModeEntry(e)) {
+                        modeEntries.add(e);
+                        modeKeywords.add(KeepOnlyTemporalFacetQuickFix.extractTemporalKeyword(e));
+                    }
+                }
+            }
+            if (modeEntries.size() > 1) {
+                for (int i = 0; i < modeEntries.size(); i++) {
+                    var modeEntry = modeEntries.get(i);
+                    var clickedKw = modeKeywords.get(i);
+                    var others = new ArrayList<String>();
+                    for (int j = 0; j < modeKeywords.size(); j++) {
+                        if (i != j && !others.contains(modeKeywords.get(j))) {
+                            others.add(modeKeywords.get(j));
+                        }
+                    }
+                    holder.registerProblem(
+                        modeEntry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive",
+                            StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new KeepOnlyTemporalFacetQuickFix(modeEntry, clickedKw, others, true),
+                        new RemoveRedundantFacetQuickFix(modeEntry, clickedKw)
+                    );
+                }
+            } else if (modeEntries.isEmpty()) {
+                holder.registerProblem(
+                    schemaType,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'",
+                        StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_OFFSET)
+                );
+            }
+        }
+    }
+
     private static final class AddDefaultTemporalFacetQuickFix implements LocalQuickFix {
-        private final TypeDefinition typeDef;
+        private final SchemaType schemaType;
         private final String facetText;
 
-        AddDefaultTemporalFacetQuickFix(TypeDefinition typeDef, String facetText) {
-            this.typeDef = typeDef;
+        AddDefaultTemporalFacetQuickFix(SchemaType schemaType, String facetText) {
+            this.schemaType = schemaType;
             this.facetText = facetText;
         }
 
@@ -210,11 +206,8 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!typeDef.isValid()) return;
-            var schemaType = typeDef.getSchemaType();
-            if (schemaType == null) return;
-
-            var existingMeta = typeDef.getMetadataMap();
+            if (!schemaType.isValid()) return;
+            var existingMeta = schemaType.getMetadataMap();
             if (existingMeta != null) {
                 var entry = StvnElementFactory.createMetadataEntry(project, facetText);
                 var entries = existingMeta.getMetadataEntryList();
@@ -225,7 +218,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                 }
             } else {
                 var newMeta = StvnElementFactory.createMetadataMap(project, facetText);
-                typeDef.addBefore(newMeta, schemaType);
+                schemaType.addBefore(newMeta, schemaType.getFirstChild());
             }
         }
     }

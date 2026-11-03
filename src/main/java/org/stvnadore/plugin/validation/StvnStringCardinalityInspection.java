@@ -54,35 +54,67 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
+                var schemaType = typeDef.getSchemaType();
+                var metaMap = typeDef.getMetadataMap() != null
+                        ? typeDef.getMetadataMap()
+                        : (schemaType != null ? schemaType.getMetadataMap() : null);
+                if (schemaType != null && metaMap != null) {
+                    validateStringCardinality(schemaType, metaMap, holder);
+                }
+            }
+
+            @Override
+            public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
+                super.visitConstantDefinition(constDef);
+                var schemaType = constDef.getSchemaType();
+                var metaMap = constDef.getMetadataMap() != null
+                        ? constDef.getMetadataMap()
+                        : (schemaType != null ? schemaType.getMetadataMap() : null);
+                if (schemaType != null && metaMap != null) {
+                    validateStringCardinality(schemaType, metaMap, holder);
+                }
             }
 
             @Override
             public void visitSchemaType(@NotNull SchemaType schemaType) {
                 super.visitSchemaType(schemaType);
+                if (schemaType.getParent() instanceof TypeDefinition
+                        || schemaType.getParent() instanceof ConstantDefinition) {
+                    return;
+                }
                 var metaMap = schemaType.getMetadataMap();
                 if (metaMap == null) {
                     return;
                 }
-                var baseType = resolveBaseTypeString(schemaType);
-                if (!baseType.equals(StvnVocabulary.TYPE_STRING)) {
-                    return;
-                }
-
-                for (var entry : metaMap.getMetadataEntryList()) {
-                    if (entry.getText().startsWith(StvnVocabulary.FACET_KW_SIZE) || (entry.getNode().findChildByType(StvnTypes.KW_SIZE) != null)) {
-                        holder.registerProblem(
-                            entry,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Facet '#size' is prohibited on ':String' (MCT § 3.1.3). Use '#minSize' and '#maxSize' for character bounds.",
-                                StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new ConvertSizeToStringBoundsQuickFix(entry)
-                        );
-                    }
-                }
+                validateStringCardinality(schemaType, metaMap, holder);
             }
         };
+    }
+
+    private static void validateStringCardinality(
+            @NotNull SchemaType schemaType,
+            @NotNull MetadataMap metaMap,
+            @NotNull ProblemsHolder holder
+    ) {
+        var baseType = resolveBaseTypeString(schemaType);
+        if (!baseType.equals(StvnVocabulary.TYPE_STRING)) {
+            return;
+        }
+
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getText().startsWith(StvnVocabulary.FACET_KW_SIZE)
+                    || (entry.getNode().findChildByType(StvnTypes.KW_SIZE) != null)) {
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet '#size' is prohibited on ':String' (MCT § 3.1.3). Use '#minSize' and '#maxSize' for character bounds.",
+                        StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    new ConvertSizeToStringBoundsQuickFix(entry)
+                );
+            }
+        }
     }
 
     private static String resolveBaseTypeString(SchemaType schemaType) {

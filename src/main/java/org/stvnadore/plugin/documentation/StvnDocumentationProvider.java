@@ -3431,7 +3431,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // Zone 2: Effective Semantic Contract (Dynamic Constraint Evaluation)
         sb.append("<div class='content'>");
         var compliance = evaluateValueCompliance(targetValueForCompliance, targetSchemaForCompliance);
-        String badgeColor = "Satisfied (Precision Loss)".equals(compliance.statusLabel())
+        String badgeColor = ("Satisfied (Precision Loss)".equals(compliance.statusLabel())
+                || "Satisfied (Degraded Schema)".equals(compliance.statusLabel()))
             ? getWarningBadgeColorHex()
             : (compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex());
         String badgeText = compliance.statusLabel();
@@ -3463,6 +3464,43 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      * explanation text, and valid alternative lexical representations.
      */
     private static @NotNull StvnValueComplianceResult evaluateValueCompliance(Value value, @Nullable SchemaType schemaType) {
+        var rawResult = evaluateValueComplianceInternal(value, schemaType);
+        if (schemaType == null || !isGoverningSchemaDegraded(value, schemaType)) {
+            return rawResult;
+        }
+        String schemaLabel = schemaType.getText().trim();
+        String degradedNote = "<b>Note:</b> Governing schema <code>" + schemaLabel
+            + "</code> is degraded (contains metadata facet errors); evaluated against best-effort fallback.<br/>";
+        String statusLabel = rawResult.isSatisfied() ? "Satisfied (Degraded Schema)" : "Violated (Degraded Schema)";
+        return new StvnValueComplianceResult(
+            rawResult.isSatisfied(),
+            statusLabel,
+            degradedNote + rawResult.detailExplanation(),
+            rawResult.evaluatedConstraints(),
+            rawResult.validLexicalForms()
+        );
+    }
+
+    private static boolean isGoverningSchemaDegraded(Value value, SchemaType schemaType) {
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var aliasText = kw.getText().trim();
+                if (StvnTypeResolver.isDegradedNominalAlias(file, aliasText)) {
+                    return true;
+                }
+                var target = StvnTypeReference.resolveTypeInFile(file, aliasText, new HashSet<>());
+                var td = StvnPsiUtils.getParentTypeDefinition(target);
+                if (td != null && StvnTypeResolver.resolveNominalIrSchema(td) instanceof StvnSchema.PoisonedSchema) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static @NotNull StvnValueComplianceResult evaluateValueComplianceInternal(Value value, @Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return new StvnValueComplianceResult(true, "Unchecked", "No governing schema identified", Collections.emptyMap(), Collections.emptyList());
         }

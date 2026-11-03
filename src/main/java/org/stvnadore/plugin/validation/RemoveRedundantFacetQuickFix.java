@@ -26,6 +26,7 @@ import org.stvnadore.psi.MetadataMap;
 public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
 
   private final String facetSnippet;
+  private final String actionPrefix;
 
   /**
    * Constructs a quick-fix with default snippet derived from the element.
@@ -33,7 +34,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param element the PSI element representing or enclosed within the offending metadata entry
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element) {
-    this(element, element.getText().trim());
+    this(element, element.getText().trim(), "Remove redundant facet");
   }
 
   /**
@@ -43,18 +44,30 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param facetSnippet the display snippet of the offending facet (e.g., "#minIncl 0")
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element, String facetSnippet) {
+    this(element, facetSnippet, "Remove redundant facet");
+  }
+
+  /**
+   * Constructs a quick-fix with an explicit snippet and custom action prefix.
+   *
+   * @param element the PSI element representing or enclosed within the offending metadata entry
+   * @param facetSnippet the display snippet of the offending facet (e.g., "#ms")
+   * @param actionPrefix the action prefix (e.g., "Remove inapplicable facet" or "Remove redundant facet")
+   */
+  public RemoveRedundantFacetQuickFix(@NotNull PsiElement element, String facetSnippet, String actionPrefix) {
     super(element);
     this.facetSnippet = facetSnippet;
+    this.actionPrefix = actionPrefix;
   }
 
   @Override
   public @Nls @NotNull String getText() {
-    return facetSnippet.isEmpty() ? "Remove redundant facet" : "Remove redundant facet '" + facetSnippet + "'";
+    return facetSnippet.isEmpty() ? actionPrefix : actionPrefix + " '" + facetSnippet + "'";
   }
 
   @Override
   public @Nls @NotNull String getFamilyName() {
-    return "Remove redundant facet";
+    return actionPrefix;
   }
 
   @Override
@@ -107,7 +120,13 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     return null;
   }
 
-  private static void executeRemoval(@Nullable PsiElement element) {
+  /**
+   * Removes the resolved {@link MetadataEntry} from its enclosing {@link MetadataMap},
+   * normalizing whitespace and excising the entire block if no entries remain.
+   *
+   * @param element the target metadata entry or interior leaf element
+   */
+  public static void executeRemoval(@Nullable PsiElement element) {
     MetadataEntry entry = resolveMetadataEntry(element);
     if (entry == null || !entry.isValid()) {
       return;

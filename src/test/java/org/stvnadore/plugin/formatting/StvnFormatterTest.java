@@ -808,4 +808,48 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             settings.getState().reformatDelegationMode = previousMode;
         }
     }
+
+    public void testSharedTypesTrailingSameLineCommentPreservedInBothFormatterModes() {
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        var input = """
+            {
+              :meta {
+                #name "shared_types"
+                #domain "core_test"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :package :com/acme/gauntlet/common {
+                  #DEFAULT_PORT { #unsigned #size 16 #minIncl 1 } :ServicePort 8080 // Why is this comment is being wrapped
+                  :ServicePort { #unsigned #size 16 #minIncl 1 } :Int
+                }
+              }
+            }
+            """;
+        var expectedLine = "      #DEFAULT_PORT { #unsigned #size 16 #minIncl 1 } :ServicePort 8080 // Why is this comment is being wrapped";
+        try {
+            // 1. Verify PSI_STRUCTURE_PRESERVING mode keeps trailing comment on the same line
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("shared_types_psi.core_test.stvn_di", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            var psiFormatted = psiFile.getText();
+            assertTrue("PSI_STRUCTURE_PRESERVING mode must keep same-line trailing comment on the same line:\n" + psiFormatted,
+                psiFormatted.contains(expectedLine));
+
+            // 2. Verify CORE_SOURCE_FORMATTER mode keeps trailing comment on the same line
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("shared_types_core.core_test.stvn_di", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            var coreFormatted = coreFile.getText();
+            assertTrue("CORE_SOURCE_FORMATTER mode must keep same-line trailing comment on the same line:\n" + coreFormatted,
+                coreFormatted.contains(expectedLine));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
+    }
 }

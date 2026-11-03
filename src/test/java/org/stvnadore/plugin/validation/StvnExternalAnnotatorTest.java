@@ -2462,4 +2462,84 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             }
             """);
     }
+
+    public void testGauntletTemporalFloatAndSubsetsCompositeFaultIsolation() {
+        myFixture.enableInspections(
+            new StvnMetadataFacetInspection(),
+            new StvnTemporalModeInspection(),
+            new StvnDiscreteIntervalInspection(),
+            new StvnStringCardinalityInspection()
+        );
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_temporal_float_and_subsets"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :OffsetTs { #ms #offset } :DateTime
+                :ZonedTs { #ms #zoned } :DateTime
+                :AuditedDualTs { #us #offset #zoned #audited } :DateTime
+                :EpochSec { #s } :TimeEpoch
+                :ExactPrice { #exact } :Float
+                :EventRow :Tuple(:OffsetTs :ZonedTs :AuditedDualTs :EpochSec :ExactPrice)
+              }
+              :type :Seq(:EventRow)
+              :body [
+                (
+                  "2026-03-29T12:00:00Z"
+                  "2026-03-29T08:00:00[America/New_York]"
+                  "2026-03-29T08:00:00-04:00[America/New_York]"
+                  1774785600
+                  19.95
+                )
+                (
+                  "2026-03-29T12:00:00Z"
+                  "2026-03-29T08:00:00[America/New_York]"
+                  "2026-03-29T08:00:00-04:00[America/New_York]"
+                  1774785600
+                  100
+                )
+              ]
+            }
+            """;
+        myFixture.configureByText("gauntlet_temporal_float_and_subsets.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        // 1. Verify #ms on :OffsetTs and :ZonedTs and #us on :AuditedDualTs are flagged as inapplicable
+        int offsetMs = code.indexOf("#ms", code.indexOf(":OffsetTs"));
+        int zonedMs = code.indexOf("#ms", code.indexOf(":ZonedTs"));
+        int auditedUs = code.indexOf("#us", code.indexOf(":AuditedDualTs"));
+        assertTrue("Expected error on #ms in :OffsetTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == offsetMs && "#ms".equals(e.getText())));
+        assertTrue("Expected error on #ms in :ZonedTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == zonedMs && "#ms".equals(e.getText())));
+        assertTrue("Expected error on #us in :AuditedDualTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == auditedUs && "#us".equals(e.getText())));
+
+        // 2. Verify #offset, #zoned, and #audited on :AuditedDualTs are flagged as mutually exclusive
+        int auditedIdx = code.indexOf(":AuditedDualTs");
+        int auditedOffset = code.indexOf("#offset", auditedIdx);
+        int auditedZoned = code.indexOf("#zoned", auditedIdx);
+        int auditedAudited = code.indexOf("#audited", auditedIdx);
+        assertTrue("Expected mutual exclusivity error on #offset in :AuditedDualTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == auditedOffset && "#offset".equals(e.getText())));
+        assertTrue("Expected mutual exclusivity error on #zoned in :AuditedDualTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == auditedZoned && "#zoned".equals(e.getText())));
+        assertTrue("Expected mutual exclusivity error on #audited in :AuditedDualTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == auditedAudited && "#audited".equals(e.getText())));
+
+        // 3. Verify per-slot composite fault isolation: Slot 4 ('100' for :ExactPrice) in Row 1 is flagged with E028
+        int int100Offset = code.lastIndexOf("100");
+        assertTrue("Expected E028 type mismatch error on '100' in healthy Slot 4 (:ExactPrice), errors: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == int100Offset
+                && "100".equals(e.getText())
+                && e.getDescription() != null
+                && e.getDescription().contains("Type mismatch: expected scalar :Float, found scalar :Int literal '100'")
+                && e.getDescription().contains("ERR_TYPE_MISMATCH")));
+    }
 }

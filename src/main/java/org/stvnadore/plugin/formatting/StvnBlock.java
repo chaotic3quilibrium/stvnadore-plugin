@@ -375,7 +375,7 @@ public final class StvnBlock implements ASTBlock {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
             if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT || t1 == StvnTypes.RBRACK) && t2 == StvnTypes.COMMENT) {
-                return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
             }
             if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT || t2 == StvnTypes.LBRACK)) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);

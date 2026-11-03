@@ -1204,4 +1204,34 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertFalse("Fenced string on :DateTime must NEVER advertise Verbatim Fenced as valid:\n" + fencedDoc,
             fencedDoc.contains("Verbatim Fenced"));
     }
+
+    public void testHoverOnPayloadSlotGovernedByPoisonedSchemaShowsDegradedCompliance() {
+        var text = """
+            {
+              :defs {
+                :OffsetTs { #ms #offset } :DateTime
+                :ExactPrice { #exact } :Float
+                :EventRow :Tuple(:OffsetTs :ExactPrice)
+              }
+              :type :EventRow
+              :body (
+                "2026-03-29T12:00:00Z"
+                19.95
+              )
+            }
+            """;
+        myFixture.configureByText("degraded_slot_hover.stvn", text);
+
+        var slot0Doc = getDocAtOffset(text, text.indexOf("\"2026-03-29T12:00:00Z\"") + 2);
+        assertTrue("Slot 0 governed by PoisonedSchema :OffsetTs must display Satisfied (Degraded Schema):\n" + slot0Doc,
+            slot0Doc.contains("Satisfied (Degraded Schema)"));
+        assertTrue("Slot 0 must include degraded schema explanation note:\n" + slot0Doc,
+            slot0Doc.contains("Governing schema <code>:OffsetTs</code> is degraded"));
+
+        var slot1Doc = getDocAtOffset(text, text.indexOf("19.95") + 1);
+        assertTrue("Healthy Slot 1 (:ExactPrice) must display Satisfied without degraded notice:\n" + slot1Doc,
+            slot1Doc.contains(">Satisfied</b>"));
+        assertFalse("Healthy Slot 1 (:ExactPrice) must NOT mention degraded schema:\n" + slot1Doc,
+            slot1Doc.contains("Degraded Schema"));
+    }
 }

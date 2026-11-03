@@ -738,6 +738,68 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Inapplicable metadata facet quick-fix (ERR_INVALID_METADATA_FACET)
+                if ((DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
+                        || rawMessage.contains("is not permitted on"))
+                        && !rawMessage.contains("#preserveIndent")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (entry == null && range.getStartOffset() + 1 < textLength) {
+                        entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(
+                            file.findElementAt(range.getStartOffset() + 1)
+                        );
+                    }
+                    if (entry != null) {
+                        String facetName = StvnMetadataFacetInspection.extractFacetName(entry);
+                        String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
+                        annotationBuilder = annotationBuilder
+                            .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet"))
+                            .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove invalid facet"));
+                    }
+                }
+
+                // Mutually exclusive temporal mode/scale quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
+                if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || rawMessage.contains("Temporal scale facets")
+                        || rawMessage.contains("Temporal mode facets")
+                        || rawMessage.contains("Mutually exclusive temporal")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (entry == null && range.getStartOffset() + 1 < textLength) {
+                        entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(
+                            file.findElementAt(range.getStartOffset() + 1)
+                        );
+                    }
+                    if (entry != null) {
+                        var metaMap = PsiTreeUtil.getParentOfType(entry, org.stvnadore.psi.MetadataMap.class);
+                        if (metaMap != null) {
+                            boolean isMode = KeepOnlyTemporalFacetQuickFix.isModeEntry(entry);
+                            boolean isScale = KeepOnlyTemporalFacetQuickFix.isScaleEntry(entry);
+                            if (isMode || isScale) {
+                                String clickedKw = KeepOnlyTemporalFacetQuickFix.extractTemporalKeyword(entry);
+                                var others = new java.util.ArrayList<String>();
+                                for (var sibling : metaMap.getMetadataEntryList()) {
+                                    if (sibling != entry
+                                            && ((isMode && KeepOnlyTemporalFacetQuickFix.isModeEntry(sibling))
+                                                || (isScale && KeepOnlyTemporalFacetQuickFix.isScaleEntry(sibling)))) {
+                                        String sibKw = KeepOnlyTemporalFacetQuickFix.extractTemporalKeyword(sibling);
+                                        if (!sibKw.equals(clickedKw) && !others.contains(sibKw)) {
+                                            others.add(sibKw);
+                                        }
+                                    }
+                                }
+                                annotationBuilder = annotationBuilder
+                                    .withFix(new KeepOnlyTemporalFacetQuickFix(entry, clickedKw, others, isMode))
+                                    .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw));
+                            }
+                        }
+                    }
+                }
+
                 // Reserved package namespace quick-fix (E037)
                 if (DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
@@ -825,10 +887,12 @@ public final class StvnExternalAnnotator
             var typeKeywords = PsiTreeUtil.findChildrenOfType(typeEntry, TypeKeyword.class);
             for (var typeKw : typeKeywords) {
                 var aliasName = typeKw.getText();
+                var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasName);
+                boolean isTraitPoisoned = irSchema instanceof StvnSchema.PoisonedSchema p
+                    && DiagnosticBag.ERR_TRAIT_VIOLATION.equals(p.primaryDiagnosticCode());
                 boolean isDegraded = StvnTypeResolver.isDegradedNominalAlias(file, aliasName);
-                if (isDegraded || hasCrossFileInvertibleError) {
+                if (isDegraded || hasCrossFileInvertibleError || isTraitPoisoned) {
                     var fallbackBase = ":Value";
-                    var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasName);
                     if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
                             && poisoned.bestEffortFallback().isPresent()) {
                         fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
@@ -847,9 +911,7 @@ public final class StvnExternalAnnotator
                         + fallbackBase + "').";
                     var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, degradedMsg)
                         .range(typeKw.getTextRange());
-                    if (hasCrossFileInvertibleError
-                            || (irSchema instanceof StvnSchema.PoisonedSchema p
-                                && DiagnosticBag.ERR_TRAIT_VIOLATION.equals(p.primaryDiagnosticCode()))) {
+                    if (hasCrossFileInvertibleError || isTraitPoisoned) {
                         warnBuilder = StvnTraitViolationQuickFixProvider.registerActions(
                             warnBuilder,
                             file,

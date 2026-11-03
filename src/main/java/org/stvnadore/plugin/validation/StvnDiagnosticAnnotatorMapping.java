@@ -98,8 +98,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
         map.put("E036", "StvnMetadataFacet");
         map.put("ERR_UNRECOGNIZED_METADATA_FACET", "StvnMetadataFacet");
-        map.put(DiagnosticBag.ERR_INCOMPATIBLE_TYPE, "StvnMetadataFacet");
-        map.put(DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK, "StvnMetadataFacet");
@@ -309,6 +307,8 @@ public final class StvnDiagnosticAnnotatorMapping {
     private static boolean isExplicitlyUngovernedSymbolicId(String code) {
         return DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
+            || DiagnosticBag.ERR_INCOMPATIBLE_TYPE.equals(code)
+            || DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE.equals(code)
             || DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(code)
             || "NON_OVERRIDABLE_FACET".equals(code)
             || "E040".equals(code)
@@ -381,16 +381,19 @@ public final class StvnDiagnosticAnnotatorMapping {
             return false;
         }
 
-        // Guard: StvnConstantRange only inspects ConstantDefinitions inside :defs, not :body integer literals
+        // Guard: StvnConstantRange only inspects ConstantDefinition values inside :defs, not :body literals or metadata bounds
         if (DiagnosticBag.ERR_INTEGER_OVERFLOW.equals(sym)
+                || DiagnosticBag.ERR_FLOAT_OVERFLOW.equals(sym)
                 || "INT_OVERFLOW".equals(sym)
-                || ("E009".equals(canon) && sym == null)) {
+                || ("E009".equals(canon) && sym == null)
+                || ("E010".equals(canon) && sym == null)) {
             int offset = diag.startOffset();
             if (offset < 0 || offset >= file.getTextLength()) {
                 return false;
             }
             var elem = file.findElementAt(offset);
-            if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ConstantDefinition.class) == null) {
+            if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ConstantDefinition.class) == null
+                    || com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetadataMap.class) != null) {
                 return false;
             }
         }
@@ -406,6 +409,9 @@ public final class StvnDiagnosticAnnotatorMapping {
                     || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
                     || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
                     || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)) {
+                if (message.contains("ancestor")) {
+                    return false;
+                }
                 String mutexOwner = "StvnDiscreteInterval";
                 if (message.contains("Temporal scale facets")
                         || message.contains("Temporal mode facets")

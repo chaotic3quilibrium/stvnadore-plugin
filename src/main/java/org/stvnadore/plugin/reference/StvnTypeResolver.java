@@ -373,13 +373,38 @@ public final class StvnTypeResolver {
 
                 if (typeDef != null) {
                     var range = typeDef.getTextRange();
-                    if (diag.startOffset() >= range.getStartOffset() && diag.endOffset() <= range.getEndOffset()) {
+                    if (diag.startOffset() >= range.getStartOffset()
+                            && diag.endOffset() <= range.getEndOffset()
+                            && !isInsideCompositeChildSchema(typeDef, diag.startOffset(), diag.endOffset())) {
                         return true;
                     }
                 }
             }
         }
 
+        return false;
+    }
+
+    private static boolean isInsideCompositeChildSchema(TypeDefinition typeDef, int startOffset, int endOffset) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null || schemaType.getSchemaConstructor() == null) {
+            return false;
+        }
+        var ctor = schemaType.getSchemaConstructor();
+        List<SchemaType> childSchemas = List.of();
+        if (ctor.getCollectionType() != null) {
+            childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getCollectionType(), SchemaType.class);
+        } else if (ctor.getProductType() != null) {
+            childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getProductType(), SchemaType.class);
+        } else if (ctor.getSumType() != null) {
+            childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
+        }
+        for (var child : childSchemas) {
+            var childRange = child.getTextRange();
+            if (startOffset >= childRange.getStartOffset() && endOffset <= childRange.getEndOffset()) {
+                return true;
+            }
+        }
         return false;
     }
 
