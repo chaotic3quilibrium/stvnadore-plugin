@@ -130,29 +130,41 @@ public final class StvnBlock implements ASTBlock {
 
         // Map literal block boundaries: { and } never indent; all entries between them indent normally (+2)
         if (parentType == StvnTypes.MAP_LITERAL) {
-            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+            boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
+            if (childType == StvnTypes.LBRACE) {
                 return Indent.getNoneIndent();
             }
-            if (isSecondValueOfMapEntry(child)) {
+            if (childType == StvnTypes.RBRACE) {
+                return sameLineMapContainer ? Indent.getNormalIndent() : Indent.getNoneIndent();
+            }
+            if (isSecondValueOfMapEntry(child) && isMapEntryValueOnNewLine(child)) {
                 return Indent.getContinuationIndent();
             }
-            return Indent.getNormalIndent();
+            return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
         // List literal block boundaries: [ and ] never indent; contents indent normally (+2)
         if (parentType == StvnTypes.LIST_LITERAL) {
-            if (childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
+            boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
+            if (childType == StvnTypes.LBRACK) {
                 return Indent.getNoneIndent();
             }
-            return Indent.getNormalIndent();
+            if (childType == StvnTypes.RBRACK) {
+                return sameLineMapContainer ? Indent.getNormalIndent() : Indent.getNoneIndent();
+            }
+            return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
         // Tuple literal block boundaries: ( and ) never indent; contents indent normally (+2)
         if (parentType == StvnTypes.TUPLE_LITERAL) {
-            if (childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN) {
+            boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
+            if (childType == StvnTypes.LPAREN) {
                 return Indent.getNoneIndent();
             }
-            return Indent.getNormalIndent();
+            if (childType == StvnTypes.RPAREN) {
+                return sameLineMapContainer ? Indent.getNormalIndent() : Indent.getNoneIndent();
+            }
+            return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
         // Schema-level composite type constructors: :Tuple(...), :Seq(...), :Set(...), :Map(...), :Option(...), :Either(...), :Union(...)
@@ -311,6 +323,33 @@ public final class StvnBlock implements ASTBlock {
         return false;
     }
 
+    private static boolean isMapEntryValueOnNewLine(ASTNode secondValueNode) {
+        ASTNode prev = secondValueNode.getTreePrev();
+        while (prev != null && (prev.getElementType() == TokenType.WHITE_SPACE || prev.getElementType() == StvnTypes.COMMENT)) {
+            if (prev.getText().indexOf('\n') >= 0) {
+                return true;
+            }
+            prev = prev.getTreePrev();
+        }
+        return false;
+    }
+
+    private boolean isSameLineMapEntryContainer(ASTNode containerNode) {
+        ASTNode collectionVal = containerNode.getTreeParent();
+        if (collectionVal == null || collectionVal.getElementType() != StvnTypes.COLLECTION_VALUE) {
+            return false;
+        }
+        ASTNode valueNode = collectionVal.getTreeParent();
+        if (valueNode == null || valueNode.getElementType() != StvnTypes.VALUE) {
+            return false;
+        }
+        ASTNode parent = valueNode.getTreeParent();
+        if (parent == null || parent.getElementType() != StvnTypes.MAP_LITERAL) {
+            return false;
+        }
+        return isSecondValueOfMapEntry(valueNode) && !isMapEntryValueOnNewLine(valueNode);
+    }
+
     @Override
     public @Nullable Wrap getWrap() {
         return wrap;
@@ -342,11 +381,23 @@ public final class StvnBlock implements ASTBlock {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
             IElementType parentType = node.getElementType();
-            if ((parentType == StvnTypes.PRODUCT_TYPE || parentType == StvnTypes.SUM_TYPE)
+            if ((t1 == StvnTypes.LPAREN || t1 == StvnTypes.LBRACK || (t1 == StvnTypes.LBRACE && parentType == StvnTypes.MAP_LITERAL))
+                    && t2 == StvnTypes.COMMENT) {
+                return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
+            }
+            if ((parentType == StvnTypes.PRODUCT_TYPE
+                    || (parentType == StvnTypes.SUM_TYPE && node.findChildByType(StvnTypes.KW_UNION) != null))
                     && requiresMultiLineSchemaGroup(node)) {
                 if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.SCHEMA_TYPE)
                         || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.SCHEMA_TYPE)
                         || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.RPAREN)) {
+                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
+            if (parentType == StvnTypes.LIST_LITERAL && hasNestedValueContainer(node)) {
+                if ((t1 == StvnTypes.LBRACK && t2 == StvnTypes.VALUE)
+                        || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
+                        || (t1 == StvnTypes.VALUE && t2 == StvnTypes.RBRACK)) {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
@@ -370,17 +421,49 @@ public final class StvnBlock implements ASTBlock {
 
     private static boolean requiresMultiLineSchemaGroup(ASTNode groupNode) {
         for (ASTNode child = groupNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-            if (child.getElementType() == StvnTypes.SCHEMA_TYPE) {
-                if (child.findChildByType(StvnTypes.METADATA_MAP) != null) {
+            if (child.getElementType() == StvnTypes.SCHEMA_TYPE
+                    && isInlineFacetedOrMultiLineSchemaNode(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isInlineFacetedOrMultiLineSchemaNode(ASTNode schemaTypeNode) {
+        ASTNode metaMap = schemaTypeNode.findChildByType(StvnTypes.METADATA_MAP);
+        if (metaMap != null && metaMap.findChildByType(StvnTypes.METADATA_ENTRY) != null) {
+            return true;
+        }
+        return containsMultiLineSchemaConstruct(schemaTypeNode);
+    }
+
+    private static boolean containsMultiLineSchemaConstruct(ASTNode schemaTypeNode) {
+        ASTNode constructor = schemaTypeNode.findChildByType(StvnTypes.SCHEMA_CONSTRUCTOR);
+        if (constructor == null) {
+            return false;
+        }
+        ASTNode productType = constructor.findChildByType(StvnTypes.PRODUCT_TYPE);
+        if (productType != null) {
+            return productType.textContains('\n') || requiresMultiLineSchemaGroup(productType);
+        }
+        ASTNode sumType = constructor.findChildByType(StvnTypes.SUM_TYPE);
+        if (sumType != null) {
+            if (sumType.findChildByType(StvnTypes.KW_UNION) != null) {
+                return sumType.textContains('\n') || requiresMultiLineSchemaGroup(sumType);
+            }
+            for (ASTNode child = sumType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+                if (child.getElementType() == StvnTypes.SCHEMA_TYPE
+                        && containsMultiLineSchemaConstruct(child)) {
                     return true;
                 }
-                ASTNode constructor = child.findChildByType(StvnTypes.SCHEMA_CONSTRUCTOR);
-                ASTNode searchRoot = constructor != null ? constructor : child;
-                ASTNode nestedGroup = searchRoot.findChildByType(StvnTypes.PRODUCT_TYPE);
-                if (nestedGroup == null) {
-                    nestedGroup = searchRoot.findChildByType(StvnTypes.SUM_TYPE);
-                }
-                if (nestedGroup != null && requiresMultiLineSchemaGroup(nestedGroup)) {
+            }
+            return false;
+        }
+        ASTNode collectionType = constructor.findChildByType(StvnTypes.COLLECTION_TYPE);
+        if (collectionType != null) {
+            for (ASTNode child = collectionType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+                if (child.getElementType() == StvnTypes.SCHEMA_TYPE
+                        && containsMultiLineSchemaConstruct(child)) {
                     return true;
                 }
             }
@@ -388,9 +471,19 @@ public final class StvnBlock implements ASTBlock {
         return false;
     }
 
+    private static boolean hasNestedValueContainer(ASTNode containerNode) {
+        for (ASTNode child = containerNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+            if (child.getElementType() == StvnTypes.VALUE
+                    && child.findChildByType(StvnTypes.COLLECTION_VALUE) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isAliasBlockAnchoredToDirectiveHeader(ASTNode aliasBlockNode) {
         ASTNode prev = aliasBlockNode.getTreePrev();
-        while (prev != null && prev.getElementType() == TokenType.WHITE_SPACE) {
+        while (prev != null && (prev.getElementType() == TokenType.WHITE_SPACE || prev.getElementType() == StvnTypes.COMMENT)) {
             if (prev.getText().indexOf('\n') >= 0) {
                 return false;
             }
@@ -402,7 +495,7 @@ public final class StvnBlock implements ASTBlock {
         ASTNode parent = aliasBlockNode.getTreeParent();
         if (parent != null && parent.getElementType() == StvnTypes.INCLUDE_ELEMENT) {
             ASTNode elemPrev = parent.getTreePrev();
-            while (elemPrev != null && elemPrev.getElementType() == TokenType.WHITE_SPACE) {
+            while (elemPrev != null && (elemPrev.getElementType() == TokenType.WHITE_SPACE || elemPrev.getElementType() == StvnTypes.COMMENT)) {
                 if (elemPrev.getText().indexOf('\n') >= 0) {
                     return false;
                 }
@@ -421,6 +514,14 @@ public final class StvnBlock implements ASTBlock {
                 : Indent.getNormalIndent();
             return new ChildAttributes(childIndent, null);
         }
+        if (type == StvnTypes.LIST_LITERAL
+                || type == StvnTypes.MAP_LITERAL
+                || type == StvnTypes.TUPLE_LITERAL) {
+            Indent childIndent = isSameLineMapEntryContainer(node)
+                ? Indent.getSpaceIndent(4)
+                : Indent.getNormalIndent();
+            return new ChildAttributes(childIndent, null);
+        }
         if (type instanceof IFileElementType
                 || type == StvnTypes.DEFS_ENTRY
                 || type == StvnTypes.META_BLOCK
@@ -433,10 +534,7 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.SUM_TYPE
                 || type == StvnTypes.ENUM_DEF
                 || type == StvnTypes.VARIANT_LIST
-                || type == StvnTypes.METADATA_MAP
-                || type == StvnTypes.LIST_LITERAL
-                || type == StvnTypes.MAP_LITERAL
-                || type == StvnTypes.TUPLE_LITERAL) {
+                || type == StvnTypes.METADATA_MAP) {
             return new ChildAttributes(Indent.getNormalIndent(), null);
         }
         return new ChildAttributes(Indent.getNoneIndent(), null);

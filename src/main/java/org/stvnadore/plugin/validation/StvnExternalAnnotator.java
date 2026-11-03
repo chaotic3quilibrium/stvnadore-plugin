@@ -718,10 +718,14 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Redundant metadata facet quick-fix (W003)
+                // Redundant or non-overridable metadata facet quick-fix (W003 / E040)
                 if (DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
                         || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
-                        || rawMessage.contains("is redundant")) {
+                        || DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(diagnosticId)
+                        || "NON_OVERRIDABLE_FACET".equals(diagnosticId)
+                        || "E040".equals(diagnosticId)
+                        || rawMessage.contains("is redundant")
+                        || rawMessage.contains("non-overridable")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                     if (entry == null && range.getStartOffset() + 1 < textLength) {

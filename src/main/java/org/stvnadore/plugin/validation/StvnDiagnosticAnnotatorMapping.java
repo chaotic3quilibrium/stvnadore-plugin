@@ -86,7 +86,6 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // 6. Redundant Metadata Facet Override Inspection
         map.put(StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE, "StvnRedundantFacetOverride");
-        map.put(DiagnosticBag.ERR_NON_OVERRIDABLE_FACET, "StvnRedundantFacetOverride");
 
         // 7. Metadata Facet Governance Inspection
         map.put(DiagnosticBag.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
@@ -310,6 +309,9 @@ public final class StvnDiagnosticAnnotatorMapping {
     private static boolean isExplicitlyUngovernedSymbolicId(String code) {
         return DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
+            || DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(code)
+            || "NON_OVERRIDABLE_FACET".equals(code)
+            || "E040".equals(code)
             || DiagnosticBag.ERR_PRELUDE_ALIAS_PURGED.equals(code)
             || "ERR_PRELUDE_ALIAS_PURGED".equals(code)
             || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(code)

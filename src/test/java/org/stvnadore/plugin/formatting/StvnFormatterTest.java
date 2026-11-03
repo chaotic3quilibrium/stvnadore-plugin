@@ -600,6 +600,107 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             });
             assertEquals("PSI_STRUCTURE_PRESERVING must format gauntlet_seams.core_test.stvn_i identically to CORE_SOURCE_FORMATTER",
                 expected, psiFile.getText());
+
+            // Verify 3 authored multi-line :body tuples in gauntlet_seams.core_test.stvn_i remain multi-line in both modes
+            var unformattedThreeTuplesGauntlet = """
+                {
+                  :meta {
+                    #kind #BODY_INCLUDE
+                    #domain "core_test"
+                    #name "gauntlet_seams"
+                  }
+                  :defs {
+                    :use [
+                  :org/stvnadore/prelude {
+                    :Port :Port
+                    :Uint64 :Uint64
+                  }
+                    ]
+                    :NodeState :Enum [ #INIT   #RUNNING   #DRAINING ]
+                    :Outcome :Option(:Either(:String :Union(:Port :Uint64)))
+                    #DEFAULT_OUTCOME :Outcome #Some #Right #1 8080
+                  }
+                  :type :Seq(:Tuple(:Outcome :NodeState :Uint64))
+                  :body [
+                    // Row 0 (100% Valid):
+                    (
+                      #Some #Right #1 8080
+                      #RUNNING
+                      18446744073709551615
+                    )
+
+                    // Row 1 (Fault Isolation & Constant Barrier):
+                    (
+                      #DEFAULT_OUTCOME
+                      #DRAINING
+                      1773561600000000000
+                    )
+
+                    // Row 2 (Union Branch Overflow):
+                    (
+                      #Some #Right #99999999999999999999 443
+                      #INIT
+                      0
+                    )
+                  ]
+                }
+                """;
+            var expectedCoreSource = """
+                {
+                  :meta {
+                    #name "gauntlet_seams"
+                    #domain "core_test"
+                    #kind #BODY_INCLUDE
+                  }
+                  :defs {
+                    :use [
+                      :org/stvnadore/prelude {
+                        :Port :Port
+                        :Uint64 :Uint64
+                      }
+                    ]
+                    :NodeState :Enum[#INIT #RUNNING #DRAINING]
+                    :Outcome :Option(:Either(:String :Union(:Port :Uint64)))
+                    #DEFAULT_OUTCOME :Outcome #Some #Right #1 8080
+                  }
+                  :type :Seq(:Tuple(:Outcome :NodeState :Uint64))
+                  :body [
+                    // Row 0 (100% Valid):
+                    (
+                      #Some #Right #1 8080
+                      #RUNNING
+                      18446744073709551615
+                    )
+
+                    // Row 1 (Fault Isolation & Constant Barrier):
+                    (
+                      #DEFAULT_OUTCOME
+                      #DRAINING
+                      1773561600000000000
+                    )
+
+                    // Row 2 (Union Branch Overflow):
+                    (
+                      #Some #Right #99999999999999999999 443
+                      #INIT
+                      0
+                    )
+                  ]
+                }
+                """;
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var threeTuplesCoreFile = myFixture.configureByText("gauntlet_seams.core_test.stvn_i", unformattedThreeTuplesGauntlet);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(threeTuplesCoreFile);
+            });
+            myFixture.checkResult(expectedCoreSource);
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var threeTuplesPsiFile = myFixture.configureByText("gauntlet_seams.core_test.stvn_i", unformattedThreeTuplesGauntlet);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(threeTuplesPsiFile);
+            });
+            myFixture.checkResult(expectedCoreSource);
         } finally {
             settings.getState().reformatDelegationMode = previousMode;
         }

@@ -2394,4 +2394,72 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 match.get().getDescription() != null && match.get().getDescription().contains(expectedMsg));
         }
     }
+
+    public void testSharedTypesForwardReferencedConstRendersTwoE040ErrorsAndQuickFixes() {
+        myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
+        var code = """
+            {
+              :meta {
+                #name "shared_types"
+                #domain "core_test"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :package :com/acme/gauntlet/common {
+                  #DEFAULT_PORT { #unsigned #size 16 #minIncl 1 } :ServicePort 8080
+                  :ServicePort { #unsigned #size 16 #minIncl 1 } :Int
+                }
+              }
+            }
+            """;
+        var psiFile = myFixture.configureByText("shared_types.core_test.stvn_di", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected exactly 2 E040 errors on #DEFAULT_PORT (#unsigned and #size 16): " + errors, 2, errors.size());
+
+        var docText = psiFile.getText();
+        var defaultPortIdx = docText.indexOf("#DEFAULT_PORT");
+        var unsignedStart = docText.indexOf("#unsigned", defaultPortIdx);
+        var unsignedEnd = unsignedStart + "#unsigned".length();
+        var sizeStart = docText.indexOf("#size 16", defaultPortIdx);
+        var sizeEnd = sizeStart + "#size 16".length();
+
+        assertTrue("Expected E040 error pinned to #unsigned",
+            errors.stream().anyMatch(e -> e.getStartOffset() == unsignedStart && e.getEndOffset() == unsignedEnd
+                && e.getDescription() != null && e.getDescription().contains("NON_OVERRIDABLE_FACET")));
+        assertTrue("Expected E040 error pinned to #size 16",
+            errors.stream().anyMatch(e -> e.getStartOffset() == sizeStart && e.getEndOffset() == sizeEnd
+                && e.getDescription() != null && e.getDescription().contains("NON_OVERRIDABLE_FACET")));
+
+        // Invoke RemoveRedundantFacetQuickFix on #unsigned and #size 16 sequentially
+        myFixture.getEditor().getCaretModel().moveToOffset(unsignedStart + 2);
+        var fixUnsigned = myFixture.findSingleIntention("Remove redundant facet '#unsigned'");
+        myFixture.launchAction(fixUnsigned);
+
+        var updatedText = myFixture.getEditor().getDocument().getText();
+        var newSizeStart = updatedText.indexOf("#size 16", updatedText.indexOf("#DEFAULT_PORT"));
+        myFixture.getEditor().getCaretModel().moveToOffset(newSizeStart + 2);
+        myFixture.doHighlighting();
+        var fixSize = myFixture.findSingleIntention("Remove redundant facet '#size 16'");
+        myFixture.launchAction(fixSize);
+
+        myFixture.checkResult("""
+            {
+              :meta {
+                #name "shared_types"
+                #domain "core_test"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :package :com/acme/gauntlet/common {
+                  #DEFAULT_PORT { #minIncl 1 } :ServicePort 8080
+                  :ServicePort { #unsigned #size 16 #minIncl 1 } :Int
+                }
+              }
+            }
+            """);
+    }
 }

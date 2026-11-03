@@ -129,18 +129,8 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
         var bareFlag = entry.getMetadataBareFlag();
         if (bareFlag != null) {
-            var text = bareFlag.getText().trim();
-            if (text.startsWith(StvnVocabulary.FACET_KW_UNSIGNED)
-                && parentIr instanceof StvnSchema.IntSchema i && i.unsigned()) {
-                registerRedundantProblem(entry, "#TRUE", holder);
-            } else if (text.startsWith(StvnVocabulary.FACET_KW_EXACT)
-                && parentIr instanceof StvnSchema.FloatSchema f
-                && f.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
-                registerRedundantProblem(entry, "#TRUE", holder);
-            } else if (text.startsWith(StvnVocabulary.FACET_KW_INVERTIBLE)
-                && parentIr instanceof StvnSchema.MapSchema m && m.invertible()) {
-                registerRedundantProblem(entry, "#TRUE", holder);
-            }
+            // Tier-1 bare definition flags (#unsigned, #exact, #invertible, scale/mode flags)
+            // are non-overridable on derived nominal types and are governed by Core E040.
             return;
         }
 

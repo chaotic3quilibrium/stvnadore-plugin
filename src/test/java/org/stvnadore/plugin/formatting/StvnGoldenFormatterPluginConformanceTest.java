@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 36 mirrored golden formatter quartet files
+ * Plugin-level Golden Formatter Conformance Suite verifying the 40 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
@@ -51,6 +51,11 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         "\"\"\"\\[([A-Za-z0-9_-]+)]\\n[\\s\\S]*?\\[\\1]\"\"\""
     );
 
+    /**
+     * Zero exemptions: PSI_STRUCTURE_PRESERVING matches source_pretty/ byte-for-byte across all golden quartets.
+     */
+    private static final Set<String> PSI_VS_SOURCE_PRETTY_EXEMPTIONS = Set.of();
+
     public void testMirroredGoldenFormattingInventoryParity() throws IOException {
         assertTrue("Missing mirrored input directory: " + INPUT_DIR, Files.isDirectory(INPUT_DIR));
         assertTrue("Missing mirrored source_pretty directory: " + SOURCE_PRETTY_DIR, Files.isDirectory(SOURCE_PRETTY_DIR));
@@ -62,7 +67,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 9 mirrored golden formatter quartets", 9, inputNames.size());
+        assertEquals("Expected 10 mirrored golden formatter quartets", 10, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -207,8 +212,11 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String passTwo = inputPsiFile.getText();
                 assertEquals("PSI formatter must be strictly idempotent on input/" + fileName, passOne, passTwo);
 
-                if ("09_multiline_use_and_comments.core_fmt.stvn_i".equals(fileName)) {
-                    assertEquals("PSI formatter must match golden source_pretty/09_multiline_use_and_comments.core_fmt.stvn_i byte-for-byte",
+                assertTrue("PSI_VS_SOURCE_PRETTY_EXEMPTIONS must be empty", PSI_VS_SOURCE_PRETTY_EXEMPTIONS.isEmpty());
+                if ("01_tripartite_datetime_tuples.stvn".equals(fileName)
+                        || "09_multiline_use_and_comments.core_fmt.stvn_i".equals(fileName)
+                        || "10_deep_recursive_nesting.core_fmt.stvn_i".equals(fileName)) {
+                    assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }
 
