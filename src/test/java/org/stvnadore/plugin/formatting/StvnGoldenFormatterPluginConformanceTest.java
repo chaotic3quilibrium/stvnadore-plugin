@@ -29,11 +29,12 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 24 mirrored golden formatter files
- * ({@code src/test/resources/shared-fixtures/formatting/{input,pretty,compact}/}) across:
+ * Plugin-level Golden Formatter Conformance Suite verifying the 36 mirrored golden formatter quartet files
+ * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
- *   <li>Core-delegated {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
+ *   <li>Default Core Source Formatter {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
+ *   <li>Core Canonical Pretty {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
  *   <li>Structure-preserving PSI {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnFormattingModelBuilder} and {@link StvnBlock}</li>
  * </ul>
  */
@@ -42,6 +43,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
 
     private static final Path FORMATTING_ROOT = Paths.get("src", "test", "resources", "shared-fixtures", "formatting");
     private static final Path INPUT_DIR = FORMATTING_ROOT.resolve("input");
+    private static final Path SOURCE_PRETTY_DIR = FORMATTING_ROOT.resolve("source_pretty");
     private static final Path PRETTY_DIR = FORMATTING_ROOT.resolve("pretty");
     private static final Path COMPACT_DIR = FORMATTING_ROOT.resolve("compact");
 
@@ -51,19 +53,22 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
 
     public void testMirroredGoldenFormattingInventoryParity() throws IOException {
         assertTrue("Missing mirrored input directory: " + INPUT_DIR, Files.isDirectory(INPUT_DIR));
+        assertTrue("Missing mirrored source_pretty directory: " + SOURCE_PRETTY_DIR, Files.isDirectory(SOURCE_PRETTY_DIR));
         assertTrue("Missing mirrored pretty directory: " + PRETTY_DIR, Files.isDirectory(PRETTY_DIR));
         assertTrue("Missing mirrored compact directory: " + COMPACT_DIR, Files.isDirectory(COMPACT_DIR));
 
         Set<String> inputNames = listRegularFileNames(INPUT_DIR);
+        Set<String> sourcePrettyNames = listRegularFileNames(SOURCE_PRETTY_DIR);
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 8 mirrored golden formatter triplets", 8, inputNames.size());
+        assertEquals("Expected 9 mirrored golden formatter quartets", 9, inputNames.size());
+        assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
     }
 
-    public void testCoreDelegatedActionsAndReformatCodeMatchGoldenTriplets() throws IOException {
+    public void testCoreDelegatedActionsAndReformatCodeMatchGoldenQuartets() throws IOException {
         var settings = StvnSettings.getInstance(getProject());
         var projSettings = StvnProjectSettings.getInstance(getProject());
         var prevMode = settings.getState().reformatDelegationMode;
@@ -74,6 +79,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
             for (Path inputPath : listSortedFiles(INPUT_DIR)) {
                 String fileName = inputPath.getFileName().toString();
                 String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
+                String expectedSourcePretty = Files.readString(SOURCE_PRETTY_DIR.resolve(fileName), StandardCharsets.UTF_8);
                 String expectedPretty = Files.readString(PRETTY_DIR.resolve(fileName), StandardCharsets.UTF_8);
                 String expectedCompact = Files.readString(COMPACT_DIR.resolve(fileName), StandardCharsets.UTF_8);
 
@@ -101,7 +107,30 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("StvnConvertToCompactPrintAction mismatch for " + fileName,
                     expectedCompact, myFixture.getEditor().getDocument().getText() + "\n");
 
-                // 3. Verify Ctrl+Alt+L Core Canonical Delegation on input/, compact/, and pretty/ (idempotency)
+                // 3. Verify Default Ctrl+Alt+L (CORE_SOURCE_FORMATTER) on input/, source_pretty/ (idempotency), and pretty/ (fixed-point)
+                settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+
+                var sourceFormatFile = myFixture.configureByText(fileName, inputSource);
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(sourceFormatFile);
+                });
+                assertEquals("Default CORE_SOURCE_FORMATTER Ctrl+Alt+L mismatch from input/" + fileName,
+                    expectedSourcePretty, sourceFormatFile.getText());
+
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(sourceFormatFile);
+                });
+                assertEquals("Default CORE_SOURCE_FORMATTER Ctrl+Alt+L must be idempotent on source_pretty/" + fileName,
+                    expectedSourcePretty, sourceFormatFile.getText());
+
+                var prettyFixedPointFile = myFixture.configureByText(fileName, expectedPretty);
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(prettyFixedPointFile);
+                });
+                assertEquals("Default CORE_SOURCE_FORMATTER Ctrl+Alt+L must preserve pretty/" + fileName + " as a fixed point",
+                    expectedPretty, prettyFixedPointFile.getText());
+
+                // 4. Verify Ctrl+Alt+L Core Canonical Delegation on input/, compact/, and pretty/ (idempotency)
                 settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_PRETTY_CANONICAL;
 
                 var fromInputFile = myFixture.configureByText(fileName, inputSource);
@@ -140,10 +169,21 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
             for (Path prettyPath : listSortedFiles(PRETTY_DIR)) {
                 String fileName = prettyPath.getFileName().toString();
                 Path inputPath = INPUT_DIR.resolve(fileName);
+                Path sourcePrettyPath = SOURCE_PRETTY_DIR.resolve(fileName);
                 String expectedPretty = Files.readString(prettyPath, StandardCharsets.UTF_8);
+                String expectedSourcePretty = Files.readString(sourcePrettyPath, StandardCharsets.UTF_8);
                 String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
 
-                // 1. PSI Ctrl+Alt+L on golden pretty/* must be byte-for-byte idempotent (exact 2.0.0 indentation & spacing)
+                // 1. PSI Ctrl+Alt+L on golden source_pretty/* and pretty/* must be byte-for-byte idempotent
+                var sourcePrettyPsiFile = myFixture.configureByText(fileName, expectedSourcePretty);
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(sourcePrettyPsiFile);
+                });
+                String reformattedSourcePretty = sourcePrettyPsiFile.getText();
+                assertEquals("PSI formatter must preserve golden source_pretty/" + fileName + " byte-for-byte",
+                    expectedSourcePretty, reformattedSourcePretty);
+                assertZeroStructuralTabsOutsideFencedBodies(reformattedSourcePretty, "PSI source_pretty/" + fileName);
+
                 var prettyPsiFile = myFixture.configureByText(fileName, expectedPretty);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(prettyPsiFile);
@@ -166,6 +206,11 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 });
                 String passTwo = inputPsiFile.getText();
                 assertEquals("PSI formatter must be strictly idempotent on input/" + fileName, passOne, passTwo);
+
+                if ("09_multiline_use_and_comments.core_fmt.stvn_i".equals(fileName)) {
+                    assertEquals("PSI formatter must match golden source_pretty/09_multiline_use_and_comments.core_fmt.stvn_i byte-for-byte",
+                        expectedSourcePretty, passTwo);
+                }
 
                 StvnDocument expectedDoc = compileClean(expectedPretty, prettyPath);
                 StvnDocument psiFormattedDoc = compileClean(passTwo, inputPath);

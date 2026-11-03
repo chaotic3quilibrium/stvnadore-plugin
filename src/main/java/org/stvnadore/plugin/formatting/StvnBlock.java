@@ -191,6 +191,14 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
+        // Use and Include options block boundaries ({ #strip })
+        if (parentType == StvnTypes.USE_OPTIONS_BLOCK || parentType == StvnTypes.INCLUDE_OPTIONS_BLOCK) {
+            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+                return Indent.getNoneIndent();
+            }
+            return Indent.getNormalIndent();
+        }
+
         // Use and Include alias block boundaries: context-aware indentation for same-line vs new-line '{'
         if (parentType == StvnTypes.USE_ALIAS_BLOCK || parentType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
             boolean anchoredToDirective = isAliasBlockAnchoredToDirectiveHeader(node);
@@ -226,8 +234,12 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNoneIndent();
         }
 
-        // Section entries inside documents indent by 2 spaces (normal indent)
+        // Section entries inside documents indent by 2 spaces (normal indent);
+        // comments outside the root '{ ... }' envelope remain at column 0.
         if (parentType instanceof IFileElementType) {
+            if (childType == StvnTypes.COMMENT && isOutsideRootBraces(child)) {
+                return Indent.getNoneIndent();
+            }
             return Indent.getNormalIndent();
         }
 
@@ -329,8 +341,51 @@ public final class StvnBlock implements ASTBlock {
             if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT || t2 == StvnTypes.LBRACK)) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
+            IElementType parentType = node.getElementType();
+            if ((parentType == StvnTypes.PRODUCT_TYPE || parentType == StvnTypes.SUM_TYPE)
+                    && requiresMultiLineSchemaGroup(node)) {
+                if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.SCHEMA_TYPE)
+                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.SCHEMA_TYPE)
+                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.RPAREN)) {
+                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
         }
         return spacingBuilder.getSpacing(this, child1, child2);
+    }
+
+    private static boolean isOutsideRootBraces(ASTNode child) {
+        boolean seenOpenBrace = false;
+        for (ASTNode prev = child.getTreePrev(); prev != null; prev = prev.getTreePrev()) {
+            if (prev.getElementType() == StvnTypes.RBRACE) {
+                return true;
+            }
+            if (prev.getElementType() == StvnTypes.LBRACE) {
+                seenOpenBrace = true;
+                break;
+            }
+        }
+        return !seenOpenBrace;
+    }
+
+    private static boolean requiresMultiLineSchemaGroup(ASTNode groupNode) {
+        for (ASTNode child = groupNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+            if (child.getElementType() == StvnTypes.SCHEMA_TYPE) {
+                if (child.findChildByType(StvnTypes.METADATA_MAP) != null) {
+                    return true;
+                }
+                ASTNode constructor = child.findChildByType(StvnTypes.SCHEMA_CONSTRUCTOR);
+                ASTNode searchRoot = constructor != null ? constructor : child;
+                ASTNode nestedGroup = searchRoot.findChildByType(StvnTypes.PRODUCT_TYPE);
+                if (nestedGroup == null) {
+                    nestedGroup = searchRoot.findChildByType(StvnTypes.SUM_TYPE);
+                }
+                if (nestedGroup != null && requiresMultiLineSchemaGroup(nestedGroup)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean isAliasBlockAnchoredToDirectiveHeader(ASTNode aliasBlockNode) {

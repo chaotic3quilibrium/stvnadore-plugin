@@ -135,8 +135,10 @@ public final class StvnConfigurable implements SearchableConfigurable {
             @Override
             public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
                 super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value == StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING) {
-                    setText("PSI Structure-Preserving Formatter (Default: preserves comments & authoring sugar)");
+                if (value == StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER) {
+                    setText("Core Source Formatter (Default: Non-Destructive CST + Comments)");
+                } else if (value == StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING) {
+                    setText("PSI Structure-Preserving Formatter (Preserves comments & authoring sugar)");
                 } else if (value == StvnSettings.ReformatDelegationMode.CORE_PRETTY_WHEN_LOSSLESS) {
                     setText("Core Pretty Printer When Lossless (AstPrettyPrinter when no comments/sugar are lost)");
                 } else if (value == StvnSettings.ReformatDelegationMode.CORE_PRETTY_CANONICAL) {

@@ -158,26 +158,44 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
     }
 
     public void testCommentFollowingClosingBraceFormatsOnDedicatedLine() {
-        var unformatted = """
-            {
-              :defs {
-                :UserID :Int
-              }// comment
-              :type :UserID
-              :body 1001
-            }
-            """;
-        var psiFile = myFixture.configureByText("closing_brace_comment.stvn", unformatted);
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var unformatted = """
+                {
+                  :defs {
+                    :UserID :Int
+                  }// comment
+                  :type :UserID
+                  :body 1001
+                }
+                """;
+            var psiFile = myFixture.configureByText("closing_brace_comment.stvn", unformatted);
 
-        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
-            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
-        });
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
 
-        var text = psiFile.getText();
-        assertFalse("Closing brace must not collapse directly against comment prefix:\n" + text,
-                text.contains("}//"));
-        assertTrue("Comment following closing brace must appear on dedicated indented line:\n" + text,
-                text.contains("  }\n  // comment\n"));
+            var text = psiFile.getText();
+            assertFalse("Closing brace must not collapse directly against comment prefix:\n" + text,
+                    text.contains("}//"));
+            assertTrue("Comment following closing brace in PSI mode must appear on dedicated indented line:\n" + text,
+                    text.contains("  }\n  // comment\n"));
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("closing_brace_comment_core.stvn", unformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            var coreText = coreFile.getText();
+            assertFalse("Closing brace must not collapse directly against comment prefix:\n" + coreText,
+                    coreText.contains("}//"));
+            assertTrue("Comment following closing brace in Core Source Formatter mode must appear on dedicated indented line:\n" + coreText,
+                    coreText.contains("  }\n  // comment\n"));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
     }
 
     public void testReformatNormalizesMetadataEntriesToFiveTierOrder() {
@@ -395,22 +413,196 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
               }
             }
             """;
-        var psiFile = myFixture.configureByText("format_use_newline_target.stvn", unformatted);
+        var expectedBlock = """
+                :use [
+                  :org/stvnadore/prelude {
+                    :Port :Port
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                  }
+                ]
+            """.stripTrailing();
 
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("format_use_newline_target_core.stvn", unformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            assertTrue("Core Source Formatter must indent Layout 2 :use at columns 4/6/8/6/4:\n" + coreFile.getText(),
+                coreFile.getText().contains(expectedBlock));
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("format_use_newline_target.stvn", unformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            assertTrue("PSI formatter must indent Layout 2 :use at columns 4/6/8/6/4:\n" + psiFile.getText(),
+                psiFile.getText().contains(expectedBlock));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
+    }
+
+    public void testAdjustLineIndentForMultiLineUseLayouts1And2() {
+        var layout1Unindented = """
+            {
+              :defs {
+            :use [ :org/stvnadore/prelude {
+            :Port :Port
+            #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+            }
+            ]
+              }
+            }
+            """;
+        var expectedLayout1 = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude {
+                    :Port :Port
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                  }
+                ]
+              }
+            }
+            """;
+        var psiFile1 = myFixture.configureByText("paste_layout1.stvn", layout1Unindented);
         WriteCommandAction.runWriteCommandAction(getProject(), () -> {
-            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            CodeStyleManager.getInstance(getProject()).adjustLineIndent(psiFile1, psiFile1.getTextRange());
         });
+        assertEquals("adjustLineIndent on Layout 1 :use must enforce 4/8/6/4 columns",
+            expectedLayout1, psiFile1.getText());
 
-        var text = psiFile.getText();
-        assertTrue("New-line target ':org/stvnadore/prelude {' must indent at column 6, entries at column 8, '}' at column 6, and ']' at column 4:\n" + text,
-            text.contains("""
-                    :use [
-                      :org/stvnadore/prelude {
-                        :Port :Port
-                        #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
-                      }
-                    ]
-                """.stripTrailing()));
+        var layout2Unindented = """
+            {
+              :defs {
+            :use [
+            :org/stvnadore/prelude {
+            :Port :Port
+            #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+            }
+            ]
+              }
+            }
+            """;
+        var expectedLayout2 = """
+            {
+              :defs {
+                :use [
+                  :org/stvnadore/prelude {
+                    :Port :Port
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                  }
+                ]
+              }
+            }
+            """;
+        var psiFile2 = myFixture.configureByText("paste_layout2.stvn", layout2Unindented);
+        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+            CodeStyleManager.getInstance(getProject()).adjustLineIndent(psiFile2, psiFile2.getTextRange());
+        });
+        assertEquals("adjustLineIndent on Layout 2 :use must enforce 4/6/8/6/4 columns",
+            expectedLayout2, psiFile2.getText());
+    }
+
+    public void testGauntletSeamsFormatsWithPass3SemanticErrorInBothCoreSourceAndPsiModes() {
+        var gauntletUnformatted = """
+            // Gauntlet seams interactive smoke test with Pass 3 #DRAINING subset violation
+            {
+              :meta {
+                #kind #BODY_INCLUDE
+                #domain "core_test"
+                #name "gauntlet_seams"
+              }
+
+
+
+              :defs {
+                :use [
+              :org/stvnadore/prelude {
+                :Port :Port
+                #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+              }
+                ]
+                :NodeState :Enum [ #STARTING   #ACTIVE   #DRAINING   #STOPPED ]
+                :ActiveNodeState { #filterExcl [ #DRAINING #STOPPED ] } :NodeState
+                :ScrambledInline :Tuple(
+                  :Port
+                  :ActiveNodeState
+                  { #maxExcl 1000 #unsigned #minIncl 1 #size 16 } :Int
+                  { #maxSize 128 #regex #SHA256_LOWER_CASE_REGEX } :String
+                )
+                #DEFAULT_PORT :Port 8080
+              }
+              :type :ScrambledInline
+              :body (
+                #DEFAULT_PORT // Preserved constant reference
+                #DRAINING // Intentionally excluded variant triggering Pass 3 semantic error
+                42
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              )
+            }
+            """;
+
+        var expected = """
+            // Gauntlet seams interactive smoke test with Pass 3 #DRAINING subset violation
+            {
+              :meta {
+                #name "gauntlet_seams"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+
+              :defs {
+                :use [
+                  :org/stvnadore/prelude {
+                    :Port :Port
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
+                  }
+                ]
+                :NodeState :Enum[#STARTING #ACTIVE #DRAINING #STOPPED]
+                :ActiveNodeState { #filterExcl [#DRAINING #STOPPED] } :NodeState
+                :ScrambledInline :Tuple(
+                  :Port
+                  :ActiveNodeState
+                  { #unsigned #size 16 #minIncl 1 #maxExcl 1000 } :Int
+                  { #maxSize 128 #regex #SHA256_LOWER_CASE_REGEX } :String
+                )
+                #DEFAULT_PORT :Port 8080
+              }
+              :type :ScrambledInline
+              :body (
+                #DEFAULT_PORT // Preserved constant reference
+                #DRAINING // Intentionally excluded variant triggering Pass 3 semantic error
+                42
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              )
+            }
+            """;
+
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("gauntlet_seams.core_test.stvn_i", gauntletUnformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            assertEquals("CORE_SOURCE_FORMATTER must format gauntlet_seams.core_test.stvn_i non-destructively despite Pass 3 #DRAINING error",
+                expected, coreFile.getText());
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("gauntlet_seams_psi.core_test.stvn_i", gauntletUnformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            assertEquals("PSI_STRUCTURE_PRESERVING must format gauntlet_seams.core_test.stvn_i identically to CORE_SOURCE_FORMATTER",
+                expected, psiFile.getText());
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
     }
 
     public void testMultilineMapEntryNestedCollectionIndentation() {

@@ -120,6 +120,8 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
             @NotNull CommonCodeStyleSettings commonSettings,
             @NotNull CommonCodeStyleSettings.IndentOptions indentOptions
     ) {
+        commonSettings.KEEP_BLANK_LINES_IN_CODE = 1;
+        commonSettings.KEEP_BLANK_LINES_IN_DECLARATIONS = 1;
         indentOptions.INDENT_SIZE = 2;
         indentOptions.TAB_SIZE = 2;
         indentOptions.CONTINUATION_INDENT_SIZE = 4;

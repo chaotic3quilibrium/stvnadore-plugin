@@ -50,13 +50,20 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
      */
     public enum ReformatDelegationMode {
         /**
+         * Delegates whole-file formatting to {@code StvnSourceFormatter} (Operation 1 non-destructive
+         * CST and hidden-channel comment formatter in {@code ij_stvnadore_core}), falling back to the
+         * native IntelliJ PSI formatter on partial selections or Pass 1 syntax errors.
+         */
+        CORE_SOURCE_FORMATTER,
+        /**
          * Uses the native IntelliJ PSI formatter, preserving {@code //} comments,
          * {@code :package}/{@code :use} authoring sugar, and broken in-flight syntax.
          */
         PSI_STRUCTURE_PRESERVING,
         /**
          * Delegates whole-file formatting to {@code AstPrettyPrinter} when the document compiles
-         * cleanly without comments or authoring sugar that canonicalization would discard.
+         * cleanly without comments or authoring sugar that canonicalization would discard, or to
+         * {@code StvnSourceFormatter} when authoring constructs are present.
          */
         CORE_PRETTY_WHEN_LOSSLESS,
         /**
@@ -88,7 +95,7 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         /** If true, displays warning banner on suspicious epoch magnitude in hover cards. */
         public boolean showEpochMagnitudeWarnings = true;
         /** Engine delegation mode for Reformat Code (Ctrl+Alt+L). */
-        public ReformatDelegationMode reformatDelegationMode = ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+        public ReformatDelegationMode reformatDelegationMode = ReformatDelegationMode.CORE_SOURCE_FORMATTER;
         /** Canonical bootstrap template for modular payload documents (.stvn). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
         /** Canonical bootstrap template for isolated payload documents (.stvn_i). */

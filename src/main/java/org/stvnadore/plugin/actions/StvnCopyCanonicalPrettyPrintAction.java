@@ -16,6 +16,7 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnDocument;
 import org.stvnadore.core.printer.AstPrettyPrinter;
+import org.stvnadore.core.printer.StvnSourceFormatter;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 
@@ -47,10 +48,11 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
         }
 
         String text = editor.getDocument().getText();
+        String normalizedText = StvnSourceFormatter.tryFormat(text).orElse(text);
         VirtualFile vf = psiFile.getVirtualFile();
         String fileName = vf != null ? vf.getName() : psiFile.getName();
         String docPath = vf != null
-            ? StvnCompiledDocumentCache.resolvePhysicalPath(vf, project, text)
+            ? StvnCompiledDocumentCache.resolvePhysicalPath(vf, project, normalizedText)
             : fileName;
         StvnParserConfig config = StvnCompiledDocumentCache.isSystemSubstrateFileName(fileName)
             ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
@@ -58,7 +60,7 @@ public final class StvnCopyCanonicalPrettyPrintAction extends AnAction {
 
         StvnCompilationResult<StvnDocument> result;
         try {
-            result = StvnCompiler.compileToResult(text, docPath, config);
+            result = StvnCompiler.compileToResult(normalizedText, docPath, config);
         } catch (Exception ex) {
             StvnWorkspaceNotificationHelper.showGenericError(project, ex);
             return;

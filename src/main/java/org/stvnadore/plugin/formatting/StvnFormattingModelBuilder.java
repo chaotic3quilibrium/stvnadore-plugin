@@ -72,6 +72,7 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .after(StvnTypes.KW_TYPE).spaces(1)
                 .after(StvnTypes.KW_BODY).spaces(1)
                 .after(StvnTypes.KW_PACKAGE).spaces(1)
+                .between(StvnTypes.PACKAGE_PATH, StvnTypes.LBRACE).spaces(1)
                 .after(StvnTypes.KW_USE).spaces(1)
                 .after(StvnTypes.KW_INCLUDE).spaces(1)
                 .after(StvnTypes.KW_META_NAME).spaces(1)
@@ -161,6 +162,16 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .afterInside(StvnTypes.LBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
 
+                // Use and Include options block spacing: { #strip }
+                .afterInside(StvnTypes.LBRACE, StvnTypes.USE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.USE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACE, StvnTypes.INCLUDE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
+                .afterInside(StvnTypes.LBRACK, StvnTypes.INCLUDE_STMT).spacing(1, 1, 0, true, 1)
+                .beforeInside(StvnTypes.RBRACK, StvnTypes.INCLUDE_STMT).spacing(1, 1, 0, true, 1)
+
                 // Line breaks following closing braces
                 .after(StvnTypes.RBRACE).lineBreakInCode()
 
@@ -222,7 +233,8 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .betweenInside(StvnTypes.COMMENT, StvnTypes.LBRACK, StvnTypes.MAP_LITERAL).lineBreakInCode()
 
                 // Preservation of comment lines
-                .after(StvnTypes.COMMENT).lineBreakInCode();
+                .after(StvnTypes.COMMENT).lineBreakInCode()
+                .before(StvnTypes.COMMENT).spacing(1, 1, 0, true, 1);
     }
 
     @Override

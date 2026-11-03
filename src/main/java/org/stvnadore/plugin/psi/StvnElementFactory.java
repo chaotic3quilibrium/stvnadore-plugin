@@ -96,6 +96,18 @@ public final class StvnElementFactory {
         throw new IllegalStateException("Failed to create MetadataMap from text: " + text);
     }
 
+    public static org.stvnadore.psi.MetaBlock createMetaBlock(Project project, String text) {
+        var cleanText = text.trim().startsWith("{") ? text : "{\n" + text + "\n  }";
+        var dummyFileText = "{\n  :meta " + cleanText + "\n}";
+        var file = PsiFileFactory.getInstance(project)
+                .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
+        var metaBlock = PsiTreeUtil.findChildOfType(file, org.stvnadore.psi.MetaBlock.class);
+        if (metaBlock != null) {
+            return metaBlock;
+        }
+        throw new IllegalStateException("Failed to create MetaBlock from text: " + text);
+    }
+
     public static DefsEntry createDefsBlock(Project project, String content) {
         var dummyFileText = "{\n  :defs {\n" + content + "\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
