@@ -1,15 +1,18 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInspection.LocalInspectionTool;
+import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
+import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.Visitor;
 
@@ -129,13 +132,21 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
 
                     if (floatVal.compareTo(minBound) < 0 || floatVal.compareTo(maxBound) > 0) {
                         String targetType = (rawBitWidth != null) ? "{ #size " + rawBitWidth + " } " + cleanType : cleanType;
+                        String msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Float literal " + litText + " out of range for " + targetType + " [" + minBound + ", " + maxBound + "]",
+                            StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value,
+                            StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW,
+                            msg,
+                            Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(
                             value.getFloatLiteral(),
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Float literal " + litText + " out of range for " + targetType + " [" + minBound + ", " + maxBound + "]",
-                                StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            msg,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
                         );
                     }
                     return;
@@ -164,13 +175,21 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                         : BigInteger.ONE.shiftLeft(bitWidth - 1).subtract(BigInteger.ONE);
 
                     if (val.compareTo(min) < 0 || val.compareTo(max) > 0) {
+                        String msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
+                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value,
+                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW,
+                            msg,
+                            Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(
                             value.getIntegerLiteral(),
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Integer literal " + val + " out of range for " + baseType + " [" + min + ", " + max + "]",
-                                StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            msg,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
                         );
                     }
                 } else {
@@ -181,13 +200,21 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                         String rangeStr = isUnsigned
                             ? "[0, 2^" + rawBitWidth + " - 1]"
                             : "[-2^" + rawBitWidth.subtract(BigInteger.ONE) + ", 2^" + rawBitWidth.subtract(BigInteger.ONE) + " - 1]";
+                        String msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Integer literal " + val + " out of range for " + baseType + " " + rangeStr,
+                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value,
+                            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW,
+                            msg,
+                            Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(
                             value.getIntegerLiteral(),
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Integer literal " + val + " out of range for " + baseType + " " + rangeStr,
-                                StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            msg,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
                         );
                     }
                 }

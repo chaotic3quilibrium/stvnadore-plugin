@@ -2965,6 +2965,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append(facetsTable).append("<br/>");
         }
         sb.append("<b>Underlying Structure:</b> ").append(underlying);
+        var lhsIrSchema = StvnTypeResolver.resolveNominalIrSchema(typeDef);
+        var lhsExemplar = StvnExemplarValueGenerator.generateExemplar(schemaType, lhsIrSchema);
+        if (lhsExemplar != null && !lhsExemplar.isBlank()) {
+            sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(lhsExemplar)).append("</code>");
+        }
         sb.append("</div><hr/>");
 
         // Zone 3: Authoring Capabilities & Context
@@ -3443,6 +3448,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (epochDoc != null) {
             sb.append(epochDoc);
         }
+        StvnSchema leafIrSchema = targetSchemaForCompliance != null
+            ? resolveEffectiveIrSchemaForCompliance(targetValueForCompliance, targetSchemaForCompliance)
+            : null;
+        String exemplar = StvnExemplarValueGenerator.generateExemplar(targetSchemaForCompliance, leafIrSchema);
+        if (exemplar != null && !exemplar.isBlank()) {
+            sb.append("<b>Exemplar Value:</b> <code>")
+              .append(escapeHtmlBody(exemplar))
+              .append("</code><br/>");
+        }
         sb.append("</div><hr/>");
 
         // Zone 3: Authoring Capabilities & Context
@@ -3512,8 +3526,24 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // 1. Numeric integer literal evaluation
         if (value.getIntegerLiteral() != null) {
+            var rawIntText = value.getIntegerLiteral().getText().trim();
+            boolean isIntOrEpoch = irSchema instanceof StvnSchema.IntSchema
+                || irSchema instanceof StvnSchema.TimeEpochSchema
+                || StvnVocabulary.TYPE_INT.equals(baseType)
+                || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
+                || ":Value".equals(baseType);
+            if (!isIntOrEpoch) {
+                return new StvnValueComplianceResult(
+                    false,
+                    "Violated",
+                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                        + ", found :Int literal (" + escapeHtmlBody(rawIntText) + ")",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
             try {
-                var text = value.getIntegerLiteral().getText().trim();
+                var text = rawIntText;
                 var valBI = StvnPsiLiteralEvaluator.parseBigInteger(text).orElse(null);
                 if (valBI == null) {
                     return new StvnValueComplianceResult(false, "In Violation", "Invalid integer literal representation: " + text, Collections.emptyMap(), Collections.emptyList());
@@ -3662,6 +3692,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             var rawText = value.getText();
+            boolean isStringSchema = irSchema instanceof StvnSchema.StringSchema
+                || StvnVocabulary.TYPE_STRING.equals(baseType)
+                || ":Value".equals(baseType);
+            if (!isStringSchema) {
+                return new StvnValueComplianceResult(
+                    false,
+                    "Violated",
+                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                        + ", found :String literal (" + escapeHtmlBody(rawText.trim()) + ")",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+
             int len = StvnPsiLiteralEvaluator.evaluateStringContentLength(value.getStringLiteral());
 
             var minSize = BigInteger.ZERO;
@@ -3727,8 +3771,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // 3. Floating-point literal evaluation (continuous and exact)
         if (value.getFloatLiteral() != null) {
+            var rawFloatText = value.getFloatLiteral().getText().trim();
+            boolean isFloatSchema = irSchema instanceof StvnSchema.FloatSchema
+                || StvnVocabulary.TYPE_FLOAT.equals(baseType)
+                || ":Value".equals(baseType);
+            if (!isFloatSchema) {
+                return new StvnValueComplianceResult(
+                    false,
+                    "Violated",
+                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                        + ", found :Float literal (" + escapeHtmlBody(rawFloatText) + ")",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
             try {
-                var text = value.getFloatLiteral().getText().trim();
+                var text = rawFloatText;
                 var valBD = StvnPsiLiteralEvaluator.parseBigDecimal(text).orElse(null);
                 if (valBD == null) {
                     if (StvnVocabulary.LITERAL_NAN.equals(text)
@@ -3905,7 +3963,132 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
-        return new StvnValueComplianceResult(true, "Satisfied", "Payload value conforms to schema shape", Collections.emptyMap(), Collections.emptyList());
+        // 4. Boolean literal evaluation
+        if (value.getBooleanValue() != null) {
+            var rawBoolText = value.getBooleanValue().getText().trim();
+            boolean isBoolSchema = irSchema instanceof StvnSchema.BooleanSchema
+                || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)
+                || ":Value".equals(baseType);
+            if (!isBoolSchema) {
+                return new StvnValueComplianceResult(
+                    false,
+                    "Violated",
+                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                        + ", found :Boolean literal (" + escapeHtmlBody(rawBoolText) + ")",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+            return new StvnValueComplianceResult(
+                true,
+                "Satisfied",
+                "Boolean literal <code>" + escapeHtmlBody(rawBoolText) + "</code> conforms to <code>:Boolean</code>",
+                Collections.emptyMap(),
+                buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+            );
+        }
+
+        // 5. Value keyword / Enum variant evaluation
+        if (value.getValueKeyword() != null) {
+            var rawKwText = value.getValueKeyword().getText().trim();
+            if (irSchema instanceof StvnSchema.EnumSubsetSchema subsetSchema) {
+                boolean allowed = subsetSchema.activeVariants().contains(rawKwText);
+                return new StvnValueComplianceResult(
+                    allowed,
+                    allowed ? "Satisfied" : "Violated",
+                    allowed
+                        ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is permitted in active enum subset"
+                        : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is excluded from active enum subset",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+            if (irSchema instanceof StvnSchema.EnumSchema enumSchema) {
+                boolean allowed = enumSchema.rootVariants().contains(rawKwText);
+                return new StvnValueComplianceResult(
+                    allowed,
+                    allowed ? "Satisfied" : "Violated",
+                    allowed
+                        ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is a declared member of governing <code>:Enum</code>"
+                        : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is not a declared member of governing <code>:Enum</code>",
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+        }
+
+        return new StvnValueComplianceResult(
+            true,
+            "Satisfied",
+            "Payload value conforms to schema shape",
+            Collections.emptyMap(),
+            buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+        );
+    }
+
+    private static String formatExpectedSlotDescription(
+        SchemaType schemaType,
+        @Nullable StvnSchema irSchema,
+        String baseType
+    ) {
+        String formattedSchema = StvnTypeResolver.formatSchemaType(schemaType);
+        if (formattedSchema.isEmpty()) {
+            formattedSchema = baseType;
+        }
+        if (irSchema instanceof StvnSchema.TimeEpochSchema
+                || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+            return escapeHtmlBody(formattedSchema) + " integer tick literal";
+        }
+        return escapeHtmlBody(formattedSchema);
+    }
+
+    private static List<String> buildSchemaValidLexicalForms(
+        SchemaType schemaType,
+        @Nullable StvnSchema irSchema,
+        String baseType
+    ) {
+        if (irSchema instanceof StvnSchema.TimeEpochSchema
+                || irSchema instanceof StvnSchema.IntSchema
+                || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
+                || StvnVocabulary.TYPE_INT.equals(baseType)) {
+            return List.of(
+                "Decimal: <code>0</code>, <code>42</code>, <code>1_000_000</code>",
+                "Hexadecimal: <code>0x0</code>, <code>0x2A</code>",
+                "Binary: <code>0b0</code>, <code>0b101010</code>",
+                "Octal: <code>0o0</code>, <code>0o52</code>"
+            );
+        }
+        if (irSchema instanceof StvnSchema.DateTimeSchema
+                || StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+            return List.of("Simple Quoted: <code>\"...\"</code> (ISO-8601 String)");
+        }
+        if (irSchema instanceof StvnSchema.StringSchema
+                || StvnVocabulary.TYPE_STRING.equals(baseType)) {
+            return List.of(
+                "Simple Quoted: <code>\"...\"</code>",
+                "Verbatim Fenced: <code>\"\"\"[TAG]\\n...\\n[TAG]\"\"\"</code>"
+            );
+        }
+        if (irSchema instanceof StvnSchema.FloatSchema
+                || StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+            return List.of(
+                "Decimal: <code>0.0</code>, <code>3.14</code>",
+                "Scientific: <code>1.0e-5</code>, <code>6.022E23</code>"
+            );
+        }
+        if (irSchema instanceof StvnSchema.BooleanSchema
+                || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)) {
+            return List.of(
+                "Canonical: <code>#TRUE</code>, <code>#FALSE</code>",
+                "Short Form: <code>#T</code>, <code>#F</code>"
+            );
+        }
+        if (irSchema instanceof StvnSchema.EnumSchema
+                || irSchema instanceof StvnSchema.EnumSubsetSchema
+                || StvnVocabulary.TYPE_ENUM.equals(baseType)) {
+            return List.of("Enum Variant Tag: <code>#VARIANT</code>");
+        }
+        return List.of("Standard STVN literal");
     }
 
     /**
@@ -4060,7 +4243,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             SchemaType schemaType,
             @Nullable StvnSchema irSchema
     ) {
-        var forms = List.of("Simple Quoted: <code>\"...\"</code>");
+        var forms = List.of("Simple Quoted: <code>\"...\"</code> (ISO-8601 String)");
         var strLit = value.getStringLiteral();
         var rawText = strLit != null ? strLit.getText().trim() : value.getText().trim();
 
@@ -4487,19 +4670,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     ) {}
 
     private static @Nullable UnionVariantHoverContext resolveUnionVariantHoverContext(Value value, @Nullable PsiElement originalElement) {
-        ExplicitUnionValue union = value.getExplicitUnionValue();
+        ExplicitUnionValue union = null;
         Value payloadVal = null;
-        if (union != null) {
+        if (value.getExplicitUnionValue() != null) {
+            union = value.getExplicitUnionValue();
             payloadVal = union.getValue();
-        } else if (value.getParent() instanceof ExplicitUnionValue pUnion) {
+        } else if (originalElement != null && originalElement.getParent() instanceof ExplicitUnionValue origUnion) {
+            union = origUnion;
+            payloadVal = origUnion.getValue();
+        }
+        if (union == null && value.getParent() instanceof ExplicitUnionValue pUnion && value.getCollectionValue() == null) {
             union = pUnion;
             payloadVal = value;
-        } else if (originalElement != null) {
-            var origUnion = PsiTreeUtil.getParentOfType(originalElement, ExplicitUnionValue.class);
-            if (origUnion != null) {
-                union = origUnion;
-                payloadVal = origUnion.getValue();
-            }
         }
 
         if (union == null) {

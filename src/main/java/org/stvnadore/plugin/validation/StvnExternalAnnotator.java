@@ -47,6 +47,7 @@ import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
@@ -58,6 +59,7 @@ import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
@@ -887,7 +889,73 @@ public final class StvnExternalAnnotator
                     );
                 }
 
+                annotationBuilder = StvnPayloadValueQuickFixProvider.registerPayloadValueQuickFixes(
+                    annotationBuilder,
+                    file,
+                    diagnosticId,
+                    rawMessage,
+                    range.getStartOffset(),
+                    range.getEndOffset()
+                );
+
                 annotationBuilder.create();
+            }
+        }
+
+        // Validate DateTime literals in :body slots governed by degraded schemas that retain a valid mode
+        var bodyClause = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+        if (bodyClause != null) {
+            for (var strLit : PsiTreeUtil.findChildrenOfType(bodyClause, StringLiteral.class)) {
+                if (strLit.getParent() instanceof Value valNode) {
+                    var govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(valNode);
+                    if (govSchema != null) {
+                        var termSchema = StvnTypeResolver.resolveNominalSchema(govSchema);
+                        var inspectSchema = termSchema != null ? termSchema : govSchema;
+                        var ctor = inspectSchema.getSchemaConstructor();
+                        if (ctor != null && ctor.getAtomicType() != null
+                                && StvnVocabulary.TYPE_DATE_TIME.equals(ctor.getAtomicType().getText().trim())) {
+                            var modeFlag = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(govSchema);
+                            if (modeFlag == null) {
+                                modeFlag = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(inspectSchema);
+                            }
+                            StvnSchema.DateTimeMode mode = StvnVocabulary.FACET_KW_OFFSET.equals(modeFlag)
+                                ? StvnSchema.DateTimeMode.OFFSET
+                                : StvnVocabulary.FACET_KW_ZONED.equals(modeFlag)
+                                    ? StvnSchema.DateTimeMode.ZONED
+                                    : StvnVocabulary.FACET_KW_AUDITED.equals(modeFlag)
+                                        ? StvnSchema.DateTimeMode.AUDITED
+                                        : null;
+                            if (mode != null) {
+                                var failureOpt = StvnCompiler.validateDateTimeLiteral(strLit.getText().trim(), mode);
+                                if (failureOpt.isPresent()) {
+                                    var failure = failureOpt.get();
+                                    var valRange = valNode.getTextRange();
+                                    var formattedMsg = StvnDiagnosticFormatter.formatCore(
+                                        failure.message(),
+                                        failure.symbolicId()
+                                    );
+                                    var exactKey = valRange.getStartOffset() + ":" + valRange.getEndOffset() + ":" + formattedMsg;
+                                    boolean rangeAlreadyHasError = registeredExactAnnotations.stream()
+                                        .anyMatch(k -> k.startsWith(valRange.getStartOffset() + ":" + valRange.getEndOffset() + ":"));
+                                    if (!registeredExactAnnotations.contains(exactKey) && !rangeAlreadyHasError) {
+                                        registeredExactAnnotations.add(exactKey);
+                                        var dtBuilder = holder.newAnnotation(HighlightSeverity.ERROR, formattedMsg)
+                                            .range(valRange);
+                                        dtBuilder = StvnPayloadValueQuickFixProvider.registerPayloadValueQuickFixes(
+                                            dtBuilder,
+                                            file,
+                                            failure.symbolicId(),
+                                            failure.message(),
+                                            valRange.getStartOffset(),
+                                            valRange.getEndOffset()
+                                        );
+                                        dtBuilder.create();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

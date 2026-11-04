@@ -1,8 +1,16 @@
 package org.stvnadore.plugin.documentation;
 
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.ir.StvnSchema.DateTimeMode;
+import org.stvnadore.core.ir.StvnSchema.TemporalScale;
+import org.stvnadore.psi.TypeDefinition;
 
+import java.math.BigInteger;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -1233,5 +1241,168 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
             slot1Doc.contains(">Satisfied</b>"));
         assertFalse("Healthy Slot 1 (:ExactPrice) must NOT mention degraded schema:\n" + slot1Doc,
             slot1Doc.contains("Degraded Schema"));
+    }
+
+    public void testDeepSumTaggedTupleHoverAtLine136_TimeEpochSlotTypeMismatch() {
+        var text = """
+            {
+              :defs {
+                :DeepTelemetryMatrix :Union(
+                  :String
+                  :Tuple(
+                    { #unsigned #size 16 #minIncl 1 #maxExcl 1000 } :Int
+                    { #ns } :TimeEpoch
+                    { #maxSize 4096 } :Set( :Tuple( { #unsigned #size 8 } :Int :Boolean ) )
+                  )
+                )
+                :Envelope :Option( :Either( :String :DeepTelemetryMatrix ) )
+              }
+              :type :Envelope
+              :body #Some #Right #2 ( 999 "not-an-epoch" [ (7 #TRUE) ] )
+            }
+            """;
+        myFixture.configureByText("deep_sum_tuple_epoch.stvn", text);
+
+        var offset = text.indexOf("\"not-an-epoch\"") + 2;
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Value Type must resolve to { #ns } :TimeEpoch:\n" + doc,
+            doc.contains("<b>Value Type:</b> { #ns } :TimeEpoch"));
+        assertTrue("Governing Schema must resolve to { #ns } :TimeEpoch:\n" + doc,
+            doc.contains("<b>Governing Schema:</b> <code>{ #ns } :TimeEpoch</code>"));
+        assertFalse("Governing Schema must NOT stop at outer :DeepTelemetryMatrix #2 (:Tuple(...)):\n" + doc,
+            doc.contains(":DeepTelemetryMatrix #2"));
+        assertTrue("Compliance Status must be Violated:\n" + doc,
+            doc.contains(">Violated</b>"));
+        assertTrue("Explanation must report Type mismatch for :TimeEpoch integer tick literal:\n" + doc,
+            doc.contains("Type mismatch: expected { #ns } :TimeEpoch integer tick literal, found :String literal"));
+        assertTrue("Hover card must include Exemplar Value:\n" + doc,
+            doc.contains("<b>Exemplar Value:</b> <code>"));
+        assertTrue("Valid Lexical Forms must include Decimal, Hexadecimal, Binary, and Octal:\n" + doc,
+            doc.contains("Decimal:") && doc.contains("Hexadecimal:") && doc.contains("Binary:") && doc.contains("Octal:"));
+    }
+
+    public void testDeepSumTaggedTupleHoverAtLine164_DateTimeOffsetViolation() {
+        var text = """
+            {
+              :defs {
+                :Port { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } :Int
+                :DeepFaultIsolationProbe :Union(
+                  :String
+                  :Tuple(
+                    :Port
+                    { #offset } :DateTime
+                    { #unsigned #size 8 #maxExcl 100 } :Int
+                  )
+                )
+                :FaultEnvelope :Option( :Either( :String :DeepFaultIsolationProbe ) )
+              }
+              :type :FaultEnvelope
+              :body #Some #Right ( #2 ( 8080 "2026-11-03T20:45:00[America/Chicago]" 250 ) )
+            }
+            """;
+        myFixture.configureByText("deep_sum_tuple_datetime.stvn", text);
+
+        var offset = text.indexOf("\"2026-11-03T20:45:00[America/Chicago]\"") + 2;
+        var doc = getDocAtOffset(text, offset);
+
+        assertTrue("Value Type must resolve to { #offset } :DateTime:\n" + doc,
+            doc.contains("<b>Value Type:</b> { #offset } :DateTime"));
+        assertTrue("Governing Schema must resolve to { #offset } :DateTime:\n" + doc,
+            doc.contains("<b>Governing Schema:</b> <code>{ #offset } :DateTime</code>"));
+        assertFalse("Governing Schema must NOT stop at outer :DeepFaultIsolationProbe #2 (:Tuple(...)):\n" + doc,
+            doc.contains(":DeepFaultIsolationProbe #2"));
+        assertTrue("Compliance Status must be Violated:\n" + doc,
+            doc.contains(">Violated</b>"));
+        assertTrue("Compliance explanation must report prohibited IANA time zone brackets in #offset mode:\n" + doc,
+            doc.contains("IANA time zone brackets '[...]' are prohibited"));
+        assertTrue("Hover card must include Exemplar Value:\n" + doc,
+            doc.contains("<b>Exemplar Value:</b> <code>\""));
+        assertTrue("Valid Lexical Forms must include ISO-8601 String:\n" + doc,
+            doc.contains("ISO-8601 String"));
+    }
+
+    public void testExemplarValueGenerationAcrossAllScalarAndTemporalModes() {
+        Clock fixedClock = Clock.fixed(
+            Instant.parse("2026-11-04T14:17:00Z"),
+            ZoneId.of("America/Chicago")
+        );
+
+        assertEquals(
+            "\"2026-11-04T08:17:00-06:00\"",
+            StvnExemplarValueGenerator.generateDateTimeExemplar(DateTimeMode.OFFSET, null, null, fixedClock)
+        );
+        assertEquals(
+            "\"2026-11-04T08:17:00[America/Chicago]\"",
+            StvnExemplarValueGenerator.generateDateTimeExemplar(DateTimeMode.ZONED, null, null, fixedClock)
+        );
+        assertEquals(
+            "\"2026-11-04T08:17:00-06:00[America/Chicago]\"",
+            StvnExemplarValueGenerator.generateDateTimeExemplar(DateTimeMode.AUDITED, null, null, fixedClock)
+        );
+
+        assertEquals(
+            "1793801820",
+            StvnExemplarValueGenerator.generateTimeEpochExemplar(TemporalScale.S, false, 64, null, null, fixedClock)
+        );
+        assertEquals(
+            "1793801820000",
+            StvnExemplarValueGenerator.generateTimeEpochExemplar(TemporalScale.MS, false, 64, null, null, fixedClock)
+        );
+        assertEquals(
+            "1793801820000000",
+            StvnExemplarValueGenerator.generateTimeEpochExemplar(TemporalScale.US, false, 64, null, null, fixedClock)
+        );
+        assertEquals(
+            "1793801820000000000",
+            StvnExemplarValueGenerator.generateTimeEpochExemplar(TemporalScale.NS, false, 128, null, null, fixedClock)
+        );
+
+        assertEquals(
+            "1",
+            StvnExemplarValueGenerator.generateIntExemplar(
+                true,
+                16,
+                BigInteger.ONE,
+                BigInteger.valueOf(1000)
+            )
+        );
+        assertEquals(
+            "0",
+            StvnExemplarValueGenerator.generateIntExemplar(
+                true,
+                8,
+                null,
+                BigInteger.valueOf(100)
+            )
+        );
+        assertEquals("0.0", StvnExemplarValueGenerator.generateFloatExemplar(null, null, null, null));
+        assertEquals("\"example\"", StvnExemplarValueGenerator.generateStringExemplar(null, null, null, null, false));
+
+        var text = """
+            {
+              :defs {
+                :Method :Enum [ #GET #POST #DELETE ]
+                :WriteMethod { #filterExcl [ #GET ] } :Method
+                :Pair :Tuple( :WriteMethod :Boolean )
+                :Lookup { #minSize 1 } :Map( :String :WriteMethod )
+              }
+              :type :Pair
+              :body ( #POST #TRUE )
+            }
+            """;
+        var file = myFixture.configureByText("exemplar_composite.stvn", text);
+        var defs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        for (var def : defs) {
+            var name = def.getTypeKeyword() != null ? def.getTypeKeyword().getText().trim() : "";
+            var exemplar = StvnExemplarValueGenerator.generateExemplar(def.getSchemaType(), null, fixedClock);
+            switch (name) {
+                case ":Method" -> assertEquals("#GET", exemplar);
+                case ":WriteMethod" -> assertEquals("#POST", exemplar);
+                case ":Pair" -> assertEquals("(#POST #TRUE)", exemplar);
+                case ":Lookup" -> assertEquals("{ [\"example\" #POST] }", exemplar);
+                default -> {}
+            }
+        }
     }
 }

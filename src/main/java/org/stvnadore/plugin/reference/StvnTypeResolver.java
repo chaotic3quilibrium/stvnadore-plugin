@@ -1669,19 +1669,36 @@ public final class StvnTypeResolver {
                 return null;
             }
 
-            if (step.type != StepType.OPTION) {
-                var sum = constructor.getSumType();
-                while (sum != null && sum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
+            var sum = constructor.getSumType();
+            while (sum != null) {
+                SchemaType innerSchema = null;
+                if (step.type != StepType.OPTION && sum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                     var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                    if (optBranches.isEmpty()) break;
-                    var innerSchema = optBranches.get(0);
-                    var res = resolveNominalSchema(innerSchema);
-                    schemaToInspect = (res != null) ? res : innerSchema;
-                    var c = schemaToInspect.getSchemaConstructor();
-                    if (c == null) break;
-                    constructor = c;
-                    sum = c.getSumType();
+                    if (!optBranches.isEmpty()) {
+                        innerSchema = optBranches.get(0);
+                    }
+                } else if (step.type != StepType.EITHER && sum.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
+                    var eitherBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                    if (eitherBranches.size() >= 2) {
+                        innerSchema = eitherBranches.get(1);
+                    }
+                } else if (step.type != StepType.UNION && sum.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
+                    var unionBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                    if (unionBranches.size() == 1) {
+                        innerSchema = unionBranches.get(0);
+                    }
                 }
+                if (innerSchema == null) {
+                    break;
+                }
+                var res = resolveNominalSchema(innerSchema);
+                schemaToInspect = (res != null) ? res : innerSchema;
+                var c = schemaToInspect.getSchemaConstructor();
+                if (c == null) {
+                    break;
+                }
+                constructor = c;
+                sum = c.getSumType();
             }
 
             if (step.type == StepType.LIST) {
@@ -1715,6 +1732,8 @@ public final class StvnTypeResolver {
                     currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
                         ? innerSchemas.get(step.index)
                         : null;
+                } else if (step.index == 0 && constructor.getSumType() != null) {
+                    currentSchema = schemaToInspect;
                 } else {
                     currentSchema = null;
                 }
@@ -2341,10 +2360,9 @@ public final class StvnTypeResolver {
             return null;
         }
 
-        // Unpack explicit union constructor when evaluating an inner payload Value
+        // Unpack explicit union constructor when evaluating an immediate union tag or direct union value
         var explicitUnion = PsiTreeUtil.getParentOfType(position, ExplicitUnionValue.class);
-        if (explicitUnion != null && explicitUnion.getValue() != null
-            && (position == explicitUnion.getValue() || PsiTreeUtil.isAncestor(explicitUnion.getValue(), position, false))) {
+        if (explicitUnion != null && (explicitUnion.getValue() == null || position.getParent() == explicitUnion)) {
             var tagElem = explicitUnion.getUnionTagPrefix();
             var tagText = tagElem.getText().trim();
             if (tagText.startsWith("#")) {
