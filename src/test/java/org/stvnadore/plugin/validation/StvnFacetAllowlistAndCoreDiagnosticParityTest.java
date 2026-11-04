@@ -87,8 +87,10 @@ public final class StvnFacetAllowlistAndCoreDiagnosticParityTest extends BasePla
         var reorderFixes = myFixture.filterAvailableIntentions("Reorder metadata facets");
         assertTrue("Reorder quick-fix must NOT be offered on invalid facets", reorderFixes.isEmpty());
 
-        var removeFixes = myFixture.filterAvailableIntentions("Remove invalid facet '#us'");
-        assertEquals("Expected 'Remove invalid facet '#us'' intention", 1, removeFixes.size());
+        var duplicateInvalidFixes = myFixture.filterAvailableIntentions("Remove invalid facet '#us'");
+        assertTrue("Duplicate 'Remove invalid facet '#us'' intention must NOT be offered", duplicateInvalidFixes.isEmpty());
+        var removeFixes = myFixture.filterAvailableIntentions("Remove inapplicable facet '#us'");
+        assertEquals("Expected 'Remove inapplicable facet '#us'' intention", 1, removeFixes.size());
         myFixture.launchAction(removeFixes.get(0));
 
         var result = myFixture.getFile().getText();

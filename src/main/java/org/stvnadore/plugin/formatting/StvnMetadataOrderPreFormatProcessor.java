@@ -1,8 +1,10 @@
 package org.stvnadore.plugin.formatting;
 
 import com.intellij.lang.ASTNode;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.impl.source.codeStyle.PreFormatProcessor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -28,6 +30,12 @@ import java.util.List;
  */
 @NullMarked
 public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProcessor {
+
+    /**
+     * UserData key storing the document text after pre-format metadata reordering
+     * and immediately prior to Stage 2 IntelliJ PSI whitespace formatting.
+     */
+    public static final Key<String> PRE_PSI_FORMAT_TEXT_KEY = Key.create("STVN_PRE_PSI_FORMAT_TEXT");
 
     /**
      * Constructs a new StvnMetadataOrderPreFormatProcessor instance.
@@ -57,6 +65,15 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
             Collection<MetadataMap> maps = PsiTreeUtil.findChildrenOfType(psi, MetadataMap.class);
             for (MetadataMap map : maps) {
                 normalizeMapIfDisordered(map, range);
+            }
+        }
+        PsiFile containingFile = psi.getContainingFile();
+        if (containingFile != null) {
+            TextRange fileRange = containingFile.getTextRange();
+            if (fileRange != null && range.contains(fileRange)) {
+                containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, containingFile.getText());
+            } else {
+                containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, null);
             }
         }
         return range;

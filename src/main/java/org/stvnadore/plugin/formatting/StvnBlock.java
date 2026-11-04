@@ -11,6 +11,8 @@ import com.intellij.formatting.Wrap;
 import com.intellij.formatting.WrapType;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.tree.IElementType;
@@ -375,15 +377,18 @@ public final class StvnBlock implements ASTBlock {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
             if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT || t1 == StvnTypes.RBRACK) && t2 == StvnTypes.COMMENT) {
-                return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
+                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
             if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT || t2 == StvnTypes.LBRACK)) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
             IElementType parentType = node.getElementType();
-            if ((t1 == StvnTypes.LPAREN || t1 == StvnTypes.LBRACK || (t1 == StvnTypes.LBRACE && parentType == StvnTypes.MAP_LITERAL))
+            if ((t1 == StvnTypes.LPAREN || t1 == StvnTypes.LBRACK || t1 == StvnTypes.LBRACE)
                     && t2 == StvnTypes.COMMENT) {
-                return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
+                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
+            }
+            if (t1 != StvnTypes.DEFS_ENTRY && t2 == StvnTypes.COMMENT) {
+                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
             if ((parentType == StvnTypes.PRODUCT_TYPE
                     || (parentType == StvnTypes.SUM_TYPE && node.findChildByType(StvnTypes.KW_UNION) != null))
@@ -571,5 +576,65 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.LITERAL_STRING_SIMPLE
                 || type == StvnTypes.COMMENT
                 || node.getFirstChildNode() == null;
+    }
+
+    /**
+     * Computes horizontal spacing before a comment node in compliance with STVN_LANGUAGE_SPEC.md § 3.3.1.
+     * Preserves multi-space horizontal padding ({@code authoredSpaces >= 2}) and compensates {@code minSpaces}
+     * when interior multi-space runs earlier on the same line collapse to 1 space during PSI formatting.
+     */
+    private static Spacing createTrailingCommentSpacing(ASTNode prevNode, ASTNode commentNode, int keepBlankLines) {
+        PsiElement psi = commentNode.getPsi();
+        PsiFile file = psi != null ? psi.getContainingFile() : null;
+        CharSequence chars = file != null ? file.getViewProvider().getContents() : null;
+        int prevEnd = prevNode.getTextRange().getEndOffset();
+        int commentStart = commentNode.getTextRange().getStartOffset();
+        if (chars == null || prevEnd < 0 || commentStart < prevEnd || commentStart > chars.length()) {
+            return Spacing.createSpacing(1, Integer.MAX_VALUE, 0, true, keepBlankLines);
+        }
+        for (int i = prevEnd; i < commentStart; i++) {
+            char c = chars.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return Spacing.createSpacing(1, Integer.MAX_VALUE, 0, true, keepBlankLines);
+            }
+        }
+        int authoredSpaces = commentStart - prevEnd;
+        if (authoredSpaces <= 1) {
+            return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
+        }
+        int lineStart = prevEnd;
+        while (lineStart > 0 && chars.charAt(lineStart - 1) != '\n' && chars.charAt(lineStart - 1) != '\r') {
+            lineStart--;
+        }
+        int targetCol = commentStart - lineStart;
+        int collapsedInteriorSpaces = countCollapsibleInteriorSpacesOnLine(chars, lineStart, prevEnd);
+        int estimatedCurrentLineCol = Math.max(0, (prevEnd - lineStart) - collapsedInteriorSpaces);
+        int minSpaces = Math.max(authoredSpaces, targetCol - estimatedCurrentLineCol);
+        return Spacing.createSpacing(minSpaces, Integer.MAX_VALUE, 0, true, keepBlankLines);
+    }
+
+    private static int countCollapsibleInteriorSpacesOnLine(CharSequence chars, int lineStart, int codeEnd) {
+        int i = lineStart;
+        while (i < codeEnd && (chars.charAt(i) == ' ' || chars.charAt(i) == '\t')) {
+            i++;
+        }
+        int collapsible = 0;
+        boolean inString = false;
+        int spaceRun = 0;
+        for (; i < codeEnd; i++) {
+            char c = chars.charAt(i);
+            if (c == '"' && (i == lineStart || chars.charAt(i - 1) != '\\')) {
+                inString = !inString;
+                spaceRun = 0;
+            } else if (!inString && c == ' ') {
+                spaceRun++;
+                if (spaceRun >= 2) {
+                    collapsible++;
+                }
+            } else {
+                spaceRun = 0;
+            }
+        }
+        return collapsible;
     }
 }

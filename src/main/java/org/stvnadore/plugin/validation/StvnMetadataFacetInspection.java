@@ -370,7 +370,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             String facetName = extractFacetName(entry);
             String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
             var inapplicableFix = new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet");
-            var removeFix = new RemoveElementQuickFix("Remove invalid facet '" + kwTag + "'", "Remove invalid facet");
 
             // Temporal scale facets (#ns, #us, #ms, #s) strictly on :TimeEpoch
             if (hasToken(entry, TIME_EPOCH_SCALE_TOKENS) && !isTimeEpoch) {
@@ -381,8 +380,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
                 continue;
             }
@@ -395,8 +393,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
                 continue;
             }
@@ -408,8 +405,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (hasToken(entry, NUMERIC_FACET_TOKENS) && !isNumeric) {
                 holder.registerProblem(
@@ -419,8 +415,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
                 holder.registerProblem(
@@ -430,8 +425,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (isString && hasToken(entry, TokenSet.create(StvnTypes.KW_REGEX)) && hasLocalPreserveIndentTrue(metaMap)) {
                 holder.registerProblem(
@@ -441,8 +435,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (hasToken(entry, MIN_SIZE_FACET_TOKENS) && !isString && !isCollection) {
                 holder.registerProblem(
@@ -452,8 +445,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (hasToken(entry, MAX_SIZE_FACET_TOKENS)) {
                 boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(baseType);
@@ -469,8 +461,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        inapplicableFix,
-                        removeFix
+                        inapplicableFix
                     );
                     continue;
                 }
@@ -482,8 +473,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        inapplicableFix,
-                        removeFix
+                        inapplicableFix
                     );
                 }
             } else if (hasToken(entry, MAP_FACET_TOKENS) && !isMap) {
@@ -494,8 +484,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             } else if (entry.getMetadataFilter() != null && !isEnum) {
                 if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
@@ -508,8 +497,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix,
-                    removeFix
+                    inapplicableFix
                 );
             }
         }

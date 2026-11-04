@@ -391,8 +391,8 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Double space before '{' must collapse to 1 space:\n" + text,
-            text.contains("    :use [ :org/stvnadore/prelude { // <-- comment"));
+        assertTrue("Double space before '{' must collapse to 1 space while preserving trailing comment column alignment:\n" + text,
+            text.contains("    :use [ :org/stvnadore/prelude {                    // <-- comment"));
         assertTrue("Alias pairs must indent at column 8:\n" + text,
             text.contains("\n        :Port :Port")
                 && text.contains("\n        #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- comment"));
@@ -848,6 +848,62 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             var coreFormatted = coreFile.getText();
             assertTrue("CORE_SOURCE_FORMATTER mode must keep same-line trailing comment on the same line:\n" + coreFormatted,
                 coreFormatted.contains(expectedLine));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
+    }
+
+    /**
+     * Verifies STVN_LANGUAGE_SPEC.md § 3.3.1 on {@code use_nested.json.stvn_i}:
+     * collapsing {@code :prelude  {} (2 spaces) to {@code :prelude {} (1 space) expands post-brace
+     * padding from 18 spaces to 19 spaces so {@code //} stays aligned at 0-based column 54
+     * in both {@code CORE_SOURCE_FORMATTER} and {@code PSI_STRUCTURE_PRESERVING} modes.
+     */
+    public void testUseNestedAlignedTrailingCommentsPreservedInBothDelegationModes() {
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        var input = """
+            {
+              :meta {
+                #name "use_nested"
+                #domain "json"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :use [ :org/stvnadore/prelude/meta { :StvnPosixId64 :StvnPosixId64 } ]
+                :use [ :org/stvnadore/prelude  {                  // <-- Aligned trailing comment
+                    :Port :Port                                   // <-- Aligned trailing comment
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- Aligned trailing comment
+                  }                                               // <-- Aligned trailing comment
+                ]
+              }
+            }
+            """;
+        var expectedAlignedBlock = """
+                :use [ :org/stvnadore/prelude {                   // <-- Aligned trailing comment
+                    :Port :Port                                   // <-- Aligned trailing comment
+                    #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- Aligned trailing comment
+                  }                                               // <-- Aligned trailing comment
+                ]
+            """;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("use_nested.json.stvn_i", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            var coreFormatted = coreFile.getText();
+            assertTrue("CORE_SOURCE_FORMATTER must keep Line 9 '//' aligned at column 54 (19 spaces after '{'):\n" + coreFormatted,
+                coreFormatted.contains(expectedAlignedBlock));
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("use_nested_psi.json.stvn_i", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            var psiFormatted = psiFile.getText();
+            assertTrue("PSI_STRUCTURE_PRESERVING must keep Line 9 '//' aligned at column 54 (19 spaces after '{'):\n" + psiFormatted,
+                psiFormatted.contains(expectedAlignedBlock));
         } finally {
             settings.getState().reformatDelegationMode = previousMode;
         }

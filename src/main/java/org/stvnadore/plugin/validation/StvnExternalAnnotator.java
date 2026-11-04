@@ -765,8 +765,7 @@ public final class StvnExternalAnnotator
                         String facetName = StvnMetadataFacetInspection.extractFacetName(entry);
                         String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
                         annotationBuilder = annotationBuilder
-                            .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet"))
-                            .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove invalid facet"));
+                            .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet"));
                     }
                 }
 
