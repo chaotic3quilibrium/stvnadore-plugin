@@ -388,4 +388,107 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             }
             """);
     }
+
+    public void testDeepTelemetryMatrixDepthFourToSixteenWarningsAndQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :use [ :org/stvnadore/prelude { :Port :Port } ]
+                :DeepTelemetryMatrix :Tuple(
+                  { #maxSize 4096 } :String
+                  { #maxSize 4096 } :Seq(:Tuple(
+                    :Port
+                    :Map(:String :Tuple(
+                      :Boolean
+                      :Union(
+                        :Port
+                        :Tuple(
+                          { #offset } :DateTime
+                          :Seq(:Tuple(
+                            :String
+                            :Option(:Either(:String :Union(
+                              :Boolean
+                              :Tuple(
+                                { #unsigned #size 16 #minIncl 1 #maxExcl 1000 } :Int
+                                { #ns } :TimeEpoch
+                                :Set(:Tuple(
+                                  { #unsigned #size 8 } :Int
+                                  :Boolean
+                                ))
+                              )
+                            )))
+                          ))
+                        )
+                      )
+                    ))
+                  ))
+                )
+              }
+            }
+            """;
+        myFixture.configureByText("deep_telemetry_matrix.stvn_i", text);
+        var warnings = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+            .toList();
+
+        assertEquals("Expected 6 unadorned warnings at depths d=4, 5, 8, 10, 12, 14", 6, warnings.size());
+        assertEquals(":Map", text.substring(warnings.get(0).getStartOffset(), warnings.get(0).getEndOffset()));
+        assertEquals(":String", text.substring(warnings.get(1).getStartOffset(), warnings.get(1).getEndOffset()));
+        assertEquals(":Seq", text.substring(warnings.get(2).getStartOffset(), warnings.get(2).getEndOffset()));
+        assertEquals(":String", text.substring(warnings.get(3).getStartOffset(), warnings.get(3).getEndOffset()));
+        assertEquals(":String", text.substring(warnings.get(4).getStartOffset(), warnings.get(4).getEndOffset()));
+        assertEquals(":Set", text.substring(warnings.get(5).getStartOffset(), warnings.get(5).getEndOffset()));
+
+        for (int step = 0; step < 6; step++) {
+            var currentWarnings = myFixture.doHighlighting().stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+                .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+                .toList();
+            myFixture.getEditor().getCaretModel().moveToOffset(currentWarnings.get(0).getStartOffset());
+            myFixture.doHighlighting();
+            var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
+            assertFalse("Expected 'Set nominal capacity to 4096' at step " + step, actions.isEmpty());
+            myFixture.launchAction(actions.get(0));
+        }
+
+        var remainingWarnings = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+            .toList();
+        assertTrue("Expected zero remaining unadorned warnings after applying quick-fixes across all depths",
+            remainingWarnings.isEmpty());
+    }
+
+    public void testConstantDefinitionInlineSchemaInspectionAndQuickFix() {
+        var text = """
+            {
+              :defs {
+                #GREETING :String "hello"
+              }
+            }
+            """;
+        myFixture.configureByText("const_greeting.stvn_di", text);
+        int strOffset = text.indexOf(":String");
+        myFixture.getEditor().getCaretModel().moveToOffset(strOffset);
+        var warnings = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"))
+            .toList();
+
+        assertEquals("Expected 1 unadorned string warning on #GREETING inline :String", 1, warnings.size());
+        assertEquals(strOffset, warnings.get(0).getStartOffset());
+
+        var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
+        assertFalse(actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+            {
+              :defs {
+                #GREETING { #maxSize 4096 } :String "hello"
+              }
+            }
+            """);
+    }
 }
