@@ -36,7 +36,7 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                             "Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements",
                             StvnDiagnosticCodes.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT
                         ),
-                        ProblemHighlightType.ERROR
+                        ProblemHighlightType.GENERIC_ERROR
                     );
                 }
             }

@@ -128,7 +128,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                 "Empty type constraint block is invalid; remove '{}' or specify valid constraint facets",
                                 StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
                             ),
-                            ProblemHighlightType.ERROR,
+                            ProblemHighlightType.GENERIC_ERROR,
                             new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else if (def.getSchemaType() != null) {
@@ -153,7 +153,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                 "Empty type constraint block is invalid; remove '{}' or specify valid constraint facets",
                                 StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
                             ),
-                            ProblemHighlightType.ERROR,
+                            ProblemHighlightType.GENERIC_ERROR,
                             new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
@@ -173,7 +173,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                 "Empty type constraint block is invalid; remove '{}' or specify valid constraint facets",
                                 StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
                             ),
-                            ProblemHighlightType.ERROR,
+                            ProblemHighlightType.GENERIC_ERROR,
                             new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
@@ -190,7 +190,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         "Directive facet '#strip' is not permitted on constant definitions; directive facets are valid strictly in :use and :include blocks",
                                         StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                                     ),
-                                    ProblemHighlightType.ERROR,
+                                    ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix("Remove invalid facet '#strip'", "Remove invalid facet")
                                 );
                             }
@@ -202,7 +202,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         "Trait overrides are not permitted on constants; permitted facets: [Definition, Bounds, Constraints]",
                                         StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
                                     ),
-                                    ProblemHighlightType.ERROR,
+                                    ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix("Remove invalid facet '#" + facetName + "'", "Remove invalid facet")
                                 );
                             }
@@ -237,7 +237,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Empty directive block in :use statement is invalid; specify {#strip} or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
                 }
@@ -249,7 +249,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Empty directive block in :use statement is invalid; specify alias mappings or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
                 }
@@ -265,7 +265,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Empty directive block in :include statement is invalid; specify {#strip} or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
                 }
@@ -277,7 +277,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Empty directive block in :include statement is invalid; specify alias mappings or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveElementQuickFix("Remove empty directive block")
                     );
                 }
@@ -298,7 +298,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
                         StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     new RemoveElementQuickFix("Remove invalid facet '#strip'", "Remove invalid facet")
                 );
             }
@@ -354,7 +354,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Unrecognized metadata facet '" + facetName + "'",
                         StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     new RemoveElementQuickFix("Remove unrecognized facet '" + facetName + "'", "Remove unrecognized facet")
                 );
                 continue;
@@ -380,7 +380,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is not permitted on " + baseType + "; temporal scale facets [#ns, #us, #ms, #s] apply only to :TimeEpoch",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -394,7 +394,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is not permitted on " + baseType + "; temporal mode facets [#offset, #zoned, #audited] apply only to :DateTime",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -407,7 +407,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + "; permitted facets for numeric, temporal, and string types: [#minIncl, #maxIncl, #minExcl, #maxExcl]",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -418,7 +418,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + "; permitted facets for numeric types: [#equatable, #comparable, #size, #unsigned, #exact]",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -429,7 +429,18 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + "; permitted facets for string types: [#equatable, #comparable, #regex, #minSize, #maxSize, #preserveIndent]",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
+                    inapplicableFix,
+                    removeFix
+                );
+            } else if (isString && hasToken(entry, TokenSet.create(StvnTypes.KW_REGEX)) && hasLocalPreserveIndentTrue(metaMap)) {
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet '#regex' cannot be combined with '#preserveIndent #TRUE' on " + baseType,
+                        StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -440,7 +451,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -457,7 +468,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Facet is not permitted on :Float: facet '#maxSize' is prohibited on continuous ':Float'; declare '#exact' or use value interval bounds",
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         inapplicableFix,
                         removeFix
                     );
@@ -470,7 +481,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             "Facet is not permitted on " + baseType + "; permitted facets for collections, string types, and exact float: [#minSize, #maxSize]",
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         inapplicableFix,
                         removeFix
                     );
@@ -482,7 +493,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Facet is not permitted on " + baseType + "; permitted facets for map types: [#invertible]",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -496,7 +507,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Filter facets are permitted strictly on nominal aliases of :Enum and enum subsets",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix,
                     removeFix
                 );
@@ -510,6 +521,19 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             var bare = entry.getMetadataBareFlag();
             if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLocalPreserveIndentTrue(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) return false;
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (hasToken(entry, TokenSet.create(StvnTypes.KW_PRESERVE_INDENT))) {
+                String text = entry.getText().trim();
+                if (text.endsWith("#TRUE") || text.endsWith("#T")) {
+                    return true;
+                }
             }
         }
         return false;

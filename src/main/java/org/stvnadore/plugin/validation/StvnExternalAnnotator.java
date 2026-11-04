@@ -719,13 +719,14 @@ public final class StvnExternalAnnotator
                 }
 
                 // Redundant or non-overridable metadata facet quick-fix (W003 / E040)
-                if (DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
-                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
-                        || DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(diagnosticId)
+                boolean isNonOverridable = DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(diagnosticId)
                         || "NON_OVERRIDABLE_FACET".equals(diagnosticId)
                         || "E040".equals(diagnosticId)
-                        || rawMessage.contains("is redundant")
-                        || rawMessage.contains("non-overridable")) {
+                        || rawMessage.contains("non-overridable");
+                boolean isRedundant = DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
+                        || rawMessage.contains("is redundant");
+                if (isRedundant || isNonOverridable) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                     if (entry == null && range.getStartOffset() + 1 < textLength) {
@@ -734,7 +735,17 @@ public final class StvnExternalAnnotator
                         );
                     }
                     if (entry != null) {
-                        annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
+                        if (isNonOverridable) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new RemoveRedundantFacetQuickFix(
+                                    entry,
+                                    RemoveRedundantFacetQuickFix.extractFacetKeyword(entry),
+                                    "Remove non-overridable facet"
+                                )
+                            );
+                        } else {
+                            annotationBuilder = annotationBuilder.withFix(new RemoveRedundantFacetQuickFix(entry));
+                        }
                     }
                 }
 
@@ -792,8 +803,11 @@ public final class StvnExternalAnnotator
                                         }
                                     }
                                 }
+                                if (!others.isEmpty()) {
+                                    annotationBuilder = annotationBuilder
+                                        .withFix(new KeepOnlyTemporalFacetQuickFix(entry, clickedKw, others, isMode));
+                                }
                                 annotationBuilder = annotationBuilder
-                                    .withFix(new KeepOnlyTemporalFacetQuickFix(entry, clickedKw, others, isMode))
                                     .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw));
                             }
                         }

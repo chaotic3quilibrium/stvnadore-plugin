@@ -48,7 +48,7 @@ public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
                             "Fundamental type '" + rawText + "' cannot be aliased",
                             StvnDiagnosticCodes.ERR_RESERVED_KEYWORD_ON_LHS
                         ),
-                        ProblemHighlightType.ERROR
+                        ProblemHighlightType.GENERIC_ERROR
                     );
                 }
             }

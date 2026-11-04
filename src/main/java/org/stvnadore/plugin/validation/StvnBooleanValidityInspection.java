@@ -90,7 +90,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
             holder.registerProblem(
                 element,
                 message,
-                ProblemHighlightType.ERROR,
+                ProblemHighlightType.GENERIC_ERROR,
                 new StvnVariantStyleInspection.ChangeVariantTagFormQuickFix(targetTag)
             );
         } else {
@@ -99,7 +99,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                 holder.registerProblem(
                     element,
                     message,
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     new ChangeToBooleanLiteralQuickFix("#TRUE"),
                     new ChangeToBooleanLiteralQuickFix("#FALSE")
                 );
@@ -107,7 +107,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                 holder.registerProblem(
                     element,
                     message,
-                    ProblemHighlightType.ERROR,
+                    ProblemHighlightType.GENERIC_ERROR,
                     new ChangeToBooleanLiteralQuickFix("#T"),
                     new ChangeToBooleanLiteralQuickFix("#F")
                 );

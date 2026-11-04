@@ -34,7 +34,17 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param element the PSI element representing or enclosed within the offending metadata entry
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element) {
-    this(element, element.getText().trim(), "Remove redundant facet");
+    this(element, extractFacetKeyword(element), "Remove redundant facet");
+  }
+
+  /**
+   * Extracts the trimmed facet text snippet from a metadata entry PSI element for intention labels.
+   *
+   * @param element the metadata entry PSI element
+   * @return the trimmed facet text (for example, {@code "#zoned"} or {@code "#size 16"})
+   */
+  public static @NotNull String extractFacetKeyword(@NotNull PsiElement element) {
+    return element.getText().trim();
   }
 
   /**

@@ -35,7 +35,7 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
                         "Nested packages are prohibited",
                         StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED
                     ),
-                    ProblemHighlightType.ERROR
+                    ProblemHighlightType.GENERIC_ERROR
                 );
             }
 
@@ -50,7 +50,7 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
                             "Nested packages are prohibited",
                             StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED
                         ),
-                        ProblemHighlightType.ERROR
+                        ProblemHighlightType.GENERIC_ERROR
                     );
                 }
             }

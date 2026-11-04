@@ -43,7 +43,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                             "Trailing slash prohibited in :use target",
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveTrailingSlashQuickFix()
                     );
                 }
@@ -58,7 +58,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                             "Trailing slash prohibited in :package path",
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
-                        ProblemHighlightType.ERROR,
+                        ProblemHighlightType.GENERIC_ERROR,
                         new RemoveTrailingSlashQuickFix()
                     );
                 }

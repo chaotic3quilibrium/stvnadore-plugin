@@ -2,11 +2,13 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.impl.AnnotationHolderImpl;
 import com.intellij.codeInsight.daemon.impl.AnnotationSessionImpl;
+import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver;
 import com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl;
 import com.intellij.lang.annotation.Annotation;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.editor.colors.CodeInsightColors;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.problems.WolfTheProblemSolver;
@@ -2436,14 +2438,14 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
 
         // Invoke RemoveRedundantFacetQuickFix on #unsigned and #size 16 sequentially
         myFixture.getEditor().getCaretModel().moveToOffset(unsignedStart + 2);
-        var fixUnsigned = myFixture.findSingleIntention("Remove redundant facet '#unsigned'");
+        var fixUnsigned = myFixture.findSingleIntention("Remove non-overridable facet '#unsigned'");
         myFixture.launchAction(fixUnsigned);
 
         var updatedText = myFixture.getEditor().getDocument().getText();
         var newSizeStart = updatedText.indexOf("#size 16", updatedText.indexOf("#DEFAULT_PORT"));
         myFixture.getEditor().getCaretModel().moveToOffset(newSizeStart + 2);
         myFixture.doHighlighting();
-        var fixSize = myFixture.findSingleIntention("Remove redundant facet '#size 16'");
+        var fixSize = myFixture.findSingleIntention("Remove non-overridable facet '#size 16'");
         myFixture.launchAction(fixSize);
 
         myFixture.checkResult("""
@@ -2510,16 +2512,25 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
 
-        // 1. Verify #ms on :OffsetTs and :ZonedTs and #us on :AuditedDualTs are flagged as inapplicable
+        // 1. Verify #ms on :OffsetTs and :ZonedTs and #us on :AuditedDualTs are flagged as inapplicable with ERRORS_ATTRIBUTES (wavy squiggly underline, not WRONG_REF)
         int offsetMs = code.indexOf("#ms", code.indexOf(":OffsetTs"));
         int zonedMs = code.indexOf("#ms", code.indexOf(":ZonedTs"));
         int auditedUs = code.indexOf("#us", code.indexOf(":AuditedDualTs"));
-        assertTrue("Expected error on #ms in :OffsetTs",
-            errors.stream().anyMatch(e -> e.getStartOffset() == offsetMs && "#ms".equals(e.getText())));
-        assertTrue("Expected error on #ms in :ZonedTs",
-            errors.stream().anyMatch(e -> e.getStartOffset() == zonedMs && "#ms".equals(e.getText())));
-        assertTrue("Expected error on #us in :AuditedDualTs",
-            errors.stream().anyMatch(e -> e.getStartOffset() == auditedUs && "#us".equals(e.getText())));
+        assertTrue("Expected ERRORS_ATTRIBUTES (wavy squiggly, not WRONG_REF) on #ms in :OffsetTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == offsetMs
+                && "#ms".equals(e.getText())
+                && e.type != HighlightInfoType.WRONG_REF
+                && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
+        assertTrue("Expected ERRORS_ATTRIBUTES (wavy squiggly, not WRONG_REF) on #ms in :ZonedTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == zonedMs
+                && "#ms".equals(e.getText())
+                && e.type != HighlightInfoType.WRONG_REF
+                && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
+        assertTrue("Expected ERRORS_ATTRIBUTES (wavy squiggly, not WRONG_REF) on #us in :AuditedDualTs",
+            errors.stream().anyMatch(e -> e.getStartOffset() == auditedUs
+                && "#us".equals(e.getText())
+                && e.type != HighlightInfoType.WRONG_REF
+                && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
 
         // 2. Verify #offset, #zoned, and #audited on :AuditedDualTs are flagged as mutually exclusive
         int auditedIdx = code.indexOf(":AuditedDualTs");
@@ -2541,5 +2552,129 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 && e.getDescription() != null
                 && e.getDescription().contains("Type mismatch: expected scalar :Float, found scalar :Int literal '100'")
                 && e.getDescription().contains("ERR_TYPE_MISMATCH")));
+    }
+
+    public void testGauntletBoundsAndCrossHopRendersE040WithRemoveNonOverridableFixAndValidatesHealthyTupleSlot() {
+        myFixture.enableInspections(
+            new StvnMetadataFacetInspection(),
+            new StvnTemporalModeInspection(),
+            new StvnDiscreteIntervalInspection(),
+            new StvnStringCardinalityInspection(),
+            new StvnFencedStringInspection(),
+            new StvnRedundantFacetOverrideInspection()
+        );
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_bounds_and_crosshop"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                // 1. Cross-Hop Temporal Mode Conflict (Parent is #offset, Child tries #zoned -> Expect E008 / E040 error!)
+                :BaseOffsetTs { #offset } :DateTime
+                :ConflictingChildTs { #zoned } :BaseOffsetTs
+
+                // 2. Inverted :DateTime ISO-8601 Bounds (minIncl > maxExcl -> Expect E011 inverted range error!)
+                :InvertedWindow {
+                  #offset
+                  #minIncl "2026-12-31T23:59:59Z"
+                  #maxExcl "2026-01-01T00:00:00Z"
+                } :DateTime
+
+                // 3. Inverted :String Lexicographical Bounds (minIncl "z" > maxExcl "a" -> Expect E011 inverted range error!)
+                :InvertedLex { #minSize 1 #maxSize 16 #minIncl "zebra" #maxExcl "alpha" } :String
+
+                // 4. Prohibited #size on :String TypeDefinition (Expect E012 + Alt+Enter Convert #size to #minSize/#maxSize!)
+                :FixedCode { #size 8 } :String
+
+                // 5. Incompatible Facet Argument Value Type (#minIncl integer on :DateTime -> Expect E009!)
+                :BadArgType { #offset #minIncl 12345 } :DateTime
+
+                // 6. Prohibited #regex on Fenced String (#preserveIndent #TRUE + #regex -> Expect E036!)
+                :IllegalFencedRegex {
+                  #maxSize 256
+                  #preserveIndent #TRUE
+                  #regex "^[a-z]+$"
+                } :String
+
+                // 7. Healthy Sibling Slot in Tuple alongside 6 Broken Schemas Above
+                :HealthyPort { #unsigned #size 16 #minIncl 1 #maxExcl 65535 } :Int
+
+                :CompositeRow :Tuple(
+                  :BaseOffsetTs
+                  :HealthyPort
+                )
+              }
+
+              :type :CompositeRow
+
+              :body (
+                "2026-11-03T14:00:00Z"
+                // Expect E012 out-of-bounds error on 70000 (> 65535) even with errors in :defs above!
+                70000
+              )
+            }
+            """;
+        myFixture.configureByText("gauntlet_bounds_and_crosshop.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        // 1. Assert :ConflictingChildTs { #zoned } :BaseOffsetTs emits E040 with locked ancestor message
+        int conflictingIdx = code.indexOf(":ConflictingChildTs");
+        int zonedStart = code.indexOf("#zoned", conflictingIdx);
+        int zonedEnd = zonedStart + "#zoned".length();
+        assertTrue("Expected E040 error pinned to #zoned on :ConflictingChildTs, got: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == zonedStart
+                && e.getEndOffset() == zonedEnd
+                && e.getDescription() != null
+                && e.getDescription().contains("NON_OVERRIDABLE_FACET")
+                && e.getDescription().contains("temporal mode is already locked as '#offset' by ancestor :BaseOffsetTs and cannot be overridden")));
+
+        // 2. Assert #zoned offers "Remove non-overridable facet '#zoned'" and does NOT offer "Keep only '#zoned'"
+        myFixture.getEditor().getCaretModel().moveToOffset(zonedStart + 2);
+        var removeNonOverridableFixes = myFixture.filterAvailableIntentions("Remove non-overridable facet '#zoned'");
+        assertFalse("Expected 'Remove non-overridable facet '#zoned'' intention on #zoned", removeNonOverridableFixes.isEmpty());
+        var keepOnlyFixes = myFixture.filterAvailableIntentions("Keep only '#zoned'");
+        assertTrue("Must NOT offer 'Keep only '#zoned'' on single-facet cross-hop override", keepOnlyFixes.isEmpty());
+
+        // 3. Assert :InvertedWindow, :InvertedLex, :FixedCode, :BadArgType, and :IllegalFencedRegex all emit ERROR diagnostics
+        int invertedWindowStart = code.indexOf(":InvertedWindow");
+        int invertedLexStart = code.indexOf(":InvertedLex");
+        int fixedCodeStart = code.indexOf(":FixedCode");
+        int badArgTypeStart = code.indexOf(":BadArgType");
+        int illegalFencedRegexStart = code.indexOf(":IllegalFencedRegex");
+        int healthyPortStart = code.indexOf(":HealthyPort");
+
+        assertTrue("Expected ERROR diagnostic inside :InvertedWindow",
+            errors.stream().anyMatch(e -> e.getStartOffset() >= invertedWindowStart && e.getEndOffset() <= invertedLexStart));
+        assertTrue("Expected ERROR diagnostic inside :InvertedLex",
+            errors.stream().anyMatch(e -> e.getStartOffset() >= invertedLexStart && e.getEndOffset() <= fixedCodeStart));
+        assertTrue("Expected ERROR diagnostic inside :FixedCode",
+            errors.stream().anyMatch(e -> e.getStartOffset() >= fixedCodeStart && e.getEndOffset() <= badArgTypeStart
+                && e.type != HighlightInfoType.WRONG_REF
+                && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
+        assertTrue("Expected ERROR diagnostic inside :BadArgType",
+            errors.stream().anyMatch(e -> e.getStartOffset() >= badArgTypeStart && e.getEndOffset() <= illegalFencedRegexStart));
+        assertTrue("Expected ERROR diagnostic inside :IllegalFencedRegex, got: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() >= illegalFencedRegexStart && e.getEndOffset() <= healthyPortStart));
+
+        // 4. Assert 70000 in :body (Slot 1 :HealthyPort) emits its out-of-bounds error
+        int body70000Start = code.lastIndexOf("70000");
+        int body70000End = body70000Start + "70000".length();
+        assertTrue("Expected out-of-bounds error pinned to '70000' in :body, got: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == body70000Start
+                && e.getEndOffset() == body70000End
+                && e.getDescription() != null
+                && (e.getDescription().contains("CONSTRAINT_VIOLATION")
+                    || e.getDescription().contains("INTEGER_OVERFLOW")
+                    || e.getDescription().contains("overflows"))));
+
+        // 5. Invoke "Remove non-overridable facet '#zoned'" and verify { #zoned } is cleanly removed
+        myFixture.launchAction(removeNonOverridableFixes.get(0));
+        assertTrue("Expected :ConflictingChildTs { #zoned } :BaseOffsetTs to heal to :ConflictingChildTs :BaseOffsetTs",
+            myFixture.getEditor().getDocument().getText().contains(":ConflictingChildTs :BaseOffsetTs"));
     }
 }
