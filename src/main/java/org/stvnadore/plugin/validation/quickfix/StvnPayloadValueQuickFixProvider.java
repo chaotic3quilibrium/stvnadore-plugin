@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -170,7 +171,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     new MetadataEntryReplacementQuickFix(
                         metaEntry,
                         facetKw + " " + exemplarBound,
-                        "Replace '" + facetKw + "' with exemplar bound '" + exemplarBound + "'"
+                        "Replace '" + facetKw + "' with exemplar bound '" + exemplarBound + "'",
+                        PriorityAction.Priority.LOW
                     )
                 );
                 return current;
@@ -344,7 +346,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Convert to " + modeFlag + " " + StvnVocabulary.TYPE_DATE_TIME + " '" + converted + "'",
                             "STVN Temporal Mode Conversion",
                             converted,
-                            null
+                            null,
+                            PriorityAction.Priority.TOP
                         )
                     );
                 }
@@ -361,7 +364,8 @@ public final class StvnPayloadValueQuickFixProvider {
                         "Replace with current " + modeFlag + " " + StvnVocabulary.TYPE_DATE_TIME,
                         "STVN Exemplar Value Replacement",
                         initialExemplar,
-                        () -> StvnExemplarValueGenerator.generateDateTimeExemplar(mode, minIncl, maxExcl, clock)
+                        () -> StvnExemplarValueGenerator.generateDateTimeExemplar(mode, minIncl, maxExcl, clock),
+                        PriorityAction.Priority.LOW
                     )
                 );
             }
@@ -393,7 +397,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Convert timestamp to " + scaleFlag + " " + StvnVocabulary.TYPE_TIME_EPOCH + " '" + convertedTicks + "'",
                             "STVN Temporal Epoch Conversion",
                             convertedTicks,
-                            null
+                            null,
+                            PriorityAction.Priority.TOP
                         )
                     );
                 }
@@ -421,7 +426,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             minIncl,
                             maxExcl,
                             clock
-                        )
+                        ),
+                        PriorityAction.Priority.LOW
                     )
                 );
             }
@@ -449,7 +455,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Replace with exemplar value '" + exemplar + "'",
                             "STVN Exemplar Value Replacement",
                             exemplar,
-                            null
+                            null,
+                            PriorityAction.Priority.LOW
                         )
                     );
                 }
@@ -487,7 +494,8 @@ public final class StvnPayloadValueQuickFixProvider {
                                 "Append '.0' to integer value '" + appended + "'",
                                 "STVN Float Literal Conversion",
                                 appended,
-                                null
+                                null,
+                                PriorityAction.Priority.TOP
                             )
                         );
                     }
@@ -502,7 +510,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
                         maxDigits = fs.exactMaxDigits().intValue();
                     }
-                    if (maxDigits <= 0 && meta.containsKey(StvnVocabulary.FACET_KW_EXACT)) {
+                    if (maxDigits <= 0 && (meta.containsKey(StvnVocabulary.FACET_KW_EXACT)
+                            || meta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE))) {
                         maxDigits = parseIntOrDefault(meta.get(StvnVocabulary.FACET_KW_MAX_SIZE), -1);
                     }
                     if (maxDigits > 0) {
@@ -519,7 +528,8 @@ public final class StvnPayloadValueQuickFixProvider {
                                         + maxDigits + " significant digits '" + roundedStr + "'",
                                     "STVN Exact Float Precision Rounding",
                                     roundedStr,
-                                    null
+                                    null,
+                                    PriorityAction.Priority.TOP
                                 )
                             );
                             fixes.add(
@@ -529,7 +539,8 @@ public final class StvnPayloadValueQuickFixProvider {
                                         + maxDigits + " significant digits '" + truncatedStr + "'",
                                     "STVN Exact Float Precision Truncation",
                                     truncatedStr,
-                                    null
+                                    null,
+                                    PriorityAction.Priority.HIGH
                                 )
                             );
                         }
@@ -544,7 +555,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Replace with exemplar value '" + exemplar + "'",
                             "STVN Exemplar Value Replacement",
                             exemplar,
-                            null
+                            null,
+                            PriorityAction.Priority.LOW
                         )
                     );
                 }
@@ -558,7 +570,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Convert to boolean literal '" + StvnVocabulary.VAL_TRUE + "'",
                             "STVN Scalar Conversion",
                             StvnVocabulary.VAL_TRUE,
-                            null
+                            null,
+                            PriorityAction.Priority.TOP
                         )
                     );
                 } else if (clean.equalsIgnoreCase("false") || clean.equals("0")) {
@@ -568,7 +581,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Convert to boolean literal '" + StvnVocabulary.VAL_FALSE + "'",
                             "STVN Scalar Conversion",
                             StvnVocabulary.VAL_FALSE,
-                            null
+                            null,
+                            PriorityAction.Priority.TOP
                         )
                     );
                 }
@@ -578,7 +592,8 @@ public final class StvnPayloadValueQuickFixProvider {
                         "Replace with exemplar value '" + StvnVocabulary.VAL_TRUE + "'",
                         "STVN Exemplar Value Replacement",
                         StvnVocabulary.VAL_TRUE,
-                        null
+                        null,
+                        PriorityAction.Priority.LOW
                     )
                 );
             }
@@ -591,7 +606,8 @@ public final class StvnPayloadValueQuickFixProvider {
                             "Replace with exemplar value '" + exemplar + "'",
                             "STVN Exemplar Value Replacement",
                             exemplar,
-                            null
+                            null,
+                            PriorityAction.Priority.LOW
                         )
                     );
                 }
@@ -926,7 +942,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to minimum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         } else if (actual.compareTo(effMaxIncl) > 0) {
@@ -937,7 +954,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to maximum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         }
@@ -990,7 +1008,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to minimum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         } else if (minExcl != null && actual <= minExcl) {
@@ -1001,7 +1020,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to minimum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         } else if (maxIncl != null && actual > maxIncl) {
@@ -1012,7 +1032,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to maximum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         } else if (maxExcl != null && actual >= maxExcl) {
@@ -1023,7 +1044,8 @@ public final class StvnPayloadValueQuickFixProvider {
                     "Clamp value to maximum bound '" + clamped + "'",
                     "STVN Scalar Bound Clamping",
                     clamped,
-                    null
+                    null,
+                    PriorityAction.Priority.TOP
                 )
             );
         }
@@ -1185,7 +1207,16 @@ public final class StvnPayloadValueQuickFixProvider {
         if (elem instanceof Value v) {
             return v;
         }
-        return PsiTreeUtil.getParentOfType(elem, Value.class, false);
+        if (PsiTreeUtil.getParentOfType(elem, com.intellij.psi.PsiErrorElement.class, false) != null) {
+            return null;
+        }
+        Value parentVal = PsiTreeUtil.getParentOfType(elem, Value.class, false);
+        if (parentVal != null
+                && parentVal.getCollectionValue() != null
+                && parentVal.getTextRange().getStartOffset() < startOffset) {
+            return null;
+        }
+        return parentVal;
     }
 
     private static String formatFloatBound(double value) {
@@ -1228,16 +1259,17 @@ public final class StvnPayloadValueQuickFixProvider {
      * Unified {@link IntentionAction} and {@link LocalQuickFix} that replaces an invalid STVN
      * {@link Value} node with a converted, clamped, or exemplar literal.
      */
-    public static final class PayloadValueQuickFix implements IntentionAction, LocalQuickFix {
+    public static final class PayloadValueQuickFix implements IntentionAction, LocalQuickFix, PriorityAction {
 
         private final SmartPsiElementPointer<Value> targetPointer;
         private final String text;
         private final String familyName;
         private final String fallbackReplacement;
         private final @Nullable Supplier<String> dynamicReplacementSupplier;
+        private final Priority priority;
 
         /**
-         * Creates a {@link PayloadValueQuickFix}.
+         * Creates a {@link PayloadValueQuickFix} with {@link Priority#HIGH}.
          *
          * @param target                     the PSI {@link Value} element to replace
          * @param text                       the user-facing quick-fix label
@@ -1252,11 +1284,38 @@ public final class StvnPayloadValueQuickFixProvider {
             String fallbackReplacement,
             @Nullable Supplier<String> dynamicReplacementSupplier
         ) {
+            this(target, text, familyName, fallbackReplacement, dynamicReplacementSupplier, Priority.HIGH);
+        }
+
+        /**
+         * Creates a {@link PayloadValueQuickFix} with an explicit {@link Priority}.
+         *
+         * @param target                     the PSI {@link Value} element to replace
+         * @param text                       the user-facing quick-fix label
+         * @param familyName                 the intention family name
+         * @param fallbackReplacement        the replacement literal text
+         * @param dynamicReplacementSupplier optional live supplier for clock-dependent exemplars
+         * @param priority                   the intention sorting priority
+         */
+        public PayloadValueQuickFix(
+            Value target,
+            String text,
+            String familyName,
+            String fallbackReplacement,
+            @Nullable Supplier<String> dynamicReplacementSupplier,
+            Priority priority
+        ) {
             this.targetPointer = SmartPointerManager.getInstance(target.getProject()).createSmartPsiElementPointer(target);
             this.text = text;
             this.familyName = familyName;
             this.fallbackReplacement = fallbackReplacement;
             this.dynamicReplacementSupplier = dynamicReplacementSupplier;
+            this.priority = priority;
+        }
+
+        @Override
+        public Priority getPriority() {
+            return priority;
         }
 
         @Override
@@ -1365,7 +1424,7 @@ public final class StvnPayloadValueQuickFixProvider {
     /**
      * Intention and quick-fix that replaces an exact character range in a document.
      */
-    private static final class TextRangeReplacementQuickFix implements IntentionAction, LocalQuickFix {
+    private static final class TextRangeReplacementQuickFix implements IntentionAction, LocalQuickFix, PriorityAction {
 
         private final SmartPsiElementPointer<PsiFile> filePointer;
         private final int startOffset;
@@ -1385,6 +1444,11 @@ public final class StvnPayloadValueQuickFixProvider {
             this.endOffset = endOffset;
             this.replacement = replacement;
             this.label = label;
+        }
+
+        @Override
+        public Priority getPriority() {
+            return Priority.TOP;
         }
 
         @Override
@@ -1460,20 +1524,36 @@ public final class StvnPayloadValueQuickFixProvider {
     /**
      * Intention and quick-fix that replaces a {@link MetadataEntry} node in {@code :defs} or {@code :type}.
      */
-    private static final class MetadataEntryReplacementQuickFix implements IntentionAction, LocalQuickFix {
+    private static final class MetadataEntryReplacementQuickFix implements IntentionAction, LocalQuickFix, PriorityAction {
 
         private final SmartPsiElementPointer<MetadataEntry> entryPointer;
         private final String replacementEntryText;
         private final String label;
+        private final Priority priority;
 
         MetadataEntryReplacementQuickFix(
             MetadataEntry entry,
             String replacementEntryText,
             String label
         ) {
+            this(entry, replacementEntryText, label, Priority.TOP);
+        }
+
+        MetadataEntryReplacementQuickFix(
+            MetadataEntry entry,
+            String replacementEntryText,
+            String label,
+            Priority priority
+        ) {
             this.entryPointer = SmartPointerManager.getInstance(entry.getProject()).createSmartPsiElementPointer(entry);
             this.replacementEntryText = replacementEntryText;
             this.label = label;
+            this.priority = priority;
+        }
+
+        @Override
+        public Priority getPriority() {
+            return priority;
         }
 
         @Override
@@ -1550,7 +1630,7 @@ public final class StvnPayloadValueQuickFixProvider {
     /**
      * Intention and quick-fix that removes a duplicate or excess container element or map entry.
      */
-    private static final class RemoveContainerElementQuickFix implements IntentionAction, LocalQuickFix {
+    private static final class RemoveContainerElementQuickFix implements IntentionAction, LocalQuickFix, PriorityAction {
 
         private final SmartPsiElementPointer<PsiElement> elementPointer;
         private final String label;
@@ -1558,6 +1638,11 @@ public final class StvnPayloadValueQuickFixProvider {
         RemoveContainerElementQuickFix(PsiElement element, String label) {
             this.elementPointer = SmartPointerManager.getInstance(element.getProject()).createSmartPsiElementPointer(element);
             this.label = label;
+        }
+
+        @Override
+        public Priority getPriority() {
+            return Priority.TOP;
         }
 
         @Override

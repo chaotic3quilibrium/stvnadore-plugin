@@ -3698,9 +3698,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 forms.add("Binary: <code>0b" + binStr + "</code>");
                 forms.add("Octal: <code>0o" + valBI.toString(8) + "</code>");
 
+                if (satisfied && rawIntText.contains("_")) {
+                    satisfied = false;
+                    explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                        + escapeHtmlBody(rawIntText) + "'";
+                }
                 return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
             } catch (Exception e) {
-                return new StvnValueComplianceResult(false, "In Violation", "Invalid integer literal representation: " + e.getMessage(), Collections.emptyMap(), Collections.emptyList());
+                return new StvnValueComplianceResult(false, "In Violation", "Error evaluating integer constraints", Collections.emptyMap(), Collections.emptyList());
             }
         }
 
@@ -3908,6 +3913,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     forms.add("Scientific: <code>" + valBD.toString() + "</code>");
                     forms.add("Precision (Digits): <code>" + precision + "</code>");
                     forms.add("Scale: <code>" + valBD.scale() + "</code>");
+                    if (satisfied && rawFloatText.contains("_")) {
+                        satisfied = false;
+                        explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                            + escapeHtmlBody(rawFloatText) + "'";
+                    }
                     return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
                 } else {
                     int bitWidth = (irSchema instanceof StvnSchema.FloatSchema fs
@@ -3954,6 +3964,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (!capOk) {
                         explanation = String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
                             valBD.toString(), capMin, capMax, bitWidth);
+                    } else if (rawFloatText.contains("_")) {
+                        capOk = false;
+                        statusLabel = "In Violation";
+                        explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                            + escapeHtmlBody(rawFloatText) + "'";
                     } else if (precisionLoss) {
                         statusLabel = "Satisfied (Precision Loss)";
                         explanation = String.format(
@@ -3979,7 +3994,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     return new StvnValueComplianceResult(capOk, statusLabel, explanation, Collections.emptyMap(), forms);
                 }
             } catch (Exception e) {
-                return new StvnValueComplianceResult(false, "In Violation", "Invalid float literal representation: " + e.getMessage(), Collections.emptyMap(), Collections.emptyList());
+                return new StvnValueComplianceResult(false, "In Violation", "Error evaluating float constraints", Collections.emptyMap(), Collections.emptyList());
             }
         }
 

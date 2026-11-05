@@ -32,8 +32,8 @@ UNION_TAG_PREFIX=#[1-9][0-9]*
 TYPE_KEYWORD_BASE=:[a-zA-Z_][a-zA-Z0-9_]*
 VALUE_KEYWORD_BASE=#[a-zA-Z_][a-zA-Z0-9_]*
 IDENTIFIER=[a-zA-Z_][a-zA-Z0-9_]*
-LITERAL_INTEGER=-?(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[1-9][0-9]*|0)
-LITERAL_FLOAT=-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?
+LITERAL_INTEGER=-?(0[xX][0-9a-fA-F][0-9a-fA-F_]*|0[bB][01][01_]*|0[oO][0-7][0-7_]*|[1-9][0-9_]*|0(_[0-9_]+)?)
+LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
 
 %%
 

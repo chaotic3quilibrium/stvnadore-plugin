@@ -252,4 +252,161 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
         assertTrue("Expected integer 250 to be converted to 250.0",
             myFixture.getEditor().getDocument().getText().contains(":body 250.0"));
     }
+
+    public void testExactFloatPrecisionOverflowOrdersRoundThenTruncateThenExemplar() {
+        var text = """
+            {
+              :defs {
+                :ExactPrice5Digits { #exact #maxSize 5 } :Float
+              }
+              :type :ExactPrice5Digits
+              :body 123.<caret>456
+            }
+            """;
+        myFixture.configureByText("exact_float_precision_priority.stvn", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> quickFixes = myFixture.getAllQuickFixes();
+        List<String> labels = quickFixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 3 quick-fixes on 123.456, found: " + labels, quickFixes.size() >= 3);
+        assertEquals(
+            "Index 0 must be Round quick-fix",
+            "Round value to #maxSize 5 significant digits '123.46'",
+            quickFixes.get(0).getText()
+        );
+        assertEquals(
+            "Index 1 must be Truncate quick-fix",
+            "Truncate value to #maxSize 5 significant digits '123.45'",
+            quickFixes.get(1).getText()
+        );
+        assertEquals(
+            "Index 2 must be Replace with exemplar quick-fix",
+            "Replace with exemplar value '0.0'",
+            quickFixes.get(2).getText()
+        );
+
+        myFixture.launchAction(quickFixes.get(0));
+        assertTrue(
+            "Expected 123.456 to be rounded to 123.46",
+            myFixture.getEditor().getDocument().getText().contains(":body 123.46")
+        );
+    }
+
+    public void testStage5SiblingQuickFixesAndHoverCardsResilientWhileSlot0HasProhibitedUnderscores() {
+        var text = """
+            {
+              :defs {
+                :Uint128Token { #unsigned #size 128 #minIncl 100000000000000000000 } :Int
+                :ExactPrice5Digits { #exact #maxSize 5 } :Float
+                :Stage5Payload :Tuple(
+                  :Uint128Token
+                  :Uint128Token
+                  :ExactPrice5Digits
+                  :ExactPrice5Digits
+                )
+              }
+              :type :Stage5Payload
+              :body (
+                0x1000_0000_0000_0000_0001
+                500
+                123.456
+                250
+              )
+            }
+            """;
+        myFixture.configureByText("stage5_sibling_resilience.stvn", text);
+        myFixture.doHighlighting();
+
+        var docProvider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+        var file = myFixture.getFile();
+        var editor = myFixture.getEditor();
+
+        // 1. Slot 0: 0x1000_0000_0000_0000_0001
+        int slot0Offset = text.indexOf("0x1000_0000_0000_0000_0001") + 2;
+        editor.getCaretModel().moveToOffset(slot0Offset);
+        var slot0Fixes = myFixture.filterAvailableIntentions(
+            "Remove prohibited underscores from numeric literal '0x10000000000000000001'"
+        );
+        assertFalse("Slot 0 must offer prohibited underscore removal quick-fix", slot0Fixes.isEmpty());
+        var slot0Elem = file.findElementAt(slot0Offset);
+        assertNotNull(slot0Elem);
+        var slot0DocElem = docProvider.getCustomDocumentationElement(editor, file, slot0Elem, slot0Offset);
+        assertNotNull("Slot 0 documentation element must not be null while underscores are present", slot0DocElem);
+        String slot0Doc = docProvider.generateDoc(slot0DocElem, slot0Elem);
+        assertNotNull("Slot 0 hover card must not be null", slot0Doc);
+        assertTrue(
+            "Slot 0 hover card must display violation status:\n" + slot0Doc,
+            slot0Doc.contains("In Violation") || slot0Doc.contains("Violated")
+        );
+
+        // 2. Slot 1: 500 (while Slot 0 still has prohibited underscores!)
+        int slot1Offset = text.indexOf("500") + 1;
+        editor.getCaretModel().moveToOffset(slot1Offset);
+        var slot1Fixes = myFixture.filterAvailableIntentions(
+            "Clamp value to minimum bound '100000000000000000000'"
+        );
+        assertFalse(
+            "Slot 1 (500) must offer Clamp quick-fix even while Slot 0 has prohibited underscores",
+            slot1Fixes.isEmpty()
+        );
+        var slot1Elem = file.findElementAt(slot1Offset);
+        assertNotNull(slot1Elem);
+        var slot1DocElem = docProvider.getCustomDocumentationElement(editor, file, slot1Elem, slot1Offset);
+        assertNotNull("Slot 1 documentation element must not be null while Slot 0 has underscores", slot1DocElem);
+        String slot1Doc = docProvider.generateDoc(slot1DocElem, slot1Elem);
+        assertNotNull("Slot 1 hover card must not be null", slot1Doc);
+        assertTrue(
+            "Slot 1 hover card must display violation status:\n" + slot1Doc,
+            slot1Doc.contains("In Violation") || slot1Doc.contains("Violated")
+        );
+
+        // 3. Slot 2: 123.456 (while Slot 0 still has prohibited underscores!)
+        int slot2Offset = text.indexOf("123.456") + 2;
+        editor.getCaretModel().moveToOffset(slot2Offset);
+        var slot2RoundFixes = myFixture.filterAvailableIntentions(
+            "Round value to #maxSize 5 significant digits '123.46'"
+        );
+        var slot2TruncateFixes = myFixture.filterAvailableIntentions(
+            "Truncate value to #maxSize 5 significant digits '123.45'"
+        );
+        assertFalse(
+            "Slot 2 (123.456) must offer Round quick-fix while Slot 0 has underscores",
+            slot2RoundFixes.isEmpty()
+        );
+        assertFalse(
+            "Slot 2 (123.456) must offer Truncate quick-fix while Slot 0 has underscores",
+            slot2TruncateFixes.isEmpty()
+        );
+        var slot2Elem = file.findElementAt(slot2Offset);
+        assertNotNull(slot2Elem);
+        var slot2DocElem = docProvider.getCustomDocumentationElement(editor, file, slot2Elem, slot2Offset);
+        assertNotNull("Slot 2 documentation element must not be null while Slot 0 has underscores", slot2DocElem);
+        String slot2Doc = docProvider.generateDoc(slot2DocElem, slot2Elem);
+        assertNotNull("Slot 2 hover card must not be null", slot2Doc);
+        assertTrue(
+            "Slot 2 hover card must display violation status:\n" + slot2Doc,
+            slot2Doc.contains("In Violation") || slot2Doc.contains("Violated")
+        );
+
+        // 4. Slot 3: 250 (while Slot 0 still has prohibited underscores!)
+        int slot3Offset = text.indexOf("250") + 1;
+        editor.getCaretModel().moveToOffset(slot3Offset);
+        var slot3AppendFixes = myFixture.filterAvailableIntentions(
+            "Append '.0' to integer value '250.0'"
+        );
+        assertFalse(
+            "Slot 3 (250) must offer Append '.0' quick-fix while Slot 0 has underscores",
+            slot3AppendFixes.isEmpty()
+        );
+        var slot3Elem = file.findElementAt(slot3Offset);
+        assertNotNull(slot3Elem);
+        var slot3DocElem = docProvider.getCustomDocumentationElement(editor, file, slot3Elem, slot3Offset);
+        assertNotNull("Slot 3 documentation element must not be null while Slot 0 has underscores", slot3DocElem);
+        String slot3Doc = docProvider.generateDoc(slot3DocElem, slot3Elem);
+        assertNotNull("Slot 3 hover card must not be null", slot3Doc);
+        assertTrue(
+            "Slot 3 hover card must display violation status:\n" + slot3Doc,
+            slot3Doc.contains("In Violation") || slot3Doc.contains("Violated")
+        );
+    }
 }

@@ -32,7 +32,7 @@ public final class StvnPsiLiteralEvaluator {
         if (rawText == null) {
             return Optional.empty();
         }
-        String s = rawText.trim();
+        String s = rawText.trim().replace("_", "");
         if (s.isEmpty()) {
             return Optional.empty();
         }
@@ -74,7 +74,7 @@ public final class StvnPsiLiteralEvaluator {
             return Optional.empty();
         }
         try {
-            return Optional.of(new BigDecimal(rawText.trim()));
+            return Optional.of(new BigDecimal(rawText.trim().replace("_", "")));
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }

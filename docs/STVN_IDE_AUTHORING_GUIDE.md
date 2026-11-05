@@ -371,6 +371,13 @@ The quick-fix also handles multi-tier transitive derivation chains by resolving 
 
 ---
 
+### 2.4 Resilient Payload Value Quick-Fixes & Exact Float Precision Rounding (`Alt+Enter` in `:body` & `#CONST`)
+
+- **Prohibited Numeric Underscore Removal (`E002`):** Strips prohibited `_` separators from integer and float literals in place (`Remove prohibited underscores from numeric literal '...'`) while preserving full PSI container slot resolution, hover cards, and quick-fixes on all sibling tuple, sequence, set, and map elements.
+- **Exact Decimal Float Precision Rounding & Truncation (`E012`):** On `{ #exact #maxSize N } :Float` precision overflow, offers `Round value to #maxSize N significant digits '...'` as the primary (`Priority.TOP`) quick-fix, `Truncate value to #maxSize N significant digits '...'` second (`Priority.HIGH`), and `Replace with exemplar value '...'` third (`Priority.LOW`).
+
+---
+
 ## 3. Visual Grammar & Inlay Hint Badging Guide
 
 ### 3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags
