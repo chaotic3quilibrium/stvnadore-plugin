@@ -954,7 +954,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Exactly one error highlight must exist on opening delimiter line", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited [stvn-plugin:ERR_PROHIBITED_FENCE_ARROW]", error.getDescription());
+        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited [stvn-plugin:E026-ERR_PROHIBITED_FENCE_ARROW]", error.getDescription());
         assertFalse("Raw compiler syntax error duplicate must be suppressed", error.getDescription().contains("STVN Syntax Error:"));
 
         var quickFixes = myFixture.getAllQuickFixes();
@@ -1392,7 +1392,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .toList();
 
         assertTrue("Expected Empty type constraint block diagnostic: " + errorDescriptions,
-            errorDescriptions.stream().anyMatch(d -> d.contains("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]")));
+            errorDescriptions.stream().anyMatch(d -> d.contains("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:E003-ERR_EMPTY_METADATA_BLOCK]")));
     }
 
     /**
@@ -1422,7 +1422,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals("Expected exactly one error on line 1 '{'", 1, lineOneErrors.size());
         var desc = lineOneErrors.get(0).getDescription();
         assertTrue("Diagnostic must originate from inspection",
-            desc.contains("[stvn-plugin:ERR_DOCUMENT_KIND_MISMATCH]"));
+            desc.contains("[stvn-plugin:E031-ERR_DOCUMENT_KIND_MISMATCH]"));
 
         var actions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
         assertEquals("Expected exactly one quick-fix intention", 1, actions.size());

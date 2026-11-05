@@ -65,8 +65,8 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Structural indentation tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
-        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testTrailingTabAfterTypeClauseReportsSingleProblemDescriptor() {
@@ -78,8 +78,8 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Trailing tab after type clause must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
-        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testSecondaryCascadeSuppressionOnRootBraceWhenTabPresent() {
@@ -101,8 +101,8 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Comment tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
-        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testSimpleStringRawTabReportsProblemDescriptor() {
@@ -115,8 +115,8 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Unescaped tab in simple string must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
-        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testOpeningFenceLineTabReportsProblemDescriptor() {
@@ -129,8 +129,8 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Opening fence delimiter tab must report exactly one error highlight under Invariant 10", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:ERR_TAB_CHARACTER_FORBIDDEN]"));
-        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertTrue("Highlight must originate from local inspection", error.getDescription().contains("[stvn-plugin:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
+        assertFalse("External annotator duplicate must be suppressed", error.getDescription().contains("[stvn-core:E001-ERR_TAB_CHARACTER_FORBIDDEN]"));
     }
 
     public void testQuickFixReplacesOnlyStructuralTabsAndPreservesFencedTabs() {

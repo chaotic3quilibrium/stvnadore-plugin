@@ -228,16 +228,8 @@ public final class StvnDiagnosticAnnotatorMapping {
         // 21. Degraded Schema Payload Evaluation Inspection
         map.put(StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE, "StvnDegradedSchema");
 
-        // 22. Map Structural Inspection
-        map.put(DiagnosticBag.ERR_DUPLICATE_MAP_KEY, "StvnMapStructural");
-        map.put(DiagnosticBag.ERR_DUPLICATE_INVERTED_MAP_VALUE, "StvnMapStructural");
+        // 22. Map Structural Inspection (Duplicate map keys E017 and duplicate inverted values E018 are governed by Core)
         map.put(StvnDiagnosticCodes.ERR_FLAT_LIST_IN_MAP_SLOT, "StvnMapStructural");
-        map.put(StvnDiagnosticCodes.ERR_DUPLICATE_MAP_KEY, "StvnMapStructural");
-        map.put(StvnDiagnosticCodes.ERR_INVERTIBLE_MAP_DUPLICATE_VALUE, "StvnMapStructural");
-        map.put("DUPLICATE_MAP_KEY", "StvnMapStructural");
-        map.put("DUPLICATE_INVERTED_MAP_VALUE", "StvnMapStructural");
-        map.put("INVERTIBLE_MAP_DUPLICATE", "StvnMapStructural");
-        map.put("E018", "StvnMapStructural");
 
         // 23. Boolean Validity Inspection
         map.put(StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING, "StvnBooleanValidity");
@@ -307,6 +299,13 @@ public final class StvnDiagnosticAnnotatorMapping {
     private static boolean isExplicitlyUngovernedSymbolicId(String code) {
         return DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
+            || "DUPLICATE_MAP_KEY".equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_INVERTED_MAP_VALUE.equals(code)
+            || "DUPLICATE_INVERTED_MAP_VALUE".equals(code)
+            || "INVERTIBLE_MAP_DUPLICATE".equals(code)
+            || "E017".equals(code)
+            || "E018".equals(code)
             || DiagnosticBag.ERR_INCOMPATIBLE_TYPE.equals(code)
             || DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE.equals(code)
             || DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(code)
@@ -410,6 +409,9 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // Guard: Schema facet numeric/capacity domain violations not covered by PSI inspections remain with core
         if (message.contains("is out of bounds for physical capacity")
+                || message.contains("Mantissa precision ")
+                || message.contains("significant digits")
+                || message.contains(": Size ")
                 || message.contains("must be >= 1")
                 || message.contains("must be >= 0")
                 || message.contains("must be 32 or 64")

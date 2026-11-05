@@ -341,10 +341,12 @@ public final class StvnTypeResolver {
             }
         }
 
-        // 3. Check compiler diagnostics accumulated for the defining file
+        // 3. Check compiler diagnostics accumulated for the defining file (strictly within :defs, never :body)
         PsiFile diagFile = typeDef != null && typeDef.getContainingFile() != null
             ? typeDef.getContainingFile()
             : file;
+        var bodyEntry = PsiTreeUtil.findChildOfType(diagFile, BodyEntry.class);
+        int bodyStartOffset = bodyEntry != null ? bodyEntry.getTextRange().getStartOffset() : Integer.MAX_VALUE;
         var snapshot = StvnCompiledDocumentCache.getSnapshot(diagFile);
         for (var diag : snapshot.diagnostics()) {
             if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
@@ -352,6 +354,9 @@ public final class StvnTypeResolver {
             }
             if (diag.sourcePath().isPresent()
                 && !diag.sourcePath().get().equals(snapshot.normalizedDocPath())) {
+                continue;
+            }
+            if (diag.startOffset() >= bodyStartOffset) {
                 continue;
             }
             String symbolic = diag.symbolicId().orElse("");
@@ -366,7 +371,10 @@ public final class StvnTypeResolver {
                 if (matcher.find()) {
                     var target = matcher.group(1).trim();
                     if (matchesTargetTypeName(target, aliasName)) {
-                        return true;
+                        if (typeDef == null || (diag.startOffset() >= typeDef.getTextRange().getStartOffset()
+                                && diag.endOffset() <= typeDef.getTextRange().getEndOffset())) {
+                            return true;
+                        }
                     }
                     continue;
                 }

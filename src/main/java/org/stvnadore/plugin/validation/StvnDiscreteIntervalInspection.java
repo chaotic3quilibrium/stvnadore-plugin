@@ -136,9 +136,16 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
                 if (discrete) {
+                    var replaceKwFix = new ReplaceBoundKeywordQuickFix(
+                        entry,
+                        StvnVocabulary.FACET_KW_MAX_INCL,
+                        StvnVocabulary.FACET_KW_MAX_EXCL,
+                        "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
+                            + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
+                    );
                     var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry)}
-                        : LocalQuickFix.EMPTY_ARRAY;
+                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry), replaceKwFix}
+                        : new LocalQuickFix[]{replaceKwFix};
                     holder.registerProblem(
                         entry,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -157,9 +164,16 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
                 if (discrete) {
+                    var replaceKwFix = new ReplaceBoundKeywordQuickFix(
+                        entry,
+                        StvnVocabulary.FACET_KW_MIN_EXCL,
+                        StvnVocabulary.FACET_KW_MIN_INCL,
+                        "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
+                            + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
+                    );
                     var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry)}
-                        : LocalQuickFix.EMPTY_ARRAY;
+                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry), replaceKwFix}
+                        : new LocalQuickFix[]{replaceKwFix};
                     holder.registerProblem(
                         entry,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -456,6 +470,47 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             var nextVal = incrementBound(valText);
             var replacement = StvnElementFactory.createMetadataEntry(project, "#minIncl " + nextVal);
             entry.replace(replacement);
+        }
+    }
+
+    private static final class ReplaceBoundKeywordQuickFix implements LocalQuickFix {
+        private final MetadataEntry entry;
+        private final String oldKw;
+        private final String newKw;
+        private final String label;
+
+        ReplaceBoundKeywordQuickFix(MetadataEntry entry, String oldKw, String newKw, String label) {
+            this.entry = entry;
+            this.oldKw = oldKw;
+            this.newKw = newKw;
+            this.label = label;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            return label;
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return label;
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            if (!entry.isValid()) return;
+            var val = entry.getMetadataValue();
+            if (val != null) {
+                var replacement = StvnElementFactory.createMetadataEntry(
+                    project,
+                    newKw + " " + val.getText().trim()
+                );
+                entry.replace(replacement);
+            } else {
+                var text = entry.getText().trim().replaceFirst("^" + java.util.regex.Pattern.quote(oldKw), newKw);
+                var replacement = StvnElementFactory.createMetadataEntry(project, text);
+                entry.replace(replacement);
+            }
         }
     }
 }

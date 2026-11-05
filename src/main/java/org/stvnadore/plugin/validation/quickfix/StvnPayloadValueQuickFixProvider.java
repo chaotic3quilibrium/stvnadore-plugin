@@ -16,6 +16,8 @@ import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -37,6 +39,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnSchema.DateTimeMode;
 import org.stvnadore.core.ir.StvnSchema.TemporalScale;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
@@ -45,6 +48,9 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.ListLiteral;
+import org.stvnadore.psi.MapLiteral;
+import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.Value;
 
@@ -59,6 +65,18 @@ public final class StvnPayloadValueQuickFixProvider {
         "^(\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?)"
             + "(Z|[+-]\\d{2}:\\d{2})?"
             + "(?:\\[([^\\]]+)\\])?$"
+    );
+
+    private static final Pattern VALID_METADATA_RANGE_PATTERN = Pattern.compile(
+        "valid\\s+(#\\w+)\\s+range\\s+is\\s+\\[(-?\\d+),\\s*(-?\\d+)\\]"
+    );
+
+    private static final Pattern ALLOWABLE_RANGE_MAX_PATTERN = Pattern.compile(
+        "outside allowable range \\[\\d+,\\s*(\\d+)\\]"
+    );
+
+    private static final Pattern SIGNIFICANT_DIGITS_MAX_PATTERN = Pattern.compile(
+        "significant digits \\((\\d+)\\)"
     );
 
     private StvnPayloadValueQuickFixProvider() {}
@@ -84,6 +102,172 @@ public final class StvnPayloadValueQuickFixProvider {
         int endOffset
     ) {
         String code = diagnosticId != null ? diagnosticId : "";
+        int textLength = file.getTextLength();
+
+        // 1. Prohibited numeric underscore separator removal (E002 / ERR_INVALID_NUMERIC_LITERAL)
+        if ((DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL.equals(code)
+                || rawMessage.contains("Underscore separators are prohibited in numeric literals"))
+                && startOffset >= 0
+                && endOffset > startOffset
+                && endOffset <= textLength) {
+            String rawLiteral = file.getText().substring(startOffset, endOffset).trim();
+            if (rawLiteral.contains("_")) {
+                String cleanLiteral = rawLiteral.replace("_", "");
+                return builder.withFix(
+                    new TextRangeReplacementQuickFix(
+                        file,
+                        startOffset,
+                        endOffset,
+                        cleanLiteral,
+                        "Remove prohibited underscores from numeric literal '" + cleanLiteral + "'"
+                    )
+                );
+            }
+        }
+
+        // 2. MetadataEntry integer bound overflow (E009) and discrete bound kind (E011) in :defs / :type
+        PsiElement elemAtStart = (startOffset >= 0 && startOffset < textLength)
+            ? file.findElementAt(startOffset)
+            : null;
+        MetadataEntry metaEntry = elemAtStart != null
+            ? PsiTreeUtil.getParentOfType(elemAtStart, MetadataEntry.class, false)
+            : null;
+        if (metaEntry != null) {
+            Matcher rangeMatcher = VALID_METADATA_RANGE_PATTERN.matcher(rawMessage);
+            if (rangeMatcher.find() && metaEntry.getMetadataValue() != null) {
+                String facetKw = rangeMatcher.group(1);
+                BigInteger minAllowed = new BigInteger(rangeMatcher.group(2));
+                BigInteger maxAllowed = new BigInteger(rangeMatcher.group(3));
+                BigInteger actual = StvnPsiLiteralEvaluator.parseBigInteger(
+                    metaEntry.getMetadataValue().getText().trim()
+                ).orElse(null);
+                AnnotationBuilder current = builder;
+                if (actual != null) {
+                    if (actual.compareTo(minAllowed) < 0) {
+                        current = current.withFix(
+                            new MetadataEntryReplacementQuickFix(
+                                metaEntry,
+                                facetKw + " " + minAllowed,
+                                "Clamp '" + facetKw + "' to minimum physical bound '" + minAllowed + "'"
+                            )
+                        );
+                    } else if (actual.compareTo(maxAllowed) > 0) {
+                        current = current.withFix(
+                            new MetadataEntryReplacementQuickFix(
+                                metaEntry,
+                                facetKw + " " + maxAllowed,
+                                "Clamp '" + facetKw + "' to maximum physical bound '" + maxAllowed + "'"
+                            )
+                        );
+                    }
+                }
+                String exemplarBound = StvnVocabulary.FACET_KW_MIN_INCL.equals(facetKw)
+                    ? (BigInteger.ZERO.compareTo(minAllowed) >= 0 && BigInteger.ZERO.compareTo(maxAllowed) <= 0
+                        ? "0"
+                        : minAllowed.toString())
+                    : maxAllowed.toString();
+                current = current.withFix(
+                    new MetadataEntryReplacementQuickFix(
+                        metaEntry,
+                        facetKw + " " + exemplarBound,
+                        "Replace '" + facetKw + "' with exemplar bound '" + exemplarBound + "'"
+                    )
+                );
+                return current;
+            }
+            if (DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED.equals(code)
+                    || "E011".equals(code)
+                    || rawMessage.contains("Discrete types reject")
+                    || rawMessage.contains("prohibited on discrete")) {
+                String entryText = metaEntry.getText().trim();
+                String valText = metaEntry.getMetadataValue() != null
+                    ? metaEntry.getMetadataValue().getText().trim()
+                    : "0";
+                if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                    return builder.withFix(
+                        new MetadataEntryReplacementQuickFix(
+                            metaEntry,
+                            StvnVocabulary.FACET_KW_MAX_EXCL + " " + valText,
+                            "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
+                                + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
+                        )
+                    );
+                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                    return builder.withFix(
+                        new MetadataEntryReplacementQuickFix(
+                            metaEntry,
+                            StvnVocabulary.FACET_KW_MIN_INCL + " " + valText,
+                            "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
+                                + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
+                        )
+                    );
+                }
+            }
+        }
+
+        // 3. Duplicate set element removal (DUPLICATE_SET_ELEMENT / E017 / E029)
+        if (DiagnosticBag.ERR_DUPLICATE_SET_ELEMENT.equals(code)
+                || rawMessage.contains("Duplicate set element")) {
+            Value dupElem = findTargetValue(file, startOffset, endOffset);
+            if (dupElem != null) {
+                String elemText = dupElem.getText().trim();
+                return builder.withFix(
+                    new RemoveContainerElementQuickFix(
+                        dupElem,
+                        "Remove duplicate set element '" + elemText + "'"
+                    )
+                );
+            }
+        }
+
+        // 4. Duplicate map key / duplicate inverted map value entry removal (E017 / E018)
+        if (DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
+                || DiagnosticBag.ERR_DUPLICATE_INVERTED_MAP_VALUE.equals(code)
+                || rawMessage.contains("Duplicate map key")
+                || rawMessage.contains("Duplicate inverted map value")) {
+            PsiElement mapEntryElem = findEnclosingMapEntry(elemAtStart);
+            if (mapEntryElem != null) {
+                String entryText = mapEntryElem.getText().trim();
+                return builder.withFix(
+                    new RemoveContainerElementQuickFix(
+                        mapEntryElem,
+                        "Remove duplicate map entry '" + entryText + "'"
+                    )
+                );
+            }
+        }
+
+        // 5. Container #maxSize excess element / entry removal (CAPACITY_OVERFLOW / E012)
+        if ((DiagnosticBag.ERR_CAPACITY_OVERFLOW.equals(code) || "E012".equals(code))
+                && rawMessage.contains("outside allowable range [")
+                && !rawMessage.contains("String ")) {
+            Matcher maxMatcher = ALLOWABLE_RANGE_MAX_PATTERN.matcher(rawMessage);
+            String maxSizeStr = maxMatcher.find() ? maxMatcher.group(1) : "";
+            String suffix = !maxSizeStr.isEmpty()
+                ? " (exceeds " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + maxSizeStr + ")"
+                : "";
+            PsiElement mapEntryElem = findEnclosingMapEntry(elemAtStart);
+            if (mapEntryElem != null && mapEntryElem.getTextRange().getStartOffset() == startOffset) {
+                String entryText = mapEntryElem.getText().trim();
+                return builder.withFix(
+                    new RemoveContainerElementQuickFix(
+                        mapEntryElem,
+                        "Remove excess map entry '" + entryText + "'" + suffix
+                    )
+                );
+            }
+            Value excessElem = findTargetValue(file, startOffset, endOffset);
+            if (excessElem != null && excessElem.getParent() instanceof ListLiteral) {
+                String elemText = excessElem.getText().trim();
+                return builder.withFix(
+                    new RemoveContainerElementQuickFix(
+                        excessElem,
+                        "Remove excess element '" + elemText + "'" + suffix
+                    )
+                );
+            }
+        }
+
         if (!isPayloadValueDiagnostic(code, rawMessage)) {
             return builder;
         }
@@ -125,14 +309,18 @@ public final class StvnPayloadValueQuickFixProvider {
         Clock clock
     ) {
         SchemaType rawSchema = resolveGoverningSchemaForValue(value);
-        if (rawSchema == null) {
-            return List.of();
-        }
-        SchemaType terminalSchema = StvnExemplarValueGenerator.resolveTerminalSchemaType(rawSchema);
-        Map<String, String> meta = StvnExemplarValueGenerator.extractLineageMetadata(rawSchema);
-        StvnSchema irSchema = resolveLeafIrSchema(rawSchema);
+        SchemaType terminalSchema = rawSchema != null
+            ? StvnExemplarValueGenerator.resolveTerminalSchemaType(rawSchema)
+            : null;
+        Map<String, String> meta = rawSchema != null
+            ? StvnExemplarValueGenerator.extractLineageMetadata(rawSchema)
+            : Map.of();
+        StvnSchema irSchema = rawSchema != null ? resolveLeafIrSchema(rawSchema) : null;
 
-        String baseType = extractBaseType(terminalSchema, irSchema);
+        String baseType = terminalSchema != null ? extractBaseType(terminalSchema, irSchema) : null;
+        if (baseType == null && value.getFloatLiteral() != null) {
+            baseType = StvnVocabulary.TYPE_FLOAT;
+        }
         if (baseType == null) {
             return List.of();
         }
@@ -302,6 +490,49 @@ public final class StvnPayloadValueQuickFixProvider {
                                 null
                             )
                         );
+                    }
+                }
+                if (value.getFloatLiteral() != null) {
+                    int maxDigits = -1;
+                    Matcher sigMatcher = SIGNIFICANT_DIGITS_MAX_PATTERN.matcher(message);
+                    if (sigMatcher.find()) {
+                        maxDigits = parseIntOrDefault(sigMatcher.group(1), -1);
+                    }
+                    if (maxDigits <= 0 && irSchema instanceof StvnSchema.FloatSchema fs
+                            && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
+                        maxDigits = fs.exactMaxDigits().intValue();
+                    }
+                    if (maxDigits <= 0 && meta.containsKey(StvnVocabulary.FACET_KW_EXACT)) {
+                        maxDigits = parseIntOrDefault(meta.get(StvnVocabulary.FACET_KW_MAX_SIZE), -1);
+                    }
+                    if (maxDigits > 0) {
+                        BigDecimal bd = StvnPsiLiteralEvaluator.parseBigDecimal(rawValueText).orElse(null);
+                        if (bd != null && bd.precision() > maxDigits) {
+                            BigDecimal roundedBd = bd.round(new MathContext(maxDigits, RoundingMode.HALF_UP));
+                            BigDecimal truncatedBd = bd.round(new MathContext(maxDigits, RoundingMode.DOWN));
+                            String roundedStr = formatExactDecimalLiteral(roundedBd, maxDigits);
+                            String truncatedStr = formatExactDecimalLiteral(truncatedBd, maxDigits);
+                            fixes.add(
+                                new PayloadValueQuickFix(
+                                    value,
+                                    "Round value to " + StvnVocabulary.FACET_KW_MAX_SIZE + " "
+                                        + maxDigits + " significant digits '" + roundedStr + "'",
+                                    "STVN Exact Float Precision Rounding",
+                                    roundedStr,
+                                    null
+                                )
+                            );
+                            fixes.add(
+                                new PayloadValueQuickFix(
+                                    value,
+                                    "Truncate value to " + StvnVocabulary.FACET_KW_MAX_SIZE + " "
+                                        + maxDigits + " significant digits '" + truncatedStr + "'",
+                                    "STVN Exact Float Precision Truncation",
+                                    truncatedStr,
+                                    null
+                                )
+                            );
+                        }
                     }
                 }
                 addFloatClampFixIfOutOfBounds(fixes, value, rawValueText, minIncl, minExcl, maxIncl, maxExcl);
@@ -804,6 +1035,7 @@ public final class StvnPayloadValueQuickFixProvider {
                 || code.equals("ERR_TYPE_MISMATCH")
                 || code.equals("E028")
                 || code.equals("ERR_CONSTRAINT_VIOLATION")
+                || code.equals(DiagnosticBag.ERR_CAPACITY_OVERFLOW)
                 || code.equals("E012")
                 || code.equals("ERR_INTEGER_OVERFLOW")
                 || code.equals("E009")
@@ -816,6 +1048,8 @@ public final class StvnPayloadValueQuickFixProvider {
         }
         return message.contains("Type mismatch")
             || message.contains("Constraint violation")
+            || message.contains("Mantissa precision ")
+            || message.contains("significant digits")
             || message.contains("out of bounds")
             || message.contains("out of range")
             || message.contains("overflow")
@@ -825,6 +1059,33 @@ public final class StvnPayloadValueQuickFixProvider {
             || message.contains("IANA time zone")
             || message.contains("UTC offset")
             || message.contains("Invalid {");
+    }
+
+    private static @Nullable PsiElement findEnclosingMapEntry(@Nullable PsiElement elem) {
+        PsiElement current = elem;
+        while (current != null && !(current instanceof PsiFile)) {
+            if (current.getParent() instanceof MapLiteral
+                    && (current instanceof Value || current instanceof ListLiteral)) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    private static String formatExactDecimalLiteral(BigDecimal bd, int maxDigits) {
+        String plain = bd.toPlainString();
+        if (plain.contains(".")) {
+            return plain;
+        }
+        if (bd.precision() < maxDigits) {
+            return plain + ".0";
+        }
+        String sci = bd.toString();
+        if (sci.contains(".") || sci.contains("E") || sci.contains("e")) {
+            return sci;
+        }
+        return plain + ".0";
     }
 
     private record OptionalEpochInstant(Instant instant) {}
@@ -1092,6 +1353,304 @@ public final class StvnPayloadValueQuickFixProvider {
                 : fallbackReplacement;
             Value newValue = StvnElementFactory.createValue(project, replacementText);
             copyTarget.replace(newValue);
+            return IntentionPreviewInfo.DIFF;
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return false;
+        }
+    }
+
+    /**
+     * Intention and quick-fix that replaces an exact character range in a document.
+     */
+    private static final class TextRangeReplacementQuickFix implements IntentionAction, LocalQuickFix {
+
+        private final SmartPsiElementPointer<PsiFile> filePointer;
+        private final int startOffset;
+        private final int endOffset;
+        private final String replacement;
+        private final String label;
+
+        TextRangeReplacementQuickFix(
+            PsiFile file,
+            int startOffset,
+            int endOffset,
+            String replacement,
+            String label
+        ) {
+            this.filePointer = SmartPointerManager.getInstance(file.getProject()).createSmartPsiElementPointer(file);
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.replacement = replacement;
+            this.label = label;
+        }
+
+        @Override
+        public String getText() {
+            return label;
+        }
+
+        @Override
+        public String getName() {
+            return label;
+        }
+
+        @Override
+        public String getFamilyName() {
+            return label;
+        }
+
+        @Override
+        public boolean isAvailable(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            PsiFile targetFile = file != null ? file : filePointer.getElement();
+            return targetFile != null && targetFile.isValid() && endOffset <= targetFile.getTextLength();
+        }
+
+        @Override
+        public void invoke(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            PsiFile targetFile = file != null ? file : filePointer.getElement();
+            if (targetFile == null || !targetFile.isValid()) {
+                return;
+            }
+            WriteCommandAction.runWriteCommandAction(
+                project,
+                label,
+                null,
+                () -> applyToDocument(project, targetFile),
+                targetFile
+            );
+        }
+
+        @Override
+        public void applyFix(Project project, ProblemDescriptor descriptor) {
+            PsiFile targetFile = descriptor.getPsiElement() != null
+                ? descriptor.getPsiElement().getContainingFile()
+                : filePointer.getElement();
+            if (targetFile != null && targetFile.isValid()) {
+                applyToDocument(project, targetFile);
+            }
+        }
+
+        private void applyToDocument(Project project, PsiFile targetFile) {
+            var doc = targetFile.getViewProvider().getDocument();
+            if (doc != null && startOffset >= 0 && endOffset <= doc.getTextLength() && startOffset <= endOffset) {
+                doc.replaceString(startOffset, endOffset, replacement);
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+        }
+
+        @Override
+        public IntentionPreviewInfo generatePreview(Project project, Editor editor, PsiFile file) {
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null && startOffset >= 0 && endOffset <= doc.getTextLength() && startOffset <= endOffset) {
+                doc.replaceString(startOffset, endOffset, replacement);
+                return IntentionPreviewInfo.DIFF;
+            }
+            return IntentionPreviewInfo.EMPTY;
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return false;
+        }
+    }
+
+    /**
+     * Intention and quick-fix that replaces a {@link MetadataEntry} node in {@code :defs} or {@code :type}.
+     */
+    private static final class MetadataEntryReplacementQuickFix implements IntentionAction, LocalQuickFix {
+
+        private final SmartPsiElementPointer<MetadataEntry> entryPointer;
+        private final String replacementEntryText;
+        private final String label;
+
+        MetadataEntryReplacementQuickFix(
+            MetadataEntry entry,
+            String replacementEntryText,
+            String label
+        ) {
+            this.entryPointer = SmartPointerManager.getInstance(entry.getProject()).createSmartPsiElementPointer(entry);
+            this.replacementEntryText = replacementEntryText;
+            this.label = label;
+        }
+
+        @Override
+        public String getText() {
+            return label;
+        }
+
+        @Override
+        public String getName() {
+            return label;
+        }
+
+        @Override
+        public String getFamilyName() {
+            return label;
+        }
+
+        @Override
+        public boolean isAvailable(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            MetadataEntry entry = entryPointer.getElement();
+            return entry != null && entry.isValid();
+        }
+
+        @Override
+        public void invoke(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            MetadataEntry entry = entryPointer.getElement();
+            if (entry == null || !entry.isValid()) {
+                return;
+            }
+            PsiFile targetFile = file != null ? file : entry.getContainingFile();
+            WriteCommandAction.runWriteCommandAction(
+                project,
+                label,
+                null,
+                () -> {
+                    var replacement = StvnElementFactory.createMetadataEntry(project, replacementEntryText);
+                    if (entry.isValid()) {
+                        entry.replace(replacement);
+                    }
+                },
+                targetFile
+            );
+        }
+
+        @Override
+        public void applyFix(Project project, ProblemDescriptor descriptor) {
+            MetadataEntry entry = entryPointer.getElement();
+            if (entry != null && entry.isValid()) {
+                var replacement = StvnElementFactory.createMetadataEntry(project, replacementEntryText);
+                entry.replace(replacement);
+            }
+        }
+
+        @Override
+        public IntentionPreviewInfo generatePreview(Project project, Editor editor, PsiFile file) {
+            MetadataEntry orig = entryPointer.getElement();
+            if (orig == null) {
+                return IntentionPreviewInfo.EMPTY;
+            }
+            MetadataEntry copy = PsiTreeUtil.findSameElementInCopy(orig, file);
+            if (copy == null) {
+                return IntentionPreviewInfo.EMPTY;
+            }
+            copy.replace(StvnElementFactory.createMetadataEntry(project, replacementEntryText));
+            return IntentionPreviewInfo.DIFF;
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return false;
+        }
+    }
+
+    /**
+     * Intention and quick-fix that removes a duplicate or excess container element or map entry.
+     */
+    private static final class RemoveContainerElementQuickFix implements IntentionAction, LocalQuickFix {
+
+        private final SmartPsiElementPointer<PsiElement> elementPointer;
+        private final String label;
+
+        RemoveContainerElementQuickFix(PsiElement element, String label) {
+            this.elementPointer = SmartPointerManager.getInstance(element.getProject()).createSmartPsiElementPointer(element);
+            this.label = label;
+        }
+
+        @Override
+        public String getText() {
+            return label;
+        }
+
+        @Override
+        public String getName() {
+            return label;
+        }
+
+        @Override
+        public String getFamilyName() {
+            return label;
+        }
+
+        @Override
+        public boolean isAvailable(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            PsiElement elem = elementPointer.getElement();
+            return elem != null && elem.isValid();
+        }
+
+        @Override
+        public void invoke(Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            PsiElement elem = elementPointer.getElement();
+            if (elem == null || !elem.isValid()) {
+                return;
+            }
+            PsiFile targetFile = file != null ? file : elem.getContainingFile();
+            WriteCommandAction.runWriteCommandAction(
+                project,
+                label,
+                null,
+                () -> deleteElementCleanly(project, targetFile, elem),
+                targetFile
+            );
+        }
+
+        @Override
+        public void applyFix(Project project, ProblemDescriptor descriptor) {
+            PsiElement elem = elementPointer.getElement();
+            if (elem != null && elem.isValid()) {
+                deleteElementCleanly(project, elem.getContainingFile(), elem);
+            }
+        }
+
+        private static void deleteElementCleanly(
+            Project project,
+            @Nullable PsiFile file,
+            PsiElement elem
+        ) {
+            if (file != null) {
+                var doc = file.getViewProvider().getDocument();
+                if (doc != null) {
+                    CharSequence chars = doc.getCharsSequence();
+                    var range = elem.getTextRange();
+                    int delStart = range.getStartOffset();
+                    int delEnd = range.getEndOffset();
+                    int scanBack = delStart;
+                    while (scanBack > 0 && Character.isWhitespace(chars.charAt(scanBack - 1))) {
+                        scanBack--;
+                    }
+                    if (scanBack < delStart && scanBack > 0
+                            && chars.charAt(scanBack - 1) != '['
+                            && chars.charAt(scanBack - 1) != '{') {
+                        delStart = scanBack;
+                    } else {
+                        while (delEnd < chars.length() && (chars.charAt(delEnd) == ' ' || chars.charAt(delEnd) == '\t')) {
+                            delEnd++;
+                        }
+                    }
+                    doc.deleteString(delStart, delEnd);
+                    PsiDocumentManager.getInstance(project).commitDocument(doc);
+                    return;
+                }
+            }
+            if (elem.isValid()) {
+                elem.delete();
+            }
+        }
+
+        @Override
+        public IntentionPreviewInfo generatePreview(Project project, Editor editor, PsiFile file) {
+            PsiElement orig = elementPointer.getElement();
+            if (orig == null) {
+                return IntentionPreviewInfo.EMPTY;
+            }
+            PsiElement copy = PsiTreeUtil.findSameElementInCopy(orig, file);
+            if (copy == null) {
+                return IntentionPreviewInfo.EMPTY;
+            }
+            copy.delete();
             return IntentionPreviewInfo.DIFF;
         }
 

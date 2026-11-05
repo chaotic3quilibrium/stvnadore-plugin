@@ -54,23 +54,23 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
         assertEquals("Expected 5 unadorned nominal warnings (StrAlias, SeqAlias, SetAlias, MapAlias, and inner :String key)", 5, warnings.size());
         assertTrue(warnings.get(0).getDescription().contains("Nominal string type ':StrAlias'"));
         assertTrue("String alias must emit WARN_NOMINAL_STRING_UNADORNED tag",
-            warnings.get(0).getDescription().contains("[stvn-plugin:WARN_NOMINAL_STRING_UNADORNED]"));
+            warnings.get(0).getDescription().contains("[stvn-plugin:PW002-WARN_NOMINAL_STRING_UNADORNED]"));
 
         assertTrue(warnings.get(1).getDescription().contains("Nominal collection type ':SeqAlias'"));
         assertTrue("Seq alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
-            warnings.get(1).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
+            warnings.get(1).getDescription().contains("[stvn-plugin:PW001-WARN_NOMINAL_COLLECTION_UNADORNED]"));
 
         assertTrue(warnings.get(2).getDescription().contains("Nominal collection type ':SetAlias'"));
         assertTrue("Set alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
-            warnings.get(2).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
+            warnings.get(2).getDescription().contains("[stvn-plugin:PW001-WARN_NOMINAL_COLLECTION_UNADORNED]"));
 
         assertTrue(warnings.get(3).getDescription().contains("Nominal collection type ':MapAlias'"));
         assertTrue("Map alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
-            warnings.get(3).getDescription().contains("[stvn-plugin:WARN_NOMINAL_COLLECTION_UNADORNED]"));
+            warnings.get(3).getDescription().contains("[stvn-plugin:PW001-WARN_NOMINAL_COLLECTION_UNADORNED]"));
 
         assertTrue(warnings.get(4).getDescription().contains("Nominal string type ':String'"));
         assertTrue("Inner Map key :String must emit WARN_NOMINAL_STRING_UNADORNED tag",
-            warnings.get(4).getDescription().contains("[stvn-plugin:WARN_NOMINAL_STRING_UNADORNED]"));
+            warnings.get(4).getDescription().contains("[stvn-plugin:PW002-WARN_NOMINAL_STRING_UNADORNED]"));
     }
 
     public void testAllSixIntentionsAvailableOnSeq() {

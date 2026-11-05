@@ -3479,6 +3479,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      */
     private static @NotNull StvnValueComplianceResult evaluateValueCompliance(Value value, @Nullable SchemaType schemaType) {
         var rawResult = evaluateValueComplianceInternal(value, schemaType);
+        if (rawResult.isSatisfied()) {
+            var file = value.getContainingFile();
+            var range = value.getTextRange();
+            if (file != null && range != null) {
+                for (var diag : StvnCompiledDocumentCache.getSnapshot(file).diagnostics()) {
+                    if (diag.severity() == org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR
+                            && diag.startOffset() == range.getStartOffset()
+                            && diag.endOffset() == range.getEndOffset()) {
+                        rawResult = new StvnValueComplianceResult(
+                            false,
+                            "Violated",
+                            escapeHtmlBody(diag.message()),
+                            rawResult.evaluatedConstraints(),
+                            rawResult.validLexicalForms()
+                        );
+                        break;
+                    }
+                }
+            }
+        }
         if (schemaType == null || !isGoverningSchemaDegraded(value, schemaType)) {
             return rawResult;
         }

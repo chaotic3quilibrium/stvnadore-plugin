@@ -58,7 +58,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Single Diagnostic Highlight Invariant: exactly one error highlight must exist", 1, errorHighlights.size());
         var error = errorHighlights.get(0);
-        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited [stvn-plugin:ERR_PROHIBITED_FENCE_ARROW]", error.getDescription());
+        assertEquals("Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited [stvn-plugin:E026-ERR_PROHIBITED_FENCE_ARROW]", error.getDescription());
         assertFalse("Raw background annotator duplicate must be suppressed", error.getDescription().contains("STVN Syntax Error:"));
     }
 
@@ -383,7 +383,7 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Must report exactly 1 error highlight for unfenced block string (zero duplication)", 1, errorHighlights.size());
         var errorHighlight = errorHighlights.get(0);
-        assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:FENCE_DELIMITER_MISMATCH]"));
+        assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:E025-FENCE_DELIMITER_MISMATCH]"));
 
         int expectedStart = code.indexOf("\"\"\"");
         assertEquals("Error highlight must pin strictly to opening triple-quote delimiter [startOffset, startOffset + 3)",

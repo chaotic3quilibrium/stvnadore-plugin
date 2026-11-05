@@ -484,7 +484,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
 
         assertEquals("Expected exactly 1 inspection error on empty type constraint block", 1, errors.size());
-        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:E003-ERR_EMPTY_METADATA_BLOCK]",
             errors.get(0).getDescription());
     }
 
@@ -508,7 +508,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
 
         assertEquals("Expected exactly 1 inspection error on constraint block with comment only", 1, errors.size());
-        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:E003-ERR_EMPTY_METADATA_BLOCK]",
             errors.get(0).getDescription());
     }
 
@@ -576,7 +576,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
 
         assertEquals("Expected exactly 1 inspection error on empty constant constraint block", 1, errors.size());
-        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:ERR_EMPTY_METADATA_BLOCK]",
+        assertEquals("Empty type constraint block is invalid; remove '{}' or specify valid constraint facets [stvn-plugin:E003-ERR_EMPTY_METADATA_BLOCK]",
             errors.get(0).getDescription());
     }
 

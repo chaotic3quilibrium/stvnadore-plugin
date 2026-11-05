@@ -3,7 +3,6 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -14,7 +13,6 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
 
-import java.util.HashMap;
 import java.util.HashSet;
 
 /**
@@ -56,46 +54,8 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
             @Override
             public void visitMapLiteral(@NotNull MapLiteral mapLiteral) {
                 super.visitMapLiteral(mapLiteral);
-                var valueParent = PsiTreeUtil.getParentOfType(mapLiteral, Value.class);
-                if (valueParent == null) return;
-                var typeInfo = StvnTypeResolver.resolveBaseTypeInfo(valueParent);
-                if (typeInfo != null && isInvertibleMapSchema(typeInfo.getSchema())) {
-                    var seenKeys = new HashMap<String, PsiElement>();
-                    var seenValues = new HashMap<String, PsiElement>();
-                    var values = mapLiteral.getValueList();
-                    for (int i = 0; i + 1 < values.size(); i += 2) {
-                        var keyElem = values.get(i);
-                        var valElem = values.get(i + 1);
-                        var keyText = keyElem.getText();
-                        var valText = valElem.getText();
-
-                        if (seenKeys.containsKey(keyText)) {
-                            holder.registerProblem(
-                                keyElem,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Duplicate map key '" + keyText + "' is forbidden in map collection",
-                                    StvnDiagnosticCodes.ERR_DUPLICATE_MAP_KEY
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        } else {
-                            seenKeys.put(keyText, keyElem);
-                        }
-
-                        if (seenValues.containsKey(valText)) {
-                            holder.registerProblem(
-                                valElem,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Invertible map violates bidirectional uniqueness invariant: duplicate value '" + valText + "'",
-                                    StvnDiagnosticCodes.ERR_INVERTIBLE_MAP_DUPLICATE_VALUE
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        } else {
-                            seenValues.put(valText, valElem);
-                        }
-                    }
-                }
+                // Duplicate map keys (E017) and duplicate inverted map values (E018) are governed
+                // authoritatively by StvnCompiler / StvnExternalAnnotator with semantic value normalization.
             }
         };
     }

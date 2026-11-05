@@ -5864,7 +5864,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("Expected 0 compilation errors", 0, errors.size());
 
         var redundant = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && "Redundant variant tag [stvn-plugin:PW006-WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
         assertEquals("Expected exactly 1 warning on element 0 (#1 100) and 0 warnings on element 1 (#1 200)", 1, redundant.size());
     }
@@ -6649,6 +6649,213 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"))
             .toList();
         assertEquals("Expected WARN_NOMINAL_STRING_UNADORNED on inline :String in use_nested.json.stvn_i", 1, useNestedCapacityWarn.size());
+    }
+
+    public void testStage4GauntletMapDuplicateKeySetDuplicateAndBoundedBatchSeqUX() throws Exception {
+        var fixturePath = Paths.get(
+            getTestDataPath(),
+            "metadata",
+            "invalid",
+            "map_constraints",
+            "inv_map_duplicate_key_and_set_cardinality_stage4.stvn_i"
+        );
+        var contractPath = Paths.get(
+            getTestDataPath(),
+            "metadata",
+            "invalid",
+            "map_constraints",
+            "inv_map_duplicate_key_and_set_cardinality_stage4.contract.stvn_i"
+        );
+        assertTrue("Mirrored Stage 4 fixture must exist: " + fixturePath, Files.isRegularFile(fixturePath));
+        assertTrue("Mirrored Stage 4 contract must exist: " + contractPath, Files.isRegularFile(contractPath));
+
+        var expectations = parseErrorContract(contractPath, fixturePath.getFileName().toString());
+        assertEquals("Stage 4 contract must contain 3 expectations", 3, expectations.size());
+
+        myFixture.configureByFile("metadata/invalid/map_constraints/inv_map_duplicate_key_and_set_cardinality_stage4.stvn_i");
+        myFixture.enableInspections(
+            new org.stvnadore.plugin.validation.StvnMapStructuralInspection(),
+            new org.stvnadore.plugin.validation.StvnStringCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnStringCardinalityInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataFacetInspection()
+        );
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected exactly 3 non-duplicate ERROR highlights on Stage 4 gauntlet fixture: " + errors, 3, errors.size());
+
+        for (var exp : expectations) {
+            var expectedTag = "[stvn-core:" + exp.canonicalCode() + "-" + exp.symbolicId() + "]";
+            var matched = errors.stream()
+                .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
+                .findFirst();
+            assertTrue("Missing Stage 4 highlight at [" + exp.startOffset() + ", " + exp.endOffset() + "] for "
+                + expectedTag + "; actual=" + errors, matched.isPresent());
+            var desc = matched.get().getDescription();
+            assertNotNull(desc);
+            assertTrue("Expected unified tag " + expectedTag + " in '" + desc + "'", desc.contains(expectedTag));
+        }
+
+        // Verify :BoundedBatchSeq is NOT falsely marked as degraded
+        assertFalse(
+            ":BoundedBatchSeq has valid :defs constraints and must NOT be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(myFixture.getFile(), ":BoundedBatchSeq")
+        );
+
+        var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+        var fileText = myFixture.getFile().getText();
+        var batchSeqOffset = fileText.indexOf(":BoundedBatchSeq");
+        var batchSeqElem = myFixture.getFile().findElementAt(batchSeqOffset);
+        assertNotNull(batchSeqElem);
+        var batchSeqDocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), batchSeqElem, batchSeqOffset);
+        assertNotNull(batchSeqDocElem);
+        var batchSeqDoc = provider.generateDoc(batchSeqDocElem, batchSeqElem);
+        assertNotNull(batchSeqDoc);
+        assertFalse("Valid :BoundedBatchSeq hover card must NOT contain Degraded Schema Warning",
+            batchSeqDoc.contains("Degraded Schema Warning"));
+
+        // Verify hover on 4th element 40 in [10 20 30 40] reports Violated
+        var elem40Offset = fileText.indexOf("40]");
+        var elem40Psi = myFixture.getFile().findElementAt(elem40Offset);
+        assertNotNull(elem40Psi);
+        var elem40DocElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem40Psi, elem40Offset);
+        assertNotNull(elem40DocElem);
+        var elem40Doc = provider.generateDoc(elem40DocElem, elem40Psi);
+        assertNotNull(elem40Doc);
+        assertTrue("Hover on 4th element 40 exceeding #maxSize 3 must report Violated",
+            elem40Doc.contains("Violated"));
+
+        // Verify quick-fixes on duplicate set element, duplicate map key, and excess element 40
+        myFixture.getEditor().getCaretModel().moveToOffset(elem40Offset);
+        var excessActions = myFixture.getAvailableIntentions().stream()
+            .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+            .toList();
+        assertTrue("Expected 'Remove excess element' quick-fix on 40, got: " + excessActions,
+            excessActions.stream().anyMatch(t -> t.contains("Remove excess element '40' (exceeds #maxSize 3)")));
+        assertFalse("Must NOT offer scalar exemplar '0' on excess container element 40: " + excessActions,
+            excessActions.stream().anyMatch(t -> t.contains("Replace with exemplar value '0'")));
+    }
+
+    public void testStage5GauntletOverflowBoundsDiscreteFloatPrecisionAndUnderscoreLiteralUX() throws Exception {
+        var metaFixturePath = Paths.get(
+            getTestDataPath(),
+            "metadata",
+            "invalid",
+            "precision_and_overflow",
+            "inv_exact_float_precision_and_derived_maxsize_stage5.stvn_i"
+        );
+        var metaContractPath = Paths.get(
+            getTestDataPath(),
+            "metadata",
+            "invalid",
+            "precision_and_overflow",
+            "inv_exact_float_precision_and_derived_maxsize_stage5.contract.stvn_i"
+        );
+        var synFixturePath = Paths.get(
+            getTestDataPath(),
+            "syntax",
+            "invalid",
+            "inv_numeric_underscore_resilient_body_stage5.stvn_i"
+        );
+        var synContractPath = Paths.get(
+            getTestDataPath(),
+            "syntax",
+            "invalid",
+            "inv_numeric_underscore_resilient_body_stage5.contract.stvn_i"
+        );
+        assertTrue("Mirrored Stage 5 metadata fixture must exist", Files.isRegularFile(metaFixturePath));
+        assertTrue("Mirrored Stage 5 metadata contract must exist", Files.isRegularFile(metaContractPath));
+        assertTrue("Mirrored Stage 5 syntax fixture must exist", Files.isRegularFile(synFixturePath));
+        assertTrue("Mirrored Stage 5 syntax contract must exist", Files.isRegularFile(synContractPath));
+
+        // 1. Validate Stage 5 metadata precision & overflow fixture
+        var metaExpectations = parseErrorContract(metaContractPath, metaFixturePath.getFileName().toString());
+        assertEquals(4, metaExpectations.size());
+
+        myFixture.configureByFile("metadata/invalid/precision_and_overflow/inv_exact_float_precision_and_derived_maxsize_stage5.stvn_i");
+        myFixture.enableInspections(
+            new org.stvnadore.plugin.validation.StvnDiscreteIntervalInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataFacetInspection(),
+            new org.stvnadore.plugin.validation.StvnExcessiveExactFloatPrecisionInspection(),
+            new org.stvnadore.plugin.validation.StvnStringCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnStringCardinalityInspection()
+        );
+        myFixture.doHighlighting();
+
+        var floatPrecOffset = myFixture.getFile().getText().lastIndexOf("123.456");
+        myFixture.getEditor().getCaretModel().moveToOffset(floatPrecOffset + 1);
+        var floatActions = myFixture.getAvailableIntentions().stream()
+            .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+            .toList();
+        assertTrue("Expected rounding quick-fix '123.46' on 123.456, got: " + floatActions,
+            floatActions.stream().anyMatch(t -> t.contains("Round value to #maxSize 5 significant digits '123.46'")));
+        assertTrue("Expected truncation quick-fix '123.45' on 123.456, got: " + floatActions,
+            floatActions.stream().anyMatch(t -> t.contains("Truncate value to #maxSize 5 significant digits '123.45'")));
+
+        // Validate discrete #exact :Float #maxIncl quick-fix, #maxExcl 257 physical bound clamp, and PW005 warning
+        var stage5DefsUxText = """
+            {
+              :defs {
+                :BadUint8Bounds { #unsigned #size 8 #minIncl 0 #maxExcl 257 } :Int
+                :BadExactFloatBounds { #exact #maxSize 6 #minIncl 0.0 #maxIncl 100.0 } :Float
+                :HighPrec50Decimal { #exact #maxSize 50 } :Float
+              }
+              :type :HighPrec50Decimal
+              :body 1.5
+            }
+            """;
+        myFixture.configureByText("stage5_defs_ux.stvn", stage5DefsUxText);
+        var metaHighlights = myFixture.doHighlighting();
+
+        var maxInclFloatOffset = myFixture.getFile().getText().indexOf("#maxIncl 100.0");
+        myFixture.getEditor().getCaretModel().moveToOffset(maxInclFloatOffset + 2);
+        var boundActions = myFixture.getAvailableIntentions().stream()
+            .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+            .toList();
+        assertTrue("Expected '#maxIncl' -> '#maxExcl' quick-fix on discrete #exact :Float, got: " + boundActions,
+            boundActions.stream().anyMatch(t -> t.contains("Replace '#maxIncl' with half-open bound '#maxExcl'")));
+
+        var maxExcl257Offset = myFixture.getFile().getText().indexOf("#maxExcl 257");
+        myFixture.getEditor().getCaretModel().moveToOffset(maxExcl257Offset + 10);
+        var clampActions = myFixture.getAvailableIntentions().stream()
+            .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+            .toList();
+        assertTrue("Expected physical bound clamp quick-fix on #maxExcl 257, got: " + clampActions,
+            clampActions.stream().anyMatch(t -> t.contains("Clamp '#maxExcl' to maximum physical bound '256'")));
+
+        // Verify PW005 advisory warning on #maxSize 50 #exact :Float
+        assertTrue("Expected [stvn-plugin:PW005-WARN_EXCESSIVE_EXACT_PRECISION] warning on :HighPrec50Decimal",
+            metaHighlights.stream().anyMatch(h -> h.getSeverity() == HighlightSeverity.WARNING
+                && h.getDescription() != null
+                && h.getDescription().contains("[stvn-plugin:PW005-WARN_EXCESSIVE_EXACT_PRECISION]")));
+
+        // 2. Validate Stage 5 underscore resilient body fixture
+        var synExpectations = parseErrorContract(synContractPath, synFixturePath.getFileName().toString());
+        assertEquals(4, synExpectations.size());
+
+        myFixture.configureByFile("syntax/invalid/inv_numeric_underscore_resilient_body_stage5.stvn_i");
+        var synHighlights = myFixture.doHighlighting();
+        var synErrors = synHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected all 4 resilient body errors on Stage 5 syntax fixture: " + synErrors,
+            4, synErrors.size());
+        assertTrue("Expected [stvn-core:E002-ERR_INVALID_NUMERIC_LITERAL] on prohibited underscore literal",
+            synErrors.stream().anyMatch(h -> h.getDescription() != null
+                && h.getDescription().contains("[stvn-core:E002-ERR_INVALID_NUMERIC_LITERAL]")));
+        assertTrue("Expected [stvn-core:E012-CAPACITY_OVERFLOW] on resilient body sibling float literal",
+            synErrors.stream().anyMatch(h -> h.getDescription() != null
+                && h.getDescription().contains("[stvn-core:E012-CAPACITY_OVERFLOW]")));
+
+        var underscoreOffset = myFixture.getFile().getText().indexOf("0x1000_0000_0000_0000_0001");
+        myFixture.getEditor().getCaretModel().moveToOffset(underscoreOffset + 4);
+        var underscoreActions = myFixture.getAvailableIntentions().stream()
+            .map(com.intellij.codeInsight.intention.IntentionAction::getText)
+            .toList();
+        assertTrue("Expected underscore removal quick-fix on 0x1000_0000_0000_0000_0001, got: " + underscoreActions,
+            underscoreActions.stream().anyMatch(t ->
+                t.contains("Remove prohibited underscores from numeric literal '0x10000000000000000001'")));
     }
 }
 

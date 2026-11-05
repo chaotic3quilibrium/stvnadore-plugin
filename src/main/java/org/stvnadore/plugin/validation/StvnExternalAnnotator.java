@@ -367,7 +367,11 @@ public final class StvnExternalAnnotator
                 var line = Math.max(0, diag.line() - 1);
                 var col = Math.max(0, diag.column());
                 var diagnosticId = resolvePrimaryDiagnosticId(diag);
-                var diagMsg = StvnDiagnosticFormatter.formatCore(diag.message(), diagnosticId);
+                var diagMsg = StvnDiagnosticFormatter.formatCore(
+                    diag.message(),
+                    diag.canonicalCode().orElse(null),
+                    diagnosticId
+                );
                 var problem = wolf.convertToProblem(virtualFile, line, col, new String[]{diagMsg});
                 if (problem == null) {
                     var highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
@@ -388,7 +392,11 @@ public final class StvnExternalAnnotator
             } else if (!activeErrorDiagnostics.isEmpty()) {
                 var firstDiag = activeErrorDiagnostics.get(0);
                 var diagnosticId = resolvePrimaryDiagnosticId(firstDiag);
-                var diagMsg = StvnDiagnosticFormatter.formatCore(firstDiag.message(), diagnosticId);
+                var diagMsg = StvnDiagnosticFormatter.formatCore(
+                    firstDiag.message(),
+                    firstDiag.canonicalCode().orElse(null),
+                    diagnosticId
+                );
                 var highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
                     .range(new TextRange(0, 0))
                     .descriptionAndTooltip(diagMsg)
@@ -424,7 +432,8 @@ public final class StvnExternalAnnotator
                 .replace("<schema type>", "schema type")
                 .replace("<value keyword>", "variant keyword");
             var diagnosticId = resolvePrimaryDiagnosticId(diag);
-            var message = StvnDiagnosticFormatter.formatCore(rawMessage, diagnosticId);
+            var canonicalCode = diag.canonicalCode().orElse(null);
+            var message = StvnDiagnosticFormatter.formatCore(rawMessage, canonicalCode, diagnosticId);
             var severity = mapSeverity(diag.severity());
             var start = diag.startOffset();
             var end = diag.endOffset();
@@ -475,6 +484,7 @@ public final class StvnExternalAnnotator
                 }
                 message = StvnDiagnosticFormatter.formatCore(
                     "Duplicate map key detected: '" + rawKey + "'",
+                    canonicalCode,
                     DiagnosticBag.ERR_DUPLICATE_MAP_KEY
                 );
             }
@@ -490,6 +500,7 @@ public final class StvnExternalAnnotator
                             int missing = exp - got;
                             message = StvnDiagnosticFormatter.formatCore(
                                 "Tuple arity mismatch: Expected " + exp + " elements, got " + got + " (" + missing + " missing)",
+                                canonicalCode,
                                 DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH
                             );
                         }
@@ -499,7 +510,7 @@ public final class StvnExternalAnnotator
 
             // Unlocated cyclic dependency trace fallback (rotates trace to start at active file name)
             if ((start < 0 || end < start) && rawMessage.startsWith("Cycle detected: ")) {
-                renderCyclicIncludeDiagnostic(file, holder, severity, rawMessage, diagnosticId);
+                renderCyclicIncludeDiagnostic(file, holder, severity, rawMessage, canonicalCode, diagnosticId);
                 continue;
             }
 
@@ -528,7 +539,7 @@ public final class StvnExternalAnnotator
                         );
                         if (canonicalEmptyMsg != null) {
                             rawMessage = canonicalEmptyMsg;
-                            message = StvnDiagnosticFormatter.formatCore(rawMessage, diagnosticId);
+                            message = StvnDiagnosticFormatter.formatCore(rawMessage, canonicalCode, diagnosticId);
                         }
                     }
                 }
@@ -1071,10 +1082,11 @@ public final class StvnExternalAnnotator
         AnnotationHolder holder,
         HighlightSeverity severity,
         String rawMessage,
+        @Nullable String canonicalCode,
         String diagnosticId
     ) {
         String rotatedRaw = rotateCycleTrace(rawMessage, file.getName());
-        String formatted = StvnDiagnosticFormatter.formatCore(rotatedRaw, diagnosticId);
+        String formatted = StvnDiagnosticFormatter.formatCore(rotatedRaw, canonicalCode, diagnosticId);
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         boolean matched = false;
         for (var elem : includes) {

@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 @NullMarked
 public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformTestCase {
 
-    private static final Pattern DIAGNOSTIC_TAG_PATTERN = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_]+)\\]");
+    private static final Pattern DIAGNOSTIC_TAG_PATTERN = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_-]+)\\]");
 
     @Override
     protected void setUp() throws Exception {
@@ -81,7 +81,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
 
         assertEquals("Expected exactly 1 WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME highlight", 1, domainWarnings.size());
         assertTrue("Highlight must originate exclusively from stvn-plugin",
-            domainWarnings.get(0).getDescription().contains("[stvn-plugin:WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME]"));
+            domainWarnings.get(0).getDescription().contains("[stvn-plugin:W002-WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME]"));
         assertNoCoreHighlight("roots.stvn", highlights, "WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME");
         assertNoCoreHighlight("roots.stvn", highlights, "W002");
     }
@@ -128,7 +128,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             .toList();
 
         assertEquals("Expected exactly 1 ERR_DOCUMENT_KIND_MISMATCH on line 1 brace", 1, line1Errors.size());
-        assertTrue(line1Errors.get(0).getDescription().contains("[stvn-plugin:ERR_DOCUMENT_KIND_MISMATCH]"));
+        assertTrue(line1Errors.get(0).getDescription().contains("[stvn-plugin:E031-ERR_DOCUMENT_KIND_MISMATCH]"));
         assertNoCoreHighlight("schema.stvn_d", highlights, "ERR_DOCUMENT_KIND_MISMATCH");
         assertNoCoreHighlight("schema.stvn_d", highlights, "E031");
     }
@@ -229,14 +229,14 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             .filter(h -> "#SHORT".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on excluded enum subset variant '#SHORT'", 1, shortErrors.size());
-        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
+        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:E014-ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
 
         var constErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> "500".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on out-of-bounds #FALLBACK_CHANNEL value '500'", 1, constErrors.size());
-        assertTrue(constErrors.get(0).getDescription().contains("[stvn-plugin:ERR_CONSTANT_INTEGER_OVERFLOW]"));
+        assertTrue(constErrors.get(0).getDescription().contains("[stvn-plugin:E009-ERR_CONSTANT_INTEGER_OVERFLOW]"));
     }
 
     /**
@@ -245,7 +245,9 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {
         var coreHighlights = highlights.stream()
             .filter(h -> h.getDescription() != null)
-            .filter(h -> h.getDescription().contains("[stvn-core:" + code + "]"))
+            .filter(h -> h.getDescription().contains("[stvn-core:" + code + "]")
+                || h.getDescription().contains("[stvn-core:" + code + "-")
+                || (h.getDescription().contains("[stvn-core:") && h.getDescription().contains("-" + code + "]")))
             .toList();
         assertTrue(String.format("File '%s' must contain zero [stvn-core:%s] highlights, but found: %s",
             fileName, code, coreHighlights), coreHighlights.isEmpty());
