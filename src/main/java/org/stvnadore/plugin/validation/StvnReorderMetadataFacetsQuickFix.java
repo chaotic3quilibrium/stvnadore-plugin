@@ -1,15 +1,20 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.StvnTypes;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,13 +25,13 @@ import java.util.List;
  * the canonical 5-Tier Decimal Hierarchy (§ 6.1).
  */
 @NullMarked
-public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
+public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, IntentionAction {
 
     private final MetadataMap metadataMap;
 
     /**
      * Constructs a reordering quick-fix for the specified metadata map.
-      *
+     *
      * @param metadataMap the metadata map containing unordered facets
      */
     public StvnReorderMetadataFacetsQuickFix(MetadataMap metadataMap) {
@@ -34,8 +39,30 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
     }
 
     @Override
+    public @NotNull String getText() {
+        return getFamilyName();
+    }
+
+    @Override
     public @NotNull String getFamilyName() {
         return "Reorder metadata facets to canonical 5-tier order";
+    }
+
+    @Override
+    public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+        return metadataMap.isValid();
+    }
+
+    @Override
+    public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+        if (metadataMap.isValid()) {
+            reorderMetadataMap(project, metadataMap);
+        }
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+        return true;
     }
 
     @Override
@@ -49,6 +76,13 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
             reorderMetadataMap(project, targetMap);
         }
     }
+
+    private record FacetWithComment(
+        MetadataEntry entry,
+        int rank,
+        String entryText,
+        @Nullable String sameLineComment
+    ) {}
 
     /**
      * Sorts the entries of the given metadata map in-place into the canonical 5-tier order.
@@ -68,14 +102,43 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix {
             }
         }
 
-        List<MetadataEntry> sorted = new ArrayList<>(entries);
-        sorted.sort(Comparator.comparingInt(e -> StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(e))));
-
-        StringBuilder sb = new StringBuilder("{");
-        for (MetadataEntry entry : sorted) {
-            sb.append(" ").append(entry.getText().trim());
+        List<FacetWithComment> items = new ArrayList<>(entries.size());
+        boolean hasComments = map.getNode().findChildByType(StvnTypes.COMMENT) != null;
+        for (MetadataEntry entry : entries) {
+            String trailingComment = StvnReorderMetaEntriesQuickFix.extractSameLineTrailingComment(entry.getNode());
+            if (trailingComment != null) {
+                hasComments = true;
+            }
+            int rank = StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(entry));
+            items.add(new FacetWithComment(entry, rank, entry.getText().trim(), trailingComment));
         }
-        sb.append(" }");
+
+        items.sort(Comparator.comparingInt(FacetWithComment::rank));
+
+        String rawMapText = map.getText();
+        boolean multiLine = hasComments;
+        String entryIndent = StvnReorderMetaEntriesQuickFix.detectEntryIndent(rawMapText, "      ");
+        String closingIndent = StvnReorderMetaEntriesQuickFix.detectClosingBraceIndent(rawMapText, "    ");
+        List<String> leadingComments = StvnReorderMetaEntriesQuickFix.extractStandaloneCommentsBeforeFirstEntry(map.getNode());
+
+        StringBuilder sb = new StringBuilder(multiLine ? "{\n" : "{");
+        if (multiLine) {
+            for (String leadComment : leadingComments) {
+                sb.append(entryIndent).append(leadComment).append("\n");
+            }
+        }
+        for (FacetWithComment item : items) {
+            if (multiLine) {
+                sb.append(entryIndent).append(item.entryText());
+                if (item.sameLineComment() != null) {
+                    sb.append(item.sameLineComment());
+                }
+                sb.append("\n");
+            } else {
+                sb.append(" ").append(item.entryText());
+            }
+        }
+        sb.append(multiLine ? closingIndent + "}" : " }");
 
         MetadataMap newMap = StvnElementFactory.createMetadataMap(project, sb.toString());
         map.replace(newMap);

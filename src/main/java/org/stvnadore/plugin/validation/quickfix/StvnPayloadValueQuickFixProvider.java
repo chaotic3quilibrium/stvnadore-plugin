@@ -289,6 +289,21 @@ public final class StvnPayloadValueQuickFixProvider {
                         }
                     }
                 }
+                if (value.getIntegerLiteral() != null) {
+                    String rawIntText = value.getIntegerLiteral().getText().trim();
+                    String appended = rawIntText + ".0";
+                    if (isFloatWithinBounds(appended, minIncl, minExcl, maxIncl, maxExcl)) {
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Append '.0' to integer value '" + appended + "'",
+                                "STVN Float Literal Conversion",
+                                appended,
+                                null
+                            )
+                        );
+                    }
+                }
                 addFloatClampFixIfOutOfBounds(fixes, value, rawValueText, minIncl, minExcl, maxIncl, maxExcl);
                 String exemplar = StvnExemplarValueGenerator.generateFloatExemplar(minIncl, minExcl, maxIncl, maxExcl);
                 if (!exemplar.equals(rawValueText)) {
@@ -695,6 +710,32 @@ public final class StvnPayloadValueQuickFixProvider {
                 )
             );
         }
+    }
+
+    private static boolean isFloatWithinBounds(
+        String rawValueText,
+        @Nullable Double minIncl,
+        @Nullable Double minExcl,
+        @Nullable Double maxIncl,
+        @Nullable Double maxExcl
+    ) {
+        Double actual = parseDoubleOrNull(rawValueText);
+        if (actual == null || Double.isNaN(actual)) {
+            return false;
+        }
+        if (minIncl != null && actual < minIncl) {
+            return false;
+        }
+        if (minExcl != null && actual <= minExcl) {
+            return false;
+        }
+        if (maxIncl != null && actual > maxIncl) {
+            return false;
+        }
+        if (maxExcl != null && actual >= maxExcl) {
+            return false;
+        }
+        return true;
     }
 
     private static void addFloatClampFixIfOutOfBounds(

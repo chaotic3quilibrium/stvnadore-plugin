@@ -815,6 +815,45 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Missing temporal mode/scale quick-fixes (ERR_MISSING_TEMPORAL_FACET)
+                if (DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING.equals(diagnosticId)
+                        || rawMessage.contains("requires explicit mode facet")
+                        || rawMessage.contains("requires a scale facet")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var schemaType = PsiTreeUtil.getParentOfType(targetElem, SchemaType.class, false);
+                    if (schemaType != null) {
+                        var typeText = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
+                        if (StvnVocabulary.TYPE_DATE_TIME.equals(typeText)) {
+                            for (var fix : StvnTemporalModeInspection.createDateTimeModeQuickFixes(schemaType)) {
+                                annotationBuilder = annotationBuilder.withFix(fix);
+                            }
+                        } else if (StvnVocabulary.TYPE_TIME_EPOCH.equals(typeText)) {
+                            for (var fix : StvnTemporalModeInspection.createTimeEpochScaleQuickFixes(schemaType)) {
+                                annotationBuilder = annotationBuilder.withFix(fix);
+                            }
+                        }
+                    }
+                }
+
+                // Metadata facet and ':meta' entry order quick-fixes (ERR_FACET_ORDER_VIOLATION)
+                if (DiagnosticBag.ERR_FACET_ORDER_VIOLATION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION.equals(diagnosticId)
+                        || rawMessage.contains("5-tier hierarchy")
+                        || rawMessage.contains("canonical order (#name, #domain, #kind)")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var metaBlock = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetaBlock.class, false);
+                    if (metaBlock != null) {
+                        annotationBuilder = annotationBuilder.withFix(new StvnReorderMetaEntriesQuickFix(metaBlock));
+                    } else {
+                        var metaMap = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetadataMap.class, false);
+                        if (metaMap != null) {
+                            annotationBuilder = annotationBuilder.withFix(new StvnReorderMetadataFacetsQuickFix(metaMap));
+                        }
+                    }
+                }
+
                 // Reserved package namespace quick-fix (E037)
                 if (DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)

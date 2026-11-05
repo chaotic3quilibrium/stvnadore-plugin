@@ -223,4 +223,33 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
         myFixture.launchAction(constClampFix);
         assertTrue(myFixture.getEditor().getDocument().getText().contains("#MAX_BYTE { #unsigned #size 8 #maxExcl 100 } :Int 99"));
     }
+
+    public void testFloatSlotIntegerLiteralOffersAppendPointZeroAsFirstQuickFix() {
+        var text = """
+            {
+              :defs {
+                :ExactLatencyMs { #exact #maxSize 8 #minIncl 0.0 #maxExcl 500.0 } :Float
+              }
+              :type :ExactLatencyMs
+              :body 25<caret>0
+            }
+            """;
+        myFixture.configureByText("float_int_append.stvn", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> quickFixes = myFixture.getAllQuickFixes();
+        String expectedAppendLabel = "Append '.0' to integer value '250.0'";
+        IntentionAction appendFix = quickFixes.stream()
+            .filter(a -> expectedAppendLabel.equals(a.getText()))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Expected '" + expectedAppendLabel + "', found: "
+            + quickFixes.stream().map(IntentionAction::getText).toList(), appendFix);
+        assertEquals("Expected Append '.0' quick-fix to be offered ahead of exemplar replacement",
+            expectedAppendLabel, quickFixes.get(0).getText());
+
+        myFixture.launchAction(appendFix);
+        assertTrue("Expected integer 250 to be converted to 250.0",
+            myFixture.getEditor().getDocument().getText().contains(":body 250.0"));
+    }
 }

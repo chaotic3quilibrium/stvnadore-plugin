@@ -1,12 +1,15 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInspection.LocalInspectionTool;
+import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
+import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.*;
 
 import java.util.ArrayList;
@@ -268,13 +271,21 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
 
                 var text = vkw.getText();
                 if (subset.rootVariants().contains(text) && !subset.containsVariant(text)) {
+                    var msg = StvnDiagnosticFormatter.formatPlugin(
+                        "Payload variant '" + text + "' is not a member of active enum subset '" + subset.name() + "'",
+                        StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION
+                    );
+                    var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                        value,
+                        StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION,
+                        msg,
+                        Clock.systemDefaultZone()
+                    ).toArray(LocalQuickFix.EMPTY_ARRAY);
                     holder.registerProblem(
                         vkw,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Payload variant '" + text + "' is not a member of active enum subset '" + subset.name() + "'",
-                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR
+                        msg,
+                        ProblemHighlightType.GENERIC_ERROR,
+                        fixes
                     );
                 }
             }

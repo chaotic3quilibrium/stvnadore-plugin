@@ -81,4 +81,26 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
                 }
                 """);
     }
+
+    public void testEnumSubsetExcludedPayloadVariantOffersReplaceWithExemplarQuickFix() {
+        var text = """
+                {
+                  :defs {
+                    :TradeSide :Enum[#BUY #SELL #SHORT #COVER]
+                    :LongOnlySide { #filterIncl [#BUY #SELL] } :TradeSide
+                  }
+                  :type :LongOnlySide
+                  :body #SH<caret>ORT
+                }
+                """;
+        myFixture.configureByText("enum_subset_exemplar_fix.stvn", text);
+        myFixture.doHighlighting();
+
+        var actions = myFixture.filterAvailableIntentions("Replace with exemplar value '#BUY'");
+        assertFalse("Expected \"Replace with exemplar value '#BUY'\" quick-fix on #SHORT", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        assertTrue("Expected #SHORT to be replaced with #BUY",
+            myFixture.getEditor().getDocument().getText().contains(":body #BUY"));
+    }
 }

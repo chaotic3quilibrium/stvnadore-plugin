@@ -1,12 +1,15 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -141,7 +144,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_MS)
+                    createTimeEpochScaleQuickFixes(schemaType)
                 );
             }
         } else if (StvnVocabulary.TYPE_DATE_TIME.equals(typeText)) {
@@ -184,13 +187,30 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_OFFSET)
+                    createDateTimeModeQuickFixes(schemaType)
                 );
             }
         }
     }
 
-    private static final class AddDefaultTemporalFacetQuickFix implements LocalQuickFix {
+    static AddDefaultTemporalFacetQuickFix @NotNull [] createTimeEpochScaleQuickFixes(@NotNull SchemaType schemaType) {
+        return new AddDefaultTemporalFacetQuickFix[] {
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_MS),
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_S),
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_US),
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_SCALE_NS)
+        };
+    }
+
+    static AddDefaultTemporalFacetQuickFix @NotNull [] createDateTimeModeQuickFixes(@NotNull SchemaType schemaType) {
+        return new AddDefaultTemporalFacetQuickFix[] {
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_OFFSET),
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_ZONED),
+            new AddDefaultTemporalFacetQuickFix(schemaType, StvnVocabulary.FACET_KW_AUDITED)
+        };
+    }
+
+    static final class AddDefaultTemporalFacetQuickFix implements LocalQuickFix, IntentionAction {
         private final SchemaType schemaType;
         private final String facetText;
 
@@ -200,14 +220,45 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
         }
 
         @Override
+        public @NotNull String getText() {
+            return getFamilyName();
+        }
+
+        @Override
         public @NotNull String getFamilyName() {
             return "Add temporal facet '" + facetText + "'";
         }
 
         @Override
+        public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            return schemaType.isValid();
+        }
+
+        @Override
+        public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            applyTemporalFacet(project);
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return true;
+        }
+
+        @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!schemaType.isValid()) return;
-            var existingMeta = schemaType.getMetadataMap();
+            applyTemporalFacet(project);
+        }
+
+        private void applyTemporalFacet(@NotNull Project project) {
+            if (!schemaType.isValid()) {
+                return;
+            }
+            MetadataMap existingMeta = schemaType.getMetadataMap();
+            if (existingMeta == null && schemaType.getParent() instanceof TypeDefinition td) {
+                existingMeta = td.getMetadataMap();
+            } else if (existingMeta == null && schemaType.getParent() instanceof ConstantDefinition cd) {
+                existingMeta = cd.getMetadataMap();
+            }
             if (existingMeta != null) {
                 var entry = StvnElementFactory.createMetadataEntry(project, facetText);
                 var entries = existingMeta.getMetadataEntryList();
@@ -216,6 +267,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                 } else {
                     existingMeta.add(entry);
                 }
+                StvnReorderMetadataFacetsQuickFix.reorderMetadataMap(project, existingMeta);
             } else {
                 var newMeta = StvnElementFactory.createMetadataMap(project, facetText);
                 schemaType.addBefore(newMeta, schemaType.getFirstChild());

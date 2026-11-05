@@ -196,4 +196,78 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             .toList();
         assertTrue("Canonical 5-tier order { #size 32 #equatable #TRUE } must produce zero errors", errors.isEmpty());
     }
+
+    public void testOutOfOrderMetaEntriesWarningAndQuickFixWithComments() {
+        var text = """
+            {
+              :meta {
+                #kind #DEFS_INCLUDE   // Kind comment
+                #name "gauntlet_v2"   // Name comment
+                #domain "core_test"   // Domain comment
+              }
+              :defs {
+                :Port :Int
+              }
+            }
+            """;
+        myFixture.configureByText("gauntlet_v2.core_test.stvn_di", text);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("canonical order (#name, #domain, #kind)"))
+            .toList();
+        assertEquals("Expected 2 warnings on out-of-order :meta entries (#name and #domain after #kind)", 2, warnings.size());
+
+        int offset = text.indexOf("#name");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder ':meta' entries to canonical order (#name, #domain, #kind)");
+        assertFalse("Expected ':meta' reorder quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        var expectedMeta = """
+              :meta {
+                #name "gauntlet_v2"   // Name comment
+                #domain "core_test"   // Domain comment
+                #kind #DEFS_INCLUDE   // Kind comment
+              }
+            """.stripTrailing();
+        assertTrue("Expected canonical :meta order with preserved trailing comments:\n" + result,
+            result.contains(expectedMeta));
+    }
+
+    public void testMultilineMetadataMapReorderingPreservesTrailingComments() {
+        var text = """
+            {
+              :defs {
+                :LedgerChannel {
+                  #minIncl 1024   // Tier 1.4
+                  #size 16        // Tier 1.3
+                  #unsigned       // Tier 1.1
+                } :Int
+              }
+              :type :LedgerChannel
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("multiline_facets_comments.stvn", text);
+        myFixture.doHighlighting();
+
+        int offset = text.indexOf("#size");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
+        assertFalse("Expected facet reorder quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        var expectedMap = """
+                :LedgerChannel {
+                  #unsigned       // Tier 1.1
+                  #size 16        // Tier 1.3
+                  #minIncl 1024   // Tier 1.4
+                } :Int
+            """.stripTrailing();
+        assertTrue("Expected multi-line facet order with preserved trailing comments:\n" + result,
+            result.contains(expectedMap));
+    }
 }

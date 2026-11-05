@@ -216,4 +216,48 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         assertTrue("Expected healed definition ':ConflictedEpoch { #ms } :TimeEpoch', got:\n" + finalResult,
             finalResult.contains(":ConflictedEpoch { #ms } :TimeEpoch"));
     }
+
+    public void testAllThreeDateTimeModeQuickFixesAndAllFourTimeEpochScaleQuickFixesOffered() {
+        var dtText = """
+            {
+              :defs {
+                :AuditClock { #equatable #TRUE } :Date<caret>Time
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        myFixture.configureByText("all_dt_modes.stvn", dtText);
+        myFixture.doHighlighting();
+
+        assertFalse("Expected '#offset' quick-fix", myFixture.filterAvailableIntentions("Add temporal facet '#offset'").isEmpty());
+        assertFalse("Expected '#zoned' quick-fix", myFixture.filterAvailableIntentions("Add temporal facet '#zoned'").isEmpty());
+        var auditedFixes = myFixture.filterAvailableIntentions("Add temporal facet '#audited'");
+        assertFalse("Expected '#audited' quick-fix", auditedFixes.isEmpty());
+        myFixture.launchAction(auditedFixes.get(0));
+        assertTrue("Adding #audited to existing { #equatable #TRUE } must sort to canonical 5-tier order { #audited #equatable #TRUE }:\n"
+            + myFixture.getEditor().getDocument().getText(),
+            myFixture.getEditor().getDocument().getText().contains(":AuditClock { #audited #equatable #TRUE } :DateTime"));
+
+        var epText = """
+            {
+              :defs {
+                :RawTicks :Time<caret>Epoch
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        myFixture.configureByText("all_epoch_scales.stvn", epText);
+        myFixture.doHighlighting();
+
+        assertFalse("Expected '#ms' quick-fix", myFixture.filterAvailableIntentions("Add temporal facet '#ms'").isEmpty());
+        assertFalse("Expected '#s' quick-fix", myFixture.filterAvailableIntentions("Add temporal facet '#s'").isEmpty());
+        assertFalse("Expected '#us' quick-fix", myFixture.filterAvailableIntentions("Add temporal facet '#us'").isEmpty());
+        var nsFixes = myFixture.filterAvailableIntentions("Add temporal facet '#ns'");
+        assertFalse("Expected '#ns' quick-fix", nsFixes.isEmpty());
+        myFixture.launchAction(nsFixes.get(0));
+        assertTrue("Expected #ns to be added to :RawTicks",
+            myFixture.getEditor().getDocument().getText().contains("{ #ns } :TimeEpoch"));
+    }
 }

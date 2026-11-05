@@ -199,6 +199,47 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     }
 
     /**
+     * Verifies that excluded enum subset payload variants and #CONST values under disordered
+     * parent facets each produce exactly ONE error highlight without core/plugin duplication.
+     */
+    public void testEnumSubsetExcludedPayloadAndDisorderedParentConstBoundHaveZeroDuplicates() {
+        var content = """
+            {
+              :defs {
+                :LedgerChannel {
+                  #minIncl 1024
+                  #size 16
+                  #unsigned
+                } :Int
+                #FALLBACK_CHANNEL :LedgerChannel 500
+                :TradeSide :Enum[#BUY #SELL #SHORT #COVER]
+                :LongOnlySide { #filterIncl [#BUY #SELL] } :TradeSide
+              }
+              :type :LongOnlySide
+              :body #SHORT
+            }
+            """;
+        myFixture.configureByText("gauntlet_v2_dedup.stvn", content);
+        var highlights = myFixture.doHighlighting();
+
+        assertZeroDuplicateDiagnostics("gauntlet_v2_dedup.stvn", highlights);
+
+        var shortErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "#SHORT".equals(h.getText()))
+            .toList();
+        assertEquals("Expected exactly 1 error highlight on excluded enum subset variant '#SHORT'", 1, shortErrors.size());
+        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
+
+        var constErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "500".equals(h.getText()))
+            .toList();
+        assertEquals("Expected exactly 1 error highlight on out-of-bounds #FALLBACK_CHANNEL value '500'", 1, constErrors.size());
+        assertTrue(constErrors.get(0).getDescription().contains("[stvn-plugin:ERR_CONSTANT_INTEGER_OVERFLOW]"));
+    }
+
+    /**
      * Asserts that zero [stvn-core:...] highlights exist for the specified diagnostic code.
      */
     private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {

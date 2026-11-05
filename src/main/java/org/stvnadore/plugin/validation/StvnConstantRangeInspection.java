@@ -7,8 +7,10 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
 import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -18,6 +20,7 @@ import org.stvnadore.psi.Visitor;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Map;
 
 /**
  * Validates that integer and continuous floating-point literals assigned to typed constants
@@ -100,19 +103,69 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     }
                 }
 
+                Map<String, String> lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+                if (constDef.getMetadataMap() != null) {
+                    for (var entry : constDef.getMetadataMap().getMetadataEntryList()) {
+                        String kw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
+                        String valText = entry.getText().trim().substring(kw.length()).trim();
+                        lineageMeta.put(kw, valText.isEmpty() ? "#true" : valText);
+                    }
+                }
+                if ("#true".equals(lineageMeta.get(StvnVocabulary.FACET_KW_UNSIGNED))) {
+                    isUnsigned = true;
+                }
+                if (rawBitWidth == null && lineageMeta.containsKey(StvnVocabulary.FACET_KW_SIZE)) {
+                    rawBitWidth = StvnPsiLiteralEvaluator.parseBigInteger(lineageMeta.get(StvnVocabulary.FACET_KW_SIZE)).orElse(null);
+                }
+
                 if (isEpoch) {
                     if (rawBitWidth == null) {
                         rawBitWidth = BigInteger.valueOf("ns".equals(epochScale) ? 128L : 64L);
                     }
                 }
 
-                // Continuous float evaluation branch
+                // Continuous and exact float evaluation branch
                 if (isFloat) {
-                    if (isExact) {
-                        return; // Discrete exact float has arbitrary capacity; governed by #maxSize
-                    }
                     if (value.getFloatLiteral() == null) {
                         return;
+                    }
+                    var litText = value.getFloatLiteral().getText();
+                    var floatValOpt = StvnPsiLiteralEvaluator.parseBigDecimal(litText);
+                    if (floatValOpt.isEmpty()) {
+                        return;
+                    }
+                    BigDecimal floatVal = floatValOpt.get();
+
+                    BigDecimal explicitMinIncl = parseDecimalOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+                    BigDecimal explicitMinExcl = parseDecimalOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
+                    BigDecimal explicitMaxIncl = parseDecimalOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MAX_INCL));
+                    BigDecimal explicitMaxExcl = parseDecimalOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+                    if ((explicitMinIncl != null && floatVal.compareTo(explicitMinIncl) < 0)
+                            || (explicitMinExcl != null && floatVal.compareTo(explicitMinExcl) <= 0)
+                            || (explicitMaxIncl != null && floatVal.compareTo(explicitMaxIncl) > 0)
+                            || (explicitMaxExcl != null && floatVal.compareTo(explicitMaxExcl) >= 0)) {
+                        String constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
+                        String msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + constName + "): Float literal " + litText + " violates explicit range bounds on " + baseType,
+                            StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value,
+                            StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW,
+                            msg,
+                            Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
+                        holder.registerProblem(
+                            value.getFloatLiteral(),
+                            msg,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
+                        );
+                        return;
+                    }
+
+                    if (isExact) {
+                        return; // Discrete exact float has arbitrary capacity; governed by #maxSize
                     }
                     if (rawBitWidth != null
                         && !rawBitWidth.equals(BigInteger.valueOf(32L))
@@ -122,13 +175,6 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     int floatBits = (rawBitWidth != null && rawBitWidth.intValue() == 32) ? 32 : 64;
                     BigDecimal minBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MIN : StvnVocabulary.FLOAT64_MIN;
                     BigDecimal maxBound = (floatBits == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
-
-                    var litText = value.getFloatLiteral().getText();
-                    var floatValOpt = StvnPsiLiteralEvaluator.parseBigDecimal(litText);
-                    if (floatValOpt.isEmpty()) {
-                        return;
-                    }
-                    BigDecimal floatVal = floatValOpt.get();
 
                     if (floatVal.compareTo(minBound) < 0 || floatVal.compareTo(maxBound) > 0) {
                         String targetType = (rawBitWidth != null) ? "{ #size " + rawBitWidth + " } " + cleanType : cleanType;
@@ -156,16 +202,23 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                     return;
                 }
 
-                if (rawBitWidth == null || rawBitWidth.compareTo(BigInteger.ONE) < 0) {
-                    return;
-                }
-
                 var litText = value.getIntegerLiteral().getText();
                 var valOpt = StvnPsiLiteralEvaluator.parseBigInteger(litText);
                 if (valOpt.isEmpty()) {
                     return;
                 }
                 BigInteger val = valOpt.get();
+
+                BigInteger explicitMinIncl = parseIntOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+                BigInteger explicitMaxExcl = parseIntOrNull(lineageMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+
+                if (rawBitWidth == null || rawBitWidth.compareTo(BigInteger.ONE) < 0) {
+                    if ((explicitMinIncl != null && val.compareTo(explicitMinIncl) < 0)
+                            || (explicitMaxExcl != null && val.compareTo(explicitMaxExcl) >= 0)) {
+                        registerExplicitIntBoundViolation(holder, constDef, value, val, explicitMinIncl, explicitMaxExcl, baseType);
+                    }
+                    return;
+                }
 
                 if (rawBitWidth.compareTo(BigInteger.valueOf(StvnPsiLiteralEvaluator.MAX_EAGER_SHIFT_BIT_WIDTH)) <= 0) {
                     int bitWidth = rawBitWidth.intValueExact();
@@ -191,6 +244,11 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             fixes
                         );
+                        return;
+                    }
+                    if ((explicitMinIncl != null && val.compareTo(explicitMinIncl) < 0)
+                            || (explicitMaxExcl != null && val.compareTo(explicitMaxExcl) >= 0)) {
+                        registerExplicitIntBoundViolation(holder, constDef, value, val, explicitMinIncl, explicitMaxExcl, baseType);
                     }
                 } else {
                     boolean outOfRange = isUnsigned
@@ -216,9 +274,61 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             fixes
                         );
+                        return;
+                    }
+                    if ((explicitMinIncl != null && val.compareTo(explicitMinIncl) < 0)
+                            || (explicitMaxExcl != null && val.compareTo(explicitMaxExcl) >= 0)) {
+                        registerExplicitIntBoundViolation(holder, constDef, value, val, explicitMinIncl, explicitMaxExcl, baseType);
                     }
                 }
             }
         };
+    }
+
+    private static void registerExplicitIntBoundViolation(
+            @NotNull ProblemsHolder holder,
+            @NotNull ConstantDefinition constDef,
+            @NotNull org.stvnadore.psi.Value value,
+            @NotNull BigInteger val,
+            @Nullable BigInteger minIncl,
+            @Nullable BigInteger maxExcl,
+            @NotNull String baseType
+    ) {
+        if (value.getIntegerLiteral() == null) {
+            return;
+        }
+        String constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
+        String lowerStr = minIncl != null ? minIncl.toString() : "-inf";
+        String upperStr = maxExcl != null ? maxExcl.toString() : "+inf";
+        String msg = StvnDiagnosticFormatter.formatPlugin(
+            "Constraint violation (" + constName + "): Value " + val + " is outside allowable range [" + lowerStr + ", " + upperStr + ") for " + baseType,
+            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+        );
+        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+            value,
+            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW,
+            msg,
+            Clock.systemDefaultZone()
+        ).toArray(LocalQuickFix.EMPTY_ARRAY);
+        holder.registerProblem(
+            value.getIntegerLiteral(),
+            msg,
+            ProblemHighlightType.GENERIC_ERROR,
+            fixes
+        );
+    }
+
+    private static @Nullable BigInteger parseIntOrNull(@Nullable String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return StvnPsiLiteralEvaluator.parseBigInteger(text.trim()).orElse(null);
+    }
+
+    private static @Nullable BigDecimal parseDecimalOrNull(@Nullable String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return StvnPsiLiteralEvaluator.parseBigDecimal(text.trim()).orElse(null);
     }
 }

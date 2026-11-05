@@ -908,4 +908,58 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             settings.getState().reformatDelegationMode = previousMode;
         }
     }
+
+    public void testAuthoredMultilineParameterizedConstructorsPreservedAtDepthFifteen() {
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        var input = """
+            {
+              :defs {
+                :SingleLineWrappedTuple { #maxSize 10 } :Seq(:Tuple(
+                  { #minSize 1 } :String
+                  { #unsigned } :Int
+                ))
+                :MultilineContainers :Map(
+                  :String // key comment
+                  :Option(
+                    :Either(
+                      :String
+                      :Seq(
+                        :Set(
+                          :Int // leaf element comment
+                        )
+                      )
+                    )
+                  )
+                )
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("multiline_ctors_psi.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            var psiFormatted = psiFile.getText();
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("multiline_ctors_core.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            var coreFormatted = coreFile.getText();
+
+            assertEquals("PSI_STRUCTURE_PRESERVING and CORE_SOURCE_FORMATTER must produce identical output on multi-line parameterized constructors",
+                coreFormatted, psiFormatted);
+            assertTrue("Single-line wrapper around multi-line :Tuple must remain inline ':Seq(:Tuple(':\n" + psiFormatted,
+                psiFormatted.contains(":SingleLineWrappedTuple { #maxSize 10 } :Seq(:Tuple(\n"));
+            assertTrue("Authored multi-line :Map/:Option/:Either/:Seq/:Set must preserve multi-line structure and trailing comments:\n" + psiFormatted,
+                psiFormatted.contains(":MultilineContainers :Map(\n      :String // key comment\n      :Option(\n        :Either(\n"));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
+    }
 }

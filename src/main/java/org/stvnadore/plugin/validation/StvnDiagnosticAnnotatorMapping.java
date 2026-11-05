@@ -354,6 +354,45 @@ public final class StvnDiagnosticAnnotatorMapping {
         var canon = diag.canonicalCode().orElse(null);
         var err = diag.errorCode().orElse(null);
 
+        if (DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(sym)
+                || "E012".equals(canon)
+                || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(err)) {
+            if (message.contains("not permitted in enum subset")) {
+                int offset = diag.startOffset();
+                if (offset >= 0 && offset < file.getTextLength()) {
+                    var elem = file.findElementAt(offset);
+                    var vkw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ValueKeyword.class, false);
+                    if (vkw != null && com.intellij.psi.util.PsiTreeUtil.getParentOfType(vkw, org.stvnadore.psi.ConstantDefinition.class) == null) {
+                        var ref = vkw.getReference();
+                        if (ref == null || !(ref.resolve() instanceof org.stvnadore.psi.ConstantDefinition)) {
+                            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                                return true;
+                            }
+                            return isInspectionActive(file, "StvnEnumSubset");
+                        }
+                    }
+                }
+            }
+            if (message.contains("is outside allowable range")
+                    || message.contains("Value must be greater than")
+                    || message.contains("Value must be strictly")
+                    || message.contains("Value must be less than")) {
+                int offset = diag.startOffset();
+                if (offset >= 0 && offset < file.getTextLength()) {
+                    var elem = file.findElementAt(offset);
+                    var constDef = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ConstantDefinition.class);
+                    var metaMap = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetadataMap.class);
+                    if (constDef != null && metaMap == null && constDef.getValue() != null
+                            && com.intellij.psi.util.PsiTreeUtil.isAncestor(constDef.getValue(), elem, false)) {
+                        if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                            return true;
+                        }
+                        return isInspectionActive(file, "StvnConstantRange");
+                    }
+                }
+            }
+        }
+
         if ((sym != null && isExplicitlyUngovernedSymbolicId(sym))
                 || (canon != null && isExplicitlyUngovernedSymbolicId(canon))
                 || (err != null && isExplicitlyUngovernedSymbolicId(err))) {

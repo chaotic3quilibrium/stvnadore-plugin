@@ -82,4 +82,35 @@ public final class StvnConstantRangeInspectionTest extends BasePlatformTestCase 
 
         assertTrue("Exact float constants have arbitrary capacity and must not trigger ERR_CONSTANT_FLOAT_OVERFLOW", errors.isEmpty());
     }
+
+    public void testConstUnderDisorderedParentFacetsFlagsBoundViolationAndOffersClampFix() {
+        var text = """
+            {
+              :defs {
+                :LedgerChannel {
+                  #minIncl 1024
+                  #size 16
+                  #unsigned
+                } :Int
+                #FALLBACK_CHANNEL :LedgerChannel 5<caret>00
+              }
+              :type :LedgerChannel
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("disordered_parent_const.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var boundErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> "500".equals(h.getText()))
+            .toList();
+        assertEquals("Expected exactly 1 error highlight on out-of-range constant literal '500'", 1, boundErrors.size());
+
+        var clampFixes = myFixture.filterAvailableIntentions("Clamp value to minimum bound '1024'");
+        assertFalse("Expected \"Clamp value to minimum bound '1024'\" quick-fix on #FALLBACK_CHANNEL", clampFixes.isEmpty());
+        myFixture.launchAction(clampFixes.get(0));
+
+        assertTrue("Expected #FALLBACK_CHANNEL value to be clamped to 1024",
+            myFixture.getEditor().getDocument().getText().contains("#FALLBACK_CHANNEL :LedgerChannel 1024"));
+    }
 }

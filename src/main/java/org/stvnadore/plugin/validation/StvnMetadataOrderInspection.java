@@ -8,6 +8,9 @@ import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.psi.MetaBlock;
+import org.stvnadore.psi.MetaElement;
+import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.Visitor;
@@ -59,6 +62,37 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
             @Override
+            public void visitMetaEntry(@NotNull MetaEntry metaEntry) {
+                super.visitMetaEntry(metaEntry);
+                MetaBlock metaBlock = metaEntry.getMetaBlock();
+                if (metaBlock == null) {
+                    return;
+                }
+                List<MetaElement> elements = metaBlock.getMetaElementList();
+                if (elements.size() <= 1) {
+                    return;
+                }
+                int maxRankSeen = -1;
+                for (MetaElement element : elements) {
+                    int rank = getMetaElementRank(element);
+                    if (rank < maxRankSeen) {
+                        String keyword = extractMetaElementKeyword(element);
+                        holder.registerProblem(
+                            element,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Metadata facet '" + keyword + "' violates 3-tier monotonic progression and canonical order (#name, #domain, #kind)",
+                                StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION
+                            ),
+                            ProblemHighlightType.WARNING,
+                            new StvnReorderMetaEntriesQuickFix(metaBlock)
+                        );
+                    } else {
+                        maxRankSeen = rank;
+                    }
+                }
+            }
+
+            @Override
             public void visitMetadataMap(@NotNull MetadataMap metadataMap) {
                 super.visitMetadataMap(metadataMap);
                 List<MetadataEntry> entries = metadataMap.getMetadataEntryList();
@@ -98,6 +132,70 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    /**
+     * Determines whether the entries in a {@code :meta} block violate the canonical
+     * {@code #name -> #domain -> #kind} order.
+     *
+     * @param metaBlock the {@code :meta} block PSI node
+     * @return {@code true} if any entry is out of canonical order, {@code false} otherwise
+     */
+    public static boolean isMetaBlockDisordered(MetaBlock metaBlock) {
+        List<MetaElement> elements = metaBlock.getMetaElementList();
+        if (elements.size() <= 1) {
+            return false;
+        }
+        int maxRank = -1;
+        for (MetaElement element : elements) {
+            int rank = getMetaElementRank(element);
+            if (rank < maxRank) {
+                return true;
+            }
+            maxRank = rank;
+        }
+        return false;
+    }
+
+    /**
+     * Computes the canonical rank of a {@code :meta} element:
+     * {@code #name} = 1, {@code #domain} = 2, {@code #kind} = 3.
+     *
+     * @param element the {@code :meta} element PSI node
+     * @return the canonical integer rank (1..4)
+     */
+    public static int getMetaElementRank(MetaElement element) {
+        if (element.getMetaNameFacet() != null) {
+            return 1;
+        }
+        if (element.getMetaDomainFacet() != null) {
+            return 2;
+        }
+        if (element.getMetaKindFacet() != null) {
+            return 3;
+        }
+        return 4;
+    }
+
+    /**
+     * Extracts the leading keyword from a {@code :meta} element.
+     *
+     * @param element the {@code :meta} element PSI node
+     * @return {@code "#name"}, {@code "#domain"}, or {@code "#kind"}
+     */
+    public static String extractMetaElementKeyword(MetaElement element) {
+        if (element.getMetaNameFacet() != null) {
+            return StvnVocabulary.FACET_KW_META_NAME;
+        }
+        if (element.getMetaDomainFacet() != null) {
+            return StvnVocabulary.FACET_KW_META_DOMAIN;
+        }
+        if (element.getMetaKindFacet() != null) {
+            return StvnVocabulary.FACET_KW_META_KIND;
+        }
+        String text = element.getText().trim();
+        int spaceIdx = text.indexOf(' ');
+        return spaceIdx > 0 ? text.substring(0, spaceIdx) : text;
     }
 
     /**

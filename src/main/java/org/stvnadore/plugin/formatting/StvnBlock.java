@@ -399,6 +399,17 @@ public final class StvnBlock implements ASTBlock {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
+            if ((parentType == StvnTypes.COLLECTION_TYPE
+                    || (parentType == StvnTypes.SUM_TYPE
+                        && (node.findChildByType(StvnTypes.KW_OPTION) != null
+                            || node.findChildByType(StvnTypes.KW_EITHER) != null)))
+                    && isAuthoredMultiLineParameterizedConstructor(node)) {
+                if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.SCHEMA_TYPE)
+                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.SCHEMA_TYPE)
+                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.RPAREN)) {
+                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
             if (parentType == StvnTypes.LIST_LITERAL && hasNestedValueContainer(node)) {
                 if ((t1 == StvnTypes.LBRACK && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
@@ -456,6 +467,9 @@ public final class StvnBlock implements ASTBlock {
             if (sumType.findChildByType(StvnTypes.KW_UNION) != null) {
                 return sumType.textContains('\n') || requiresMultiLineSchemaGroup(sumType);
             }
+            if (isAuthoredMultiLineParameterizedConstructor(sumType)) {
+                return true;
+            }
             for (ASTNode child = sumType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
                 if (child.getElementType() == StvnTypes.SCHEMA_TYPE
                         && containsMultiLineSchemaConstruct(child)) {
@@ -466,11 +480,55 @@ public final class StvnBlock implements ASTBlock {
         }
         ASTNode collectionType = constructor.findChildByType(StvnTypes.COLLECTION_TYPE);
         if (collectionType != null) {
+            if (isAuthoredMultiLineParameterizedConstructor(collectionType)) {
+                return true;
+            }
             for (ASTNode child = collectionType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
                 if (child.getElementType() == StvnTypes.SCHEMA_TYPE
                         && containsMultiLineSchemaConstruct(child)) {
                     return true;
                 }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether a parameterized collection or sum constructor ({@code :Map}, {@code :Seq},
+     * {@code :Set}, {@code :Option}, or {@code :Either}) was authored in multi-line form by checking
+     * whether any boundary between {@code (}, child {@code SCHEMA_TYPE} nodes, and {@code )} spans
+     * a newline or contains a comment token.
+     */
+    private static boolean isAuthoredMultiLineParameterizedConstructor(ASTNode constructorNode) {
+        ASTNode lparen = constructorNode.findChildByType(StvnTypes.LPAREN);
+        ASTNode rparen = constructorNode.findChildByType(StvnTypes.RPAREN);
+        if (lparen == null || rparen == null) {
+            return false;
+        }
+        List<ASTNode> schemaChildren = new ArrayList<>();
+        for (ASTNode child = constructorNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+            if (child.getElementType() == StvnTypes.SCHEMA_TYPE) {
+                schemaChildren.add(child);
+            }
+        }
+        if (schemaChildren.isEmpty()) {
+            return false;
+        }
+        if (hasNewlineOrCommentBetween(lparen, schemaChildren.get(0))) {
+            return true;
+        }
+        for (int i = 0; i < schemaChildren.size() - 1; i++) {
+            if (hasNewlineOrCommentBetween(schemaChildren.get(i), schemaChildren.get(i + 1))) {
+                return true;
+            }
+        }
+        return hasNewlineOrCommentBetween(schemaChildren.get(schemaChildren.size() - 1), rparen);
+    }
+
+    private static boolean hasNewlineOrCommentBetween(ASTNode left, ASTNode right) {
+        for (ASTNode cur = left.getTreeNext(); cur != null && cur != right; cur = cur.getTreeNext()) {
+            if (cur.getElementType() == StvnTypes.COMMENT || cur.textContains('\n')) {
+                return true;
             }
         }
         return false;

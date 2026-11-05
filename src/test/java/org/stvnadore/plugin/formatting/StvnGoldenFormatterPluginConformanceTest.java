@@ -67,7 +67,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 10 mirrored golden formatter quartets", 10, inputNames.size());
+        assertEquals("Expected 12 mirrored golden formatter quartets", 12, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -215,7 +215,9 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertTrue("PSI_VS_SOURCE_PRETTY_EXEMPTIONS must be empty", PSI_VS_SOURCE_PRETTY_EXEMPTIONS.isEmpty());
                 if ("01_tripartite_datetime_tuples.stvn".equals(fileName)
                         || "09_multiline_use_and_comments.core_fmt.stvn_i".equals(fileName)
-                        || "10_deep_recursive_nesting.core_fmt.stvn_i".equals(fileName)) {
+                        || "10_deep_recursive_nesting.core_fmt.stvn_i".equals(fileName)
+                        || "11_trailing_comment_alignment_and_facet_sorting.core_fmt.stvn_i".equals(fileName)
+                        || "12_multiline_parameterized_constructors_depth_fifteen.core_fmt.stvn_i".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }
