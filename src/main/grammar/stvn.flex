@@ -24,8 +24,8 @@ import static org.stvnadore.psi.StvnTypes.*;
 
 WHITE_SPACE=[ \r\n]+
 TAB_CHARACTER=\t+
-COMMENT="//"[^\r\n\t]*
-LITERAL_STRING_SIMPLE=\"([^\"\\\r\n\t]|\\.)*\"
+COMMENT="//"[^\r\n]*
+LITERAL_STRING_SIMPLE=\"([^\"\\\r\n]|\\.)*\"
 
 
 UNION_TAG_PREFIX=#[1-9][0-9]*
@@ -39,7 +39,7 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
 
 <YYINITIAL> {
   {WHITE_SPACE}                  { return WHITE_SPACE; }
-  {TAB_CHARACTER}                { return BAD_CHARACTER; }
+  {TAB_CHARACTER}                { return TAB_CHARACTER; }
 
   "["                            { return LBRACK; }
   "]"                            { return RBRACK; }
@@ -135,7 +135,7 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
   \"\"\"->\[[^\r\n\]]*\][ \r]*\n { return BAD_CHARACTER; }
 
   // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG]
-  \"\"\"\[[^\r\n\]]*\][ \r]*\n {
+  \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
     String text = yytext().toString();
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);

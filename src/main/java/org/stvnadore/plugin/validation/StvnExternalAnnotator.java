@@ -916,6 +916,36 @@ public final class StvnExternalAnnotator
                     annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
                 }
 
+                // Tab character quick-fix (Rule STR-01 / E001)
+                if (DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN.equals(diagnosticId)
+                        || "TAB_DISCIPLINE_VIOLATION".equals(diagnosticId)
+                        || rawMessage.contains("Tab character")) {
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnTabCharacterInspection.ReplaceTabWithSpacesQuickFix()
+                    );
+                }
+
+                // Inverted interval bounds quick-fix (ERR_INVERTED_RANGE / INVALID_NUMERIC_RANGE)
+                if (DiagnosticBag.ERR_INVERTED_RANGE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_INVERTED_RANGE.equals(diagnosticId)
+                        || "INVALID_NUMERIC_RANGE".equals(diagnosticId)
+                        || rawMessage.contains("effective range is invalid")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var metaMap = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetadataMap.class, false);
+                    if (metaMap == null && range.getStartOffset() + 1 < textLength) {
+                        metaMap = PsiTreeUtil.getParentOfType(
+                            file.findElementAt(range.getStartOffset() + 1),
+                            org.stvnadore.psi.MetadataMap.class,
+                            false
+                        );
+                    }
+                    var swapFix = StvnDiscreteIntervalInspection.createSwapFixForMetadataMap(metaMap);
+                    if (swapFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(swapFix);
+                    }
+                }
+
                 // Interactive bootstrapping intention actions for incomplete clauses
                 if (rawMessage.contains("':meta' requires a metadata block")) {
                     annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));

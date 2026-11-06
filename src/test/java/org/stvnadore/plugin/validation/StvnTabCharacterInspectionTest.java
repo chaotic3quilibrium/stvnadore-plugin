@@ -2,14 +2,18 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.psi.PsiErrorElement;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 
 import java.util.List;
 
 /**
  * Conformance tests for StvnTabCharacterInspection and ReplaceTabWithSpacesQuickFix.
- * Verifies the Strict Zero-Tab Invariant and the Verbatim Tab Character Exemption for fenced strings.
+ * Verifies the Strict Zero-Tab Invariant, non-destructive PSI parsing when tabs are present,
+ * and the Verbatim Tab Character Exemption for fenced strings.
  */
 @NullMarked
 public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
@@ -138,7 +142,7 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         myFixture.configureByText("mixed.stvn", code);
         myFixture.doHighlighting();
         var action = myFixture.getAllQuickFixes().stream()
-            .filter(f -> f.getText().contains("Replace tabs with 2 spaces"))
+            .filter(f -> f.getText().contains(StvnTabCharacterInspection.QUICK_FIX_NAME))
             .findFirst()
             .orElse(null);
         assertNotNull("Replace tabs quick-fix must be available", action);
@@ -147,5 +151,45 @@ public final class StvnTabCharacterInspectionTest extends BasePlatformTestCase {
         String text = myFixture.getEditor().getDocument().getText();
         assertTrue("Structural tab must be replaced with two spaces", text.contains("{\n  :type :String"));
         assertTrue("Fenced string recipe tab must be preserved intact", text.contains("all:\n\tgcc main.c"));
+    }
+
+    public void testTabsInAllStructuralAndCommentContextsPreservePsiTree() {
+        String code = "\t{\n"
+            + "  // Comment\twith tab\n"
+            + "  :meta {\n"
+            + "    #name \"tab_non_destructive_all_contexts\"\n"
+            + "    #kind #BODY_INCLUDE\n"
+            + "  }\n"
+            + "  :defs {\n"
+            + "    :Stage3Envelope :Tuple( :Int :Int :String :String )\n"
+            + "  }\n"
+            + "  :type\t:Stage3Envelope\n"
+            + "  :body\t( 3\t\t1500 \"simple\tstring\" \"\"\"[TSV]\t\ncol1\tcol2\n\t[TSV]\"\"\" )\n"
+            + "}\n";
+        var psiFile = myFixture.configureByText("tab_non_destructive_all_contexts.stvn_i", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+
+        var psiErrors = PsiTreeUtil.findChildrenOfType(psiFile, PsiErrorElement.class);
+        assertTrue("Grammar-Kit PSI parser must produce zero PsiErrorElement nodes when tabs are present: " + psiErrors,
+            psiErrors.isEmpty());
+
+        var errorHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Must report exactly 8 forbidden tab run highlights and zero secondary syntax errors", 8, errorHighlights.size());
+        for (var err : errorHighlights) {
+            assertTrue("Every error highlight must be E001-ERR_TAB_CHARACTER_FORBIDDEN, got: " + err.getDescription(),
+                err.getDescription() != null && err.getDescription().contains("E001-ERR_TAB_CHARACTER_FORBIDDEN"));
+        }
+
+        // Verify hover documentation on #kind in :meta still works when a tab is at offset 0
+        int kindOffset = code.indexOf("#kind") + 2;
+        var kindLeaf = psiFile.findElementAt(kindOffset);
+        assertNotNull(kindLeaf);
+        var docProvider = new StvnDocumentationProvider();
+        var docTarget = docProvider.getCustomDocumentationElement(myFixture.getEditor(), psiFile, kindLeaf, kindOffset);
+        assertNotNull("Documentation target on #kind must resolve when tab is at offset 0", docTarget);
+        String docHtml = docProvider.generateDoc(docTarget, kindLeaf);
+        assertNotNull("Hover documentation on #kind must be generated when tab is at offset 0", docHtml);
     }
 }

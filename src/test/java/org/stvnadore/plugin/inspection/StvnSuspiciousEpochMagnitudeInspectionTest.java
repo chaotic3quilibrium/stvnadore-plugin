@@ -76,7 +76,7 @@ public final class StvnSuspiciousEpochMagnitudeInspectionTest extends BasePlatfo
         int offset = text.indexOf("1704067200000");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
 
-        var actions = myFixture.filterAvailableIntentions("Rescale literal to 1704067200 (match declared '#s' scale)");
+        var actions = myFixture.filterAvailableIntentions("Rescale literal to '1704067200' (match declared '#s' scale)");
         assertFalse("Expected rescale quick-fix to be available", actions.isEmpty());
 
         myFixture.launchAction(actions.get(0));

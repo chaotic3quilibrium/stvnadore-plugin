@@ -65,28 +65,32 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
 
     /**
      * V01: Zero-Tab Indentation Rejection
-     * Assert structural tab \t in document indentation emits BAD_CHARACTER.
+     * Assert structural tab \t in document indentation emits StvnTypes.TAB_CHARACTER without fracturing the PSI tree.
      */
     public void testV01_ZeroTabIndentationRejection() {
         var input = "{\n\t:type :Int\n\t:body 42\n}";
         var tokens = tokenize(input);
-        var badChars = tokens.stream()
-            .filter(t -> t.type() == TokenType.BAD_CHARACTER && t.text().contains("\t"))
+        var tabChars = tokens.stream()
+            .filter(t -> t.type() == StvnTypes.TAB_CHARACTER && t.text().contains("\t"))
             .toList();
-        assertFalse("V01: Structural tab in document indentation must emit BAD_CHARACTER", badChars.isEmpty());
+        assertFalse("V01: Structural tab in document indentation must emit TAB_CHARACTER", tabChars.isEmpty());
+        var file = myFixture.configureByText("v01.stvn", input);
+        assertNoSyntaxErrors(file);
     }
 
     /**
      * V02: Tab in Metadata Block Rejection
-     * Assert structural tab \t in metadata block emits BAD_CHARACTER.
+     * Assert structural tab \t in metadata block emits StvnTypes.TAB_CHARACTER without fracturing the PSI tree.
      */
     public void testV02_TabInMetadataBlockRejection() {
         var input = "{:defs { :Port { #unsigned\t} :Int } :type :Port :body 8080}";
         var tokens = tokenize(input);
-        var badChars = tokens.stream()
-            .filter(t -> t.type() == TokenType.BAD_CHARACTER && t.text().contains("\t"))
+        var tabChars = tokens.stream()
+            .filter(t -> t.type() == StvnTypes.TAB_CHARACTER && t.text().contains("\t"))
             .toList();
-        assertFalse("V02: Structural tab in metadata block must emit BAD_CHARACTER", badChars.isEmpty());
+        assertFalse("V02: Structural tab in metadata block must emit TAB_CHARACTER", tabChars.isEmpty());
+        var file = myFixture.configureByText("v02.stvn", input);
+        assertNoSyntaxErrors(file);
     }
 
     /**

@@ -7,8 +7,8 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Platform integration test suite verifying smart temporal mode conversions, epoch timestamp
- * conversions, scalar bound clamping, and exemplar replacement quick-fixes in {@code :body} and
- * {@code #CONST} declarations.
+ * conversions, scalar bound clamping, case-conversion quick-fixes, and exemplar replacement
+ * quick-fixes in {@code :body} and {@code #CONST} declarations.
  */
 @NullMarked
 public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
@@ -553,11 +553,185 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
             .filter(a -> !a.getText().startsWith("Open included module"))
             .toList();
         List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
-        assertTrue("Expected at least 2 quick-fixes on 500, found: " + labels, fixes.size() >= 2);
+        assertTrue("Expected at least 3 quick-fixes on 500, found: " + labels, fixes.size() >= 3);
         assertEquals("Clamp value to minimum bound '1024'", fixes.get(0).getText());
-        assertEquals("Replace with exemplar value '1024'", fixes.get(1).getText());
+        assertEquals("Clamp value to maximum bound '65535'", fixes.get(1).getText());
+        assertEquals("Replace with exemplar value '1024'", fixes.get(2).getText());
 
         myFixture.launchAction(fixes.get(0));
         assertTrue(myFixture.getEditor().getDocument().getText().contains(":body 1024"));
+    }
+
+    public void testTarget3IntProximityOrderedMinAndMaxClampFixesOnConstBounds() {
+        var belowMinText = """
+            {
+              :defs {
+                #PORT_MIN_INCL { #unsigned #size 16 } :Int 1024
+                #PORT_MAX_EXCL { #unsigned #size 16 } :Int 4096
+                :DynamicPortChannel {
+                  #unsigned
+                  #size 16
+                  #minIncl #PORT_MIN_INCL
+                  #maxExcl #PORT_MAX_EXCL
+                } :Int
+              }
+              :type :DynamicPortChannel
+              :body 5<caret>12
+            }
+            """;
+        myFixture.configureByText("target3_int_below_min.stvn", belowMinText);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> belowFixes = myFixture.getAllQuickFixes();
+        List<String> belowLabels = belowFixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 3 quick-fixes on 512, found: " + belowLabels, belowFixes.size() >= 3);
+        assertEquals("Clamp value to minimum bound '1024'", belowFixes.get(0).getText());
+        assertEquals("Clamp value to maximum bound '4095'", belowFixes.get(1).getText());
+        assertEquals("Replace with exemplar value '1024'", belowFixes.get(2).getText());
+
+        var aboveMaxText = """
+            {
+              :defs {
+                #PORT_MIN_INCL { #unsigned #size 16 } :Int 1024
+                #PORT_MAX_EXCL { #unsigned #size 16 } :Int 4096
+                :DynamicPortChannel {
+                  #unsigned
+                  #size 16
+                  #minIncl #PORT_MIN_INCL
+                  #maxExcl #PORT_MAX_EXCL
+                } :Int
+              }
+              :type :DynamicPortChannel
+              :body 81<caret>92
+            }
+            """;
+        myFixture.configureByText("target3_int_above_max.stvn", aboveMaxText);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> aboveFixes = myFixture.getAllQuickFixes();
+        List<String> aboveLabels = aboveFixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 3 quick-fixes on 8192, found: " + aboveLabels, aboveFixes.size() >= 3);
+        assertEquals("Clamp value to maximum bound '4095'", aboveFixes.get(0).getText());
+        assertEquals("Clamp value to minimum bound '1024'", aboveFixes.get(1).getText());
+        assertEquals("Replace with exemplar value '1024'", aboveFixes.get(2).getText());
+    }
+
+    public void testTarget4UuidLowerCaseConvertCaseRandomUuidAndValidExemplar() {
+        var text = """
+            {
+              :defs {
+                :use [
+                  :org/stvnadore/prelude
+                  { #strip }
+                ]
+              }
+              :type :UuidLowerCase
+              :body "550E8400-E29B-41D4-<caret>A716-446655440000"
+            }
+            """;
+        myFixture.configureByText("target4_uuid_lowercase.stvn", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> fixes = myFixture.getAllQuickFixes();
+        List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 3 quick-fixes on uppercase UUID, found: " + labels, fixes.size() >= 3);
+
+        assertEquals(
+            "Top quick-fix must convert uppercase UUID to lowercase in-place",
+            "Convert string to lowercase '\"550e8400-e29b-41d4-a716-446655440000\"'",
+            fixes.get(0).getText()
+        );
+        assertTrue(
+            "Must offer random lowercase UUID quick-fix, found: " + labels,
+            labels.stream().anyMatch(l -> l.startsWith("Replace with random lowercase UUID '\""))
+        );
+        assertTrue(
+            "Exemplar quick-fix must use canonical valid lowercase UUID, found: " + labels,
+            labels.contains("Replace with exemplar value '\"550e8400-e29b-41d4-a716-446655440000\"'")
+        );
+        assertFalse(
+            "Exemplar quick-fix must never offer invalid padded 'exampleaaa...'",
+            labels.stream().anyMatch(l -> l.contains("exampleaaa"))
+        );
+
+        myFixture.launchAction(fixes.get(0));
+        assertTrue(
+            myFixture.getEditor().getDocument().getText().contains(":body \"550e8400-e29b-41d4-a716-446655440000\"")
+        );
+    }
+
+    public void testTarget5DateTimeProximityOrderedClampFixesAheadOfLiveCurrentTime() {
+        var text = """
+            {
+              :defs {
+                #WINDOW_OPEN_ISO { #offset } :DateTime "2026-01-01T00:00:00Z"
+                #WINDOW_CLOSE_ISO { #offset } :DateTime "2027-01-01T00:00:00Z"
+                :BoundedAuditWindow {
+                  #offset
+                  #minIncl #WINDOW_OPEN_ISO
+                  #maxExcl #WINDOW_CLOSE_ISO
+                } :DateTime
+              }
+              :type :BoundedAuditWindow
+              :body "2027-06-15<caret>T00:00:00Z"
+            }
+            """;
+        myFixture.configureByText("target5_datetime_clamp.stvn", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> fixes = myFixture.getAllQuickFixes();
+        List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 3 quick-fixes on out-of-bounds DateTime, found: " + labels, fixes.size() >= 3);
+
+        assertEquals("Clamp value to maximum bound '\"2026-12-31T23:59:59Z\"'", fixes.get(0).getText());
+        assertEquals("Clamp value to minimum bound '\"2026-01-01T00:00:00Z\"'", fixes.get(1).getText());
+        assertEquals("Replace with current #offset :DateTime", fixes.get(2).getText());
+
+        myFixture.launchAction(fixes.get(0));
+        assertTrue(
+            myFixture.getEditor().getDocument().getText().contains(":body \"2026-12-31T23:59:59Z\"")
+        );
+    }
+
+    public void testTarget6TimeEpochRescaleFixTopPriorityAheadOfBoundClampFixes() {
+        var text = """
+            {
+              :defs {
+                #EPOCH_2024_START_SEC { #s } :TimeEpoch 1704067200
+                #EPOCH_2025_END_SEC { #s } :TimeEpoch 1735689600
+                :BoundedEpochSec {
+                  #s
+                  #minIncl #EPOCH_2024_START_SEC
+                  #maxExcl #EPOCH_2025_END_SEC
+                } :TimeEpoch
+              }
+              :type :BoundedEpochSec
+              :body 1711929<caret>600000
+            }
+            """;
+        myFixture.configureByText("target6_epoch_rescale_priority.stvn", text);
+        myFixture.enableInspections(new StvnSuspiciousEpochMagnitudeInspection());
+        myFixture.doHighlighting();
+
+        List<IntentionAction> fixes = myFixture.getAllQuickFixes();
+        List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 4 quick-fixes on 1711929600000, found: " + labels, fixes.size() >= 4);
+
+        assertEquals(
+            "Top quick-fix must be scale-divisor rescaling",
+            "Rescale literal to '1711929600' (match declared '#s' scale)",
+            fixes.get(0).getText()
+        );
+        long rescaleCount = labels.stream()
+            .filter(l -> l.equals("Rescale literal to '1711929600' (match declared '#s' scale)"))
+            .count();
+        assertEquals("Must not register duplicate rescale quick-fix from warning inspection", 1L, rescaleCount);
+        assertEquals("Clamp value to maximum bound '1735689599'", fixes.get(1).getText());
+        assertEquals("Clamp value to minimum bound '1704067200'", fixes.get(2).getText());
+
+        myFixture.launchAction(fixes.get(0));
+        assertTrue(
+            myFixture.getEditor().getDocument().getText().contains(":body 1711929600")
+        );
     }
 }

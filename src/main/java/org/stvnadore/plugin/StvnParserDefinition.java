@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.FileViewProvider;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.IFileElementType;
 import com.intellij.psi.tree.TokenSet;
 import org.jspecify.annotations.NullMarked;
@@ -24,8 +25,19 @@ public final class StvnParserDefinition implements ParserDefinition {
     /** File node element type for STVN document root. */
     public static final IFileElementType FILE = new IFileElementType("STVN_FILE", StvnLanguage.INSTANCE);
 
+    /** Whitespace token set including horizontal tabs so PSI tree construction never aborts on tabs. */
+    public static final TokenSet WHITE_SPACES = TokenSet.create(
+        TokenType.WHITE_SPACE,
+        StvnTypes.TAB_CHARACTER
+    );
+
     /** Constructs a new StvnParserDefinition. */
     public StvnParserDefinition() {}
+
+    @Override
+    public TokenSet getWhitespaceTokens() {
+        return WHITE_SPACES;
+    }
 
     @Override
     public Lexer createLexer(Project project) {
@@ -72,4 +84,4 @@ public final class StvnParserDefinition implements ParserDefinition {
         }
         return new StvnPayloadFile(viewProvider);
     }
-}
+}

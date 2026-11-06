@@ -7,7 +7,8 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Automated platform test suite validating {@link StvnDiscreteIntervalInspection}.
- * Verifies half-open interval governance [minIncl, maxExcl) on discrete types (:Int and { #exact } :Float).
+ * Verifies half-open interval governance [minIncl, maxExcl) on discrete types (:Int and { #exact } :Float)
+ * and in-place swapping of inverted bounds via {@link StvnDiscreteIntervalInspection.SwapInvertedBoundsQuickFix}.
  */
 @NullMarked
 public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCase {
@@ -256,5 +257,56 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
             .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_EMPTY_INTERVAL_DOMAIN"))
             .toList();
         assertEquals("Expected 1 empty interval domain error on nominal exact float", 1, errors.size());
+    }
+
+    public void testSwapInvertedBoundsQuickFixOnLiteralAndConstBounds() {
+        var literalText = """
+            {
+              :defs {
+                :InvertedBoundsTrap { #minIncl 20<caret>00 #maxExcl 1000 } :Int
+              }
+              :type :InvertedBoundsTrap
+              :body 1500
+            }
+            """;
+        myFixture.configureByText("inverted_bounds_swap.stvn", literalText);
+        myFixture.doHighlighting();
+
+        String expectedLiteralSwap = "Swap inverted bounds ('#minIncl 1000' and '#maxExcl 2000')";
+        var swapActions = myFixture.filterAvailableIntentions(expectedLiteralSwap);
+        assertFalse("Expected '" + expectedLiteralSwap + "' quick-fix", swapActions.isEmpty());
+        myFixture.launchAction(swapActions.get(0));
+        assertTrue(
+            "Expected bounds to be swapped in-place to '#minIncl 1000 #maxExcl 2000'",
+            myFixture.getFile().getText().contains(":InvertedBoundsTrap { #minIncl 1000 #maxExcl 2000 } :Int")
+        );
+
+        var constText = """
+            {
+              :defs {
+                #PORT_MIN_INCL { #unsigned #size 16 } :Int 1024
+                #PORT_MAX_EXCL { #unsigned #size 16 } :Int 4096
+                :InvertedConstBounds { #minIncl #PORT_MAX_<caret>EXCL #maxExcl #PORT_MIN_INCL } :Int
+              }
+              :type :InvertedConstBounds
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("inverted_const_bounds_swap.stvn", constText);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVERTED_RANGE"))
+            .toList();
+        assertFalse("Expected ERR_INVERTED_RANGE on #CONST-referenced inverted bounds", errors.isEmpty());
+
+        String expectedConstSwap = "Swap inverted bounds ('#minIncl #PORT_MIN_INCL' and '#maxExcl #PORT_MAX_EXCL')";
+        var constSwapActions = myFixture.filterAvailableIntentions(expectedConstSwap);
+        assertFalse("Expected '" + expectedConstSwap + "' quick-fix", constSwapActions.isEmpty());
+        myFixture.launchAction(constSwapActions.get(0));
+        assertTrue(
+            "Expected #CONST bounds to be swapped in-place",
+            myFixture.getFile().getText().contains(":InvertedConstBounds { #minIncl #PORT_MIN_INCL #maxExcl #PORT_MAX_EXCL } :Int")
+        );
     }
 }

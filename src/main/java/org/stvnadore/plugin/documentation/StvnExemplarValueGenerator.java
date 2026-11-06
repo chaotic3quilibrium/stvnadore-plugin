@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.documentation;
 
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -20,13 +21,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnSchema.DateTimeMode;
 import org.stvnadore.core.ir.StvnSchema.TemporalScale;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.MetadataMap;
@@ -44,6 +49,9 @@ public final class StvnExemplarValueGenerator {
 
     private static final DateTimeFormatter LOCAL_SECONDS_FORMATTER =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+
+    /** Deterministic RFC 4122 v4 lowercase UUID exemplar for documentation and fallback synthesis. */
+    public static final String CANONICAL_UUID_LOWER_EXEMPLAR = "550e8400-e29b-41d4-a716-446655440000";
 
     private StvnExemplarValueGenerator() {}
 
@@ -104,8 +112,10 @@ public final class StvnExemplarValueGenerator {
                     : psiMeta.containsKey(StvnVocabulary.FACET_KW_OFFSET)
                         ? DateTimeMode.OFFSET
                         : dtSchema.mode();
-            String minIncl = dtSchema.explicitMinInclIso().orElse(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
-            String maxExcl = dtSchema.explicitMaxExclIso().orElse(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+            String minIncl = dtSchema.explicitMinInclIso()
+                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
+            String maxExcl = dtSchema.explicitMaxExclIso()
+                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
             return generateDateTimeExemplar(mode, minIncl, maxExcl, clock);
         }
         if (effectiveIr instanceof StvnSchema.TimeEpochSchema epSchema) {
@@ -114,22 +124,22 @@ public final class StvnExemplarValueGenerator {
                 : epSchema.scale();
             boolean unsigned = psiMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
             int defaultBits = scale.bitWidth().intValue();
-            int sizeBits = parseIntOrDefault(psiMeta.get(StvnVocabulary.FACET_KW_SIZE), defaultBits);
+            int sizeBits = parseIntOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_SIZE), defaultBits);
             BigInteger minIncl = epSchema.explicitMinIncl()
-                .orElseGet(() -> parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
+                .orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
             BigInteger maxExcl = epSchema.explicitMaxExcl()
-                .orElseGet(() -> parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
+                .orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
             return generateTimeEpochExemplar(scale, unsigned, sizeBits, minIncl, maxExcl, clock);
         }
         if (effectiveIr instanceof StvnSchema.IntSchema intSchema) {
             boolean unsigned = intSchema.unsigned() || psiMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
             int sizeBits = psiMeta.containsKey(StvnVocabulary.FACET_KW_SIZE)
-                ? parseIntOrDefault(psiMeta.get(StvnVocabulary.FACET_KW_SIZE), intSchema.bitWidth().intValue())
+                ? parseIntOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_SIZE), intSchema.bitWidth().intValue())
                 : intSchema.bitWidth().intValue();
             BigInteger minIncl = intSchema.explicitMinIncl()
-                .orElseGet(() -> parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
+                .orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
             BigInteger maxExcl = intSchema.explicitMaxExcl()
-                .orElseGet(() -> parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
+                .orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
             return generateIntExemplar(unsigned, sizeBits, minIncl, maxExcl);
         }
         if (effectiveIr instanceof StvnSchema.FloatSchema floatSchema) {
@@ -154,29 +164,36 @@ public final class StvnExemplarValueGenerator {
                 }
             }
             if (minIncl == null && minExcl == null) {
-                minIncl = parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
-                minExcl = parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
+                minIncl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+                minExcl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
             }
             if (maxIncl == null && maxExcl == null) {
-                maxIncl = parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL));
-                maxExcl = parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+                maxIncl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL));
+                maxExcl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
             }
             return generateFloatExemplar(minIncl, minExcl, maxIncl, maxExcl);
         }
         if (effectiveIr instanceof StvnSchema.StringSchema strSchema) {
             long minSize = psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)
-                ? parseLongOrDefault(psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), strSchema.minSize().longValue())
+                ? parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), strSchema.minSize().longValue())
                 : strSchema.minSize().longValue();
             long maxSize = psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)
-                ? parseLongOrDefault(psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE), strSchema.maxSize().longValue())
+                ? parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE), strSchema.maxSize().longValue())
                 : strSchema.maxSize().longValue();
+            if (psiMeta.containsKey(StvnVocabulary.FACET_KW_SIZE)) {
+                long fixedSize = parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_SIZE), minSize);
+                minSize = fixedSize;
+                maxSize = fixedSize;
+            }
             String minIncl = strSchema.lowerBound()
                 .map(StvnSchema.ContinuousBound::value)
-                .orElseGet(() -> unquoteOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
+                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
             String maxExcl = strSchema.upperBound()
                 .map(StvnSchema.ContinuousBound::value)
-                .orElseGet(() -> unquoteOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
-            return generateStringExemplar(minSize, maxSize, minIncl, maxExcl, strSchema.preserveIndent());
+                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
+            String regexPattern = strSchema.rawRegexPattern()
+                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_REGEX)));
+            return generateStringExemplar(minSize, maxSize, minIncl, maxExcl, regexPattern, strSchema.preserveIndent());
         }
         if (effectiveIr instanceof StvnSchema.BooleanSchema) {
             return StvnVocabulary.VAL_TRUE;
@@ -199,8 +216,8 @@ public final class StvnExemplarValueGenerator {
                             DateTimeMode mode = resolveDateTimeModeFromMeta(psiMeta);
                             yield generateDateTimeExemplar(
                                 mode,
-                                psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL),
-                                psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL),
+                                resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)),
+                                resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)),
                                 clock
                             );
                         }
@@ -208,44 +225,64 @@ public final class StvnExemplarValueGenerator {
                             TemporalScale scale = resolveEpochScaleFromMeta(psiMeta);
                             boolean unsigned = psiMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
                             int sizeBits = parseIntOrDefault(
+                                schemaType,
                                 psiMeta.get(StvnVocabulary.FACET_KW_SIZE),
                                 scale.bitWidth().intValue()
                             );
-                            BigInteger minIncl = parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
-                            BigInteger maxExcl = parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+                            BigInteger minIncl = parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+                            BigInteger maxExcl = parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
                             yield generateTimeEpochExemplar(scale, unsigned, sizeBits, minIncl, maxExcl, clock);
                         }
                         case StvnVocabulary.TYPE_INT -> {
                             boolean unsigned = psiMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
                             int sizeBits = parseIntOrDefault(
+                                schemaType,
                                 psiMeta.get(StvnVocabulary.FACET_KW_SIZE),
                                 StvnVocabulary.DEFAULT_INT_BIT_WIDTH.intValue()
                             );
-                            BigInteger minIncl = parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
-                            BigInteger maxExcl = parseBigIntOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+                            BigInteger minIncl = parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+                            BigInteger maxExcl = parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
                             yield generateIntExemplar(unsigned, sizeBits, minIncl, maxExcl);
                         }
                         case StvnVocabulary.TYPE_FLOAT -> generateFloatExemplar(
-                            parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)),
-                            parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)),
-                            parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)),
-                            parseDoubleOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL))
+                            parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)),
+                            parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)),
+                            parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)),
+                            parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL))
                         );
-                        case StvnVocabulary.TYPE_STRING -> generateStringExemplar(
-                            parseLongOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE)),
-                            parseLongOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE)),
-                            unquoteOrNull(
+                        case StvnVocabulary.TYPE_STRING -> {
+                            Long fixedSize = parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_SIZE));
+                            Long minSize = fixedSize != null
+                                ? fixedSize
+                                : parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE));
+                            Long maxSize = fixedSize != null
+                                ? fixedSize
+                                : parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE));
+                            String minIncl = resolveStringOrConstOrNull(
+                                schemaType,
                                 psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
                                     ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
                                     : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)
-                            ),
-                            unquoteOrNull(
+                            );
+                            String maxExcl = resolveStringOrConstOrNull(
+                                schemaType,
                                 psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)
                                     ? psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
                                     : psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)
-                            ),
-                            psiMeta.containsKey(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
-                        );
+                            );
+                            String regexPattern = resolveStringOrConstOrNull(
+                                schemaType,
+                                psiMeta.get(StvnVocabulary.FACET_KW_REGEX)
+                            );
+                            yield generateStringExemplar(
+                                minSize,
+                                maxSize,
+                                minIncl,
+                                maxExcl,
+                                regexPattern,
+                                psiMeta.containsKey(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
+                            );
+                        }
                         case StvnVocabulary.TYPE_BOOLEAN -> StvnVocabulary.VAL_TRUE;
                         default -> null;
                     };
@@ -266,7 +303,7 @@ public final class StvnExemplarValueGenerator {
                 if (ctor.getCollectionType() != null) {
                     var coll = ctor.getCollectionType();
                     String kind = coll.getFirstChild() != null ? coll.getFirstChild().getText().trim() : "";
-                    long minSize = parseLongOrDefault(psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
+                    long minSize = parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
                     var innerTypes = coll.getSchemaTypeList();
                     if (StvnVocabulary.TYPE_MAP.equals(kind)) {
                         if (minSize <= 0 || innerTypes.size() < 2) {
@@ -656,11 +693,42 @@ public final class StvnExemplarValueGenerator {
         @Nullable String maxExcl,
         boolean preserveIndent
     ) {
+        return generateStringExemplar(minSize, maxSize, minIncl, maxExcl, null, preserveIndent);
+    }
+
+    /**
+     * Generates a valid STVN {@code :String} literal respecting UTF-8 byte size, lexicographical
+     * bounds, and an optional regular expression pattern.
+     *
+     * @param minSize        optional minimum UTF-8 byte size
+     * @param maxSize        optional maximum UTF-8 byte size
+     * @param minIncl        optional minimum inclusive lexicographical bound
+     * @param maxExcl        optional maximum exclusive lexicographical bound
+     * @param regexPattern   optional unquoted regular expression pattern
+     * @param preserveIndent whether {@code #preserveIndent} is active
+     * @return a compliant quoted string literal
+     */
+    public static String generateStringExemplar(
+        @Nullable Long minSize,
+        @Nullable Long maxSize,
+        @Nullable String minIncl,
+        @Nullable String maxExcl,
+        @Nullable String regexPattern,
+        boolean preserveIndent
+    ) {
         long minBytes = minSize != null ? Math.max(0L, minSize) : 0L;
         long maxBytes = maxSize != null ? Math.max(0L, maxSize) : StvnVocabulary.DEFAULT_MAX_SIZE.longValue();
 
         if (maxBytes == 0L) {
             return "\"\"";
+        }
+
+        if (regexPattern != null && !regexPattern.isBlank()) {
+            String regexSynthesized = synthesizeRegexConformingString(regexPattern, minBytes, maxBytes);
+            if (regexSynthesized != null) {
+                String escaped = regexSynthesized.replace("\\", "\\\\").replace("\"", "\\\"");
+                return "\"" + escaped + "\"";
+            }
         }
 
         String base = "example";
@@ -684,6 +752,59 @@ public final class StvnExemplarValueGenerator {
 
         String escaped = base.replace("\\", "\\\\").replace("\"", "\\\"");
         return "\"" + escaped + "\"";
+    }
+
+    /**
+     * Synthesizes an unquoted string conforming to {@code regexPattern} and {@code [minBytes, maxBytes]}
+     * when the pattern matches a known Standard Library Prelude or common structural regex.
+     *
+     * @param regexPattern unquoted regular expression pattern
+     * @param minBytes     minimum UTF-8 byte length
+     * @param maxBytes     maximum UTF-8 byte length
+     * @return conforming unquoted string, or {@code null} if no deterministic synthesis matches
+     */
+    public static @Nullable String synthesizeRegexConformingString(
+        String regexPattern,
+        long minBytes,
+        long maxBytes
+    ) {
+        String clean = unquoteOrNull(regexPattern);
+        if (clean == null || clean.isBlank()) {
+            return null;
+        }
+        List<String> candidates = List.of(
+            CANONICAL_UUID_LOWER_EXEMPLAR,
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "1.0.0",
+            "user@example.com",
+            "127.0.0.1",
+            "example_id",
+            "example",
+            "EXAMPLE",
+            "12345"
+        );
+        try {
+            Pattern compiled = Pattern.compile(clean);
+            for (String candidate : candidates) {
+                int len = candidate.getBytes(StandardCharsets.UTF_8).length;
+                if (len >= minBytes && len <= maxBytes && compiled.matcher(candidate).matches()) {
+                    return candidate;
+                }
+            }
+            // Length-adjusted repetition for simple character-class patterns
+            int targetLen = (int) Math.max(1L, Math.min(maxBytes, Math.max(minBytes, 7L)));
+            if (targetLen <= 4096) {
+                for (char fill : new char[]{'a', 'A', '0', '1'}) {
+                    String repeated = String.valueOf(fill).repeat(targetLen);
+                    if (compiled.matcher(repeated).matches()) {
+                        return repeated;
+                    }
+                }
+            }
+        } catch (PatternSyntaxException ignored) {
+        }
+        return null;
     }
 
     private static String generateEnumSubsetExemplarFromIr(
@@ -854,6 +975,9 @@ public final class StvnExemplarValueGenerator {
             }
             var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
             var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
+            if (td == null && !file.getProject().isDisposed()) {
+                td = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), alias);
+            }
             if (td == null) {
                 break;
             }
@@ -899,6 +1023,18 @@ public final class StvnExemplarValueGenerator {
             }
             SchemaType next = StvnTypeResolver.resolveNominalSchema(curr);
             if (next == null || next == curr) {
+                var kw = curr.getTypeKeyword();
+                if (kw != null && !curr.getProject().isDisposed()) {
+                    var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(
+                        curr.getProject(),
+                        kw.getText().trim()
+                    );
+                    if (preludeDef != null && preludeDef.getSchemaType() != null) {
+                        next = preludeDef.getSchemaType();
+                    }
+                }
+            }
+            if (next == null || next == curr) {
                 break;
             }
             curr = next;
@@ -937,59 +1073,55 @@ public final class StvnExemplarValueGenerator {
         }
     }
 
-    private static int parseIntOrDefault(@Nullable String raw, int defaultValue) {
+    private static int parseIntOrDefault(@Nullable PsiElement context, @Nullable String raw, int defaultValue) {
         if (raw == null || raw.isBlank()) {
             return defaultValue;
         }
-        try {
-            return Integer.parseInt(raw.trim().replace("_", ""));
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
+        return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, raw)
+            .map(BigInteger::intValue)
+            .orElse(defaultValue);
     }
 
-    private static long parseLongOrDefault(@Nullable String raw, long defaultValue) {
+    private static long parseLongOrDefault(@Nullable PsiElement context, @Nullable String raw, long defaultValue) {
         if (raw == null || raw.isBlank()) {
             return defaultValue;
         }
-        try {
-            return Long.parseLong(raw.trim().replace("_", ""));
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
+        return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, raw)
+            .map(BigInteger::longValue)
+            .orElse(defaultValue);
     }
 
-    private static @Nullable BigInteger parseBigIntOrNull(@Nullable String raw) {
+    private static @Nullable BigInteger parseBigIntOrNull(@Nullable PsiElement context, @Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        try {
-            return StvnPsiLiteralEvaluatorFallback.parseBigInt(raw.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, raw).orElse(null);
     }
 
-    private static @Nullable Long parseLongOrNull(@Nullable String raw) {
+    private static @Nullable Long parseLongOrNull(@Nullable PsiElement context, @Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        try {
-            return Long.parseLong(raw.trim().replace("_", ""));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, raw)
+            .map(BigInteger::longValue)
+            .orElse(null);
     }
 
-    private static @Nullable Double parseDoubleOrNull(@Nullable String raw) {
+    private static @Nullable Double parseDoubleOrNull(@Nullable PsiElement context, @Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        try {
-            return Double.parseDouble(raw.trim().replace("_", ""));
-        } catch (NumberFormatException e) {
+        return StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(context, raw)
+            .map(BigDecimal::doubleValue)
+            .orElse(null);
+    }
+
+    private static @Nullable String resolveStringOrConstOrNull(@Nullable PsiElement context, @Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
             return null;
         }
+        return StvnPsiLiteralEvaluator.resolveStringOrConst(context, raw, false)
+            .orElseGet(() -> unquoteOrNull(raw));
     }
 
     private static @Nullable String unquoteOrNull(@Nullable String raw) {
@@ -1001,21 +1133,5 @@ public final class StvnExemplarValueGenerator {
             return trimmed.substring(1, trimmed.length() - 1);
         }
         return trimmed;
-    }
-
-    private static final class StvnPsiLiteralEvaluatorFallback {
-        private static @Nullable BigInteger parseBigInt(String text) {
-            String clean = text.replace("_", "");
-            if (clean.startsWith("0x") || clean.startsWith("0X")) {
-                return new BigInteger(clean.substring(2), 16);
-            }
-            if (clean.startsWith("0b") || clean.startsWith("0B")) {
-                return new BigInteger(clean.substring(2), 2);
-            }
-            if (clean.startsWith("0o") || clean.startsWith("0O")) {
-                return new BigInteger(clean.substring(2), 8);
-            }
-            return new BigInteger(clean, 10);
-        }
     }
 }

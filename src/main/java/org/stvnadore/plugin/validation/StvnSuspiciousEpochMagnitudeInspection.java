@@ -1,26 +1,42 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema.TemporalScale;
+import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.documentation.StvnTimeEpochFormatter;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.psi.*;
+import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.IntegerLiteral;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.Value;
+import org.stvnadore.psi.Visitor;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -32,6 +48,9 @@ import java.util.Set;
 @NullMarked
 public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectionTool {
 
+    /**
+     * Constructs a new {@link StvnSuspiciousEpochMagnitudeInspection}.
+     */
     public StvnSuspiciousEpochMagnitudeInspection() {
     }
 
@@ -76,7 +95,7 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
 
                 var scaleFlag = extractScaleFlag(info.getSchema());
                 var text = literal.getText().trim();
-                var digits = text.startsWith("-") ? text.substring(1) : text;
+                var digits = (text.startsWith("-") ? text.substring(1) : text).replace("_", "");
                 int digitCount = digits.length();
 
                 if (digitCount == 0 || text.equals("0")) return;
@@ -99,69 +118,160 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
                         StvnDiagnosticCodes.WARN_SUSPICIOUS_EPOCH_MAGNITUDE
                     );
 
-                    LocalQuickFix rescaleFix = createRescaleFix(text, declaredOrder, detectedOrder, scaleFlag);
-                    LocalQuickFix updateSchemaFix = createUpdateSchemaFix(info.getSchema(), detectedScale);
-
-                    if (updateSchemaFix != null) {
-                        holder.registerProblem(
-                            literal,
-                            formatted,
-                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            rescaleFix,
-                            updateSchemaFix
-                        );
-                    } else {
-                        holder.registerProblem(
-                            literal,
-                            formatted,
-                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            rescaleFix
-                        );
+                    boolean outOfSchemaBounds = isLiteralOutOfTimeEpochBounds(info.getSchema(), literal, text);
+                    List<LocalQuickFix> quickFixes = new ArrayList<>(2);
+                    if (!outOfSchemaBounds) {
+                        quickFixes.add(createRescaleFix(text, declaredOrder, detectedOrder, scaleFlag));
                     }
+                    LocalQuickFix updateSchemaFix = createUpdateSchemaFix(info.getSchema(), detectedScale);
+                    if (updateSchemaFix != null) {
+                        quickFixes.add(updateSchemaFix);
+                    }
+
+                    holder.registerProblem(
+                        literal,
+                        formatted,
+                        ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                        quickFixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                    );
                 }
             }
         };
     }
 
-    private static int scaleToOrder(String scale) {
+    private static boolean isLiteralOutOfTimeEpochBounds(
+            SchemaType schemaType,
+            PsiElement context,
+            String rawText
+    ) {
+        BigInteger actual = StvnPsiLiteralEvaluator.parseBigInteger(rawText).orElse(null);
+        if (actual == null) {
+            return false;
+        }
+        Map<String, String> meta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+        TemporalScale scale = StvnExemplarValueGenerator.resolveEpochScaleFromMeta(meta);
+        boolean unsigned = meta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
+        int sizeBits = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                context,
+                meta.get(StvnVocabulary.FACET_KW_SIZE)
+            )
+            .map(BigInteger::intValue)
+            .orElse(scale.bitWidth().intValue());
+        BigInteger minIncl = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                context,
+                meta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+            )
+            .orElse(null);
+        BigInteger maxExcl = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                context,
+                meta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+            )
+            .orElse(null);
+        BigInteger[] bounds = StvnExemplarValueGenerator.computeEffectiveIntegerBounds(
+            unsigned,
+            sizeBits,
+            minIncl,
+            maxExcl
+        );
+        return actual.compareTo(bounds[0]) < 0 || actual.compareTo(bounds[1]) > 0;
+    }
+
+    /**
+     * Converts a canonical temporal scale facet flag to its decimal exponent order relative to seconds.
+     *
+     * @param scale scale facet flag
+     * @return decimal order (0, 3, 6, or 9)
+     */
+    public static int scaleToOrder(String scale) {
         return switch (scale) {
             case StvnVocabulary.FACET_KW_SCALE_NS -> 9;
             case StvnVocabulary.FACET_KW_SCALE_US -> 6;
             case StvnVocabulary.FACET_KW_SCALE_MS -> 3;
-            default -> 0; // #s
+            default -> 0;
         };
     }
 
-    private static LocalQuickFix createRescaleFix(String rawText, int declaredOrder, int detectedOrder, String targetScale) {
-        BigInteger original = new BigInteger(rawText);
+    private static LocalQuickFix createRescaleFix(
+            String rawText,
+            int declaredOrder,
+            int detectedOrder,
+            String targetScale
+    ) {
+        BigInteger original = new BigInteger(rawText.replace("_", ""));
         int diff = detectedOrder - declaredOrder;
         BigInteger factor = BigInteger.TEN.pow(Math.abs(diff));
         BigInteger rescaled = diff > 0 ? original.divide(factor) : original.multiply(factor);
+        String label = "Rescale literal to '" + rescaled + "' (match declared '" + targetScale + "' scale)";
 
-        return new LocalQuickFix() {
-            @Override
-            public @Nls @NotNull String getName() {
-                return "Rescale literal to " + rescaled + " (match declared '" + targetScale + "' scale)";
-            }
-
-            @Override
-            public @Nls @NotNull String getFamilyName() {
-                return "Rescale TimeEpoch literal";
-            }
-
-            @Override
-            public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-                var elem = descriptor.getPsiElement();
-                if (elem == null) return;
-                var doc = PsiDocumentManager.getInstance(project).getDocument(elem.getContainingFile());
-                if (doc == null) return;
-                doc.replaceString(elem.getTextRange().getStartOffset(), elem.getTextRange().getEndOffset(), rescaled.toString());
-                PsiDocumentManager.getInstance(project).commitDocument(doc);
-            }
-        };
+        return new RescaleEpochLiteralQuickFix(rescaled.toString(), label);
     }
 
-    private static @org.jetbrains.annotations.Nullable LocalQuickFix createUpdateSchemaFix(SchemaType schemaType, String detectedScale) {
+    private static final class RescaleEpochLiteralQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
+        private final String rescaledText;
+        private final String label;
+
+        RescaleEpochLiteralQuickFix(String rescaledText, String label) {
+            this.rescaledText = rescaledText;
+            this.label = label;
+        }
+
+        @Override
+        public @Nls @NotNull String getName() {
+            return label;
+        }
+
+        @Override
+        public @Nls @NotNull String getText() {
+            return label;
+        }
+
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+            return "Rescale TimeEpoch literal";
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            return file != null;
+        }
+
+        @Override
+        public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            if (editor == null || file == null) return;
+            var elem = file.findElementAt(editor.getCaretModel().getOffset());
+            if (elem == null) return;
+            var intLit = elem instanceof IntegerLiteral il
+                ? il
+                : PsiTreeUtil.getParentOfType(elem, IntegerLiteral.class, false);
+            if (intLit == null) return;
+            var doc = PsiDocumentManager.getInstance(project).getDocument(file);
+            if (doc == null) return;
+            doc.replaceString(intLit.getTextRange().getStartOffset(), intLit.getTextRange().getEndOffset(), rescaledText);
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return true;
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var elem = descriptor.getPsiElement();
+            if (elem == null) return;
+            var doc = PsiDocumentManager.getInstance(project).getDocument(elem.getContainingFile());
+            if (doc == null) return;
+            doc.replaceString(elem.getTextRange().getStartOffset(), elem.getTextRange().getEndOffset(), rescaledText);
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+        }
+    }
+
+    private static @Nullable LocalQuickFix createUpdateSchemaFix(SchemaType schemaType, String detectedScale) {
         if (!schemaType.isWritable()) return null;
         var metaMap = schemaType.getMetadataMap();
         PsiElement targetScaleElem = null;
@@ -183,7 +293,7 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
                 var file = schemaType.getContainingFile();
                 if (file != null) {
                     var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                    var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                    var td = StvnPsiUtils.getParentTypeDefinition(resolved);
                     if (td != null && td.isWritable() && td.getSchemaType() != null) {
                         return createUpdateSchemaFix(td.getSchemaType(), detectedScale);
                     }
@@ -230,7 +340,7 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
             var file = schemaType.getContainingFile();
             if (file != null) {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                var td = StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (td != null && td.getSchemaType() != null) {
                     return extractScaleFlag(td.getSchemaType());
                 }
@@ -239,7 +349,7 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
         return StvnVocabulary.FACET_KW_SCALE_MS;
     }
 
-    private static @org.jetbrains.annotations.Nullable String resolveBaseTypeString(SchemaType schemaType, Set<String> visited) {
+    private static @Nullable String resolveBaseTypeString(SchemaType schemaType, Set<String> visited) {
         var ctor = schemaType.getSchemaConstructor();
         if (ctor != null && ctor.getAtomicType() != null) {
             return ctor.getAtomicType().getText().trim();
@@ -252,7 +362,7 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
             var file = schemaType.getContainingFile();
             if (file != null) {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+                var td = StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (td != null && td.getSchemaType() != null) {
                     return resolveBaseTypeString(td.getSchemaType(), visited);
                 }

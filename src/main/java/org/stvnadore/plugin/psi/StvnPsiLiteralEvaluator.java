@@ -1,13 +1,25 @@
 package org.stvnadore.plugin.psi;
 
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.plugin.reference.StvnConstantReference;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.UseMapAlias;
+import org.stvnadore.psi.UseStmt;
+import org.stvnadore.psi.Value;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * Pure Java 21 CPU-bias-free PSI literal evaluator for standalone editor inspections,
@@ -18,6 +30,8 @@ public final class StvnPsiLiteralEvaluator {
 
     /** Maximum bit-width shifted eagerly into decimal range bounds during live editor analysis. */
     public static final int MAX_EAGER_SHIFT_BIT_WIDTH = 16_384;
+
+    private static final int MAX_CONST_RESOLUTION_DEPTH = 16;
 
     private StvnPsiLiteralEvaluator() {
     }
@@ -78,6 +92,178 @@ public final class StvnPsiLiteralEvaluator {
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Resolves an STVN integer literal or a {@code #CONST} reference chain to a {@link BigInteger}.
+     *
+     * @param context PSI context element for resolving {@code :defs}, {@code :use}, {@code :include}, or Prelude constants
+     * @param rawText raw literal or {@code #CONST} token text
+     * @return resolved {@link BigInteger}, or empty if unresolvable or cyclic
+     */
+    public static Optional<BigInteger> resolveBigIntegerOrConst(@Nullable PsiElement context, @Nullable String rawText) {
+        return resolveBigIntegerOrConstInternal(context, rawText, new HashSet<>());
+    }
+
+    private static Optional<BigInteger> resolveBigIntegerOrConstInternal(
+        @Nullable PsiElement context,
+        @Nullable String rawText,
+        Set<String> visited
+    ) {
+        if (rawText == null || rawText.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = rawText.trim();
+        Optional<BigInteger> direct = parseBigInteger(trimmed);
+        if (direct.isPresent()) {
+            return direct;
+        }
+        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+            ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
+            if (constDef != null && constDef.getValue() != null) {
+                Value val = constDef.getValue();
+                return resolveBigIntegerOrConstInternal(val, val.getText(), visited);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves an STVN decimal/floating-point literal or a {@code #CONST} reference chain to a {@link BigDecimal}.
+     *
+     * @param context PSI context element for resolving {@code :defs}, {@code :use}, {@code :include}, or Prelude constants
+     * @param rawText raw literal or {@code #CONST} token text
+     * @return resolved {@link BigDecimal}, or empty if unresolvable or cyclic
+     */
+    public static Optional<BigDecimal> resolveBigDecimalOrConst(@Nullable PsiElement context, @Nullable String rawText) {
+        return resolveBigDecimalOrConstInternal(context, rawText, new HashSet<>());
+    }
+
+    private static Optional<BigDecimal> resolveBigDecimalOrConstInternal(
+        @Nullable PsiElement context,
+        @Nullable String rawText,
+        Set<String> visited
+    ) {
+        if (rawText == null || rawText.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = rawText.trim();
+        Optional<BigDecimal> direct = parseBigDecimal(trimmed);
+        if (direct.isPresent()) {
+            return direct;
+        }
+        Optional<BigInteger> intVal = parseBigInteger(trimmed);
+        if (intVal.isPresent()) {
+            return Optional.of(new BigDecimal(intVal.get()));
+        }
+        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+            ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
+            if (constDef != null && constDef.getValue() != null) {
+                Value val = constDef.getValue();
+                return resolveBigDecimalOrConstInternal(val, val.getText(), visited);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves an STVN string literal (simple or fenced) or a {@code #CONST} reference chain to its decoded UTF-8 string.
+     *
+     * @param context        PSI context element for resolving {@code :defs}, {@code :use}, {@code :include}, or Prelude constants
+     * @param rawText        raw string literal or {@code #CONST} token text
+     * @param preserveIndent {@code true} when {@code #preserveIndent #TRUE} retains common leading spaces
+     * @return decoded string value, or empty if unresolvable or cyclic
+     */
+    public static Optional<String> resolveStringOrConst(
+        @Nullable PsiElement context,
+        @Nullable String rawText,
+        boolean preserveIndent
+    ) {
+        return resolveStringOrConstInternal(context, rawText, preserveIndent, new HashSet<>());
+    }
+
+    private static Optional<String> resolveStringOrConstInternal(
+        @Nullable PsiElement context,
+        @Nullable String rawText,
+        boolean preserveIndent,
+        Set<String> visited
+    ) {
+        if (rawText == null || rawText.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = rawText.trim();
+        Optional<String> decoded = decodeStringLiteral(trimmed, preserveIndent);
+        if (decoded.isPresent()) {
+            return decoded;
+        }
+        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+            ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
+            if (constDef != null && constDef.getValue() != null) {
+                Value val = constDef.getValue();
+                return resolveStringOrConstInternal(val, val.getText(), preserveIndent, visited);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves a {@link ConstantDefinition} across local {@code :defs}, {@code :package}, {@code :use},
+     * {@code :include}, and Standard Library Prelude scopes.
+     *
+     * @param context   originating PSI context element
+     * @param constName constant token starting with {@code #}
+     * @return resolved {@link ConstantDefinition}, or {@code null} if not found
+     */
+    public static @Nullable ConstantDefinition resolveConstantDefinition(@Nullable PsiElement context, String constName) {
+        if (context == null || !constName.startsWith("#")) {
+            return null;
+        }
+        PsiFile file = context.getContainingFile();
+        if (file == null) {
+            return null;
+        }
+        PsiElement resolvedElem = StvnConstantReference.resolveConstantInFile(file, constName, new HashSet<>());
+        if (resolvedElem != null) {
+            if (resolvedElem instanceof ConstantDefinition cd) {
+                return cd;
+            }
+            if (resolvedElem.getParent() instanceof ConstantDefinition cd) {
+                return cd;
+            }
+            if (resolvedElem.getParent() instanceof UseMapAlias alias) {
+                var kws = alias.getValueKeywordList();
+                if (!kws.isEmpty() && kws.get(0) != null) {
+                    var useStmt = PsiTreeUtil.getParentOfType(alias, UseStmt.class);
+                    String remoteName = kws.get(0).getText().trim();
+                    if (useStmt != null && useStmt.getUseTarget() != null) {
+                        String fqni = useStmt.getUseTarget().getText().trim() + "/" + remoteName;
+                        PsiElement hopped = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
+                        if (hopped instanceof ConstantDefinition cd) {
+                            return cd;
+                        }
+                        if (hopped != null && hopped.getParent() instanceof ConstantDefinition cd) {
+                            return cd;
+                        }
+                    }
+                    PsiElement hoppedShort = StvnConstantReference.resolveConstantInFile(file, remoteName, new HashSet<>());
+                    if (hoppedShort instanceof ConstantDefinition cd) {
+                        return cd;
+                    }
+                    if (hoppedShort != null && hoppedShort.getParent() instanceof ConstantDefinition cd) {
+                        return cd;
+                    }
+                }
+            }
+        }
+        ConstantDefinition local = StvnTypeResolver.findConstantDefinition(file, constName);
+        if (local != null) {
+            return local;
+        }
+        var project = file.getProject();
+        if (!project.isDisposed()) {
+            return StvnPreludeBridge.resolvePreludeConstantDefinition(project, constName);
+        }
+        return null;
     }
 
     /**
