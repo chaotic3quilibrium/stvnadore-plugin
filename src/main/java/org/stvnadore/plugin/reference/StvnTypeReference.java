@@ -212,7 +212,13 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                 if (stringLit != null) {
                     var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                     if (targetFile != null) {
-                        var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited);
+                        var optBlock = includeElement.getIncludeOptionsBlock();
+                        var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
+                        var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited, null, hasStrip);
+                        if (resolved == null && !hasStrip) {
+                            visited.clear();
+                            resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited, null, true);
+                        }
                         return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
                     }
                 }

@@ -365,10 +365,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (target instanceof TypeDefinition td
+                && td.getTypeDefTarget() != null
+                && StvnVocabulary.KEYWORD_PACKAGE.equals(td.getTypeDefTarget().getText().trim())) {
+            return null;
+        }
+
         // 1. Contextual Section Routing: Check if target is RHS base type in :defs
         if ((target instanceof TypeKeyword || target instanceof AtomicType) && originalElement != null) {
             var enclosingDef = PsiTreeUtil.getParentOfType(originalElement, TypeDefinition.class);
             if (enclosingDef != null && enclosingDef.getTypeKeyword() != target) {
+                if (enclosingDef.getTypeDefTarget() != null
+                        && StvnVocabulary.KEYWORD_PACKAGE.equals(enclosingDef.getTypeDefTarget().getText().trim())) {
+                    return null;
+                }
                 return renderRhsBaseTypeCard(target.getText().trim(), enclosingDef, originalElement);
             }
         }
@@ -2252,7 +2262,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
             if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
-                if (isContainerLiteral(valueAncestor)) {
+                if (isContainerLiteral(valueAncestor) && !isScalarSlotArityOneTuple(valueAncestor)) {
                     if (!isExplicitContainerDelimiter(valueAncestor, originalElement)) {
                         return null;
                     }
@@ -2274,7 +2284,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (element instanceof Value && PsiTreeUtil.getParentOfType(element, BodyEntry.class) != null) {
-            if (isContainerLiteral((Value) element)) {
+            if (isContainerLiteral((Value) element) && !isScalarSlotArityOneTuple((Value) element)) {
                 if (originalElement != null && !isExplicitContainerDelimiter((Value) element, originalElement)) {
                     return null;
                 }
@@ -2331,7 +2341,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var valueAncestor = PsiTreeUtil.getParentOfType(contextElement, Value.class);
         if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
-            if (isContainerLiteral(valueAncestor)) {
+            if (isContainerLiteral(valueAncestor) && !isScalarSlotArityOneTuple(valueAncestor)) {
                 if (!isExplicitContainerDelimiter(valueAncestor, contextElement)) {
                     return null;
                 }
@@ -2541,6 +2551,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             || PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false) != null) {
             return false;
         }
+        if (element instanceof org.stvnadore.psi.NestedPackageIllegal
+                || PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.NestedPackageIllegal.class, false) != null) {
+            return true;
+        }
         if (element instanceof PsiErrorElement) {
             return true;
         }
@@ -2553,6 +2567,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var text = element.getText().trim();
         return text.equals(StvnVocabulary.SIGIL_VALUE) || text.equals(StvnVocabulary.SIGIL_TYPIC) || text.equals("/");
+    }
+
+    private static boolean isScalarSlotArityOneTuple(Value value) {
+        var coll = value.getCollectionValue();
+        if (coll == null || coll.getTupleLiteral() == null || coll.getTupleLiteral().getValueList().size() != 1) {
+            return false;
+        }
+        var info = StvnTypeResolver.resolveBaseTypeInfo(value);
+        var schema = info != null ? info.getSchema() : null;
+        if (schema == null) {
+            return false;
+        }
+        var baseType = resolveBaseTypeString(schema, new HashSet<>());
+        return baseType != null
+            && !baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
+            && !":Value".equals(baseType)
+            && !baseType.startsWith(StvnVocabulary.TYPE_UNION)
+            && !baseType.startsWith(StvnVocabulary.TYPE_EITHER)
+            && !baseType.startsWith(StvnVocabulary.TYPE_OPTION);
     }
 
     private static boolean isContainerLiteral(Value value) {
@@ -3424,6 +3457,31 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             ? unionContext.payloadValue()
             : value;
 
+        Value enclosingIllegalTuple = null;
+        if (isScalarSlotArityOneTuple(value)) {
+            enclosingIllegalTuple = value;
+        } else if (value.getParent() instanceof org.stvnadore.psi.TupleLiteral tl
+                && tl.getValueList().size() == 1
+                && tl.getParent() != null
+                && tl.getParent().getParent() instanceof Value outerTuple
+                && isScalarSlotArityOneTuple(outerTuple)) {
+            enclosingIllegalTuple = outerTuple;
+        }
+        if (enclosingIllegalTuple != null) {
+            targetValueForCompliance = enclosingIllegalTuple;
+            if (enclosingIllegalTuple.getParent() instanceof org.stvnadore.psi.ExplicitOptionValue optVal
+                    && optVal.getParent() instanceof Value optOuterVal) {
+                var optInfo = StvnTypeResolver.resolveBaseTypeInfo(optOuterVal);
+                if (optInfo != null && optInfo.getSchema() != null && optInfo.getSchema().getTypeKeyword() != null) {
+                    var optAlias = optInfo.getSchema().getTypeKeyword().getText().trim();
+                    var innerSchemaLabel = (schemaType != null)
+                        ? StvnSchemaFormatter.formatSchema(schemaType)
+                        : displayType;
+                    governingSchema = optAlias + " (" + innerSchemaLabel + ")";
+                }
+            }
+        }
+
         // Zone 1: Identity & Structural Trace
         sb.append("<div class='definition'>");
         sb.append("<b>Payload Value:</b> <code>").append(value.getText()).append("</code><br/>");
@@ -3525,7 +3583,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     return true;
                 }
                 var target = StvnTypeReference.resolveTypeInFile(file, aliasText, new HashSet<>());
-                var td = StvnPsiUtils.getParentTypeDefinition(target);
+                var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
                 if (td != null && StvnTypeResolver.resolveNominalIrSchema(td) instanceof StvnSchema.PoisonedSchema) {
                     return true;
                 }
@@ -3543,6 +3601,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (baseType == null) baseType = ":Value";
 
         StvnSchema irSchema = resolveEffectiveIrSchemaForCompliance(value, schemaType);
+
+        if (value.getCollectionValue() != null
+                && value.getCollectionValue().getTupleLiteral() != null
+                && !baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
+                && !":Value".equals(baseType)) {
+            return new StvnValueComplianceResult(
+                false,
+                "In Violation",
+                "Type mismatch: expected scalar " + escapeHtmlBody(baseType) + ", found product constructor :Tuple",
+                Collections.emptyMap(),
+                buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+            );
+        }
 
         // 1. Numeric integer literal evaluation
         if (value.getIntegerLiteral() != null) {
@@ -4148,7 +4219,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var file = schemaType.getContainingFile();
             if (file != null) {
                 var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                var td = StvnPsiUtils.getParentTypeDefinition(target);
+                var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
                 if (td != null) {
                     return unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(td));
                 }
@@ -4388,7 +4459,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var file = schemaType.getContainingFile();
                 if (file != null) {
                     var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                    var td = StvnPsiUtils.getParentTypeDefinition(target);
+                    var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
                     if (td != null && td.getSchemaType() != null) {
                         return extractDateTimeModeFromPsiChain(td.getSchemaType(), visited);
                     }
@@ -4423,7 +4494,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var file = schemaType.getContainingFile();
                 if (file != null) {
                     var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                    var td = StvnPsiUtils.getParentTypeDefinition(target);
+                    var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
                     if (td != null && td.getSchemaType() != null) {
                         return extractStringMetadataBound(td.getSchemaType(), facetKw, visited);
                     }

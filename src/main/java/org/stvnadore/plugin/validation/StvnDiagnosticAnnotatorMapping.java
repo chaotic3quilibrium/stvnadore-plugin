@@ -166,10 +166,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         // 14. Nested Package Enclosures Inspection
         map.put(DiagnosticBag.ERR_NESTED_PACKAGE_PROHIBITED, "StvnNestedPackage");
         map.put(StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED, "StvnNestedPackage");
-        map.put(DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED, "StvnNestedPackage");
-        map.put(StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED, "StvnNestedPackage");
-        map.put("ERR_RESERVED_PACKAGE_PROHIBITED", "StvnNestedPackage");
-        map.put("E037", "StvnNestedPackage");
 
         // 15. Trailing Slash Inspection
         map.put(DiagnosticBag.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
@@ -551,11 +547,11 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("Fenced string closing tag mismatch")) {
             return "StvnFencedString";
         }
-        if (message.contains("Nested package enclosures are prohibited")
-                || message.contains("Reserved package namespace prohibited")) {
+        if (message.contains("Nested packages are prohibited")
+                || message.contains("Nested package enclosures are prohibited")) {
             return "StvnNestedPackage";
         }
-        if (message.contains("Trailing slash prohibited in package path")) {
+        if (message.contains("Trailing slash prohibited")) {
             return "StvnTrailingSlash";
         }
         if (message.contains("Reserved type keyword cannot be declared on LHS")

@@ -165,6 +165,44 @@ public final class StvnWrapSumVariantQuickFixTest extends BasePlatformTestCase {
         );
     }
 
+    public void testStage7EitherLeftMissingTagRuleEOffersWrapLeftAndRightExemplar() {
+        myFixture.configureByText(
+            "stage7_either_rule_e.stvn",
+            """
+            {
+              :defs {
+                :ErrorCode { #unsigned #size 16 } :Int
+                :SuccessMsg { #minSize 1 #maxSize 128 } :String
+                :RpcOutcome :Either(:ErrorCode :SuccessMsg)
+              }
+              :type :RpcOutcome
+              :body 4<caret>04
+            }
+            """
+        );
+
+        myFixture.doHighlighting();
+
+        var allFixes = myFixture.getAllQuickFixes();
+        var labels = allFixes.stream().map(com.intellij.codeInsight.intention.IntentionAction::getText).toList();
+        assertTrue(
+            "Expected 'Wrap with #Left (-> :ErrorCode)' and 'Replace with exemplar value' on Rule E violation, found: " + labels,
+            labels.contains("Wrap with #Left (-> :ErrorCode)")
+                && labels.contains("Replace with exemplar value '#Right \"example\"'")
+        );
+        assertEquals(
+            "Primary quick-fix for E023 must be 'Wrap with #Left (-> :ErrorCode)'",
+            "Wrap with #Left (-> :ErrorCode)",
+            allFixes.get(0).getText()
+        );
+
+        myFixture.launchAction(allFixes.get(0));
+        assertTrue(
+            "Launching Wrap with #Left must produce ':body #Left 404'",
+            myFixture.getEditor().getDocument().getText().contains(":body #Left 404")
+        );
+    }
+
     public void testBareHashUnionCompleteBranchActions() {
         myFixture.configureByText(
             "bare_hash_union.stvn",

@@ -320,4 +320,83 @@ public final class StvnReservedPackageAndDomainPluginTest extends BasePlatformTe
         .findFirst();
     assertTrue("Must emit ERR_RESERVED_PACKAGE_PROHIBITED on ':org/stvnadore/prelude'", e037.isPresent());
   }
+
+  /**
+   * Verifies Stage 9 2A (nested :package), 2B (reserved :org/stvnadore/custom_hack E037), and
+   * 2C (trailing slash in :use) diagnostics and quick-fixes when local inspections are enabled.
+   */
+  public void testStage9NestedPackageReservedNamespaceAndTrailingSlashWithInspectionsEnabled() {
+    myFixture.enableInspections(
+        new StvnNestedPackageInspection(),
+        new StvnTrailingSlashInspection()
+    );
+    var content = """
+        {
+          :defs {
+            :package :com/acme/identity {
+              :UserId { #unsigned #size 64 #minIncl 1000 } :Int
+
+              :package :com/acme/identity/nested {
+                :IllegalNestedType :Int
+              }
+            }
+
+            :package :org/stvnadore/custom_hack {
+              :HijackedPort :Int
+            }
+
+            :use [ :com<caret>/acme/identity/ ]
+          }
+          :type :Int
+          :body 0
+        }
+        """;
+    var psiFile = myFixture.configureByText("stage9_pkg_governance.stvn_i", content);
+    var highlights = myFixture.doHighlighting();
+
+    var nestedNodes = com.intellij.psi.util.PsiTreeUtil.findChildrenOfType(
+        psiFile,
+        org.stvnadore.psi.NestedPackageIllegal.class
+    );
+    assertEquals("Grammar must parse nested :package as NestedPackageIllegal", 1, nestedNodes.size());
+
+    var nestedErrors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+            && h.getDescription() != null
+            && h.getDescription().contains("ERR_NESTED_PACKAGE_PROHIBITED"))
+        .toList();
+    assertEquals("Must emit exactly 1 ERR_NESTED_PACKAGE_PROHIBITED highlight", 1, nestedErrors.size());
+    assertTrue(
+        "Nested package error must include offending package path",
+        nestedErrors.get(0).getDescription().contains(":com/acme/identity/nested")
+    );
+
+    var e037 = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+            && h.getDescription() != null
+            && h.getDescription().contains(DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED))
+        .toList();
+    assertEquals(
+        "Must emit E037 ERR_RESERVED_PACKAGE_PROHIBITED on :org/stvnadore/custom_hack even with StvnNestedPackageInspection enabled",
+        1,
+        e037.size()
+    );
+
+    var trailingSlashErrors = highlights.stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+            && h.getDescription() != null
+            && h.getDescription().contains("ERR_TRAILING_SLASH_PROHIBITED"))
+        .toList();
+    assertEquals("Must emit exactly 1 ERR_TRAILING_SLASH_PROHIBITED highlight", 1, trailingSlashErrors.size());
+
+    var slashFixes = myFixture.getAllQuickFixes().stream()
+        .filter(a -> "Remove trailing slash ':com/acme/identity'".equals(a.getText()))
+        .toList();
+    assertFalse("Must offer \"Remove trailing slash ':com/acme/identity'\" quick-fix", slashFixes.isEmpty());
+    myFixture.launchAction(slashFixes.get(0));
+    assertTrue(
+        "Trailing slash must be removed from :use target",
+        myFixture.getEditor().getDocument().getText().contains(":use [ :com/acme/identity ]")
+    );
+  }
 }

@@ -154,10 +154,10 @@ private defs_element_recover ::= !(RBRACE | KW_TYPE | KW_BODY | KW_INCLUDE | KW_
 
 package_enclosure         ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 package_path              ::= type_keyword
-package_element           ::= use_stmt
+package_element           ::= nested_package_illegal
+                            | use_stmt
                             | type_definition
                             | constant_definition
-                            | nested_package_illegal
 nested_package_illegal    ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 
 use_stmt                  ::= KW_USE LBRACK use_target use_options_block? use_alias_block? RBRACK {pin=1}

@@ -12,10 +12,15 @@ import org.stvnadore.plugin.StvnDefinitionsFile;
 import org.stvnadore.plugin.StvnDefsIncludeFile;
 import org.stvnadore.plugin.StvnPayloadFile;
 import org.stvnadore.plugin.StvnPayloadIncludeFile;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+
 import java.util.List;
+import java.util.Set;
+
 
 /**
  * PSI utility helpers for AST inspection and token sequence scanning.
@@ -113,6 +118,111 @@ public final class StvnPsiUtils {
     /**
      * Determines whether the given element is the declaration target of a {@link TypeDefinition}.
      */
+    /**
+     * Resolves the governing {@link TypeDefinition} for a PSI element, hopping across
+     * {@link IncludeMapAlias} (into the included {@code .stvn_di} or {@code .stvn_d} file) and
+     * {@link UseMapAlias} (into the target {@code :package} enclosure) when the element is an alias keyword.
+     *
+     * @param element the candidate PSI element (TypeDefinition, TypeKeyword, IncludeMapAlias, or UseMapAlias)
+     * @return the resolved {@link TypeDefinition}, or {@code null} if unresolvable
+     */
+    public static @Nullable TypeDefinition resolveTargetTypeDefinition(@Nullable PsiElement element) {
+        return resolveTargetTypeDefinitionInternal(element, new HashSet<>());
+    }
+
+    private static @Nullable TypeDefinition resolveTargetTypeDefinitionInternal(
+        @Nullable PsiElement element,
+        Set<PsiElement> visited
+    ) {
+        if (element == null || !visited.add(element)) {
+            return null;
+        }
+        var direct = getParentTypeDefinition(element);
+        if (direct != null) {
+            return direct;
+        }
+        var includeAlias = element instanceof IncludeMapAlias ima ? ima
+            : PsiTreeUtil.getParentOfType(element, IncludeMapAlias.class, false);
+        if (includeAlias != null) {
+            var keywords = includeAlias.getTypeKeywordList();
+            if (!keywords.isEmpty()) {
+                var remoteKw = keywords.get(0);
+                if (remoteKw != null) {
+                    var resolvedRef = new StvnTypeReference(remoteKw).resolve();
+                    if (resolvedRef != null) {
+                        var hopped = resolveTargetTypeDefinitionInternal(resolvedRef, visited);
+                        if (hopped != null) {
+                            return hopped;
+                        }
+                    }
+                    var sourceTypeName = remoteKw.getText().trim();
+                    var includeElement = PsiTreeUtil.getParentOfType(includeAlias, IncludeElement.class);
+                    if (includeElement != null && includeElement.getStringLiteral() != null) {
+                        var targetFile = StvnTypeReference.resolveIncludeFile(includeElement.getStringLiteral());
+                        if (targetFile != null) {
+                            var resolvedInTarget = StvnTypeReference.resolveTypeInFile(
+                                targetFile, sourceTypeName, new HashSet<>(), null, true);
+                            if (resolvedInTarget != null) {
+                                var hopped = resolveTargetTypeDefinitionInternal(resolvedInTarget, visited);
+                                if (hopped != null) {
+                                    return hopped;
+                                }
+                            }
+                            var bareSource = sourceTypeName.startsWith(":") ? sourceTypeName.substring(1) : sourceTypeName;
+                            for (var td : PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class)) {
+                                var tdKw = td.getTypeKeyword();
+                                if (tdKw != null) {
+                                    var tdName = tdKw.getText().trim();
+                                    if (tdName.equals(sourceTypeName) || tdName.endsWith("/" + bareSource)) {
+                                        return td;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        var useAlias = element instanceof UseMapAlias uma ? uma
+            : PsiTreeUtil.getParentOfType(element, UseMapAlias.class, false);
+        if (useAlias != null) {
+            var keywords = useAlias.getTypeKeywordList();
+            if (!keywords.isEmpty()) {
+                var remoteKw = keywords.get(0);
+                if (remoteKw != null) {
+                    var resolvedRef = new StvnTypeReference(remoteKw).resolve();
+                    if (resolvedRef != null) {
+                        var hopped = resolveTargetTypeDefinitionInternal(resolvedRef, visited);
+                        if (hopped != null) {
+                            return hopped;
+                        }
+                    }
+                    var sourceTypeName = remoteKw.getText().trim();
+                    var useStmt = PsiTreeUtil.getParentOfType(useAlias, UseStmt.class);
+                    var targetPkg = (useStmt != null && useStmt.getUseTarget() != null)
+                        ? useStmt.getUseTarget().getText().trim()
+                        : null;
+                    var containingFile = element.getContainingFile();
+                    if (containingFile != null) {
+                        for (var pkg : PsiTreeUtil.findChildrenOfType(containingFile, PackageEnclosure.class)) {
+                            var pkgPath = pkg.getPackagePath();
+                            if (targetPkg == null || (pkgPath != null && targetPkg.equals(pkgPath.getText().trim()))) {
+                                for (var pkgElem : pkg.getPackageElementList()) {
+                                    var td = pkgElem.getTypeDefinition();
+                                    if (td != null && td.getTypeKeyword() != null
+                                        && td.getTypeKeyword().getText().trim().equals(sourceTypeName)) {
+                                        return td;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     public static boolean isTypeDefinitionTarget(@Nullable PsiElement element) {
         if (element == null) return false;
         var parent = element.getParent();

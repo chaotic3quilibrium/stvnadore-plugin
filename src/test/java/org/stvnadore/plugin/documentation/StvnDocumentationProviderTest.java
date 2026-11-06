@@ -1405,4 +1405,80 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
             }
         }
     }
+
+    public void testStage9NestedPackageIllegalSuppressesFalseTypeAliasHoverCard() {
+        var text = """
+            {
+              :defs {
+                :package :com/acme/identity {
+                  :UserId { #unsigned #size 64 #minIncl 1000 } :Int
+                  :package :com/acme/identity/nested {
+                    :IllegalNestedType :Int
+                  }
+                }
+              }
+              :type :Int
+              :body 0
+            }
+            """;
+        var file = myFixture.configureByText("stage9_nested_pkg_hover.stvn_i", text);
+        var editor = myFixture.getEditor();
+
+        int nestedKwOffset = text.indexOf(":package :com/acme/identity/nested") + 2;
+        var kwElem = file.findElementAt(nestedKwOffset);
+        assertNotNull(kwElem);
+        var kwDocElem = provider.getCustomDocumentationElement(editor, file, kwElem, nestedKwOffset);
+        var kwDoc = kwDocElem != null ? provider.generateDoc(kwDocElem, kwElem) : provider.generateDoc(kwElem, kwElem);
+        assertNull("Hovering illegal nested ':package' keyword must return null documentation", kwDoc);
+
+        int nestedPathOffset = text.indexOf(":com/acme/identity/nested") + 2;
+        var pathElem = file.findElementAt(nestedPathOffset);
+        assertNotNull(pathElem);
+        var pathDocElem = provider.getCustomDocumentationElement(editor, file, pathElem, nestedPathOffset);
+        var pathDoc = pathDocElem != null ? provider.generateDoc(pathDocElem, pathElem) : provider.generateDoc(pathElem, pathElem);
+        assertNull("Hovering illegal nested package path must return null documentation", pathDoc);
+    }
+
+    public void testStage7OptionSomeArityOneTupleHoverDisplaysViolationAndGoverningSchemaOnBothTupleAndInnerScalar() {
+        var text = """
+            {
+              :defs {
+                :OptionalCount :Option({ #unsigned #size 16 } :Int)
+              }
+              :type :OptionalCount
+              :body #Some (42)
+            }
+            """;
+        myFixture.configureByText("stage7_option_some_tuple_hover.stvn", text);
+
+        int parenOffset = text.indexOf("(42)");
+        String tupleDoc = getDocAtOffset(text, parenOffset);
+        assertTrue(
+            "Tuple hover must preserve enclosing :OptionalCount nominal schema:\n" + tupleDoc,
+            tupleDoc.contains("<b>Governing Schema:</b> <code>:OptionalCount ({ #unsigned #size 16 } :Int)</code>")
+        );
+        assertTrue(
+            "Tuple hover must display In Violation:\n" + tupleDoc,
+            tupleDoc.contains(">In Violation</b>")
+        );
+        assertTrue(
+            "Tuple hover must explain scalar vs product constructor mismatch:\n" + tupleDoc,
+            tupleDoc.contains("Type mismatch: expected scalar :Int, found product constructor :Tuple")
+        );
+
+        int scalarOffset = text.indexOf("42");
+        String scalarDoc = getDocAtOffset(text, scalarOffset);
+        assertTrue(
+            "Inner scalar hover must preserve enclosing :OptionalCount nominal schema:\n" + scalarDoc,
+            scalarDoc.contains("<b>Governing Schema:</b> <code>:OptionalCount ({ #unsigned #size 16 } :Int)</code>")
+        );
+        assertTrue(
+            "Inner scalar hover must display In Violation:\n" + scalarDoc,
+            scalarDoc.contains(">In Violation</b>")
+        );
+        assertTrue(
+            "Inner scalar hover must explain scalar vs product constructor mismatch:\n" + scalarDoc,
+            scalarDoc.contains("Type mismatch: expected scalar :Int, found product constructor :Tuple")
+        );
+    }
 }

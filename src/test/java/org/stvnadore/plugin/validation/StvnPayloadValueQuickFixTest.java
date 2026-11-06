@@ -409,4 +409,155 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
             slot3Doc.contains("In Violation") || slot3Doc.contains("Violated")
         );
     }
+
+    public void testStage7OptionSomeScalarArityOneTupleUnwrapQuickFix() {
+        var text = """
+            {
+              :defs {
+                :OptionalCount :Option({ #unsigned #size 16 } :Int)
+              }
+              :type :OptionalCount
+              :body #Some (<caret>42)
+            }
+            """;
+        myFixture.configureByText("stage7_option_some_tuple.stvn", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> quickFixes = myFixture.getAllQuickFixes();
+        List<String> labels = quickFixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 2 quick-fixes on (42), found: " + labels, quickFixes.size() >= 2);
+        assertEquals(
+            "Primary quick-fix must unwrap parentheses around scalar value '42'",
+            "Unwrap parentheses around scalar value '42'",
+            quickFixes.get(0).getText()
+        );
+        assertEquals(
+            "Secondary quick-fix must be exemplar replacement",
+            "Replace with exemplar value '0'",
+            quickFixes.get(1).getText()
+        );
+
+        myFixture.launchAction(quickFixes.get(0));
+        assertTrue(
+            "Unwrapping (42) must produce ':body #Some 42'",
+            myFixture.getEditor().getDocument().getText().contains(":body #Some 42")
+        );
+    }
+
+    public void testStage8StringLexicographicalBoundsProximityOrderedClampQuickFixes() {
+        var upperViolationText = """
+            {
+              :defs {
+                :BoundedLexCode {
+                  #minSize 4
+                  #maxSize 4
+                  #minIncl "B000"
+                  #maxIncl "M999"
+                } :String
+              }
+              :type :BoundedLexCode
+              :body "Z9<caret>99"
+            }
+            """;
+        myFixture.configureByText("stage8_string_upper_clamp.stvn", upperViolationText);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> upperFixes = myFixture.getAllQuickFixes();
+        List<String> upperLabels = upperFixes.stream().map(IntentionAction::getText).toList();
+        assertEquals(
+            "Expected proximity-ordered maximum then minimum clamp fixes without duplicate exemplar fix",
+            List.of(
+                "Clamp value to maximum bound '\"M999\"'",
+                "Clamp value to minimum bound '\"B000\"'"
+            ),
+            upperLabels
+        );
+        myFixture.launchAction(upperFixes.get(0));
+        assertTrue(myFixture.getEditor().getDocument().getText().contains(":body \"M999\""));
+
+        var lowerViolationText = """
+            {
+              :defs {
+                :BoundedLexCode {
+                  #minSize 4
+                  #maxSize 4
+                  #minIncl "B000"
+                  #maxIncl "M999"
+                } :String
+              }
+              :type :BoundedLexCode
+              :body "A0<caret>00"
+            }
+            """;
+        myFixture.configureByText("stage8_string_lower_clamp.stvn", lowerViolationText);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> lowerFixes = myFixture.getAllQuickFixes();
+        List<String> lowerLabels = lowerFixes.stream().map(IntentionAction::getText).toList();
+        assertEquals(
+            "Expected proximity-ordered minimum then maximum clamp fixes without duplicate exemplar fix",
+            List.of(
+                "Clamp value to minimum bound '\"B000\"'",
+                "Clamp value to maximum bound '\"M999\"'"
+            ),
+            lowerLabels
+        );
+        myFixture.launchAction(lowerFixes.get(0));
+        assertTrue(myFixture.getEditor().getDocument().getText().contains(":body \"B000\""));
+    }
+
+    public void testStage9CrossFileIncludeAliasIntegerBoundClampingAndExemplarQuickFixes() {
+        myFixture.addFileToProject(
+            "gauntlet_v2_shared_defs.stvn_di",
+            """
+            {
+              :meta {
+                #name "gauntlet_v2_shared_defs"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :package :com/acme/shared/ledger {
+                  :LedgerChannel {
+                    #unsigned
+                    #size 16
+                    #minIncl 1024
+                  } :Int
+                }
+              }
+            }
+            """
+        );
+        var text = """
+            {
+              :meta {
+                #name "stage9_imported_ledger"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :include [
+                  "./gauntlet_v2_shared_defs.stvn_di"
+                  { #strip }
+                  {
+                    :LedgerChannel :ImportedLedgerChannel
+                  }
+                ]
+              }
+              :type :ImportedLedgerChannel
+              :body 5<caret>00
+            }
+            """;
+        myFixture.configureByText("stage9_imported_ledger.stvn_i", text);
+        myFixture.doHighlighting();
+
+        List<IntentionAction> fixes = myFixture.getAllQuickFixes().stream()
+            .filter(a -> !a.getText().startsWith("Open included module"))
+            .toList();
+        List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
+        assertTrue("Expected at least 2 quick-fixes on 500, found: " + labels, fixes.size() >= 2);
+        assertEquals("Clamp value to minimum bound '1024'", fixes.get(0).getText());
+        assertEquals("Replace with exemplar value '1024'", fixes.get(1).getText());
+
+        myFixture.launchAction(fixes.get(0));
+        assertTrue(myFixture.getEditor().getDocument().getText().contains(":body 1024"));
+    }
 }

@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.NestedPackageIllegal;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.TypeDefinition;
@@ -29,10 +30,14 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
         return new Visitor() {
             @Override
             public void visitNestedPackageIllegal(@NotNull NestedPackageIllegal element) {
+                var pkgPath = element.getPackagePath() != null ? element.getPackagePath().getText().trim() : "";
+                var rawMsg = pkgPath.isEmpty()
+                    ? "Nested packages are prohibited"
+                    : "Nested packages are prohibited: " + pkgPath;
                 holder.registerProblem(
                     element,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Nested packages are prohibited",
+                        rawMsg,
                         StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED
                     ),
                     ProblemHighlightType.GENERIC_ERROR
@@ -42,7 +47,7 @@ public final class StvnNestedPackageInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
                 var target = def.getTypeDefTarget();
-                if (target != null && ":package".equals(target.getText().trim())
+                if (target != null && StvnVocabulary.KEYWORD_PACKAGE.equals(target.getText().trim())
                         && PsiTreeUtil.getParentOfType(def, PackageEnclosure.class) != null) {
                     holder.registerProblem(
                         def,

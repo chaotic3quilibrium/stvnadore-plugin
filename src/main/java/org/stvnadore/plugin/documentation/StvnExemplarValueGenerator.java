@@ -234,8 +234,16 @@ public final class StvnExemplarValueGenerator {
                         case StvnVocabulary.TYPE_STRING -> generateStringExemplar(
                             parseLongOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE)),
                             parseLongOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE)),
-                            unquoteOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)),
-                            unquoteOrNull(psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)),
+                            unquoteOrNull(
+                                psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
+                                    ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+                                    : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)
+                            ),
+                            unquoteOrNull(
+                                psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)
+                                    ? psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+                                    : psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)
+                            ),
                             psiMeta.containsKey(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
                         );
                         case StvnVocabulary.TYPE_BOOLEAN -> StvnVocabulary.VAL_TRUE;
@@ -845,7 +853,7 @@ public final class StvnExemplarValueGenerator {
                 break;
             }
             var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-            var td = StvnPsiUtils.getParentTypeDefinition(target);
+            var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
             if (td == null) {
                 break;
             }

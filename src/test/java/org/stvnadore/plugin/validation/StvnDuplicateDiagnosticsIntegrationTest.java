@@ -240,6 +240,43 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     }
 
     /**
+     * Verifies that Stage 9 nested :package (2A), reserved :org/stvnadore/custom_hack (2B E037),
+     * and trailing slash in :use (2C) produce zero duplicate diagnostics when all inspections are enabled.
+     */
+    public void testStage9NestedReservedPackageAndTrailingSlashHaveZeroDuplicatesAndPreserveE037() {
+        var content = """
+            {
+              :defs {
+                :package :com/acme/identity {
+                  :UserId { #unsigned #size 64 #minIncl 1000 } :Int
+                  :package :com/acme/identity/nested {
+                    :IllegalNestedType :Int
+                  }
+                }
+                :package :org/stvnadore/custom_hack {
+                  :HijackedPort :Int
+                }
+                :use [ :com/acme/identity/ ]
+              }
+              :type :Int
+              :body 0
+            }
+            """;
+        myFixture.configureByText("stage9_dedup.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+
+        assertZeroDuplicateDiagnostics("stage9_dedup.stvn_i", highlights);
+        assertNoCoreHighlight("stage9_dedup.stvn_i", highlights, "ERR_NESTED_PACKAGE_PROHIBITED");
+        assertNoCoreHighlight("stage9_dedup.stvn_i", highlights, "ERR_TRAILING_SLASH_PROHIBITED");
+
+        var reservedPkgErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_RESERVED_PACKAGE_PROHIBITED"))
+            .toList();
+        assertEquals("Expected exactly 1 E037 ERR_RESERVED_PACKAGE_PROHIBITED highlight", 1, reservedPkgErrors.size());
+    }
+
+    /**
      * Asserts that zero [stvn-core:...] highlights exist for the specified diagnostic code.
      */
     private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {

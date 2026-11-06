@@ -37,6 +37,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
             @Override
             public void visitUseTarget(@NotNull UseTarget element) {
                 if (hasTrailingSlash(element)) {
+                    var cleaned = stripTrailingSlashes(extractNonCommentText(element));
                     holder.registerProblem(
                         element,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -44,7 +45,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveTrailingSlashQuickFix()
+                        new RemoveTrailingSlashQuickFix(cleaned)
                     );
                 }
             }
@@ -52,6 +53,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
             @Override
             public void visitPackagePath(@NotNull PackagePath element) {
                 if (hasTrailingSlash(element)) {
+                    var cleaned = stripTrailingSlashes(extractNonCommentText(element));
                     holder.registerProblem(
                         element,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -59,7 +61,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveTrailingSlashQuickFix()
+                        new RemoveTrailingSlashQuickFix(cleaned)
                     );
                 }
             }
@@ -99,14 +101,48 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
     }
 
     /**
+     * Strips trailing forward slashes from a package or {@code :use} target path string.
+     *
+     * @param text raw path string
+     * @return path string with all trailing {@code /} characters removed
+     */
+    public static @NotNull String stripTrailingSlashes(@NotNull String text) {
+        String cleaned = text.trim();
+        while (cleaned.endsWith("/")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        }
+        return cleaned;
+    }
+
+    /**
      * Quick-fix that strips prohibited trailing slash characters from a {@code :use} target or {@code :package} path.
      */
     public static final class RemoveTrailingSlashQuickFix implements LocalQuickFix {
 
+        private final String cleanedTarget;
+
         /**
-         * Constructs a new RemoveTrailingSlashQuickFix instance.
+         * Constructs a new RemoveTrailingSlashQuickFix instance without a specific target display suffix.
          */
         public RemoveTrailingSlashQuickFix() {
+            this("");
+        }
+
+        /**
+         * Constructs a new RemoveTrailingSlashQuickFix instance displaying the cleaned target path.
+         *
+         * @param cleanedTarget the target path after trailing slashes are removed
+         */
+        public RemoveTrailingSlashQuickFix(@NotNull String cleanedTarget) {
+            this.cleanedTarget = cleanedTarget;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            if (!cleanedTarget.isBlank()) {
+                return "Remove trailing slash '" + cleanedTarget + "'";
+            }
+            return "Remove trailing slash";
         }
 
         @Override

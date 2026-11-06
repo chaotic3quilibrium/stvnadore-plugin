@@ -207,7 +207,7 @@ public final class StvnTypeResolver {
         if (targetElem == null) {
             return null;
         }
-        TypeDefinition typeDef = StvnPsiUtils.getParentTypeDefinition(targetElem);
+        TypeDefinition typeDef = StvnPsiUtils.resolveTargetTypeDefinition(targetElem);
         if (typeDef != null) {
             return typeDef;
         }
@@ -1740,8 +1740,8 @@ public final class StvnTypeResolver {
                     currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
                         ? innerSchemas.get(step.index)
                         : null;
-                } else if (step.index == 0 && constructor.getSumType() != null) {
-                    currentSchema = schemaToInspect;
+                } else if (step.index == 0 && (constructor.getSumType() != null || constructor.getAtomicType() != null)) {
+                    currentSchema = (constructor.getSumType() != null) ? schemaToInspect : currentSchema;
                 } else {
                     currentSchema = null;
                 }
@@ -2587,7 +2587,7 @@ public final class StvnTypeResolver {
             }
         }
         var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        return StvnPsiUtils.getParentTypeDefinition(resolved);
+        return StvnPsiUtils.resolveTargetTypeDefinition(resolved);
     }
 
     /**

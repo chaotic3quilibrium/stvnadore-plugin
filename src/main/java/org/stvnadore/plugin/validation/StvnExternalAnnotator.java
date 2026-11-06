@@ -875,6 +875,23 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Trailing slash quick-fix (ERR_TRAILING_SLASH_PROHIBITED)
+                if (DiagnosticBag.ERR_TRAILING_SLASH_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED.equals(diagnosticId)
+                        || rawMessage.contains("Trailing slash prohibited")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    PsiElement slashElem = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.UseTarget.class, false);
+                    if (slashElem == null) {
+                        slashElem = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.PackagePath.class, false);
+                    }
+                    if (slashElem != null) {
+                        String cleaned = StvnTrailingSlashInspection.stripTrailingSlashes(slashElem.getText().trim());
+                        annotationBuilder = annotationBuilder.withFix(
+                            new StvnRemoveTrailingSlashIntentionAction(slashElem, cleaned)
+                        );
+                    }
+                }
+
                 // Reserved domain quick-fixes (E038)
                 if (DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
@@ -1029,7 +1046,7 @@ public final class StvnExternalAnnotator
                         fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
                     } else {
                         var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
-                        var td = StvnPsiUtils.getParentTypeDefinition(targetDef);
+                        var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
                         if (td != null && td.getSchemaType() != null) {
                             var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                             if (resolved != null) {
@@ -1899,9 +1916,15 @@ public final class StvnExternalAnnotator
         String diagnosticId,
         String rawMessage
     ) {
-        if (!DiagnosticBag.ERR_AMBIGUOUS_SUM_INFERENCE.equals(diagnosticId)
-                && !rawMessage.contains("Ambiguous implicit")
-                && !rawMessage.contains("matches multiple candidate branches")) {
+        boolean isAmbiguousSum = DiagnosticBag.ERR_AMBIGUOUS_SUM_INFERENCE.equals(diagnosticId)
+            || rawMessage.contains("Ambiguous implicit")
+            || rawMessage.contains("matches multiple candidate branches");
+        boolean isEitherLeftMissingTag = DiagnosticBag.ERR_EITHER_LEFT_MISSING_TAG.equals(diagnosticId)
+            || "EITHER_LEFT_MISSING_TAG".equals(diagnosticId)
+            || "E023".equals(diagnosticId)
+            || rawMessage.contains("Rule E Violation")
+            || rawMessage.contains("explicit #Left tag is required");
+        if (!isAmbiguousSum && !isEitherLeftMissingTag) {
             return annotationBuilder;
         }
         var elem = file.findElementAt(range.getStartOffset());
@@ -1928,12 +1951,18 @@ public final class StvnExternalAnnotator
         if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER) && innerSchemas.size() >= 2) {
             var rightLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(1));
             var leftLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0));
-            annotationBuilder = annotationBuilder.withFix(
-                new WrapSumVariantQuickFix(targetElement, "#Right", rightLabel, PriorityAction.Priority.HIGH)
-            );
-            annotationBuilder = annotationBuilder.withFix(
-                new WrapSumVariantQuickFix(targetElement, "#Left", leftLabel, PriorityAction.Priority.NORMAL)
-            );
+            if (isEitherLeftMissingTag) {
+                annotationBuilder = annotationBuilder.withFix(
+                    new WrapSumVariantQuickFix(targetElement, StvnVocabulary.VAL_LEFT, leftLabel, PriorityAction.Priority.TOP)
+                );
+            } else {
+                annotationBuilder = annotationBuilder.withFix(
+                    new WrapSumVariantQuickFix(targetElement, StvnVocabulary.VAL_RIGHT, rightLabel, PriorityAction.Priority.HIGH)
+                );
+                annotationBuilder = annotationBuilder.withFix(
+                    new WrapSumVariantQuickFix(targetElement, StvnVocabulary.VAL_LEFT, leftLabel, PriorityAction.Priority.NORMAL)
+                );
+            }
         } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
             for (int i = 0; i < innerSchemas.size(); i++) {
                 var branch = innerSchemas.get(i);
@@ -1946,5 +1975,42 @@ public final class StvnExternalAnnotator
             }
         }
         return annotationBuilder;
+    }
+
+    private static final class StvnRemoveTrailingSlashIntentionAction
+            extends com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement {
+
+        private final String cleanedTarget;
+
+        StvnRemoveTrailingSlashIntentionAction(@Nullable PsiElement element, String cleanedTarget) {
+            super(element);
+            this.cleanedTarget = cleanedTarget;
+        }
+
+        @Override
+        public String getText() {
+            return "Remove trailing slash '" + cleanedTarget + "'";
+        }
+
+        @Override
+        public String getFamilyName() {
+            return "Remove trailing slash";
+        }
+
+        @Override
+        public void invoke(
+            Project project,
+            PsiFile file,
+            @Nullable Editor editor,
+            PsiElement startElement,
+            PsiElement endElement
+        ) {
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null) {
+                var range = startElement.getTextRange();
+                doc.replaceString(range.getStartOffset(), range.getEndOffset(), cleanedTarget);
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+        }
     }
 }

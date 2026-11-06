@@ -80,6 +80,18 @@ public final class StvnPayloadValueQuickFixProvider {
         "significant digits \\((\\d+)\\)"
     );
 
+    private static final Pattern INT_MIN_BOUND_DIAG_PATTERN = Pattern.compile(
+        "(?:below minimum(?: bound)?|must be >=)\\s+(-?\\d+)"
+    );
+
+    private static final Pattern INT_MAX_BOUND_DIAG_PATTERN = Pattern.compile(
+        "(?:exceeds maximum(?: bound)?|meets or exceeds maximum(?: bound)?|must be <)\\s+(-?\\d+)"
+    );
+
+    private static final Pattern INT_RANGE_DIAG_PATTERN = Pattern.compile(
+        "\\[(-?\\d+),\\s*(-?\\d+)([\\])])"
+    );
+
     private StvnPayloadValueQuickFixProvider() {}
 
     /**
@@ -318,17 +330,78 @@ public final class StvnPayloadValueQuickFixProvider {
             ? StvnExemplarValueGenerator.extractLineageMetadata(rawSchema)
             : Map.of();
         StvnSchema irSchema = rawSchema != null ? resolveLeafIrSchema(rawSchema) : null;
+        if (irSchema == null) {
+            var coreVal = StvnTypeResolver.resolveCoreValue(value);
+            irSchema = coreVal != null ? coreVal.schema() : null;
+            while (irSchema instanceof StvnSchema.PoisonedSchema p) {
+                irSchema = p.bestEffortFallback().orElse(null);
+            }
+        }
 
+        String rawValueText = value.getText().trim();
         String baseType = terminalSchema != null ? extractBaseType(terminalSchema, irSchema) : null;
         if (baseType == null && value.getFloatLiteral() != null) {
             baseType = StvnVocabulary.TYPE_FLOAT;
         }
+        if (baseType == null
+                && value.getIntegerLiteral() != null
+                && (terminalSchema == null || terminalSchema.getSchemaConstructor() == null)) {
+            baseType = StvnVocabulary.TYPE_INT;
+        }
         if (baseType == null) {
+            if (rawSchema != null) {
+                String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
+                if (exemplar != null && !exemplar.equals(rawValueText)) {
+                    return List.of(
+                        new PayloadValueQuickFix(
+                            value,
+                            "Replace with exemplar value '" + exemplar + "'",
+                            "STVN Exemplar Value Replacement",
+                            exemplar,
+                            null,
+                            PriorityAction.Priority.LOW
+                        )
+                    );
+                }
+            }
             return List.of();
         }
 
         List<PayloadValueQuickFix> fixes = new ArrayList<>();
-        String rawValueText = value.getText().trim();
+
+        if (value.getCollectionValue() != null
+                && value.getCollectionValue().getTupleLiteral() != null
+                && value.getCollectionValue().getTupleLiteral().getValueList().size() == 1) {
+            Value innerVal = value.getCollectionValue().getTupleLiteral().getValueList().get(0);
+            String innerText = innerVal.getText().trim();
+            if (!innerText.isEmpty()) {
+                fixes.add(
+                    new PayloadValueQuickFix(
+                        value,
+                        "Unwrap parentheses around scalar value '" + innerText + "'",
+                        "STVN Scalar Unwrap",
+                        innerText,
+                        null,
+                        PriorityAction.Priority.TOP
+                    )
+                );
+            }
+        } else if (value.getParent() instanceof org.stvnadore.psi.TupleLiteral parentTuple
+                && parentTuple.getValueList().size() == 1
+                && parentTuple.getParent() != null
+                && parentTuple.getParent().getParent() instanceof Value outerTupleVal
+                && !rawValueText.isEmpty()) {
+            fixes.add(
+                new PayloadValueQuickFix(
+                    outerTupleVal,
+                    "Unwrap parentheses around scalar value '" + rawValueText + "'",
+                    "STVN Scalar Unwrap",
+                    rawValueText,
+                    null,
+                    PriorityAction.Priority.TOP
+                )
+            );
+        }
 
         switch (baseType) {
             case StvnVocabulary.TYPE_DATE_TIME -> {
@@ -444,6 +517,32 @@ public final class StvnPayloadValueQuickFixProvider {
                 BigInteger maxExcl = (irSchema instanceof StvnSchema.IntSchema is && is.explicitMaxExcl().isPresent())
                     ? is.explicitMaxExcl().get()
                     : parseBigIntOrNull(meta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+
+                if (minIncl == null) {
+                    Matcher minM = INT_MIN_BOUND_DIAG_PATTERN.matcher(message);
+                    if (minM.find()) {
+                        minIncl = parseBigIntOrNull(minM.group(1));
+                    } else {
+                        Matcher rangeM = INT_RANGE_DIAG_PATTERN.matcher(message);
+                        if (rangeM.find()) {
+                            minIncl = parseBigIntOrNull(rangeM.group(1));
+                        }
+                    }
+                }
+                if (maxExcl == null) {
+                    Matcher maxM = INT_MAX_BOUND_DIAG_PATTERN.matcher(message);
+                    if (maxM.find()) {
+                        maxExcl = parseBigIntOrNull(maxM.group(1));
+                    } else {
+                        Matcher rangeM = INT_RANGE_DIAG_PATTERN.matcher(message);
+                        if (rangeM.find()) {
+                            BigInteger rawUpper = parseBigIntOrNull(rangeM.group(2));
+                            if (rawUpper != null) {
+                                maxExcl = "]".equals(rangeM.group(3)) ? rawUpper.add(BigInteger.ONE) : rawUpper;
+                            }
+                        }
+                    }
+                }
 
                 addIntegerClampFixIfOutOfBounds(fixes, value, rawValueText, unsigned, sizeBits, minIncl, maxExcl);
 
@@ -597,7 +696,106 @@ public final class StvnPayloadValueQuickFixProvider {
                     )
                 );
             }
-            case StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_ENUM -> {
+            case StvnVocabulary.TYPE_STRING -> {
+                String rawMin = null;
+                String rawMax = null;
+                if (irSchema instanceof StvnSchema.StringSchema ss) {
+                    if (ss.lowerBound().isPresent()) {
+                        rawMin = ss.lowerBound().get().value();
+                    }
+                    if (ss.upperBound().isPresent()) {
+                        rawMax = ss.upperBound().get().value();
+                    }
+                }
+                if (rawMin == null) {
+                    String metaMin = meta.get(StvnVocabulary.FACET_KW_MIN_INCL);
+                    if (metaMin == null) {
+                        metaMin = meta.get(StvnVocabulary.FACET_KW_MIN_EXCL);
+                    }
+                    if (metaMin != null) {
+                        rawMin = stripQuotesOrFences(metaMin);
+                    }
+                }
+                if (rawMax == null) {
+                    String metaMax = meta.get(StvnVocabulary.FACET_KW_MAX_INCL);
+                    if (metaMax == null) {
+                        metaMax = meta.get(StvnVocabulary.FACET_KW_MAX_EXCL);
+                    }
+                    if (metaMax != null) {
+                        rawMax = stripQuotesOrFences(metaMax);
+                    }
+                }
+
+                String authored = value.getStringLiteral() != null ? stripQuotesOrFences(rawValueText) : null;
+                if (authored != null && (rawMin != null || rawMax != null)) {
+                    String quotedMin = rawMin != null ? "\"" + rawMin + "\"" : null;
+                    String quotedMax = rawMax != null ? "\"" + rawMax + "\"" : null;
+                    if (rawMax != null && quotedMax != null && authored.compareTo(rawMax) > 0) {
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Clamp value to maximum bound '" + quotedMax + "'",
+                                "STVN Scalar Bound Clamping",
+                                quotedMax,
+                                null,
+                                PriorityAction.Priority.TOP
+                            )
+                        );
+                        if (quotedMin != null) {
+                            fixes.add(
+                                new PayloadValueQuickFix(
+                                    value,
+                                    "Clamp value to minimum bound '" + quotedMin + "'",
+                                    "STVN Scalar Bound Clamping",
+                                    quotedMin,
+                                    null,
+                                    PriorityAction.Priority.HIGH
+                                )
+                            );
+                        }
+                    } else if (rawMin != null && quotedMin != null && authored.compareTo(rawMin) < 0) {
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Clamp value to minimum bound '" + quotedMin + "'",
+                                "STVN Scalar Bound Clamping",
+                                quotedMin,
+                                null,
+                                PriorityAction.Priority.TOP
+                            )
+                        );
+                        if (quotedMax != null) {
+                            fixes.add(
+                                new PayloadValueQuickFix(
+                                    value,
+                                    "Clamp value to maximum bound '" + quotedMax + "'",
+                                    "STVN Scalar Bound Clamping",
+                                    quotedMax,
+                                    null,
+                                    PriorityAction.Priority.HIGH
+                                )
+                            );
+                        }
+                    }
+                }
+
+                String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
+                if (exemplar != null
+                        && !exemplar.equals(rawValueText)
+                        && fixes.stream().noneMatch(f -> f.getText().endsWith("'" + exemplar + "'"))) {
+                    fixes.add(
+                        new PayloadValueQuickFix(
+                            value,
+                            "Replace with exemplar value '" + exemplar + "'",
+                            "STVN Exemplar Value Replacement",
+                            exemplar,
+                            null,
+                            PriorityAction.Priority.LOW
+                        )
+                    );
+                }
+            }
+            case StvnVocabulary.TYPE_ENUM -> {
                 String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
                 if (exemplar != null && !exemplar.equals(rawValueText)) {
                     fixes.add(
@@ -649,7 +847,7 @@ public final class StvnPayloadValueQuickFixProvider {
                 kw.getText().trim(),
                 new HashSet<>()
             );
-            var td = StvnPsiUtils.getParentTypeDefinition(target);
+            var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
             if (td != null) {
                 StvnSchema ir = StvnTypeResolver.resolveNominalIrSchema(td);
                 while (ir instanceof StvnSchema.PoisonedSchema p) {
@@ -1065,11 +1263,16 @@ public final class StvnPayloadValueQuickFixProvider {
                 || code.equals("E010")
                 || code.equals("ERR_INVALID_DATETIME_LITERAL")
                 || code.equals("E011")
-                || code.equals("ERR_ENUM_VARIANT_NOT_IN_SUBSET")) {
+                || code.equals("ERR_ENUM_VARIANT_NOT_IN_SUBSET")
+                || code.equals(DiagnosticBag.ERR_EITHER_LEFT_MISSING_TAG)
+                || code.equals("EITHER_LEFT_MISSING_TAG")
+                || code.equals("E023")) {
             return true;
         }
         return message.contains("Type mismatch")
             || message.contains("Constraint violation")
+            || message.contains("Rule E Violation")
+            || message.contains("explicit #Left tag is required")
             || message.contains("Mantissa precision ")
             || message.contains("significant digits")
             || message.contains("out of bounds")
