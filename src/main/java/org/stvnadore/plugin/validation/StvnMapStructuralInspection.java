@@ -33,7 +33,9 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
             public void visitListLiteral(@NotNull ListLiteral listLiteral) {
                 super.visitListLiteral(listLiteral);
                 var valueParent = PsiTreeUtil.getParentOfType(listLiteral, Value.class);
-                if (valueParent == null) {
+                if (valueParent == null
+                        || valueParent.getParent() instanceof ListLiteral
+                        || valueParent.getParent() instanceof MapLiteral) {
                     return;
                 }
 
@@ -68,7 +70,15 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
      */
     public static boolean isMapSchema(@Nullable SchemaType schema) {
         if (schema == null) return false;
-        var resolved = StvnTypeResolver.resolveNominalSchema(schema);
+        var resolved = schema;
+        var visited = new HashSet<com.intellij.psi.PsiElement>();
+        while (resolved != null && resolved.getSchemaConstructor() == null && visited.add(resolved)) {
+            var next = StvnTypeResolver.resolveNominalSchema(resolved);
+            if (next == null || next == resolved) {
+                break;
+            }
+            resolved = next;
+        }
         if (resolved == null) {
             return false;
         }

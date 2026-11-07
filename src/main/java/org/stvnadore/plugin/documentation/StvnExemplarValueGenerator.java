@@ -1003,6 +1003,13 @@ public final class StvnExemplarValueGenerator {
             String[] parts = text.split("\\s+", 2);
             String key = parts[0];
             String val = parts.length > 1 ? parts[1].trim() : StvnVocabulary.VAL_TRUE;
+            if (StvnVocabulary.FACET_KW_MIN_INCL.equals(key) || StvnVocabulary.FACET_KW_MIN_EXCL.equals(key)) {
+                target.remove(StvnVocabulary.FACET_KW_MIN_INCL);
+                target.remove(StvnVocabulary.FACET_KW_MIN_EXCL);
+            } else if (StvnVocabulary.FACET_KW_MAX_INCL.equals(key) || StvnVocabulary.FACET_KW_MAX_EXCL.equals(key)) {
+                target.remove(StvnVocabulary.FACET_KW_MAX_INCL);
+                target.remove(StvnVocabulary.FACET_KW_MAX_EXCL);
+            }
             target.put(key, val);
         }
     }

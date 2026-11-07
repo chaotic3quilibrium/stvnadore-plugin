@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -14,15 +15,15 @@ import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.Value;
 
-import java.util.List;
-
 /**
  * Smart structural auto-healer intention action and quick-fix that intercepts
  * raw flat bracketed lists supplied to map slots and restructures them into
  * canonical map literals ({ [ k v ] }).
  */
 @NullMarked
-public final class StvnMapAutoHealerQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+public final class StvnMapAutoHealerQuickFix
+        extends LocalQuickFixAndIntentionActionOnPsiElement
+        implements PriorityAction {
 
     /**
      * Constructs an StvnMapAutoHealerQuickFix for the given ListLiteral element.
@@ -31,6 +32,11 @@ public final class StvnMapAutoHealerQuickFix extends LocalQuickFixAndIntentionAc
      */
     public StvnMapAutoHealerQuickFix(ListLiteral element) {
         super(element);
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return Priority.TOP;
     }
 
     @Override
@@ -51,8 +57,24 @@ public final class StvnMapAutoHealerQuickFix extends LocalQuickFixAndIntentionAc
         if (!startElement.isValid()) {
             return false;
         }
-        var listLiteral = PsiTreeUtil.getNonStrictParentOfType(startElement, ListLiteral.class);
+        var listLiteral = resolveTargetListLiteral(startElement);
         return listLiteral != null && listLiteral.isValid();
+    }
+
+    private static @Nullable ListLiteral resolveTargetListLiteral(PsiElement startElement) {
+        if (startElement instanceof ListLiteral direct) {
+            return direct;
+        }
+        var current = PsiTreeUtil.getNonStrictParentOfType(startElement, ListLiteral.class);
+        while (current != null) {
+            var valParent = PsiTreeUtil.getParentOfType(current, Value.class);
+            if (valParent != null && valParent.getParent() instanceof ListLiteral outerList) {
+                current = outerList;
+            } else {
+                break;
+            }
+        }
+        return current;
     }
 
     @Override
@@ -61,7 +83,7 @@ public final class StvnMapAutoHealerQuickFix extends LocalQuickFixAndIntentionAc
                        @Nullable Editor editor,
                        @NotNull PsiElement startElement,
                        @NotNull PsiElement endElement) {
-        var listLiteral = PsiTreeUtil.getNonStrictParentOfType(startElement, ListLiteral.class);
+        var listLiteral = resolveTargetListLiteral(startElement);
         if (listLiteral == null) {
             return;
         }
@@ -90,29 +112,53 @@ public final class StvnMapAutoHealerQuickFix extends LocalQuickFixAndIntentionAc
         var baseIndent = extractBaseIndent(listLiteral);
         var entryIndent = baseIndent + "  ";
 
-        var sb = new StringBuilder();
-        if (isMultiLine) {
-            sb.append("{\n");
-            for (int i = 0; i < values.size() - 1; i += 2) {
-                var key = values.get(i).getText();
-                var val = values.get(i + 1).getText();
-                sb.append(entryIndent).append("[ ").append(key).append(" ").append(val).append(" ]\n");
-            }
-            sb.append(baseIndent).append("}");
-        } else {
-            sb.append("{ ");
-            for (int i = 0; i < values.size() - 1; i += 2) {
-                var key = values.get(i).getText();
-                var val = values.get(i + 1).getText();
-                sb.append("[ ").append(key).append(" ").append(val).append(" ] ");
-            }
-            sb.append("}");
-        }
+        boolean allBracketedEntries = values.stream().allMatch(v ->
+            (v.getCollectionValue() != null && v.getCollectionValue().getListLiteral() != null)
+                || (v.getText().trim().startsWith("[") && v.getText().trim().endsWith("]"))
+        );
 
-        // Handle odd trailing element gracefully by appending it outside if present
-        if (values.size() % 2 != 0) {
-            var danglingVal = values.get(values.size() - 1).getText();
-            sb.append(" ").append(danglingVal);
+        var sb = new StringBuilder();
+        if (allBracketedEntries) {
+            var rawText = listLiteral.getText().trim();
+            if (isMultiLine && rawText.startsWith("[") && rawText.endsWith("]")) {
+                sb.append("{").append(rawText, 1, rawText.length() - 1).append("}");
+            } else if (isMultiLine) {
+                sb.append("{\n");
+                for (var v : values) {
+                    sb.append(entryIndent).append(v.getText().trim()).append("\n");
+                }
+                sb.append(baseIndent).append("}");
+            } else {
+                sb.append("{ ");
+                for (var v : values) {
+                    sb.append(v.getText().trim()).append(" ");
+                }
+                sb.append("}");
+            }
+        } else {
+            if (isMultiLine) {
+                sb.append("{\n");
+                for (int i = 0; i < values.size() - 1; i += 2) {
+                    var key = values.get(i).getText();
+                    var val = values.get(i + 1).getText();
+                    sb.append(entryIndent).append("[ ").append(key).append(" ").append(val).append(" ]\n");
+                }
+                sb.append(baseIndent).append("}");
+            } else {
+                sb.append("{ ");
+                for (int i = 0; i < values.size() - 1; i += 2) {
+                    var key = values.get(i).getText();
+                    var val = values.get(i + 1).getText();
+                    sb.append("[ ").append(key).append(" ").append(val).append(" ] ");
+                }
+                sb.append("}");
+            }
+
+            // Handle odd trailing element gracefully by appending it outside if present
+            if (values.size() % 2 != 0) {
+                var danglingVal = values.get(values.size() - 1).getText();
+                sb.append(" ").append(danglingVal);
+            }
         }
 
         var docManager = PsiDocumentManager.getInstance(project);

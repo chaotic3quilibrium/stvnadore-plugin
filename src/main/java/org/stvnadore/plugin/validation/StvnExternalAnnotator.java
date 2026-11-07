@@ -957,6 +957,20 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Duplicate enum filter variant quick-fix (ERR_FILTER_DUPLICATE_VARIANT)
+                if (DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT.equals(diagnosticId)
+                        || rawMessage.contains("in filter list")
+                        || rawMessage.contains("duplicate variant in filter")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var vkw = PsiTreeUtil.getParentOfType(targetElem, ValueKeyword.class, false);
+                    if (vkw != null) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new StvnRemoveDuplicateFilterVariantQuickFix(vkw, vkw.getText())
+                        );
+                    }
+                }
+
                 // Interactive bootstrapping intention actions for incomplete clauses
                 if (rawMessage.contains("':meta' requires a metadata block")) {
                     annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
@@ -1731,7 +1745,9 @@ public final class StvnExternalAnnotator
         for (var listLit : lists) {
             if (listLit.getTextRange().intersects(range)) {
                 var valueParent = PsiTreeUtil.getParentOfType(listLit, Value.class);
-                if (valueParent != null) {
+                if (valueParent != null
+                        && !(valueParent.getParent() instanceof ListLiteral)
+                        && !(valueParent.getParent() instanceof org.stvnadore.psi.MapLiteral)) {
                     var typeInfo = StvnTypeResolver.resolveBaseTypeInfo(valueParent);
                     if (typeInfo != null && StvnMapStructuralInspection.isMapSchema(typeInfo.getSchema())) {
                         return listLit;

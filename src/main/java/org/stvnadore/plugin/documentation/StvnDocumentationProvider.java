@@ -3600,14 +3600,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var file = schemaType.getContainingFile();
             if (file != null) {
                 var aliasText = kw.getText().trim();
-                if (StvnTypeResolver.isDegradedNominalAlias(file, aliasText)) {
-                    return true;
-                }
-                var target = StvnTypeReference.resolveTypeInFile(file, aliasText, new HashSet<>());
-                var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                if (td != null && StvnTypeResolver.resolveNominalIrSchema(td) instanceof StvnSchema.PoisonedSchema) {
-                    return true;
-                }
+                return StvnTypeResolver.isDegradedNominalAlias(file, aliasText);
             }
         }
         return false;

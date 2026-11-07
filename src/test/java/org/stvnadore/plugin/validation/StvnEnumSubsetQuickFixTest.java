@@ -103,4 +103,44 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
         assertTrue("Expected #SHORT to be replaced with #BUY",
             myFixture.getEditor().getDocument().getText().contains(":body #BUY"));
     }
+
+    public void testDuplicateFilterVariantEmitsCoreAlignedErrorAndOffersRemoveDuplicateQuickFix() {
+        var text = """
+                {
+                  :defs {
+                    :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+                    :DuplicateFilterTrap { #filterIncl [ #LOW #HIGH #<caret>LOW ] } :Priority
+                  }
+                  :type :DuplicateFilterTrap
+                  :body #LOW
+                }
+                """;
+        myFixture.configureByText("duplicate_filter_variant_fix.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == com.intellij.lang.annotation.HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected strictly 1 error on [ #LOW #HIGH #LOW ] (duplicate #LOW only, no false ordering error): " + errors,
+            1, errors.size());
+        assertEquals(
+            "Enum subset violation (:DuplicateFilterTrap): duplicate variant '#LOW' in filter list [stvn-plugin:E008-ERR_FILTER_DUPLICATE_VARIANT]",
+            errors.get(0).getDescription()
+        );
+
+        var actions = myFixture.filterAvailableIntentions("Remove duplicate variant '#LOW'");
+        assertFalse("Expected \"Remove duplicate variant '#LOW'\" quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+                {
+                  :defs {
+                    :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+                    :DuplicateFilterTrap { #filterIncl [ #LOW #HIGH ] } :Priority
+                  }
+                  :type :DuplicateFilterTrap
+                  :body #LOW
+                }
+                """);
+    }
 }

@@ -8,6 +8,7 @@ import com.intellij.psi.PsiElementVisitor;
 import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.*;
@@ -126,7 +127,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
                     rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
                     parentAllowed = rootVariants;
-                    parentName = schemaType.getTypeKeyword() != null ? schemaType.getTypeKeyword().getText() : ":Enum";
+                    parentName = schemaType.getTypeKeyword() != null ? schemaType.getTypeKeyword().getText() : StvnVocabulary.TYPE_ENUM;
                     rootEnumName = parentName;
                 }
 
@@ -151,14 +152,16 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     // Duplicate variant check
                     var seen = new HashSet<String>();
                     for (var vkw : valueKeywords) {
-                        if (!seen.add(vkw.getText())) {
+                        var text = vkw.getText();
+                        if (!seen.add(text)) {
                             holder.registerProblem(
                                 vkw,
                                 StvnDiagnosticFormatter.formatPlugin(
-                                    "Constraint violation (" + kw + "): duplicate variant in filter facet",
+                                    "Enum subset violation (" + kw + "): duplicate variant '" + text + "' in filter list",
                                     StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT
                                 ),
-                                ProblemHighlightType.GENERIC_ERROR
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new StvnRemoveDuplicateFilterVariantQuickFix(vkw, text)
                             );
                         }
                     }
@@ -180,27 +183,32 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
 
                     // Relative root order check
                     int prevRootIdx = -1;
-                    String outOfOrderText = null;
+                    ValueKeyword outOfOrderNode = null;
+                    var seenForOrder = new HashSet<String>();
                     for (var vkw : valueKeywords) {
                         var text = vkw.getText();
+                        if (!seenForOrder.add(text)) {
+                            continue;
+                        }
                         int idx = rootVariants.indexOf(text);
                         if (idx >= 0) {
                             if (idx <= prevRootIdx) {
-                                outOfOrderText = text;
+                                outOfOrderNode = vkw;
                                 break;
                             }
                             prevRootIdx = idx;
                         }
                     }
 
-                    if (outOfOrderText != null) {
+                    if (outOfOrderNode != null) {
+                        var outOfOrderText = outOfOrderNode.getText();
                         var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Constraint violation (" + kw + "): Root ordering violation: variant " + outOfOrderText + " does not match relative declaration order of root :Enum " + rootEnumName,
                             StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION
                         );
                         for (var vkw : valueKeywords) {
-                            if (outOfOrderText.equals(vkw.getText())) {
+                            if (vkw == outOfOrderNode) {
                                 holder.registerProblem(
                                     vkw,
                                     msg,

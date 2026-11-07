@@ -309,4 +309,37 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
             myFixture.getFile().getText().contains(":InvertedConstBounds { #minIncl #PORT_MIN_INCL #maxExcl #PORT_MAX_EXCL } :Int")
         );
     }
+
+    public void testCrossHopPartialBoundOverrideDetectsInvertedRangeWithoutSwapFix() {
+        var text = """
+            {
+              :defs {
+                :BaseCluster { #unsigned #size 16 #minIncl 500 #maxExcl 5000 } :Int
+                :InvertedChild { <caret>#minIncl 6000 } :BaseCluster
+                :EmptyChild { #minIncl 5000 } :BaseCluster
+              }
+              :type :BaseCluster
+              :body 1000
+            }
+            """;
+        myFixture.configureByText("cross_hop_partial_bounds.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertTrue("Expected ERR_INVERTED_RANGE on :InvertedChild { #minIncl 6000 }",
+            errors.stream().anyMatch(e -> e.getDescription() != null
+                && e.getDescription().contains("ERR_INVERTED_RANGE")
+                && e.getDescription().contains("6000")
+                && e.getDescription().contains("5000")));
+        assertTrue("Expected ERR_EMPTY_INTERVAL_DOMAIN on :EmptyChild { #minIncl 5000 }",
+            errors.stream().anyMatch(e -> e.getDescription() != null
+                && e.getDescription().contains("ERR_EMPTY_INTERVAL_DOMAIN")
+                && e.getDescription().contains("[5000, 5000)")));
+
+        var swapFixes = myFixture.filterAvailableIntentions("Swap inverted bounds");
+        assertTrue("SwapInvertedBoundsQuickFix must not be offered when only one bound is in the local MetadataMap",
+            swapFixes.isEmpty());
+    }
 }

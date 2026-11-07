@@ -2814,4 +2814,187 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 .toList();
         assertTrue("Expected 0 errors after applying both quick-fixes", postFixErrors.isEmpty());
     }
+
+    public void testStage4NominalBoundOverrideAndBodyBoundsSquiggliesAndHoverSync() {
+        myFixture.enableInspections(
+            new StvnDiscreteIntervalInspection(),
+            new StvnRedundantFacetOverrideInspection()
+        );
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_v3_nominal_refinement_chains_and_trait_revocation"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :BaseClusterId          { #unsigned #size 16 #minIncl 100 #maxExcl 10000 } :Int
+                :RegionClusterId        { #minIncl 500 #maxExcl 5000 } :BaseClusterId
+                :ReplacedBoundsCluster  { #minIncl 200 #maxExcl 8000 } :RegionClusterId
+                :StrictClusterId        { #minIncl 1000 #maxExcl 2000 } :ReplacedBoundsCluster
+              }
+              :type :Seq( :StrictClusterId )
+              :body [
+                1500
+                750
+                2500
+              ]
+            }
+            """;
+        var file = myFixture.configureByText(
+            "gauntlet_v3_nominal_refinement_chains_and_trait_revocation.core_test.stvn_i",
+            code
+        );
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected strictly 2 error highlights (on 750 and 2500 in :body), got: " + errors, 2, errors.size());
+
+        int offset750 = code.indexOf("750");
+        int offset2500 = code.indexOf("2500");
+        assertTrue("Expected E012 constraint violation on 750",
+            errors.stream().anyMatch(e -> e.getStartOffset() == offset750
+                && "750".equals(e.getText())
+                && e.getDescription() != null
+                && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
+        assertTrue("Expected E012 constraint violation on 2500",
+            errors.stream().anyMatch(e -> e.getStartOffset() == offset2500
+                && "2500".equals(e.getText())
+                && e.getDescription() != null
+                && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
+
+        myFixture.getEditor().getCaretModel().moveToOffset(offset750 + 1);
+        var exemplarFixes = myFixture.filterAvailableIntentions("Replace with exemplar value '1000'");
+        assertFalse("Expected \"Replace with exemplar value '1000'\" quick-fix on 750", exemplarFixes.isEmpty());
+
+        var docProvider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
+        int strictDefOffset = code.indexOf(":StrictClusterId");
+        var strictDefElem = com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+            file.findElementAt(strictDefOffset + 1),
+            org.stvnadore.psi.TypeDefinition.class,
+            false
+        );
+        assertNotNull(strictDefElem);
+        var defsDoc = docProvider.generateDoc(strictDefElem, file.findElementAt(strictDefOffset + 1));
+        assertNotNull(defsDoc);
+        assertFalse(":StrictClusterId hover in :defs must not be degraded: " + defsDoc,
+            defsDoc.contains("Degraded Schema Active"));
+        assertTrue(":StrictClusterId hover in :defs must display [1000, 2000) bounds: " + defsDoc,
+            defsDoc.contains("1000") && defsDoc.contains("2000"));
+
+        var body750Elem = com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+            file.findElementAt(offset750),
+            org.stvnadore.psi.Value.class,
+            false
+        );
+        assertNotNull(body750Elem);
+        var bodyDoc = docProvider.generateDoc(body750Elem, file.findElementAt(offset750));
+        assertNotNull(bodyDoc);
+        assertFalse("750 hover in :body must not report Degraded Schema Active: " + bodyDoc,
+            bodyDoc.contains("Degraded Schema Active"));
+        assertTrue("750 hover in :body must report out-of-range compliance against minimum bound 1000: " + bodyDoc,
+            bodyDoc.contains("Value 750 is below minimum allowable bound 1000"));
+    }
+
+    public void testStage5Case2CDuplicateFilterVariantDeconflictionAndSingleDiagnostic() {
+        myFixture.enableInspections(new StvnEnumSubsetInspection());
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_v3_enum_subset_lattice_and_filter_traps"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :OrderLifecycle :Enum[
+                  #NEW
+                  #PENDING
+                  #PARTIAL
+                  #FILLED
+                  #CANCELLED
+                  #REJECTED
+                  #EXPIRED
+                  #SETTLED
+                ]
+                :DuplicateFilterTrap {
+                  #filterIncl [ #PENDING #<caret>PENDING #SETTLED ]
+                } :OrderLifecycle
+              }
+              :type :OrderLifecycle
+              :body #NEW
+            }
+            """;
+        myFixture.configureByText("gauntlet_v3_enum_subset_lattice_and_filter_traps.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected strictly 1 deduplicated error on second #PENDING, got: " + errors, 1, errors.size());
+        assertEquals(
+            "Enum subset violation (:DuplicateFilterTrap): duplicate variant '#PENDING' in filter list [stvn-plugin:E008-ERR_FILTER_DUPLICATE_VARIANT]",
+            errors.get(0).getDescription()
+        );
+
+        var fix = myFixture.findSingleIntention("Remove duplicate variant '#PENDING'");
+        myFixture.launchAction(fix);
+        assertTrue(
+            myFixture.getFile().getText().contains("#filterIncl [ #PENDING #SETTLED ]")
+        );
+        var postFixErrors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Expected 0 errors after removing duplicate #PENDING", postFixErrors.isEmpty());
+    }
+
+    public void testStage6Slot1FlatListInMapSlotSingleDiagnosticZeroInnerCascadeAndAutoHealer() {
+        myFixture.enableInspections(new StvnMapStructuralInspection());
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_v3_collections_maps_and_Structural_envelopes"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :ZoneTag  { #minSize 2 #maxSize 8 #regex "^[a-z]+$" } :String
+                :Priority { #unsigned #size 8 #minIncl 1 #maxExcl 64 } :Int
+                :RouteKey :Tuple( :ZoneTag :Priority )
+                :CompositeRoutingTable :Map( :RouteKey :Boolean )
+                :BoundedRouteMap { #minSize 1 #maxSize 4 } :CompositeRoutingTable
+              }
+              :type :BoundedRouteMap
+              :body [
+                [ <caret>("edge" 16) #TRUE ]
+                [ ("core" 32) #FALSE ]
+              ]
+            }
+            """;
+        myFixture.configureByText("gauntlet_v3_collections_maps_and_Structural_envelopes.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR || h.getSeverity() == HighlightSeverity.WARNING)
+            .toList();
+
+        assertEquals("Expected strictly 1 diagnostic on outer flat list in :Map slot (zero inner cascading errors): " + errors,
+            1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E028-ERR_FLAT_LIST_IN_MAP_SLOT"));
+
+        var autoHealFixes = myFixture.filterAvailableIntentions("Convert flat list to canonical map literal '{ [ ... ] }'");
+        assertEquals("Expected exactly 1 map auto-healer quick-fix", 1, autoHealFixes.size());
+        myFixture.launchAction(autoHealFixes.get(0));
+
+        String updated = myFixture.getFile().getText();
+        assertFalse("Must never double-wrap inner map entries in '[ [ ... ] ]': " + updated,
+            updated.contains("[ ["));
+        assertTrue("Expected outer brackets replaced with '{ ... }' preserving inner '[ (\"edge\" 16) #TRUE ]' entries: " + updated,
+            updated.contains(":body {\n    [ (\"edge\" 16) #TRUE ]\n    [ (\"core\" 32) #FALSE ]\n  }"));
+
+        var postFixErrors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Expected 0 errors after map auto-healer rewrite, got: " + postFixErrors, postFixErrors.isEmpty());
+    }
 }

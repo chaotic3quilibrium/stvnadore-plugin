@@ -68,6 +68,8 @@ public final class StvnTypeResolver {
         DiagnosticBag.ERR_INVALID_REGEX,
         "E012",
         DiagnosticBag.ERR_INVERTED_RANGE,
+        DiagnosticBag.ERR_EMPTY_INTERVAL_DOMAIN,
+        DiagnosticBag.ERR_FLOAT_INVALID_SIZE,
         "E010",
         DiagnosticBag.ERR_CAPACITY_OVERFLOW,
         "E011",
@@ -76,14 +78,25 @@ public final class StvnTypeResolver {
         "E013",
         DiagnosticBag.ERR_NON_OVERRIDABLE_FACET,
         "E035",
+        "E040",
         DiagnosticBag.ERR_INVALID_METADATA_FACET,
         "E036",
+        DiagnosticBag.ERR_DUPLICATE_METADATA_FACET,
+        DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT,
+        DiagnosticBag.ERR_TRAIT_VIOLATION,
+        DiagnosticBag.ERR_MISSING_TEMPORAL_FACET,
+        DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING,
+        DiagnosticBag.ERR_DATETIME_MODE_INVALID,
         DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED,
         DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED,
+        DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET,
+        DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION,
         DiagnosticBag.ERR_ENUM_SUBSET_EMPTY,
+        "E016",
         DiagnosticBag.ERR_UNDEFINED_TYPE,
         "E014",
         DiagnosticBag.ERR_CIRCULAR_TYPE,
+        "E007",
         "E015"
     );
 
@@ -335,8 +348,50 @@ public final class StvnTypeResolver {
                 if ((hasMinIncl && hasMinExcl) || (hasMaxIncl && hasMaxExcl)) {
                     return true;
                 }
-                if (minVal != null && maxVal != null && minVal.compareTo(maxVal) > 0) {
-                    return true;
+                if ((minVal != null && maxVal == null) || (minVal == null && maxVal != null)) {
+                    var visitedAncestors = new HashSet<String>();
+                    var parentSt = typeDef.getSchemaType();
+                    String parentAlias = (parentSt != null && parentSt.getTypeKeyword() != null)
+                        ? parentSt.getTypeKeyword().getText().trim()
+                        : null;
+                    while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                            && visitedAncestors.add(parentAlias)) {
+                        var parentTarget = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
+                        var parentDef = resolveUnderlyingTypeDefinition(parentTarget);
+                        if (parentDef == null) {
+                            break;
+                        }
+                        var parentMeta = parentDef.getMetadataMap();
+                        if (parentMeta != null) {
+                            for (var pEntry : parentMeta.getMetadataEntryList()) {
+                                var pText = pEntry.getText();
+                                if (minVal == null && (pText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                                        || pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL))) {
+                                    minVal = extractNumericValue(pEntry);
+                                    if (pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) hasMinExcl = true;
+                                    else hasMinIncl = true;
+                                } else if (maxVal == null && (pText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                                        || pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL))) {
+                                    maxVal = extractNumericValue(pEntry);
+                                    if (pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) hasMaxExcl = true;
+                                    else hasMaxIncl = true;
+                                }
+                            }
+                        }
+                        if (minVal != null && maxVal != null) {
+                            break;
+                        }
+                        var nextSt = parentDef.getSchemaType();
+                        parentAlias = (nextSt != null && nextSt.getTypeKeyword() != null)
+                            ? nextSt.getTypeKeyword().getText().trim()
+                            : null;
+                    }
+                }
+                if (minVal != null && maxVal != null) {
+                    int cmp = minVal.compareTo(maxVal);
+                    if (cmp > 0 || (cmp == 0 && (hasMinExcl || hasMaxExcl))) {
+                        return true;
+                    }
                 }
             }
         }
@@ -1610,6 +1665,14 @@ public final class StvnTypeResolver {
             } else if (parent instanceof MapLiteral map) {
                 var values = map.getValueList();
                 var idx = values.indexOf(curr);
+                if (idx == -1) {
+                    for (int i = 0; i < values.size(); i++) {
+                        if (values.get(i).getTextRange().equals(curr.getTextRange())) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                }
                 if (idx != -1) {
                     var isKey = (idx % 2 == 0);
                     path.push(new PathStep(isKey ? StepType.MAP_KEY : StepType.MAP_VALUE, isKey ? 0 : 1));
@@ -1665,12 +1728,24 @@ public final class StvnTypeResolver {
         return new ResolvedTypeInfo(currentSchema, finalLabel);
     }
 
+    private static SchemaType unwrapNominalSchemaChain(SchemaType schema) {
+        var current = schema;
+        var visited = new HashSet<PsiElement>();
+        while (current.getSchemaConstructor() == null && visited.add(current)) {
+            var next = resolveNominalSchema(current);
+            if (next == null || next == current) {
+                break;
+            }
+            current = next;
+        }
+        return current;
+    }
+
     private static @Nullable SchemaType descendSchemaPath(SchemaType rootSchema, Stack<PathStep> path) {
         var currentSchema = rootSchema;
         while (!path.isEmpty() && currentSchema != null) {
             var step = path.pop();
-            var resolvedNominal = resolveNominalSchema(currentSchema);
-            var schemaToInspect = resolvedNominal != null ? resolvedNominal : currentSchema;
+            var schemaToInspect = unwrapNominalSchemaChain(currentSchema);
 
             var constructor = schemaToInspect.getSchemaConstructor();
             if (constructor == null) {
@@ -1699,8 +1774,7 @@ public final class StvnTypeResolver {
                 if (innerSchema == null) {
                     break;
                 }
-                var res = resolveNominalSchema(innerSchema);
-                schemaToInspect = (res != null) ? res : innerSchema;
+                schemaToInspect = unwrapNominalSchemaChain(innerSchema);
                 var c = schemaToInspect.getSchemaConstructor();
                 if (c == null) {
                     break;
@@ -1711,7 +1785,11 @@ public final class StvnTypeResolver {
 
             if (step.type == StepType.LIST) {
                 var collection = constructor.getCollectionType();
-                if (collection != null && !collection.getSchemaTypeList().isEmpty()) {
+                var firstChild = collection != null ? collection.getFirstChild() : null;
+                var collType = firstChild != null ? firstChild.getText() : "";
+                if (collection != null
+                        && !collection.getSchemaTypeList().isEmpty()
+                        && (collType.equals(StvnVocabulary.TYPE_SEQ) || collType.equals(StvnVocabulary.TYPE_SET))) {
                     currentSchema = collection.getSchemaTypeList().get(0);
                 } else {
                     currentSchema = null;

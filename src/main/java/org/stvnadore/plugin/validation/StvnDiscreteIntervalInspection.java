@@ -237,15 +237,84 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             }
         }
 
-        LocalQuickFix[] swapFixes = (lowerEntry != null && upperEntry != null && minRaw != null && maxRaw != null)
-            ? new LocalQuickFix[]{new SwapInvertedBoundsQuickFix(lowerEntry, lowerKw, minRaw, upperEntry, upperKw, maxRaw)}
+        MetadataEntry localLowerEntry = lowerEntry;
+        MetadataEntry localUpperEntry = upperEntry;
+
+        if ((localLowerEntry != null && localUpperEntry == null)
+                || (localLowerEntry == null && localUpperEntry != null)) {
+            var kw = schemaType.getTypeKeyword();
+            var file = schemaType.getContainingFile();
+            if (kw != null && file != null) {
+                var visited = new HashSet<String>();
+                String parentAlias = kw.getText().trim();
+                while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC) && visited.add(parentAlias)) {
+                    var resolved = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
+                    var parentDef = resolved != null ? PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class, false) : null;
+                    if (parentDef == null) {
+                        break;
+                    }
+                    var parentMeta = parentDef.getMetadataMap() != null
+                        ? parentDef.getMetadataMap()
+                        : (parentDef.getSchemaType() != null ? parentDef.getSchemaType().getMetadataMap() : null);
+                    if (parentMeta != null) {
+                        for (var pEntry : parentMeta.getMetadataEntryList()) {
+                            var pText = pEntry.getText();
+                            if (lowerEntry == null
+                                    && (pText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                                        || pEntry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null
+                                        || pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                                        || pEntry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null)) {
+                                boolean isMinExcl = pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                                    || pEntry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null;
+                                minVal = extractBoundBigDecimal(pEntry);
+                                minInstant = isDateTime ? extractBoundInstant(pEntry) : null;
+                                minStr = extractBoundString(pEntry);
+                                lowerEntry = pEntry;
+                                lowerKw = isMinExcl ? StvnVocabulary.FACET_KW_MIN_EXCL : StvnVocabulary.FACET_KW_MIN_INCL;
+                                lowerExcl = isMinExcl;
+                            } else if (upperEntry == null
+                                    && (pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                                        || pEntry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
+                                        || pText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                                        || pEntry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null)) {
+                                boolean isMaxExcl = pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                                    || pEntry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null;
+                                if (isMaxExcl) {
+                                    maxExclEntry = pEntry;
+                                }
+                                maxVal = extractBoundBigDecimal(pEntry);
+                                maxInstant = isDateTime ? extractBoundInstant(pEntry) : null;
+                                maxStr = extractBoundString(pEntry);
+                                upperEntry = pEntry;
+                                upperKw = isMaxExcl ? StvnVocabulary.FACET_KW_MAX_EXCL : StvnVocabulary.FACET_KW_MAX_INCL;
+                                upperExcl = isMaxExcl;
+                            }
+                        }
+                    }
+                    if (lowerEntry != null && upperEntry != null) {
+                        break;
+                    }
+                    var parentSchema = parentDef.getSchemaType();
+                    parentAlias = (parentSchema != null && parentSchema.getTypeKeyword() != null)
+                        ? parentSchema.getTypeKeyword().getText().trim()
+                        : null;
+                }
+            }
+        }
+
+        boolean bothBoundsLocal = (localLowerEntry != null && localUpperEntry != null);
+        MetadataEntry localBoundTarget = localUpperEntry != null ? localUpperEntry : localLowerEntry;
+        LocalQuickFix[] swapFixes = (bothBoundsLocal && minRaw != null && maxRaw != null)
+            ? new LocalQuickFix[]{new SwapInvertedBoundsQuickFix(localLowerEntry, lowerKw, minRaw, localUpperEntry, upperKw, maxRaw)}
             : LocalQuickFix.EMPTY_ARRAY;
 
         if (minVal != null && maxVal != null && upperEntry != null) {
             int cmp = minVal.compareTo(maxVal);
             if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
                 holder.registerProblem(
-                    maxExclEntry != null ? maxExclEntry : upperEntry,
+                    bothBoundsLocal
+                        ? (maxExclEntry != null ? maxExclEntry : upperEntry)
+                        : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "Discrete interval defines an empty domain [" + minVal.toPlainString() + ", " + maxVal.toPlainString() + ")",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
@@ -254,7 +323,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 );
             } else if (cmp > 0) {
                 holder.registerProblem(
-                    metaMap,
+                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE
@@ -267,7 +336,9 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             int cmp = minInstant.compareTo(maxInstant);
             if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
                 holder.registerProblem(
-                    maxExclEntry != null ? maxExclEntry : upperEntry,
+                    bothBoundsLocal
+                        ? (maxExclEntry != null ? maxExclEntry : upperEntry)
+                        : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "Temporal interval defines an empty domain [" + minStr + ", " + maxStr + ")",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
@@ -276,7 +347,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 );
             } else if (cmp > 0) {
                 holder.registerProblem(
-                    metaMap,
+                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "Temporal interval lower bound " + minStr + " is greater than upper bound " + maxStr,
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE
@@ -289,7 +360,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             int cmp = minStr.compareTo(maxStr);
             if (cmp == 0 && (lowerExcl || upperExcl)) {
                 holder.registerProblem(
-                    upperEntry,
+                    bothBoundsLocal ? upperEntry : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "String interval defines an empty domain",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
@@ -298,7 +369,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 );
             } else if (cmp > 0) {
                 holder.registerProblem(
-                    metaMap,
+                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
                     StvnDiagnosticFormatter.formatPlugin(
                         "String interval lower bound '" + minStr + "' is lexicographically greater than upper bound '" + maxStr + "'",
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE

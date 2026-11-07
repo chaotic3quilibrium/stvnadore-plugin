@@ -7,6 +7,7 @@ import com.intellij.psi.PsiFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnDiagnostic;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
 
 import java.util.Collections;
@@ -198,6 +199,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put("E026", "StvnFencedString");
 
         // 19. Enum Subset Filtering Inspection
+        map.put(DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE, "StvnEnumSubset");
@@ -401,6 +403,17 @@ public final class StvnDiagnosticAnnotatorMapping {
             }
         }
 
+        if ((DiagnosticBag.ERR_TYPE_MISMATCH.equals(sym)
+                || "E028".equals(canon)
+                || DiagnosticBag.ERR_TYPE_MISMATCH.equals(err))
+                && message.contains("expected collection constructor " + StvnVocabulary.TYPE_MAP
+                    + ", found collection constructor " + StvnVocabulary.TYPE_SEQ)) {
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnMapStructural");
+        }
+
         if ((sym != null && isExplicitlyUngovernedSymbolicId(sym))
                 || (canon != null && isExplicitlyUngovernedSymbolicId(canon))
                 || (err != null && isExplicitlyUngovernedSymbolicId(err))) {
@@ -520,7 +533,9 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("enum filter variant list cannot be empty")
                 || message.contains("Complete exclusion violation")
                 || message.contains("filter facets cannot be applied")
-                || message.contains("filter facets are not allowed")) {
+                || message.contains("filter facets are not allowed")
+                || message.contains("in filter list")
+                || message.contains("duplicate variant in filter")) {
             return "StvnEnumSubset";
         }
         if (message.contains("is omitted from filename stem slot 1")
