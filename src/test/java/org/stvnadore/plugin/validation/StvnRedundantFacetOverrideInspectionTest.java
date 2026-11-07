@@ -391,4 +391,34 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             .toList();
         assertTrue("Declaring {#equatable #TRUE} on :Tuple must produce zero redundant warnings", warnings.isEmpty());
     }
+
+    public void testDerivedNominalTypesRepeatingIntrinsicDefaultsEmitOnlyE040AndZeroW003Warnings() {
+        myFixture.configureByText("derived_nominal_no_w003.stvn_d", """
+            {
+              :meta {
+                #name "derived_nominal_no_w003"
+                #kind #DEFS
+              }
+              :defs {
+                :Int32 :Int
+                :Int32b { #size 32 } :Int32
+                :Float64 :Float
+                :Float64b { #size 64 } :Float64
+                :Uint32a { #unsigned } :Int
+                :ChildUInt { #size 32 } :Uint32a
+              }
+            }
+            """);
+        var highlights = myFixture.doHighlighting();
+        var warnings = highlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+                .toList();
+        assertEquals("Derived nominal types repeating intrinsic defaults must emit 0 W003 warnings", 0, warnings.size());
+
+        var errors = highlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertEquals("Expected exactly 3 E040 errors on ':Int32b', ':Float64b', and ':ChildUInt'", 3, errors.size());
+        assertTrue(errors.stream().allMatch(e -> e.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET")));
+    }
 }

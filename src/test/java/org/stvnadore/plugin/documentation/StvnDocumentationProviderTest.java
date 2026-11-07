@@ -1481,4 +1481,36 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
             scalarDoc.contains("Type mismatch: expected scalar :Int, found product constructor :Tuple")
         );
     }
+
+    public void testHoverOnNominalInt32AndViolatingDerivedInt16bRendersAccurateContractAndUnsetOptions() {
+        var text = """
+            {
+              :meta {
+                #name "uhoh"
+                #kind #BODY
+              }
+              :defs {
+                :Int32 :Int
+                :Int16b { #size 16 } :Int32
+              }
+              :type :Int32
+              :body 1
+            }
+            """;
+        myFixture.configureByText("uhoh.stvn", text);
+
+        // 1. Hover on ':Int32' in ':Int32 :Int'
+        int lhsInt32Offset = text.indexOf(":Int32 :Int") + 2;
+        String int32Doc = getDocAtOffset(text, lhsInt32Offset);
+        assertTrue("Expected ':Int32 -> :Int' resolution path:\n" + int32Doc, int32Doc.contains(":Int32 &rarr; :Int"));
+        assertTrue("Expected 'Underlying Structure: :Int':\n" + int32Doc, int32Doc.contains("<b>Underlying Structure:</b> :Int"));
+        assertTrue("Expected '#unsigned' in Configurable Options (Unset) on ':Int32':\n" + int32Doc, int32Doc.contains("<code>#unsigned</code>"));
+
+        // 2. Hover on ':Int16b' in ':Int16b { #size 16 } :Int32'
+        int lhsInt16bOffset = text.indexOf(":Int16b") + 2;
+        String int16bDoc = getDocAtOffset(text, lhsInt16bOffset);
+        assertTrue("Expected Degraded Schema Warning banner on ':Int16b':\n" + int16bDoc, int16bDoc.contains("Degraded Schema Warning"));
+        assertTrue("Expected '#size' row marked 'Invalid' on ':Int16b':\n" + int16bDoc, int16bDoc.contains("#size") && int16bDoc.contains("Invalid"));
+        assertFalse("Locked Tier-1 facet '#unsigned' must not be listed as unset on derived ':Int16b':\n" + int16bDoc, int16bDoc.contains("<code>#unsigned</code>"));
+    }
 }

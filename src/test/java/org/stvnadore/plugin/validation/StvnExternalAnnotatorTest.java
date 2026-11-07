@@ -2677,4 +2677,141 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertTrue("Expected :ConflictingChildTs { #zoned } :BaseOffsetTs to heal to :ConflictingChildTs :BaseOffsetTs",
             myFixture.getEditor().getDocument().getText().contains(":ConflictingChildTs :BaseOffsetTs"));
     }
+
+    public void testUhohReproductionRendersE040WithPrioritizedChangeBaseTypeAndRemoveFacetQuickFixes() {
+        var code = """
+            {
+              :meta {
+                #name "uhoh"
+                #kind #BODY
+              }
+              :defs {
+                :Int32 :Int
+                :Int16a { #size 16 } :Int
+                :Int16b { <caret>#size 16 } :Int32
+                :Values :Tuple(
+                  :Int32
+                  :Int16a
+                  :Int16b
+                )
+              }
+              :type :Values
+              :body (
+                1
+                2
+                3
+              )
+            }
+            """;
+        myFixture.configureByText("uhoh.stvn", code);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertEquals("Expected exactly 1 error on ':Int16b { #size 16 } :Int32'", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET"));
+        assertEquals("#size 16", myFixture.getFile().getText().substring(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
+
+        var changeBaseFix = myFixture.findSingleIntention("Change base type from ':Int32' to primitive ':Int'");
+        var removeFacetFix = myFixture.findSingleIntention("Remove non-overridable facet '#size 16'");
+        assertNotNull("Expected 'Change base type from ':Int32' to primitive ':Int'' intention", changeBaseFix);
+        assertNotNull("Expected 'Remove non-overridable facet '#size 16'' intention", removeFacetFix);
+
+        var changePriority = com.intellij.codeInsight.intention.IntentionActionDelegate.unwrap(changeBaseFix) instanceof com.intellij.codeInsight.intention.PriorityAction pa
+                ? pa.getPriority()
+                : com.intellij.codeInsight.intention.PriorityAction.Priority.NORMAL;
+        var removePriority = com.intellij.codeInsight.intention.IntentionActionDelegate.unwrap(removeFacetFix) instanceof com.intellij.codeInsight.intention.PriorityAction pa
+                ? pa.getPriority()
+                : com.intellij.codeInsight.intention.PriorityAction.Priority.NORMAL;
+        assertEquals(com.intellij.codeInsight.intention.PriorityAction.Priority.TOP, changePriority);
+        assertEquals(com.intellij.codeInsight.intention.PriorityAction.Priority.HIGH, removePriority);
+
+        myFixture.launchAction(changeBaseFix);
+        assertTrue(
+                "Expected ':Int16b { #size 16 } :Int' after invoking ChangeBaseTypeToPrimitiveQuickFix",
+                myFixture.getFile().getText().contains(":Int16b { #size 16 } :Int")
+        );
+        var postFixErrors = myFixture.doHighlighting().stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertTrue("Expected 0 errors after changing base type to ':Int'", postFixErrors.isEmpty());
+    }
+
+    public void testUhohRemoveNonOverridableFacetQuickFixRemovesEntireMetadataMapWithoutEmptyBlockResidue() {
+        var code = """
+            {
+              :meta {
+                #name "uhoh"
+                #kind #BODY
+              }
+              :defs {
+                :Int32 :Int
+                :Int16a { #size 16 } :Int
+                :Int16b { <caret>#size 16 } :Int32
+                :Values :Tuple(
+                  :Int32
+                  :Int16a
+                  :Int16b
+                )
+              }
+              :type :Values
+              :body (
+                1
+                2
+                3
+              )
+            }
+            """;
+        myFixture.configureByText("uhoh.stvn", code);
+        myFixture.doHighlighting();
+
+        var removeFix = myFixture.findSingleIntention("Remove non-overridable facet '#size 16'");
+        myFixture.launchAction(removeFix);
+
+        String updatedText = myFixture.getFile().getText();
+        assertTrue("Expected ':Int16b :Int32' with entire metadata map removed", updatedText.contains(":Int16b :Int32"));
+        assertFalse("Must never leave empty '{}' metadata block behind", updatedText.contains("{}"));
+        var postFixErrors = myFixture.doHighlighting().stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertTrue("Expected 0 errors after removing '#size 16'", postFixErrors.isEmpty());
+    }
+
+    public void testCrossHopFloatAndCollectionNominalQuickFixesPreserveConstructorArguments() {
+        var code = """
+            {
+              :meta {
+                #name "cross_hop_fixes"
+                #kind #DEFS
+              }
+              :defs {
+                :Float64 :Float
+                :Float32b { <caret>#size 32 } :Float64
+                :PlainMap :Map( :String :Int )
+                :InvMap { #invertible } :PlainMap
+              }
+            }
+            """;
+        myFixture.configureByText("cross_hop_fixes.stvn_d", code);
+        myFixture.doHighlighting();
+
+        var floatFix = myFixture.findSingleIntention("Change base type from ':Float64' to primitive ':Float'");
+        myFixture.launchAction(floatFix);
+        assertTrue(myFixture.getFile().getText().contains(":Float32b { #size 32 } :Float"));
+
+        int invOffset = myFixture.getFile().getText().indexOf("#invertible");
+        myFixture.getEditor().getCaretModel().moveToOffset(invOffset + 2);
+        myFixture.doHighlighting();
+
+        var mapFix = myFixture.findSingleIntention("Change base type from ':PlainMap' to primitive ':Map'");
+        myFixture.launchAction(mapFix);
+        assertTrue(
+                "Expected ':PlainMap' to be replaced with ':Map( :String :Int )' preserving type arguments",
+                myFixture.getFile().getText().contains(":InvMap { #invertible } :Map( :String :Int )")
+        );
+        var postFixErrors = myFixture.doHighlighting().stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+                .toList();
+        assertTrue("Expected 0 errors after applying both quick-fixes", postFixErrors.isEmpty());
+    }
 }

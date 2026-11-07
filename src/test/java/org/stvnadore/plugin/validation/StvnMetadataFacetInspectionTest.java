@@ -288,7 +288,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
                 :RawMap :Map( :String :Int )
                 :AliasSeq { #maxSize 1024 } :RawSeq
                 :AliasSet { #minSize 1 #maxSize 512 } :RawSet
-                :AliasMap { #invertible #maxSize 256 } :RawMap
+                :AliasMap { #minSize 1 #maxSize 256 } :RawMap
               }
               :type :AliasSeq
               :body [ 42 ]
@@ -637,5 +637,36 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
         assertEquals("Expected exactly 1 inspection error on #minSize on :Float", 1, errors.size());
         assertTrue(errors.get(0).getDescription().contains("Facet is not permitted on :Float; permitted facets for collections and string types"));
+    }
+
+    public void testDerivedNominalMapInvertibleFacetRejectedWithE040AndQuickFixes() {
+        var text = """
+            {
+              :meta {
+                #name "derived_nominal_map_invertible"
+                #kind #BODY
+              }
+              :defs {
+                :RawMap :Map( :String :Int )
+                :AliasMap { <caret>#invertible #maxSize 256 } :RawMap
+              }
+              :type :AliasMap
+              :body {
+                [ "a" 1 ]
+              }
+            }
+            """;
+        myFixture.configureByText("derived_nominal_map_invertible.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected 1 E040 error on '#invertible' over ':RawMap'", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET"));
+
+        var changeBaseFix = myFixture.findSingleIntention("Change base type from ':RawMap' to primitive ':Map'");
+        assertNotNull("Expected primary quick-fix to change ':RawMap' to ':Map'", changeBaseFix);
+        var removeFacetFix = myFixture.findSingleIntention("Remove non-overridable facet '#invertible'");
+        assertNotNull("Expected secondary quick-fix to remove '#invertible'", removeFacetFix);
     }
 }

@@ -982,7 +982,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (msg.contains("Constraint violation (" + currentAlias + "):")
                             || msg.contains("Constraint violation (:" + bareAlias + "):")
                             || msg.contains("Constraint violation (" + bareAlias + "):")) {
-                        for (var tag : List.of("#minIncl", "#minExcl", "#maxIncl", "#maxExcl", "#size", "#minSize", "#maxSize", "#regex")) {
+                        for (var tag : List.of(
+                                "#unsigned", "#exact", "#invertible",
+                                "#ns", "#us", "#ms", "#s",
+                                "#offset", "#zoned", "#audited",
+                                "#minIncl", "#minExcl", "#maxIncl", "#maxExcl",
+                                "#size", "#minSize", "#maxSize", "#regex")) {
                             if (msg.contains(tag) || msg.contains(tag.substring(1))) {
                                 invalidFacetTags.add(tag);
                             }
@@ -1173,12 +1178,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (declaredMeta != null) {
             for (var entry : declaredMeta.getMetadataEntryList()) {
                 var entryText = entry.getText().trim();
-                for (var tag : List.of("#preserveIndent", "#minIncl", "#minExcl", "#maxIncl", "#maxExcl", "#size", "#regex", "#minSize", "#maxSize")) {
+                for (var tag : List.of(
+                        "#unsigned", "#exact", "#invertible",
+                        "#ns", "#us", "#ms", "#s",
+                        "#offset", "#zoned", "#audited",
+                        "#preserveIndent", "#minIncl", "#minExcl", "#maxIncl", "#maxExcl",
+                        "#size", "#regex", "#minSize", "#maxSize")) {
                     if (entryText.startsWith(tag)) {
                         boolean alreadyPresent = rows.stream().anyMatch(r -> r.tag().equals(tag));
                         if (!alreadyPresent) {
                             var parts = entryText.split("\\s+", 2);
-                            var val = parts.length > 1 ? parts[1].trim() : "";
+                            var val = parts.length > 1 ? parts[1].trim() : "#TRUE";
                             if ("#preserveIndent".equals(tag)) {
                                 var piOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
                                 rows.add(new FacetRow(tag, val, piOrigin.origin(), piOrigin.status()));
@@ -2617,6 +2627,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (metaMap == null || typeDef == null) {
             return null;
         }
+        var containingFile = entry.getContainingFile();
+        var entryRange = entry.getTextRange();
+        if (containingFile != null && entryRange != null) {
+            for (var diag : StvnCompiledDocumentCache.getSnapshot(containingFile).diagnostics()) {
+                if (diag.severity() == org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR
+                        && diag.startOffset() < entryRange.getEndOffset()
+                        && diag.endOffset() > entryRange.getStartOffset()) {
+                    return null;
+                }
+            }
+        }
 
         var typeKeyword = typeDef.getTypeKeyword();
         String typeName = typeKeyword != null ? typeKeyword.getText().trim() : ":Type";
@@ -2687,7 +2708,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 3. Sizing tautologies
-        else if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+        else if (text.startsWith(StvnVocabulary.FACET_KW_SIZE) && schemaType != null && schemaType.getTypeKeyword() == null) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
@@ -4647,16 +4668,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             baseType = StvnTypeResolver.formatSchemaType(typeDef.getSchemaType());
         }
         boolean isCtor = isConstructorBaseType(baseType);
+        boolean isNominalDerivation = typeDef.getSchemaType() != null && typeDef.getSchemaType().getTypeKeyword() != null;
 
         if (irSchema != null) {
             switch (irSchema) {
                 case StvnSchema.IntSchema i -> {
-                    if (i.unsigned()) tags.add(StvnVocabulary.FACET_KW_UNSIGNED);
-                    if (!i.bitWidth().equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH)) tags.add(StvnVocabulary.FACET_KW_SIZE);
+                    if (isNominalDerivation || i.unsigned()) tags.add(StvnVocabulary.FACET_KW_UNSIGNED);
+                    if (isNominalDerivation || !i.bitWidth().equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH)) tags.add(StvnVocabulary.FACET_KW_SIZE);
                     if (i.explicitMinIncl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MIN_INCL);
                     if (i.explicitMaxExcl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_EXCL);
                 }
                 case StvnSchema.FloatSchema f -> {
+                    if (isNominalDerivation) {
+                        tags.add(StvnVocabulary.FACET_KW_EXACT);
+                        tags.add(StvnVocabulary.FACET_KW_SIZE);
+                    }
                     if (f.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
                         tags.add(StvnVocabulary.FACET_KW_EXACT);
                         if (!f.exactMaxDigits().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
@@ -4703,7 +4729,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (!st.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                 }
                 case StvnSchema.MapSchema mp -> {
-                    if (mp.invertible()) tags.add(StvnVocabulary.FACET_KW_INVERTIBLE);
+                    if (isNominalDerivation || mp.invertible()) tags.add(StvnVocabulary.FACET_KW_INVERTIBLE);
                     if (!mp.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
                     if (!mp.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                 }

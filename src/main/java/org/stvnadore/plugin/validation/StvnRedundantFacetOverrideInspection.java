@@ -135,6 +135,11 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
 
         var text = entry.getText().trim();
+        if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+            // Physical storage #size is a Tier-1 non-overridable facet governed by Core W003 (on root types)
+            // and Core E040 / E008 (on derived nominal types). Never emit a local W003 override warning.
+            return;
+        }
         if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
             extractBigInteger(text).ifPresent(val -> {
                 BigInteger parentVal = resolveParentMinSize(parentIr);

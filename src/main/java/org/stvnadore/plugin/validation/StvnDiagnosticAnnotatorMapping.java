@@ -262,6 +262,19 @@ public final class StvnDiagnosticAnnotatorMapping {
      * @return governing inspection shortName, or {@code null} if ungoverned
      */
     public static @Nullable String getGoverningInspectionShortName(StvnDiagnostic diag) {
+        var msg = diag.message();
+        if (msg != null && msg.contains("ancestor")) {
+            var symId = diag.symbolicId().orElse("");
+            var canonId = diag.canonicalCode().orElse("");
+            var errId = diag.errorCode().orElse("");
+            if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(symId)
+                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(symId)
+                    || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(errId)
+                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(errId)
+                    || "E008".equals(canonId)) {
+                return null;
+            }
+        }
         if (diag.symbolicId().isPresent()) {
             String sym = diag.symbolicId().get();
             if (isExplicitlyUngovernedSymbolicId(sym)) {
@@ -440,15 +453,16 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
                 || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
                 || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)
+                || "E008".equals(canon)
                 || "E011".equals(canon)
                 || "E011".equals(err)) {
+            if (message.contains("ancestor")) {
+                return false;
+            }
             if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
                     || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
                     || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
                     || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)) {
-                if (message.contains("ancestor")) {
-                    return false;
-                }
                 String mutexOwner = "StvnDiscreteInterval";
                 if (message.contains("Temporal scale facets")
                         || message.contains("Temporal mode facets")

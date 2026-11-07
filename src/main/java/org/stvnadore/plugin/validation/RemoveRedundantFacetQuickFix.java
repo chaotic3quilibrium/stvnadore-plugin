@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -23,10 +24,11 @@ import org.stvnadore.psi.MetadataMap;
  *    braces to prevent triggering ERR_EMPTY_METADATA_BLOCK (E003).
  */
 @NullMarked
-public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
 
   private final String facetSnippet;
   private final String actionPrefix;
+  private final Priority priority;
 
   /**
    * Constructs a quick-fix with default snippet derived from the element.
@@ -34,7 +36,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param element the PSI element representing or enclosed within the offending metadata entry
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element) {
-    this(element, extractFacetKeyword(element), "Remove redundant facet");
+    this(element, extractFacetKeyword(element), "Remove redundant facet", Priority.TOP);
   }
 
   /**
@@ -54,7 +56,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param facetSnippet the display snippet of the offending facet (e.g., "#minIncl 0")
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element, String facetSnippet) {
-    this(element, facetSnippet, "Remove redundant facet");
+    this(element, facetSnippet, "Remove redundant facet", Priority.TOP);
   }
 
   /**
@@ -65,9 +67,37 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
    * @param actionPrefix the action prefix (e.g., "Remove inapplicable facet" or "Remove redundant facet")
    */
   public RemoveRedundantFacetQuickFix(@NotNull PsiElement element, String facetSnippet, String actionPrefix) {
+    this(
+        element,
+        facetSnippet,
+        actionPrefix,
+        actionPrefix.contains("non-overridable") ? Priority.HIGH : Priority.TOP
+    );
+  }
+
+  /**
+   * Constructs a quick-fix with an explicit snippet, custom action prefix, and intention priority.
+   *
+   * @param element the PSI element representing or enclosed within the offending metadata entry
+   * @param facetSnippet the display snippet of the offending facet (e.g., "#size 16")
+   * @param actionPrefix the action prefix (e.g., "Remove non-overridable facet")
+   * @param priority the intention priority ordering
+   */
+  public RemoveRedundantFacetQuickFix(
+      @NotNull PsiElement element,
+      String facetSnippet,
+      String actionPrefix,
+      @NotNull Priority priority
+  ) {
     super(element);
     this.facetSnippet = facetSnippet;
     this.actionPrefix = actionPrefix;
+    this.priority = priority;
+  }
+
+  @Override
+  public @NotNull Priority getPriority() {
+    return priority;
   }
 
   @Override

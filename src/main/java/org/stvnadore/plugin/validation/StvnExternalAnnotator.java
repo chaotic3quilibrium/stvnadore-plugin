@@ -731,15 +731,20 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Redundant or non-overridable metadata facet quick-fix (W003 / E040)
+                // Redundant or non-overridable metadata facet quick-fix (W003 / E040 / cross-hop E008)
                 boolean isNonOverridable = DiagnosticBag.ERR_NON_OVERRIDABLE_FACET.equals(diagnosticId)
                         || "NON_OVERRIDABLE_FACET".equals(diagnosticId)
                         || "E040".equals(diagnosticId)
                         || rawMessage.contains("non-overridable");
+                boolean isCrossHopAncestorMutex = (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || "E008".equals(diagnosticId)
+                        || rawMessage.contains("mutually exclusive"))
+                        && rawMessage.contains("ancestor");
                 boolean isRedundant = DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
                         || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
                         || rawMessage.contains("is redundant");
-                if (isRedundant || isNonOverridable) {
+                if (isRedundant || isNonOverridable || isCrossHopAncestorMutex) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                     if (entry == null && range.getStartOffset() + 1 < textLength) {
@@ -748,12 +753,17 @@ public final class StvnExternalAnnotator
                         );
                     }
                     if (entry != null) {
-                        if (isNonOverridable) {
+                        if (isNonOverridable || isCrossHopAncestorMutex) {
+                            var changeBaseFix = ChangeBaseTypeToPrimitiveQuickFix.createIfApplicable(file, entry);
+                            if (changeBaseFix != null) {
+                                annotationBuilder = annotationBuilder.withFix(changeBaseFix);
+                            }
                             annotationBuilder = annotationBuilder.withFix(
                                 new RemoveRedundantFacetQuickFix(
                                     entry,
                                     RemoveRedundantFacetQuickFix.extractFacetKeyword(entry),
-                                    "Remove non-overridable facet"
+                                    "Remove non-overridable facet",
+                                    PriorityAction.Priority.HIGH
                                 )
                             );
                         } else {
@@ -783,13 +793,14 @@ public final class StvnExternalAnnotator
                 }
 
                 // Mutually exclusive temporal mode/scale quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
-                if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                if ((DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || rawMessage.contains("Temporal scale facets")
                         || rawMessage.contains("Temporal mode facets")
-                        || rawMessage.contains("Mutually exclusive temporal")) {
+                        || rawMessage.contains("Mutually exclusive temporal"))
+                        && !isCrossHopAncestorMutex) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                     if (entry == null && range.getStartOffset() + 1 < textLength) {
