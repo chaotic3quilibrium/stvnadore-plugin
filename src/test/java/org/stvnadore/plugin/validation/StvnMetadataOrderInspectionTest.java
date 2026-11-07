@@ -4,6 +4,7 @@ import com.intellij.codeInspection.InspectionProfileEntry;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.StvnSyntaxHighlighterColors;
 
 /**
  * Platform integration test suite validating {@link StvnMetadataOrderInspection}
@@ -109,8 +110,17 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
 
         var result = myFixture.getFile().getText();
         // 5-Tier: Tier 1 (#minSize 4 #maxSize 16) < Tier 2 (#equatable #TRUE) < Tier 4 (#preserveIndent #TRUE #regex "^[A-Z]+$")
-        assertTrue("Expected canonical 5-tier ordering in result:\n" + result,
-            result.contains("#minSize 4 #maxSize 16 #equatable #TRUE #preserveIndent #TRUE #regex \"^[A-Z]+$\""));
+        var expectedMap = """
+                :ComplexType {
+                  #minSize 4
+                  #maxSize 16
+                  #equatable #TRUE
+                  #preserveIndent #TRUE
+                  #regex "^[A-Z]+$"
+                } :String
+            """.stripTrailing();
+        assertTrue("Expected preserved multi-line canonical 5-tier ordering in result:\n" + result,
+            result.contains(expectedMap));
     }
 
     public void testCompliantOrderProducesZeroWarnings() {
@@ -269,5 +279,106 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """.stripTrailing();
         assertTrue("Expected multi-line facet order with preserved trailing comments:\n" + result,
             result.contains(expectedMap));
+    }
+
+    public void testScrambledFacetOrderTrapQuickFixPreservesCommentFreeMultiLineLayoutAcrossNestingDepths() {
+        var text = """
+            {
+              :defs {
+                :package :com/acme/network {
+                  :ScrambledFacetOrderTrap {
+                    #minIncl 10
+                    #unsigned
+                    #maxExcl 100
+                    #size 16
+                    #comparable #TRUE
+                  } :Int
+                }
+              }
+              :type :com/acme/network/ScrambledFacetOrderTrap
+              :body 42
+            }
+            """;
+        myFixture.configureByText("stage9_trap.stvn", text);
+        myFixture.doHighlighting();
+
+        int offset = text.indexOf("#unsigned");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
+        assertFalse("Expected facet reorder quick-fix to be available", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        var result = myFixture.getFile().getText();
+        var expectedMap = """
+                  :ScrambledFacetOrderTrap {
+                    #unsigned
+                    #size 16
+                    #comparable #TRUE
+                    #minIncl 10
+                    #maxExcl 100
+                  } :Int
+            """.stripTrailing();
+        assertTrue("Expected comment-free multi-line MetadataMap inside :package to preserve 6/8/6 space indentation:\n" + result,
+            result.contains(expectedMap));
+    }
+
+    public void testPathDelimitedValueKeywordAndTypeKeywordUniformSemanticHighlighting() {
+        var text = """
+            {
+              :defs {
+                :package :com/acme/network {
+                  :Port { #unsigned #size 16 #minIncl 1 #maxExcl 65536 } :Int
+                  #MIN_PORT :Port 1024
+                  #POSIX_REGEX :String "^[a-z_]+$"
+                }
+                :use [ :com/acme/network { #MIN_PORT #LOCAL_MIN_PORT } ]
+                #com/acme/network/DEFAULT_PORT :com/acme/network/Port 8080
+                :ConstrainedPort { #minIncl #com/acme/network/MIN_PORT } :com/acme/network/Port
+                :ConstrainedId { #regex #com/acme/network/POSIX_REGEX } :String
+                :GatewayTuple :Tuple(:com/acme/network/Port :ConstrainedPort)
+              }
+              :type :GatewayTuple
+              :body (
+                443
+                #com/acme/network/DEFAULT_PORT
+              )
+            }
+            """;
+        myFixture.configureByText("stage9_highlighting.stvn", text);
+        var highlights = myFixture.doHighlighting();
+
+        String[] valueKeywordTargets = {
+            "#com/acme/network/DEFAULT_PORT",
+            "#com/acme/network/MIN_PORT",
+            "#com/acme/network/POSIX_REGEX"
+        };
+        for (String target : valueKeywordTargets) {
+            int idx = 0;
+            while ((idx = text.indexOf(target, idx)) >= 0) {
+                final int start = idx;
+                final int end = idx + target.length();
+                boolean foundFullSpan = highlights.stream().anyMatch(h ->
+                    h.getStartOffset() == start
+                        && h.getEndOffset() == end
+                        && StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD.equals(h.forcedTextAttributesKey)
+                );
+                assertTrue("Expected uniform STVN_VALUE_KEYWORD highlight across full span of '" + target + "' at offset " + start, foundFullSpan);
+                idx = end;
+            }
+        }
+
+        String typeTarget = ":com/acme/network/Port";
+        int typeIdx = 0;
+        while ((typeIdx = text.indexOf(typeTarget, typeIdx)) >= 0) {
+            final int start = typeIdx;
+            final int end = typeIdx + typeTarget.length();
+            boolean foundFullSpan = highlights.stream().anyMatch(h ->
+                h.getStartOffset() == start
+                    && h.getEndOffset() == end
+                    && StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE.equals(h.forcedTextAttributesKey)
+            );
+            assertTrue("Expected uniform STVN_NOMINAL_TYPE highlight across full span of '" + typeTarget + "' at offset " + start, foundFullSpan);
+            typeIdx = end;
+        }
     }
 }

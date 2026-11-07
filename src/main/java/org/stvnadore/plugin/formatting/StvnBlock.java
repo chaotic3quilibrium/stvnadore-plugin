@@ -390,6 +390,13 @@ public final class StvnBlock implements ASTBlock {
             if (t1 != StvnTypes.DEFS_ENTRY && t2 == StvnTypes.COMMENT) {
                 return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
+            if (parentType == StvnTypes.METADATA_MAP && isMultiLineMetadataMap(node)) {
+                if ((t1 == StvnTypes.LBRACE && t2 == StvnTypes.METADATA_ENTRY)
+                        || (t1 == StvnTypes.METADATA_ENTRY && t2 == StvnTypes.METADATA_ENTRY)
+                        || (t1 == StvnTypes.METADATA_ENTRY && t2 == StvnTypes.RBRACE)) {
+                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
             if ((parentType == StvnTypes.PRODUCT_TYPE
                     || (parentType == StvnTypes.SUM_TYPE && node.findChildByType(StvnTypes.KW_UNION) != null))
                     && requiresMultiLineSchemaGroup(node)) {
@@ -453,7 +460,16 @@ public final class StvnBlock implements ASTBlock {
         return containsMultiLineSchemaConstruct(schemaTypeNode);
     }
 
+    private static boolean isMultiLineMetadataMap(ASTNode metadataMapNode) {
+        return metadataMapNode.textContains('\n')
+                || metadataMapNode.findChildByType(StvnTypes.COMMENT) != null;
+    }
+
     private static boolean containsMultiLineSchemaConstruct(ASTNode schemaTypeNode) {
+        ASTNode metaMap = schemaTypeNode.findChildByType(StvnTypes.METADATA_MAP);
+        if (metaMap != null && isMultiLineMetadataMap(metaMap)) {
+            return true;
+        }
         ASTNode constructor = schemaTypeNode.findChildByType(StvnTypes.SCHEMA_CONSTRUCTOR);
         if (constructor == null) {
             return false;

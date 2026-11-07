@@ -221,8 +221,17 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Reformatting must normalize metadata entries into 5-tier canonical order:\n" + text,
-                text.contains("#minSize 4 #maxSize 16 #equatable #TRUE #preserveIndent #TRUE #regex \"^[A-Z]+$\""));
+        var expectedBlock = """
+                :DisorderedType {
+                  #minSize 4
+                  #maxSize 16
+                  #equatable #TRUE
+                  #preserveIndent #TRUE
+                  #regex "^[A-Z]+$"
+                } :String
+            """.stripTrailing();
+        assertTrue("Reformatting must preserve multi-line MetadataMap layout while normalizing facets into 5-tier canonical order:\n" + text,
+                text.contains(expectedBlock));
     }
 
     public void testReformatReordersPortMetadataToCanonicalSevenTierOrder() {
@@ -958,6 +967,60 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
                 psiFormatted.contains(":SingleLineWrappedTuple { #maxSize 10 } :Seq(:Tuple(\n"));
             assertTrue("Authored multi-line :Map/:Option/:Either/:Seq/:Set must preserve multi-line structure and trailing comments:\n" + psiFormatted,
                 psiFormatted.contains(":MultilineContainers :Map(\n      :String // key comment\n      :Option(\n        :Either(\n"));
+        } finally {
+            settings.getState().reformatDelegationMode = previousMode;
+        }
+    }
+
+    public void testScrambledFacetOrderTrapPreservesMultiLineLayoutInCoreAndPsiModes() {
+        var settings = StvnSettings.getInstance(getProject());
+        var previousMode = settings.getState().reformatDelegationMode;
+        var input = """
+            {
+              :defs {
+                :ScrambledFacetOrderTrap {
+                  #minIncl 10
+                  #unsigned
+                  #maxExcl 100
+                  #size 16
+                  #comparable #TRUE
+                } :Int
+              }
+              :type :ScrambledFacetOrderTrap
+              :body 42
+            }
+            """;
+        var expected = """
+            {
+              :defs {
+                :ScrambledFacetOrderTrap {
+                  #unsigned
+                  #size 16
+                  #comparable #TRUE
+                  #minIncl 10
+                  #maxExcl 100
+                } :Int
+              }
+              :type :ScrambledFacetOrderTrap
+              :body 42
+            }
+            """;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("scrambled_trap_core.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            assertEquals("CORE_SOURCE_FORMATTER must preserve comment-free multi-line MetadataMap on :ScrambledFacetOrderTrap",
+                expected, coreFile.getText());
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("scrambled_trap_psi.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            assertEquals("PSI_STRUCTURE_PRESERVING must preserve comment-free multi-line MetadataMap on :ScrambledFacetOrderTrap",
+                expected, psiFile.getText());
         } finally {
             settings.getState().reformatDelegationMode = previousMode;
         }

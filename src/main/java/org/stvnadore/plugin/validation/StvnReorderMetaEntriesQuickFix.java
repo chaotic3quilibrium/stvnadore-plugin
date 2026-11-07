@@ -125,8 +125,9 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
 
         String rawBlockText = block.getText();
         boolean multiLine = rawBlockText.contains("\n") || hasComments;
-        String entryIndent = detectEntryIndent(rawBlockText, "    ");
-        String closingIndent = detectClosingBraceIndent(rawBlockText, "  ");
+        String baseIndent = detectElementLineIndent(block, "  ");
+        String entryIndent = detectEntryIndent(rawBlockText, baseIndent + "  ");
+        String closingIndent = detectClosingBraceIndent(rawBlockText, baseIndent);
         List<String> standaloneLeadingComments = extractStandaloneCommentsBeforeFirstEntry(block.getNode());
 
         StringBuilder sb = new StringBuilder(multiLine ? "{\n" : "{");
@@ -186,6 +187,27 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         return comments;
     }
 
+    static String detectElementLineIndent(PsiElement element, String fallback) {
+        PsiFile file = element.getContainingFile();
+        if (file == null) {
+            return fallback;
+        }
+        CharSequence chars = file.getViewProvider().getContents();
+        int startOffset = element.getTextRange().getStartOffset();
+        if (startOffset < 0 || startOffset > chars.length()) {
+            return fallback;
+        }
+        int lineStart = startOffset;
+        while (lineStart > 0 && chars.charAt(lineStart - 1) != '\n' && chars.charAt(lineStart - 1) != '\r') {
+            lineStart--;
+        }
+        int wsEnd = lineStart;
+        while (wsEnd < startOffset && (chars.charAt(wsEnd) == ' ' || chars.charAt(wsEnd) == '\t')) {
+            wsEnd++;
+        }
+        return chars.subSequence(lineStart, wsEnd).toString();
+    }
+
     static String detectEntryIndent(String blockText, String fallback) {
         String[] lines = blockText.split("\n", -1);
         for (int i = 1; i < lines.length; i++) {
@@ -208,7 +230,18 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
             String lastLine = blockText.substring(lastNewline + 1);
             int braceIdx = lastLine.indexOf('}');
             if (braceIdx >= 0) {
-                return lastLine.substring(0, braceIdx);
+                String prefix = lastLine.substring(0, braceIdx);
+                boolean whitespaceOnly = true;
+                for (int i = 0; i < prefix.length(); i++) {
+                    char c = prefix.charAt(i);
+                    if (c != ' ' && c != '\t') {
+                        whitespaceOnly = false;
+                        break;
+                    }
+                }
+                if (whitespaceOnly) {
+                    return prefix;
+                }
             }
         }
         return fallback;

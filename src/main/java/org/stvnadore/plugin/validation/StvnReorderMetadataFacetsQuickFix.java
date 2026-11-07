@@ -116,9 +116,10 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
         items.sort(Comparator.comparingInt(FacetWithComment::rank));
 
         String rawMapText = map.getText();
-        boolean multiLine = hasComments;
-        String entryIndent = StvnReorderMetaEntriesQuickFix.detectEntryIndent(rawMapText, "      ");
-        String closingIndent = StvnReorderMetaEntriesQuickFix.detectClosingBraceIndent(rawMapText, "    ");
+        boolean multiLine = rawMapText.indexOf('\n') >= 0 || hasComments;
+        String baseIndent = StvnReorderMetaEntriesQuickFix.detectElementLineIndent(map, "    ");
+        String entryIndent = StvnReorderMetaEntriesQuickFix.detectEntryIndent(rawMapText, baseIndent + "  ");
+        String closingIndent = StvnReorderMetaEntriesQuickFix.detectClosingBraceIndent(rawMapText, baseIndent);
         List<String> leadingComments = StvnReorderMetaEntriesQuickFix.extractStandaloneCommentsBeforeFirstEntry(map.getNode());
 
         StringBuilder sb = new StringBuilder(multiLine ? "{\n" : "{");

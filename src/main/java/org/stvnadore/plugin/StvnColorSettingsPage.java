@@ -61,6 +61,7 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
                 "  <primitive>:defs</primitive> {\n" +
                 "    <primitive>:package</primitive> :org/example/service {\n" +
                 "      <nominal>:Port</nominal> { <metadata>#unsigned</metadata> <metadata>#size</metadata> <number>16</number> <metadata>#minIncl</metadata> <number>1</number> } <primitive>:Int</primitive>\n" +
+                "      <value>#DEFAULT_PORT</value> <nominal>:Port</nominal> <number>8443</number>\n" +
                 "      <nominal>:State</nominal> <primitive>:Enum</primitive> [ <value>#ACTIVE</value> <value>#INACTIVE</value> <value>#SUSPENDED</value> ]\n" +
                 "      <nominal>:ServiceConfig</nominal> <primitive>:Tuple</primitive>(\n" +
                 "        <nominal>:Port</nominal>\n" +
@@ -73,9 +74,9 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
                 "      )\n" +
                 "    }\n" +
                 "  }\n" +
-                "  <primitive>:type</primitive> :org/example/service/<nominal>ServiceConfig</nominal>\n" +
+                "  <primitive>:type</primitive> <nominal>:org/example/service/ServiceConfig</nominal>\n" +
                 "  <primitive>:body</primitive> (\n" +
-                "    <number>8443</number>\n" +
+                "    <value>#org/example/service/DEFAULT_PORT</value>\n" +
                 "    <value>#ACTIVE</value>\n" +
                 "    <value>#Some</value> <string>\"Escaped string \\n \\t \\\"quotes\\\"\"</string>\n" +
                 "    <value>#Left</value> <string>\"primary\"</string>\n" +

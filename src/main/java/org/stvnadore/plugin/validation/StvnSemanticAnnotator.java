@@ -14,6 +14,8 @@ import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.SumType;
+import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.ValueKeyword;
 
 /**
  * Validates structural tags and paints semantic types in the editor.
@@ -67,6 +69,29 @@ public final class StvnSemanticAnnotator implements Annotator {
         }
 
         // 2. Highlight standard syntax categories
+        if (type.equals(StvnTypes.TYPE_KEYWORD)) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                  .textAttributes(StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE)
+                  .create();
+            return;
+        }
+        if (type.equals(StvnTypes.VALUE_KEYWORD)) {
+            if (PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.MetadataUnknownEntry.class, false) != null
+                    && PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.MetadataMap.class, false) != null) {
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                      .textAttributes(StvnSyntaxHighlighterColors.STVN_METADATA_TARGET)
+                      .create();
+                return;
+            }
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                  .textAttributes(StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD)
+                  .create();
+            return;
+        }
+        PsiElement parent = element.getParent();
+        if (parent instanceof TypeKeyword || parent instanceof ValueKeyword) {
+            return;
+        }
         if (type.equals(StvnTypes.TYPE_KEYWORD_BASE)) {
             holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                   .textAttributes(StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE)
