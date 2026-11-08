@@ -294,9 +294,18 @@ public final class StvnTraitViolationQuickFixProvider {
     public record ConstituentInfo(int index, String label, SchemaType schema) {}
 
     public static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef) {
+        return extractNonConformingConstituents(typeDef, new java.util.HashSet<>());
+    }
+
+    private static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef, java.util.Set<String> visited) {
         var result = new ArrayList<ConstituentInfo>();
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
+            return result;
+        }
+
+        var defKw = typeDef.getTypeKeyword();
+        if (defKw != null && !visited.add(defKw.getText().trim())) {
             return result;
         }
 
@@ -305,7 +314,7 @@ public final class StvnTraitViolationQuickFixProvider {
             var aliasTarget = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
             var aliasDef = StvnPsiUtils.getParentTypeDefinition(aliasTarget);
             if (aliasDef != null && aliasDef != typeDef) {
-                return extractNonConformingConstituents(aliasDef);
+                return extractNonConformingConstituents(aliasDef, visited);
             }
         }
 
@@ -354,7 +363,7 @@ public final class StvnTraitViolationQuickFixProvider {
                             if (!traits.equatable()) {
                                 result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                             }
-                        } else if (!isUnderlyingIntrinsicallyEquatable(targetDef)) {
+                        } else if (!isUnderlyingIntrinsicallyEquatable(targetDef, visited)) {
                             result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                         }
                     }
@@ -381,9 +390,18 @@ public final class StvnTraitViolationQuickFixProvider {
     }
 
     public static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef) {
+        return extractNonComparableConstituents(typeDef, new java.util.HashSet<>());
+    }
+
+    private static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef, java.util.Set<String> visited) {
         var result = new ArrayList<ConstituentInfo>();
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
+            return result;
+        }
+
+        var defKw = typeDef.getTypeKeyword();
+        if (defKw != null && !visited.add(defKw.getText().trim())) {
             return result;
         }
 
@@ -392,7 +410,7 @@ public final class StvnTraitViolationQuickFixProvider {
             var aliasTarget = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
             var aliasDef = StvnPsiUtils.getParentTypeDefinition(aliasTarget);
             if (aliasDef != null && aliasDef != typeDef) {
-                return extractNonComparableConstituents(aliasDef);
+                return extractNonComparableConstituents(aliasDef, visited);
             }
         }
 
@@ -449,7 +467,7 @@ public final class StvnTraitViolationQuickFixProvider {
                             if (!traits.comparable()) {
                                 result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                             }
-                        } else if (!isUnderlyingIntrinsicallyComparable(targetDef)) {
+                        } else if (!isUnderlyingIntrinsicallyComparable(targetDef, visited)) {
                             result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                         }
                     }
@@ -476,13 +494,12 @@ public final class StvnTraitViolationQuickFixProvider {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
 
-        var kw = typeDef.getTypeKeyword();
-        if (kw != null && !visited.add(kw.getText().trim())) {
-            return true; // Break recursion on cycle
-        }
-
         var schemaKw = schemaType.getTypeKeyword();
         if (schemaKw != null) {
+            var kw = typeDef.getTypeKeyword();
+            if (kw != null && !visited.add(kw.getText().trim())) {
+                return true; // Break recursion on cycle
+            }
             var name = schemaKw.getText().trim();
             if (StvnVocabulary.TYPE_FLOAT.equals(name)) {
                 return hasExactFacet(schemaType.getMetadataMap());
@@ -501,7 +518,7 @@ public final class StvnTraitViolationQuickFixProvider {
                 }
             }
         }
-        return findFirstNonEquatableConstituent(typeDef) == null;
+        return extractNonConformingConstituents(typeDef, visited).isEmpty();
     }
 
     public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef) {
@@ -512,13 +529,12 @@ public final class StvnTraitViolationQuickFixProvider {
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) return false;
 
-        var kw = typeDef.getTypeKeyword();
-        if (kw != null && !visited.add(kw.getText().trim())) {
-            return true;
-        }
-
         var schemaKw = schemaType.getTypeKeyword();
         if (schemaKw != null) {
+            var kw = typeDef.getTypeKeyword();
+            if (kw != null && !visited.add(kw.getText().trim())) {
+                return true;
+            }
             var name = schemaKw.getText().trim();
             if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
                 return false;
@@ -538,7 +554,7 @@ public final class StvnTraitViolationQuickFixProvider {
                 }
             }
         }
-        return findFirstNonComparableConstituent(typeDef) == null;
+        return extractNonComparableConstituents(typeDef, visited).isEmpty();
     }
 
     private static boolean hasExactFacet(@Nullable MetadataMap map) {

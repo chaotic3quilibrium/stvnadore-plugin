@@ -194,9 +194,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (ir instanceof StvnSchema.PoisonedSchema p && p.bestEffortFallback().isPresent()) {
                         return new DegradedSchemaInfo(alias, StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get()));
                     }
-                    var schemaType = typeDef.getSchemaType();
-                    var resolved = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
-                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
+                    var terminal = resolveTerminalSchemaType(typeDef, new HashSet<>());
+                    var base = terminal != null ? StvnSchemaFormatter.formatCleanSchema(terminal) : ":Value";
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -211,11 +210,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var fallbackBase = ":Value";
                 var td = StvnPsiUtils.getParentTypeDefinition(targetDef);
                 if (td != null && td.getSchemaType() != null) {
-                    var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
-                    if (resolved != null) {
-                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
-                    } else {
-                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(td.getSchemaType());
+                    var terminal = resolveTerminalSchemaType(td, new HashSet<>());
+                    if (terminal != null) {
+                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(terminal);
                     }
                 }
                 return new DegradedSchemaInfo(alias, fallbackBase);
@@ -231,8 +228,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (ir instanceof StvnSchema.PoisonedSchema p && p.bestEffortFallback().isPresent()) {
                         return new DegradedSchemaInfo(alias, StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get()));
                     }
-                    var resolved = StvnTypeResolver.resolveNominalSchema(schema);
-                    var base = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(schema);
+                    var terminal = resolveTerminalSchemaType(schema, new HashSet<>());
+                    var base = terminal != null ? StvnSchemaFormatter.formatCleanSchema(terminal) : ":Value";
                     return new DegradedSchemaInfo(alias, base);
                 }
             }
@@ -772,6 +769,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static String extractScaleFlag(SchemaType schemaType) {
+        return extractScaleFlag(schemaType, new HashSet<>());
+    }
+
+    private static String extractScaleFlag(SchemaType schemaType, Set<PsiElement> visited) {
+        if (!visited.add(schemaType)) {
+            return StvnVocabulary.FACET_KW_SCALE_MS;
+        }
         var metaMap = schemaType.getMetadataMap();
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
@@ -799,7 +803,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         }
                     }
                     if (td.getSchemaType() != null) {
-                        return extractScaleFlag(td.getSchemaType());
+                        return extractScaleFlag(td.getSchemaType(), visited);
                     }
                 }
             }

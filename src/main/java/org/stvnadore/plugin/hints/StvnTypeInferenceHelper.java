@@ -9,6 +9,9 @@ import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * Provides bounded-depth payload type inference and badge coordinate calculations
  * for STVN inlay hint rendering.
@@ -40,11 +43,18 @@ public final class StvnTypeInferenceHelper {
      * @return true if structurally compatible, false otherwise
      */
     public static boolean isStructurallyCompatible(@Nullable Value valueElement, @Nullable SchemaType expectedSchema) {
-        if (valueElement == null || expectedSchema == null) {
+        return isStructurallyCompatible(valueElement, expectedSchema, new HashSet<>());
+    }
+
+    private static boolean isStructurallyCompatible(@Nullable Value valueElement, @Nullable SchemaType expectedSchema, Set<SchemaType> visited) {
+        if (valueElement == null || expectedSchema == null || !visited.add(expectedSchema)) {
             return false;
         }
         var resolved = StvnTypeResolver.resolveNominalSchema(expectedSchema);
         var toInspect = (resolved != null) ? resolved : expectedSchema;
+        if (toInspect != expectedSchema && !visited.add(toInspect)) {
+            return false;
+        }
         var constructor = toInspect.getSchemaConstructor();
         if (constructor == null) {
             return true;
@@ -82,7 +92,7 @@ public final class StvnTypeInferenceHelper {
             }
             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
             for (var branch : innerSchemas) {
-                if (isStructurallyCompatible(valueElement, branch)) {
+                if (isStructurallyCompatible(valueElement, branch, visited)) {
                     return true;
                 }
             }

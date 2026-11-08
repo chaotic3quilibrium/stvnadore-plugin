@@ -14,6 +14,7 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.AliasExpansionMode;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.util.StvnTypePresentationUtil;
+import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Value;
 
 /**
@@ -79,7 +80,8 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
 
     /**
      * Builds an inlay hint presentation for a {@code :body} value element, wrapping it in a clickable
-     * PSI reference when the value is governed by a nominal {@code TypeDefinition}.
+     * PSI reference when the value is governed by a nominal {@code TypeDefinition} or inline member
+     * {@code SchemaType} in {@code :defs}.
      *
      * @param valueElement the payload value element
      * @param badgeText    the formatted inlay badge text
@@ -87,12 +89,15 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
      */
     public @NotNull InlayPresentation buildInlayPresentation(@NotNull Value valueElement, @NotNull String badgeText) {
         var baseText = getFactory().text(badgeText);
-        var targetTypeDef = StvnTypeResolver.resolveGoverningNominalTypeDefinition(valueElement);
-        if (targetTypeDef == null) {
+        var targetElement = StvnTypeResolver.resolveGoverningDeclarationTarget(valueElement);
+        if (targetElement == null) {
             return baseText;
         }
-        return getFactory().psiSingleReference(baseText, () ->
-            targetTypeDef.getTypeKeyword() != null ? targetTypeDef.getTypeKeyword() : targetTypeDef
-        );
+        return getFactory().psiSingleReference(baseText, () -> {
+            if (targetElement instanceof TypeDefinition targetTypeDef) {
+                return targetTypeDef.getTypeKeyword() != null ? targetTypeDef.getTypeKeyword() : targetTypeDef;
+            }
+            return targetElement;
+        });
     }
 }

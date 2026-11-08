@@ -1513,4 +1513,61 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertTrue("Expected '#size' row marked 'Invalid' on ':Int16b':\n" + int16bDoc, int16bDoc.contains("#size") && int16bDoc.contains("Invalid"));
         assertFalse("Locked Tier-1 facet '#unsigned' must not be listed as unset on derived ':Int16b':\n" + int16bDoc, int16bDoc.contains("<code>#unsigned</code>"));
     }
+
+    public void testStage12CircularTypeAliasesAndGuardedRecursiveTreeNodeHoverWithoutStackOverflow() {
+        var text = """
+            {
+              :meta {
+                #name "gauntlet_v3_circular_types_recursion_and_duplicate_defs"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta  :CycleAlpha
+
+                :TreeLabel { #minSize 1 #maxSize 32 } :String
+                :TreeNode  :Tuple(
+                  :TreeLabel
+                  :Seq(:TreeNode)
+                )
+              }
+              :type :TreeNode
+              :body (
+                "root"
+                [
+                  ("leaf-1" [])
+                ]
+              )
+            }
+            """;
+        myFixture.configureByText("gauntlet_v3_circular_types_recursion_and_duplicate_defs.core_test.stvn_i", text);
+
+        // 1. Hover on LHS ':CycleAlpha'
+        int lhsAlphaOffset = text.indexOf(":CycleAlpha :CycleBeta") + 2;
+        String lhsAlphaDoc = getDocAtOffset(text, lhsAlphaOffset);
+        assertNotNull("Hover on LHS :CycleAlpha must not be null", lhsAlphaDoc);
+        assertTrue("LHS :CycleAlpha must show Degraded Schema Warning:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("Degraded Schema Warning"));
+        assertTrue("LHS :CycleAlpha must show fallback base :Value:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("<code>:Value</code>"));
+        assertTrue("LHS :CycleAlpha must show cycle resolution path:\n" + lhsAlphaDoc, lhsAlphaDoc.contains(":CycleAlpha &rarr; :CycleBeta &rarr; :CycleAlpha"));
+
+        // 2. Hover on RHS ':CycleBeta' on line ':CycleAlpha :CycleBeta'
+        int rhsBetaOffset = text.indexOf(":CycleAlpha :CycleBeta") + ":CycleAlpha ".length() + 2;
+        String rhsBetaDoc = getDocAtOffset(text, rhsBetaOffset);
+        assertNotNull("Hover on RHS :CycleBeta must not be null", rhsBetaDoc);
+        assertTrue("RHS :CycleBeta must show Degraded Schema Warning:\n" + rhsBetaDoc, rhsBetaDoc.contains("Degraded Schema Warning"));
+
+        // 3. Hover on LHS ':CycleBeta' on line ':CycleBeta  :CycleAlpha'
+        int lhsBetaOffset = text.indexOf(":CycleBeta  :CycleAlpha") + 2;
+        String lhsBetaDoc = getDocAtOffset(text, lhsBetaOffset);
+        assertNotNull("Hover on LHS :CycleBeta must not be null", lhsBetaDoc);
+        assertTrue("LHS :CycleBeta must show Degraded Schema Warning:\n" + lhsBetaDoc, lhsBetaDoc.contains("Degraded Schema Warning"));
+
+        // 4. Hover on guarded recursive ':TreeNode'
+        int treeNodeOffset = text.indexOf(":TreeNode  :Tuple") + 2;
+        String treeNodeDoc = getDocAtOffset(text, treeNodeOffset);
+        assertNotNull("Hover on :TreeNode must not be null", treeNodeDoc);
+        assertTrue("Guarded recursive :TreeNode must render Arity 2:\n" + treeNodeDoc, treeNodeDoc.contains("<b>Arity:</b> 2"));
+        assertTrue("Guarded recursive :TreeNode must render exemplar value:\n" + treeNodeDoc, treeNodeDoc.contains("(\"example\" [])"));
+    }
 }

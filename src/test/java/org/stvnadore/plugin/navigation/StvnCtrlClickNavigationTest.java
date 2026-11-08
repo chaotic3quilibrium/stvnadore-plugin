@@ -13,6 +13,7 @@ import org.stvnadore.plugin.hints.StvnInlayHintsCollector;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TupleLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Value;
@@ -479,5 +480,89 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
             }
         });
         assertFalse("Collector must emit inline presentations for :body values", recordedPresentations.isEmpty());
+    }
+
+    public void testStage12InlineMemberSeqInsideNominalTypeDefinitionNavigatesToSchemaTypeInDefs() {
+        var code = """
+            {
+              :meta {
+                #name "gauntlet_v3_circular_types_recursion_and_duplicate_defs"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :TreeLabel { #minSize 1 #maxSize 32 } :String
+                :TreeNode  :Tuple(
+                  :TreeLabel
+                  :Seq(:TreeNode)
+                )
+                :Stage12V3Envelope :Tuple(
+                  :TreeNode
+                )
+              }
+              :type :Stage12V3Envelope
+              :body (
+                (
+                  "root"
+                  [
+                    (
+                      "child-left"
+                      [
+                        ("leaf-1" [])
+                        ("leaf-2" [])
+                      ]
+                    )
+                    (
+                      "child-right"
+                      []
+                    )
+                  ]
+                )
+              )
+            }
+            """;
+        var file = myFixture.configureByText("gauntlet_v3_circular_types_recursion_and_duplicate_defs.core_test.stvn_i", code);
+        var handler = new StvnGotoDeclarationHandler();
+
+        int expectedSeqSchemaOffset = code.indexOf(":Seq(:TreeNode)");
+
+        // 1. Ctrl+Click on '[' and ']' of outer child list and nested lists
+        int[] bracketOffsets = new int[] {
+            code.indexOf("[", code.indexOf("\"root\"")),
+            code.indexOf("[", code.indexOf("\"child-left\"")),
+            code.indexOf("[]", code.indexOf("\"leaf-1\"")),
+            code.indexOf("[]", code.indexOf("\"leaf-1\"")) + 1,
+            code.indexOf("[]", code.indexOf("\"leaf-2\"")),
+            code.indexOf("]", code.indexOf("\"leaf-2\"") + "\"leaf-2\" [])".length()),
+            code.indexOf("[]", code.indexOf("\"child-right\"")),
+            code.lastIndexOf("]")
+        };
+
+        for (int offset : bracketOffsets) {
+            assertTrue("Expected non-negative bracket offset", offset >= 0);
+            var leaf = file.findElementAt(offset);
+            assertNotNull("Expected token at offset " + offset, leaf);
+            var targets = handler.getGotoDeclarationTargets(leaf, offset, myFixture.getEditor());
+            assertNotNull("Expected navigation target at bracket offset " + offset, targets);
+            assertEquals(1, targets.length);
+            assertTrue("Expected SchemaType target for inline :Seq(:TreeNode) at offset " + offset, targets[0] instanceof SchemaType);
+            assertEquals(":Seq(:TreeNode)", targets[0].getText());
+            assertEquals(expectedSeqSchemaOffset, targets[0].getTextRange().getStartOffset());
+        }
+
+        // 2. Verify Inlay Hint presentation for the child ListLiteral wraps with clickable PsiSingleReference targeting :Seq(:TreeNode)
+        var leaf1EmptyListLeaf = file.findElementAt(code.indexOf("[]", code.indexOf("\"leaf-1\"")));
+        var listValue = PsiTreeUtil.getParentOfType(leaf1EmptyListLeaf, Value.class);
+        assertNotNull(listValue);
+        assertEquals("[]", listValue.getText());
+
+        var declarationTarget = StvnTypeResolver.resolveGoverningDeclarationTarget(listValue);
+        assertNotNull("Expected governing declaration target for []", declarationTarget);
+        assertEquals(":Seq(:TreeNode)", declarationTarget.getText());
+        assertEquals(expectedSeqSchemaOffset, declarationTarget.getTextRange().getStartOffset());
+
+        var collector = new StvnInlayHintsCollector(myFixture.getEditor());
+        var listInlayPresentation = collector.buildInlayPresentation(listValue, ":Seq( :TreeNode )");
+        assertNotNull(listInlayPresentation);
     }
 }

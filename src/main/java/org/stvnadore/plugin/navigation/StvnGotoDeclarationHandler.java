@@ -141,12 +141,12 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
         }
 
         // 7. Rule 3: Scalar literals, sum constructor tags, and container delimiters in :body or ConstantDefinition
-        // jump to their governing nominal alias TypeDefinition in :defs
+        // jump to their governing nominal alias TypeDefinition or inline member SchemaType in :defs
         var targetValue = findNavigablePayloadValue(sourceElement);
         if (targetValue != null) {
-            var governingTypeDef = StvnTypeResolver.resolveGoverningNominalTypeDefinition(targetValue);
-            if (governingTypeDef != null) {
-                return new PsiElement[]{ governingTypeDef };
+            var governingTarget = StvnTypeResolver.resolveGoverningDeclarationTarget(targetValue);
+            if (governingTarget != null) {
+                return new PsiElement[]{ governingTarget };
             }
         }
 
