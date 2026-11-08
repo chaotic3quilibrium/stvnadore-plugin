@@ -223,6 +223,97 @@ public final class StvnPsiUtils {
         return null;
     }
 
+    /**
+     * Determines whether the given element is the declaration identifier of a {@link ConstantDefinition}
+     * or the local alias identifier (index 1) of a {@link UseMapAlias}.
+     *
+     * @param element the candidate PSI element
+     * @return {@code true} if the element is a constant or constant-alias declaration target
+     */
+    public static boolean isConstantDefinitionTarget(@Nullable PsiElement element) {
+        if (!(element instanceof ValueKeyword)) {
+            return false;
+        }
+        var parent = element.getParent();
+        if (parent instanceof ConstantDefinition constDef) {
+            return constDef.getValueKeyword() == element;
+        }
+        if (parent instanceof UseMapAlias alias) {
+            var kws = alias.getValueKeywordList();
+            return kws.size() >= 2 && kws.get(1) == element;
+        }
+        return false;
+    }
+
+    /**
+     * Retrieves the parent {@link ConstantDefinition} if the element is its declaration target keyword.
+     *
+     * @param element the candidate PSI element
+     * @return the enclosing {@link ConstantDefinition}, or {@code null} if not a constant declaration target
+     */
+    public static @Nullable ConstantDefinition getParentConstantDefinition(@Nullable PsiElement element) {
+        if (element == null) {
+            return null;
+        }
+        if (element instanceof ConstantDefinition constDef) {
+            return constDef;
+        }
+        if (element.getParent() instanceof ConstantDefinition constDef && constDef.getValueKeyword() == element) {
+            return constDef;
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a constant reference target (which may be a {@link ConstantDefinition}, a {@link ValueKeyword},
+     * or a {@link UseMapAlias} local keyword) to its underlying {@link ConstantDefinition}, hopping across
+     * {@code :use} aliases with cycle protection.
+     *
+     * @param resolved the resolved PSI element
+     * @return the underlying {@link ConstantDefinition}, or {@code null} if unresolvable
+     */
+    public static @Nullable ConstantDefinition resolveTargetConstantDefinition(@Nullable PsiElement resolved) {
+        var visited = new HashSet<PsiElement>();
+        var current = resolved;
+        while (current != null && visited.add(current)) {
+            var direct = getParentConstantDefinition(current);
+            if (direct != null) {
+                return direct;
+            }
+            UseMapAlias alias = null;
+            if (current instanceof UseMapAlias a) {
+                alias = a;
+            } else if (current.getParent() instanceof UseMapAlias a) {
+                alias = a;
+            }
+            if (alias != null) {
+                var kws = alias.getValueKeywordList();
+                var useStmt = PsiTreeUtil.getParentOfType(alias, UseStmt.class);
+                var file = alias.getContainingFile();
+                if (!kws.isEmpty() && useStmt != null && useStmt.getUseTarget() != null && file != null) {
+                    var remoteName = kws.get(0).getText();
+                    var fqni = org.stvnadore.plugin.reference.StvnConstantReference.buildPackageConstantFqni(
+                        useStmt.getUseTarget().getText(), remoteName);
+                    current = org.stvnadore.plugin.reference.StvnConstantReference.resolveConstantInFile(
+                        file, fqni, new HashSet<>());
+                    continue;
+                }
+            }
+            break;
+        }
+        return null;
+    }
+
+    /**
+     * Determines whether the given element resides inside a {@code :body} entry.
+     *
+     * @param element the candidate PSI element
+     * @return {@code true} if the element is inside a {@link BodyEntry}
+     */
+    public static boolean isInsideBody(@Nullable PsiElement element) {
+        return element != null && PsiTreeUtil.getParentOfType(element, BodyEntry.class, false) != null;
+    }
+
     public static boolean isTypeDefinitionTarget(@Nullable PsiElement element) {
         if (element == null) return false;
         var parent = element.getParent();

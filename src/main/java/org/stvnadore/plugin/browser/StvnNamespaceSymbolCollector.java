@@ -583,7 +583,7 @@ public final class StvnNamespaceSymbolCollector {
         if (valueKw != null) {
             var name = valueKw.getText();
             if (processed.add(name)) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
+                var resolved = org.stvnadore.plugin.reference.StvnConstantReference.resolveConstantInFile(file, name, new HashSet<>());
                 var source = resolved != null && resolved.getContainingFile() != null
                     ? resolved.getContainingFile().getName()
                     : file.getName();

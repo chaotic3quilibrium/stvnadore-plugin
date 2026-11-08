@@ -2,12 +2,14 @@ package org.stvnadore.plugin.hints;
 
 import com.intellij.codeInsight.hints.FactoryInlayHintsCollector;
 import com.intellij.codeInsight.hints.InlayHintsSink;
+import com.intellij.codeInsight.hints.presentation.InlayPresentation;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.AliasExpansionMode;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
@@ -38,6 +40,9 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                 public void visitElement(@NotNull PsiElement child) {
                     super.visitElement(child);
                     if (child instanceof Value valueElement) {
+                        if (!StvnPsiUtils.isInsideBody(valueElement)) {
+                            return;
+                        }
                         if (StvnTypeInferenceHelper.isInnerChildOfAlgebraicContainer(valueElement)) {
                             return;
                         }
@@ -61,7 +66,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                             var formatted = StvnTypePresentationUtil.formatAliasChain(finalLabel, mode);
                             if (formatted.isPresent()) {
                                 var offset = StvnTypeInferenceHelper.calculateInlayBadgeOffset(valueElement, coreNode);
-                                var presentation = getFactory().text(formatted.get());
+                                var presentation = buildInlayPresentation(valueElement, formatted.get());
                                 sink.addInlineElement(offset, true, presentation, false);
                             }
                         }
@@ -70,5 +75,24 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
             });
         }
         return true;
+    }
+
+    /**
+     * Builds an inlay hint presentation for a {@code :body} value element, wrapping it in a clickable
+     * PSI reference when the value is governed by a nominal {@code TypeDefinition}.
+     *
+     * @param valueElement the payload value element
+     * @param badgeText    the formatted inlay badge text
+     * @return the constructed {@link InlayPresentation}
+     */
+    public @NotNull InlayPresentation buildInlayPresentation(@NotNull Value valueElement, @NotNull String badgeText) {
+        var baseText = getFactory().text(badgeText);
+        var targetTypeDef = StvnTypeResolver.resolveGoverningNominalTypeDefinition(valueElement);
+        if (targetTypeDef == null) {
+            return baseText;
+        }
+        return getFactory().psiSingleReference(baseText, () ->
+            targetTypeDef.getTypeKeyword() != null ? targetTypeDef.getTypeKeyword() : targetTypeDef
+        );
     }
 }

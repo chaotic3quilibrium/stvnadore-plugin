@@ -887,8 +887,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     ) {
         var file = alias.getContainingFile();
         if (file != null) {
-            var bareRemote = remoteName.startsWith("#") ? remoteName.substring(1) : remoteName;
-            var fqni = targetNamespace + "/" + bareRemote;
+            var fqni = StvnConstantReference.buildPackageConstantFqni(targetNamespace, remoteName);
             var resolved = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
             if (resolved == null) {
                 resolved = StvnConstantReference.resolveConstantInFile(file, remoteName, new HashSet<>());

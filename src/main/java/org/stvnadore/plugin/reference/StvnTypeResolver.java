@@ -1634,7 +1634,8 @@ public final class StvnTypeResolver {
      */
     public static @Nullable ResolvedTypeInfo resolveBaseTypeInfo(Value element) {
         var bodyEntry = findBodyEntryParent(element);
-        if (bodyEntry == null) {
+        var constDef = bodyEntry == null ? PsiTreeUtil.getParentOfType(element, ConstantDefinition.class, false) : null;
+        if (bodyEntry == null && constDef == null) {
             return null;
         }
 
@@ -1642,7 +1643,7 @@ public final class StvnTypeResolver {
         var curr = (PsiElement) element;
         while (curr != null) {
             var parent = curr.getParent();
-            if (parent instanceof BodyEntry) {
+            if (parent instanceof BodyEntry || parent instanceof ConstantDefinition) {
                 break;
             }
 
@@ -1693,16 +1694,20 @@ public final class StvnTypeResolver {
             curr = parent;
         }
 
-        var containingFile = bodyEntry.getContainingFile();
-        if (containingFile == null) {
-            return null;
+        SchemaType rootSchemaType;
+        if (bodyEntry != null) {
+            var containingFile = bodyEntry.getContainingFile();
+            if (containingFile == null) {
+                return null;
+            }
+            var typeEntry = PsiTreeUtil.findChildOfType(containingFile, TypeEntry.class);
+            if (typeEntry == null) {
+                return null;
+            }
+            rootSchemaType = typeEntry.getSchemaType();
+        } else {
+            rootSchemaType = constDef.getSchemaType();
         }
-        var typeEntry = PsiTreeUtil.findChildOfType(containingFile, TypeEntry.class);
-        if (typeEntry == null) {
-            return null;
-        }
-
-        var rootSchemaType = typeEntry.getSchemaType();
         if (rootSchemaType == null) {
             return null;
         }
@@ -1854,6 +1859,186 @@ public final class StvnTypeResolver {
             }
         }
         return currentSchema;
+    }
+
+    /**
+     * Resolves the governing nominal {@link TypeDefinition} in {@code :defs} (or {@code :package},
+     * {@code :include}, or Standard Library Prelude) for a payload {@link Value} in {@code :body}
+     * or {@link ConstantDefinition}. Returns {@code null} if the value is governed by an unaliased
+     * primitive/base type or anonymous composite constructor.
+     *
+     * @param value the payload value element
+     * @return the governing nominal {@link TypeDefinition}, or {@code null} if unaliased
+     */
+    public static @Nullable TypeDefinition resolveGoverningNominalTypeDefinition(Value value) {
+        var info = resolveBaseTypeInfo(value);
+        if (info != null) {
+            var schema = info.getSchema();
+
+            // 1. Check if the slot schema itself carries a nominal TypeKeyword (e.g. :Port, :GatewayTuple, :Stage9V3Envelope)
+            var directTypeDef = resolveNominalTypeDefinitionFromSchema(schema);
+            if (directTypeDef != null) {
+                return directTypeDef;
+            }
+
+            // 2. If the slot schema is an anonymous sum constructor (:Option(:Port), :Either(:Port :HostName), :Union(...))
+            // and the value is an implicitly inferred branch payload, unwrap the inferred branch and check its TypeKeyword.
+            if (value.getExplicitOptionValue() == null
+                    && value.getExplicitEitherValue() == null
+                    && value.getExplicitUnionValue() == null) {
+                var unwrappedBranch = unwrapImplicitSumBranchSchema(schema, value);
+                if (unwrappedBranch != null) {
+                    var branchTypeDef = resolveNominalTypeDefinitionFromSchema(unwrappedBranch);
+                    if (branchTypeDef != null) {
+                        return branchTypeDef;
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback to core IR node alias when value resides inside a multi-branch implicit union container
+        var coreNode = resolveCoreValue(value);
+        if (coreNode != null && !(coreNode instanceof StvnValue.StvnErrorValue)) {
+            var aliasOpt = coreNode.schema().aliasName();
+            if (aliasOpt.isPresent()) {
+                var aliasName = aliasOpt.get();
+                if (!StvnNamespaceRules.isReservedFundamentalType(aliasName)) {
+                    return findTypeDefinition(value.getContainingFile(), aliasName, value);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable TypeDefinition resolveNominalTypeDefinitionFromSchema(@Nullable SchemaType schema) {
+        if (schema == null) {
+            return null;
+        }
+        var typeKw = schema.getTypeKeyword();
+        if (typeKw == null) {
+            return null;
+        }
+        var kwText = typeKw.getText().trim();
+        if (StvnNamespaceRules.isReservedFundamentalType(kwText)) {
+            return null;
+        }
+        var resolved = new StvnTypeReference(typeKw).resolve();
+        if (resolved != null) {
+            var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            if (targetDef != null) {
+                return targetDef;
+            }
+        }
+        return findTypeDefinition(typeKw.getContainingFile(), kwText, typeKw);
+    }
+
+    private static @Nullable SchemaType unwrapImplicitSumBranchSchema(SchemaType schema, Value value) {
+        SchemaType current = schema;
+        var coreNode = resolveCoreValue(value);
+        for (int depth = 0; depth < 8 && current != null; depth++) {
+            var ctor = current.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+            if (sum == null) {
+                break;
+            }
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            if (branches.isEmpty()) {
+                break;
+            }
+            var sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                current = branches.get(0);
+                if (coreNode instanceof StvnValue.StvnOption optVal && optVal.value().isPresent()) {
+                    coreNode = optVal.value().get();
+                }
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() >= 2) {
+                if (coreNode instanceof StvnValue.StvnEither eitherVal) {
+                    boolean isLeft = eitherVal.branch() == StvnValue.EitherBranch.LEFT;
+                    current = isLeft ? branches.get(0) : branches.get(1);
+                    coreNode = eitherVal.value();
+                } else {
+                    current = matchesSchemaPattern(value, branches.get(1)) ? branches.get(1) : branches.get(0);
+                }
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                if (coreNode instanceof StvnValue.StvnUnion unionVal) {
+                    int idx = toSafeZeroBasedIndex(unionVal.oneBasedBranchIndex());
+                    if (idx >= 0 && idx < branches.size()) {
+                        current = branches.get(idx);
+                        coreNode = unionVal.value();
+                    } else {
+                        break;
+                    }
+                } else {
+                    SchemaType matched = null;
+                    for (var b : branches) {
+                        if (matchesSchemaPattern(value, b)) {
+                            matched = b;
+                            break;
+                        }
+                    }
+                    current = matched;
+                }
+            } else {
+                break;
+            }
+            if (current != null && current.getTypeKeyword() != null) {
+                return current;
+            }
+        }
+        return current;
+    }
+
+    /**
+     * Resolves a {@link ValueKeyword} representing an {@code :Enum} variant (either in a
+     * {@code #filterIncl}/{@code #filterExcl} {@link VariantList} or in a {@code :body} /
+     * {@link ConstantDefinition} payload {@link Value}) to its declaration {@link ValueKeyword}
+     * inside the root {@link EnumDef}.
+     *
+     * @param valKw the enum variant value keyword
+     * @return the declaration {@link ValueKeyword} inside the root {@link EnumDef}, or {@code null}
+     */
+    public static @Nullable ValueKeyword resolveGoverningEnumVariant(ValueKeyword valKw) {
+        var variantName = valKw.getText().trim();
+        SchemaType startSchema = null;
+        if (PsiTreeUtil.getParentOfType(valKw, VariantList.class) != null) {
+            startSchema = PsiTreeUtil.getParentOfType(valKw, SchemaType.class);
+            if (startSchema == null) {
+                var enclosingTypeDef = PsiTreeUtil.getParentOfType(valKw, TypeDefinition.class);
+                if (enclosingTypeDef != null) {
+                    startSchema = enclosingTypeDef.getSchemaType();
+                }
+            }
+        } else {
+            var enclosingValue = PsiTreeUtil.getParentOfType(valKw, Value.class);
+            if (enclosingValue != null) {
+                var info = resolveBaseTypeInfo(enclosingValue);
+                if (info != null) {
+                    startSchema = info.getSchema();
+                    if (startSchema.getTypeKeyword() == null
+                            && enclosingValue.getExplicitOptionValue() == null
+                            && enclosingValue.getExplicitEitherValue() == null
+                            && enclosingValue.getExplicitUnionValue() == null) {
+                        var unwrapped = unwrapImplicitSumBranchSchema(startSchema, enclosingValue);
+                        if (unwrapped != null) {
+                            startSchema = unwrapped;
+                        }
+                    }
+                }
+            }
+        }
+        if (startSchema == null) {
+            return null;
+        }
+        var targetSchema = unwrapNominalSchemaChain(startSchema);
+        var ctor = targetSchema.getSchemaConstructor();
+        if (ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+            for (var kw : ctor.getSumType().getEnumDef().getValueKeywordList()) {
+                if (variantName.equals(kw.getText().trim())) {
+                    return kw;
+                }
+            }
+        }
+        return null;
     }
 
     private static @Nullable BodyEntry findBodyEntryParent(PsiElement element) {
@@ -2661,6 +2846,18 @@ public final class StvnTypeResolver {
                             return typeDef;
                         }
                     }
+                    var useStmt = elem.getUseStmt();
+                    if (useStmt != null && useStmt.getUseAliasBlock() != null) {
+                        for (var alias : useStmt.getUseAliasBlock().getUseMapAliasList()) {
+                            var kws = alias.getTypeKeywordList();
+                            if (kws.size() >= 2 && kws.get(1) != null && kws.get(1).getText().equals(typeName)) {
+                                var hopped = StvnPsiUtils.resolveTargetTypeDefinition(alias);
+                                if (hopped != null) {
+                                    return hopped;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2715,6 +2912,13 @@ public final class StvnTypeResolver {
     public static @Nullable ConstantDefinition findConstantDefinition(@Nullable PsiFile file, String name) {
         if (file == null) {
             return null;
+        }
+        var resolved = StvnConstantReference.resolveConstantInFile(file, name, new HashSet<>());
+        if (resolved != null) {
+            var target = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+            if (target != null) {
+                return target;
+            }
         }
         var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
         for (var def : constDefs) {

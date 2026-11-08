@@ -12,7 +12,6 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.TypeDefinition;
-import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
 import java.util.HashSet;
@@ -97,7 +96,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
         }
-        if (resolved != null && resolved.getContainingFile() != null && element.getContainingFile() != null
+        if (resolved.getContainingFile() != null && element.getContainingFile() != null
             && StvnPreludeBridge.isPreludeFile(resolved.getContainingFile())
             && StvnPreludeBridge.isPreludeFile(element.getContainingFile())) {
             String resolvedText = (resolved instanceof ValueKeyword vk) ? vk.getText()
@@ -124,37 +123,52 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
             return null;
         }
 
-        // 0. UseMapAlias remote keyword resolution (:use [ :pkg { #REMOTE_CONST #LOCAL_ALIAS } ])
-        if (element.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
-            var list = alias.getValueKeywordList();
-            if (list.size() >= 2 && list.get(0) == element) {
-                var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
-                if (useStmt != null && useStmt.getUseTarget() != null) {
-                    var fqni = useStmt.getUseTarget().getText() + "/" + tokenText;
-                    return StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
-                }
+        // 0. Declaration-site guard
+        if (element instanceof ValueKeyword valKw) {
+            if (valKw.getParent() instanceof ConstantDefinition cDef && cDef.getValueKeyword() == valKw) {
+                return valKw;
+            }
+            if (valKw.getParent() instanceof org.stvnadore.psi.EnumDef) {
+                return valKw;
             }
         }
 
-        // 1. Resolve target schema at this coordinate to determine Dimension 1 (:Enum) vs Dimension 2 (:defs constant)
-        var valueParent = PsiTreeUtil.getParentOfType(element, Value.class, false);
+        // 1. Dimension 1 (:Enum) check: if the enclosing Value is governed by an :Enum in the compiled IR,
+        // resolve to the :Enum variant declaration before checking constant definitions.
+        var valueParent = PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.Value.class, false);
         if (valueParent != null) {
             var coreVal = StvnTypeResolver.resolveCoreValue(valueParent);
             if (coreVal instanceof org.stvnadore.core.ir.StvnValue.StvnEnum) {
-                var enumVariant = findEnumDeclaration(file, tokenText, new HashSet<>());
+                PsiElement enumVariant = element instanceof ValueKeyword valKw
+                    ? StvnTypeResolver.resolveGoverningEnumVariant(valKw)
+                    : null;
+                if (enumVariant == null) {
+                    enumVariant = findEnumDeclaration(file, tokenText, new HashSet<>());
+                }
                 if (enumVariant != null) {
                     return enumVariant;
                 }
             }
         }
 
-        // 2. Resolve to Constant Definition in :defs (Dimension 2/3/4)
-        var constDef = StvnConstantReference.resolveConstantInFile(file, tokenText, new HashSet<>());
-        if (constDef != null) {
-            return constDef;
+        // 2. Scoped ConstantDefinition / UseMapAlias resolution
+        if (element instanceof ValueKeyword valKw) {
+            var constResolved = StvnConstantReference.resolveConstantWithContext(valKw);
+            if (constResolved != null) {
+                return constResolved;
+            }
+            var contextualEnumVariant = StvnTypeResolver.resolveGoverningEnumVariant(valKw);
+            if (contextualEnumVariant != null) {
+                return contextualEnumVariant;
+            }
+        } else {
+            var constDef = StvnConstantReference.resolveConstantInFile(file, tokenText, new HashSet<>());
+            if (constDef != null) {
+                return constDef;
+            }
         }
 
-        // 3. Fallback to Enum Declaration if constant was not found
+        // Fallback to file-wide Enum Declaration if constant or contextual enum was not found
         return findEnumDeclaration(file, tokenText, new HashSet<>());
     }
 

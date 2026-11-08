@@ -10,6 +10,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnMetaReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -23,6 +24,7 @@ import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.ValueKeyword;
 
 /**
@@ -32,6 +34,13 @@ import org.stvnadore.psi.ValueKeyword;
 @NullMarked
 public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 {
 
+    /**
+     * Resolves the target declaration element at the given editor offset.
+     *
+     * @param editor the active editor
+     * @param offset the document offset
+     * @return the resolved target element, or {@code null} if none
+     */
     public @Nullable PsiElement getTargetElement(@NotNull Editor editor, int offset) {
         var project = editor.getProject();
         if (project == null) return null;
@@ -91,6 +100,10 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
             if (ref != null) {
                 var resolved = ref.resolve();
                 if (resolved != null) {
+                    var targetConst = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+                    if (targetConst != null) {
+                        return targetConst;
+                    }
                     return resolved.getParent() instanceof ConstantDefinition cDef ? cDef : resolved;
                 }
             }
@@ -149,6 +162,16 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
 
     @Override
     public boolean isAcceptableNamedParent(@NotNull PsiElement parent) {
+        if (parent.getParent() instanceof UseMapAlias alias) {
+            var typeKws = alias.getTypeKeywordList();
+            if (!typeKws.isEmpty() && typeKws.get(0) == parent) {
+                return false;
+            }
+            var valKws = alias.getValueKeywordList();
+            if (!valKws.isEmpty() && valKws.get(0) == parent) {
+                return false;
+            }
+        }
         if (parent instanceof ValueKeyword valKw) {
             return valKw.getReferences().length == 0;
         }
@@ -157,6 +180,7 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
         }
         return parent instanceof TypeDefinition
             || parent instanceof ConstantDefinition
+            || parent instanceof UseMapAlias
             || parent instanceof EnumDef;
     }
 
@@ -164,6 +188,10 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
     public @Nullable PsiElement getNamedElement(@NotNull PsiElement element) {
         if (element instanceof com.intellij.psi.impl.source.tree.LeafPsiElement) {
             var parent = element.getParent();
+            if (parent != null && parent.getParent() instanceof UseMapAlias alias) {
+                var id = alias.getNameIdentifier();
+                return id == parent ? alias : null;
+            }
             if (parent instanceof ValueKeyword valKw) {
                 return valKw.getReferences().length == 0 ? valKw : null;
             }
@@ -179,6 +207,9 @@ public final class StvnTargetElementEvaluator extends TargetElementEvaluatorEx2 
         }
         if (element instanceof TypeDefinition typeDef) {
             return typeDef.getNameIdentifier();
+        }
+        if (element instanceof UseMapAlias alias) {
+            return alias.getNameIdentifier();
         }
         if (element instanceof ValueKeyword valKw) {
             return valKw.getReferences().length == 0 ? valKw : null;

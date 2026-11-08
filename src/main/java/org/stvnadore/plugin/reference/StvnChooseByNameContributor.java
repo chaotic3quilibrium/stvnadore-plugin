@@ -93,7 +93,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     if (constDef != null) {
                         var kw = constDef.getValueKeyword();
                         if (kw != null) {
-                            var fqni = pathText + "/" + kw.getText();
+                            var fqni = StvnConstantReference.buildPackageConstantFqni(pathText, kw.getText());
                             if (seenNames.add(fqni)) {
                                 if (!processor.process(fqni)) return false;
                             }
@@ -169,7 +169,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     if (constDef != null) {
                         var kw = constDef.getValueKeyword();
                         if (kw != null) {
-                            var fqni = pathText + "/" + kw.getText();
+                            var fqni = StvnConstantReference.buildPackageConstantFqni(pathText, kw.getText());
                             if (name.equals(fqni) || name.equals(kw.getText()) || name.equals(constDef.getName())) {
                                 if (kw instanceof NavigationItem item) {
                                     if (!processor.process(item)) return false;
