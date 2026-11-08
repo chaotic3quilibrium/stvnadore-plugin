@@ -5,8 +5,13 @@ import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.tree.TokenSet;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -15,16 +20,22 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
- * Validates STVN metadata facet compatibility and detects empty blocks in directives and metadata.
+ * Validates STVN metadata facet compatibility and detects empty blocks in directives, definitions, and metadata.
  */
 @NullMarked
 public final class StvnMetadataFacetInspection extends LocalInspectionTool {
+
+    private static final Pattern POSIX_META_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
 
     /**
      * Constructs a new StvnMetadataFacetInspection instance.
@@ -80,6 +91,158 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         return new Visitor() {
+            @Override
+            public void visitMetaBlock(@NotNull MetaBlock block) {
+                super.visitMetaBlock(block);
+                var file = block.getContainingFile();
+                if (file == null) {
+                    return;
+                }
+                List<MetaElement> elements = block.getMetaElementList();
+                if (elements.isEmpty()) {
+                    if (PsiTreeUtil.hasErrorElements(block)) {
+                        return;
+                    }
+                    String fileName = file.getName();
+                    String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+                    List<LocalQuickFix> fixes = new ArrayList<>();
+                    fixes.add(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
+                    fixes.add(new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(expectedKind));
+                    if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) {
+                        fixes.add(new RemoveParentMetaEntryQuickFix());
+                    }
+                    holder.registerProblem(
+                        block,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Metadata block '" + StvnVocabulary.KEYWORD_META + " {}' must not be empty",
+                            StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                    );
+                    return;
+                }
+
+                Set<String> seenMetaFacets = new HashSet<>();
+                for (MetaElement el : elements) {
+                    MetaUnknownFacet unk = el.getMetaUnknownFacet();
+                    if (unk != null) {
+                        var vkw = unk.getValueKeyword();
+                        String facetTag = vkw != null ? vkw.getText().trim() : unk.getText().trim();
+                        holder.registerProblem(
+                            unk,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Invalid metadata facet tag '" + facetTag + "' in '" + StvnVocabulary.KEYWORD_META + "' block",
+                                StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove invalid metadata facet '" + facetTag + "'", "Remove invalid metadata facet")
+                        );
+                        continue;
+                    }
+
+                    MetaNameFacet nameFacet = el.getMetaNameFacet();
+                    if (nameFacet != null) {
+                        if (!seenMetaFacets.add(StvnVocabulary.FACET_KW_META_NAME)) {
+                            holder.registerProblem(
+                                nameFacet,
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Duplicate metadata facet tag '" + StvnVocabulary.FACET_KW_META_NAME
+                                        + "' declared in '" + StvnVocabulary.KEYWORD_META + "' block",
+                                    StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
+                                ),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new RemoveElementQuickFix(
+                                    "Remove duplicate metadata facet '" + StvnVocabulary.FACET_KW_META_NAME + "'",
+                                    "Remove duplicate facet"
+                                )
+                            );
+                        }
+                        validatePosixMetaIdentifier(nameFacet.getStringLiteral(), StvnVocabulary.FACET_KW_META_NAME, holder);
+                        continue;
+                    }
+
+                    MetaDomainFacet domainFacet = el.getMetaDomainFacet();
+                    if (domainFacet != null) {
+                        if (!seenMetaFacets.add(StvnVocabulary.FACET_KW_META_DOMAIN)) {
+                            holder.registerProblem(
+                                domainFacet,
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Duplicate metadata facet tag '" + StvnVocabulary.FACET_KW_META_DOMAIN
+                                        + "' declared in '" + StvnVocabulary.KEYWORD_META + "' block",
+                                    StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
+                                ),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new RemoveElementQuickFix(
+                                    "Remove duplicate metadata facet '" + StvnVocabulary.FACET_KW_META_DOMAIN + "'",
+                                    "Remove duplicate facet"
+                                )
+                            );
+                        }
+                        validatePosixMetaIdentifier(domainFacet.getStringLiteral(), StvnVocabulary.FACET_KW_META_DOMAIN, holder);
+                        continue;
+                    }
+
+                    MetaKindFacet kindFacet = el.getMetaKindFacet();
+                    if (kindFacet != null) {
+                        if (!seenMetaFacets.add(StvnVocabulary.FACET_KW_META_KIND)) {
+                            holder.registerProblem(
+                                kindFacet,
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Duplicate metadata facet tag '" + StvnVocabulary.FACET_KW_META_KIND
+                                        + "' declared in '" + StvnVocabulary.KEYWORD_META + "' block",
+                                    StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
+                                ),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new RemoveElementQuickFix(
+                                    "Remove duplicate metadata facet '" + StvnVocabulary.FACET_KW_META_KIND + "'",
+                                    "Remove duplicate facet"
+                                )
+                            );
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void visitDefsEntry(@NotNull DefsEntry defsEntry) {
+                super.visitDefsEntry(defsEntry);
+                if (!defsEntry.getDefsElementList().isEmpty()) {
+                    return;
+                }
+                if (PsiTreeUtil.hasErrorElements(defsEntry)) {
+                    return;
+                }
+                var lbraceNode = defsEntry.getNode().findChildByType(StvnTypes.LBRACE);
+                var rbraceNode = defsEntry.getNode().findChildByType(StvnTypes.RBRACE);
+                if (lbraceNode == null || rbraceNode == null) {
+                    return;
+                }
+                int entryStart = defsEntry.getTextRange().getStartOffset();
+                TextRange braceRange = new TextRange(
+                    lbraceNode.getStartOffset() - entryStart,
+                    rbraceNode.getTextRange().getEndOffset() - entryStart
+                );
+                var file = defsEntry.getContainingFile();
+                boolean isSchemaDoc = isDefsSchemaDocument(file, defsEntry);
+                String msg = isSchemaDoc
+                    ? "Definition schema '" + StvnVocabulary.KEYWORD_DEFS + " {}' must declare at least one definition or include"
+                    : "Empty definition block '" + StvnVocabulary.KEYWORD_DEFS + " {}' is redundant; omit '"
+                        + StvnVocabulary.KEYWORD_DEFS + "' or add definitions";
+                LocalQuickFix primaryFix = isSchemaDoc
+                    ? new InsertDefaultTypeDefinitionQuickFix()
+                    : new RemoveElementQuickFix(
+                        "Remove redundant '" + StvnVocabulary.KEYWORD_DEFS + " {}' block",
+                        "Remove empty definition block"
+                    );
+                holder.registerProblem(
+                    defsEntry,
+                    braceRange,
+                    StvnDiagnosticFormatter.formatPlugin(msg, StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK),
+                    primaryFix
+                );
+            }
+
             @Override
             public void visitMetadataMap(@NotNull MetadataMap metaMap) {
                 super.visitMetadataMap(metaMap);
@@ -674,6 +837,118 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         return !stripped.trim().isEmpty();
     }
 
+    private static void validatePosixMetaIdentifier(
+            @Nullable StringLiteral stringLit,
+            @NotNull String facetKeyword,
+            @NotNull ProblemsHolder holder
+    ) {
+        if (stringLit == null) {
+            return;
+        }
+        String raw = stringLit.getText();
+        String unquoted = (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2)
+            ? raw.substring(1, raw.length() - 1)
+            : raw;
+        if (!POSIX_META_ID_PATTERN.matcher(unquoted).matches()) {
+            holder.registerProblem(
+                stringLit,
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Metadata " + facetKeyword + " '" + unquoted
+                        + "' does not match required atomic POSIX pattern ^[a-zA-Z0-9_-]{1,64}$",
+                    StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                ),
+                ProblemHighlightType.GENERIC_ERROR
+            );
+        }
+    }
+
+    private static boolean isDefsSchemaDocument(@Nullable PsiFile file, @NotNull DefsEntry defsEntry) {
+        if (file != null) {
+            var kindFacet = PsiTreeUtil.findChildOfType(file, MetaKindFacet.class);
+            if (kindFacet != null && kindFacet.getMetaKindValue() != null) {
+                String kindText = kindFacet.getMetaKindValue().getText().trim();
+                return StvnVocabulary.KIND_KW_DEFS.equals(kindText)
+                    || StvnVocabulary.KIND_KW_DEFS_INCLUDE.equals(kindText);
+            }
+            String name = file.getName();
+            if (name.endsWith(".stvn_d") || name.endsWith(".stvn_di") || name.endsWith(".stvn_bd")) {
+                return true;
+            }
+            if (name.endsWith(".stvn") || name.endsWith(".stvn_i") || name.endsWith(".stvn_b")) {
+                return false;
+            }
+            return PsiTreeUtil.findChildOfType(file, BodyEntry.class) == null
+                && PsiTreeUtil.findChildOfType(file, TypeEntry.class) == null;
+        }
+        return false;
+    }
+
+    private static final class RemoveParentMetaEntryQuickFix implements LocalQuickFix {
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+            return "Remove empty '" + StvnVocabulary.KEYWORD_META + " {}' block";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            PsiElement element = descriptor.getPsiElement();
+            if (element == null || !element.isValid()) {
+                return;
+            }
+            MetaEntry metaEntry = element instanceof MetaEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(element, MetaEntry.class, false);
+            PsiElement toDelete = metaEntry != null ? metaEntry : element;
+            var prev = toDelete.getPrevSibling();
+            if (prev instanceof PsiWhiteSpace) {
+                prev.delete();
+            }
+            toDelete.delete();
+        }
+    }
+
+    private static final class InsertDefaultTypeDefinitionQuickFix implements LocalQuickFix {
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+            return "Insert sample type definition in " + StvnVocabulary.KEYWORD_DEFS;
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            PsiElement element = descriptor.getPsiElement();
+            if (element == null || !element.isValid()) {
+                return;
+            }
+            DefsEntry defsEntry = element instanceof DefsEntry de
+                ? de
+                : PsiTreeUtil.getParentOfType(element, DefsEntry.class, false);
+            if (defsEntry == null) {
+                return;
+            }
+            var lbrace = defsEntry.getNode().findChildByType(StvnTypes.LBRACE);
+            if (lbrace == null) {
+                return;
+            }
+            PsiFile file = defsEntry.getContainingFile();
+            if (file == null) {
+                return;
+            }
+            Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
+            if (doc == null) {
+                return;
+            }
+            int insertOffset = lbrace.getStartOffset() + 1;
+            doc.insertString(
+                insertOffset,
+                "\n    " + StvnVocabulary.SIGIL_TYPIC + "SampleType " + StvnVocabulary.TYPE_INT + "\n  "
+            );
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+            if (defsEntry.isValid()) {
+                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(defsEntry);
+            }
+        }
+    }
+
     private static final class RemoveElementQuickFix implements LocalQuickFix {
         private final String name;
         private final String familyName;
@@ -714,7 +989,12 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         return;
                     }
                 }
-                var toDelete = targetEntry != null ? targetEntry : element;
+                var targetMetaElement = element instanceof MetaElement me
+                    ? me
+                    : PsiTreeUtil.getParentOfType(element, MetaElement.class, false);
+                var toDelete = targetEntry != null
+                    ? targetEntry
+                    : (targetMetaElement != null ? targetMetaElement : element);
                 var next = toDelete.getNextSibling();
                 var prev = toDelete.getPrevSibling();
                 if (next instanceof PsiWhiteSpace && !(prev instanceof PsiWhiteSpace)) {

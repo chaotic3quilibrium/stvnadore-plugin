@@ -15,7 +15,9 @@ import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.Visitor;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Validates the canonical 5-Tier Decimal Hierarchy of metadata facets (§ 6.1).
@@ -73,17 +75,27 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     return;
                 }
                 int maxRankSeen = -1;
+                Set<Integer> seenTiers = new HashSet<>();
                 for (MetaElement element : elements) {
                     int rank = getMetaElementRank(element);
+                    if (rank > 3) {
+                        continue;
+                    }
+                    if (!seenTiers.add(rank)) {
+                        continue;
+                    }
                     if (rank < maxRankSeen) {
                         String keyword = extractMetaElementKeyword(element);
                         holder.registerProblem(
                             element,
                             StvnDiagnosticFormatter.formatPlugin(
-                                "Metadata facet '" + keyword + "' violates 3-tier monotonic progression and canonical order (#name, #domain, #kind)",
+                                "Metadata facet '" + keyword + "' violates 3-tier monotonic progression ("
+                                    + StvnVocabulary.FACET_KW_META_NAME + " -> "
+                                    + StvnVocabulary.FACET_KW_META_DOMAIN + " -> "
+                                    + StvnVocabulary.FACET_KW_META_KIND + ")",
                                 StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION
                             ),
-                            ProblemHighlightType.WARNING,
+                            ProblemHighlightType.GENERIC_ERROR,
                             new StvnReorderMetaEntriesQuickFix(metaBlock)
                         );
                     } else {
@@ -149,6 +161,9 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
         int maxRank = -1;
         for (MetaElement element : elements) {
             int rank = getMetaElementRank(element);
+            if (rank > 3) {
+                continue;
+            }
             if (rank < maxRank) {
                 return true;
             }

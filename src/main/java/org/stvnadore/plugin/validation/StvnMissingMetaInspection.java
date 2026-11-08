@@ -135,6 +135,10 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             @Override
             public void visitMetaEntry(@NotNull MetaEntry metaEntry) {
                 super.visitMetaEntry(metaEntry);
+                MetaBlock metaBlock = metaEntry.getMetaBlock();
+                if (metaBlock == null || metaBlock.getMetaElementList().isEmpty()) {
+                    return;
+                }
                 var file = metaEntry.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();
@@ -144,28 +148,17 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 if (kindFacet == null) {
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message = StvnDiagnosticFormatter.formatPlugin(
-                        "Root :meta block requires #kind facet matching file extension",
+                        "Root " + StvnVocabulary.KEYWORD_META + " block requires "
+                            + StvnVocabulary.FACET_KW_META_KIND + " facet matching file extension",
                         StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                     );
-                    MetaBlock metaBlock = PsiTreeUtil.findChildOfType(metaEntry, MetaBlock.class);
-                    PsiElement targetElement = metaBlock != null ? metaBlock : metaEntry;
-                    if (targetElement.getTextRange() != null && !targetElement.getTextRange().isEmpty()) {
-                        if (metaBlock != null && metaBlock.getMetaElementList().isEmpty()) {
-                            holder.registerProblem(
-                                targetElement,
-                                message,
-                                ProblemHighlightType.GENERIC_ERROR,
-                                new InsertMissingMetaBlockQuickFix(expectedKind),
-                                new InsertMissingMetaKindFacetQuickFix(expectedKind)
-                            );
-                        } else {
-                            holder.registerProblem(
-                                targetElement,
-                                message,
-                                ProblemHighlightType.GENERIC_ERROR,
-                                new InsertMissingMetaKindFacetQuickFix(expectedKind)
-                            );
-                        }
+                    if (metaBlock.getTextRange() != null && !metaBlock.getTextRange().isEmpty()) {
+                        holder.registerProblem(
+                            metaBlock,
+                            message,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new InsertMissingMetaKindFacetQuickFix(expectedKind)
+                        );
                     }
                 }
             }
@@ -312,10 +305,21 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc == null) return;
 
-            int offset = element.getTextRange().getStartOffset() + 1;
-            doc.insertString(offset, "\n    #kind " + expectedKind);
+            MetaBlock metaBlock = element instanceof MetaBlock mb
+                ? mb
+                : PsiTreeUtil.getParentOfType(element, MetaBlock.class, false);
+            MetaEntry metaEntry = element instanceof MetaEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(element, MetaEntry.class, false);
+            PsiElement anchor = metaBlock != null ? metaBlock : element;
+            int offset = anchor.getTextRange().getStartOffset() + 1;
+            doc.insertString(offset, "\n    " + StvnVocabulary.FACET_KW_META_KIND + " " + expectedKind);
             PsiDocumentManager.getInstance(project).commitDocument(doc);
-            com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(element);
+            if (metaEntry != null && metaEntry.isValid()) {
+                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(metaEntry);
+            } else if (anchor.isValid()) {
+                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(anchor);
+            }
         }
     }
 

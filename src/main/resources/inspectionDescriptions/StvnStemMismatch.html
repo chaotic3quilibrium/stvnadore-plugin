@@ -4,11 +4,11 @@
 
 <p>Filename stem slot 0 corresponds to the declared document <code>#name</code>. Filename stem slot 1 corresponds to the optional declared document <code>#domain</code>.</p>
 
-<p>When declared <code>#name</code> differs from slot 0, warning <code>WARN_DOCUMENT_NAME_MISMATCH</code> is emitted. When declared <code>#domain</code> is omitted from slot 1, warning <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> is emitted.</p>
+<p>When declared <code>#name</code> differs from slot 0, warning <code>WARN_DOCUMENT_NAME_MISMATCH</code> is emitted. When declared <code>#domain</code> is omitted from slot 1, warning <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> is emitted. When a user document declares a reserved system domain starting with <code>stvn_</code>, error <code>ERR_RESERVED_DOMAIN_PROHIBITED</code> (<code>E038</code>) is emitted.</p>
 
 <p><b>Quick-Fix:</b></p>
-<p>Renames the <code>#name</code> string literal to match the active file stem slot 0.</p>
-<p>Renames the file to include the declared domain in filename stem slot 1 (e.g. <code>name.domain.stvn_i</code>).</p>
-<p>Removes the optional <code>#domain</code> attribute from the root <code>:meta</code> block.</p>
+<p>Renames the <code>#name</code> or <code>#domain</code> string literal to match the active file stem slot.</p>
+<p>Renames the file to include a valid non-reserved declared domain in filename stem slot 1 (e.g. <code>name.domain.stvn_i</code>).</p>
+<p>Removes the optional <code>#domain</code> attribute or strips the reserved <code>stvn_</code> prefix from the root <code>:meta</code> block.</p>
 </body>
 </html>

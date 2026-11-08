@@ -44,6 +44,7 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
         if (psi == null || !psi.isValid() || !psi.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return range;
         }
+        int initialElementLength = element.getTextLength();
 
         if (psi instanceof MetaBlock metaBlock) {
             normalizeMetaBlockIfDisordered(metaBlock, range);
@@ -62,16 +63,20 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
                 normalizeMapIfDisordered(map, range);
             }
         }
+        int lengthDelta = element.getTextLength() - initialElementLength;
+        TextRange adjustedRange = lengthDelta == 0
+            ? range
+            : new TextRange(range.getStartOffset(), Math.max(range.getStartOffset(), range.getEndOffset() + lengthDelta));
         PsiFile containingFile = psi.getContainingFile();
         if (containingFile != null) {
             TextRange fileRange = containingFile.getTextRange();
-            if (fileRange != null && range.contains(fileRange)) {
+            if (fileRange != null && adjustedRange.contains(fileRange)) {
                 containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, containingFile.getText());
             } else {
                 containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, null);
             }
         }
-        return range;
+        return adjustedRange;
     }
 
     private static void normalizeMetaBlockIfDisordered(MetaBlock metaBlock, TextRange range) {

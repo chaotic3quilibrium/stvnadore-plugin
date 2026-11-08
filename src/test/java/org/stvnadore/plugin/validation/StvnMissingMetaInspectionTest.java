@@ -297,4 +297,30 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         assertNotNull(highlights);
     }
+
+    /**
+     * Verifies that an explicitly empty :meta {} block defers to E039 (ERR_EMPTY_META_BLOCK) in
+     * StvnMetadataFacetInspection and does not emit a false-positive E031 (ERR_DOCUMENT_KIND_MISMATCH)
+     * from StvnMissingMetaInspection.
+     */
+    public void testEmptyMetaBlockDefersToE039WithoutEmittingFalseE031() {
+        var content = """
+            {
+              :meta {}
+              :defs {
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :BoundedPort
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("empty_meta_block_with_body_error.core_test.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+        var e031Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DOCUMENT_KIND_MISMATCH"))
+            .toList();
+        assertTrue("Empty :meta {} must not emit false-positive E031 from StvnMissingMetaInspection: " + e031Errors,
+            e031Errors.isEmpty());
+    }
 }

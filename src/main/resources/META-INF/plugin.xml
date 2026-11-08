@@ -404,7 +404,7 @@
                          groupPath="STVN"
                          groupName="Governance"
                          enabledByDefault="true"
-                         level="WEAK WARNING"
+                         level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnMetadataOrderInspection"/>
 
         <!-- 12q. Local Inspection for Redundant Metadata Facet Overrides -->

@@ -2,10 +2,17 @@
 <body>
 <p>Reports invalid metadata facets, empty blocks, and prohibited interval bounds on type declarations and constant definitions to enforce STVN 2.0.0 language governance (STVN Spec § 3 &amp; § 5).</p>
 
-<p><b>Empty Blocks (ERR_EMPTY_METADATA_BLOCK / ERR_EMPTY_DIRECTIVE_BLOCK):</b></p>
+<p><b>Empty Blocks (ERR_EMPTY_META_BLOCK / ERR_EMPTY_DEFS_BLOCK / ERR_EMPTY_METADATA_BLOCK / ERR_EMPTY_DIRECTIVE_BLOCK):</b></p>
 <ul>
+    <li>Empty root metadata blocks <code>:meta {}</code> are invalid (<code>E039</code>). Populate canonical metadata facets or remove the optional block.</li>
+    <li>Empty definition blocks <code>:defs {}</code> are invalid (<code>E002</code>). Add definitions or omit <code>:defs {}</code> in payload documents.</li>
     <li>Empty type constraint blocks <code>{}</code> on type or constant definitions are invalid. Specify valid constraint facets or delete <code>{}</code>.</li>
     <li>Empty directive blocks <code>{}</code> in <code>:use</code> or <code>:include</code> statements are invalid. Specify <code>{#strip}</code>, alias mappings, or delete <code>{}</code>.</li>
+</ul>
+
+<p><b>Root <code>:meta</code> Facet Governance (ERR_INVALID_METADATA_FACET / ERR_DUPLICATE_METADATA_FACET):</b></p>
+<ul>
+    <li>Only <code>#name</code>, <code>#domain</code>, and <code>#kind</code> are permitted in <code>:meta</code> blocks. Unknown facet tags (such as <code>#author</code>) and duplicate facets are rejected with <code>E008</code>.</li>
 </ul>
 
 <p><b>Duplicate Facets (ERR_DUPLICATE_METADATA_FACET):</b></p>

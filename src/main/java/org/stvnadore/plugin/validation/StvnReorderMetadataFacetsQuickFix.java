@@ -3,6 +3,7 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
@@ -142,6 +143,32 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
         sb.append(multiLine ? closingIndent + "}" : " }");
 
         MetadataMap newMap = StvnElementFactory.createMetadataMap(project, sb.toString());
-        map.replace(newMap);
+        replaceMetadataMapInteriorInPlace(map, newMap);
+    }
+
+    private static void replaceMetadataMapInteriorInPlace(MetadataMap target, MetadataMap replacement) {
+        ASTNode targetNode = target.getNode();
+        ASTNode replacementNode = replacement.getNode();
+        ASTNode targetRBrace = targetNode.findChildByType(StvnTypes.RBRACE);
+        ASTNode targetLBrace = targetNode.findChildByType(StvnTypes.LBRACE);
+        if (targetLBrace == null || targetRBrace == null) {
+            target.replace(replacement);
+            return;
+        }
+        ASTNode current = targetLBrace.getTreeNext();
+        while (current != null && current != targetRBrace) {
+            ASTNode next = current.getTreeNext();
+            targetNode.removeChild(current);
+            current = next;
+        }
+        ASTNode replLBrace = replacementNode.findChildByType(StvnTypes.LBRACE);
+        ASTNode replRBrace = replacementNode.findChildByType(StvnTypes.RBRACE);
+        if (replLBrace != null && replRBrace != null) {
+            ASTNode replChild = replLBrace.getTreeNext();
+            while (replChild != null && replChild != replRBrace) {
+                targetNode.addChild(replChild.copyElement(), targetRBrace);
+                replChild = replChild.getTreeNext();
+            }
+        }
     }
 }

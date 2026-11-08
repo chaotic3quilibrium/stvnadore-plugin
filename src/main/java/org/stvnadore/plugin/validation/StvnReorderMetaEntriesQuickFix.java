@@ -150,7 +150,33 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         sb.append(multiLine ? closingIndent + "}" : " }");
 
         MetaBlock replacement = StvnElementFactory.createMetaBlock(project, sb.toString());
-        block.replace(replacement);
+        replaceMetaBlockInteriorInPlace(block, replacement);
+    }
+
+    private static void replaceMetaBlockInteriorInPlace(MetaBlock target, MetaBlock replacement) {
+        ASTNode targetNode = target.getNode();
+        ASTNode replacementNode = replacement.getNode();
+        ASTNode targetRBrace = targetNode.findChildByType(StvnTypes.RBRACE);
+        ASTNode targetLBrace = targetNode.findChildByType(StvnTypes.LBRACE);
+        if (targetLBrace == null || targetRBrace == null) {
+            target.replace(replacement);
+            return;
+        }
+        ASTNode current = targetLBrace.getTreeNext();
+        while (current != null && current != targetRBrace) {
+            ASTNode next = current.getTreeNext();
+            targetNode.removeChild(current);
+            current = next;
+        }
+        ASTNode replLBrace = replacementNode.findChildByType(StvnTypes.LBRACE);
+        ASTNode replRBrace = replacementNode.findChildByType(StvnTypes.RBRACE);
+        if (replLBrace != null && replRBrace != null) {
+            ASTNode replChild = replLBrace.getTreeNext();
+            while (replChild != null && replChild != replRBrace) {
+                targetNode.addChild(replChild.copyElement(), targetRBrace);
+                replChild = replChild.getTreeNext();
+            }
+        }
     }
 
     static @Nullable String extractSameLineTrailingComment(ASTNode entryNode) {

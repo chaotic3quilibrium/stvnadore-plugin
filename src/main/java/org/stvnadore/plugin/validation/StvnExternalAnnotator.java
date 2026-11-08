@@ -41,6 +41,7 @@ import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
@@ -587,27 +588,26 @@ public final class StvnExternalAnnotator
                     );
                     if (coveredByError) {
                         var elemAtWarn = file.findElementAt(range.getStartOffset());
-                        PsiElement enclosingFacet = PsiTreeUtil.getParentOfType(
+                        PsiElement enclosing = PsiTreeUtil.getParentOfType(
                             elemAtWarn,
                             org.stvnadore.psi.MetaDomainFacet.class,
-                            false
+                            org.stvnadore.psi.MetaNameFacet.class,
+                            org.stvnadore.psi.MetadataEntry.class
                         );
-                        if (enclosingFacet == null) {
-                            enclosingFacet = PsiTreeUtil.getParentOfType(
-                                elemAtWarn,
-                                org.stvnadore.psi.MetaNameFacet.class,
-                                false
-                            );
-                        }
-                        if (enclosingFacet == null) {
-                            enclosingFacet = PsiTreeUtil.getParentOfType(
-                                elemAtWarn,
-                                org.stvnadore.psi.MetadataEntry.class,
-                                false
-                            );
-                        }
-                        if (enclosingFacet != null && enclosingFacet.getTextRange().getLength() > range.getLength()) {
-                            range = enclosingFacet.getTextRange();
+                        while (enclosing != null && !(enclosing instanceof PsiFile)) {
+                            TextRange enclosingRange = enclosing.getTextRange();
+                            if (enclosingRange != null && enclosingRange.getLength() > range.getLength()) {
+                                boolean stillCovered = activeErrorDiagnostics.stream().anyMatch(ed ->
+                                    ed.startOffset() >= 0
+                                        && ed.startOffset() <= enclosingRange.getStartOffset()
+                                        && enclosingRange.getEndOffset() <= ed.endOffset()
+                                );
+                                if (!stillCovered) {
+                                    range = enclosingRange;
+                                    break;
+                                }
+                            }
+                            enclosing = enclosing.getParent();
                         }
                     }
                 }
@@ -975,6 +975,13 @@ public final class StvnExternalAnnotator
                 // Interactive bootstrapping intention actions for incomplete clauses
                 if (rawMessage.contains("':meta' requires a metadata block")) {
                     annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
+                }
+                if (DiagnosticBag.ERR_EMPTY_META_BLOCK.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diagnosticId)) {
+                    String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind)
+                    );
                 }
                 if (rawMessage.contains("':defs' requires definition block")) {
                     annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));

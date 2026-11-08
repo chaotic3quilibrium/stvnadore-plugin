@@ -241,4 +241,79 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
         assertTrue("Expected #domain \"json\" to be inserted in canonical 3-tier order between #name and #kind:\n" + updatedText,
             nameIdx >= 0 && domainIdx > nameIdx && kindIdx > domainIdx);
     }
+
+    /**
+     * Verifies that declaring a reserved "stvn_*" #domain in a user document emits E038 (ERROR) and W001 (WARNING),
+     * suppresses the illegal "Rename file to '*.stvn_*'" quick-fix, and offers safe domain alignment/removal quick-fixes.
+     */
+    public void testReservedDomainEmitsE038ErrorAndSuppressesIllegalRenameQuickFix() {
+        var content = """
+            {
+              :meta {
+                #name "gauntlet_v4_stage1_meta_multi_error_and_body"
+                #domain "<caret>stvn_reserved_trap"
+                #kind #BODY_INCLUDE
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("gauntlet_v4_stage1_meta_multi_error_and_body.core_test.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+
+        var e038Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_RESERVED_DOMAIN_PROHIBITED"))
+            .toList();
+        assertEquals("Expected 1 E038 error on reserved 'stvn_reserved_trap' domain", 1, e038Errors.size());
+        assertTrue(e038Errors.get(0).getDescription().contains(
+            "Reserved system domain prohibited: User document cannot declare reserved system domain 'stvn_reserved_trap'"
+        ));
+
+        var w001Warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_NAME_MISMATCH"))
+            .toList();
+        assertEquals("Expected 1 W001 warning on mismatched stem slot 1", 1, w001Warnings.size());
+
+        var illegalRename = myFixture.filterAvailableIntentions(
+            "Rename file to 'gauntlet_v4_stage1_meta_multi_error_and_body.stvn_reserved_trap.stvn_i'"
+        );
+        assertTrue("Illegal rename to reserved '.stvn_reserved_trap' domain must be suppressed", illegalRename.isEmpty());
+
+        var alignDomain = myFixture.filterAvailableIntentions("Align #domain with filename stem slot 1 ('core_test')");
+        assertFalse("Expected AlignDomainWithStemQuickFix intention", alignDomain.isEmpty());
+
+        var removeDomain = myFixture.filterAvailableIntentions("Remove optional #domain attribute");
+        assertFalse("Expected RemoveMetaDomainQuickFix intention", removeDomain.isEmpty());
+
+        var stripPrefix = myFixture.filterAvailableIntentions("Remove reserved 'stvn_' prefix from #domain");
+        assertFalse("Expected StvnChangeReservedDomainQuickFix intention", stripPrefix.isEmpty());
+
+        myFixture.launchAction(alignDomain.get(0));
+        assertTrue("Expected #domain aligned to \"core_test\"",
+            myFixture.getFile().getText().contains("#domain \"core_test\""));
+    }
+
+    /**
+     * Verifies that on a single-stem file declaring a reserved "stvn_*" #domain, W002 suppresses the illegal rename quick-fix.
+     */
+    public void testSingleStemReservedDomainSuppressesRenameToStvnPrefix() {
+        var content = """
+            {
+              :meta {
+                #name "single_stem"
+                #domain "<caret>stvn_internal"
+                #kind #BODY_INCLUDE
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("single_stem.stvn_i", content);
+        myFixture.doHighlighting();
+
+        var illegalRename = myFixture.filterAvailableIntentions("Rename file to 'single_stem.stvn_internal.stvn_i'");
+        assertTrue("Illegal rename to '.stvn_internal' on single-stem file must be suppressed", illegalRename.isEmpty());
+    }
 }

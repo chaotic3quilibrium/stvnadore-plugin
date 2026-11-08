@@ -222,11 +222,11 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """;
         myFixture.configureByText("gauntlet_v2.core_test.stvn_di", text);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("canonical order (#name, #domain, #kind)"))
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("violates 3-tier monotonic progression (#name -> #domain -> #kind)"))
             .toList();
-        assertEquals("Expected 2 warnings on out-of-order :meta entries (#name and #domain after #kind)", 2, warnings.size());
+        assertEquals("Expected 2 errors on out-of-order :meta entries (#name and #domain after #kind)", 2, errors.size());
 
         int offset = text.indexOf("#name");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
@@ -244,6 +244,50 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             """.stripTrailing();
         assertTrue("Expected canonical :meta order with preserved trailing comments:\n" + result,
             result.contains(expectedMeta));
+    }
+
+    public void testFormatActionOnDisorderedMetaBlockProducesZeroPsiInvalidation() {
+        var text = """
+            {
+              :meta {
+                #kind #BODY_INCLUDE
+                #domain "core_test"
+                #name "gauntlet_v4_stage1"
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("gauntlet_v4_stage1.core_test.stvn_i", text);
+        new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
+        com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+
+        var formatted = myFixture.getFile().getText();
+        int nameIdx = formatted.indexOf("#name \"gauntlet_v4_stage1\"");
+        int domainIdx = formatted.indexOf("#domain \"core_test\"");
+        int kindIdx = formatted.indexOf("#kind #BODY_INCLUDE");
+        assertTrue("Expected ReformatCodeProcessor to reorder :meta into #name -> #domain -> #kind without PSI invalidation:\n" + formatted,
+            nameIdx >= 0 && domainIdx > nameIdx && kindIdx > domainIdx);
+    }
+
+    public void testDuplicateMetaFacetsDoNotTriggerFalseOrderViolation() {
+        var text = """
+            {
+              :meta {
+                #name "first_name"
+                #name "second_name"
+                #kind #BODY_INCLUDE
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("first_name.stvn_i", text);
+        var highlights = myFixture.doHighlighting();
+        var orderErrors = highlights.stream()
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_FACET_ORDER_VIOLATION"))
+            .toList();
+        assertTrue("Duplicate #name at same tier must not emit ERR_FACET_ORDER_VIOLATION: " + orderErrors, orderErrors.isEmpty());
     }
 
     public void testMultilineMetadataMapReorderingPreservesTrailingComments() {

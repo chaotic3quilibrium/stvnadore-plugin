@@ -669,4 +669,129 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var removeFacetFix = myFixture.findSingleIntention("Remove non-overridable facet '#invertible'");
         assertNotNull("Expected secondary quick-fix to remove '#invertible'", removeFacetFix);
     }
+
+    public void testEmptyMetaBlockEmitsE039AndOffersPopulateQuickFixes() {
+        var text = """
+            {
+              :meta <caret>{}
+              :defs {
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :BoundedPort
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("empty_meta_block_with_body_error.core_test.stvn_i", text);
+        var highlights = myFixture.doHighlighting();
+        var e039Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E039-ERR_EMPTY_META_BLOCK"))
+            .toList();
+        assertEquals("Expected 1 E039 error on empty :meta {}", 1, e039Errors.size());
+        assertTrue(e039Errors.get(0).getDescription().contains("Metadata block ':meta {}' must not be empty"));
+        assertEquals("{}", e039Errors.get(0).getText());
+
+        var populateActions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
+        assertFalse("Expected InsertMissingMetaBlockQuickFix intention on :meta {}", populateActions.isEmpty());
+
+        var kindActions = myFixture.filterAvailableIntentions("Insert missing #kind facet");
+        assertFalse("Expected InsertMissingMetaKindFacetQuickFix intention on :meta {}", kindActions.isEmpty());
+
+        myFixture.launchAction(kindActions.get(0));
+        assertTrue("Expected #kind #BODY_INCLUDE to be inserted into :meta {}",
+            myFixture.getFile().getText().contains("#kind #BODY_INCLUDE"));
+    }
+
+    public void testEmptyDefsBlockInPayloadEmitsE002AndRemoveQuickFix() {
+        var text = """
+            {
+              :meta {
+                #name "empty_defs_block_in_payload"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs <caret>{}
+              :type { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              :body 2048
+            }
+            """;
+        myFixture.configureByText("empty_defs_block_in_payload.core_test.stvn_i", text);
+        var highlights = myFixture.doHighlighting();
+        var e002Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E002-ERR_EMPTY_DEFS_BLOCK"))
+            .toList();
+        assertEquals("Expected 1 E002 error on empty :defs {} in payload document", 1, e002Errors.size());
+        assertTrue(e002Errors.get(0).getDescription().contains(
+            "Empty definition block ':defs {}' is redundant; omit ':defs' or add definitions"
+        ));
+        assertEquals("{}", e002Errors.get(0).getText());
+
+        var removeActions = myFixture.filterAvailableIntentions("Remove redundant ':defs {}' block");
+        assertFalse("Expected 'Remove redundant :defs {} block' quick-fix", removeActions.isEmpty());
+        myFixture.launchAction(removeActions.get(0));
+        assertFalse("Expected :defs {} to be removed", myFixture.getFile().getText().contains(":defs"));
+    }
+
+    public void testEmptyDefsBlockInSchemaDocumentEmitsE002AndInsertSampleTypeQuickFix() {
+        var text = """
+            {
+              :meta {
+                #name "empty_schema"
+                #kind #DEFS
+              }
+              :defs <caret>{}
+            }
+            """;
+        myFixture.configureByText("empty_schema.stvn_d", text);
+        var highlights = myFixture.doHighlighting();
+        var e002Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E002-ERR_EMPTY_DEFS_BLOCK"))
+            .toList();
+        assertEquals("Expected 1 E002 error on empty :defs {} in schema document", 1, e002Errors.size());
+        assertTrue(e002Errors.get(0).getDescription().contains(
+            "Definition schema ':defs {}' must declare at least one definition or include"
+        ));
+        assertEquals("{}", e002Errors.get(0).getText());
+
+        var insertActions = myFixture.filterAvailableIntentions("Insert sample type definition in :defs");
+        assertFalse("Expected 'Insert sample type definition in :defs' quick-fix", insertActions.isEmpty());
+        myFixture.launchAction(insertActions.get(0));
+        assertTrue("Expected :SampleType :Int inserted in :defs",
+            myFixture.getFile().getText().contains(":SampleType :Int"));
+    }
+
+    public void testUnknownAndDuplicateMetaFacetsEmitE008AndRemoveQuickFix() {
+        var text = """
+            {
+              :meta {
+                #name "meta_facets_test"
+                #name "duplicate_name"
+                <caret>#author "rogue_architect"
+                #kind #BODY_INCLUDE
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("meta_facets_test.stvn_i", text);
+        var highlights = myFixture.doHighlighting();
+        var unknownErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Invalid metadata facet tag '#author' in ':meta' block"))
+            .toList();
+        assertEquals("Expected 1 E008 error on unknown #author facet in :meta", 1, unknownErrors.size());
+
+        var duplicateErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Duplicate metadata facet tag '#name' declared in ':meta' block"))
+            .toList();
+        assertEquals("Expected 1 E008 error on duplicate #name facet in :meta", 1, duplicateErrors.size());
+
+        var removeAuthor = myFixture.filterAvailableIntentions("Remove invalid metadata facet '#author'");
+        assertFalse("Expected 'Remove invalid metadata facet '#author'' quick-fix", removeAuthor.isEmpty());
+        myFixture.launchAction(removeAuthor.get(0));
+        assertFalse("Expected #author facet to be deleted", myFixture.getFile().getText().contains("#author"));
+    }
 }

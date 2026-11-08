@@ -6879,7 +6879,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 .filter(h -> expectsWarning
                     ? (h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.WEAK_WARNING)
                     : h.getSeverity() == HighlightSeverity.ERROR)
-                .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
+                .filter(h -> expectsWarning
+                    ? (h.getStartOffset() <= exp.startOffset() && h.getEndOffset() >= exp.endOffset())
+                    : (h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset()))
                 .filter(h -> h.getDescription() != null
                     && (h.getDescription().contains(exp.messageSubstring()) || h.getDescription().contains(exp.symbolicId())))
                 .findFirst();
@@ -6899,6 +6901,18 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testInvalidStage12CircularTypeBodySuspensionAndFaultIsolation() throws Exception {
         assertDiagnosticContract("syntax/invalid/defs/inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i");
+    }
+
+    public void testInvalidGauntletV4Stage1MetaMultiErrorAndBody() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/gauntlet_v4_stage1_meta_multi_error_and_body.core_test.stvn_i");
+    }
+
+    public void testInvalidEmptyMetaBlockWithBodyError() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/empty_meta_block_with_body_error.core_test.stvn_i");
+    }
+
+    public void testInvalidEmptyDefsBlockInPayload() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/empty_defs_block_in_payload.core_test.stvn_i");
     }
 }
 

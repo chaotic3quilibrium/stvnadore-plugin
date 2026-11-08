@@ -556,8 +556,14 @@ public final class StvnDiagnosticAnnotatorMapping {
             return "StvnTabCharacter";
         }
         if (message.contains("Mandatory :meta block missing")
+                || message.contains("requires root :meta block")
+                || message.contains("requires #kind facet")
                 || message.contains("does not match file extension")) {
             return "StvnMissingMeta";
+        }
+        if (message.contains("violates 3-tier monotonic progression")
+                || message.contains("violates canonical 5-tier order")) {
+            return "StvnMetadataOrder";
         }
         if (message.contains(":TimeEpoch requires explicit scale facet")
                 || message.contains(":DateTime requires explicit mode facet")
@@ -569,7 +575,13 @@ public final class StvnDiagnosticAnnotatorMapping {
         }
         if (message.contains("Unrecognized constraint facet")
                 || message.contains("Unrecognized metadata facet")
-                || message.contains("unrecognized facet")) {
+                || message.contains("unrecognized facet")
+                || message.contains("Invalid metadata facet tag")
+                || message.contains("Duplicate metadata facet tag")
+                || message.contains("does not match required atomic POSIX pattern")
+                || message.contains("Metadata block ':meta {}' must not be empty")
+                || message.contains("Empty definition block ':defs {}' is redundant")
+                || message.contains("Definition schema ':defs {}' must declare at least one definition")) {
             return "StvnMetadataFacet";
         }
         if (message.contains("Prohibited fenced string delimiter arrow")
