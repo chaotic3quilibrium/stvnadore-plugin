@@ -493,6 +493,22 @@ public final class StvnDiagnosticAnnotatorMapping {
             }
         }
 
+        if (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(sym)
+                || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(sym)) {
+            if (message.contains("cannot be applied to :Map directly")
+                    || message.contains("does not accept arguments")) {
+                return false;
+            }
+            int offset = diag.startOffset();
+            if (offset >= 0 && offset < file.getTextLength()) {
+                var elem = file.findElementAt(offset);
+                if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetadataMap.class, false) == null
+                        && com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetaBlock.class, false) == null) {
+                    return false;
+                }
+            }
+        }
+
         var shortName = getGoverningInspectionShortName(diag);
         if (shortName != null) {
             if (!ApplicationManager.getApplication().isUnitTestMode()) {

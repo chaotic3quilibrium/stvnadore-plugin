@@ -20,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
@@ -580,6 +581,36 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix
                 );
+            } else if (hasToken(entry, TokenSet.create(StvnTypes.KW_UNSIGNED)) && !StvnVocabulary.TYPE_INT.equals(baseType)) {
+                var fixes = buildInvalidFacetQuickFixes(
+                    inapplicableFix,
+                    schemaType,
+                    StvnVocabulary.TYPE_FLOAT.equals(baseType) ? StvnVocabulary.TYPE_INT : null
+                );
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is only applicable to " + StvnVocabulary.TYPE_INT + ", not " + baseType,
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    fixes
+                );
+            } else if (hasToken(entry, TokenSet.create(StvnTypes.KW_EXACT)) && !StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+                var fixes = buildInvalidFacetQuickFixes(
+                    inapplicableFix,
+                    schemaType,
+                    StvnVocabulary.TYPE_INT.equals(baseType) ? StvnVocabulary.TYPE_FLOAT : null
+                );
+                holder.registerProblem(
+                    entry,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Facet is not permitted on " + baseType + ": facet '" + kwTag + "' is only applicable to " + StvnVocabulary.TYPE_FLOAT + ", not " + baseType,
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    fixes
+                );
             } else if (hasToken(entry, STRING_ONLY_FACET_TOKENS) && !isString) {
                 holder.registerProblem(
                     entry,
@@ -1006,6 +1037,74 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 }
                 toDelete.delete();
             }
+        }
+    }
+
+    private static LocalQuickFix[] buildInvalidFacetQuickFixes(
+            LocalQuickFix removeFix,
+            @Nullable SchemaType schemaType,
+            @Nullable String suggestedBaseType
+    ) {
+        boolean canChangeBaseType = suggestedBaseType != null
+            && schemaType != null
+            && ((schemaType.getSchemaConstructor() != null && schemaType.getSchemaConstructor().getAtomicType() != null)
+                || schemaType.getTypeKeyword() != null);
+        if (canChangeBaseType) {
+            return new LocalQuickFix[]{
+                removeFix,
+                new ChangeBaseTypeQuickFix(suggestedBaseType)
+            };
+        }
+        return new LocalQuickFix[]{removeFix};
+    }
+
+    private static final class ChangeBaseTypeQuickFix implements LocalQuickFix {
+        private final String targetBaseType;
+
+        ChangeBaseTypeQuickFix(String targetBaseType) {
+            this.targetBaseType = targetBaseType;
+        }
+
+        @Override
+        public @Nls @NotNull String getName() {
+            return "Change base type to '" + targetBaseType + "'";
+        }
+
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+            return "Change STVN base type";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null || !element.isValid()) {
+                return;
+            }
+            var schemaType = resolveEnclosingSchemaType(element);
+            if (schemaType == null) {
+                return;
+            }
+            var replacementSchema = StvnElementFactory.createSchemaType(project, targetBaseType);
+            var replacementCtor = replacementSchema.getSchemaConstructor();
+            if (schemaType.getSchemaConstructor() != null && replacementCtor != null) {
+                schemaType.getSchemaConstructor().replace(replacementCtor);
+            } else if (schemaType.getTypeKeyword() != null && replacementCtor != null) {
+                schemaType.getTypeKeyword().replace(replacementCtor);
+            }
+        }
+
+        private static @Nullable SchemaType resolveEnclosingSchemaType(PsiElement element) {
+            var schemaType = PsiTreeUtil.getParentOfType(element, SchemaType.class, false);
+            if (schemaType != null) {
+                return schemaType;
+            }
+            var typeDef = PsiTreeUtil.getParentOfType(element, TypeDefinition.class, false);
+            if (typeDef != null) {
+                return typeDef.getSchemaType();
+            }
+            var constDef = PsiTreeUtil.getParentOfType(element, ConstantDefinition.class, false);
+            return constDef != null ? constDef.getSchemaType() : null;
         }
     }
 }

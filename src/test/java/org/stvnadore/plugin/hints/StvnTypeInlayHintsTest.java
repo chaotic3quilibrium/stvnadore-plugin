@@ -128,4 +128,140 @@ public final class StvnTypeInlayHintsTest extends BasePlatformTestCase {
         assertNotNull(dtDoc);
         assertTrue(dtDoc.contains("<b>Value Type:</b> :EventOffset (-> { #offset } :DateTime)"));
     }
+
+    public void testStage1EnvelopeInlayHintsRenderOnConstraintViolatingSlotAfterPoisonedSibling() {
+        var text = """
+            {
+              :meta {
+                #name "gauntlet_v4_stage1_meta_identity_and_section_boundaries"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :ServiceName { #minSize 1 #maxSize 64 } :String
+                :RetryCount { #unsigned #size 8 #minIncl 0 #maxExcl 10 } :Int
+                :StageFlag :Boolean
+                :RedundantSignedInt { #size 32 } :Int
+                :PoisonedStringSize { #size 16 } :String
+
+                #DEFAULT_SERVICE :ServiceName "stvn-gauntlet-v4"
+                #DEFAULT_RETRIES :RetryCount 3
+
+                :Stage1Envelope :Tuple(
+                  :ServiceName
+                  :RetryCount
+                  :StageFlag
+                  :RedundantSignedInt
+                  :PoisonedStringSize
+                  :RetryCount
+                )
+              }
+              :type :Stage1Envelope
+              :body (
+                #DEFAULT_SERVICE
+                #DEFAULT_RETRIES
+                #T
+                -42
+                "ignored_by_pass3"
+                25
+              )
+            }
+            """;
+        var file = myFixture.configureByText(
+            "gauntlet_v4_stage1_meta_identity_and_section_boundaries.core_test.stvn_i",
+            text
+        );
+
+        var tuple = PsiTreeUtil.findChildOfType(file, TupleLiteral.class);
+        assertNotNull("TupleLiteral must not be null", tuple);
+        var values = tuple.getValueList();
+        assertEquals("Expected 6 tuple elements", 6, values.size());
+
+        assertEquals(":ServiceName (-> :String)", StvnTypeResolver.resolveValueType(values.get(0)));
+        assertEquals(":RetryCount (-> :Int)", StvnTypeResolver.resolveValueType(values.get(1)));
+        assertEquals(":StageFlag (-> :Boolean)", StvnTypeResolver.resolveValueType(values.get(2)));
+        assertEquals(":RedundantSignedInt (-> :Int)", StvnTypeResolver.resolveValueType(values.get(3)));
+        assertEquals("\u26A0 :PoisonedStringSize (-> :String)", StvnTypeResolver.resolveValueType(values.get(4)));
+        assertTrue(
+            "Slot 5 (:PoisonedStringSize) must be marked degraded",
+            StvnTypeResolver.isDegradedNominalAlias(file, ":PoisonedStringSize")
+        );
+
+        // Slot 6 ('25', failing #maxExcl 10 with E012) must still resolve its healthy :RetryCount (-> :Int) inlay type
+        var slot6Val = values.get(5);
+        assertFalse(
+            "Slot 6 (:RetryCount) must NOT be marked degraded despite following Slot 5 (:PoisonedStringSize)",
+            StvnTypeResolver.isDegradedNominalAlias(file, ":RetryCount")
+        );
+        var slot6CoreVal = StvnTypeResolver.resolveCoreValue(slot6Val);
+        assertTrue(
+            "Slot 6 ('25') StvnErrorValue must be recoverable for inlay hint projection",
+            slot6CoreVal instanceof org.stvnadore.core.ir.StvnValue.StvnErrorValue errVal
+                && StvnTypeResolver.isRecoverableCoreError(errVal, slot6Val)
+        );
+        assertEquals(":RetryCount (-> :Int)", StvnTypeResolver.resolveValueType(slot6Val));
+    }
+
+    public void testStage3FloatSlotsFailingBoundsAndPrecisionConstraintsRenderInlayHints() {
+        var text = """
+            {
+              :meta {
+                #name "gauntlet_v4_stage3_continuous_vs_exact_floats_and_ieee754"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :Float32Explicit { #size 32 } :Float
+                :UnitIntervalFloat32 { #size 32 #minIncl 0.0 #maxExcl 1.0 } :Float
+                :ExactDecimal6 { #exact #maxSize 6 } :Float
+                :BoundedExactCurrency { #exact #maxSize 12 #minIncl 0.00 #maxExcl 1000000.00 } :Float
+
+                :Stage3Envelope :Tuple(
+                  :UnitIntervalFloat32
+                  :Float32Explicit
+                  :ExactDecimal6
+                  :BoundedExactCurrency
+                )
+              }
+              :type :Stage3Envelope
+              :body (
+                1.0
+                3.50e+38
+                123456.789012
+                1000000.00
+              )
+            }
+            """;
+        var file = myFixture.configureByText(
+            "gauntlet_v4_stage3_continuous_vs_exact_floats_and_ieee754.core_test.stvn_i",
+            text
+        );
+
+        var tuple = PsiTreeUtil.findChildOfType(file, TupleLiteral.class);
+        assertNotNull("TupleLiteral must not be null", tuple);
+        var values = tuple.getValueList();
+        assertEquals("Expected 4 tuple elements", 4, values.size());
+
+        String[] expectedTypes = {
+            ":UnitIntervalFloat32 (-> :Float)",
+            ":Float32Explicit (-> :Float)",
+            ":ExactDecimal6 (-> :Float)",
+            ":BoundedExactCurrency (-> :Float)"
+        };
+
+        for (int i = 0; i < values.size(); i++) {
+            var val = values.get(i);
+            var coreVal = StvnTypeResolver.resolveCoreValue(val);
+            assertTrue(
+                "Slot " + i + " ('" + val.getText() + "') must be a recoverable StvnErrorValue",
+                coreVal instanceof org.stvnadore.core.ir.StvnValue.StvnErrorValue errVal
+                    && StvnTypeResolver.isRecoverableCoreError(errVal, val)
+            );
+            assertEquals(
+                "Slot " + i + " ('" + val.getText() + "') must retain its nominal inlay hint",
+                expectedTypes[i],
+                StvnTypeResolver.resolveValueType(val)
+            );
+        }
+    }
 }

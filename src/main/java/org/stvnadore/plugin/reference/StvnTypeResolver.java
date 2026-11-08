@@ -285,7 +285,7 @@ public final class StvnTypeResolver {
 
                 for (var entry : entries) {
                     var entryText = entry.getText();
-                    if (entryText.startsWith(StvnVocabulary.FACET_KW_REGEX)) {
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_REGEX)) {
                         var strLit = PsiTreeUtil.findChildOfType(entry, StringLiteral.class);
                         if (strLit != null) {
                             var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), false);
@@ -300,23 +300,23 @@ public final class StvnTypeResolver {
                                 return true;
                             }
                         }
-                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_INCL)) {
                         hasMinIncl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) minVal = num;
-                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_EXCL)) {
                         hasMinExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) minVal = num;
-                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_INCL)) {
                         hasMaxIncl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
-                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_EXCL)) {
                         hasMaxExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
-                    } else if (entryText.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SIZE)) {
                         var schemaType = typeDef.getSchemaType();
                         var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
                         if (schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
@@ -336,9 +336,9 @@ public final class StvnTypeResolver {
                 var hasAudited = false;
                 for (var entry : entries) {
                     var entryText = entry.getText();
-                    if (entryText.startsWith(StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
-                    if (entryText.startsWith(StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
-                    if (entryText.startsWith(StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
                 }
                 int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
                 if (modeCount > 1) {
@@ -365,15 +365,15 @@ public final class StvnTypeResolver {
                         if (parentMeta != null) {
                             for (var pEntry : parentMeta.getMetadataEntryList()) {
                                 var pText = pEntry.getText();
-                                if (minVal == null && (pText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
-                                        || pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL))) {
+                                if (minVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_INCL)
+                                        || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL))) {
                                     minVal = extractNumericValue(pEntry);
-                                    if (pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) hasMinExcl = true;
+                                    if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL)) hasMinExcl = true;
                                     else hasMinIncl = true;
-                                } else if (maxVal == null && (pText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
-                                        || pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL))) {
+                                } else if (maxVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_INCL)
+                                        || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL))) {
                                     maxVal = extractNumericValue(pEntry);
-                                    if (pText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) hasMaxExcl = true;
+                                    if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL)) hasMaxExcl = true;
                                     else hasMaxIncl = true;
                                 }
                             }
@@ -1543,6 +1543,13 @@ public final class StvnTypeResolver {
         var schemaToInspect = (resolved != null) ? resolved : schema;
         if (schemaToInspect != schema && !visited.add(schemaToInspect)) {
             return false;
+        }
+        var valKwForConst = value.getValueKeyword();
+        if (valKwForConst != null && value.getContainingFile() != null) {
+            var constDef = findConstantDefinition(value.getContainingFile(), valKwForConst.getText());
+            if (constDef != null && constDef.getValue() != null) {
+                return matchesSchemaPattern(constDef.getValue(), schemaToInspect, visited);
+            }
         }
         var text = StvnSchemaFormatter.formatSchema(schemaToInspect);
         var stripped = (text.startsWith("{") && text.contains("}"))
@@ -3036,6 +3043,9 @@ public final class StvnTypeResolver {
                 if (err.schema() instanceof StvnSchema.PoisonedSchema) {
                     return true;
                 }
+                if (matchesSchemaPattern(value, toInspect)) {
+                    return true;
+                }
                 var ctor = toInspect.getSchemaConstructor();
                 if (ctor != null && (ctor.getProductType() != null || ctor.getCollectionType() != null)) {
                     return true;
@@ -3059,6 +3069,15 @@ public final class StvnTypeResolver {
             }
         }
         return false;
+    }
+
+    private static boolean hasExactFacetTag(String entryText, String facetTag) {
+        var trimmed = entryText.trim();
+        if (!trimmed.startsWith(facetTag)) {
+            return false;
+        }
+        return trimmed.length() == facetTag.length()
+            || Character.isWhitespace(trimmed.charAt(facetTag.length()));
     }
 
     private static boolean isConstructorMatch(String type, String constructor) {

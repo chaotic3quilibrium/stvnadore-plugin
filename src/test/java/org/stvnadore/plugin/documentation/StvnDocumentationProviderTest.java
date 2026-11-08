@@ -1592,4 +1592,48 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertFalse("Hover on :body value governed by :CycleAlpha must NEVER fabricate ':Value':\n" + bodyCycleValDoc,
             bodyCycleValDoc.contains(":Value"));
     }
+
+    public void testSignedBit1SizeFacetDoesNotRenderSpuriousScaleSRow() {
+        var text = """
+            {
+              :meta {
+                #name "gauntlet_v4_stage2_discrete_integers_sizing_and_radixes"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :SignedBit1 { #size 1 } :Int
+                :Float64Explicit { #size 64 } :Float
+                :BoundedStr { #minSize 1 #maxSize 8 } :String
+              }
+              :type :SignedBit1
+              :body -1
+            }
+            """;
+        myFixture.configureByText("gauntlet_v4_stage2_discrete_integers_sizing_and_radixes.core_test.stvn_i", text);
+
+        int signedBit1Offset = text.indexOf(":SignedBit1 { #size 1 } :Int") + 2;
+        String signedBit1Doc = getDocAtOffset(text, signedBit1Offset);
+        assertNotNull("Hover on :SignedBit1 must not be null", signedBit1Doc);
+        assertTrue("Hover on :SignedBit1 must include #size row:\n" + signedBit1Doc,
+            signedBit1Doc.contains("<code>#size</code>"));
+        assertTrue("Hover on :SignedBit1 must report Active Override for #size:\n" + signedBit1Doc,
+            signedBit1Doc.contains("Active Override"));
+        assertFalse("Hover on :SignedBit1 must NEVER synthesize a spurious #s facet row:\n" + signedBit1Doc,
+            signedBit1Doc.contains("<code>#s</code>"));
+
+        int float64Offset = text.indexOf(":Float64Explicit") + 2;
+        String float64Doc = getDocAtOffset(text, float64Offset);
+        assertNotNull("Hover on :Float64Explicit must not be null", float64Doc);
+        assertTrue("Hover on :Float64Explicit must include #size row:\n" + float64Doc,
+            float64Doc.contains("<code>#size</code>"));
+        assertFalse("Hover on :Float64Explicit must NEVER synthesize a spurious #s facet row:\n" + float64Doc,
+            float64Doc.contains("<code>#s</code>"));
+
+        int boundedStrOffset = text.indexOf(":BoundedStr") + 2;
+        String boundedStrDoc = getDocAtOffset(text, boundedStrOffset);
+        assertNotNull("Hover on :BoundedStr must not be null", boundedStrDoc);
+        assertFalse("Hover on :BoundedStr must NEVER synthesize a spurious #s facet row:\n" + boundedStrDoc,
+            boundedStrDoc.contains("<code>#s</code>"));
+    }
 }

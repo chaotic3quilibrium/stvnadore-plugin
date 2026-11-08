@@ -998,7 +998,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                                 StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
                                 StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
                                 StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE, StvnVocabulary.FACET_KW_REGEX)) {
-                            if (msg.contains(tag) || msg.contains(tag.substring(1))) {
+                            if (containsExactFacetToken(msg, tag)) {
                                 invalidFacetTags.add(tag);
                             }
                         }
@@ -1018,16 +1018,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (declaredMeta != null) {
             for (var entry : declaredMeta.getMetadataEntryList()) {
                 var txt = entry.getText().trim();
-                if (txt.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MIN_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredMinSize = parts[1];
-                } else if (txt.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                } else if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MAX_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredMaxSize = parts[1];
-                } else if (txt.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                } else if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredSize = parts[1];
-                } else if (txt.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+                } else if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredPreserveIndent = parts[1];
                 }
@@ -1194,7 +1194,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
                         StvnVocabulary.FACET_KW_PRESERVE_INDENT, StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
                         StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_REGEX, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                    if (entryText.startsWith(tag)) {
+                    if (hasExactFacetTag(entryText, tag)) {
                         boolean alreadyPresent = rows.stream().anyMatch(r -> r.tag().equals(tag));
                         if (!alreadyPresent) {
                             var parts = entryText.split("\\s+", 2);
@@ -1282,7 +1282,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (declaredMeta == null) return java.util.Optional.empty();
         for (var entry : declaredMeta.getMetadataEntryList()) {
             var text = entry.getText().trim();
-            if (text.startsWith(facetTag)) {
+            if (hasExactFacetTag(text, facetTag)) {
                 var parts = text.split("\\s+");
                 if (parts.length > 1) {
                     var val = parts[1].trim();
@@ -1531,20 +1531,43 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var text = entry.getText().trim();
         return switch (facetKey) {
             case StvnVocabulary.FACET_NAME_PRESERVE_INDENT ->
-                entry.getMetadataTrait() != null || text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
+                entry.getMetadataTrait() != null || hasExactFacetTag(text, StvnVocabulary.FACET_KW_PRESERVE_INDENT);
             case StvnVocabulary.FACET_NAME_MIN_SIZE ->
-                text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE);
+                hasExactFacetTag(text, StvnVocabulary.FACET_KW_MIN_SIZE);
             case StvnVocabulary.FACET_NAME_MAX_SIZE ->
-                text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE);
+                hasExactFacetTag(text, StvnVocabulary.FACET_KW_MAX_SIZE);
             case StvnVocabulary.FACET_NAME_REGEX ->
-                text.startsWith(StvnVocabulary.FACET_KW_REGEX);
+                hasExactFacetTag(text, StvnVocabulary.FACET_KW_REGEX);
             case StvnVocabulary.FACET_NAME_EQUATABLE ->
-                text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
+                hasExactFacetTag(text, StvnVocabulary.FACET_KW_EQUATABLE);
             case StvnVocabulary.FACET_NAME_COMPARABLE ->
-                text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE);
+                hasExactFacetTag(text, StvnVocabulary.FACET_KW_COMPARABLE);
             default ->
-                text.startsWith(StvnVocabulary.SIGIL_VALUE + facetKey);
+                hasExactFacetTag(text, StvnVocabulary.SIGIL_VALUE + facetKey);
         };
+    }
+
+    private static boolean hasExactFacetTag(String entryText, String facetTag) {
+        var trimmed = entryText.trim();
+        if (!trimmed.startsWith(facetTag)) {
+            return false;
+        }
+        return trimmed.length() == facetTag.length()
+            || Character.isWhitespace(trimmed.charAt(facetTag.length()));
+    }
+
+    private static boolean containsExactFacetToken(String message, String facetTag) {
+        int index = 0;
+        while ((index = message.indexOf(facetTag, index)) >= 0) {
+            int end = index + facetTag.length();
+            boolean validEnd = end == message.length()
+                || (!Character.isLetterOrDigit(message.charAt(end)) && message.charAt(end) != '_');
+            if (validEnd) {
+                return true;
+            }
+            index = end;
+        }
+        return false;
     }
 
     @Override
@@ -2675,9 +2698,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         boolean isExact = false;
         for (var e : metaMap.getMetadataEntryList()) {
             var et = e.getText().trim();
-            if (et.startsWith(StvnVocabulary.FACET_KW_UNSIGNED)) {
+            if (hasExactFacetTag(et, StvnVocabulary.FACET_KW_UNSIGNED)) {
                 isUnsigned = true;
-            } else if (et.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+            } else if (hasExactFacetTag(et, StvnVocabulary.FACET_KW_SIZE)) {
                 var parts = et.split("\\s+");
                 if (parts.length >= 2) {
                     var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
@@ -2685,13 +2708,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         bitWidth = parsed;
                     }
                 }
-            } else if (et.startsWith(StvnVocabulary.FACET_KW_EXACT)) {
+            } else if (hasExactFacetTag(et, StvnVocabulary.FACET_KW_EXACT)) {
                 isExact = true;
             }
         }
 
         // 1. Unsigned lower bound #minIncl 0 or signed natural min bound
-        if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+        if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_MIN_INCL)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
@@ -2712,7 +2735,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 2. Natural upper bound #maxExcl
-        else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_MAX_EXCL)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
@@ -2731,7 +2754,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 3. Sizing tautologies
-        else if (text.startsWith(StvnVocabulary.FACET_KW_SIZE) && schemaType != null && schemaType.getTypeKeyword() == null) {
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_SIZE) && schemaType != null && schemaType.getTypeKeyword() == null) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
@@ -2745,7 +2768,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 4. Default capacity and exact float precision ceiling (Rule W003)
-        else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_MAX_SIZE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
@@ -2766,7 +2789,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 5. Cardinality min size
-        else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_MIN_SIZE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2 && "0".equals(parts[1].trim())) {
                 String targetDesc = (baseType.endsWith(StvnVocabulary.TYPE_STRING) || baseType.equals(StvnVocabulary.TYPE_STRING))
@@ -2776,10 +2799,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         // 6. Primitive and composite default traits
-        else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_EQUATABLE) || hasExactFacetTag(text, StvnVocabulary.FACET_KW_COMPARABLE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2 && (StvnVocabulary.VAL_TRUE.equals(parts[1].trim()) || StvnVocabulary.VAL_TRUE_SHORT.equals(parts[1].trim()))) {
-                boolean isEq = text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
+                boolean isEq = hasExactFacetTag(text, StvnVocabulary.FACET_KW_EQUATABLE);
                 boolean isIntrinsicallyConforming = isEq
                         ? StvnTraitViolationQuickFixProvider.isUnderlyingIntrinsicallyEquatable(typeDef)
                         : StvnTraitViolationQuickFixProvider.isUnderlyingIntrinsicallyComparable(typeDef);
@@ -3451,13 +3474,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var txt = entry.getText().trim();
-                    if (txt.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                    if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MIN_SIZE)) {
                         var parts = txt.split("\\s+");
                         if (parts.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
                             if (parsed != null) minSize = parsed;
                         }
-                    } else if (txt.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                    } else if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MAX_SIZE)) {
                         var parts = txt.split("\\s+");
                         if (parts.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
@@ -3724,29 +3747,29 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var t = entry.getText().trim();
-                        if (t.equals(StvnVocabulary.FACET_KW_UNSIGNED) || t.startsWith(StvnVocabulary.FACET_KW_UNSIGNED + " ")) isUnsigned = true;
-                        if (t.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_UNSIGNED)) isUnsigned = true;
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_SIZE)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) bitWidth = parsed;
                             }
                         }
-                        if (t.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_INCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) minVal = parsed;
                             }
                         }
-                        if (t.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_EXCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) maxVal = parsed.subtract(BigInteger.ONE);
                             }
                         }
-                        if (t.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_EXCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3756,7 +3779,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                                 }
                             }
                         }
-                        if (t.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                        if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_INCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3873,21 +3896,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var t = entry.getText().trim();
-                    if (t.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                    if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_SIZE)) {
                         var p = t.split("\\s+");
                         if (p.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                             if (parsed != null) minSize = parsed;
                         }
                     }
-                    if (t.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                    if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_SIZE)) {
                         var p = t.split("\\s+");
                         if (p.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                             if (parsed != null) maxSize = parsed;
                         }
                     }
-                    if (t.startsWith(StvnVocabulary.FACET_KW_REGEX)) {
+                    if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_REGEX)) {
                         var p = t.split("\\s+", 2);
                         if (p.length >= 2) regex = p[1].replaceAll("^\"|\"$", "");
                     }
@@ -3952,7 +3975,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL;
                 if (!isExact && schemaType.getMetadataMap() != null) {
                     for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
-                        if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_EXACT)) isExact = true;
+                        if (hasExactFacetTag(entry.getText().trim(), StvnVocabulary.FACET_KW_EXACT)) isExact = true;
                     }
                 }
 
@@ -3964,7 +3987,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                            if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_SIZE)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3983,25 +4006,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                            if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_INCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
                                 }
-                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_EXCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
                                 }
-                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_INCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
                                 }
-                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_EXCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
@@ -4053,7 +4076,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
+                            if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_SIZE)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);

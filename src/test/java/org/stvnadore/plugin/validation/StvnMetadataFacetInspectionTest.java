@@ -794,4 +794,67 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.launchAction(removeAuthor.get(0));
         assertFalse("Expected #author facet to be deleted", myFixture.getFile().getText().contains("#author"));
     }
+
+    public void testTrapUnsignedFloatHighlightsUnsignedWithE008AndOffersQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :TrapUnsignedFloat { #unsigned } :Float
+              }
+              :type :Float
+              :body 1.0
+            }
+            """;
+        myFixture.configureByText("trap_unsigned_float.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVALID_METADATA_FACET"))
+            .toList();
+        assertEquals("Expected 1 E008 ERR_INVALID_METADATA_FACET error on :TrapUnsignedFloat { #unsigned } :Float", 1, errors.size());
+        assertEquals("#unsigned", errors.get(0).getText());
+        assertTrue(errors.get(0).getDescription().contains("facet '#unsigned' is only applicable to :Int, not :Float"));
+
+        int offset = text.indexOf("#unsigned") + 2;
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var removeActions = myFixture.filterAvailableIntentions("Remove inapplicable facet '#unsigned'");
+        assertFalse("Expected 'Remove inapplicable facet '#unsigned'' quick-fix", removeActions.isEmpty());
+        var changeBaseActions = myFixture.filterAvailableIntentions("Change base type to ':Int'");
+        assertFalse("Expected 'Change base type to ':Int'' quick-fix", changeBaseActions.isEmpty());
+
+        myFixture.launchAction(changeBaseActions.get(0));
+        assertTrue("Expected base type to change to :Int",
+            myFixture.getFile().getText().contains(":TrapUnsignedFloat { #unsigned } :Int"));
+    }
+
+    public void testExactOnIntAndMaxSizeOnContinuousFloatEmitE008WithQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :TrapExactInt { #exact } :Int
+                :TrapContinuousMaxSize { #maxSize 6 } :Float
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        myFixture.configureByText("trap_exact_int_and_float_maxsize.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVALID_METADATA_FACET"))
+            .toList();
+        assertEquals("Expected 2 E008 ERR_INVALID_METADATA_FACET errors", 2, errors.size());
+        assertEquals("#exact", errors.get(0).getText());
+        assertTrue(errors.get(0).getDescription().contains("facet '#exact' is only applicable to :Float, not :Int"));
+        assertEquals("#maxSize 6", errors.get(1).getText());
+
+        int offset = text.indexOf("#exact") + 2;
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var changeToFloatActions = myFixture.filterAvailableIntentions("Change base type to ':Float'");
+        assertFalse("Expected 'Change base type to ':Float'' quick-fix", changeToFloatActions.isEmpty());
+        myFixture.launchAction(changeToFloatActions.get(0));
+        assertTrue("Expected base type to change to :Float",
+            myFixture.getFile().getText().contains(":TrapExactInt { #exact } :Float"));
+    }
 }
