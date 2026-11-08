@@ -9,6 +9,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.LightVirtualFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
@@ -155,8 +156,8 @@ public final class StvnPreludeBridge {
      */
     public static @Nullable TypeDefinition resolvePreludeTypeDefinition(@Nullable PsiFile file, String nameOrFqni) {
         if (file == null) return null;
-        var normName = nameOrFqni.startsWith(":") ? nameOrFqni : ":" + nameOrFqni;
-        var bareName = normName.contains("/") ? ":" + normName.substring(normName.lastIndexOf('/') + 1) : normName;
+        var normName = nameOrFqni.startsWith(StvnVocabulary.SIGIL_TYPIC) ? nameOrFqni : StvnVocabulary.SIGIL_TYPIC + nameOrFqni;
+        var bareName = normName.contains("/") ? StvnVocabulary.SIGIL_TYPIC + normName.substring(normName.lastIndexOf('/') + 1) : normName;
 
         var allDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : allDefs) {
@@ -252,8 +253,8 @@ public final class StvnPreludeBridge {
     public static @Nullable ConstantDefinition resolvePreludeConstantDefinition(Project project, String constName) {
         var file = getPreludeFile(project);
         if (file == null) return null;
-        var normName = constName.startsWith("#") ? constName : "#" + constName;
-        var bareName = normName.contains("/") ? "#" + normName.substring(normName.lastIndexOf('/') + 1) : normName;
+        var normName = constName.startsWith(StvnVocabulary.SIGIL_VALUE) ? constName : StvnVocabulary.SIGIL_VALUE + constName;
+        var bareName = normName.contains("/") ? StvnVocabulary.SIGIL_VALUE + normName.substring(normName.lastIndexOf('/') + 1) : normName;
         var allConstDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
         for (var cDef : allConstDefs) {
             var kw = cDef.getValueKeyword();

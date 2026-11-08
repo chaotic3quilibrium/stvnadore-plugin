@@ -97,7 +97,7 @@ public final class StvnDiagnosticFormatter {
      */
     public static String format(String enclave, @Nullable String message, String diagnosticId) {
         if (message == null || message.isBlank()) {
-            return "[" + enclave + ":" + diagnosticId + "]";
+            return "[" + enclave + ':' + diagnosticId + "]";
         }
         var clean = message.stripTrailing();
         // Idempotent guard: avoid double formatting if string already contains nominal coordinates
@@ -108,6 +108,6 @@ public final class StvnDiagnosticFormatter {
         if (clean.endsWith(".")) {
             clean = clean.substring(0, clean.length() - 1).stripTrailing();
         }
-        return clean + " [" + enclave + ":" + diagnosticId + "]";
+        return clean + " [" + enclave + ':' + diagnosticId + "]";
     }
 }

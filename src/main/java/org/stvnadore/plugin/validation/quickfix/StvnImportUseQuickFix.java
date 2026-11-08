@@ -11,6 +11,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
@@ -166,10 +167,10 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
 
     private void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse) {
         var opts = existingUse.getUseOptionsBlock();
-        if (opts != null && opts.getText().contains("#strip")) {
+        if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
             return;
         }
-        if (existingUse.getText().contains("#strip")) {
+        if (existingUse.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
             return;
         }
         var aliasBlock = existingUse.getUseAliasBlock();

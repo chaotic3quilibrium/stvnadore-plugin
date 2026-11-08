@@ -9,6 +9,7 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.TypeDefinition;
 
@@ -32,7 +33,7 @@ public final class StvnSchemaIndexHelper {
      */
     public static List<PsiFile> findDeclaringSchemaFiles(Project project, String leafTypeName) {
         var results = new ArrayList<PsiFile>();
-        var cleanLeaf = leafTypeName.startsWith(":") ? leafTypeName : ":" + leafTypeName;
+        var cleanLeaf = leafTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? leafTypeName : StvnVocabulary.SIGIL_TYPIC + leafTypeName;
         var scope = GlobalSearchScope.projectScope(project);
         var psiManager = PsiManager.getInstance(project);
 

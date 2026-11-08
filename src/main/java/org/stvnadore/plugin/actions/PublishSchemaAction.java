@@ -14,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnSchemaFlattener;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.CyclicDependencyException;
 import org.stvnadore.core.validation.DuplicateModuleImportException;
 import org.stvnadore.core.validation.NamespaceCollisionException;
@@ -89,7 +90,7 @@ public final class PublishSchemaAction extends AnAction {
         }
 
         // 2b. Ensure root :meta block presence for repository Gate 2 compliance
-        if (!schemaContent.contains(":meta")) {
+        if (!schemaContent.contains(StvnVocabulary.KEYWORD_META)) {
             String stem = schemaName.endsWith(".stvn_d")
                 ? schemaName.substring(0, schemaName.length() - ".stvn_d".length())
                 : schemaName;

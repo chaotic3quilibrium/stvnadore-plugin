@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.validation.quickfix.StvnBrandNominalTypeQuickFix;
@@ -60,7 +61,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
             return;
         }
         // Must be a bare colon identifier
-        if (!text.startsWith(":") || text.substring(1).contains("/")) {
+        if (!text.startsWith(StvnVocabulary.SIGIL_TYPIC) || text.substring(1).contains("/")) {
             return;
         }
 
@@ -117,7 +118,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
                 }
             }
             var opts = use.getUseOptionsBlock();
-            if (opts != null && opts.getText().contains("#strip")) {
+            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 var useTarget = use.getUseTarget();
                 var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
                 if (useTarget != null && (useTarget.getText().equals(":org/stvnadore/prelude") || useTarget.getText().equals(pkgPath))) {

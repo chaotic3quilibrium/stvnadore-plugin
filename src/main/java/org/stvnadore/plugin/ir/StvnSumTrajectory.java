@@ -2,6 +2,7 @@ package org.stvnadore.plugin.ir;
 
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnValue;
@@ -63,7 +64,7 @@ public record StvnSumTrajectory(
             if (currIr instanceof StvnValue.StvnOption opt) {
                 var explicitOpt = currPsi != null ? currPsi.getExplicitOptionValue() : null;
                 if (explicitOpt != null) {
-                    String tag = opt.value().isPresent() ? "#S" : "#N";
+                    String tag = opt.value().isPresent() ? StvnVocabulary.VAL_SOME_SHORT : StvnVocabulary.VAL_NONE_SHORT;
                     steps.add(new Step(false, tag, opt.schema()));
                     if (opt.value().isEmpty()) {
                         break;
@@ -71,14 +72,16 @@ public record StvnSumTrajectory(
                     currPsi = explicitOpt.getValue();
                     currIr = opt.value().get();
                 } else if (opt.value().isPresent()) {
-                    steps.add(new Step(true, "#S", opt.schema()));
+                    steps.add(new Step(true, StvnVocabulary.VAL_SOME_SHORT, opt.schema()));
                     currIr = opt.value().get();
                 } else {
-                    steps.add(new Step(false, "#N", opt.schema()));
+                    steps.add(new Step(false, StvnVocabulary.VAL_NONE_SHORT, opt.schema()));
                     break;
                 }
             } else if (currIr instanceof StvnValue.StvnEither either) {
-                String tag = either.branch() == StvnValue.EitherBranch.LEFT ? "#L" : "#R";
+                String tag = either.branch() == StvnValue.EitherBranch.LEFT
+                    ? StvnVocabulary.VAL_LEFT_SHORT
+                    : StvnVocabulary.VAL_RIGHT_SHORT;
                 var explicitEither = currPsi != null ? currPsi.getExplicitEitherValue() : null;
                 if (explicitEither != null) {
                     steps.add(new Step(false, tag, either.schema()));
@@ -89,7 +92,7 @@ public record StvnSumTrajectory(
                     currIr = either.value();
                 }
             } else if (currIr instanceof StvnValue.StvnUnion union) {
-                String tag = "#" + union.oneBasedBranchIndex();
+                String tag = StvnVocabulary.SIGIL_VALUE + union.oneBasedBranchIndex();
                 var explicitUnion = currPsi != null ? currPsi.getExplicitUnionValue() : null;
                 if (explicitUnion != null) {
                     steps.add(new Step(false, tag, union.schema()));
@@ -149,12 +152,12 @@ public record StvnSumTrajectory(
             return false;
         }
         String text = vk.getText().trim();
-        if (!text.startsWith("#") || text.length() <= 1) {
+        if (!text.startsWith(StvnVocabulary.SIGIL_VALUE) || text.length() <= 1) {
             return false;
         }
-        if ("#None".equals(text) || "#N".equals(text)
-            || "#TRUE".equals(text) || "#T".equals(text)
-            || "#FALSE".equals(text) || "#F".equals(text)) {
+        if (StvnVocabulary.VAL_NONE.equals(text) || StvnVocabulary.VAL_NONE_SHORT.equals(text)
+            || StvnVocabulary.VAL_TRUE.equals(text) || StvnVocabulary.VAL_TRUE_SHORT.equals(text)
+            || StvnVocabulary.VAL_FALSE.equals(text) || StvnVocabulary.VAL_FALSE_SHORT.equals(text)) {
             return false;
         }
         StvnValue leaf = unwrapTerminalIrValue(irValue);

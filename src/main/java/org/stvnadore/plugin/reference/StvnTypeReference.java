@@ -60,7 +60,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
      */
     @Override
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
-        if (newElementName.startsWith(":") || newElementName.startsWith("#")) {
+        if (newElementName.startsWith(StvnVocabulary.SIGIL_TYPIC) || newElementName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + newElementName);
         }
         var element = getElement();
@@ -71,7 +71,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             var prefix = currentText.substring(0, lastSlashIndex + 1);
             replacementText = prefix + newElementName;
         } else {
-            replacementText = ":" + newElementName;
+            replacementText = StvnVocabulary.SIGIL_TYPIC + newElementName;
         }
         var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(element.getProject(), replacementText);
         return element.replace(newKeyword);
@@ -165,7 +165,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     if (useStmt != null && useStmt.getUseTarget() != null) {
                         var targetPackage = useStmt.getUseTarget().getText();
                         var targetTypeName = keyword.getText();
-                        var bare = targetTypeName.startsWith(":") ? targetTypeName.substring(1) : targetTypeName;
+                        var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? targetTypeName.substring(1) : targetTypeName;
                         var fqni = targetPackage + "/" + bare;
                         if (":org/stvnadore/prelude".equals(targetPackage) || targetPackage.startsWith(":org/stvnadore/prelude/")) {
                             var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(keyword.getProject(), fqni);
@@ -228,7 +228,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
         // 2. Lexical Package Scope Priority: check sibling definitions in enclosing package
         var enclosingPkg = PsiTreeUtil.getParentOfType(keyword, PackageEnclosure.class);
-        if (enclosingPkg != null && (!targetTypeName.startsWith(":") || !targetTypeName.substring(1).contains("/"))) {
+        if (enclosingPkg != null && (!targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !targetTypeName.substring(1).contains("/"))) {
             for (var elem : enclosingPkg.getPackageElementList()) {
                 var typeDef = elem.getTypeDefinition();
                 if (typeDef != null) {
@@ -252,7 +252,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
             var pkgPath = enclosingPkg.getPackagePath();
             if (pkgPath != null) {
-                var bare = targetTypeName.startsWith(":") ? targetTypeName.substring(1) : targetTypeName;
+                var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? targetTypeName.substring(1) : targetTypeName;
                 var fqni = pkgPath.getText() + "/" + bare;
                 var localVisited = new HashSet<PsiFile>();
                 var resolvedFqni = StvnTypeReference.resolveTypeInFile(containingFile, fqni, localVisited);
@@ -340,7 +340,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     var kw = typeDef.getTypeKeyword();
                     if (kw != null) {
                         var kwText = kw.getText();
-                        var fqni = pathText + "/" + (kwText.startsWith(":") ? kwText.substring(1) : kwText);
+                        var fqni = pathText + "/" + (kwText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? kwText.substring(1) : kwText);
                         if (fqni.equals(targetName) || (allowUnqualifiedPackaged && kwText.equals(targetName))) {
                             return kw;
                         }
@@ -371,9 +371,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                 }
             }
             var optBlock = use.getUseOptionsBlock();
-            if (optBlock != null && optBlock.getText().contains("#strip")) {
+            if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 var target = use.getUseTarget();
-                if (target != null && targetName.startsWith(":") && !targetName.substring(1).contains("/")) {
+                if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
                     var prefix = target.getText();
                     var fqni = prefix + "/" + targetName.substring(1);
 
@@ -388,7 +388,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                                 var kw = typeDef.getTypeKeyword();
                                 if (kw != null) {
                                     var kwText = kw.getText();
-                                    var candidateFqni = pathText + "/" + (kwText.startsWith(":") ? kwText.substring(1) : kwText);
+                                    var candidateFqni = pathText + "/" + (kwText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? kwText.substring(1) : kwText);
                                     if (candidateFqni.equals(fqni)) {
                                         return kw;
                                     }
@@ -456,7 +456,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
 
             var optBlock = incl.getIncludeOptionsBlock();
-            var hasStrip = optBlock != null && optBlock.getText().contains("#strip");
+            var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
 
             var aliasBlock = incl.getIncludeAliasBlock();
             if (aliasBlock != null) {

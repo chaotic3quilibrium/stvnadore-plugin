@@ -368,7 +368,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             }
 
             String facetName = extractFacetName(entry);
-            String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
+            String kwTag = facetName != null ? StvnVocabulary.SIGIL_VALUE + facetName : entry.getText().trim();
             var inapplicableFix = new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet");
 
             // Temporal scale facets (#ns, #us, #ms, #s) strictly on :TimeEpoch
@@ -519,7 +519,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         for (var entry : metaMap.getMetadataEntryList()) {
             if (hasToken(entry, TokenSet.create(StvnTypes.KW_PRESERVE_INDENT))) {
                 String text = entry.getText().trim();
-                if (text.endsWith("#TRUE") || text.endsWith("#T")) {
+                if (text.endsWith(StvnVocabulary.VAL_TRUE) || text.endsWith(StvnVocabulary.VAL_TRUE_SHORT)) {
                     return true;
                 }
             }
@@ -629,7 +629,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             }
         }
         String token = text.substring(0, end);
-        return token.startsWith("#") ? token.substring(1) : token;
+        return token.startsWith(StvnVocabulary.SIGIL_VALUE) ? token.substring(1) : token;
     }
 
     private static boolean isGenuinelyEmptyConstraintBlock(@NotNull MetadataMap metaMap) {

@@ -11,6 +11,7 @@ import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.TypeDefinition;
@@ -73,7 +74,7 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
 
     @Override
     public boolean isInputValid(@NotNull String newName, @NotNull PsiElement element, @NotNull ProcessingContext context) {
-        if (newName.startsWith(":") || newName.startsWith("#")) {
+        if (newName.startsWith(StvnVocabulary.SIGIL_TYPIC) || newName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return false;
         }
         var namesValidator = new StvnNamesValidator();
@@ -82,7 +83,7 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
 
     @Override
     public @Nullable @DialogMessage String getErrorMessage(@NotNull String newName, @NotNull Project project) {
-        if (newName.startsWith(":") || newName.startsWith("#")) {
+        if (newName.startsWith(StvnVocabulary.SIGIL_TYPIC) || newName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return PREFIX_ERROR_MESSAGE;
         }
         var namesValidator = new StvnNamesValidator();

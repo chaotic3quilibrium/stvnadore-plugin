@@ -85,7 +85,7 @@ public final class StvnTypeInferenceHelper {
         var sum = constructor.getSumType();
         if (sum != null) {
             if (sum.getEnumDef() != null) {
-                return valueElement.getValueKeyword() != null || (valueElement.getText() != null && valueElement.getText().startsWith("#"));
+                return valueElement.getValueKeyword() != null || (valueElement.getText() != null && valueElement.getText().startsWith(org.stvnadore.core.StvnVocabulary.SIGIL_VALUE));
             }
             if (valueElement.getExplicitOptionValue() != null || valueElement.getExplicitEitherValue() != null || valueElement.getExplicitUnionValue() != null) {
                 return true;

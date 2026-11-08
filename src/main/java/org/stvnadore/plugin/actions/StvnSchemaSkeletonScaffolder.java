@@ -5,6 +5,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.*;
 
@@ -144,7 +145,7 @@ public final class StvnSchemaSkeletonScaffolder {
         if (rawKeyword != null) {
             var rawText = rawKeyword.getText().trim();
             if (rawText.startsWith(":org/stvnadore/prelude/")) {
-                rawText = ":" + rawText.substring(":org/stvnadore/prelude/".length());
+                rawText = StvnVocabulary.SIGIL_TYPIC + rawText.substring(":org/stvnadore/prelude/".length());
             }
         }
 
@@ -177,20 +178,20 @@ public final class StvnSchemaSkeletonScaffolder {
         var atomic = ctor.getAtomicType();
         if (atomic != null) {
             var atomicText = atomic.getText().trim();
-            if (atomicText.equals(":DateTime")) {
+            if (atomicText.equals(StvnVocabulary.TYPE_DATE_TIME)) {
                 var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
                 if (parentDef == null) {
                     parentDef = PsiTreeUtil.getParentOfType(schema, TypeDefinition.class);
                 }
                 var metaMap = parentDef != null ? parentDef.getMetadataMap() : PsiTreeUtil.findChildOfType(schema.getParent(), MetadataMap.class);
                 var metaText = metaMap != null ? metaMap.getText() : "";
-                if (metaText.contains("#offset")) {
+                if (metaText.contains(StvnVocabulary.FACET_KW_OFFSET)) {
                     appendPlaceholder("\"2026-08-18T18:00:00-05:00\"", sb, placeholders);
                     return;
-                } else if (metaText.contains("#zoned")) {
+                } else if (metaText.contains(StvnVocabulary.FACET_KW_ZONED)) {
                     appendPlaceholder("\"2026-08-18T18:00:00[America/Chicago]\"", sb, placeholders);
                     return;
-                } else if (metaText.contains("#audited")) {
+                } else if (metaText.contains(StvnVocabulary.FACET_KW_AUDITED)) {
                     appendPlaceholder("\"2026-08-18T18:00:00-05:00[America/Chicago]\"", sb, placeholders);
                     return;
                 }
@@ -222,10 +223,10 @@ public final class StvnSchemaSkeletonScaffolder {
         var collection = ctor.getCollectionType();
         if (collection != null) {
             var firstChild = collection.getFirstChild();
-            var collName = firstChild != null ? firstChild.getText().trim() : ":Seq";
+            var collName = firstChild != null ? firstChild.getText().trim() : StvnVocabulary.TYPE_SEQ;
             var children = collection.getSchemaTypeList();
 
-            if (collName.startsWith(":Map") || collName.startsWith(":MapInv")) {
+            if (collName.startsWith(StvnVocabulary.TYPE_MAP) || collName.startsWith(":MapInv")) {
                 sb.append("{\n");
                 var innerIndent = currentIndent + "  ";
                 sb.append(innerIndent).append("[ ");
@@ -312,14 +313,14 @@ public final class StvnSchemaSkeletonScaffolder {
     }
 
     private static void scaffoldFromKeywordText(String text, StringBuilder sb, List<PlaceholderSpec> placeholders) {
-        if (text.startsWith(":Int") || text.startsWith(":Uint") || text.startsWith(":TimeEpoch")) {
+        if (text.startsWith(StvnVocabulary.TYPE_INT) || text.startsWith(":Uint") || text.startsWith(StvnVocabulary.TYPE_TIME_EPOCH)) {
             appendPlaceholder("0", sb, placeholders);
-        } else if (text.startsWith(":Float")) {
+        } else if (text.startsWith(StvnVocabulary.TYPE_FLOAT)) {
             appendPlaceholder("0.0", sb, placeholders);
-        } else if (text.startsWith(":String")) {
+        } else if (text.startsWith(StvnVocabulary.TYPE_STRING)) {
             appendPlaceholder("\"placeholder\"", sb, placeholders);
-        } else if (text.equals(":Boolean")) {
-            appendPlaceholder("#FALSE", sb, placeholders);
+        } else if (text.equals(StvnVocabulary.TYPE_BOOLEAN)) {
+            appendPlaceholder(StvnVocabulary.VAL_FALSE, sb, placeholders);
         } else {
             appendPlaceholder("0", sb, placeholders);
         }

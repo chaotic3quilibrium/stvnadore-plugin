@@ -13,6 +13,7 @@ import com.intellij.psi.codeStyle.CodeStyleManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.TypeKeyword;
 
@@ -123,7 +124,7 @@ public final class StvnQualifyTypeQuickFix extends LocalQuickFixAndIntentionActi
                     }
                     var text = typeKw.getText().trim();
                     String resolvedFqni;
-                    if (text.startsWith(":") && !text.substring(1).contains("/")) {
+                    if (text.startsWith(StvnVocabulary.SIGIL_TYPIC) && !text.substring(1).contains("/")) {
                         resolvedFqni = ":org/stvnadore/prelude/" + text.substring(1);
                     } else {
                         resolvedFqni = fqni;

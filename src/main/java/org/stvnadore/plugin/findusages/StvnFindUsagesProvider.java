@@ -8,6 +8,7 @@ import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.StvnTypes;
@@ -81,28 +82,28 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
     public @NotNull String getDescriptiveName(@NotNull PsiElement element) {
         if (element instanceof TypeDefinition) {
             var name = ((TypeDefinition) element).getName();
-            return name != null && !name.isEmpty() ? ":" + name : "";
+            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : "";
         }
         if (element instanceof ConstantDefinition) {
             var name = ((ConstantDefinition) element).getName();
-            return name != null && !name.isEmpty() ? "#" + name : "";
+            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_VALUE + name : "";
         }
         if (element instanceof IncludeMapAlias) {
             var name = ((IncludeMapAlias) element).getName();
-            return name != null && !name.isEmpty() ? ":" + name : "";
+            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : "";
         }
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             var name = alias.getName();
             if (name == null || name.isEmpty()) return "";
-            return (alias.getValueKeywordList().size() >= 2 && alias.getTypeKeywordList().isEmpty() ? "#" : ":") + name;
+            return (alias.getValueKeywordList().size() >= 2 && alias.getTypeKeywordList().isEmpty() ? StvnVocabulary.SIGIL_VALUE : StvnVocabulary.SIGIL_TYPIC) + name;
         }
         if (element instanceof TypeKeyword tk) {
             var name = tk.getName();
-            return name != null && !name.isEmpty() ? ":" + name : element.getText();
+            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : element.getText();
         }
         if (element instanceof ValueKeyword vk) {
             var name = vk.getName();
-            return name != null && !name.isEmpty() ? "#" + name : element.getText();
+            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_VALUE + name : element.getText();
         }
         return "";
     }

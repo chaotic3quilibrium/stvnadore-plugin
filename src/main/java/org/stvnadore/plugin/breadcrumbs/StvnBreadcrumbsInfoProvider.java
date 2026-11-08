@@ -6,6 +6,7 @@ import com.intellij.ui.breadcrumbs.BreadcrumbsProvider;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
@@ -46,18 +47,18 @@ public final class StvnBreadcrumbsInfoProvider implements BreadcrumbsProvider {
         if (e instanceof TypeDefinition typeDef) {
             var name = typeDef.getName();
             var schema = StvnSchemaFormatter.formatSchema(typeDef.getSchemaType());
-            info = (":" + name + " -> " + schema).trim();
+            info = (StvnVocabulary.SIGIL_TYPIC + name + " -> " + schema).trim();
         } else if (e instanceof ConstantDefinition constDef) {
             var kw = constDef.getValueKeyword();
             var name = kw != null ? kw.getText() : "#Const";
             var schema = StvnSchemaFormatter.formatSchema(constDef.getSchemaType());
             info = (name + " : " + schema).trim();
         } else if (e instanceof TypeEntry typeEntry) {
-            info = (":type " + StvnSchemaFormatter.formatSchema(typeEntry.getSchemaType())).trim();
+            info = (StvnVocabulary.KEYWORD_TYPE + " " + StvnSchemaFormatter.formatSchema(typeEntry.getSchemaType())).trim();
         } else if (e instanceof DefsEntry) {
-            info = ":defs";
+            info = StvnVocabulary.KEYWORD_DEFS;
         } else if (e instanceof BodyEntry) {
-            info = ":body";
+            info = StvnVocabulary.KEYWORD_BODY;
         } else if (e instanceof SchemaType schemaType) {
             info = StvnSchemaFormatter.formatSchema(schemaType);
         } else {

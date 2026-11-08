@@ -709,7 +709,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                             var target = use.getUseTarget();
                             String remoteName = remoteKw.getText();
                             if (target != null) {
-                                String fqni = target.getText() + "/" + (remoteName.startsWith(":") ? remoteName.substring(1) : remoteName);
+                                String fqni = target.getText() + "/" + (remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName);
                                 if (PRELUDE_STRING_CAPACITIES.containsKey(fqni) || PRELUDE_STRING_CAPACITIES.containsKey(remoteName)) {
                                     int cap = PRELUDE_STRING_CAPACITIES.getOrDefault(fqni, PRELUDE_STRING_CAPACITIES.get(remoteName));
                                     return new EffectiveTypeCapacity(true, false, cap, true);
@@ -724,9 +724,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
             }
             var optBlock = use.getUseOptionsBlock();
-            if (optBlock != null && optBlock.getText().contains("#strip")) {
+            if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 var target = use.getUseTarget();
-                if (target != null && targetName.startsWith(":") && !targetName.substring(1).contains("/")) {
+                if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
                     String fqni = target.getText() + "/" + targetName.substring(1);
                     if (PRELUDE_STRING_CAPACITIES.containsKey(fqni)) {
                         return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(fqni), true);

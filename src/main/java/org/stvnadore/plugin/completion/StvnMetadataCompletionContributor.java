@@ -60,7 +60,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             var domainFacet = PsiTreeUtil.getParentOfType(position, MetaDomainFacet.class);
             if (domainFacet == null) {
               var prev = PsiTreeUtil.prevVisibleLeaf(position);
-              if (prev != null && "#domain".equals(prev.getText())) {
+              if (prev != null && StvnVocabulary.FACET_KW_META_DOMAIN.equals(prev.getText())) {
                 domainFacet = PsiTreeUtil.getParentOfType(prev, MetaDomainFacet.class);
               }
             }
@@ -625,7 +625,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     }
 
     var nextText = nextLeaf.getText().trim();
-    if (!nextText.startsWith(":")) {
+    if (!nextText.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
       return null;
     }
 
@@ -633,7 +633,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     boolean isValidPreceding = false;
     if (prevLeaf != null) {
       var prevText = prevLeaf.getText().trim();
-      if (prevText.startsWith(":") || "(".equals(prevText) || ")".equals(prevText) || StvnVocabulary.KEYWORD_TYPE.equals(prevText)) {
+      if (prevText.startsWith(StvnVocabulary.SIGIL_TYPIC) || "(".equals(prevText) || ")".equals(prevText) || StvnVocabulary.KEYWORD_TYPE.equals(prevText)) {
         isValidPreceding = true;
       }
     }
@@ -957,7 +957,7 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     var metaBlock = PsiTreeUtil.getParentOfType(position, MetaBlock.class);
     if (metaBlock != null) {
       var prev = PsiTreeUtil.prevVisibleLeaf(position);
-      if (prev != null && "#domain".equals(prev.getText())) {
+      if (prev != null && StvnVocabulary.FACET_KW_META_DOMAIN.equals(prev.getText())) {
         return true;
       }
     }

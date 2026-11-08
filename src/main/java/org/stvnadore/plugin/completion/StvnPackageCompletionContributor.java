@@ -105,7 +105,7 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
 
     private static boolean isCaretDirectlyAfterPackageKeyword(PsiElement position) {
         var prev = PsiTreeUtil.prevVisibleLeaf(position);
-        if (prev != null && ":package".equals(prev.getText())) {
+        if (prev != null && StvnVocabulary.KEYWORD_PACKAGE.equals(prev.getText())) {
             return true;
         }
         var pkgEnc = PsiTreeUtil.getParentOfType(position, PackageEnclosure.class);
@@ -122,9 +122,9 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
         var useStmt = PsiTreeUtil.getParentOfType(elem, UseStmt.class);
         if (useStmt == null) {
             var prev = PsiTreeUtil.prevVisibleLeaf(elem);
-            if (prev != null && (":use".equals(prev.getText()) || "[".equals(prev.getText()))) {
+            if (prev != null && (StvnVocabulary.KEYWORD_USE.equals(prev.getText()) || "[".equals(prev.getText()))) {
                 var grandPrev = PsiTreeUtil.prevVisibleLeaf(prev);
-                return (":use".equals(prev.getText())) || (grandPrev != null && ":use".equals(grandPrev.getText()));
+                return (StvnVocabulary.KEYWORD_USE.equals(prev.getText())) || (grandPrev != null && StvnVocabulary.KEYWORD_USE.equals(grandPrev.getText()));
             }
             return false;
         }

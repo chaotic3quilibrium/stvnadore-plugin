@@ -169,20 +169,42 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var degradedInfo = extractDegradedSchemaInfo(target, originalElement);
         if (degradedInfo != null) {
+            var detailsHtml = degradedInfo.fallbackBase() != null
+                ? """
+                    Nominal type <code>%s</code> contains constraint errors in <code>:defs</code>.<br/>
+                    Currently evaluating payload using fallback base type (<code>%s</code>).""".formatted(
+                        degradedInfo.aliasName(), degradedInfo.fallbackBase())
+                : """
+                    Nominal type <code>%s</code> does not resolve to a base type in <code>:defs</code> (circular or unresolved lineage).<br/>
+                    Payload evaluation is suspended.""".formatted(degradedInfo.aliasName());
             var banner = """
                 <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
                     <b style="font-size: 1.05em;">&#9888; Degraded Schema Warning</b><br/>
-                    Nominal type <code>%s</code> contains constraint errors in <code>:defs</code>.<br/>
-                    Currently evaluating payload using fallback base type (<code>%s</code>).
+                    %s
                 </div>
-                """.formatted(degradedInfo.aliasName(), degradedInfo.fallbackBase());
+                """.formatted(detailsHtml);
             return banner + baseDoc;
         }
 
         return baseDoc;
     }
 
-    private record DegradedSchemaInfo(String aliasName, String fallbackBase) {}
+    private record DegradedSchemaInfo(String aliasName, @Nullable String fallbackBase) {}
+
+    private static @Nullable String resolveGroundedFallbackBase(
+            @Nullable StvnSchema ir,
+            @Nullable PsiElement psiElement) {
+        if (ir instanceof StvnSchema.PoisonedSchema p && p.isGrounded()) {
+            return StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get());
+        }
+        if (psiElement != null) {
+            var terminal = resolveTerminalSchemaType(psiElement, new HashSet<>());
+            if (terminal != null && terminal.getSchemaConstructor() != null) {
+                return StvnSchemaFormatter.formatCleanSchema(terminal);
+            }
+        }
+        return null;
+    }
 
     private @Nullable DegradedSchemaInfo extractDegradedSchemaInfo(PsiElement target, @Nullable PsiElement originalElement) {
         if (target instanceof TypeDefinition typeDef) {
@@ -191,31 +213,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var alias = kw.getText();
                 if (StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), alias)) {
                     var ir = StvnTypeResolver.resolveNominalIrSchema(typeDef);
-                    if (ir instanceof StvnSchema.PoisonedSchema p && p.bestEffortFallback().isPresent()) {
-                        return new DegradedSchemaInfo(alias, StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get()));
-                    }
-                    var terminal = resolveTerminalSchemaType(typeDef, new HashSet<>());
-                    var base = terminal != null ? StvnSchemaFormatter.formatCleanSchema(terminal) : ":Value";
-                    return new DegradedSchemaInfo(alias, base);
+                    return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, typeDef));
                 }
             }
         } else if (target instanceof TypeKeyword typeKw) {
             var alias = typeKw.getText();
             if (StvnTypeResolver.isDegradedNominalAlias(typeKw.getContainingFile(), alias)) {
                 var ir = StvnTypeResolver.resolveIrSchemaByAlias(typeKw.getContainingFile(), alias);
-                if (ir instanceof StvnSchema.PoisonedSchema p && p.bestEffortFallback().isPresent()) {
-                    return new DegradedSchemaInfo(alias, StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get()));
-                }
                 var targetDef = StvnTypeReference.resolveTypeInFile(typeKw.getContainingFile(), alias, new HashSet<>());
-                var fallbackBase = ":Value";
                 var td = StvnPsiUtils.getParentTypeDefinition(targetDef);
-                if (td != null && td.getSchemaType() != null) {
-                    var terminal = resolveTerminalSchemaType(td, new HashSet<>());
-                    if (terminal != null) {
-                        fallbackBase = StvnSchemaFormatter.formatCleanSchema(terminal);
-                    }
-                }
-                return new DegradedSchemaInfo(alias, fallbackBase);
+                return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, td));
             }
         } else if (target instanceof Value value) {
             var info = StvnTypeResolver.resolveBaseTypeInfo(value);
@@ -225,12 +232,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var alias = kw != null ? kw.getText() : null;
                 if (alias != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), alias)) {
                     var ir = StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), alias);
-                    if (ir instanceof StvnSchema.PoisonedSchema p && p.bestEffortFallback().isPresent()) {
-                        return new DegradedSchemaInfo(alias, StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get()));
-                    }
-                    var terminal = resolveTerminalSchemaType(schema, new HashSet<>());
-                    var base = terminal != null ? StvnSchemaFormatter.formatCleanSchema(terminal) : ":Value";
-                    return new DegradedSchemaInfo(alias, base);
+                    return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, schema));
                 }
             }
         }
@@ -256,7 +258,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (text.startsWith(":org/stvnadore/prelude/")) {
             return null;
         }
-        if (!text.startsWith(":") || text.substring(1).contains("/")) {
+        if (!text.startsWith(StvnVocabulary.SIGIL_TYPIC) || text.substring(1).contains("/")) {
             return null;
         }
 
@@ -293,7 +295,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
             var opts = use.getUseOptionsBlock();
-            if (opts != null && opts.getText().contains("#strip")) {
+            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 var useTarget = use.getUseTarget();
                 if (useTarget != null && useTarget.getText().equals(":org/stvnadore/prelude")) {
                     return null;
@@ -343,9 +345,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("<b>Validation Constraint:</b> <code>").append(metaMap.getText()).append("</code><br/>");
         }
         sb.append("<hr/>");
-        sb.append("<b>Underlying Structure:</b> ").append(schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
+        sb.append("<b>Underlying Structure:</b> ").append(schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "unresolved");
 
-        var specDoc = getBuiltInPreludeDoc(text.startsWith(":org/stvnadore/prelude/") ? ":" + text.substring(":org/stvnadore/prelude/".length()) : text);
+        var specDoc = getBuiltInPreludeDoc(text.startsWith(":org/stvnadore/prelude/") ? StvnVocabulary.SIGIL_TYPIC + text.substring(":org/stvnadore/prelude/".length()) : text);
         if (specDoc != null && specDoc.contains("<hr/>")) {
             var descPart = specDoc.substring(specDoc.indexOf("<hr/>") + 5);
             sb.append("<br/>").append(descPart);
@@ -479,7 +481,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     sb.append("<hr/>");
                     sb.append("<b>Target Type:</b> ").append(remoteName);
                 } else {
-                    var bareRemote = remoteName.startsWith(":") ? remoteName.substring(1) : remoteName;
+                    var bareRemote = remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName;
                     var fqni = targetText + "/" + bareRemote;
                     sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
                     sb.append("<b>Source Namespace:</b> ").append(targetText);
@@ -501,7 +503,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     sb.append("<hr/>");
                     sb.append("<b>Target Constant:</b> ").append(remoteName);
                 } else {
-                    var bareRemote = remoteName.startsWith("#") ? remoteName.substring(1) : remoteName;
+                    var bareRemote = remoteName.startsWith(StvnVocabulary.SIGIL_VALUE) ? remoteName.substring(1) : remoteName;
                     var fqni = targetText + "/" + bareRemote;
                     sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
                     sb.append("<b>Source Namespace:</b> ").append(targetText);
@@ -536,9 +538,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
                 var pkgPath = enclosingPkg.getPackagePath().getText().trim();
                 var localName = keyword != null ? keyword.getText() : "";
-                var cleanPkg = pkgPath.startsWith(":") ? pkgPath.substring(1) : pkgPath;
-                var cleanLocal = localName.startsWith("#") ? localName.substring(1) : localName;
-                var fqni = "#" + cleanPkg + "/" + cleanLocal;
+                var cleanPkg = pkgPath.startsWith(StvnVocabulary.SIGIL_TYPIC) ? pkgPath.substring(1) : pkgPath;
+                var cleanLocal = localName.startsWith(StvnVocabulary.SIGIL_VALUE) ? localName.substring(1) : localName;
+                var fqni = StvnVocabulary.SIGIL_VALUE + cleanPkg + "/" + cleanLocal;
                 sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
                 sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
             }
@@ -579,7 +581,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
                 return sb.toString();
             }
-            if (text.equals("#BODY") || text.equals("#DEFS") || text.equals("#BODY_INCLUDE") || text.equals("#DEFS_INCLUDE")) {
+            if (text.equals(StvnVocabulary.KIND_KW_BODY)
+                    || text.equals(StvnVocabulary.KIND_KW_DEFS)
+                    || text.equals(StvnVocabulary.KIND_KW_BODY_INCLUDE)
+                    || text.equals(StvnVocabulary.KIND_KW_DEFS_INCLUDE)) {
                 return """
                     <b>Document Kind Variant:</b> <code>%s</code><br/>
                     <b>Enclosing Enum:</b> <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code> (<code>:StvnDocumentKind</code>)<br/>
@@ -869,7 +874,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var file = alias.getContainingFile();
         if (file != null) {
-            var bareRemote = remoteName.startsWith(":") ? remoteName.substring(1) : remoteName;
+            var bareRemote = remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName;
             var fqni = targetNamespace + "/" + bareRemote;
             var resolved = StvnTypeReference.resolveTypeInFile(file, fqni, new HashSet<>());
             if (resolved == null) {
@@ -959,9 +964,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             baseType = StvnSchemaFormatter.formatCleanIrSchema(irSchema);
         } else {
             var terminal = resolveTerminalSchemaType(typeDef, new HashSet<>());
-            baseType = terminal != null
+            baseType = terminal != null && terminal.getSchemaConstructor() != null
                 ? StvnSchemaFormatter.formatCleanSchema(terminal)
-                : (typeDef.getSchemaType() != null ? StvnSchemaFormatter.formatCleanSchema(typeDef.getSchemaType()) : ":Value");
+                : (typeDef.getSchemaType() != null && typeDef.getSchemaType().getSchemaConstructor() != null
+                    ? StvnSchemaFormatter.formatCleanSchema(typeDef.getSchemaType())
+                    : "");
         }
 
         var trace = (keyword != null) ? StvnTypeReference.extractResolutionTrace(keyword) : List.<String>of();
@@ -973,7 +980,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var diagnostics = StvnTypeResolver.getCompilationDiagnostics(file);
         var invalidFacetTags = new HashSet<String>();
         if (diagnostics != null) {
-            var bareAlias = currentAlias.startsWith(":") ? currentAlias.substring(1) : currentAlias;
+            var bareAlias = currentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC) ? currentAlias.substring(1) : currentAlias;
             for (var d : diagnostics) {
                 var sym = d.symbolicId().orElse("");
                 var canon = d.canonicalCode().orElse("");
@@ -986,11 +993,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                             || msg.contains("Constraint violation (:" + bareAlias + "):")
                             || msg.contains("Constraint violation (" + bareAlias + "):")) {
                         for (var tag : List.of(
-                                "#unsigned", "#exact", "#invertible",
-                                "#ns", "#us", "#ms", "#s",
-                                "#offset", "#zoned", "#audited",
-                                "#minIncl", "#minExcl", "#maxIncl", "#maxExcl",
-                                "#size", "#minSize", "#maxSize", "#regex")) {
+                                StvnVocabulary.FACET_KW_UNSIGNED, StvnVocabulary.FACET_KW_EXACT, StvnVocabulary.FACET_KW_INVERTIBLE,
+                                StvnVocabulary.FACET_KW_SCALE_NS, StvnVocabulary.FACET_KW_SCALE_US, StvnVocabulary.FACET_KW_SCALE_MS, StvnVocabulary.FACET_KW_SCALE_S,
+                                StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
+                                StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
+                                StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE, StvnVocabulary.FACET_KW_REGEX)) {
                             if (msg.contains(tag) || msg.contains(tag.substring(1))) {
                                 invalidFacetTags.add(tag);
                             }
@@ -1011,16 +1018,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (declaredMeta != null) {
             for (var entry : declaredMeta.getMetadataEntryList()) {
                 var txt = entry.getText().trim();
-                if (txt.startsWith("#minSize")) {
+                if (txt.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredMinSize = parts[1];
-                } else if (txt.startsWith("#maxSize")) {
+                } else if (txt.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredMaxSize = parts[1];
-                } else if (txt.startsWith("#size")) {
+                } else if (txt.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredSize = parts[1];
-                } else if (txt.startsWith("#preserveIndent")) {
+                } else if (txt.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) declaredPreserveIndent = parts[1];
                 }
@@ -1032,54 +1039,54 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             switch (irSchema) {
                 case StvnSchema.IntSchema i -> {
                     if (i.unsigned()) {
-                        rows.add(new FacetRow("#unsigned", "#TRUE", "Declared", "Active"));
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_UNSIGNED, StvnVocabulary.VAL_TRUE, "Declared", "Active"));
                     }
                     if (declaredSize != null
                             || !i.bitWidth().equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH)
                             || hasFacetInLineage(typeDef, trace, StvnVocabulary.FACET_NAME_SIZE)) {
                         String eff = declaredSize != null ? declaredSize : i.bitWidth().toString();
                         var originInfo = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_SIZE);
-                        String status = invalidFacetTags.contains("#size") ? "Invalid" : originInfo.status();
-                        rows.add(new FacetRow("#size", eff, originInfo.origin(), status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_SIZE) ? "Invalid" : originInfo.status();
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_SIZE, eff, originInfo.origin(), status));
                     }
                     if (i.explicitMinIncl().isPresent()) {
-                        String status = invalidFacetTags.contains("#minIncl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#minIncl", i.explicitMinIncl().get().toString(), "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_INCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_INCL, i.explicitMinIncl().get().toString(), "Declared", status));
                     }
                     if (i.explicitMaxExcl().isPresent()) {
-                        String status = invalidFacetTags.contains("#maxExcl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#maxExcl", i.explicitMaxExcl().get().toString(), "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_EXCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_EXCL, i.explicitMaxExcl().get().toString(), "Declared", status));
                     }
                 }
                 case StvnSchema.FloatSchema f -> {
                     if (f.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
                         isExactFloat = true;
-                        rows.add(new FacetRow("#exact", "#TRUE", "Declared", "Active"));
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_EXACT, StvnVocabulary.VAL_TRUE, "Declared", "Active"));
                         if (declaredMaxSize != null
                                 || !f.exactMaxDigits().equals(StvnVocabulary.DEFAULT_MAX_SIZE)
                                 || hasFacetInLineage(typeDef, trace, StvnVocabulary.FACET_NAME_MAX_SIZE)) {
                             String eff = declaredMaxSize != null ? declaredMaxSize : f.exactMaxDigits().toString();
                             var originInfo = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-                            String status = invalidFacetTags.contains("#maxSize") ? "Invalid" : originInfo.status();
-                            rows.add(new FacetRow("#maxSize", eff, originInfo.origin(), status));
+                            String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_SIZE) ? "Invalid" : originInfo.status();
+                            rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_SIZE, eff, originInfo.origin(), status));
                         }
                     } else if (declaredSize != null
                             || f.representation() == StvnSchema.FloatRepresentation.IEEE_32
                             || hasFacetInLineage(typeDef, trace, StvnVocabulary.FACET_NAME_SIZE)) {
                         String eff = declaredSize != null ? declaredSize : (f.representation() == StvnSchema.FloatRepresentation.IEEE_32 ? "32" : "64");
                         var originInfo = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_SIZE);
-                        String status = invalidFacetTags.contains("#size") ? "Invalid" : originInfo.status();
-                        rows.add(new FacetRow("#size", eff, originInfo.origin(), status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_SIZE) ? "Invalid" : originInfo.status();
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_SIZE, eff, originInfo.origin(), status));
                     }
                     if (f.lowerBound().isPresent()) {
                         var lb = f.lowerBound().get();
-                        String tag = lb.kind() == StvnSchema.BoundKind.INCLUSIVE ? "#minIncl" : "#minExcl";
+                        String tag = lb.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MIN_INCL : StvnVocabulary.FACET_KW_MIN_EXCL;
                         String status = invalidFacetTags.contains(tag) ? "Invalid" : "Active";
                         rows.add(new FacetRow(tag, lb.value().toPlainString(), "Declared", status));
                     }
                     if (f.upperBound().isPresent()) {
                         var ub = f.upperBound().get();
-                        String tag = ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? "#maxIncl" : "#maxExcl";
+                        String tag = ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MAX_INCL : StvnVocabulary.FACET_KW_MAX_EXCL;
                         String status = invalidFacetTags.contains(tag) ? "Invalid" : "Active";
                         rows.add(new FacetRow(tag, ub.value().toPlainString(), "Declared", status));
                     }
@@ -1088,89 +1095,89 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var piOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
                     String effPreserve = declaredPreserveIndent != null
                         ? declaredPreserveIndent
-                        : (s.preserveIndent() ? "#TRUE" : "#FALSE");
-                    rows.add(new FacetRow("#preserveIndent", effPreserve, piOrigin.origin(), piOrigin.status()));
+                        : (s.preserveIndent() ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE);
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_PRESERVE_INDENT, effPreserve, piOrigin.origin(), piOrigin.status()));
 
                     String effMin = declaredMinSize != null ? declaredMinSize : s.minSize().toString();
                     var minOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
-                    rows.add(new FacetRow("#minSize", effMin, minOrigin.origin(), invalidFacetTags.contains("#minSize") ? "Invalid" : minOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_SIZE, effMin, minOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_SIZE) ? "Invalid" : minOrigin.status()));
 
                     String effMax = declaredMaxSize != null ? declaredMaxSize : s.maxSize().toString();
                     var maxOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-                    rows.add(new FacetRow("#maxSize", effMax, maxOrigin.origin(), invalidFacetTags.contains("#maxSize") ? "Invalid" : maxOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_SIZE, effMax, maxOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_SIZE) ? "Invalid" : maxOrigin.status()));
 
                     if (s.rawRegexPattern().isPresent()) {
                         String effRegex = "\"" + s.rawRegexPattern().get() + "\"";
                         var regexOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_REGEX);
-                        rows.add(new FacetRow("#regex", effRegex, regexOrigin.origin(), invalidFacetTags.contains("#regex") ? "Invalid" : regexOrigin.status()));
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_REGEX, effRegex, regexOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_REGEX) ? "Invalid" : regexOrigin.status()));
                     }
                     if (s.lowerBound().isPresent()) {
                         var lb = s.lowerBound().get();
-                        String tag = lb.kind() == StvnSchema.BoundKind.INCLUSIVE ? "#minIncl" : "#minExcl";
+                        String tag = lb.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MIN_INCL : StvnVocabulary.FACET_KW_MIN_EXCL;
                         rows.add(new FacetRow(tag, "\"" + lb.value() + "\"", "Declared", invalidFacetTags.contains(tag) ? "Invalid" : "Active"));
                     }
                     if (s.upperBound().isPresent()) {
                         var ub = s.upperBound().get();
-                        String tag = ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? "#maxIncl" : "#maxExcl";
+                        String tag = ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MAX_INCL : StvnVocabulary.FACET_KW_MAX_EXCL;
                         rows.add(new FacetRow(tag, "\"" + ub.value() + "\"", "Declared", invalidFacetTags.contains(tag) ? "Invalid" : "Active"));
                     }
                 }
                 case StvnSchema.TimeEpochSchema te -> {
-                    rows.add(new FacetRow("#scale", "#" + te.scale().name().toLowerCase(Locale.ROOT), "Declared", "Active"));
+                    rows.add(new FacetRow("#scale", StvnVocabulary.SIGIL_VALUE + te.scale().name().toLowerCase(Locale.ROOT), "Declared", "Active"));
                     if (te.explicitMinIncl().isPresent()) {
-                        String status = invalidFacetTags.contains("#minIncl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#minIncl", te.explicitMinIncl().get().toString(), "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_INCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_INCL, te.explicitMinIncl().get().toString(), "Declared", status));
                     }
                     if (te.explicitMaxExcl().isPresent()) {
-                        String status = invalidFacetTags.contains("#maxExcl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#maxExcl", te.explicitMaxExcl().get().toString(), "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_EXCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_EXCL, te.explicitMaxExcl().get().toString(), "Declared", status));
                     }
                 }
                 case StvnSchema.DateTimeSchema dt -> {
                     String modeTag = switch (dt.mode()) {
-                        case OFFSET -> "#offset";
-                        case ZONED -> "#zoned";
-                        case AUDITED -> "#audited";
+                        case OFFSET -> StvnVocabulary.FACET_KW_OFFSET;
+                        case ZONED -> StvnVocabulary.FACET_KW_ZONED;
+                        case AUDITED -> StvnVocabulary.FACET_KW_AUDITED;
                     };
-                    rows.add(new FacetRow(modeTag, "#TRUE", "Declared", "Active"));
+                    rows.add(new FacetRow(modeTag, StvnVocabulary.VAL_TRUE, "Declared", "Active"));
                     if (dt.explicitMinInclIso().isPresent()) {
-                        String status = invalidFacetTags.contains("#minIncl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#minIncl", "\"" + dt.explicitMinInclIso().get() + "\"", "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_INCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_INCL, "\"" + dt.explicitMinInclIso().get() + "\"", "Declared", status));
                     }
                     if (dt.explicitMaxExclIso().isPresent()) {
-                        String status = invalidFacetTags.contains("#maxExcl") ? "Invalid" : "Active";
-                        rows.add(new FacetRow("#maxExcl", "\"" + dt.explicitMaxExclIso().get() + "\"", "Declared", status));
+                        String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_EXCL) ? "Invalid" : "Active";
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_EXCL, "\"" + dt.explicitMaxExclIso().get() + "\"", "Declared", status));
                     }
                 }
                 case StvnSchema.SeqSchema sq -> {
                     String effMin = declaredMinSize != null ? declaredMinSize : sq.minSize().toString();
                     var minOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
-                    rows.add(new FacetRow("#minSize", effMin, minOrigin.origin(), invalidFacetTags.contains("#minSize") ? "Invalid" : minOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_SIZE, effMin, minOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_SIZE) ? "Invalid" : minOrigin.status()));
 
                     String effMax = declaredMaxSize != null ? declaredMaxSize : sq.maxSize().toString();
                     var maxOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-                    rows.add(new FacetRow("#maxSize", effMax, maxOrigin.origin(), invalidFacetTags.contains("#maxSize") ? "Invalid" : maxOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_SIZE, effMax, maxOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_SIZE) ? "Invalid" : maxOrigin.status()));
                 }
                 case StvnSchema.SetSchema st -> {
                     String effMin = declaredMinSize != null ? declaredMinSize : st.minSize().toString();
                     var minOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
-                    rows.add(new FacetRow("#minSize", effMin, minOrigin.origin(), invalidFacetTags.contains("#minSize") ? "Invalid" : minOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_SIZE, effMin, minOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_SIZE) ? "Invalid" : minOrigin.status()));
 
                     String effMax = declaredMaxSize != null ? declaredMaxSize : st.maxSize().toString();
                     var maxOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-                    rows.add(new FacetRow("#maxSize", effMax, maxOrigin.origin(), invalidFacetTags.contains("#maxSize") ? "Invalid" : maxOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_SIZE, effMax, maxOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_SIZE) ? "Invalid" : maxOrigin.status()));
                 }
                 case StvnSchema.MapSchema mp -> {
                     if (mp.invertible()) {
-                        rows.add(new FacetRow("#invertible", "#TRUE", "Declared", "Active"));
+                        rows.add(new FacetRow(StvnVocabulary.FACET_KW_INVERTIBLE, StvnVocabulary.VAL_TRUE, "Declared", "Active"));
                     }
                     String effMin = declaredMinSize != null ? declaredMinSize : mp.minSize().toString();
                     var minOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MIN_SIZE);
-                    rows.add(new FacetRow("#minSize", effMin, minOrigin.origin(), invalidFacetTags.contains("#minSize") ? "Invalid" : minOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_SIZE, effMin, minOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_SIZE) ? "Invalid" : minOrigin.status()));
 
                     String effMax = declaredMaxSize != null ? declaredMaxSize : mp.maxSize().toString();
                     var maxOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_MAX_SIZE);
-                    rows.add(new FacetRow("#maxSize", effMax, maxOrigin.origin(), invalidFacetTags.contains("#maxSize") ? "Invalid" : maxOrigin.status()));
+                    rows.add(new FacetRow(StvnVocabulary.FACET_KW_MAX_SIZE, effMax, maxOrigin.origin(), invalidFacetTags.contains(StvnVocabulary.FACET_KW_MAX_SIZE) ? "Invalid" : maxOrigin.status()));
                 }
                 default -> {
                 }
@@ -1182,17 +1189,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             for (var entry : declaredMeta.getMetadataEntryList()) {
                 var entryText = entry.getText().trim();
                 for (var tag : List.of(
-                        "#unsigned", "#exact", "#invertible",
-                        "#ns", "#us", "#ms", "#s",
-                        "#offset", "#zoned", "#audited",
-                        "#preserveIndent", "#minIncl", "#minExcl", "#maxIncl", "#maxExcl",
-                        "#size", "#regex", "#minSize", "#maxSize")) {
+                        StvnVocabulary.FACET_KW_UNSIGNED, StvnVocabulary.FACET_KW_EXACT, StvnVocabulary.FACET_KW_INVERTIBLE,
+                        StvnVocabulary.FACET_KW_SCALE_NS, StvnVocabulary.FACET_KW_SCALE_US, StvnVocabulary.FACET_KW_SCALE_MS, StvnVocabulary.FACET_KW_SCALE_S,
+                        StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
+                        StvnVocabulary.FACET_KW_PRESERVE_INDENT, StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
+                        StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_REGEX, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE)) {
                     if (entryText.startsWith(tag)) {
                         boolean alreadyPresent = rows.stream().anyMatch(r -> r.tag().equals(tag));
                         if (!alreadyPresent) {
                             var parts = entryText.split("\\s+", 2);
-                            var val = parts.length > 1 ? parts[1].trim() : "#TRUE";
-                            if ("#preserveIndent".equals(tag)) {
+                            var val = parts.length > 1 ? parts[1].trim() : StvnVocabulary.VAL_TRUE;
+                            if (StvnVocabulary.FACET_KW_PRESERVE_INDENT.equals(tag)) {
                                 var piOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
                                 rows.add(new FacetRow(tag, val, piOrigin.origin(), piOrigin.status()));
                             } else {
@@ -1214,7 +1221,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             : resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE)
                 .orElseGet(() -> resolveDefaultEquatable(baseType, exactFlag));
         OriginInfo equatableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, effEquatable, isComposite);
-        rows.add(new FacetRow("#equatable", effEquatable ? "#TRUE" : "#FALSE", equatableOrigin.origin(), equatableOrigin.status()));
+        rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, effEquatable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, equatableOrigin.origin(), equatableOrigin.status()));
 
         // 6. #comparable
         boolean effComparable = irSchema != null
@@ -1222,7 +1229,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             : resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_COMPARABLE)
                 .orElseGet(() -> resolveDefaultComparable(baseType));
         OriginInfo comparableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
-        rows.add(new FacetRow("#comparable", effComparable ? "#TRUE" : "#FALSE", comparableOrigin.origin(), comparableOrigin.status()));
+        rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, effComparable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, comparableOrigin.origin(), comparableOrigin.status()));
 
         if (rows.isEmpty()) return null;
 
@@ -1240,9 +1247,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         html.append("</tr></thead><tbody>");
 
         for (var row : rows) {
-            String statusColor = "Invalid".equals(row.status()) ? ("#" + getViolationBadgeColorHex())
-                : ("Active Override".equals(row.status()) ? ("#" + getActiveOverrideColorHex())
-                : ("Inherited".equals(row.status()) ? ("#" + getInheritedColorHex()) : "#9E9E9E"));
+            String statusColor = "Invalid".equals(row.status()) ? ('#' + getViolationBadgeColorHex())
+                : ("Active Override".equals(row.status()) ? ('#' + getActiveOverrideColorHex())
+                : ("Inherited".equals(row.status()) ? ('#' + getInheritedColorHex()) : "#9E9E9E"));
             html.append("<tr>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.tag()).append("</code></td>");
             html.append("<td style=\"padding: 2px 4px;\"><code>").append(row.effectiveValue()).append("</code></td>");
@@ -1279,9 +1286,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var parts = text.split("\\s+");
                 if (parts.length > 1) {
                     var val = parts[1].trim();
-                    if ("#TRUE".equalsIgnoreCase(val) || "#T".equalsIgnoreCase(val)) {
+                    if (StvnVocabulary.VAL_TRUE.equalsIgnoreCase(val) || StvnVocabulary.VAL_TRUE_SHORT.equalsIgnoreCase(val)) {
                         return java.util.Optional.of(true);
-                    } else if ("#FALSE".equalsIgnoreCase(val) || "#F".equalsIgnoreCase(val)) {
+                    } else if (StvnVocabulary.VAL_FALSE.equalsIgnoreCase(val) || StvnVocabulary.VAL_FALSE_SHORT.equalsIgnoreCase(val)) {
                         return java.util.Optional.of(false);
                     }
                 }
@@ -1298,15 +1305,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static boolean resolveDefaultComparable(String baseType) {
-        if (baseType.startsWith(":Set") || baseType.startsWith(":Map")) {
+        if (baseType.startsWith(StvnVocabulary.TYPE_SET) || baseType.startsWith(StvnVocabulary.TYPE_MAP)) {
             return false;
         }
         return true;
     }
 
     private static boolean isCompositeOrCollectionType(String baseType) {
-        return baseType.startsWith(":Tuple") || baseType.startsWith(":Seq") || baseType.startsWith(":Set") || baseType.startsWith(":Map")
-                || baseType.startsWith(":Union") || baseType.startsWith(":Either") || baseType.startsWith(":Option");
+        return baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
+                || baseType.startsWith(StvnVocabulary.TYPE_SEQ)
+                || baseType.startsWith(StvnVocabulary.TYPE_SET)
+                || baseType.startsWith(StvnVocabulary.TYPE_MAP)
+                || baseType.startsWith(StvnVocabulary.TYPE_UNION)
+                || baseType.startsWith(StvnVocabulary.TYPE_EITHER)
+                || baseType.startsWith(StvnVocabulary.TYPE_OPTION);
     }
 
     private static boolean isScalarPrimitiveType(String baseType) {
@@ -1338,7 +1350,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         for (int i = 1; i < trace.size(); i++) {
             var alias = trace.get(i);
-            if (alias.startsWith(":")) {
+            if (alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
                 var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
@@ -1371,18 +1383,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             boolean isComposite
     ) {
         if (hasExplicitFacetInPsi(rootTypeDef, facetKey)) {
-            String typeNameWithSigil = currentAlias.startsWith(":") ? currentAlias : (":" + currentAlias);
+            String typeNameWithSigil = currentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                ? currentAlias
+                : (StvnVocabulary.SIGIL_TYPIC + currentAlias);
             return new OriginInfo("Declared on<br/><a href=\"psi_element://TypeDefinition/" + typeNameWithSigil + "\"><code>" + typeNameWithSigil + "</code></a>", "Active Override");
         }
 
         var file = rootTypeDef.getContainingFile();
         for (int i = 1; i < trace.size(); i++) {
             var alias = trace.get(i);
-            if (file != null && alias.startsWith(":")) {
+            if (file != null && alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
                 var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
-                    String aliasWithSigil = alias.startsWith(":") ? alias : (":" + alias);
+                    String aliasWithSigil = alias.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                        ? alias
+                        : (StvnVocabulary.SIGIL_TYPIC + alias);
                     return new OriginInfo("Inherited from<br/><a href=\"psi_element://TypeDefinition/" + aliasWithSigil + "\"><code>" + aliasWithSigil + "</code></a>", "Inherited");
                 }
             }
@@ -1406,13 +1422,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         boolean isComparable = StvnVocabulary.FACET_NAME_COMPARABLE.equals(facetKey);
-        if (isComparable && (baseType.startsWith(":Set") || baseType.startsWith(":Map"))) {
+        if (isComparable && (baseType.startsWith(StvnVocabulary.TYPE_SET) || baseType.startsWith(StvnVocabulary.TYPE_MAP))) {
             return new OriginInfo("Derived (unordered collection)", "Derived");
         }
 
         var nonConforming = extractNonConformingConstituents(rootTypeDef, isComparable);
         if (nonConforming.isEmpty()) {
-            if (isComparable && (baseType.startsWith(":Set") || baseType.startsWith(":Map"))) {
+            if (isComparable && (baseType.startsWith(StvnVocabulary.TYPE_SET) || baseType.startsWith(StvnVocabulary.TYPE_MAP))) {
                 return new OriginInfo("Derived (unordered collection)", "Derived");
             }
             return new OriginInfo("Derived (all constituent fields conform)", "Derived");
@@ -1449,16 +1465,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             if (kw != null) {
                 var typeName = kw.getText().trim();
-                if (typeName.equals(":Float")) {
+                if (typeName.equals(StvnVocabulary.TYPE_FLOAT)) {
                     boolean exact = hasFacetInMap(constituent.getMetadataMap(), "exact");
                     if (!checkComparable && !exact) {
                         nonConforming.add(fieldName);
                     }
                     continue;
-                } else if (checkComparable && (typeName.equals(":Set") || typeName.equals(":Map"))) {
+                } else if (checkComparable && (typeName.equals(StvnVocabulary.TYPE_SET) || typeName.equals(StvnVocabulary.TYPE_MAP))) {
                     nonConforming.add(fieldName);
                     continue;
-                } else if (typeName.equals(":Int") || typeName.equals(":String") || typeName.equals(":Boolean") || typeName.equals(":TimeEpoch") || typeName.equals(":DateTime")) {
+                } else if (typeName.equals(StvnVocabulary.TYPE_INT)
+                        || typeName.equals(StvnVocabulary.TYPE_STRING)
+                        || typeName.equals(StvnVocabulary.TYPE_BOOLEAN)
+                        || typeName.equals(StvnVocabulary.TYPE_TIME_EPOCH)
+                        || typeName.equals(StvnVocabulary.TYPE_DATE_TIME)) {
                     continue;
                 }
                 if (file != null) {
@@ -1479,9 +1499,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             } else if (constituent.getSchemaConstructor() != null) {
                 var inlineText = constituent.getText();
-                if (!checkComparable && inlineText.contains(":Float") && !inlineText.contains("#exact")) {
+                if (!checkComparable && inlineText.contains(StvnVocabulary.TYPE_FLOAT) && !inlineText.contains(StvnVocabulary.FACET_KW_EXACT)) {
                     nonConforming.add(fieldName);
-                } else if (checkComparable && (inlineText.startsWith(":Set") || inlineText.startsWith(":Map"))) {
+                } else if (checkComparable && (inlineText.startsWith(StvnVocabulary.TYPE_SET) || inlineText.startsWith(StvnVocabulary.TYPE_MAP))) {
                     nonConforming.add(fieldName);
                 }
             }
@@ -1523,7 +1543,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             case StvnVocabulary.FACET_NAME_COMPARABLE ->
                 text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE);
             default ->
-                text.startsWith("#" + facetKey);
+                text.startsWith(StvnVocabulary.SIGIL_VALUE + facetKey);
         };
     }
 
@@ -1545,7 +1565,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (unqualifiedNotice != null) {
             TypeKeyword targetKw = (element instanceof TypeKeyword kw) ? kw : (originalElement != null ? PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class, false) : null);
             var text = targetKw != null ? targetKw.getText().trim() : element.getText().trim();
-            var name = text.startsWith(":") ? text.substring(1) : text;
+            var name = text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
             return "Unqualified reference to Standard Library Prelude type ':org/stvnadore/prelude/" + name + "'";
         }
 
@@ -1554,7 +1574,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (keyword != null) {
                 var kwText = keyword.getText();
                 if (kwText.startsWith(":org/stvnadore/prelude/")) {
-                    kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
+                    kwText = StvnVocabulary.SIGIL_TYPIC + kwText.substring(":org/stvnadore/prelude/".length());
                 }
                 var specQuick = getBuiltInSpecificationQuickNavigateInfo(kwText);
                 if (specQuick != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
@@ -1586,7 +1606,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (remote.equals(local)) {
                     return "Scoped Import: " + local + " from " + targetText;
                 } else {
-                    var bare = remote.startsWith(":") ? remote.substring(1) : remote;
+                    var bare = remote.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remote.substring(1) : remote;
                     return "Renamed Reference: " + local + " -> " + targetText + "/" + bare;
                 }
             }
@@ -1597,7 +1617,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (remote.equals(local)) {
                     return "Scoped Import: " + local + " from " + targetText;
                 } else {
-                    var bare = remote.startsWith("#") ? remote.substring(1) : remote;
+                    var bare = remote.startsWith(StvnVocabulary.SIGIL_VALUE) ? remote.substring(1) : remote;
                     return "Renamed Reference: " + local + " -> " + targetText + "/" + bare;
                 }
             }
@@ -1710,7 +1730,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInSpecificationDoc(String keyword) {
         if (keyword.startsWith(":org/stvnadore/prelude/")) {
-            var shortName = ":" + keyword.substring(":org/stvnadore/prelude/".length());
+            var shortName = StvnVocabulary.SIGIL_TYPIC + keyword.substring(":org/stvnadore/prelude/".length());
             var preludeDoc = getBuiltInPreludeDoc(shortName);
             if (preludeDoc != null) {
                 return preludeDoc.replace("<b>Standard Library Prelude:</b> " + shortName, "<b>Standard Library Prelude:</b> " + keyword);
@@ -1726,7 +1746,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return preludeDoc;
         }
 
-        if (keyword.equals(":Boolean")) {
+        if (keyword.equals(StvnVocabulary.TYPE_BOOLEAN)) {
             return """
                 <b>Built-in Primitive:</b> :Boolean<br/>
                 <hr/>
@@ -1737,7 +1757,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
         }
 
-        if (keyword.equals(":Int")) {
+        if (keyword.equals(StvnVocabulary.TYPE_INT)) {
             return """
                 <b>Built-in Numeric:</b> :Int<br/>
                 <hr/>
@@ -1747,7 +1767,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
         }
 
-        if (keyword.equals(":Float")) {
+        if (keyword.equals(StvnVocabulary.TYPE_FLOAT)) {
             return """
                 <b>Built-in Floating-Point:</b> :Float<br/>
                 <hr/>
@@ -1757,7 +1777,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """;
         }
 
-        if (keyword.equals(":String")) {
+        if (keyword.equals(StvnVocabulary.TYPE_STRING)) {
             return """
                 <b>Built-in String Type:</b> :String<br/>
                 <hr/>
@@ -1822,7 +1842,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInSpecificationQuickNavigateInfo(String keyword) {
         if (keyword.startsWith(":org/stvnadore/prelude/")) {
-            var shortName = ":" + keyword.substring(":org/stvnadore/prelude/".length());
+            var shortName = StvnVocabulary.SIGIL_TYPIC + keyword.substring(":org/stvnadore/prelude/".length());
             var preludeQuick = getBuiltInPreludeQuickNavigateInfo(shortName);
             if (preludeQuick != null) {
                 return "Standard Library Prelude: " + keyword;
@@ -1838,16 +1858,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return preludeQuick;
         }
 
-        if (keyword.equals(":Boolean")) {
+        if (keyword.equals(StvnVocabulary.TYPE_BOOLEAN)) {
             return "Primitive Type: :Boolean";
         }
-        if (keyword.equals(":Int")) {
+        if (keyword.equals(StvnVocabulary.TYPE_INT)) {
             return "Primitive Type: :Int (Integer)";
         }
-        if (keyword.equals(":Float")) {
+        if (keyword.equals(StvnVocabulary.TYPE_FLOAT)) {
             return "Primitive Type: :Float (Floating-Point)";
         }
-        if (keyword.equals(":String")) {
+        if (keyword.equals(StvnVocabulary.TYPE_STRING)) {
             return "Primitive Type: :String (UTF-8 String)";
         }
 
@@ -2051,7 +2071,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInTemporalDoc(String keyword) {
         return switch (keyword) {
-            case ":TimeEpoch" -> """
+            case StvnVocabulary.TYPE_TIME_EPOCH -> """
                 <b>Built-in Temporal:</b> :TimeEpoch<br/>
                 <hr/>
                 Represents a Unix Epoch timestamp.<br/>
@@ -2059,7 +2079,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 <b>Mandatory Scale Facet:</b> Exactly one bare scale flag: <code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>.<br/>
                 <b>Bounds:</b> Half-open intervals <code>[#minIncl, #maxExcl)</code>.
                 """;
-            case ":DateTime" -> """
+            case StvnVocabulary.TYPE_DATE_TIME -> """
                 <b>Built-in Temporal:</b> :DateTime<br/>
                 <hr/>
                 Represents a calendar date and time instant or schedule.<br/>
@@ -2073,8 +2093,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static @Nullable String getBuiltInTemporalQuickNavigateInfo(String keyword) {
         return switch (keyword) {
-            case ":TimeEpoch" -> "Primitive Type: :TimeEpoch (Unix Epoch Timestamp)";
-            case ":DateTime" -> "Primitive Type: :DateTime (ISO-8601 Date and Time)";
+            case StvnVocabulary.TYPE_TIME_EPOCH -> "Primitive Type: :TimeEpoch (Unix Epoch Timestamp)";
+            case StvnVocabulary.TYPE_DATE_TIME -> "Primitive Type: :DateTime (ISO-8601 Date and Time)";
             default -> null;
         };
     }
@@ -2494,7 +2514,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var filter = entry.getMetadataFilter();
                     if (filter != null) {
                         var isIncl = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null;
-                        var filterKw = isIncl ? "#filterIncl" : "#filterExcl";
+                        var filterKw = isIncl ? StvnVocabulary.FACET_KW_FILTER_INCL : StvnVocabulary.FACET_KW_FILTER_EXCL;
                         var variants = filter.getVariantList() != null
                             ? filter.getVariantList().getValueKeywordList().stream().map(ValueKeyword::getText).toList()
                             : java.util.List.<String>of();
@@ -2594,8 +2614,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var baseType = resolveBaseTypeString(schema, new HashSet<>());
         return baseType != null
+            && !baseType.isEmpty()
             && !baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
-            && !":Value".equals(baseType)
             && !baseType.startsWith(StvnVocabulary.TYPE_UNION)
             && !baseType.startsWith(StvnVocabulary.TYPE_EITHER)
             && !baseType.startsWith(StvnVocabulary.TYPE_OPTION);
@@ -2677,10 +2697,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var valStr = parts[1].trim();
                 var val = StvnPsiLiteralEvaluator.parseBigInteger(valStr).orElse(null);
                 if (val != null) {
-                    if (isUnsigned && val.compareTo(BigInteger.ZERO) == 0 && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                    if (isUnsigned && val.compareTo(BigInteger.ZERO) == 0 && (baseType.endsWith(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_INT))) {
                         reason = "unsigned integer <code>{ #unsigned } :Int</code> is already bounded from below by 0.";
                     } else if (!isUnsigned
-                            && (baseType.endsWith(":Int") || baseType.equals(":Int"))
+                            && (baseType.endsWith(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_INT))
                             && bitWidth.compareTo(BigInteger.ONE) >= 0
                             && bitWidth.compareTo(BigInteger.valueOf(StvnPsiLiteralEvaluator.MAX_EAGER_SHIFT_BIT_WIDTH)) <= 0) {
                         var naturalMin = BigInteger.ONE.shiftLeft(bitWidth.intValue() - 1).negate();
@@ -2698,7 +2718,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var valStr = parts[1].trim();
                 var val = StvnPsiLiteralEvaluator.parseBigInteger(valStr).orElse(null);
                 if (val != null
-                        && (baseType.endsWith(":Int") || baseType.equals(":Int"))
+                        && (baseType.endsWith(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_INT))
                         && bitWidth.compareTo(BigInteger.ONE) >= 0
                         && bitWidth.compareTo(BigInteger.valueOf(StvnPsiLiteralEvaluator.MAX_EAGER_SHIFT_BIT_WIDTH)) <= 0) {
                     var naturalMax = isUnsigned
@@ -2716,10 +2736,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (parts.length >= 2) {
                 var valStr = parts[1].trim();
                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(valStr).orElse(null);
-                if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH) && (baseType.endsWith(":Int") || baseType.equals(":Int"))) {
+                if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_INT_BIT_WIDTH) && (baseType.endsWith(StvnVocabulary.TYPE_INT) || baseType.equals(StvnVocabulary.TYPE_INT))) {
                     String desc = isUnsigned ? "unsigned integer <code>{ #unsigned } :Int</code>" : "signed integer <code>:Int</code>";
                     reason = desc + " intrinsically defaults to 32-bit storage.";
-                } else if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_FLOAT_BIT_WIDTH) && (baseType.endsWith(":Float") || baseType.equals(":Float")) && !isExact) {
+                } else if (parsed != null && parsed.equals(StvnVocabulary.DEFAULT_FLOAT_BIT_WIDTH) && (baseType.endsWith(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_FLOAT)) && !isExact) {
                     reason = "continuous <code>:Float</code> intrinsically defaults to 64-bit IEEE-754 double precision.";
                 }
             }
@@ -2749,7 +2769,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
             var parts = text.split("\\s+");
             if (parts.length >= 2 && "0".equals(parts[1].trim())) {
-                String targetDesc = (baseType.endsWith(":String") || baseType.equals(":String"))
+                String targetDesc = (baseType.endsWith(StvnVocabulary.TYPE_STRING) || baseType.equals(StvnVocabulary.TYPE_STRING))
                     ? "string cardinality is inherently non-negative."
                     : "container cardinality is inherently non-negative.";
                 reason = targetDesc;
@@ -2758,7 +2778,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // 6. Primitive and composite default traits
         else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE) || text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             var parts = text.split("\\s+");
-            if (parts.length >= 2 && ("#TRUE".equals(parts[1].trim()) || "#T".equals(parts[1].trim()))) {
+            if (parts.length >= 2 && (StvnVocabulary.VAL_TRUE.equals(parts[1].trim()) || StvnVocabulary.VAL_TRUE_SHORT.equals(parts[1].trim()))) {
                 boolean isEq = text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE);
                 boolean isIntrinsicallyConforming = isEq
                         ? StvnTraitViolationQuickFixProvider.isUnderlyingIntrinsicallyEquatable(typeDef)
@@ -2951,7 +2971,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (keyword != null) {
             var kwText = keyword.getText();
             if (kwText.startsWith(":org/stvnadore/prelude/")) {
-                kwText = ":" + kwText.substring(":org/stvnadore/prelude/".length());
+                kwText = StvnVocabulary.SIGIL_TYPIC + kwText.substring(":org/stvnadore/prelude/".length());
             }
             var specDoc = getBuiltInSpecificationDoc(kwText);
             if (specDoc != null && (typeDef.getContainingFile() == null || typeDef.getContainingFile().getName().contains("prelude"))) {
@@ -2974,7 +2994,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
             if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
                 var pkgPath = enclosingPkg.getPackagePath().getText().trim();
-                var localName = keyword.getText().startsWith(":") ? keyword.getText().substring(1) : keyword.getText();
+                var localName = keyword.getText().startsWith(StvnVocabulary.SIGIL_TYPIC) ? keyword.getText().substring(1) : keyword.getText();
                 var fqni = pkgPath + "/" + localName;
                 sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
                 sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
@@ -3035,7 +3055,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var irSchema = StvnTypeResolver.resolveNominalIrSchema(typeDef);
         var baseType = irSchema != null
             ? StvnSchemaFormatter.formatCleanIrSchema(irSchema)
-            : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : ":Value");
+            : (schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "unresolved");
         var activeTags = extractActiveFacetTags(typeDef);
         var unsetFacets = StvnMetadataRegistry.getUnsetFacets(baseType, activeTags);
         if (!unsetFacets.isEmpty()) {
@@ -3431,13 +3451,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var txt = entry.getText().trim();
-                    if (txt.startsWith("#minSize")) {
+                    if (txt.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                         var parts = txt.split("\\s+");
                         if (parts.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
                             if (parsed != null) minSize = parsed;
                         }
-                    } else if (txt.startsWith("#maxSize")) {
+                    } else if (txt.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
                         var parts = txt.split("\\s+");
                         if (parts.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
@@ -3519,7 +3539,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<div class='content'>");
         var compliance = evaluateValueCompliance(targetValueForCompliance, targetSchemaForCompliance);
         String badgeColor = ("Satisfied (Precision Loss)".equals(compliance.statusLabel())
-                || "Satisfied (Degraded Schema)".equals(compliance.statusLabel()))
+                || "Satisfied (Degraded Schema)".equals(compliance.statusLabel())
+                || "Suspended (Ungrounded Schema)".equals(compliance.statusLabel()))
             ? getWarningBadgeColorHex()
             : (compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex());
         String badgeText = compliance.statusLabel();
@@ -3561,6 +3582,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      */
     private static @NotNull StvnValueComplianceResult evaluateValueCompliance(Value value, @Nullable SchemaType schemaType) {
         var rawResult = evaluateValueComplianceInternal(value, schemaType);
+        if ("Suspended (Ungrounded Schema)".equals(rawResult.statusLabel())) {
+            return rawResult;
+        }
         if (rawResult.isSatisfied()) {
             var file = value.getContainingFile();
             var range = value.getTextRange();
@@ -3615,14 +3639,28 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         var baseType = resolveBaseTypeString(schemaType, new HashSet<>());
-        if (baseType == null) baseType = ":Value";
+        if (baseType == null) {
+            if (isGoverningSchemaDegraded(value, schemaType)) {
+                String schemaLabel = schemaType.getText().trim();
+                return new StvnValueComplianceResult(
+                    true,
+                    "Suspended (Ungrounded Schema)",
+                    "Payload compliance evaluation is suspended because governing type <code>"
+                        + escapeHtmlBody(schemaLabel)
+                        + "</code> does not resolve to a base type in <code>:defs</code> (circular or unresolved lineage).",
+                    Collections.emptyMap(),
+                    List.of("Standard STVN literal")
+                );
+            }
+            baseType = "";
+        }
 
         StvnSchema irSchema = resolveEffectiveIrSchemaForCompliance(value, schemaType);
 
         if (value.getCollectionValue() != null
                 && value.getCollectionValue().getTupleLiteral() != null
                 && !baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
-                && !":Value".equals(baseType)) {
+                && !baseType.isEmpty()) {
             return new StvnValueComplianceResult(
                 false,
                 "In Violation",
@@ -3639,7 +3677,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || irSchema instanceof StvnSchema.TimeEpochSchema
                 || StvnVocabulary.TYPE_INT.equals(baseType)
                 || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
-                || ":Value".equals(baseType);
+                || baseType.isEmpty();
             if (!isIntOrEpoch) {
                 return new StvnValueComplianceResult(
                     false,
@@ -3686,29 +3724,29 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
                         var t = entry.getText().trim();
-                        if (t.equals("#unsigned") || t.startsWith("#unsigned ")) isUnsigned = true;
-                        if (t.startsWith("#size")) {
+                        if (t.equals(StvnVocabulary.FACET_KW_UNSIGNED) || t.startsWith(StvnVocabulary.FACET_KW_UNSIGNED + " ")) isUnsigned = true;
+                        if (t.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) bitWidth = parsed;
                             }
                         }
-                        if (t.startsWith("#minIncl")) {
+                        if (t.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) minVal = parsed;
                             }
                         }
-                        if (t.startsWith("#maxExcl")) {
+                        if (t.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                                 if (parsed != null) maxVal = parsed.subtract(BigInteger.ONE);
                             }
                         }
-                        if (t.startsWith("#minExcl")) {
+                        if (t.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3718,7 +3756,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                                 }
                             }
                         }
-                        if (t.startsWith("#maxIncl")) {
+                        if (t.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
                             var p = t.split("\\s+");
                             if (p.length >= 2) {
                                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3807,7 +3845,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawText = value.getText();
             boolean isStringSchema = irSchema instanceof StvnSchema.StringSchema
                 || StvnVocabulary.TYPE_STRING.equals(baseType)
-                || ":Value".equals(baseType);
+                || baseType.isEmpty();
             if (!isStringSchema) {
                 return new StvnValueComplianceResult(
                     false,
@@ -3835,21 +3873,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaMap != null) {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var t = entry.getText().trim();
-                    if (t.startsWith("#minSize")) {
+                    if (t.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                         var p = t.split("\\s+");
                         if (p.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                             if (parsed != null) minSize = parsed;
                         }
                     }
-                    if (t.startsWith("#maxSize")) {
+                    if (t.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
                         var p = t.split("\\s+");
                         if (p.length >= 2) {
                             var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
                             if (parsed != null) maxSize = parsed;
                         }
                     }
-                    if (t.startsWith("#regex")) {
+                    if (t.startsWith(StvnVocabulary.FACET_KW_REGEX)) {
                         var p = t.split("\\s+", 2);
                         if (p.length >= 2) regex = p[1].replaceAll("^\"|\"$", "");
                     }
@@ -3887,7 +3925,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawFloatText = value.getFloatLiteral().getText().trim();
             boolean isFloatSchema = irSchema instanceof StvnSchema.FloatSchema
                 || StvnVocabulary.TYPE_FLOAT.equals(baseType)
-                || ":Value".equals(baseType);
+                || baseType.isEmpty();
             if (!isFloatSchema) {
                 return new StvnValueComplianceResult(
                     false,
@@ -3914,7 +3952,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL;
                 if (!isExact && schemaType.getMetadataMap() != null) {
                     for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
-                        if (entry.getText().trim().startsWith("#exact")) isExact = true;
+                        if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_EXACT)) isExact = true;
                     }
                 }
 
@@ -3926,7 +3964,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith("#maxSize")) {
+                            if (t.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -3945,25 +3983,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith("#minIncl")) {
+                            if (t.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
                                 }
-                            } else if (t.startsWith("#minExcl")) {
+                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
                                 }
-                            } else if (t.startsWith("#maxIncl")) {
+                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
                                     if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
                                 }
-                            } else if (t.startsWith("#maxExcl")) {
+                            } else if (t.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
@@ -4015,7 +4053,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
-                            if (t.startsWith("#size")) {
+                            if (t.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                                 var p = t.split("\\s+");
                                 if (p.length >= 2) {
                                     var parsed = StvnPsiLiteralEvaluator.parseBigInteger(p[1]).orElse(null);
@@ -4091,7 +4129,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawBoolText = value.getBooleanValue().getText().trim();
             boolean isBoolSchema = irSchema instanceof StvnSchema.BooleanSchema
                 || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)
-                || ":Value".equals(baseType);
+                || baseType.isEmpty();
             if (!isBoolSchema) {
                 return new StvnValueComplianceResult(
                     false,
@@ -4595,7 +4633,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var inner = coll.getSchemaTypeList();
             if (!inner.isEmpty()) {
                 var first = coll.getFirstChild();
-                var collName = first != null ? first.getText().trim() : ":Seq";
+                var collName = first != null ? first.getText().trim() : StvnVocabulary.TYPE_SEQ;
                 var childTrace = extractRootStructuralTrace(inner.get(0), depth + 1, new HashSet<>(visited));
                 for (int i = 1; i < childTrace.size(); i++) {
                     trace.add(collName + "( " + childTrace.get(i) + " )");
@@ -4645,7 +4683,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (file != null) {
             for (int i = 1; i < trace.size(); i++) {
                 var alias = trace.get(i);
-                if (alias.startsWith(":")) {
+                if (alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
                     var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
                     var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
                     if (ancestorTypeDef != null) {
@@ -4703,7 +4741,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MAX_INCL : StvnVocabulary.FACET_KW_MAX_EXCL));
                 }
                 case StvnSchema.TimeEpochSchema te -> {
-                    tags.add("#" + te.scale().name().toLowerCase(Locale.ROOT));
+                    tags.add(StvnVocabulary.SIGIL_VALUE + te.scale().name().toLowerCase(Locale.ROOT));
                     if (te.explicitMinIncl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MIN_INCL);
                     if (te.explicitMaxExcl().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_EXCL);
                 }
@@ -4839,7 +4877,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var branches = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
         var tagPrefix = union.getUnionTagPrefix();
-        if (tagPrefix == null || !tagPrefix.getText().startsWith("#")) {
+        if (tagPrefix == null || !tagPrefix.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return null;
         }
 
@@ -4857,14 +4895,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (parentDef != null && parentDef.getTypeKeyword() != null) {
                 nominalName = parentDef.getTypeKeyword().getText().trim();
             } else {
-                nominalName = ":Union";
+                nominalName = StvnVocabulary.TYPE_UNION;
             }
         }
 
         // Format branch representation: ({ #size 32 } :Float) or (:Float)
         var branchRepr = StvnSchemaFormatter.formatSchema(branchSchema);
         if (branchRepr.isEmpty()) {
-            branchRepr = ":Value";
+            branchRepr = "?";
         }
         var governingSchemaStr = nominalName + " " + tagPrefix.getText().trim() + " (" + branchRepr + ")";
 

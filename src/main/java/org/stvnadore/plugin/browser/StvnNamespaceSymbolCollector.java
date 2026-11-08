@@ -14,6 +14,7 @@ import java.util.Queue;
 import java.util.Set;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -41,7 +42,7 @@ public final class StvnNamespaceSymbolCollector {
             var target = use.getUseTarget();
             if (target != null && target.getText().equals(packagePath)) {
                 var opts = use.getUseOptionsBlock();
-                if (opts != null && opts.getText().contains("#strip")) {
+                if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                     return true;
                 }
             }
@@ -49,7 +50,7 @@ public final class StvnNamespaceSymbolCollector {
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         for (var incl : includes) {
             var opts = incl.getIncludeOptionsBlock();
-            if (opts != null && opts.getText().contains("#strip")) {
+            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 var stringLit = incl.getStringLiteral();
                 var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
                 if (targetFile != null) {
@@ -199,7 +200,7 @@ public final class StvnNamespaceSymbolCollector {
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
             var path = pkg.getPackagePath();
-            var pathText = path != null ? path.getText() : ":package";
+            var pathText = path != null ? path.getText() : StvnVocabulary.KEYWORD_PACKAGE;
             for (var elem : pkg.getPackageElementList()) {
                 var pkgTypeDef = elem.getTypeDefinition();
                 if (pkgTypeDef != null) {
@@ -255,7 +256,7 @@ public final class StvnNamespaceSymbolCollector {
                 continue;
             }
             var target = use.getUseTarget();
-            var targetText = target != null ? target.getText() : ":use";
+            var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
             var aliasBlock = use.getUseAliasBlock();
             if (aliasBlock != null) {
                 for (var alias : aliasBlock.getUseMapAliasList()) {
@@ -296,7 +297,7 @@ public final class StvnNamespaceSymbolCollector {
                 }
             }
             var optionsBlock = use.getUseOptionsBlock();
-            if (optionsBlock != null && optionsBlock.getText().contains("#strip")) {
+            if (optionsBlock != null && optionsBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
                 collectStrippedPackageSymbols(file, targetText, processedNames, results, use);
             }
         }
@@ -337,7 +338,7 @@ public final class StvnNamespaceSymbolCollector {
             }
 
             var optionsBlock = incl.getIncludeOptionsBlock();
-            boolean hasStrip = optionsBlock != null && optionsBlock.getText().contains("#strip");
+            boolean hasStrip = optionsBlock != null && optionsBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
             if (hasStrip && targetFile != null) {
                 var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
                 for (var pkg : remotePackages) {
@@ -604,7 +605,7 @@ public final class StvnNamespaceSymbolCollector {
         var boolVal = currentVal.getBooleanValue();
         if (boolVal != null) {
             var name = boolVal.getText().trim();
-            if (name.startsWith("#") && processed.add(name)) {
+            if (name.startsWith(StvnVocabulary.SIGIL_VALUE) && processed.add(name)) {
                 results.add(new StvnNamespaceSymbolEntry(
                     name,
                     file.getName(),
@@ -649,8 +650,8 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         if (nominalName != null) {
-            if (!nominalName.startsWith(":")) {
-                nominalName = ":" + nominalName;
+            if (!nominalName.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+                nominalName = StvnVocabulary.SIGIL_TYPIC + nominalName;
             }
             if (isPrimitiveTypeName(nominalName)) {
                 nominalName = null;
@@ -661,7 +662,7 @@ public final class StvnNamespaceSymbolCollector {
         boolean alreadyTyped = false;
         if (expected != null && expected.getTypeKeyword() != null) {
             var expectedName = expected.getTypeKeyword().getText();
-            if (processed.contains(expectedName) || processed.contains(":" + expectedName)) {
+            if (processed.contains(expectedName) || processed.contains(StvnVocabulary.SIGIL_TYPIC + expectedName)) {
                 alreadyTyped = true;
             }
         }
@@ -670,7 +671,7 @@ public final class StvnNamespaceSymbolCollector {
             if (nominalName.contains("/")) {
                 var pkgPath = nominalName.substring(0, nominalName.lastIndexOf('/'));
                 if (isPackageStripped(file, pkgPath)) {
-                    nominalName = ":" + nominalName.substring(nominalName.lastIndexOf('/') + 1);
+                    nominalName = StvnVocabulary.SIGIL_TYPIC + nominalName.substring(nominalName.lastIndexOf('/') + 1);
                 }
             }
             if (processed.add(nominalName)) {
@@ -700,7 +701,7 @@ public final class StvnNamespaceSymbolCollector {
                         if (candidate.contains("/")) {
                             var pkgPath = candidate.substring(0, candidate.lastIndexOf('/'));
                             if (isPackageStripped(file, pkgPath)) {
-                                candidate = ":" + candidate.substring(candidate.lastIndexOf('/') + 1);
+                                candidate = StvnVocabulary.SIGIL_TYPIC + candidate.substring(candidate.lastIndexOf('/') + 1);
                             }
                         }
                         if (processed.add(candidate)) {
@@ -954,7 +955,7 @@ public final class StvnNamespaceSymbolCollector {
         var sum = constructor.getSumType();
         if (sum != null) {
             var childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-            if (sum.getText().startsWith(":Option")) {
+            if (sum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
                 var innerSchema = !childSchemas.isEmpty() ? childSchemas.get(0) : null;
                 var optVal = currentValue.getExplicitOptionValue();
                 if (optVal != null) {
@@ -964,7 +965,7 @@ public final class StvnNamespaceSymbolCollector {
                 } else if (innerSchema != null) {
                     correlateShapeAndValue(innerSchema, currentValue, file, depth, results, processed, new HashSet<>(visitedNominals));
                 }
-            } else if (sum.getText().startsWith(":Either")) {
+            } else if (sum.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                 var eitherVal = currentValue.getExplicitEitherValue();
                 if (eitherVal != null && eitherVal.getValue() != null && childSchemas.size() >= 2) {
                     if (eitherVal.getLeftLiteral() != null || eitherVal.getLeftShortLiteral() != null) {
@@ -973,7 +974,7 @@ public final class StvnNamespaceSymbolCollector {
                         correlateShapeAndValue(childSchemas.get(1), eitherVal.getValue(), file, depth + 1, results, processed, new HashSet<>(visitedNominals));
                     }
                 }
-            } else if (sum.getText().startsWith(":Union")) {
+            } else if (sum.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                 var unionVal = currentValue.getExplicitUnionValue();
                 if (unionVal != null && unionVal.getValue() != null) {
                     var tagElem = unionVal.getFirstChild();
@@ -1014,7 +1015,7 @@ public final class StvnNamespaceSymbolCollector {
                         var localKw = list.get(1);
                         if (localKw != null && remoteKw != null && name.equals(localKw.getText())) {
                             var target = use.getUseTarget();
-                            var targetText = target != null ? target.getText() : ":use";
+                            var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
                             var fqni = target != null ? targetText + "/" + stripColon(remoteKw.getText()) : remoteKw.getText();
                             var terminalStructure = resolveTerminalStructure(file, fqni, new HashSet<>());
                             return new NominalResolutionInfo(
@@ -1060,7 +1061,7 @@ public final class StvnNamespaceSymbolCollector {
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
             var pkgPath = pkg.getPackagePath();
-            var pathText = pkgPath != null ? pkgPath.getText() : ":package";
+            var pathText = pkgPath != null ? pkgPath.getText() : StvnVocabulary.KEYWORD_PACKAGE;
             for (var elem : pkg.getPackageElementList()) {
                 var typeDef = elem.getTypeDefinition();
                 if (typeDef != null) {
@@ -1153,18 +1154,20 @@ public final class StvnNamespaceSymbolCollector {
     }
 
     private static String stripColon(String text) {
-        return text.startsWith(":") ? text.substring(1) : text;
+        return text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
     }
 
     private static String stripHash(String text) {
-        return text.startsWith("#") ? text.substring(1) : text;
+        return text.startsWith(StvnVocabulary.SIGIL_VALUE) ? text.substring(1) : text;
     }
 
     static String buildConstantFqni(String packagePath, String constantName) {
         if (constantName.contains("/")) {
-            return constantName.startsWith(":") ? "#" + constantName.substring(1) : constantName;
+            return constantName.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                ? StvnVocabulary.SIGIL_VALUE + constantName.substring(1)
+                : constantName;
         }
-        return "#" + stripColon(packagePath) + "/" + stripHash(constantName);
+        return StvnVocabulary.SIGIL_VALUE + stripColon(packagePath) + "/" + stripHash(constantName);
     }
 
     private static void collectStrippedPackageSymbols(

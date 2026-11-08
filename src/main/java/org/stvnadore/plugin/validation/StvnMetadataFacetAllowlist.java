@@ -256,7 +256,7 @@ public final class StvnMetadataFacetAllowlist {
                 rawText = rawText.substring(metaText.length()).trim();
             }
         }
-        if (rawText.startsWith(":")) {
+        if (rawText.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
             if (StvnVocabulary.isBaseScalarType(rawText) || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(rawText)) {
                 return rawText;
             }

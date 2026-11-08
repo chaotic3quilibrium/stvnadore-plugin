@@ -48,6 +48,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.table.TableRowSorter;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -320,10 +321,10 @@ public final class StvnNamespaceBrowserPopup {
         var rawSegment = entry.name().contains("/")
             ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
             : entry.name();
-        var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
+        var cleanSegment = rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_TYPIC)
             ? rawSegment.substring(1)
             : rawSegment;
-        var bareName = (entry.name().startsWith("#") || rawSegment.startsWith("#") ? "#" : ":") + cleanSegment;
+        var bareName = (entry.name().startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE) ? StvnVocabulary.SIGIL_VALUE : StvnVocabulary.SIGIL_TYPIC) + cleanSegment;
 
         var enclosingPkg = PsiTreeUtil.findChildOfType(sourceFile, PackageEnclosure.class);
         if (enclosingPkg != null) {
@@ -386,10 +387,10 @@ public final class StvnNamespaceBrowserPopup {
 
     private static void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse, String bareName) {
         var opts = existingUse.getUseOptionsBlock();
-        if (opts != null && opts.getText().contains("#strip")) {
+        if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
             return; // Symbols already in scope via #strip
         }
-        if (existingUse.getText().contains("#strip")) {
+        if (existingUse.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
             return;
         }
         var aliasBlock = existingUse.getUseAliasBlock();
@@ -423,7 +424,7 @@ public final class StvnNamespaceBrowserPopup {
 
     static boolean isConstantSymbol(StvnNamespaceSymbolEntry entry) {
         var name = entry.name();
-        if (name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return true;
         }
         int lastSlash = name.lastIndexOf('/');
@@ -437,8 +438,8 @@ public final class StvnNamespaceBrowserPopup {
         if (isConstantSymbol(entry)) {
             if (entry.name().contains("/")) {
                 var raw = entry.name();
-                if (raw.startsWith(":")) {
-                    raw = "#" + raw.substring(1);
+                if (raw.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+                    raw = StvnVocabulary.SIGIL_VALUE + raw.substring(1);
                 }
                 int lastSlash = raw.lastIndexOf('/');
                 if (lastSlash >= 0 && lastSlash + 1 < raw.length() && raw.charAt(lastSlash + 1) == '#') {
@@ -446,17 +447,17 @@ public final class StvnNamespaceBrowserPopup {
                 }
                 return raw;
             }
-            var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
-            var cleanName = entry.name().startsWith("#") ? entry.name().substring(1) : entry.name();
-            return src.contains("/") ? "#" + src + "/" + cleanName : "#" + cleanName;
+            var src = entry.source().startsWith(StvnVocabulary.SIGIL_TYPIC) ? entry.source().substring(1) : entry.source();
+            var cleanName = entry.name().startsWith(StvnVocabulary.SIGIL_VALUE) ? entry.name().substring(1) : entry.name();
+            return src.contains("/") ? StvnVocabulary.SIGIL_VALUE + src + "/" + cleanName : StvnVocabulary.SIGIL_VALUE + cleanName;
         } else {
             if (entry.name().contains("/")) {
                 var raw = entry.name();
-                return raw.startsWith(":") ? raw : ":" + raw;
+                return raw.startsWith(StvnVocabulary.SIGIL_TYPIC) ? raw : StvnVocabulary.SIGIL_TYPIC + raw;
             }
-            var src = entry.source().startsWith(":") ? entry.source().substring(1) : entry.source();
-            var cleanName = entry.name().startsWith(":") ? entry.name().substring(1) : entry.name();
-            return src.contains("/") ? ":" + src + "/" + cleanName : ":" + cleanName;
+            var src = entry.source().startsWith(StvnVocabulary.SIGIL_TYPIC) ? entry.source().substring(1) : entry.source();
+            var cleanName = entry.name().startsWith(StvnVocabulary.SIGIL_TYPIC) ? entry.name().substring(1) : entry.name();
+            return src.contains("/") ? StvnVocabulary.SIGIL_TYPIC + src + "/" + cleanName : StvnVocabulary.SIGIL_TYPIC + cleanName;
         }
     }
 
@@ -489,10 +490,10 @@ public final class StvnNamespaceBrowserPopup {
                 var rawSegment = entry.name().contains("/")
                     ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
                     : entry.name();
-                var cleanSegment = rawSegment.startsWith("#") || rawSegment.startsWith(":")
+                var cleanSegment = rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_TYPIC)
                     ? rawSegment.substring(1)
                     : rawSegment;
-                var bareName = ":" + cleanSegment;
+                var bareName = StvnVocabulary.SIGIL_TYPIC + cleanSegment;
                 var baseIndent = computeElementIndent(doc, defsEntry);
                 var childIndent = baseIndent + "  ";
                 var brandStatement = "\n" + childIndent + bareName + " " + fqni;

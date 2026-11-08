@@ -1548,7 +1548,9 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         String lhsAlphaDoc = getDocAtOffset(text, lhsAlphaOffset);
         assertNotNull("Hover on LHS :CycleAlpha must not be null", lhsAlphaDoc);
         assertTrue("LHS :CycleAlpha must show Degraded Schema Warning:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("Degraded Schema Warning"));
-        assertTrue("LHS :CycleAlpha must show fallback base :Value:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("<code>:Value</code>"));
+        assertTrue("LHS :CycleAlpha must explain ungrounded lineage:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("does not resolve to a base type in <code>:defs</code>"));
+        assertTrue("LHS :CycleAlpha must state that payload evaluation is suspended:\n" + lhsAlphaDoc, lhsAlphaDoc.contains("Payload evaluation is suspended."));
+        assertFalse("LHS :CycleAlpha must NEVER fabricate ':Value':\n" + lhsAlphaDoc, lhsAlphaDoc.contains(":Value"));
         assertTrue("LHS :CycleAlpha must show cycle resolution path:\n" + lhsAlphaDoc, lhsAlphaDoc.contains(":CycleAlpha &rarr; :CycleBeta &rarr; :CycleAlpha"));
 
         // 2. Hover on RHS ':CycleBeta' on line ':CycleAlpha :CycleBeta'
@@ -1569,5 +1571,25 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertNotNull("Hover on :TreeNode must not be null", treeNodeDoc);
         assertTrue("Guarded recursive :TreeNode must render Arity 2:\n" + treeNodeDoc, treeNodeDoc.contains("<b>Arity:</b> 2"));
         assertTrue("Guarded recursive :TreeNode must render exemplar value:\n" + treeNodeDoc, treeNodeDoc.contains("(\"example\" [])"));
+
+        // 5. Hover on :body value governed by ungrounded :CycleAlpha reports Suspended (Ungrounded Schema) and zero ':Value'
+        var bodyCycleText = """
+            {
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta  :CycleAlpha
+              }
+              :type :CycleAlpha
+              :body 100
+            }
+            """;
+        myFixture.configureByText("stage12_body_cycle_hover.stvn_i", bodyCycleText);
+        int bodyValOffset = bodyCycleText.indexOf("100") + 1;
+        String bodyCycleValDoc = getDocAtOffset(bodyCycleText, bodyValOffset);
+        assertNotNull("Hover on :body value governed by :CycleAlpha must not be null", bodyCycleValDoc);
+        assertTrue("Hover on :body value governed by :CycleAlpha must report Suspended (Ungrounded Schema):\n" + bodyCycleValDoc,
+            bodyCycleValDoc.contains("Suspended (Ungrounded Schema)"));
+        assertFalse("Hover on :body value governed by :CycleAlpha must NEVER fabricate ':Value':\n" + bodyCycleValDoc,
+            bodyCycleValDoc.contains(":Value"));
     }
 }

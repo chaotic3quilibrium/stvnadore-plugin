@@ -6857,6 +6857,49 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             underscoreActions.stream().anyMatch(t ->
                 t.contains("Remove prohibited underscores from numeric literal '0x10000000000000000001'")));
     }
+
+    private void assertDiagnosticContract(String relativeFixturePath) throws Exception {
+        var fixturePath = Paths.get(getTestDataPath(), relativeFixturePath.split("/"));
+        var contractPath = resolveContractPath(fixturePath);
+        assertTrue("Mirrored fixture must exist: " + fixturePath, Files.isRegularFile(fixturePath));
+        assertNotNull("Mirrored contract must exist for: " + fixturePath, contractPath);
+        assertTrue("Mirrored contract file must exist: " + contractPath, Files.isRegularFile(contractPath));
+
+        var fileName = fixturePath.getFileName().toString();
+        var expectations = parseErrorContract(contractPath, fileName);
+        assertFalse("Contract expectations must not be empty for " + fileName, expectations.isEmpty());
+
+        myFixture.configureByFile(relativeFixturePath);
+        var highlights = myFixture.doHighlighting();
+        assertZeroRawCompilerJargon(highlights, fileName);
+
+        for (var exp : expectations) {
+            boolean expectsWarning = "#WARNING".equals(exp.severityTag());
+            var matched = highlights.stream()
+                .filter(h -> expectsWarning
+                    ? (h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+                    : h.getSeverity() == HighlightSeverity.ERROR)
+                .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
+                .filter(h -> h.getDescription() != null
+                    && (h.getDescription().contains(exp.messageSubstring()) || h.getDescription().contains(exp.symbolicId())))
+                .findFirst();
+            assertTrue("Missing coordinate-pinned highlight at [" + exp.startOffset() + ", " + exp.endOffset() + "] for "
+                + exp.canonicalCode() + "/" + exp.symbolicId() + " ('" + exp.messageSubstring() + "') in " + fileName
+                + "; actual=" + highlights, matched.isPresent());
+        }
+    }
+
+    public void testInvalidStage8InvertibleMapRadixCollisionAndFloatEquatable() throws Exception {
+        assertDiagnosticContract("syntax/invalid/defs/inv_stage8_invertible_map_radix_collision_and_float_equatable.stvn_i");
+    }
+
+    public void testInvalidStage10TautologyWarningsEmptyMetadataAndUnknownFacetRecovery() throws Exception {
+        assertDiagnosticContract("syntax/invalid/defs/inv_stage10_tautology_warnings_empty_metadata_and_unknown_facet_recovery.stvn_i");
+    }
+
+    public void testInvalidStage12CircularTypeBodySuspensionAndFaultIsolation() throws Exception {
+        assertDiagnosticContract("syntax/invalid/defs/inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i");
+    }
 }
 
 

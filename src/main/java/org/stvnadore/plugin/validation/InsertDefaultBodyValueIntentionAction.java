@@ -97,13 +97,13 @@ public final class InsertDefaultBodyValueIntentionAction implements IntentionAct
         return switch (lastType) {
             case StvnVocabulary.TYPE_STRING -> "\"\"";
             case StvnVocabulary.TYPE_INT, ":Nat", ":PosInt", ":Byte", ":Short", ":Long", ":BigInt" -> "0";
-            case StvnVocabulary.TYPE_BOOLEAN -> "#TRUE";
+            case StvnVocabulary.TYPE_BOOLEAN -> StvnVocabulary.VAL_TRUE;
             case StvnVocabulary.TYPE_FLOAT, ":Double", ":Decimal" -> "0.0";
             case StvnVocabulary.TYPE_SEQ, ":List" -> "[]";
             case StvnVocabulary.TYPE_SET -> "#{}";
             case StvnVocabulary.TYPE_MAP -> "{}";
             case StvnVocabulary.TYPE_TUPLE -> "()";
-            case StvnVocabulary.TYPE_OPTION -> "#None";
+            case StvnVocabulary.TYPE_OPTION -> StvnVocabulary.VAL_NONE;
             default -> {
                 if (lastType.contains("Seq") || lastType.contains("List")) yield "[]";
                 if (lastType.contains("Set")) yield "#{}";

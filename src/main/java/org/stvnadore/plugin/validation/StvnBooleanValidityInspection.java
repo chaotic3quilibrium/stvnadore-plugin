@@ -11,6 +11,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -30,7 +31,7 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
     public StvnBooleanValidityInspection() {
     }
 
-    private static final Set<String> BOOLEAN_WHITELIST = Set.of("#TRUE", "#T", "#FALSE", "#F");
+    private static final Set<String> BOOLEAN_WHITELIST = Set.of(StvnVocabulary.VAL_TRUE, StvnVocabulary.VAL_TRUE_SHORT, StvnVocabulary.VAL_FALSE, StvnVocabulary.VAL_FALSE_SHORT);
 
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
@@ -83,8 +84,8 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
         if (isNearMiss) {
             var isTrue = lower.equals("#true") || lower.equals("#t");
             var targetTag = isTrue 
-                ? (useLong ? "#TRUE" : "#T") 
-                : (useLong ? "#FALSE" : "#F");
+                ? (useLong ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_TRUE_SHORT) 
+                : (useLong ? StvnVocabulary.VAL_FALSE : StvnVocabulary.VAL_FALSE_SHORT);
 
             var message = StvnDiagnosticFormatter.formatPlugin("Invalid boolean literal casing: '" + text + "'. Valid forms are case-sensitive: #TRUE, #T, #FALSE, #F", StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING);
             holder.registerProblem(
@@ -100,16 +101,16 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                     element,
                     message,
                     ProblemHighlightType.GENERIC_ERROR,
-                    new ChangeToBooleanLiteralQuickFix("#TRUE"),
-                    new ChangeToBooleanLiteralQuickFix("#FALSE")
+                    new ChangeToBooleanLiteralQuickFix(StvnVocabulary.VAL_TRUE),
+                    new ChangeToBooleanLiteralQuickFix(StvnVocabulary.VAL_FALSE)
                 );
             } else {
                 holder.registerProblem(
                     element,
                     message,
                     ProblemHighlightType.GENERIC_ERROR,
-                    new ChangeToBooleanLiteralQuickFix("#T"),
-                    new ChangeToBooleanLiteralQuickFix("#F")
+                    new ChangeToBooleanLiteralQuickFix(StvnVocabulary.VAL_TRUE_SHORT),
+                    new ChangeToBooleanLiteralQuickFix(StvnVocabulary.VAL_FALSE_SHORT)
                 );
             }
         }

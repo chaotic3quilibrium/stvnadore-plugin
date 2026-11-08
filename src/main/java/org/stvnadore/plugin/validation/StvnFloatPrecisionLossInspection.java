@@ -218,7 +218,7 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
                 var txt = entry.getText().trim();
-                if (txt.startsWith("#size")) {
+                if (txt.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                     var parts = txt.split("\\s+");
                     if (parts.length >= 2) {
                         var bwOpt = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]);
@@ -304,7 +304,7 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
             var branch = branches.get(i);
             var base = resolveBaseTypeString(branch, new HashSet<>());
             if (StvnVocabulary.TYPE_FLOAT.equals(base) && isExactActive(branch.getMetadataMap(), branch)) {
-                return "#" + (i + 1);
+                return StvnVocabulary.SIGIL_VALUE + (i + 1);
             }
         }
         return null;

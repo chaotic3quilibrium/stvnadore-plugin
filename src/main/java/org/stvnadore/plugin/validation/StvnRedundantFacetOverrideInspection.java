@@ -121,7 +121,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 boolean declared = isBooleanTrue(bVal);
                 boolean parentEff = parentIr instanceof StvnSchema.StringSchema s && s.preserveIndent();
                 if (declared == parentEff) {
-                    registerRedundantProblem(entry, declared ? "#TRUE" : "#FALSE", holder);
+                    registerRedundantProblem(entry, declared ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, holder);
                 }
             }
             return;
@@ -160,14 +160,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             extractBooleanLiteral(text).ifPresent(val -> {
                 boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, ultimateBase, parentIr);
                 if (val == parentVal) {
-                    registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
+                    registerRedundantProblem(entry, val ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, holder);
                 }
             });
         } else if (text.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
                 boolean parentVal = resolveParentDefaultComparable(typeDef, ultimateBase, parentIr);
                 if (val == parentVal) {
-                    registerRedundantProblem(entry, val ? "#TRUE" : "#FALSE", holder);
+                    registerRedundantProblem(entry, val ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, holder);
                 }
             });
         }
@@ -736,15 +736,15 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
     private static boolean isBooleanTrue(BooleanValue bVal) {
         var t = bVal.getText().trim();
-        return "#TRUE".equals(t) || "#T".equals(t);
+        return StvnVocabulary.VAL_TRUE.equals(t) || StvnVocabulary.VAL_TRUE_SHORT.equals(t);
     }
 
     private static Optional<Boolean> extractBooleanLiteral(String text) {
         var parts = text.split("\\s+");
         if (parts.length >= 2) {
             var val = parts[1].trim();
-            if ("#TRUE".equals(val) || "#T".equals(val)) return Optional.of(true);
-            if ("#FALSE".equals(val) || "#F".equals(val)) return Optional.of(false);
+            if (StvnVocabulary.VAL_TRUE.equals(val) || StvnVocabulary.VAL_TRUE_SHORT.equals(val)) return Optional.of(true);
+            if (StvnVocabulary.VAL_FALSE.equals(val) || StvnVocabulary.VAL_FALSE_SHORT.equals(val)) return Optional.of(false);
         }
         return Optional.empty();
     }

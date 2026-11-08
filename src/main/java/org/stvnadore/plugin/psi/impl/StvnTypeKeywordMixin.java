@@ -13,6 +13,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.psi.TypeDefinition;
@@ -40,15 +41,15 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
     @Override
     public @Nullable String getName() {
         var text = getText();
-        return text.startsWith(":") ? text.substring(1) : text;
+        return text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
     }
 
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
-        if (name.startsWith(":") || name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
         }
-        var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(getProject(), ":" + name);
+        var newKw = org.stvnadore.plugin.psi.StvnElementFactory.createTypeKeyword(getProject(), StvnVocabulary.SIGIL_TYPIC + name);
         return replace(newKw);
     }
 
@@ -58,7 +59,7 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
             @Override
             public @Nullable String getPresentableText() {
                 var name = getName();
-                return name != null && !name.isEmpty() ? ":" + name : null;
+                return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : null;
             }
 
             @Override

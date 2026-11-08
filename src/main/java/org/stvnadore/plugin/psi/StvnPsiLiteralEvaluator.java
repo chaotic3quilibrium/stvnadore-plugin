@@ -5,6 +5,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -118,7 +119,7 @@ public final class StvnPsiLiteralEvaluator {
         if (direct.isPresent()) {
             return direct;
         }
-        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+        if (trimmed.startsWith(StvnVocabulary.SIGIL_VALUE) && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
             ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
             if (constDef != null && constDef.getValue() != null) {
                 Value val = constDef.getValue();
@@ -156,7 +157,7 @@ public final class StvnPsiLiteralEvaluator {
         if (intVal.isPresent()) {
             return Optional.of(new BigDecimal(intVal.get()));
         }
-        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+        if (trimmed.startsWith(StvnVocabulary.SIGIL_VALUE) && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
             ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
             if (constDef != null && constDef.getValue() != null) {
                 Value val = constDef.getValue();
@@ -196,7 +197,7 @@ public final class StvnPsiLiteralEvaluator {
         if (decoded.isPresent()) {
             return decoded;
         }
-        if (trimmed.startsWith("#") && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+        if (trimmed.startsWith(StvnVocabulary.SIGIL_VALUE) && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
             ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
             if (constDef != null && constDef.getValue() != null) {
                 Value val = constDef.getValue();
@@ -215,7 +216,7 @@ public final class StvnPsiLiteralEvaluator {
      * @return resolved {@link ConstantDefinition}, or {@code null} if not found
      */
     public static @Nullable ConstantDefinition resolveConstantDefinition(@Nullable PsiElement context, String constName) {
-        if (context == null || !constName.startsWith("#")) {
+        if (context == null || !constName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return null;
         }
         PsiFile file = context.getContainingFile();
@@ -275,7 +276,7 @@ public final class StvnPsiLiteralEvaluator {
      * @return 0-based branch index when {@code 1 <= index <= branchCount}, or empty otherwise
      */
     public static OptionalInt resolveZeroBasedUnionBranchIndex(@Nullable String tagText, int branchCount) {
-        if (tagText == null || !tagText.startsWith("#") || branchCount <= 0) {
+        if (tagText == null || !tagText.startsWith(StvnVocabulary.SIGIL_VALUE) || branchCount <= 0) {
             return OptionalInt.empty();
         }
         String digits = tagText.substring(1);

@@ -9,6 +9,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.ValueKeyword;
@@ -41,7 +42,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      */
     @Override
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
-        if (newElementName.startsWith(":") || newElementName.startsWith("#")) {
+        if (newElementName.startsWith(StvnVocabulary.SIGIL_TYPIC) || newElementName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + newElementName);
         }
         var element = getElement();
@@ -52,7 +53,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
             var prefix = currentText.substring(0, lastSlashIndex + 1);
             replacementText = prefix + newElementName;
         } else {
-            replacementText = "#" + newElementName;
+            replacementText = StvnVocabulary.SIGIL_VALUE + newElementName;
         }
         var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createValueKeyword(element.getProject(), replacementText);
         return element.replace(newKeyword);
@@ -138,20 +139,20 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      */
     public static @NotNull String buildPackageConstantFqni(@NotNull String packagePrefix, @NotNull String constKeyword) {
         var cleanPrefix = packagePrefix.trim();
-        if (cleanPrefix.startsWith(":") || cleanPrefix.startsWith("#")) {
+        if (cleanPrefix.startsWith(StvnVocabulary.SIGIL_TYPIC) || cleanPrefix.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             cleanPrefix = cleanPrefix.substring(1);
         }
         while (cleanPrefix.endsWith("/")) {
             cleanPrefix = cleanPrefix.substring(0, cleanPrefix.length() - 1);
         }
         var cleanConst = constKeyword.trim();
-        if (cleanConst.startsWith("#") || cleanConst.startsWith(":")) {
+        if (cleanConst.startsWith(StvnVocabulary.SIGIL_VALUE) || cleanConst.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
             cleanConst = cleanConst.substring(1);
         }
         if (cleanPrefix.isEmpty()) {
-            return "#" + cleanConst;
+            return StvnVocabulary.SIGIL_VALUE + cleanConst;
         }
-        return "#" + cleanPrefix + "/" + cleanConst;
+        return StvnVocabulary.SIGIL_VALUE + cleanPrefix + "/" + cleanConst;
     }
 
     /**
@@ -163,10 +164,10 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
      */
     public static @NotNull String canonicalizeConstantQuery(@NotNull String constName) {
         var trimmed = constName.trim();
-        if (trimmed.startsWith(":")) {
-            trimmed = "#" + trimmed.substring(1);
-        } else if (!trimmed.startsWith("#")) {
-            trimmed = "#" + trimmed;
+        if (trimmed.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+            trimmed = StvnVocabulary.SIGIL_VALUE + trimmed.substring(1);
+        } else if (!trimmed.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+            trimmed = StvnVocabulary.SIGIL_VALUE + trimmed;
         }
         return trimmed.replace("/#", "/");
     }
@@ -258,7 +259,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
             boolean allowUnqualifiedPackaged) {
         var canonicalName = canonicalizeConstantQuery(constName);
         String cycleKey = (file.getVirtualFile() != null ? file.getVirtualFile().getPath() : file.getName())
-            + "#" + canonicalName + "#" + allowUnqualifiedPackaged;
+            + StvnVocabulary.SIGIL_VALUE + canonicalName + StvnVocabulary.SIGIL_VALUE + allowUnqualifiedPackaged;
         if (!visited.add(cycleKey)) {
             return null;
         }
@@ -333,7 +334,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
             var stringLit = incl.getStringLiteral();
             if (stringLit != null) {
                 var optBlock = incl.getIncludeOptionsBlock();
-                var hasStrip = optBlock != null && optBlock.getText().contains("#strip");
+                var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
                 var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                 if (targetFile != null) {
                     var resolved = resolveConstantInFile(
@@ -381,7 +382,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
             }
         }
         var optBlock = use.getUseOptionsBlock();
-        if (optBlock != null && optBlock.getText().contains("#strip") && !canonicalName.contains("/")) {
+        if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP) && !canonicalName.contains("/")) {
             var target = use.getUseTarget();
             if (target != null) {
                 var prefix = target.getText();

@@ -365,7 +365,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
 
         if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-            var innerType = !innerSchemas.isEmpty() ? StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0)) : ":Value";
+            var innerType = !innerSchemas.isEmpty() ? StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0)) : "?";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(StvnVocabulary.VAL_SOME + " ")
                     .withPresentableText(StvnVocabulary.VAL_SOME)
@@ -506,7 +506,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         boolean isDateTime = schemaText.contains(StvnVocabulary.TYPE_DATE_TIME) || typeLabel.contains(StvnVocabulary.TYPE_DATE_TIME);
         boolean isTimeEpoch = schemaText.contains(StvnVocabulary.TYPE_TIME_EPOCH) || typeLabel.contains(StvnVocabulary.TYPE_TIME_EPOCH);
 
-        if (isDateTime && (schemaText.contains("#audited") || typeLabel.contains("#audited"))) {
+        if (isDateTime && (schemaText.contains(StvnVocabulary.FACET_KW_AUDITED) || typeLabel.contains(StvnVocabulary.FACET_KW_AUDITED))) {
             var offsetStr = nowZoned.getOffset().getId();
             if (offsetStr.equals("Z")) offsetStr = "+00:00";
             var timestamp = localFormatted + offsetStr + "[" + zoneId + "]";
@@ -519,7 +519,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (isDateTime && (schemaText.contains("#offset") || typeLabel.contains("#offset"))) {
+        } else if (isDateTime && (schemaText.contains(StvnVocabulary.FACET_KW_OFFSET) || typeLabel.contains(StvnVocabulary.FACET_KW_OFFSET))) {
             var timestamp = offsetFormatted;
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -530,7 +530,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (isDateTime && (schemaText.contains("#zoned") || typeLabel.contains("#zoned"))) {
+        } else if (isDateTime && (schemaText.contains(StvnVocabulary.FACET_KW_ZONED) || typeLabel.contains(StvnVocabulary.FACET_KW_ZONED))) {
             var timestamp = localFormatted + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
@@ -541,7 +541,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withInsertHandler(StvnQuoteInsertionHandler.INSTANCE),
                 98.0
             ));
-        } else if (isTimeEpoch && (schemaText.contains("#ms") || typeLabel.contains("#ms"))) {
+        } else if (isTimeEpoch && (schemaText.contains(StvnVocabulary.FACET_KW_SCALE_MS) || typeLabel.contains(StvnVocabulary.FACET_KW_SCALE_MS))) {
             var epochMs = String.valueOf(System.currentTimeMillis());
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochMs)
@@ -550,7 +550,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (isTimeEpoch && (schemaText.contains("#us") || typeLabel.contains("#us"))) {
+        } else if (isTimeEpoch && (schemaText.contains(StvnVocabulary.FACET_KW_SCALE_US) || typeLabel.contains(StvnVocabulary.FACET_KW_SCALE_US))) {
             var epochUs = String.valueOf(System.currentTimeMillis() * 1000L);
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochUs)
@@ -559,7 +559,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (isTimeEpoch && (schemaText.contains("#ns") || typeLabel.contains("#ns"))) {
+        } else if (isTimeEpoch && (schemaText.contains(StvnVocabulary.FACET_KW_SCALE_NS) || typeLabel.contains(StvnVocabulary.FACET_KW_SCALE_NS))) {
             var epochNs = String.valueOf(System.currentTimeMillis()) + "000000";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochNs)
@@ -568,7 +568,7 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                     .withTypeText(typeLabel, true),
                 95.0
             ));
-        } else if (isTimeEpoch && (schemaText.contains("#s") || typeLabel.contains("#s"))) {
+        } else if (isTimeEpoch && (schemaText.contains(StvnVocabulary.FACET_KW_SCALE_S) || typeLabel.contains(StvnVocabulary.FACET_KW_SCALE_S))) {
             var epochS = String.valueOf(System.currentTimeMillis() / 1000L);
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create(epochS)

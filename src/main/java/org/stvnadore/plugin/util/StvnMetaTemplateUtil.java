@@ -13,6 +13,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.StvnTypes;
 
@@ -33,15 +34,15 @@ public final class StvnMetaTemplateUtil {
    */
   public static String resolveExpectedKind(@NotNull String fileName) {
     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd")) {
-      return "#DEFS";
+      return StvnVocabulary.KIND_KW_DEFS;
     }
     if (fileName.endsWith(".stvn_di")) {
-      return "#DEFS_INCLUDE";
+      return StvnVocabulary.KIND_KW_DEFS_INCLUDE;
     }
     if (fileName.endsWith(".stvn_i")) {
-      return "#BODY_INCLUDE";
+      return StvnVocabulary.KIND_KW_BODY_INCLUDE;
     }
-    return "#BODY";
+    return StvnVocabulary.KIND_KW_BODY;
   }
 
   /**
@@ -112,7 +113,7 @@ public final class StvnMetaTemplateUtil {
         return true;
       }
       String text = next.getText().trim();
-      if (text.startsWith(":meta") && (text.length() == 5 || Character.isWhitespace(text.charAt(5)) || text.charAt(5) == '{')) {
+      if (text.startsWith(StvnVocabulary.KEYWORD_META) && (text.length() == 5 || Character.isWhitespace(text.charAt(5)) || text.charAt(5) == '{')) {
         return true;
       }
     }

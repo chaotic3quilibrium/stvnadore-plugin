@@ -11,6 +11,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.TypeKeyword;
@@ -86,7 +87,7 @@ public final class StvnConvertToModularQuickFix extends LocalQuickFixAndIntentio
         if (metaEntry != null) {
             var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
             if (kindFacet != null) {
-                String targetKind = isDefsSchema ? "#DEFS_INCLUDE" : "#BODY_INCLUDE";
+                String targetKind = isDefsSchema ? StvnVocabulary.KIND_KW_DEFS_INCLUDE : StvnVocabulary.KIND_KW_BODY_INCLUDE;
                 doc.replaceString(kindFacet.getTextRange().getStartOffset(), kindFacet.getTextRange().getEndOffset(), "#kind " + targetKind);
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
             }

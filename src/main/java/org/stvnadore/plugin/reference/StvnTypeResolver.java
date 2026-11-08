@@ -137,7 +137,7 @@ public final class StvnTypeResolver {
         String fqniKey = typeName;
         if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
             var pkgText = enclosingPkg.getPackagePath().getText().trim();
-            var localPart = typeName.startsWith(":") ? typeName.substring(1) : typeName;
+            var localPart = typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName.substring(1) : typeName;
             fqniKey = pkgText + "/" + localPart;
         }
 
@@ -153,7 +153,7 @@ public final class StvnTypeResolver {
         if (byRaw.isPresent()) {
             return byRaw.get();
         }
-        String localSuffix = "/" + (typeName.startsWith(":") ? typeName.substring(1) : typeName);
+        String localSuffix = "/" + (typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName.substring(1) : typeName);
         StvnSchema singleMatch = null;
         for (var entry : catalog.nominalTypes().entrySet()) {
             if (entry.getKey().endsWith(localSuffix)) {
@@ -206,7 +206,7 @@ public final class StvnTypeResolver {
         if (preludeDirect.isPresent()) {
             return preludeDirect.get();
         }
-        if (aliasName.startsWith(":") && !aliasName.substring(1).contains("/")) {
+        if (aliasName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !aliasName.substring(1).contains("/")) {
             var preludeFqni = ":org/stvnadore/prelude/" + aliasName.substring(1);
             var preludeShort = preludeCatalog.findType(preludeFqni);
             if (preludeShort.isPresent()) {
@@ -475,10 +475,10 @@ public final class StvnTypeResolver {
         if (target.equals(aliasName)) {
             return true;
         }
-        if (target.endsWith("/" + (aliasName.startsWith(":") ? aliasName.substring(1) : aliasName))) {
+        if (target.endsWith("/" + (aliasName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? aliasName.substring(1) : aliasName))) {
             return true;
         }
-        return aliasName.endsWith("/" + (target.startsWith(":") ? target.substring(1) : target));
+        return aliasName.endsWith("/" + (target.startsWith(StvnVocabulary.SIGIL_TYPIC) ? target.substring(1) : target));
     }
 
     private static @Nullable BigDecimal extractNumericValue(MetadataEntry entry) {
@@ -778,7 +778,7 @@ public final class StvnTypeResolver {
                 BigInteger activeOneBased = explicitOneBased != null
                     ? explicitOneBased
                     : union.oneBasedBranchIndex();
-                var branchTag = "#" + activeOneBased;
+                var branchTag = StvnVocabulary.SIGIL_VALUE + activeOneBased;
                 boolean isExplicit = trajectory.stoppedAtConstantReference()
                     || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
                     || explicitOneBased != null
@@ -805,11 +805,11 @@ public final class StvnTypeResolver {
                     || isExplicitOptionText(value.getText().trim());
 
                 if (opt.value().isEmpty()) {
-                    var tag = useLong ? "#None" : "#N";
+                    var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
                     return prefix + rootAlias + " " + tag;
                 }
 
-                var tag = useLong ? "#Some" : "#S";
+                var tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
                 var tagText = isExplicit ? tag : "[" + tag + "]";
 
                 var branchPsi = getNominalOptionBranchPsi(file, rootAlias);
@@ -832,8 +832,8 @@ public final class StvnTypeResolver {
                     || isExplicitEitherText(value.getText().trim());
                 var isRight = either.branch() == StvnValue.EitherBranch.RIGHT;
                 var tag = isRight
-                    ? (useLong ? "#Right" : "#R")
-                    : (useLong ? "#Left" : "#L");
+                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
+                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
                 var tagText = isExplicit ? tag : "[" + tag + "]";
 
                 var branchPsi = getNominalEitherBranchPsi(file, rootAlias, isRight);
@@ -848,7 +848,7 @@ public final class StvnTypeResolver {
 
             var alias = rootAlias;
             var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
-                ? ":" + alias.substring(":org/stvnadore/prelude/".length())
+                ? StvnVocabulary.SIGIL_TYPIC + alias.substring(":org/stvnadore/prelude/".length())
                 : alias;
             if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
                 return prefix + shortAlias;
@@ -906,7 +906,7 @@ public final class StvnTypeResolver {
     private static @Nullable BigInteger extractExplicitUnionOneBasedIndex(Value value) {
         if (value.getExplicitUnionValue() != null) {
             var firstChild = value.getExplicitUnionValue().getFirstChild();
-            if (firstChild != null && firstChild.getText().startsWith("#")) {
+            if (firstChild != null && firstChild.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(firstChild.getText().substring(1));
                 if (parsed.isPresent() && parsed.get().compareTo(BigInteger.ONE) >= 0) {
                     return parsed.get();
@@ -917,7 +917,7 @@ public final class StvnTypeResolver {
         var matcher = EXPLICIT_UNION_TAG_PATTERN.matcher(text);
         if (matcher.find()) {
             var token = matcher.group().trim();
-            if (token.startsWith("#")) {
+            if (token.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                 var parsed = StvnPsiLiteralEvaluator.parseBigInteger(token.substring(1));
                 if (parsed.isPresent() && parsed.get().compareTo(BigInteger.ONE) >= 0) {
                     return parsed.get();
@@ -937,7 +937,7 @@ public final class StvnTypeResolver {
     }
 
     private static int parseUnionTagZeroBasedIndex(@Nullable String tagText) {
-        if (tagText == null || !tagText.startsWith("#")) {
+        if (tagText == null || !tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return -1;
         }
         var parsed = StvnPsiLiteralEvaluator.parseBigInteger(tagText.trim().substring(1));
@@ -979,22 +979,22 @@ public final class StvnTypeResolver {
         while (StvnSumTrajectory.isSumValue(curr)) {
             if (curr instanceof StvnValue.StvnOption opt) {
                 if (opt.value().isEmpty()) {
-                    var tag = useLong ? "#None" : "#N";
-                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of("#None", "#N"), true));
+                    var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
+                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of(StvnVocabulary.VAL_NONE, StvnVocabulary.VAL_NONE_SHORT), true));
                     break;
                 } else {
-                    var tag = useLong ? "#Some" : "#S";
-                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of("#Some", "#S"), false));
+                    var tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
+                    levels.add(new SumLevelDescriptor(SumKind.OPTION, tag, Set.of(StvnVocabulary.VAL_SOME, StvnVocabulary.VAL_SOME_SHORT), false));
                     curr = opt.value().orElse(null);
                 }
             } else if (curr instanceof StvnValue.StvnEither either) {
                 var isRight = either.branch() == StvnValue.EitherBranch.RIGHT;
-                var tag = isRight ? (useLong ? "#Right" : "#R") : (useLong ? "#Left" : "#L");
-                var tokens = isRight ? Set.of("#Right", "#R") : Set.of("#Left", "#L");
+                var tag = isRight ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT) : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
+                var tokens = isRight ? Set.of(StvnVocabulary.VAL_RIGHT, StvnVocabulary.VAL_RIGHT_SHORT) : Set.of(StvnVocabulary.VAL_LEFT, StvnVocabulary.VAL_LEFT_SHORT);
                 levels.add(new SumLevelDescriptor(SumKind.EITHER, tag, tokens, false));
                 curr = either.value();
             } else if (curr instanceof StvnValue.StvnUnion union) {
-                var tag = "#" + union.oneBasedBranchIndex();
+                var tag = StvnVocabulary.SIGIL_VALUE + union.oneBasedBranchIndex();
                 levels.add(new SumLevelDescriptor(SumKind.UNION, tag, Set.of(tag), false));
                 curr = union.value();
             } else {
@@ -1064,22 +1064,22 @@ public final class StvnTypeResolver {
     }
 
     private static boolean isSumTagToken(String token) {
-        return token.equals("#Some") || token.equals("#S") || token.equals("#None") || token.equals("#N")
-            || token.equals("#Right") || token.equals("#R") || token.equals("#Left") || token.equals("#L")
+        return token.equals(StvnVocabulary.VAL_SOME) || token.equals(StvnVocabulary.VAL_SOME_SHORT) || token.equals(StvnVocabulary.VAL_NONE) || token.equals(StvnVocabulary.VAL_NONE_SHORT)
+            || token.equals(StvnVocabulary.VAL_RIGHT) || token.equals(StvnVocabulary.VAL_RIGHT_SHORT) || token.equals(StvnVocabulary.VAL_LEFT) || token.equals(StvnVocabulary.VAL_LEFT_SHORT)
             || EXPLICIT_UNION_TAG_PATTERN.matcher(token).matches();
     }
 
     private static boolean isExplicitOptionText(String text) {
-        return text.startsWith("#Some ") || text.equals("#Some")
-            || text.startsWith("#S ") || text.equals("#S")
-            || text.startsWith("#None") || text.equals("#N");
+        return text.startsWith("#Some ") || text.equals(StvnVocabulary.VAL_SOME)
+            || text.startsWith("#S ") || text.equals(StvnVocabulary.VAL_SOME_SHORT)
+            || text.startsWith(StvnVocabulary.VAL_NONE) || text.equals(StvnVocabulary.VAL_NONE_SHORT);
     }
 
     private static boolean isExplicitEitherText(String text) {
-        return text.startsWith("#Left ") || text.equals("#Left")
-            || text.startsWith("#L ") || text.equals("#L")
-            || text.startsWith("#Right ") || text.equals("#Right")
-            || text.startsWith("#R ") || text.equals("#R");
+        return text.startsWith("#Left ") || text.equals(StvnVocabulary.VAL_LEFT)
+            || text.startsWith("#L ") || text.equals(StvnVocabulary.VAL_LEFT_SHORT)
+            || text.startsWith("#Right ") || text.equals(StvnVocabulary.VAL_RIGHT)
+            || text.startsWith("#R ") || text.equals(StvnVocabulary.VAL_RIGHT_SHORT);
     }
 
     private static String unspoolBranchTrajectory(
@@ -1093,7 +1093,7 @@ public final class StvnTypeResolver {
             var innerBase = branchValue.schema();
             var innerAlias = innerBase.aliasName().orElse(null);
             if (branchValue instanceof StvnValue.StvnUnion innerUnion) {
-                var innerTag = "#" + innerUnion.oneBasedBranchIndex();
+                var innerTag = StvnVocabulary.SIGIL_VALUE + innerUnion.oneBasedBranchIndex();
                 var innerChild = innerUnion.value();
                 var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
                 if (innerAlias != null) {
@@ -1103,10 +1103,10 @@ public final class StvnTypeResolver {
                 }
             } else if (branchValue instanceof StvnValue.StvnOption innerOpt) {
                 if (innerOpt.value().isEmpty()) {
-                    var tag = useLong ? "#None" : "#N";
+                    var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
                     return innerAlias != null ? innerAlias + " " + tag : tag;
                 }
-                var innerTag = useLong ? "#Some" : "#S";
+                var innerTag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
                 var innerChild = innerOpt.value().orElse(null);
                 if (innerChild != null) {
                     var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
@@ -1119,8 +1119,8 @@ public final class StvnTypeResolver {
                 return innerAlias != null ? innerAlias + " " + innerTag : innerTag;
             } else if (branchValue instanceof StvnValue.StvnEither innerEither) {
                 var innerTag = innerEither.branch() == StvnValue.EitherBranch.RIGHT
-                    ? (useLong ? "#Right" : "#R")
-                    : (useLong ? "#Left" : "#L");
+                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
+                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
                 var innerChild = innerEither.value();
                 var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
                 if (innerAlias != null) {
@@ -1138,7 +1138,7 @@ public final class StvnTypeResolver {
         if (branchSchema.aliasName().isPresent()) {
             var alias = branchSchema.aliasName().get();
             var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
-                ? ":" + alias.substring(":org/stvnadore/prelude/".length())
+                ? StvnVocabulary.SIGIL_TYPIC + alias.substring(":org/stvnadore/prelude/".length())
                 : alias;
             if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
                 return shortAlias;
@@ -1169,7 +1169,7 @@ public final class StvnTypeResolver {
     public static @Nullable SchemaType getNominalUnionBranchPsi(PsiFile file, String alias, int tagIndex) {
         var typeDef = findTypeDefinition(file, alias);
         if (typeDef == null && alias.contains("/")) {
-            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            var bare = StvnVocabulary.SIGIL_TYPIC + alias.substring(alias.lastIndexOf('/') + 1);
             typeDef = findTypeDefinition(file, bare);
         }
         if (typeDef != null) {
@@ -1197,7 +1197,7 @@ public final class StvnTypeResolver {
     public static @Nullable SchemaType getNominalOptionBranchPsi(PsiFile file, String alias) {
         var typeDef = findTypeDefinition(file, alias);
         if (typeDef == null && alias.contains("/")) {
-            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            var bare = StvnVocabulary.SIGIL_TYPIC + alias.substring(alias.lastIndexOf('/') + 1);
             typeDef = findTypeDefinition(file, bare);
         }
         if (typeDef != null) {
@@ -1226,7 +1226,7 @@ public final class StvnTypeResolver {
     public static @Nullable SchemaType getNominalEitherBranchPsi(PsiFile file, String alias, boolean isRight) {
         var typeDef = findTypeDefinition(file, alias);
         if (typeDef == null && alias.contains("/")) {
-            var bare = ":" + alias.substring(alias.lastIndexOf('/') + 1);
+            var bare = StvnVocabulary.SIGIL_TYPIC + alias.substring(alias.lastIndexOf('/') + 1);
             typeDef = findTypeDefinition(file, bare);
         }
         if (typeDef != null) {
@@ -1269,8 +1269,8 @@ public final class StvnTypeResolver {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     if (eitherVal != null) {
                         var txt = eitherVal.getText().trim().split("\\s+")[0];
-                        var isLeft = txt.equals("#Left") || txt.equals("#L");
-                        var tagText = isLeft ? (useLong ? "#Left" : "#L") : (useLong ? "#Right" : "#R");
+                        var isLeft = txt.equals(StvnVocabulary.VAL_LEFT) || txt.equals(StvnVocabulary.VAL_LEFT_SHORT);
+                        var tagText = isLeft ? (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT) : (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT);
                         var branchSchema = (isLeft && !innerSchemas.isEmpty()) ? innerSchemas.get(0) : (innerSchemas.size() > 1 ? innerSchemas.get(1) : null);
                         var innerVal = eitherVal.getValue();
                         var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, innerVal, value.getProject()) : "";
@@ -1298,8 +1298,8 @@ public final class StvnTypeResolver {
 
                     if (optVal != null) {
                         var txt = optVal.getText().trim().split("\\s+")[0];
-                        var isNone = txt.equals("#None") || txt.equals("#N");
-                        var tagText = isNone ? (useLong ? "#None" : "#N") : (useLong ? "#Some" : "#S");
+                        var isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
+                        var tagText = isNone ? (useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT) : (useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT);
                         if (isNone) {
                             return baseLabel + " " + tagText;
                         }
@@ -1310,8 +1310,8 @@ public final class StvnTypeResolver {
                         }
                     } else {
                         var txt = value.getText().trim().split("\\s+")[0];
-                        if (txt.equals("#None") || txt.equals("#N")) {
-                            var tagText = useLong ? "#None" : "#N";
+                        if (txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT)) {
+                            var tagText = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
                             return baseLabel + " " + tagText;
                         } else {
                             var tagText = useLong ? "[#Some]" : "[#S]";
@@ -1412,7 +1412,7 @@ public final class StvnTypeResolver {
         var keyword = branchSchema.getTypeKeyword();
         if (keyword != null) {
             var shortKw = keyword.getText().startsWith(":org/stvnadore/prelude/")
-                ? ":" + keyword.getText().substring(":org/stvnadore/prelude/".length())
+                ? StvnVocabulary.SIGIL_TYPIC + keyword.getText().substring(":org/stvnadore/prelude/".length())
                 : keyword.getText();
             if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortKw)) {
                 return shortKw;
@@ -1434,7 +1434,7 @@ public final class StvnTypeResolver {
                             String branchTag = null;
                             if (innerValue != null && innerValue.getExplicitUnionValue() != null) {
                                 var firstChild = innerValue.getExplicitUnionValue().getFirstChild();
-                                if (firstChild != null && firstChild.getText().startsWith("#")) {
+                                if (firstChild != null && firstChild.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
                                     branchTag = firstChild.getText().trim();
                                     var resolvedIdx = StvnPsiLiteralEvaluator
                                         .resolveZeroBasedUnionBranchIndex(branchTag, innerSchemas.size());
@@ -1449,7 +1449,7 @@ public final class StvnTypeResolver {
                                 }
                             }
                             if (branchTag == null) {
-                                branchTag = "#" + (activeTagIndex + 1);
+                                branchTag = StvnVocabulary.SIGIL_VALUE + (activeTagIndex + 1);
                             }
                             var isExplicit = innerValue != null && (innerValue.getExplicitUnionValue() != null || (innerValue.getParent() instanceof ExplicitUnionValue));
                             var tagText = isExplicit ? branchTag : "[" + branchTag + "]";
@@ -1463,12 +1463,12 @@ public final class StvnTypeResolver {
                             var isLeft = false;
                             if (eitherVal != null) {
                                 var txt = eitherVal.getText().trim().split("\\s+")[0];
-                                isLeft = txt.equals("#Left") || txt.equals("#L");
+                                isLeft = txt.equals(StvnVocabulary.VAL_LEFT) || txt.equals(StvnVocabulary.VAL_LEFT_SHORT);
                             } else if (innerValue != null && !innerSchemas.isEmpty()) {
                                 isLeft = matchesSchemaPattern(innerValue, innerSchemas.get(0));
                             }
                             var isExplicit = eitherVal != null;
-                            var tag = isLeft ? (useLong ? "#Left" : "#L") : (useLong ? "#Right" : "#R");
+                            var tag = isLeft ? (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT) : (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT);
                             var tagText = isExplicit ? tag : "[" + tag + "]";
                             var nestedBranch = (isLeft && !innerSchemas.isEmpty()) ? innerSchemas.get(0) : (innerSchemas.size() > 1 ? innerSchemas.get(1) : null);
                             var nestedVal = eitherVal != null ? eitherVal.getValue() : innerValue;
@@ -1480,17 +1480,17 @@ public final class StvnTypeResolver {
                             var isNone = false;
                             if (optVal != null) {
                                 var txt = optVal.getText().trim().split("\\s+")[0];
-                                isNone = txt.equals("#None") || txt.equals("#N");
+                                isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
                             } else if (innerValue != null) {
                                 var txt = innerValue.getText().trim().split("\\s+")[0];
-                                isNone = txt.equals("#None") || txt.equals("#N");
+                                isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
                             }
                             if (isNone) {
-                                var tag = useLong ? "#None" : "#N";
+                                var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
                                 return targetAlias + " " + tag;
                             }
                             var isExplicit = optVal != null;
-                            var tag = useLong ? "#Some" : "#S";
+                            var tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
                             var tagText = isExplicit ? tag : "[" + tag + "]";
                             var nestedBranch = !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
                             var nestedVal = optVal != null ? optVal.getValue() : innerValue;
@@ -1702,7 +1702,7 @@ public final class StvnTypeResolver {
                 path.push(new PathStep(StepType.OPTION, -1));
             } else if (parent instanceof ExplicitEitherValue either) {
                 var text = either.getText().trim();
-                var isLeft = text.startsWith("#Left") || text.startsWith("#L");
+                var isLeft = text.startsWith(StvnVocabulary.VAL_LEFT) || text.startsWith(StvnVocabulary.VAL_LEFT_SHORT);
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof ExplicitUnionValue union) {
                 var firstChild = union.getUnionTagPrefix();
@@ -2377,7 +2377,7 @@ public final class StvnTypeResolver {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
                     var eitherVal = value.getExplicitEitherValue();
                     if (eitherVal != null) {
-                        var isLeft = eitherVal.getText().startsWith("#Left") || eitherVal.getText().startsWith("#L");
+                        var isLeft = eitherVal.getText().startsWith(StvnVocabulary.VAL_LEFT) || eitherVal.getText().startsWith(StvnVocabulary.VAL_LEFT_SHORT);
                         var branch = isLeft ? (!innerSchemas.isEmpty() ? innerSchemas.get(0) : null) : (innerSchemas.size() > 1 ? innerSchemas.get(1) : null);
                         return isBooleanSchema(branch);
                     } else if (innerSchemas.size() > 1) {
@@ -2419,7 +2419,7 @@ public final class StvnTypeResolver {
         }
         var first = trace.get(0);
         var shortFirst = first.startsWith(":org/stvnadore/prelude/")
-            ? ":" + first.substring(":org/stvnadore/prelude/".length())
+            ? StvnVocabulary.SIGIL_TYPIC + first.substring(":org/stvnadore/prelude/".length())
             : first;
         if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortFirst)) {
             return shortFirst;
@@ -2714,7 +2714,7 @@ public final class StvnTypeResolver {
         if (explicitUnion != null && (explicitUnion.getValue() == null || position.getParent() == explicitUnion)) {
             var tagElem = explicitUnion.getUnionTagPrefix();
             var tagText = tagElem.getText().trim();
-            if (tagText.startsWith("#")) {
+            if (tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                 var parentExpected = resolveExpectedSchemaAtCaret(explicitUnion);
                 if (parentExpected != null) {
                     var resolvedNominal = resolveNominalSchema(parentExpected);
@@ -2821,7 +2821,7 @@ public final class StvnTypeResolver {
                 path.push(new PathStep(StepType.OPTION, -1));
             } else if (parent instanceof ExplicitEitherValue either) {
                 var text = either.getText().trim();
-                var isLeft = text.startsWith("#Left") || text.startsWith("#L");
+                var isLeft = text.startsWith(StvnVocabulary.VAL_LEFT) || text.startsWith(StvnVocabulary.VAL_LEFT_SHORT);
                 path.push(new PathStep(StepType.EITHER, isLeft ? 0 : 1));
             } else if (parent instanceof ExplicitUnionValue union) {
                 var firstChild = union.getUnionTagPrefix();
@@ -2915,7 +2915,7 @@ public final class StvnTypeResolver {
         }
         if (context != null) {
             var enclosingPkg = PsiTreeUtil.getParentOfType(context, PackageEnclosure.class);
-            if (enclosingPkg != null && (!typeName.startsWith(":") || !typeName.substring(1).contains("/"))) {
+            if (enclosingPkg != null && (!typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !typeName.substring(1).contains("/"))) {
                 for (var elem : enclosingPkg.getPackageElementList()) {
                     var typeDef = elem.getTypeDefinition();
                     if (typeDef != null) {
@@ -3022,7 +3022,7 @@ public final class StvnTypeResolver {
             return false;
         }
         var text = value.getText().trim();
-        if (text.startsWith("#")) {
+        if (text.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             var constDef = findConstantDefinition(file, text);
             if (constDef != null) {
                 return true;

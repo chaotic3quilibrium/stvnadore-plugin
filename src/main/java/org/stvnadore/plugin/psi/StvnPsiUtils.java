@@ -8,6 +8,7 @@ import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnDefinitionsFile;
 import org.stvnadore.plugin.StvnDefsIncludeFile;
 import org.stvnadore.plugin.StvnPayloadFile;
@@ -65,17 +66,17 @@ public final class StvnPsiUtils {
         while (curr != null && !(curr instanceof BodyEntry) && !(curr instanceof ConstantDefinition)) {
             if (curr instanceof ExplicitOptionValue opt) {
                 var first = opt.getFirstChild();
-                if (first != null && first.getText().startsWith("#") && !tags.contains(first.getText())) {
+                if (first != null && first.getText().startsWith(StvnVocabulary.SIGIL_VALUE) && !tags.contains(first.getText())) {
                     tags.add(0, first.getText());
                 }
             } else if (curr instanceof ExplicitEitherValue either) {
                 var first = either.getFirstChild();
-                if (first != null && first.getText().startsWith("#") && !tags.contains(first.getText())) {
+                if (first != null && first.getText().startsWith(StvnVocabulary.SIGIL_VALUE) && !tags.contains(first.getText())) {
                     tags.add(0, first.getText());
                 }
             } else if (curr instanceof ExplicitUnionValue union) {
                 var first = union.getFirstChild();
-                if (first != null && first.getText().startsWith("#") && !tags.contains(first.getText())) {
+                if (first != null && first.getText().startsWith(StvnVocabulary.SIGIL_VALUE) && !tags.contains(first.getText())) {
                     tags.add(0, first.getText());
                 }
             }
@@ -89,10 +90,10 @@ public final class StvnPsiUtils {
      * Checks if the given text corresponds to a standard STVN sum type constructor tag.
      */
     public static boolean isConstructorTag(String text) {
-        if (text.equals("#Some") || text.equals("#S") ||
-            text.equals("#None") || text.equals("#N") ||
-            text.equals("#Left") || text.equals("#L") ||
-            text.equals("#Right") || text.equals("#R")) {
+        if (text.equals(StvnVocabulary.VAL_SOME) || text.equals(StvnVocabulary.VAL_SOME_SHORT) ||
+            text.equals(StvnVocabulary.VAL_NONE) || text.equals(StvnVocabulary.VAL_NONE_SHORT) ||
+            text.equals(StvnVocabulary.VAL_LEFT) || text.equals(StvnVocabulary.VAL_LEFT_SHORT) ||
+            text.equals(StvnVocabulary.VAL_RIGHT) || text.equals(StvnVocabulary.VAL_RIGHT_SHORT)) {
             return true;
         }
         return text.matches("^#[1-9][0-9]*$");
@@ -168,7 +169,7 @@ public final class StvnPsiUtils {
                                     return hopped;
                                 }
                             }
-                            var bareSource = sourceTypeName.startsWith(":") ? sourceTypeName.substring(1) : sourceTypeName;
+                            var bareSource = sourceTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? sourceTypeName.substring(1) : sourceTypeName;
                             for (var td : PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class)) {
                                 var tdKw = td.getTypeKeyword();
                                 if (tdKw != null) {
@@ -384,7 +385,7 @@ public final class StvnPsiUtils {
      */
     public static boolean isTypeDeclaredInLocalPackage(@Nullable PsiFile file, String typeName) {
         if (file == null) return false;
-        var cleanName = typeName.startsWith(":") ? typeName : ":" + typeName;
+        var cleanName = typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName : StvnVocabulary.SIGIL_TYPIC + typeName;
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
             for (var elem : pkg.getPackageElementList()) {

@@ -31,7 +31,7 @@ public final class StvnUnresolvedTypeQuickFixProvider {
      */
     public static AnnotationBuilder registerFixes(AnnotationBuilder builder, TypeKeyword typeKw) {
         var tokenText = typeKw.getText().trim();
-        if (!tokenText.startsWith(":") || tokenText.substring(1).contains("/")) {
+        if (!tokenText.startsWith(StvnVocabulary.SIGIL_TYPIC) || tokenText.substring(1).contains("/")) {
             return builder;
         }
 
@@ -66,7 +66,7 @@ public final class StvnUnresolvedTypeQuickFixProvider {
                 var def = elem.getTypeDefinition();
                 if (def != null && def.getTypeKeyword() != null) {
                     var kwText = def.getTypeKeyword().getText();
-                    if (kwText.equals(bareName) || kwText.equals(":" + bareName)) {
+                    if (kwText.equals(bareName) || kwText.equals(StvnVocabulary.SIGIL_TYPIC + bareName)) {
                         var pkgText = path.getText();
                         if (!matchingNamespaces.contains(pkgText)) {
                             matchingNamespaces.add(pkgText);

@@ -19,6 +19,7 @@ import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.StvnSchemaFlattener;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.ir.StvnDocument;
 import org.stvnadore.core.ir.StvnSchema;
@@ -130,7 +131,7 @@ public final class StvnCompiledDocumentCache {
             return "synthetic.stvn";
         }
         boolean localExists = virtualFile.isInLocalFileSystem() && new File(virtualFile.getPath()).exists();
-        boolean needsIncludeStaging = text.contains(":include")
+        boolean needsIncludeStaging = text.contains(StvnVocabulary.KEYWORD_INCLUDE)
             && (!localExists || hasUnsavedStvnBuffers());
         if (localExists && !needsIncludeStaging) {
             return virtualFile.getPath();
@@ -320,7 +321,7 @@ public final class StvnCompiledDocumentCache {
             return StvnDefsCatalog.EMPTY;
         }
         String probeSource = "{\n  " + defsText + "\n  :type :Boolean\n  :body #TRUE\n}";
-        boolean hasInclude = defsText.contains(":include");
+        boolean hasInclude = defsText.contains(StvnVocabulary.KEYWORD_INCLUDE);
         String probePath = deriveSiblingProbePath(resolvedPath, hasInclude);
         StvnParserConfig probeConfig = new StvnParserConfig(
             false,

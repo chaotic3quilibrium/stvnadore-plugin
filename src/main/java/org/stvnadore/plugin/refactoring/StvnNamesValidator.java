@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -25,12 +26,12 @@ public final class StvnNamesValidator implements NamesValidator {
         "package",
         "use",
         "include",
-        ":defs",
-        ":type",
-        ":body",
-        ":package",
-        ":use",
-        ":include"
+        StvnVocabulary.KEYWORD_DEFS,
+        StvnVocabulary.KEYWORD_TYPE,
+        StvnVocabulary.KEYWORD_BODY,
+        StvnVocabulary.KEYWORD_PACKAGE,
+        StvnVocabulary.KEYWORD_USE,
+        StvnVocabulary.KEYWORD_INCLUDE
     );
 
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile(
@@ -69,7 +70,7 @@ public final class StvnNamesValidator implements NamesValidator {
         if (name.isEmpty()) {
             return false;
         }
-        if (name.startsWith(":") || name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return false;
         }
         if (isKeyword(name, project)) {

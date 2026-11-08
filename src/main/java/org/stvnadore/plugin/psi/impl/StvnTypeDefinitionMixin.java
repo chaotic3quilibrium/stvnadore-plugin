@@ -11,6 +11,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -65,19 +66,19 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
         }
         if (identifier != null) {
             var text = identifier.getText();
-            return text.startsWith(":") ? text.substring(1) : text;
+            return text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
         }
         return "";
     }
 
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
-        if (name.startsWith(":") || name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
         }
         var identifier = getNameIdentifier();
         if (identifier != null) {
-            var newKeyword = StvnElementFactory.createTypeKeyword(getProject(), ":" + name);
+            var newKeyword = StvnElementFactory.createTypeKeyword(getProject(), StvnVocabulary.SIGIL_TYPIC + name);
             identifier.replace(newKeyword);
         }
         return this;
@@ -89,7 +90,7 @@ public abstract class StvnTypeDefinitionMixin extends ASTWrapperPsiElement imple
             @Override
             public @Nullable String getPresentableText() {
                 var name = getName();
-                return name != null && !name.isEmpty() ? ":" + name : null;
+                return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : null;
             }
 
             @Override

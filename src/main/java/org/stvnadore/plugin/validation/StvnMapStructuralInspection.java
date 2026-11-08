@@ -112,7 +112,7 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
                 var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
                 if (typeDef != null && typeDef.getMetadataMap() != null) {
                     for (var entry : typeDef.getMetadataMap().getMetadataEntryList()) {
-                        if (entry.getText().startsWith("#invertible") || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
+                        if (entry.getText().startsWith(StvnVocabulary.FACET_KW_INVERTIBLE) || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
                             return true;
                         }
                     }
@@ -122,7 +122,7 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
         var parentDef = PsiTreeUtil.getParentOfType(schema, TypeDefinition.class);
         if (parentDef != null && parentDef.getMetadataMap() != null) {
             for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
-                if (entry.getText().startsWith("#invertible") || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
+                if (entry.getText().startsWith(StvnVocabulary.FACET_KW_INVERTIBLE) || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
                     return true;
                 }
             }

@@ -98,17 +98,17 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                         var useLong = StvnSettings.getInstance(project).getState().useLongFormSumTypes;
                         if (useLong) {
                             if (o.getSomeShortLiteral() != null) {
-                                holder.registerProblem(o.getSomeShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Some'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Some"));
+                                holder.registerProblem(o.getSomeShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Some'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_SOME));
                             }
                             if (o.getNoneShortLiteral() != null) {
-                                holder.registerProblem(o.getNoneShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#None'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#None"));
+                                holder.registerProblem(o.getNoneShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#None'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_NONE));
                             }
                         } else {
                             if (o.getSomeLiteral() != null) {
-                                holder.registerProblem(o.getSomeLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#S'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#S"));
+                                holder.registerProblem(o.getSomeLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#S'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_SOME_SHORT));
                             }
                             if (o.getNoneLiteral() != null) {
-                                holder.registerProblem(o.getNoneLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#N'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#N"));
+                                holder.registerProblem(o.getNoneLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#N'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_NONE_SHORT));
                             }
                         }
                     }
@@ -172,17 +172,17 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                         var useLong = StvnSettings.getInstance(project).getState().useLongFormSumTypes;
                         if (useLong) {
                             if (o.getLeftShortLiteral() != null) {
-                                holder.registerProblem(o.getLeftShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Left'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Left"));
+                                holder.registerProblem(o.getLeftShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Left'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_LEFT));
                             }
                             if (o.getRightShortLiteral() != null) {
-                                holder.registerProblem(o.getRightShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Right'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#Right"));
+                                holder.registerProblem(o.getRightShortLiteral(), StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#Right'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_RIGHT));
                             }
                         } else {
                             if (o.getLeftLiteral() != null) {
-                                holder.registerProblem(o.getLeftLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#L'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#L"));
+                                holder.registerProblem(o.getLeftLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#L'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_LEFT_SHORT));
                             }
                             if (o.getRightLiteral() != null) {
-                                holder.registerProblem(o.getRightLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#R'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#R"));
+                                holder.registerProblem(o.getRightLiteral(), StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#R'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_RIGHT_SHORT));
                             }
                         }
                     }
@@ -200,7 +200,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                     // 1. Redundant Tag check with Strict Disjointness Invariant (Rule C)
                     if (state.enableRedundantTagInspection && state.preferImpliedSumTypes && tagElement != null) {
                         var tagText = tagElement.getText();
-                        if (tagText.startsWith("#")) {
+                        if (tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                             var child = o.getValue();
                             var valParent = PsiTreeUtil.getParentOfType(o, Value.class);
                             if (child != null && valParent != null) {
@@ -265,20 +265,20 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 if (useLong) {
                     var trueShort = o.getTrueShortLiteral();
                     if (trueShort != null) {
-                        holder.registerProblem(trueShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#TRUE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#TRUE"));
+                        holder.registerProblem(trueShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#TRUE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_TRUE));
                     }
                     var falseShort = o.getFalseShortLiteral();
                     if (falseShort != null) {
-                        holder.registerProblem(falseShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#FALSE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#FALSE"));
+                        holder.registerProblem(falseShort, StvnDiagnosticFormatter.formatPlugin("Use long-form tag '#FALSE'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_FALSE));
                     }
                 } else {
                     var trueLong = o.getTrueLiteral();
                     if (trueLong != null) {
-                        holder.registerProblem(trueLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#T'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#T"));
+                        holder.registerProblem(trueLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#T'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_TRUE_SHORT));
                     }
                     var falseLong = o.getFalseLiteral();
                     if (falseLong != null) {
-                        holder.registerProblem(falseLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#F'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix("#F"));
+                        holder.registerProblem(falseLong, StvnDiagnosticFormatter.formatPlugin("Use short-form tag '#F'", StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new ChangeVariantTagFormQuickFix(StvnVocabulary.VAL_FALSE_SHORT));
                     }
                 }
             }
@@ -367,7 +367,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
             }
 
             var val = PsiTreeUtil.getParentOfType(element, Value.class);
-            if (val != null && (targetTag.equals("#TRUE") || targetTag.equals("#FALSE") || targetTag.equals("#T") || targetTag.equals("#F"))) {
+            if (val != null && (targetTag.equals(StvnVocabulary.VAL_TRUE) || targetTag.equals(StvnVocabulary.VAL_FALSE) || targetTag.equals(StvnVocabulary.VAL_TRUE_SHORT) || targetTag.equals(StvnVocabulary.VAL_FALSE_SHORT))) {
                 if (!StvnTypeResolver.resolvesToBoolean(val)) {
                     return;
                 }
@@ -378,85 +378,85 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
 
             var coreVal = StvnTypeResolver.resolveCoreValue(element);
             if (coreVal != null) {
-                if ((targetTag.equals("#Some") || targetTag.equals("#S") || targetTag.equals("#None") || targetTag.equals("#N"))
+                if ((targetTag.equals(StvnVocabulary.VAL_SOME) || targetTag.equals(StvnVocabulary.VAL_SOME_SHORT) || targetTag.equals(StvnVocabulary.VAL_NONE) || targetTag.equals(StvnVocabulary.VAL_NONE_SHORT))
                     && findMatchingSumNode(coreVal, StvnValue.StvnOption.class) == null) {
                     return;
                 }
-                if ((targetTag.equals("#Left") || targetTag.equals("#L") || targetTag.equals("#Right") || targetTag.equals("#R"))
+                if ((targetTag.equals(StvnVocabulary.VAL_LEFT) || targetTag.equals(StvnVocabulary.VAL_LEFT_SHORT) || targetTag.equals(StvnVocabulary.VAL_RIGHT) || targetTag.equals(StvnVocabulary.VAL_RIGHT_SHORT))
                     && findMatchingSumNode(coreVal, StvnValue.StvnEither.class) == null) {
                     return;
                 }
             }
 
             PsiElement newLiteral = null;
-            if (targetTag.equals("#Some")) {
+            if (targetTag.equals(StvnVocabulary.VAL_SOME)) {
                 var dummy = StvnElementFactory.createValue(project, "#Some 1");
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getSomeLiteral();
                 }
-            } else if (targetTag.equals("#S")) {
+            } else if (targetTag.equals(StvnVocabulary.VAL_SOME_SHORT)) {
                 var dummy = StvnElementFactory.createValue(project, "#S 1");
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getSomeShortLiteral();
                 }
-            } else if (targetTag.equals("#None")) {
-                var dummy = StvnElementFactory.createValue(project, "#None");
+            } else if (targetTag.equals(StvnVocabulary.VAL_NONE)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_NONE);
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getNoneLiteral();
                 }
-            } else if (targetTag.equals("#N")) {
-                var dummy = StvnElementFactory.createValue(project, "#N");
+            } else if (targetTag.equals(StvnVocabulary.VAL_NONE_SHORT)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_NONE_SHORT);
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getNoneShortLiteral();
                 }
-            } else if (targetTag.equals("#Left")) {
+            } else if (targetTag.equals(StvnVocabulary.VAL_LEFT)) {
                 var dummy = StvnElementFactory.createValue(project, "#Left 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getLeftLiteral();
                 }
-            } else if (targetTag.equals("#L")) {
+            } else if (targetTag.equals(StvnVocabulary.VAL_LEFT_SHORT)) {
                 var dummy = StvnElementFactory.createValue(project, "#L 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getLeftShortLiteral();
                 }
-            } else if (targetTag.equals("#Right")) {
+            } else if (targetTag.equals(StvnVocabulary.VAL_RIGHT)) {
                 var dummy = StvnElementFactory.createValue(project, "#Right 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getRightLiteral();
                 }
-            } else if (targetTag.equals("#R")) {
+            } else if (targetTag.equals(StvnVocabulary.VAL_RIGHT_SHORT)) {
                 var dummy = StvnElementFactory.createValue(project, "#R 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getRightShortLiteral();
                 }
-            } else if (targetTag.equals("#TRUE")) {
-                var dummy = StvnElementFactory.createValue(project, "#TRUE");
+            } else if (targetTag.equals(StvnVocabulary.VAL_TRUE)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_TRUE);
                 var boolVal = dummy.getBooleanValue();
                 if (boolVal != null) {
                     newLiteral = boolVal.getTrueLiteral();
                 }
-            } else if (targetTag.equals("#T")) {
-                var dummy = StvnElementFactory.createValue(project, "#T");
+            } else if (targetTag.equals(StvnVocabulary.VAL_TRUE_SHORT)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_TRUE_SHORT);
                 var boolVal = dummy.getBooleanValue();
                 if (boolVal != null) {
                     newLiteral = boolVal.getTrueShortLiteral();
                 }
-            } else if (targetTag.equals("#FALSE")) {
-                var dummy = StvnElementFactory.createValue(project, "#FALSE");
+            } else if (targetTag.equals(StvnVocabulary.VAL_FALSE)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_FALSE);
                 var boolVal = dummy.getBooleanValue();
                 if (boolVal != null) {
                     newLiteral = boolVal.getFalseLiteral();
                 }
-            } else if (targetTag.equals("#F")) {
-                var dummy = StvnElementFactory.createValue(project, "#F");
+            } else if (targetTag.equals(StvnVocabulary.VAL_FALSE_SHORT)) {
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_FALSE_SHORT);
                 var boolVal = dummy.getBooleanValue();
                 if (boolVal != null) {
                     newLiteral = boolVal.getFalseShortLiteral();

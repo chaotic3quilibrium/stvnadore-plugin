@@ -370,7 +370,7 @@ public final class StvnTraitViolationQuickFixProvider {
                 }
             } else if (constituent.getSchemaConstructor() != null) {
                 var txt = constituent.getText();
-                if (txt.contains(StvnVocabulary.TYPE_FLOAT) && !txt.contains("#exact")) {
+                if (txt.contains(StvnVocabulary.TYPE_FLOAT) && !txt.contains(StvnVocabulary.FACET_KW_EXACT)) {
                     result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
                 }
             }
@@ -560,7 +560,7 @@ public final class StvnTraitViolationQuickFixProvider {
     private static boolean hasExactFacet(@Nullable MetadataMap map) {
         if (map == null) return false;
         for (var entry : map.getMetadataEntryList()) {
-            if (entry.getText().trim().startsWith("#exact")) {
+            if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_EXACT)) {
                 return true;
             }
         }
@@ -586,7 +586,7 @@ public final class StvnTraitViolationQuickFixProvider {
         var parts = txt.split("\\s+");
         if (parts.length > 1) {
             var val = parts[1].trim();
-            return "#FALSE".equalsIgnoreCase(val) || "#F".equalsIgnoreCase(val);
+            return StvnVocabulary.VAL_FALSE.equalsIgnoreCase(val) || StvnVocabulary.VAL_FALSE_SHORT.equalsIgnoreCase(val);
         }
         return false;
     }

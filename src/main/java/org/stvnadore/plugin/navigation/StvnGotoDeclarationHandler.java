@@ -11,6 +11,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -62,28 +63,28 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
 
         // 2. MetaKindFacet (#kind)
         var kindFacet = PsiTreeUtil.getParentOfType(sourceElement, MetaKindFacet.class, false);
-        if (kindFacet != null && sourceElement.getText().equals("#kind")) {
+        if (kindFacet != null && sourceElement.getText().equals(StvnVocabulary.FACET_KW_META_KIND)) {
             var target = StvnPreludeBridge.isPreludeFile(file)
-                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, ":org/stvnadore/prelude/meta/StvnDocumentKind")
-                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, StvnVocabulary.META_TYPE_DOCUMENT_KIND)
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), StvnVocabulary.META_TYPE_DOCUMENT_KIND);
             return target != null ? new PsiElement[]{ target } : null;
         }
 
         // 3. MetaNameFacet (#name)
         var nameFacet = PsiTreeUtil.getParentOfType(sourceElement, MetaNameFacet.class, false);
-        if (nameFacet != null && sourceElement.getText().equals("#name")) {
+        if (nameFacet != null && sourceElement.getText().equals(StvnVocabulary.FACET_KW_META_NAME)) {
             var target = StvnPreludeBridge.isPreludeFile(file)
-                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, ":org/stvnadore/prelude/meta/StvnPosixId64")
-                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, StvnVocabulary.META_TYPE_POSIX_ID_64)
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), StvnVocabulary.META_TYPE_POSIX_ID_64);
             return target != null ? new PsiElement[]{ target } : null;
         }
 
         // 4. MetaDomainFacet (#domain)
         var domainFacet = PsiTreeUtil.getParentOfType(sourceElement, MetaDomainFacet.class, false);
-        if (domainFacet != null && sourceElement.getText().equals("#domain")) {
+        if (domainFacet != null && sourceElement.getText().equals(StvnVocabulary.FACET_KW_META_DOMAIN)) {
             var target = StvnPreludeBridge.isPreludeFile(file)
-                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, ":org/stvnadore/prelude/meta/StvnPosixId64")
-                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(file, StvnVocabulary.META_TYPE_POSIX_ID_64)
+                : StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), StvnVocabulary.META_TYPE_POSIX_ID_64);
             return target != null ? new PsiElement[]{ target } : null;
         }
 
@@ -215,7 +216,9 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
             return kindVal.getTextRange();
         }
         var text = sourceElement.getText();
-        if (text.equals("#kind") || text.equals("#name") || text.equals("#domain")) {
+        if (text.equals(StvnVocabulary.FACET_KW_META_KIND)
+                || text.equals(StvnVocabulary.FACET_KW_META_NAME)
+                || text.equals(StvnVocabulary.FACET_KW_META_DOMAIN)) {
             return sourceElement.getTextRange();
         }
         var valKw = PsiTreeUtil.getParentOfType(sourceElement, ValueKeyword.class, false);

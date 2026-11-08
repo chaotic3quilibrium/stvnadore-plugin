@@ -14,6 +14,7 @@ import com.intellij.util.indexing.IdFilter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.TypeDefinition;
@@ -49,8 +50,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             for (var def : typeDefs) {
                 var name = def.getName();
                 if (name != null && !name.isEmpty()) {
-                    var bareName = name.startsWith(":") ? name.substring(1) : name;
-                    var canonicalName = ":" + bareName;
+                    var bareName = name.startsWith(StvnVocabulary.SIGIL_TYPIC) ? name.substring(1) : name;
+                    var canonicalName = StvnVocabulary.SIGIL_TYPIC + bareName;
                     if (!bareName.isEmpty() && seenNames.add(bareName)) {
                         if (!processor.process(bareName)) return false;
                     }
@@ -63,8 +64,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             for (var def : constDefs) {
                 var name = def.getName();
                 if (name != null && !name.isEmpty()) {
-                    var bareName = name.startsWith("#") ? name.substring(1) : name;
-                    var canonicalName = "#" + bareName;
+                    var bareName = name.startsWith(StvnVocabulary.SIGIL_VALUE) ? name.substring(1) : name;
+                    var canonicalName = StvnVocabulary.SIGIL_VALUE + bareName;
                     if (!bareName.isEmpty() && seenNames.add(bareName)) {
                         if (!processor.process(bareName)) return false;
                     }
@@ -83,7 +84,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     if (typeDef != null) {
                         var kw = typeDef.getTypeKeyword();
                         if (kw != null) {
-                            var fqni = pathText + "/" + (kw.getText().startsWith(":") ? kw.getText().substring(1) : kw.getText());
+                            var fqni = pathText + "/" + (kw.getText().startsWith(StvnVocabulary.SIGIL_TYPIC) ? kw.getText().substring(1) : kw.getText());
                             if (seenNames.add(fqni)) {
                                 if (!processor.process(fqni)) return false;
                             }
@@ -119,8 +120,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             for (var def : typeDefs) {
                 var defName = def.getName();
                 if (defName != null) {
-                    var bareDefName = defName.startsWith(":") ? defName.substring(1) : defName;
-                    var bareSearchName = name.startsWith(":") ? name.substring(1) : name;
+                    var bareDefName = defName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? defName.substring(1) : defName;
+                    var bareSearchName = name.startsWith(StvnVocabulary.SIGIL_TYPIC) ? name.substring(1) : name;
                     if (bareDefName.equals(bareSearchName)) {
                         var kw = def.getTypeKeyword();
                         if (kw instanceof NavigationItem item) {
@@ -135,8 +136,8 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             for (var def : constDefs) {
                 var defName = def.getName();
                 if (defName != null) {
-                    var bareDefName = defName.startsWith("#") ? defName.substring(1) : defName;
-                    var bareSearchName = name.startsWith("#") ? name.substring(1) : name;
+                    var bareDefName = defName.startsWith(StvnVocabulary.SIGIL_VALUE) ? defName.substring(1) : defName;
+                    var bareSearchName = name.startsWith(StvnVocabulary.SIGIL_VALUE) ? name.substring(1) : name;
                     if (bareDefName.equals(bareSearchName)) {
                         var kw = def.getValueKeyword();
                         if (kw instanceof NavigationItem item) {
@@ -157,7 +158,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
                     if (typeDef != null) {
                         var kw = typeDef.getTypeKeyword();
                         if (kw != null) {
-                            var fqni = pathText + "/" + (kw.getText().startsWith(":") ? kw.getText().substring(1) : kw.getText());
+                            var fqni = pathText + "/" + (kw.getText().startsWith(StvnVocabulary.SIGIL_TYPIC) ? kw.getText().substring(1) : kw.getText());
                             if (name.equals(fqni) || name.equals(kw.getText()) || name.equals(typeDef.getName())) {
                                 if (kw instanceof NavigationItem item) {
                                     if (!processor.process(item)) return false;

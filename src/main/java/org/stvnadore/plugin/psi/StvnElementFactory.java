@@ -4,6 +4,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
@@ -22,10 +23,10 @@ public final class StvnElementFactory {
     private StvnElementFactory() {}
 
     public static TypeKeyword createTypeKeyword(Project project, String name) {
-        if (name.startsWith("#") || name.startsWith(":#") || name.startsWith("#:")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_VALUE) || name.startsWith(":#") || name.startsWith("#:")) {
             throw new IllegalArgumentException("Cannot create TypeKeyword with constant or malformed sigil: '" + name + "'");
         }
-        var cleanName = name.startsWith(":") ? name : ":" + name;
+        var cleanName = name.startsWith(StvnVocabulary.SIGIL_TYPIC) ? name : StvnVocabulary.SIGIL_TYPIC + name;
         var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
                 .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);
@@ -37,10 +38,10 @@ public final class StvnElementFactory {
     }
 
     public static ValueKeyword createValueKeyword(Project project, String name) {
-        if (name.startsWith(":") || name.startsWith("#:") || name.startsWith(":#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith("#:") || name.startsWith(":#")) {
             throw new IllegalArgumentException("Cannot create ValueKeyword with type or malformed sigil: '" + name + "'");
         }
-        var cleanName = name.startsWith("#") ? name : "#" + name;
+        var cleanName = name.startsWith(StvnVocabulary.SIGIL_VALUE) ? name : StvnVocabulary.SIGIL_VALUE + name;
         var dummyFileText = "{\n  :defs {\n    " + cleanName + " :Int 0\n  }\n}";
         var file = PsiFileFactory.getInstance(project)
                 .createFileFromText("dummy.stvn", StvnFileType.Payload.INSTANCE, dummyFileText);

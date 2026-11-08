@@ -19,6 +19,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BodyEntry;
@@ -177,13 +178,13 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 var fileName = file.getName();
                 String expected = null;
                 if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd")) {
-                    expected = "#DEFS";
+                    expected = StvnVocabulary.KIND_KW_DEFS;
                 } else if (fileName.endsWith(".stvn_di")) {
-                    expected = "#DEFS_INCLUDE";
+                    expected = StvnVocabulary.KIND_KW_DEFS_INCLUDE;
                 } else if (fileName.endsWith(".stvn_i")) {
-                    expected = "#BODY_INCLUDE";
+                    expected = StvnVocabulary.KIND_KW_BODY_INCLUDE;
                 } else if (fileName.endsWith(".stvn") || fileName.endsWith(".stvn_b")) {
-                    expected = "#BODY";
+                    expected = StvnVocabulary.KIND_KW_BODY;
                 }
 
                 if (expected != null) {

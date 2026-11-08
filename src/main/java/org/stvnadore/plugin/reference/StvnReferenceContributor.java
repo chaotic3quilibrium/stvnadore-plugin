@@ -5,6 +5,7 @@ import com.intellij.psi.*;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
@@ -77,7 +78,7 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                     @NotNull PsiElement element,
                     @NotNull ProcessingContext context) {
                 var text = element.getText();
-                if (text.startsWith("#")) {
+                if (text.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                     var parent = element.getParent();
                     // Declaration Isolation: LHS of ConstantDefinition is a declaration site
                     if (parent instanceof ConstantDefinition constDef && constDef.getValueKeyword() == element) {

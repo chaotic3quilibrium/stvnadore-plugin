@@ -481,9 +481,9 @@ public final class StvnDiagnosticAnnotatorMapping {
                         || message.contains("Temporal mode facets")
                         || message.contains("Mutually exclusive temporal")) {
                     mutexOwner = "StvnTemporalMode";
-                } else if (message.contains("#exact") || message.contains("#size")) {
+                } else if (message.contains(StvnVocabulary.FACET_KW_EXACT) || message.contains(StvnVocabulary.FACET_KW_SIZE)) {
                     mutexOwner = "StvnMetadataFacet";
-                } else if (message.contains("#filterIncl") || message.contains("#filterExcl")) {
+                } else if (message.contains(StvnVocabulary.FACET_KW_FILTER_INCL) || message.contains(StvnVocabulary.FACET_KW_FILTER_EXCL)) {
                     mutexOwner = "StvnEnumSubset";
                 }
                 if (!ApplicationManager.getApplication().isUnitTestMode()) {

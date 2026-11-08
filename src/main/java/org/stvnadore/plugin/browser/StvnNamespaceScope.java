@@ -4,6 +4,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.TypeEntry;
@@ -15,13 +16,13 @@ import org.stvnadore.psi.TypeEntry;
 public enum StvnNamespaceScope {
 
     /** Displays all declared, aliased, and imported symbols in document scope. */
-    DEFS(":defs", "All Document Symbols (:defs Scope)"),
+    DEFS(StvnVocabulary.KEYWORD_DEFS, "All Document Symbols (:defs Scope)"),
 
     /** Displays symbols referenced and instantiated by the root schema contract. */
-    TYPE(":type", "Schema Contract Symbols (:type Scope)"),
+    TYPE(StvnVocabulary.KEYWORD_TYPE, "Schema Contract Symbols (:type Scope)"),
 
     /** Displays symbols referenced and instantiated by payload data values. */
-    BODY(":body", "Payload Instantiated Symbols (:body Scope)");
+    BODY(StvnVocabulary.KEYWORD_BODY, "Payload Instantiated Symbols (:body Scope)");
 
     private final String sectionKeyword;
     private final String displayTitle;

@@ -613,7 +613,7 @@ public final class StvnExternalAnnotator
                 }
 
                 boolean isSyntaxError = rawMessage.startsWith("STVN Syntax Error");
-                String exactKey = range.getStartOffset() + ":" + range.getEndOffset() + ":" + message;
+                String exactKey = "%d:%d:%s".formatted(range.getStartOffset(), range.getEndOffset(), message);
                 if (registeredExactAnnotations.contains(exactKey)
                         || (isSyntaxError && registeredSyntaxStartOffsets.contains(range.getStartOffset()))) {
                     continue;
@@ -648,7 +648,7 @@ public final class StvnExternalAnnotator
                         }
                         if (typeEntry != null) {
                             annotationBuilder = annotationBuilder.withFix(
-                                new RemoveIllegalStructuralSectionQuickFix(typeEntry, ":type")
+                                new RemoveIllegalStructuralSectionQuickFix(typeEntry, StvnVocabulary.KEYWORD_TYPE)
                             );
                         }
                     } else if (rawMessage.contains("cannot declare ':body'")) {
@@ -664,7 +664,7 @@ public final class StvnExternalAnnotator
                         }
                         if (bodyEntry != null) {
                             annotationBuilder = annotationBuilder.withFix(
-                                new RemoveIllegalStructuralSectionQuickFix(bodyEntry, ":body")
+                                new RemoveIllegalStructuralSectionQuickFix(bodyEntry, StvnVocabulary.KEYWORD_BODY)
                             );
                         }
                     }
@@ -702,7 +702,7 @@ public final class StvnExternalAnnotator
                                 offendingValKw = PsiTreeUtil.getParentOfType(elemAtRange, ValueKeyword.class, false);
                             }
                         }
-                        if (offendingValKw != null && offendingValKw.getText().startsWith("#")) {
+                        if (offendingValKw != null && offendingValKw.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
                             annotationBuilder = annotationBuilder.withFix(
                                 new StvnDeclareConstantQuickFix(offendingValKw, StvnVocabulary.TYPE_INT, "0")
                             );
@@ -713,7 +713,8 @@ public final class StvnExternalAnnotator
                 // Bare '#' token in sum-type value position
                 var elemAtStart = file.findElementAt(s);
                 var tokenText = elemAtStart != null ? elemAtStart.getText().trim() : "";
-                if ("#".equals(tokenText) || "#".equals(file.getText().substring(s, e).trim())) {
+                if (StvnVocabulary.SIGIL_VALUE.equals(tokenText)
+                        || StvnVocabulary.SIGIL_VALUE.equals(file.getText().substring(s, e).trim())) {
                     if (elemAtStart != null) {
                         annotationBuilder = attachCompleteSumVariantQuickFixes(annotationBuilder, elemAtStart);
                     }
@@ -722,7 +723,7 @@ public final class StvnExternalAnnotator
                 // Incomplete #preserveIndent trait quick-fixes
                 if (rawMessage.contains("Metadata facet #preserveIndent requires an explicit boolean value")
                         || (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
-                            && rawMessage.contains("#preserveIndent"))) {
+                            && rawMessage.contains(StvnVocabulary.FACET_KW_PRESERVE_INDENT))) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     if (targetElem != null) {
                         for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
@@ -776,7 +777,7 @@ public final class StvnExternalAnnotator
                 if ((DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
                         || rawMessage.contains("is not permitted on"))
-                        && !rawMessage.contains("#preserveIndent")) {
+                        && !rawMessage.contains(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
                     if (entry == null && range.getStartOffset() + 1 < textLength) {
@@ -786,7 +787,7 @@ public final class StvnExternalAnnotator
                     }
                     if (entry != null) {
                         String facetName = StvnMetadataFacetInspection.extractFacetName(entry);
-                        String kwTag = facetName != null ? "#" + facetName : entry.getText().trim();
+                        String kwTag = facetName != null ? StvnVocabulary.SIGIL_VALUE + facetName : entry.getText().trim();
                         annotationBuilder = annotationBuilder
                             .withFix(new RemoveRedundantFacetQuickFix(entry, kwTag, "Remove inapplicable facet"));
                     }
@@ -1056,9 +1057,9 @@ public final class StvnExternalAnnotator
                                         failure.message(),
                                         failure.symbolicId()
                                     );
-                                    var exactKey = valRange.getStartOffset() + ":" + valRange.getEndOffset() + ":" + formattedMsg;
+                                    var exactKey = "%d:%d:%s".formatted(valRange.getStartOffset(), valRange.getEndOffset(), formattedMsg);
                                     boolean rangeAlreadyHasError = registeredExactAnnotations.stream()
-                                        .anyMatch(k -> k.startsWith(valRange.getStartOffset() + ":" + valRange.getEndOffset() + ":"));
+                                        .anyMatch(k -> k.startsWith("%d:%d:".formatted(valRange.getStartOffset(), valRange.getEndOffset())));
                                     if (!registeredExactAnnotations.contains(exactKey) && !rangeAlreadyHasError) {
                                         registeredExactAnnotations.add(exactKey);
                                         var dtBuilder = holder.newAnnotation(HighlightSeverity.ERROR, formattedMsg)
@@ -1095,23 +1096,25 @@ public final class StvnExternalAnnotator
                     && DiagnosticBag.ERR_TRAIT_VIOLATION.equals(p.primaryDiagnosticCode());
                 boolean isDegraded = StvnTypeResolver.isDegradedNominalAlias(file, aliasName);
                 if (isDegraded || hasCrossFileInvertibleError || isTraitPoisoned) {
-                    var fallbackBase = ":Value";
-                    if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
-                            && poisoned.bestEffortFallback().isPresent()) {
+                    @Nullable String fallbackBase = null;
+                    if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isGrounded()) {
                         fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
-                    } else {
+                    } else if (!(irSchema instanceof StvnSchema.PoisonedSchema)) {
                         var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
                         var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
                         if (td != null && td.getSchemaType() != null) {
                             var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
-                            if (resolved != null) {
+                            if (resolved != null && resolved.getSchemaConstructor() != null) {
                                 fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
                             }
                         }
                     }
-                    var degradedMsg = "Schema '" + aliasName
-                        + "' has constraint errors at definition site in :defs. Operating on fallback base ('"
-                        + fallbackBase + "').";
+                    var degradedMsg = fallbackBase != null
+                        ? "Schema '" + aliasName
+                            + "' has constraint errors at definition site in :defs. Operating on fallback base ('"
+                            + fallbackBase + "')."
+                        : "Schema '" + aliasName
+                            + "' does not resolve to a base type in :defs (circular or unresolved lineage). Payload evaluation is suspended.";
                     var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, degradedMsg)
                         .range(typeKw.getTextRange());
                     if (hasCrossFileInvertibleError || isTraitPoisoned) {
@@ -1426,7 +1429,7 @@ public final class StvnExternalAnnotator
                 && !msg.contains("Unknown or undefined type:");
             var parentStmt = PsiTreeUtil.getParentOfType(matchedNode.directInclude(), IncludeStmt.class, false);
             var targetRangeElement = parentStmt != null ? parentStmt : matchedNode.directInclude();
-            var dedupKey = targetRangeElement.getTextOffset() + ":" + attributedMsg;
+            var dedupKey = "%d:%s".formatted(targetRangeElement.getTextOffset(), attributedMsg);
             if (seenMessageKeys.add(dedupKey)) {
                 var directVf = resolveIncludeVirtualFile(file, matchedNode.directFile(), matchedNode.directPath());
                 var targetVf = resolveIncludeVirtualFile(file, matchedNode.targetFile(), matchedNode.targetPath());
@@ -1950,16 +1953,16 @@ public final class StvnExternalAnnotator
             var rightLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(1));
             var leftLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(0));
             annotationBuilder = annotationBuilder.withFix(
-                new CompleteSumVariantQuickFix(targetElem, "#Right", rightLabel, PriorityAction.Priority.HIGH)
+                new CompleteSumVariantQuickFix(targetElem, StvnVocabulary.VAL_RIGHT, rightLabel, PriorityAction.Priority.HIGH)
             );
             annotationBuilder = annotationBuilder.withFix(
-                new CompleteSumVariantQuickFix(targetElem, "#Left", leftLabel, PriorityAction.Priority.NORMAL)
+                new CompleteSumVariantQuickFix(targetElem, StvnVocabulary.VAL_LEFT, leftLabel, PriorityAction.Priority.NORMAL)
             );
         } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
             for (int i = 0; i < innerSchemas.size(); i++) {
                 var branchLabel = StvnSchemaFormatter.formatCleanSchema(innerSchemas.get(i));
                 annotationBuilder = annotationBuilder.withFix(
-                    new CompleteSumVariantQuickFix(targetElem, "#" + (i + 1), branchLabel, PriorityAction.Priority.NORMAL)
+                    new CompleteSumVariantQuickFix(targetElem, StvnVocabulary.SIGIL_VALUE + (i + 1), branchLabel, PriorityAction.Priority.NORMAL)
                 );
             }
         }
@@ -2026,7 +2029,7 @@ public final class StvnExternalAnnotator
                 if (valueElement != null && StvnTypeResolver.matchesSchemaPattern(valueElement, branch)) {
                     var branchLabel = StvnSchemaFormatter.formatCleanSchema(branch);
                     annotationBuilder = annotationBuilder.withFix(
-                        new WrapSumVariantQuickFix(targetElement, "#" + (i + 1), branchLabel)
+                        new WrapSumVariantQuickFix(targetElement, StvnVocabulary.SIGIL_VALUE + (i + 1), branchLabel)
                     );
                 }
             }

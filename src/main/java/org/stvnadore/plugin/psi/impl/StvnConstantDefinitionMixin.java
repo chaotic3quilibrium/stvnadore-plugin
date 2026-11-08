@@ -11,6 +11,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -50,19 +51,19 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
         }
         if (identifier != null) {
             var text = identifier.getText();
-            return text.startsWith("#") ? text.substring(1) : text;
+            return text.startsWith(StvnVocabulary.SIGIL_VALUE) ? text.substring(1) : text;
         }
         return "";
     }
 
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
-        if (name.startsWith(":") || name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
         }
         var identifier = getNameIdentifier();
         if (identifier != null) {
-            var newValueKw = StvnElementFactory.createValueKeyword(getProject(), "#" + name);
+            var newValueKw = StvnElementFactory.createValueKeyword(getProject(), StvnVocabulary.SIGIL_VALUE + name);
             identifier.replace(newValueKw);
         }
         return this;
@@ -74,7 +75,7 @@ public abstract class StvnConstantDefinitionMixin extends ASTWrapperPsiElement i
             @Override
             public @Nullable String getPresentableText() {
                 var name = getName();
-                return name != null && !name.isEmpty() ? "#" + name : null;
+                return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_VALUE + name : null;
             }
 
             @Override

@@ -64,10 +64,10 @@ public final class StvnCompletionTypeResolver {
         var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
 
         if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-            if ("#Some".equals(tagText) || "#S".equals(tagText)) {
+            if (StvnVocabulary.VAL_SOME.equals(tagText) || StvnVocabulary.VAL_SOME_SHORT.equals(tagText)) {
                 return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
             }
-            if ("#None".equals(tagText) || "#N".equals(tagText)) {
+            if (StvnVocabulary.VAL_NONE.equals(tagText) || StvnVocabulary.VAL_NONE_SHORT.equals(tagText)) {
                 return null;
             }
             if (!innerSchemas.isEmpty()) {
@@ -75,9 +75,9 @@ public final class StvnCompletionTypeResolver {
             }
             return null;
         } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-            if ("#Left".equals(tagText) || "#L".equals(tagText)) {
+            if (StvnVocabulary.VAL_LEFT.equals(tagText) || StvnVocabulary.VAL_LEFT_SHORT.equals(tagText)) {
                 return !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
-            } else if ("#Right".equals(tagText) || "#R".equals(tagText)) {
+            } else if (StvnVocabulary.VAL_RIGHT.equals(tagText) || StvnVocabulary.VAL_RIGHT_SHORT.equals(tagText)) {
                 return innerSchemas.size() > 1 ? innerSchemas.get(1) : null;
             }
             return null;

@@ -10,6 +10,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.reference.StvnIncludeFileReferenceSet;
@@ -138,7 +139,7 @@ public final class StvnIncludeCompletionContributor extends CompletionContributo
         var prev = PsiTreeUtil.prevVisibleLeaf(position);
         if (prev != null && "[".equals(prev.getText())) {
             var grandPrev = PsiTreeUtil.prevVisibleLeaf(prev);
-            return grandPrev != null && ":include".equals(grandPrev.getText());
+            return grandPrev != null && StvnVocabulary.KEYWORD_INCLUDE.equals(grandPrev.getText());
         }
 
         return false;

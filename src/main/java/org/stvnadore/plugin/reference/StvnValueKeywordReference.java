@@ -9,6 +9,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.TypeDefinition;
@@ -35,7 +36,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
 
     private static TextRange extractHeadTokenRange(PsiElement element) {
         var text = element.getText().trim();
-        if (text.startsWith("#")) {
+        if (text.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             var firstWord = text.split("\\s+")[0];
             return new TextRange(0, firstWord.length());
         }
@@ -54,7 +55,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
     public PsiElement handleElementRename(@NotNull String newElementName) throws IncorrectOperationException {
         var element = getElement();
         if (element instanceof ValueKeyword valKw) {
-            if (newElementName.startsWith(":") || newElementName.startsWith("#")) {
+            if (newElementName.startsWith(StvnVocabulary.SIGIL_TYPIC) || newElementName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                 throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + newElementName);
             }
             var currentText = valKw.getText();
@@ -64,7 +65,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
                 var prefix = currentText.substring(0, lastSlashIndex + 1);
                 replacementText = prefix + newElementName;
             } else {
-                replacementText = "#" + newElementName;
+                replacementText = StvnVocabulary.SIGIL_VALUE + newElementName;
             }
             var newKeyword = org.stvnadore.plugin.psi.StvnElementFactory.createValueKeyword(element.getProject(), replacementText);
             return valKw.replace(newKeyword);
@@ -119,7 +120,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
         }
 
         var tokenText = element.getText().trim().split("\\s+")[0];
-        if (!tokenText.startsWith("#")) {
+        if (!tokenText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return null;
         }
 

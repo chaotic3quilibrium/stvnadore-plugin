@@ -8,6 +8,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.psi.PackageEnclosure;
 
@@ -28,7 +29,7 @@ public final class StvnNamespaceIndexHelper {
      */
     public static List<String> findExportingNamespaces(Project project, String leafTypeName) {
         var results = new ArrayList<String>();
-        var cleanLeaf = leafTypeName.startsWith(":") ? leafTypeName : ":" + leafTypeName;
+        var cleanLeaf = leafTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? leafTypeName : StvnVocabulary.SIGIL_TYPIC + leafTypeName;
         var scope = GlobalSearchScope.projectScope(project);
         var psiManager = PsiManager.getInstance(project);
 

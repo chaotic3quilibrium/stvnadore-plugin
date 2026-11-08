@@ -13,6 +13,7 @@ import javax.swing.Icon;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
@@ -74,20 +75,20 @@ public final class StvnStructureViewElement implements StructureViewTreeElement,
             public @Nullable String getPresentableText() {
                 if (element instanceof TypeDefinition typeDef) {
                     var name = typeDef.getName();
-                    return name != null && !name.isEmpty() ? ":" + name : ":Type";
+                    return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : ":Type";
                 }
                 if (element instanceof ConstantDefinition constDef) {
                     var kw = constDef.getValueKeyword();
                     return kw != null ? kw.getText() : "#Constant";
                 }
                 if (element instanceof TypeEntry) {
-                    return ":type";
+                    return StvnVocabulary.KEYWORD_TYPE;
                 }
                 if (element instanceof DefsEntry) {
-                    return ":defs";
+                    return StvnVocabulary.KEYWORD_DEFS;
                 }
                 if (element instanceof BodyEntry) {
-                    return ":body";
+                    return StvnVocabulary.KEYWORD_BODY;
                 }
                 if (element instanceof PsiNamedElement named) {
                     return named.getName();

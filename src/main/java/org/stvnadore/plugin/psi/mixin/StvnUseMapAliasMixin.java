@@ -8,6 +8,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.TypeKeyword;
@@ -66,7 +67,7 @@ public abstract class StvnUseMapAliasMixin extends ASTWrapperPsiElement implemen
         }
         if (identifier != null) {
             var text = identifier.getText();
-            if (text.startsWith(":") || text.startsWith("#")) {
+            if (text.startsWith(StvnVocabulary.SIGIL_TYPIC) || text.startsWith(StvnVocabulary.SIGIL_VALUE)) {
                 return text.substring(1);
             }
             return text;
@@ -83,15 +84,15 @@ public abstract class StvnUseMapAliasMixin extends ASTWrapperPsiElement implemen
      */
     @Override
     public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
-        if (name.startsWith(":") || name.startsWith("#")) {
+        if (name.startsWith(StvnVocabulary.SIGIL_TYPIC) || name.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             throw new IncorrectOperationException("Identifier must be a bare name without ':' or '#' prefix: " + name);
         }
         var identifier = getNameIdentifier();
         if (identifier instanceof TypeKeyword) {
-            var newKeyword = StvnElementFactory.createTypeKeyword(getProject(), ":" + name);
+            var newKeyword = StvnElementFactory.createTypeKeyword(getProject(), StvnVocabulary.SIGIL_TYPIC + name);
             identifier.replace(newKeyword);
         } else if (identifier instanceof ValueKeyword) {
-            var newKeyword = StvnElementFactory.createValueKeyword(getProject(), "#" + name);
+            var newKeyword = StvnElementFactory.createValueKeyword(getProject(), StvnVocabulary.SIGIL_VALUE + name);
             identifier.replace(newKeyword);
         }
         return this;
@@ -104,7 +105,7 @@ public abstract class StvnUseMapAliasMixin extends ASTWrapperPsiElement implemen
             public @Nullable String getPresentableText() {
                 var name = getName();
                 if (name == null || name.isEmpty()) return null;
-                return (getNameIdentifier() instanceof ValueKeyword ? "#" : ":") + name;
+                return (getNameIdentifier() instanceof ValueKeyword ? StvnVocabulary.SIGIL_VALUE : StvnVocabulary.SIGIL_TYPIC) + name;
             }
 
             @Override

@@ -100,7 +100,7 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
 
         var range = startElement.getTextRange();
         var rawText = startElement.getText().trim();
-        String replacement = rawText.startsWith("#preserveIndent")
+        String replacement = rawText.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
             ? "#preserveIndent " + replacementValue
             : rawText + " " + replacementValue;
 
@@ -127,15 +127,15 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
 
         var typeDef = PsiTreeUtil.getParentOfType(element, TypeDefinition.class);
         if (typeDef == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#TRUE", "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#FALSE", "Complete trait with '#FALSE'", Priority.NORMAL));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
             return fixes;
         }
 
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#TRUE", "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#FALSE", "Complete trait with '#FALSE'", Priority.NORMAL));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
             return fixes;
         }
 
@@ -152,8 +152,8 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
         }
 
         if (parentAlias == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#TRUE", "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, "#FALSE", "Complete trait with '#FALSE'", Priority.NORMAL));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
+            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
             return fixes;
         }
 
@@ -161,7 +161,7 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
         if (StvnVocabulary.TYPE_STRING.equals(parentAlias)) {
             fixes.add(new CompleteTraitFacetQuickFix(
                 anchor,
-                "#TRUE",
+                StvnVocabulary.VAL_TRUE,
                 "Complete trait with '#TRUE' (overrides parent :String)",
                 Priority.HIGH
             ));
@@ -183,14 +183,14 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
             if (!parentEff) {
                 fixes.add(new CompleteTraitFacetQuickFix(
                     anchor,
-                    "#TRUE",
+                    StvnVocabulary.VAL_TRUE,
                     "Complete trait with '#TRUE' (overrides parent " + parentAlias + ")",
                     Priority.HIGH
                 ));
             } else {
                 fixes.add(new CompleteTraitFacetQuickFix(
                     anchor,
-                    "#FALSE",
+                    StvnVocabulary.VAL_FALSE,
                     "Complete trait with '#FALSE' (overrides parent " + parentAlias + ")",
                     Priority.HIGH
                 ));
@@ -199,8 +199,8 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
         }
 
         // Unresolvable parent fallback
-        fixes.add(new CompleteTraitFacetQuickFix(anchor, "#TRUE", "Complete trait with '#TRUE'", Priority.HIGH));
-        fixes.add(new CompleteTraitFacetQuickFix(anchor, "#FALSE", "Complete trait with '#FALSE'", Priority.NORMAL));
+        fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
+        fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
         return fixes;
     }
 }

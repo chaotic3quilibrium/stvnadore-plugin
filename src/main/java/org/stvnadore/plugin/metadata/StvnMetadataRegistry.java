@@ -20,7 +20,7 @@ public final class StvnMetadataRegistry {
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_UNSIGNED, 1, false,
             "Designates an integer representation as unsigned (non-negative)",
-            Set.of(StvnVocabulary.TYPE_INT), "#unsigned"
+            Set.of(StvnVocabulary.TYPE_INT), StvnVocabulary.FACET_KW_UNSIGNED
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SIZE, 1, false,
@@ -30,47 +30,47 @@ public final class StvnMetadataRegistry {
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_EXACT, 1, false,
             "Enforces arbitrary-precision exact decimal representation",
-            Set.of(StvnVocabulary.TYPE_FLOAT), "#exact"
+            Set.of(StvnVocabulary.TYPE_FLOAT), StvnVocabulary.FACET_KW_EXACT
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_INVERTIBLE, 1, false,
             "Enforces bidirectional unique value-to-key mapping",
-            Set.of(StvnVocabulary.TYPE_MAP), "#invertible"
+            Set.of(StvnVocabulary.TYPE_MAP), StvnVocabulary.FACET_KW_INVERTIBLE
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SCALE_S, 1, false,
             "Physical epoch resolution in seconds (64-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#s"
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_S
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SCALE_MS, 1, false,
             "Physical epoch resolution in milliseconds (64-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#ms"
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_MS
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SCALE_US, 1, false,
             "Physical epoch resolution in microseconds (64-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#us"
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_US
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SCALE_NS, 1, false,
             "Physical epoch resolution in nanoseconds (128-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), "#ns"
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_NS
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_OFFSET, 1, false,
             "Physical instant ISO-8601 timestamp with numerical UTC offset",
-            Set.of(StvnVocabulary.TYPE_DATE_TIME), "#offset"
+            Set.of(StvnVocabulary.TYPE_DATE_TIME), StvnVocabulary.FACET_KW_OFFSET
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_ZONED, 1, false,
             "Civil wall-clock ISO-8601 timestamp with IANA jurisdiction name",
-            Set.of(StvnVocabulary.TYPE_DATE_TIME), "#zoned"
+            Set.of(StvnVocabulary.TYPE_DATE_TIME), StvnVocabulary.FACET_KW_ZONED
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_AUDITED, 1, false,
             "Dual-verified audit timestamp with numerical offset and IANA jurisdiction",
-            Set.of(StvnVocabulary.TYPE_DATE_TIME), "#audited"
+            Set.of(StvnVocabulary.TYPE_DATE_TIME), StvnVocabulary.FACET_KW_AUDITED
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_EQUATABLE, 2, true,
@@ -155,7 +155,7 @@ public final class StvnMetadataRegistry {
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_STRIP, 5, false,
             "Terminal segment slicing; strips package prefixes from imported identifiers upon ingestion",
-            Set.of(StvnVocabulary.KEYWORD_USE, StvnVocabulary.KEYWORD_INCLUDE), "#strip"
+            Set.of(StvnVocabulary.KEYWORD_USE, StvnVocabulary.KEYWORD_INCLUDE), StvnVocabulary.FACET_KW_STRIP
         ));
     }
 
@@ -172,15 +172,15 @@ public final class StvnMetadataRegistry {
      * Returns the full list of metadata facets supported by the specified base type.
      */
     public static List<StvnFacetMetadata> getSupportedFacets(String baseType) {
-        var cleanBase = baseType.startsWith(":") ? baseType : ":" + baseType;
-        if (cleanBase.startsWith(":Tuple")) cleanBase = StvnVocabulary.TYPE_TUPLE;
-        else if (cleanBase.startsWith(":Seq")) cleanBase = StvnVocabulary.TYPE_SEQ;
-        else if (cleanBase.startsWith(":Set")) cleanBase = StvnVocabulary.TYPE_SET;
-        else if (cleanBase.startsWith(":Map")) cleanBase = StvnVocabulary.TYPE_MAP;
-        else if (cleanBase.startsWith(":Union")) cleanBase = StvnVocabulary.TYPE_UNION;
-        else if (cleanBase.startsWith(":Either")) cleanBase = StvnVocabulary.TYPE_EITHER;
-        else if (cleanBase.startsWith(":Option")) cleanBase = StvnVocabulary.TYPE_OPTION;
-        else if (cleanBase.startsWith(":Enum")) cleanBase = StvnVocabulary.TYPE_ENUM;
+        var cleanBase = baseType.startsWith(StvnVocabulary.SIGIL_TYPIC) ? baseType : StvnVocabulary.SIGIL_TYPIC + baseType;
+        if (cleanBase.startsWith(StvnVocabulary.TYPE_TUPLE)) cleanBase = StvnVocabulary.TYPE_TUPLE;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_SEQ)) cleanBase = StvnVocabulary.TYPE_SEQ;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_SET)) cleanBase = StvnVocabulary.TYPE_SET;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_MAP)) cleanBase = StvnVocabulary.TYPE_MAP;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_UNION)) cleanBase = StvnVocabulary.TYPE_UNION;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_EITHER)) cleanBase = StvnVocabulary.TYPE_EITHER;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_OPTION)) cleanBase = StvnVocabulary.TYPE_OPTION;
+        else if (cleanBase.startsWith(StvnVocabulary.TYPE_ENUM)) cleanBase = StvnVocabulary.TYPE_ENUM;
 
         return DOMAIN_FACETS.getOrDefault(cleanBase, Collections.emptyList());
     }
