@@ -613,6 +613,12 @@ public final class StvnExternalAnnotator
                 }
 
                 boolean isSyntaxError = rawMessage.startsWith("STVN Syntax Error");
+                if (!isSyntaxError
+                        && (expandedEmptyCompositeRanges.contains(range)
+                            || (DiagnosticBag.ERR_MALFORMED_SCHEMA.equals(diagnosticId)
+                                && rawMessage.endsWith(", got 0")))) {
+                    continue;
+                }
                 String exactKey = "%d:%d:%s".formatted(range.getStartOffset(), range.getEndOffset(), message);
                 if (registeredExactAnnotations.contains(exactKey)
                         || (isSyntaxError && registeredSyntaxStartOffsets.contains(range.getStartOffset()))) {
@@ -1004,6 +1010,17 @@ public final class StvnExternalAnnotator
                 }
 
                 annotationBuilder = attachWrapSumVariantQuickFixes(annotationBuilder, file, range, diagnosticId, rawMessage);
+
+                if (DiagnosticBag.ERR_MALFORMED_SCHEMA.equals(diagnosticId)
+                        || "ERR_MALFORMED_SCHEMA".equals(diagnosticId)
+                        || rawMessage.startsWith("Union schema requires at least 2 branch types")) {
+                    var unwrapFix = StvnDegenerateCompositeInspection.createSingleBranchUnionUnwrapFix(
+                        file.findElementAt(range.getStartOffset())
+                    );
+                    if (unwrapFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(unwrapFix);
+                    }
+                }
 
                 // Trait violation navigation and paired healing quick-fixes (ERR_TRAIT_VIOLATION)
                 if (DiagnosticBag.ERR_TRAIT_VIOLATION.equals(diagnosticId)

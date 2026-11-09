@@ -6914,6 +6914,10 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
     public void testInvalidEmptyDefsBlockInPayload() throws Exception {
         assertDiagnosticContract("syntax/invalid/metadata/empty_defs_block_in_payload.core_test.stvn_i");
     }
+
+    public void testInvalidStage7SingleBranchUnionPoisoning() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/single_branch_union_poisoning.core_test.stvn_i");
+    }
 }
 
 

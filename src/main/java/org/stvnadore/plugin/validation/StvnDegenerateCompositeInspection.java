@@ -1,13 +1,19 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -19,8 +25,9 @@ import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.psi.*;
 
 /**
- * Local inspection tool flagging degenerate arity-1 composites (:Enum, :Union, :Tuple)
- * in STVN schema definitions, providing atomic unwrapping quick-fixes for :Union and :Tuple.
+ * Local inspection tool flagging degenerate arity-1 composites (:Enum, :Tuple)
+ * in STVN schema definitions, providing atomic unwrapping quick-fixes for :Tuple
+ * and exposing a reusable unwrap intention for invalid 1-branch :Union schemas (E010).
  */
 @NullMarked
 public final class StvnDegenerateCompositeInspection extends LocalInspectionTool {
@@ -69,25 +76,6 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
                             highlightElement != null ? highlightElement : o,
                             message,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING
-                        );
-                    }
-                    return;
-                }
-
-                if (isUnionSumType(o)) {
-                    var branches = PsiTreeUtil.getChildrenOfTypeAsList(o, SchemaType.class);
-                    if (branches.size() == 1) {
-                        var innerType = branches.get(0);
-                        var highlightElement = findKeywordToken(o, StvnTypes.KW_UNION);
-                        var formatted = StvnSchemaFormatter.formatCleanSchema(o);
-                        var innerFormatted = StvnSchemaFormatter.formatCleanSchema(innerType);
-                        var message = StvnDiagnosticFormatter.formatPlugin("Degenerate 1-branch union: '" + formatted + "' is isomorphic to its inner type", StvnDiagnosticCodes.WARN_DEGENERATE_UNION);
-
-                        holder.registerProblem(
-                            highlightElement != null ? highlightElement : o,
-                            message,
-                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            new UnwrapDegenerateCompositeQuickFix(innerFormatted)
                         );
                     }
                 }
@@ -141,6 +129,77 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
     }
 
     /**
+     * Creates an intention action that unwraps an invalid single-branch {@code :Union} schema into its inner branch type.
+     *
+     * @param element the PSI element inside or at the start of the single-branch {@code :Union}
+     * @return the unwrap intention action, or {@code null} if the element does not belong to a 1-branch {@code :Union}
+     */
+    public static @Nullable IntentionAction createSingleBranchUnionUnwrapFix(@Nullable PsiElement element) {
+        if (element == null) {
+            return null;
+        }
+        var sum = element instanceof SumType s
+            ? s
+            : PsiTreeUtil.getParentOfType(element, SumType.class, false);
+        if (sum == null || !isUnionSumType(sum)) {
+            return null;
+        }
+        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+        if (branches.size() != 1) {
+            return null;
+        }
+        var innerFormatted = StvnSchemaFormatter.formatCleanSchema(branches.get(0));
+        if (innerFormatted.isEmpty()) {
+            return null;
+        }
+        return new SingleBranchUnionUnwrapIntention(innerFormatted, sum);
+    }
+
+    private static final class SingleBranchUnionUnwrapIntention implements IntentionAction, PriorityAction {
+        private final String targetTypeName;
+        private final SmartPsiElementPointer<PsiElement> targetPointer;
+
+        private SingleBranchUnionUnwrapIntention(String targetTypeName, PsiElement targetElement) {
+            this.targetTypeName = targetTypeName;
+            this.targetPointer = SmartPointerManager.getInstance(targetElement.getProject())
+                .createSmartPsiElementPointer(targetElement);
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return "Unwrap degenerate composite to '" + targetTypeName + "'";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Unwrap degenerate composite";
+        }
+
+        @Override
+        public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            return targetPointer.getElement() != null;
+        }
+
+        @Override
+        public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
+            var element = targetPointer.getElement();
+            if (element != null) {
+                UnwrapDegenerateCompositeQuickFix.unwrapElement(project, element);
+            }
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return true;
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.HIGH;
+        }
+    }
+
+    /**
      * Quick-fix that unwraps a degenerate 1-element composite directly into its inner component schema.
      */
     public static final class UnwrapDegenerateCompositeQuickFix implements LocalQuickFix {
@@ -168,10 +227,12 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
-            if (element == null) {
-                return;
+            if (element != null) {
+                unwrapElement(project, element);
             }
+        }
 
+        static void unwrapElement(@NotNull Project project, @NotNull PsiElement element) {
             // 1. Resolve ProductType (:Tuple)
             var product = element instanceof ProductType
                 ? (ProductType) element

@@ -195,8 +195,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private static @Nullable String resolveGroundedFallbackBase(
             @Nullable StvnSchema ir,
             @Nullable PsiElement psiElement) {
-        if (ir instanceof StvnSchema.PoisonedSchema p && p.isGrounded()) {
-            return StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get());
+        if (ir instanceof StvnSchema.PoisonedSchema p) {
+            return p.isGrounded()
+                ? StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get())
+                : null;
         }
         if (psiElement != null) {
             var terminal = resolveTerminalSchemaType(psiElement, new HashSet<>());
@@ -227,6 +229,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         } else if (target instanceof Value value) {
             var info = StvnTypeResolver.resolveBaseTypeInfo(value);
+            if ((info == null || info.getSchema() == null)
+                    && value.getParent() instanceof ExplicitUnionValue pUnion
+                    && pUnion.getParent() instanceof Value outerUnionVal) {
+                info = StvnTypeResolver.resolveBaseTypeInfo(outerUnionVal);
+            }
             if (info != null && info.getSchema() != null) {
                 var schema = info.getSchema();
                 var kw = schema.getTypeKeyword();
@@ -3511,8 +3518,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     private @NotNull String renderPayloadValueCard(Value value, @Nullable PsiElement originalElement) {
         var sb = new StringBuilder();
         var info = StvnTypeResolver.resolveBaseTypeInfo(value);
-        var schemaType = info != null ? info.getSchema() : null;
         var resolvedType = StvnTypeResolver.resolveValueType(value);
+        if ((info == null || info.getSchema() == null)
+                && value.getParent() instanceof ExplicitUnionValue pUnion
+                && pUnion.getParent() instanceof Value outerUnionVal) {
+            var outerInfo = StvnTypeResolver.resolveBaseTypeInfo(outerUnionVal);
+            if (outerInfo != null && outerInfo.getSchema() != null) {
+                info = outerInfo;
+                if (resolvedType == null) {
+                    resolvedType = StvnTypeResolver.resolveValueType(outerUnionVal);
+                }
+            }
+        }
+        var schemaType = info != null ? info.getSchema() : null;
         var displayType = resolvedType != null ? resolvedType : (info != null ? info.getLabel() : "Unknown");
 
         // Resolve union variant context if value resides in or is an ExplicitUnionValue
@@ -3695,13 +3713,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return false;
     }
 
+    private static boolean isGoverningSchemaUngrounded(Value value, @Nullable SchemaType schemaType) {
+        if (schemaType == null || schemaType.getTypeKeyword() == null) {
+            return false;
+        }
+        var file = value.getContainingFile();
+        if (file == null) {
+            return false;
+        }
+        var aliasText = schemaType.getTypeKeyword().getText().trim();
+        var ir = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasText);
+        return ir instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded();
+    }
+
     private static @NotNull StvnValueComplianceResult evaluateValueComplianceInternal(Value value, @Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return new StvnValueComplianceResult(true, "Unchecked", "No governing schema identified", Collections.emptyMap(), Collections.emptyList());
         }
 
         var baseType = resolveBaseTypeString(schemaType, new HashSet<>());
-        if (baseType == null) {
+        if (baseType == null || isGoverningSchemaUngrounded(value, schemaType)) {
             if (isGoverningSchemaDegraded(value, schemaType)) {
                 String schemaLabel = schemaType.getText().trim();
                 return new StvnValueComplianceResult(
@@ -4996,6 +5027,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         var unionSchema = info.getSchema();
+        if (unionSchema.getTypeKeyword() != null && outerVal.getContainingFile() != null) {
+            var governingAlias = unionSchema.getTypeKeyword().getText().trim();
+            var governingIr = StvnTypeResolver.resolveIrSchemaByAlias(outerVal.getContainingFile(), governingAlias);
+            if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
+                return null;
+            }
+        }
         var nominalUnion = StvnTypeResolver.resolveNominalSchema(unionSchema);
         var schemaToInspect = (nominalUnion != null) ? nominalUnion : unionSchema;
         var ctor = schemaToInspect.getSchemaConstructor();
@@ -5004,6 +5042,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         var branches = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
+        if (branches.size() < 2) {
+            return null;
+        }
         var tagPrefix = union.getUnionTagPrefix();
         if (tagPrefix == null || !tagPrefix.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return null;

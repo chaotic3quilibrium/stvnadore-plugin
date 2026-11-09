@@ -324,6 +324,8 @@ public final class StvnDiagnosticAnnotatorMapping {
             || "E040".equals(code)
             || DiagnosticBag.ERR_PRELUDE_ALIAS_PURGED.equals(code)
             || "ERR_PRELUDE_ALIAS_PURGED".equals(code)
+            || DiagnosticBag.ERR_MALFORMED_SCHEMA.equals(code)
+            || "ERR_MALFORMED_SCHEMA".equals(code)
             || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(code)
             || "ERR_SECTION_PROHIBITED".equals(code)
             || "ERR_SECTION_REQUIRED".equals(code)

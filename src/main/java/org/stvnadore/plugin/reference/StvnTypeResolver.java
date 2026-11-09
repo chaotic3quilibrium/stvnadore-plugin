@@ -97,7 +97,9 @@ public final class StvnTypeResolver {
         "E014",
         DiagnosticBag.ERR_CIRCULAR_TYPE,
         "E007",
-        "E015"
+        "E015",
+        DiagnosticBag.ERR_MALFORMED_SCHEMA,
+        "ERR_MALFORMED_SCHEMA"
     );
 
     /**
@@ -257,10 +259,11 @@ public final class StvnTypeResolver {
             return false;
         }
 
-        // 1. Authoritative pure-IR PoisonedSchema check (exclude non-constraint structural warnings such as 1-branch :Union)
+        // 1. Authoritative pure-IR PoisonedSchema check
         var irSchema = resolveIrSchemaByAlias(file, aliasName);
         if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
-                && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisoned.primaryDiagnosticCode())) {
+                && (!"RECURSIVE_BACK_EDGE".equals(poisoned.primaryDiagnosticCode())
+                    || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisoned.primaryDiagnosticCode()))) {
             return true;
         }
 
@@ -270,7 +273,8 @@ public final class StvnTypeResolver {
         if (typeDef != null) {
             var defIr = resolveNominalIrSchema(typeDef);
             if (defIr instanceof StvnSchema.PoisonedSchema poisonedDef
-                    && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisonedDef.primaryDiagnosticCode())) {
+                    && (!"RECURSIVE_BACK_EDGE".equals(poisonedDef.primaryDiagnosticCode())
+                        || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisonedDef.primaryDiagnosticCode()))) {
                 return true;
             }
             var metaMap = typeDef.getMetadataMap();
@@ -738,6 +742,11 @@ public final class StvnTypeResolver {
         if (resolvedNode instanceof StvnValue.StvnErrorValue err) {
             if (!isRecoverableCoreError(err, value)) {
                 return null;
+            }
+            if (err.schema() instanceof StvnSchema.PoisonedSchema poisoned
+                    && poisoned.isUngrounded()
+                    && poisoned.aliasName().isPresent()) {
+                return "\u26A0 " + poisoned.aliasName().get();
             }
         }
         if (resolvedNode != null && !(resolvedNode instanceof StvnValue.StvnErrorValue)) {
@@ -1256,13 +1265,24 @@ public final class StvnTypeResolver {
             return null;
         }
 
+        if (info.getSchema() != null && info.getSchema().getTypeKeyword() != null) {
+            var governingAlias = info.getSchema().getTypeKeyword().getText().trim();
+            var governingIr = resolveIrSchemaByAlias(value.getContainingFile(), governingAlias);
+            if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
+                return "\u26A0 " + governingAlias;
+            }
+        }
+
         var resolvedSchema = resolveNominalSchema(info.getSchema());
         var schemaToInspect = resolvedSchema != null ? resolvedSchema : info.getSchema();
         var constructor = schemaToInspect.getSchemaConstructor();
         if (constructor != null) {
             var sumType = constructor.getSumType();
             if (sumType != null) {
-                var baseLabel = info.getLabel();
+                var degradedSum = info.getSchema() != null
+                    && info.getSchema().getTypeKeyword() != null
+                    && isDegradedNominalAlias(value.getContainingFile(), info.getSchema().getTypeKeyword().getText().trim());
+                var baseLabel = (degradedSum ? "\u26A0 " : "") + info.getLabel();
                 var useLong = useLongFormSumTypes(value.getProject());
                 if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
                     var eitherVal = value.getExplicitEitherValue();
@@ -1796,11 +1816,6 @@ public final class StvnTypeResolver {
                     if (eitherBranches.size() >= 2) {
                         innerSchema = eitherBranches.get(1);
                     }
-                } else if (step.type != StepType.UNION && sum.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                    var unionBranches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                    if (unionBranches.size() == 1) {
-                        innerSchema = unionBranches.get(0);
-                    }
                 }
                 if (innerSchema == null) {
                     break;
@@ -1876,7 +1891,7 @@ public final class StvnTypeResolver {
                 var sumType = constructor.getSumType();
                 if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
                     var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    currentSchema = (step.index >= 0 && step.index < innerSchemas.size())
+                    currentSchema = (innerSchemas.size() >= 2 && step.index >= 0 && step.index < innerSchemas.size())
                         ? innerSchemas.get(step.index)
                         : null;
                 } else {
@@ -2568,6 +2583,14 @@ public final class StvnTypeResolver {
                     mapValues(optPsi.getValue(), innerIr, map);
                 }
                 irIdx[0]++;
+            } else if (targetIr instanceof StvnValue.StvnErrorValue) {
+                map.put(psiVal.getTextRange().getStartOffset(), targetIr);
+                map.put(optPsi.getTextRange().getStartOffset(), targetIr);
+                var innerVal = optPsi.getValue();
+                if (innerVal != null) {
+                    map.put(innerVal.getTextRange().getStartOffset(), targetIr);
+                }
+                irIdx[0]++;
             } else {
                 var headTokenOffset = psiVal.getTextRange().getStartOffset();
                 map.put(headTokenOffset, targetIr);
@@ -2600,6 +2623,14 @@ public final class StvnTypeResolver {
                     mapValues(eitherPsi.getValue(), innerIr, map);
                 }
                 irIdx[0]++;
+            } else if (targetIr instanceof StvnValue.StvnErrorValue) {
+                map.put(psiVal.getTextRange().getStartOffset(), targetIr);
+                map.put(eitherPsi.getTextRange().getStartOffset(), targetIr);
+                var innerVal = eitherPsi.getValue();
+                if (innerVal != null) {
+                    map.put(innerVal.getTextRange().getStartOffset(), targetIr);
+                }
+                irIdx[0]++;
             } else {
                 var headTokenOffset = psiVal.getTextRange().getStartOffset();
                 map.put(headTokenOffset, targetIr);
@@ -2630,6 +2661,14 @@ public final class StvnTypeResolver {
                 var innerIr = union.value();
                 if (unionPsi.getValue() != null) {
                     mapValues(unionPsi.getValue(), innerIr, map);
+                }
+                irIdx[0]++;
+            } else if (targetIr instanceof StvnValue.StvnErrorValue) {
+                map.put(psiVal.getTextRange().getStartOffset(), targetIr);
+                map.put(unionPsi.getTextRange().getStartOffset(), targetIr);
+                var innerVal = unionPsi.getValue();
+                if (innerVal != null) {
+                    map.put(innerVal.getTextRange().getStartOffset(), targetIr);
                 }
                 irIdx[0]++;
             } else {
@@ -2677,7 +2716,7 @@ public final class StvnTypeResolver {
      * @return {@code true} if unspooled, {@code false} otherwise
      */
     public static boolean isUnspooledContainer(PsiElement container, @Nullable StvnValue coreNode) {
-        if (coreNode == null) {
+        if (coreNode == null || coreNode instanceof StvnValue.StvnErrorValue) {
             return false;
         }
         if (container instanceof ExplicitOptionValue) {

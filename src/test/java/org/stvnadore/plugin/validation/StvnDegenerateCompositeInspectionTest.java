@@ -6,7 +6,8 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Platform test suite for {@link StvnDegenerateCompositeInspection}.
- * Verifies detection of degenerate arity-1 composites (:Enum, :Union, :Tuple),
+ * Verifies detection of degenerate arity-1 composites (:Enum, :Tuple),
+ * fatal E010-MALFORMED_SCHEMA enforcement on 1-branch :Union,
  * multi-arity immunity, and execution of unwrapping quick-fixes.
  */
 @NullMarked
@@ -69,11 +70,19 @@ public final class StvnDegenerateCompositeInspectionTest extends BasePlatformTes
             """;
         myFixture.configureByText("union_single.stvn", beforeText);
         var highlights = myFixture.doHighlighting();
-        var warnings = highlights.stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        var legacyUnionWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING
+                && h.getDescription() != null
+                && h.getDescription().contains("WARN_DEGENERATE_UNION"))
             .toList();
-        assertEquals("Expected 1 warning for single-branch union", 1, warnings.size());
-        assertTrue(warnings.get(0).getDescription().contains("Degenerate 1-branch union: ':Union( :String )' is isomorphic to its inner type"));
+        assertEquals("Expected 0 legacy PW004 warnings for single-branch union", 0, legacyUnionWarnings.size());
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected 1 fatal E010 error for single-branch union", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E010-MALFORMED_SCHEMA"));
+        assertTrue(errors.get(0).getDescription().contains("Union schema requires at least 2 branch types"));
 
         // Move caret to :Union token and launch quick-fix
         var offset = beforeText.indexOf(":Union");
@@ -96,11 +105,10 @@ public final class StvnDegenerateCompositeInspectionTest extends BasePlatformTes
         myFixture.configureByText("union_multi.stvn",
             """
             {
-              :type :Union( :String :Int32 )
+              :type :Union( :String :Int )
               :body #1 "data"
             }
-            """
-        );
+            """);
         var highlightsMulti = myFixture.doHighlighting();
         var warningsMulti = highlightsMulti.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
@@ -144,8 +152,7 @@ public final class StvnDegenerateCompositeInspectionTest extends BasePlatformTes
               :type :Tuple( :Int32 :String )
               :body ( 42 "alpha" )
             }
-            """
-        );
+            """);
         var highlightsMulti = myFixture.doHighlighting();
         var warningsMulti = highlightsMulti.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
@@ -170,6 +177,13 @@ public final class StvnDegenerateCompositeInspectionTest extends BasePlatformTes
         var warnings = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .toList();
-        assertEquals("Expected 2 warnings for nested degenerate composites in map and seq", 2, warnings.size());
+        assertEquals("Expected 1 warning for nested 1-element tuple in map", 1, warnings.size());
+        assertTrue(warnings.get(0).getDescription().contains("WARN_DEGENERATE_TUPLE"));
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected 1 fatal E010 error for nested 1-branch union in seq", 1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E010-MALFORMED_SCHEMA"));
     }
 }

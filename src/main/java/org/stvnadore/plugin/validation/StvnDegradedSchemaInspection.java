@@ -8,6 +8,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.BodyEntry;
@@ -71,10 +72,21 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                     var kw = schema.getTypeKeyword();
                     var aliasName = kw != null ? kw.getText() : null;
                     if (aliasName != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), aliasName)) {
-                        var resolved = StvnTypeResolver.resolveNominalSchema(schema);
-                        var fallbackBase = resolved != null ? StvnSchemaFormatter.formatCleanSchema(resolved) : StvnSchemaFormatter.formatCleanSchema(schema);
+                        var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), aliasName);
+                        String rawMessage;
+                        if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
+                            rawMessage = "Value bound to degraded schema '" + aliasName
+                                + "' (payload evaluation is suspended for ungrounded schema)";
+                        } else {
+                            var resolved = StvnTypeResolver.resolveNominalSchema(schema);
+                            var fallbackBase = resolved != null
+                                ? StvnSchemaFormatter.formatCleanSchema(resolved)
+                                : StvnSchemaFormatter.formatCleanSchema(schema);
+                            rawMessage = "Value bound to degraded schema '" + aliasName
+                                + "' (operating on fallback base '" + fallbackBase + "')";
+                        }
                         var message = StvnDiagnosticFormatter.formatPlugin(
-                            "Value bound to degraded schema '" + aliasName + "' (operating on fallback base '" + fallbackBase + "')",
+                            rawMessage,
                             StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE
                         );
 

@@ -264,4 +264,85 @@ public final class StvnTypeInlayHintsTest extends BasePlatformTestCase {
             );
         }
     }
+
+    public void testStage7SingleBranchUnionPoisonedSlotSingleInlayHintAndSiblingIsolation() {
+        var text = """
+            {
+              :meta {
+                #name "single_branch_union_poisoning"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :ErrorCode { #unsigned #size 16 #minIncl 400 #maxExcl 600 } :Int
+                :TrapSingleBranchUnion :Union(:ErrorCode)
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+                :Stage7PoisonEnvelope :Tuple(
+                  :TrapSingleBranchUnion
+                  :BoundedPort
+                )
+              }
+              :type :Stage7PoisonEnvelope
+              :body (
+                #1 404
+                5000
+              )
+            }
+            """;
+        var file = myFixture.configureByText(
+            "single_branch_union_poisoning.core_test.stvn_i",
+            text
+        );
+
+        assertTrue(
+            ":TrapSingleBranchUnion must be detected as a degraded nominal alias",
+            StvnTypeResolver.isDegradedNominalAlias(file, ":TrapSingleBranchUnion")
+        );
+
+        var tuple = PsiTreeUtil.findChildOfType(file, TupleLiteral.class);
+        assertNotNull("TupleLiteral must not be null", tuple);
+        var values = tuple.getValueList();
+        assertEquals("Expected 2 tuple elements", 2, values.size());
+
+        var slot1Val = values.get(0);
+        assertEquals("#1 404", slot1Val.getText().trim());
+        var slot1CoreVal = StvnTypeResolver.resolveCoreValue(slot1Val);
+        assertTrue(
+            "Slot 1 ('#1 404') must resolve to a recoverable StvnErrorValue",
+            slot1CoreVal instanceof org.stvnadore.core.ir.StvnValue.StvnErrorValue errVal
+                && StvnTypeResolver.isRecoverableCoreError(errVal, slot1Val)
+        );
+        assertEquals(
+            "Slot 1 ('#1 404') must resolve to ungrounded degraded badge '⚠ :TrapSingleBranchUnion'",
+            "\u26A0 :TrapSingleBranchUnion",
+            StvnTypeResolver.resolveValueType(slot1Val)
+        );
+
+        var unionPsi = slot1Val.getExplicitUnionValue();
+        assertNotNull("ExplicitUnionValue must not be null", unionPsi);
+        assertFalse(
+            "Poisoned ExplicitUnionValue ('#1 404') must NOT be misclassified as an unspooled container",
+            StvnTypeResolver.isUnspooledContainer(unionPsi, slot1CoreVal)
+        );
+        assertEquals(
+            "Inlay badge for '#1 404' must be anchored at the end of '#1 404', not after '#1'",
+            slot1Val.getTextRange().getEndOffset(),
+            StvnTypeInferenceHelper.calculateInlayBadgeOffset(slot1Val, slot1CoreVal)
+        );
+
+        var innerVal = unionPsi.getValue();
+        assertNotNull("Inner value '404' must not be null", innerVal);
+        assertTrue(
+            "Inner value '404' must be recognized as an inner child of an algebraic container (suppressing duplicate inlay hint)",
+            StvnTypeInferenceHelper.isInnerChildOfAlgebraicContainer(innerVal)
+        );
+
+        var slot2Val = values.get(1);
+        assertEquals("5000", slot2Val.getText().trim());
+        assertEquals(
+            "Sibling Slot 2 ('5000') must retain its nominal inlay hint ':BoundedPort (-> :Int)'",
+            ":BoundedPort (-> :Int)",
+            StvnTypeResolver.resolveValueType(slot2Val)
+        );
+    }
 }

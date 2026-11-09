@@ -1742,4 +1742,58 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
                 doc.contains("Violated"));
         }
     }
+
+    public void testStage7SingleBranchUnionHoverInDefsAndBody() {
+        var text = """
+            {
+              :meta {
+                #name "single_branch_union_poisoning"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :ErrorCode { #unsigned #size 16 #minIncl 400 #maxExcl 600 } :Int
+                :TrapSingleBranchUnion :Union(:ErrorCode)
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+                :Stage7PoisonEnvelope :Tuple(
+                  :TrapSingleBranchUnion
+                  :BoundedPort
+                )
+              }
+              :type :Stage7PoisonEnvelope
+              :body (
+                #1 404
+                5000
+              )
+            }
+            """;
+        myFixture.configureByText("single_branch_union_poisoning.core_test.stvn_i", text);
+
+        int defsOffset = text.indexOf(":TrapSingleBranchUnion");
+        String defsDoc = getDocAtOffset(text, defsOffset + 2);
+        assertNotNull("Hover on :TrapSingleBranchUnion in :defs must not be null", defsDoc);
+        assertTrue("Hover on :TrapSingleBranchUnion in :defs must show Case A ungrounded banner:\n" + defsDoc,
+            defsDoc.contains("Degraded Schema Warning")
+                && defsDoc.contains("does not resolve to a base type in <code>:defs</code>")
+                && defsDoc.contains("Payload evaluation is suspended."));
+        assertFalse("Hover on :TrapSingleBranchUnion in :defs must not fabricate ':Value':\n" + defsDoc,
+            defsDoc.contains(":Value"));
+
+        int bodyIdx = text.indexOf(":body");
+        int tagOffset = text.indexOf("#1 404", bodyIdx);
+        String tagDoc = getDocAtOffset(text, tagOffset + 1);
+        assertNotNull("Hover on #1 in Slot 13 must not be null", tagDoc);
+        assertTrue("Hover on #1 in Slot 13 must show Suspended (Ungrounded Schema):\n" + tagDoc,
+            tagDoc.contains("Suspended (Ungrounded Schema)"));
+        assertFalse("Hover on #1 in Slot 13 must not unwrap into :ErrorCode:\n" + tagDoc,
+            tagDoc.contains("Active Branch"));
+
+        int innerOffset = text.indexOf("404", bodyIdx);
+        String innerDoc = getDocAtOffset(text, innerOffset + 1);
+        assertNotNull("Hover on 404 in Slot 13 must not be null", innerDoc);
+        assertTrue("Hover on 404 in Slot 13 must show Suspended (Ungrounded Schema):\n" + innerDoc,
+            innerDoc.contains("Suspended (Ungrounded Schema)"));
+        assertFalse("Hover on 404 in Slot 13 must not unwrap into :ErrorCode:\n" + innerDoc,
+            innerDoc.contains("Active Branch"));
+    }
 }

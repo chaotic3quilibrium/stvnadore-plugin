@@ -2997,4 +2997,59 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .toList();
         assertTrue("Expected 0 errors after map auto-healer rewrite, got: " + postFixErrors, postFixErrors.isEmpty());
     }
+
+    public void testStage7SingleBranchUnionPoisoningAnnotatorAndDegradedInspection() {
+        var degradedInspection = new StvnDegradedSchemaInspection();
+        degradedInspection.highlightBodyValuesBoundToDegradedSchemas = true;
+        myFixture.enableInspections(degradedInspection, new StvnMetadataFacetInspection(), new StvnDegenerateCompositeInspection());
+
+        var code = """
+            {
+              :meta {
+                #name "single_branch_union_poisoning"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :ErrorCode { #unsigned #size 16 #minIncl 400 #maxExcl 600 } :Int
+                :TrapSingleBranchUnion <caret>:Union(:ErrorCode)
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+                :Stage7PoisonEnvelope :Tuple(
+                  :TrapSingleBranchUnion
+                  :BoundedPort
+                )
+              }
+              :type :Stage7PoisonEnvelope
+              :body (
+                #1 404
+                5000
+              )
+            }
+            """;
+        myFixture.configureByText("single_branch_union_poisoning.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected exactly 2 errors (E010 in :defs and E012 on sibling 5000 in :body): " + errors,
+            2, errors.size());
+        assertTrue("Expected E010-MALFORMED_SCHEMA on :Union(:ErrorCode) even when StvnMetadataFacetInspection is enabled: " + errors,
+            errors.stream().anyMatch(h -> h.getDescription().contains("E010-MALFORMED_SCHEMA")
+                && h.getDescription().contains("Union schema requires at least 2 branch types")));
+        assertTrue("Expected E012-ERR_CONSTRAINT_VIOLATION on sibling slot 5000: " + errors,
+            errors.stream().anyMatch(h -> h.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")
+                && h.getDescription().contains("5000")));
+
+        var weakWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .toList();
+        assertEquals("Expected exactly 1 degraded schema weak warning on Slot 13 (#1 404): " + weakWarnings,
+            1, weakWarnings.size());
+        assertTrue("Expected ungrounded degraded schema message on #1 404: " + weakWarnings.get(0).getDescription(),
+            weakWarnings.get(0).getDescription().contains("Value bound to degraded schema ':TrapSingleBranchUnion' (payload evaluation is suspended for ungrounded schema)"));
+
+        var unwrapFixes = myFixture.filterAvailableIntentions("Unwrap degenerate composite to ':ErrorCode'");
+        assertEquals("Expected unwrap quick-fix on single-branch :Union(:ErrorCode)", 1, unwrapFixes.size());
+    }
 }

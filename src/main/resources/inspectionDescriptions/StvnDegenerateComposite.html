@@ -1,11 +1,11 @@
 <html>
 <body>
-<p>Reports degenerate arity-1 composite schema definitions (<code>:Enum</code>, <code>:Union</code>, <code>:Tuple</code>) that offer zero branching entropy or redundant container wrapping.</p>
+<p>Reports degenerate arity-1 composite schema definitions (<code>:Enum</code>, <code>:Tuple</code>) that offer zero branching entropy or redundant container wrapping, and provides an unwrap quick-fix (also available on invalid single-branch <code>:Union</code> schemas reported as <code>E010</code>).</p>
 <!-- tooltip end -->
 <p>In algebraic type systems, composites containing exactly one component are isomorphic to simpler forms:</p>
 <ul>
     <li><b>Single-Variant Enum (<code>:Enum [ #Variant ]</code>):</b> An enumeration with only 1 variant has 0 bits of information entropy. It acts as a static constant rather than a branching state machine.</li>
-    <li><b>Single-Branch Union (<code>:Union( :T )</code>):</b> A coproduct with a single branch (<code>:T + ∅ ≅ :T</code>) offers no alternative branches or polymorphic dispatch.</li>
+    <li><b>Single-Branch Union (<code>:Union( :T )</code>):</b> A coproduct with a single branch (<code>:T + ∅ ≅ :T</code>) is a fatal Pass 2 schema error (<code>E010-MALFORMED_SCHEMA</code>) and offers an unwrap quick-fix to <code>:T</code>.</li>
     <li><b>Single-Element Tuple (<code>:Tuple( :T )</code>):</b> A Cartesian product with one factor (<code>:T × 1 ≅ :T</code>) adds redundant parenthesis wrapping without positional decomposition benefits.</li>
 </ul>
 
@@ -18,7 +18,7 @@
 <pre><code>{
   :defs {
     :Status :Enum [ #Active ]       // Warning: 0 branching entropy
-    :SingleBranch :Union( :String ) // Warning: Isomorphic to :String
+    :SingleBranch :Union( :String ) // Error (E010): Malformed 1-branch union
     :WrappedId :Tuple( :Int )      // Warning: Redundant container wrapping
   }
   :type :Tuple( :Status :SingleBranch :WrappedId )
