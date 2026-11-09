@@ -8,6 +8,7 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.psi.*;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -17,6 +18,33 @@ import java.util.Set;
 public final class StvnMetadataFacetAllowlist {
 
     private StvnMetadataFacetAllowlist() {}
+
+    private static final List<String> CANONICAL_FACET_ORDER = List.of(
+        StvnVocabulary.FACET_KW_UNSIGNED,
+        StvnVocabulary.FACET_KW_EXACT,
+        StvnVocabulary.FACET_KW_INVERTIBLE,
+        StvnVocabulary.FACET_KW_SCALE_NS,
+        StvnVocabulary.FACET_KW_SCALE_US,
+        StvnVocabulary.FACET_KW_SCALE_MS,
+        StvnVocabulary.FACET_KW_SCALE_S,
+        StvnVocabulary.FACET_KW_OFFSET,
+        StvnVocabulary.FACET_KW_ZONED,
+        StvnVocabulary.FACET_KW_AUDITED,
+        StvnVocabulary.FACET_KW_SIZE,
+        StvnVocabulary.FACET_KW_MIN_SIZE,
+        StvnVocabulary.FACET_KW_MAX_SIZE,
+        StvnVocabulary.FACET_KW_EQUATABLE,
+        StvnVocabulary.FACET_KW_COMPARABLE,
+        StvnVocabulary.FACET_KW_MIN_INCL,
+        StvnVocabulary.FACET_KW_MIN_EXCL,
+        StvnVocabulary.FACET_KW_MAX_INCL,
+        StvnVocabulary.FACET_KW_MAX_EXCL,
+        StvnVocabulary.FACET_KW_FILTER_INCL,
+        StvnVocabulary.FACET_KW_FILTER_EXCL,
+        StvnVocabulary.FACET_KW_PRESERVE_INDENT,
+        StvnVocabulary.FACET_KW_REGEX,
+        StvnVocabulary.FACET_KW_STRIP
+    );
 
     private static final Set<String> COMMON_TRAIT_FACETS = Set.of(
         StvnVocabulary.FACET_KW_EQUATABLE,
@@ -363,6 +391,44 @@ public final class StvnMetadataFacetAllowlist {
      */
     public static boolean isMapType(String baseType) {
         return baseType.equals(StvnVocabulary.TYPE_MAP) || baseType.startsWith(StvnVocabulary.TYPE_MAP);
+    }
+
+    /**
+     * Returns the canonically ordered list of permitted metadata facet tags (with leading {@code #})
+     * for the specified base type.
+     *
+     * @param baseType      the resolved base type token (e.g., {@code :Tuple}, {@code :Int}, {@code :Float})
+     * @param isExactActive {@code true} if {@code #exact} is active on {@code :Float}
+     * @return immutable list of permitted facet tags for {@code baseType}
+     */
+    public static List<String> getPermittedFacetsForType(String baseType, boolean isExactActive) {
+        var cleanBase = extractCleanBaseType(baseType);
+        return CANONICAL_FACET_ORDER.stream()
+            .filter(facetKw -> isFacetPermittedOnBaseType(facetKw, cleanBase, isExactActive))
+            .toList();
+    }
+
+    /**
+     * Strips type arguments from parameterized constructors such as {@code :Seq(:Int)} or {@code :Tuple(:Int :String)}.
+     *
+     * @param baseType the raw base type string
+     * @return the clean constructor or scalar keyword
+     */
+    public static String extractCleanBaseType(String baseType) {
+        var trimmed = baseType.trim();
+        int parenIdx = trimmed.indexOf('(');
+        if (parenIdx > 0) {
+            trimmed = trimmed.substring(0, parenIdx).trim();
+        }
+        int bracketIdx = trimmed.indexOf('[');
+        if (bracketIdx > 0) {
+            trimmed = trimmed.substring(0, bracketIdx).trim();
+        }
+        int spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx > 0) {
+            trimmed = trimmed.substring(0, spaceIdx).trim();
+        }
+        return trimmed;
     }
 
     /**

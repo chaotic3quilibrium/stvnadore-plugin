@@ -341,7 +341,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             new RemoveElementQuickFix("Remove empty type constraint block")
                         );
                     } else {
-                        var constName = def.getValueKeyword() != null ? def.getValueKeyword().getText() : "#CONST";
                         for (var entry : metaMap.getMetadataEntryList()) {
                             String facetName = extractFacetName(entry);
                             if (facetName == null) continue;
@@ -365,18 +364,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                     StvnDiagnosticFormatter.formatPlugin(
                                         "Trait overrides are not permitted on constants; permitted facets: [Definition, Bounds, Constraints]",
                                         StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT
-                                    ),
-                                    ProblemHighlightType.GENERIC_ERROR,
-                                    new RemoveElementQuickFix("Remove invalid facet '#" + facetName + "'", "Remove invalid facet")
-                                );
-                            }
-                            // Enum Subsets: Prohibited on constants
-                            else if (entry.getMetadataFilter() != null || "filterIncl".equals(facetName) || "filterExcl".equals(facetName)) {
-                                holder.registerProblem(
-                                    entry,
-                                    StvnDiagnosticFormatter.formatPlugin(
-                                        "Constraint violation (" + constName + "): filter facets are not allowed on constants",
-                                        StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix("Remove invalid facet '#" + facetName + "'", "Remove invalid facet")
@@ -632,10 +619,15 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     inapplicableFix
                 );
             } else if (hasToken(entry, MIN_SIZE_FACET_TOKENS) && !isString && !isCollection) {
+                var cleanBase = StvnMetadataFacetAllowlist.extractCleanBaseType(baseType);
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Facet is not permitted on " + baseType + "; permitted facets for collections and string types: [#minSize, #maxSize]",
+                        "Facet '" + kwTag + "' is not permitted on " + baseType + "; '" + kwTag + "' applies only to "
+                            + StvnVocabulary.TYPE_STRING + ", " + StvnVocabulary.TYPE_SEQ + ", "
+                            + StvnVocabulary.TYPE_SET + ", and " + StvnVocabulary.TYPE_MAP
+                            + " (permitted facets on " + cleanBase + ": "
+                            + StvnMetadataFacetAllowlist.getPermittedFacetsForType(cleanBase, false) + ")",
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
@@ -660,10 +652,15 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     continue;
                 }
                 if (!isString && !isCollection) {
+                    var cleanBase = StvnMetadataFacetAllowlist.extractCleanBaseType(baseType);
                     holder.registerProblem(
                         entry,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Facet is not permitted on " + baseType + "; permitted facets for collections, string types, and exact float: [#minSize, #maxSize]",
+                            "Facet '" + kwTag + "' is not permitted on " + baseType + "; '" + kwTag + "' applies only to "
+                                + StvnVocabulary.TYPE_STRING + ", " + StvnVocabulary.TYPE_SEQ + ", "
+                                + StvnVocabulary.TYPE_SET + ", and " + StvnVocabulary.TYPE_MAP
+                                + " (permitted facets on " + cleanBase + ": "
+                                + StvnMetadataFacetAllowlist.getPermittedFacetsForType(cleanBase, false) + ")",
                             StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                         ),
                         ProblemHighlightType.GENERIC_ERROR,

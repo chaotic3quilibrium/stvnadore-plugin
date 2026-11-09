@@ -229,7 +229,8 @@ public final class StvnExcessiveExactFloatPrecisionInspectionTest extends BasePl
 
     /**
      * TC-PREC-06 (Transitive Exact Float Sizing):
-     * Assert that derived nominal types inherit #exact and trigger the warning.
+     * Assert that derived nominal types attempting to override #maxSize on an #exact :Float alias
+     * emit Core E040 (ERR_NON_OVERRIDABLE_FACET) with zero competing W002 warnings.
      */
     public void testTransitiveExactFloatWarning() {
         var text = """
@@ -249,7 +250,13 @@ public final class StvnExcessiveExactFloatPrecisionInspectionTest extends BasePl
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_EXCESSIVE_EXACT_PRECISION"))
             .toList();
-        assertEquals("Expected 1 warning on transitive exact float", 1, warnings.size());
+        assertTrue("Derived #maxSize override must defer to Core E040 with 0 W002 warnings: " + warnings, warnings.isEmpty());
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET"))
+            .toList();
+        assertEquals("Expected strictly 1 E040 error on :DerivedHigh", 1, errors.size());
     }
 
     /**

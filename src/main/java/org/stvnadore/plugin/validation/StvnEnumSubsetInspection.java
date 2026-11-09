@@ -5,10 +5,14 @@ import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.*;
@@ -251,15 +255,20 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 if (metaMap == null) return;
 
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    if (entry.getMetadataFilter() != null) {
+                    var filter = entry.getMetadataFilter();
+                    if (filter != null) {
                         var constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
+                        var facetTag = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
+                            ? StvnVocabulary.FACET_KW_FILTER_INCL
+                            : StvnVocabulary.FACET_KW_FILTER_EXCL;
                         holder.registerProblem(
-                            entry.getMetadataFilter(),
+                            filter,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Constraint violation (" + constName + "): filter facets are not allowed on constants",
                                 StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
                             ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveRedundantFacetQuickFix(entry, facetTag, "Remove invalid facet")
                         );
                     }
                 }
@@ -273,6 +282,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
 
                 var typeInfo = StvnTypeResolver.resolveBaseTypeInfo(value);
                 if (typeInfo == null) return;
+
+                if (isGovernedByPoisonedOrDegradedEnumSubset(value.getContainingFile(), typeInfo.getSchema())) {
+                    return;
+                }
 
                 var subset = StvnTypeResolver.resolveEnumSubset(typeInfo.getSchema());
                 if (subset == null) return;
@@ -298,5 +311,116 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    private static boolean isGovernedByPoisonedOrDegradedEnumSubset(
+            @Nullable PsiFile file,
+            @Nullable SchemaType schemaType
+    ) {
+        if (file == null || schemaType == null) {
+            return false;
+        }
+        var hops = new ArrayList<TypeDefinition>();
+        var visited = new HashSet<String>();
+        SchemaType current = schemaType;
+        while (current != null && current.getTypeKeyword() != null) {
+            String name = current.getTypeKeyword().getText().trim();
+            if (!visited.add(name)) {
+                return true;
+            }
+            if (StvnTypeResolver.isDegradedNominalAlias(file, name)) {
+                return true;
+            }
+            var target = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
+            var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
+            if (typeDef == null) {
+                return true;
+            }
+            hops.add(typeDef);
+            current = typeDef.getSchemaType();
+        }
+        if (hops.isEmpty()) {
+            return false;
+        }
+        var rootSchema = hops.get(hops.size() - 1).getSchemaType();
+        if (rootSchema == null || rootSchema.getSchemaConstructor() == null
+                || rootSchema.getSchemaConstructor().getSumType() == null
+                || rootSchema.getSchemaConstructor().getSumType().getEnumDef() == null) {
+            return false;
+        }
+        var rootVariants = rootSchema.getSchemaConstructor().getSumType().getEnumDef()
+            .getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+        var effective = new ArrayList<>(rootVariants);
+        for (int i = hops.size() - 2; i >= 0; i--) {
+            if (!isHealthyEnumSubsetHop(hops.get(i), rootVariants, effective)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isHealthyEnumSubsetHop(
+            TypeDefinition hopDef,
+            List<String> rootVariants,
+            List<String> parentEffective
+    ) {
+        var metaMap = hopDef.getMetadataMap();
+        if (metaMap == null && hopDef.getSchemaType() != null) {
+            metaMap = hopDef.getSchemaType().getMetadataMap();
+        }
+        if (metaMap == null) {
+            return true;
+        }
+        var filters = new ArrayList<MetadataFilter>();
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getMetadataFilter() != null) {
+                filters.add(entry.getMetadataFilter());
+            }
+        }
+        if (filters.isEmpty()) {
+            return true;
+        }
+        boolean hasIncl = filters.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null);
+        boolean hasExcl = filters.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null);
+        if (hasIncl && hasExcl) {
+            return false;
+        }
+        for (var filter : filters) {
+            var variantList = filter.getVariantList();
+            if (variantList == null) {
+                return false;
+            }
+            var kws = variantList.getValueKeywordList();
+            if (kws.isEmpty()) {
+                return false;
+            }
+            var seen = new HashSet<String>();
+            var filterVariants = new ArrayList<String>();
+            int lastRootIdx = -1;
+            for (var kw : kws) {
+                var v = kw.getText().trim();
+                if (!seen.add(v)) {
+                    return false;
+                }
+                int rootIdx = rootVariants.indexOf(v);
+                if (rootIdx < 0 || !parentEffective.contains(v)) {
+                    return false;
+                }
+                if (rootIdx <= lastRootIdx) {
+                    return false;
+                }
+                lastRootIdx = rootIdx;
+                filterVariants.add(v);
+            }
+            if (hasIncl) {
+                parentEffective.retainAll(filterVariants);
+            } else {
+                parentEffective.removeAll(filterVariants);
+            }
+            if (parentEffective.isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 }

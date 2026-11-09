@@ -286,9 +286,9 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
                 :RawSeq :Seq( :Int )
                 :RawSet :Set( :String )
                 :RawMap :Map( :String :Int )
-                :AliasSeq { #maxSize 1024 } :RawSeq
-                :AliasSet { #minSize 1 #maxSize 512 } :RawSet
-                :AliasMap { #minSize 1 #maxSize 256 } :RawMap
+                :AliasSeq { #equatable #FALSE } :RawSeq
+                :AliasSet { #equatable #FALSE } :RawSet
+                :AliasMap { #equatable #FALSE } :RawMap
               }
               :type :AliasSeq
               :body [ 42 ]
@@ -428,7 +428,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             {
               :defs {
                 :BaseStr :String
-                :Foo { #minSize 4 } :BaseStr
+                :Foo { #regex "^[A-Z]{4}$" } :BaseStr
               }
               :type :Foo
               :body "TEST"
@@ -636,7 +636,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .filter(h -> "StvnMetadataFacet".equals(h.getInspectionToolId()))
             .toList();
         assertEquals("Expected exactly 1 inspection error on #minSize on :Float", 1, errors.size());
-        assertTrue(errors.get(0).getDescription().contains("Facet is not permitted on :Float; permitted facets for collections and string types"));
+        assertTrue(errors.get(0).getDescription().contains("Facet '#minSize' is not permitted on :Float; '#minSize' applies only to :String, :Seq, :Set, and :Map (permitted facets on :Float: [#exact, #size, #equatable, #comparable, #minIncl, #minExcl, #maxIncl, #maxExcl])"));
     }
 
     public void testDerivedNominalMapInvertibleFacetRejectedWithE040AndQuickFixes() {
@@ -648,7 +648,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
               }
               :defs {
                 :RawMap :Map( :String :Int )
-                :AliasMap { <caret>#invertible #maxSize 256 } :RawMap
+                :AliasMap { <caret>#invertible } :RawMap
               }
               :type :AliasMap
               :body {
@@ -856,5 +856,30 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.launchAction(changeToFloatActions.get(0));
         assertTrue("Expected base type to change to :Float",
             myFixture.getFile().getText().contains(":TrapExactInt { #exact } :Float"));
+    }
+
+    public void testStage6MinSizeOnTupleDisplaysClearTargetTypesAndPermittedTupleFacets() {
+        var text = """
+            {
+              :defs {
+                :TrapTupleWithSizeFacet { #min<caret>Size 2 } :Tuple( :Int :String )
+              }
+              :type :Tuple( :Int :String )
+              :body ( 1 "a" )
+            }
+            """;
+        myFixture.configureByText("stage6_tuple_min_size.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 1 E008 error on :TrapTupleWithSizeFacet", 1, errors.size());
+        assertEquals(
+            "Facet '#minSize' is not permitted on :Tuple( :Int :String ); '#minSize' applies only to :String, :Seq, :Set, and :Map (permitted facets on :Tuple: [#equatable, #comparable]) [stvn-plugin:E008-ERR_INVALID_METADATA_FACET]",
+            errors.get(0).getDescription()
+        );
+
+        var removeActions = myFixture.filterAvailableIntentions("Remove inapplicable facet '#minSize'");
+        assertFalse("Expected 'Remove inapplicable facet' quick-fix on #minSize", removeActions.isEmpty());
     }
 }

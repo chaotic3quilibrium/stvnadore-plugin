@@ -124,6 +124,11 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
                 if (schemaType == null) {
                     return;
                 }
+                // On derived nominal types (e.g., :DerivedHigh { #maxSize 100 } :BaseExact),
+                // #maxSize is a Tier-1 non-overridable facet governed by Core E040 (ERR_NON_OVERRIDABLE_FACET).
+                if (schemaType.getTypeKeyword() != null) {
+                    return;
+                }
 
                 // 4. Resolve ultimate base type
                 var baseType = resolveBaseTypeString(schemaType, new HashSet<>());

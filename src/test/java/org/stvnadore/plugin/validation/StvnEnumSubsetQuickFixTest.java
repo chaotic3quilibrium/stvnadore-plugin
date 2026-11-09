@@ -143,4 +143,80 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
                 }
                 """);
     }
+
+    public void testStage5ConstantWithFilterEmitsSingleDeduplicatedE008AndRemoveInvalidFacetQuickFix() {
+        myFixture.enableInspections(new StvnMetadataFacetInspection());
+        var text = """
+                {
+                  :defs {
+                    :Color :Enum [ #RED #GREEN #BLUE ]
+                    #TRAP_CONST_WITH_FILTER { #filter<caret>Incl [ #RED ] } :Color #RED
+                  }
+                  :type :Color
+                  :body #RED
+                }
+                """;
+        myFixture.configureByText("stage5_constant_with_filter.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == com.intellij.lang.annotation.HighlightSeverity.ERROR)
+            .toList();
+
+        assertEquals("Expected strictly 1 deduplicated E008 error on #TRAP_CONST_WITH_FILTER: " + errors,
+            1, errors.size());
+        assertTrue(errors.get(0).getDescription().contains("E008-ERR_FILTER_ON_CONSTANT"));
+
+        var actions = myFixture.filterAvailableIntentions("Remove invalid facet '#filterIncl'");
+        assertFalse("Expected \"Remove invalid facet '#filterIncl'\" quick-fix on constant filter", actions.isEmpty());
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult("""
+                {
+                  :defs {
+                    :Color :Enum [ #RED #GREEN #BLUE ]
+                    #TRAP_CONST_WITH_FILTER :Color #RED
+                  }
+                  :type :Color
+                  :body #RED
+                }
+                """);
+    }
+
+    public void testStage5PoisonedEnumSubsetSuspendsBodySlots5And6WhileValidatingHealthySlots7And8WithE012() {
+        var text = """
+                {
+                  :defs {
+                    :BaseEnum :Enum [ #ALPHA #BETA #GAMMA #DELTA ]
+                    :SubsetWithoutAlpha { #filterExcl [ #ALPHA ] } :BaseEnum
+                    :TrapReintroduceExcludedVariant { #filterIncl [ #ALPHA #BETA ] } :SubsetWithoutAlpha
+                    :TrapTotalExclusionEmptyDomain { #filterExcl [ #ALPHA #BETA #GAMMA #DELTA ] } :BaseEnum
+                    :ValidSubsetBetaGamma { #filterIncl [ #BETA #GAMMA ] } :BaseEnum
+                  }
+                  :type :Tuple(
+                    :TrapReintroduceExcludedVariant
+                    :TrapTotalExclusionEmptyDomain
+                    :ValidSubsetBetaGamma
+                    :ValidSubsetBetaGamma
+                  )
+                  :body (
+                    #BETA
+                    #ALPHA
+                    #BETA
+                    #DELTA
+                  )
+                }
+                """;
+        myFixture.configureByText("stage5_poisoned_enum_subset_body.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var bodyOffset = text.indexOf(":body");
+        var bodyErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == com.intellij.lang.annotation.HighlightSeverity.ERROR)
+            .filter(h -> h.getStartOffset() >= bodyOffset)
+            .toList();
+
+        assertEquals("Expected strictly 1 error in :body (on healthy slot #DELTA only, zero cascade on poisoned slots): " + bodyErrors,
+            1, bodyErrors.size());
+        assertTrue("Expected E012 on #DELTA: " + bodyErrors.get(0).getDescription(),
+            bodyErrors.get(0).getDescription().contains("E012-ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION"));
+    }
 }

@@ -229,7 +229,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             .filter(h -> "#SHORT".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on excluded enum subset variant '#SHORT'", 1, shortErrors.size());
-        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:E014-ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
+        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:E012-ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
 
         var constErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)

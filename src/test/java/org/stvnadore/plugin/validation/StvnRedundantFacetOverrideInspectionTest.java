@@ -55,7 +55,7 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             {
               :defs {
                 :Parent { #preserveIndent #TRUE } :String
-                :Child { #preserveIndent #TRUE #maxSize 500 } :Parent
+                :Child { #preserveIndent #TRUE #minIncl "a" } :Parent
               }
               :type :Child
               :body "sample"
@@ -71,15 +71,15 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
         assertTrue("Warning message must mention effective value '#TRUE'",
             warnings.get(0).getDescription().contains("'#TRUE'"));
 
-        int offset = text.indexOf("#preserveIndent #TRUE #maxSize");
+        int offset = text.indexOf("#preserveIndent #TRUE #minIncl");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         var actions = myFixture.filterAvailableIntentions("Remove redundant facet");
         assertFalse("Expected quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
-        assertTrue("Expected '#maxSize 500' preserved in child metadata map:\n" + result,
-            result.contains(":Child { #maxSize 500 } :Parent"));
+        assertTrue("Expected '#minIncl \"a\"' preserved in child metadata map:\n" + result,
+            result.contains(":Child { #minIncl \"a\" } :Parent"));
         assertFalse("Child must not contain #preserveIndent", result.contains(":Child { #preserveIndent"));
     }
 
@@ -120,9 +120,12 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
             .toList();
-        assertEquals("Expected strictly 1 warning on redundant derived #maxSize override", 1, warnings.size());
-        assertTrue("Warning message must mention effective value '500'",
-            warnings.get(0).getDescription().contains("'500'"));
+        assertTrue("Derived #maxSize is a Tier-1 non-overridable facet governed by Core E040 (zero W003 warnings)", warnings.isEmpty());
+        var e040Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET"))
+            .toList();
+        assertEquals("Expected strictly 1 E040 error on derived #maxSize override", 1, e040Errors.size());
     }
 
     public void testDerivedNominalExplicitDefaultMaxSizeOverrideStillFlagsRedundantOverride() {
@@ -142,16 +145,15 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("Redundant facet override"))
             .toList();
-        assertEquals(
-            "Expected strictly 1 local override warning on :DerivedMax (while :BoundedMax is governed by W003)",
-            1,
-            localOverrideWarnings.size()
+        assertTrue(
+            "Derived #maxSize is a Tier-1 non-overridable facet governed by Core E040 (zero W003 warnings): " + localOverrideWarnings,
+            localOverrideWarnings.isEmpty()
         );
-        assertEquals(
-            "Local override warning must pin to :DerivedMax's #maxSize 16777216",
-            text.lastIndexOf("#maxSize 16777216"),
-            localOverrideWarnings.get(0).getStartOffset()
-        );
+        var e040Errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET"))
+            .toList();
+        assertEquals("Expected strictly 1 E040 error on :DerivedMax's #maxSize 16777216", 1, e040Errors.size());
     }
 
     public void testRootDefaultMaxSizeYieldsToCoreRuleW003WithoutDuplicateLocalWarnings() {
@@ -420,5 +422,38 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
                 .toList();
         assertEquals("Expected exactly 3 E040 errors on ':Int32b', ':Float64b', and ':ChildUInt'", 3, errors.size());
         assertTrue(errors.stream().allMatch(e -> e.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET")));
+    }
+
+    public void testStage4Tier1ImplicitCardinalityAndFloatSizeLocksRenderE040AndQuickFixes() {
+        var text = """
+            {
+              :defs {
+                :ImplicitString :String
+                :TrapOverrideImplicitStringMaxSize { #max<caret>Size 64 } :ImplicitString
+                :ImplicitFloat64 :Float
+                :TrapOverrideImplicitFloatSize { #size 32 } :ImplicitFloat64
+              }
+              :type :ImplicitString
+              :body "ok"
+            }
+            """;
+        myFixture.configureByText("stage4_tier1_implicit_locks.stvn", text);
+        var highlights = myFixture.doHighlighting();
+
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .toList();
+        assertTrue("Expected zero warnings on derived Tier-1 locks: " + warnings, warnings.isEmpty());
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 2 E040 errors", 2, errors.size());
+        assertTrue(errors.stream().allMatch(e -> e.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET")));
+
+        var removeActions = myFixture.filterAvailableIntentions("Remove non-overridable facet '#maxSize 64'");
+        assertFalse("Expected 'Remove non-overridable facet' quick-fix", removeActions.isEmpty());
+        var rebaseActions = myFixture.filterAvailableIntentions("Change base type from ':ImplicitString' to primitive ':String'");
+        assertFalse("Expected 'Change base type to primitive' quick-fix", rebaseActions.isEmpty());
     }
 }

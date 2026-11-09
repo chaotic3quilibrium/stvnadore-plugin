@@ -470,8 +470,8 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :BlockStringB { #minSize 4 #preserveIndent #TRUE } :String
-                :BlockStringF { #preserveIndent #FALSE #maxSize 1024 } :BlockStringB
+                :BlockStringB { #minSize 4 #maxSize 1024 #preserveIndent #TRUE } :String
+                :BlockStringF { #preserveIndent #FALSE } :BlockStringB
               }
               :type :BlockStringF
               :body "sample"
@@ -1635,5 +1635,111 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertNotNull("Hover on :BoundedStr must not be null", boundedStrDoc);
         assertFalse("Hover on :BoundedStr must NEVER synthesize a spurious #s facet row:\n" + boundedStrDoc,
             boundedStrDoc.contains("<code>#s</code>"));
+    }
+
+    public void testStage4HoverZone3NeverAdvertisesMinSizeOrMaxSizeOnDerivedNominalAliases() {
+        var text = """
+            {
+              :defs {
+                :ImplicitString :String
+                :DerivedString :ImplicitString
+                :ImplicitSeq :Seq( :Int )
+                :DerivedSeq :ImplicitSeq
+                :ImplicitSet :Set( :Int )
+                :DerivedSet :ImplicitSet
+                :ImplicitMap :Map( :String :Int )
+                :DerivedMap :ImplicitMap
+                :ExactFloat { #exact } :Float
+                :DerivedExactFloat :ExactFloat
+              }
+              :type :DerivedString
+              :body "ok"
+            }
+            """;
+        myFixture.configureByText("stage4_hover_zone3_locks.stvn", text);
+
+        for (String alias : java.util.List.of(
+                ":DerivedString", ":DerivedSeq", ":DerivedSet", ":DerivedMap", ":DerivedExactFloat")) {
+            int offset = text.indexOf(alias + " :");
+            String doc = getDocAtOffset(text, offset + 2);
+            assertNotNull("Hover on " + alias + " must not be null", doc);
+            int zone3Idx = doc.indexOf("Configurable Options (Unset):");
+            if (zone3Idx >= 0) {
+                String zone3 = doc.substring(zone3Idx);
+                assertFalse("Zone 3 on " + alias + " must never advertise #minSize:\n" + zone3,
+                    zone3.contains("<code>#minSize</code>"));
+                assertFalse("Zone 3 on " + alias + " must never advertise #maxSize:\n" + zone3,
+                    zone3.contains("<code>#maxSize</code>"));
+                assertFalse("Zone 3 on " + alias + " must never advertise #invertible:\n" + zone3,
+                    zone3.contains("<code>#invertible</code>"));
+            }
+        }
+    }
+
+    public void testStage6ContainerHoverComplianceViolatedOnSlots7Through13AndSatisfiedOnHealthySiblings() {
+        var text = """
+            {
+              :defs {
+                :BoundedSeq { #minSize 2 #maxSize 2 } :Seq( :Int )
+                :BoundedSet { #minSize 2 #maxSize 3 } :Set( :String )
+                :SimpleMap :Map( :String :Int )
+                :BijectiveMap { #invertible } :Map( :String :Int )
+              }
+              :type :Tuple(
+                :Tuple( :Int :String )
+                :Tuple( :Int :String )
+                :BoundedSeq
+                :BoundedSeq
+                :BoundedSet
+                :SimpleMap
+                :BijectiveMap
+                :BoundedSeq
+                :BoundedSet
+                :BijectiveMap
+              )
+              :body (
+                ( 10 )
+                ( 10 "alpha" #TRUE )
+                [ 10 ]
+                [ 10 20 30 ]
+                [ "a" "a" ]
+                { [ "k1" 1 ] [ "k1" 2 ] }
+                { [ "k1" 100 ] [ "k2" 100 ] }
+                [ 10 20 ]
+                [ "a" "b" ]
+                { [ "k1" 100 ] [ "k2" 200 ] }
+              )
+            }
+            """;
+        myFixture.configureByText("stage6_container_hover_compliance.stvn", text);
+        int bodyIdx = text.indexOf(":body");
+
+        for (String violatedSnippet : java.util.List.of(
+                "( 10 )",
+                "( 10 \"alpha\" #TRUE )",
+                "[ 10 ]",
+                "[ 10 20 30 ]",
+                "[ \"a\" \"a\" ]",
+                "{ [ \"k1\" 1 ] [ \"k1\" 2 ] }",
+                "{ [ \"k1\" 100 ] [ \"k2\" 100 ] }")) {
+            int offset = text.indexOf(violatedSnippet, bodyIdx);
+            String doc = getDocAtOffset(text, offset);
+            assertNotNull("Hover on " + violatedSnippet + " must not be null", doc);
+            assertTrue("Hover on violating container " + violatedSnippet + " must report Violated:\n" + doc,
+                doc.contains("Violated"));
+        }
+
+        for (String healthySnippet : java.util.List.of(
+                "[ 10 20 ]",
+                "[ \"a\" \"b\" ]",
+                "{ [ \"k1\" 100 ] [ \"k2\" 200 ] }")) {
+            int offset = text.indexOf(healthySnippet, bodyIdx);
+            String doc = getDocAtOffset(text, offset);
+            assertNotNull("Hover on " + healthySnippet + " must not be null", doc);
+            assertTrue("Hover on healthy container " + healthySnippet + " must report Satisfied:\n" + doc,
+                doc.contains("Satisfied"));
+            assertFalse("Hover on healthy container " + healthySnippet + " must not report Violated:\n" + doc,
+                doc.contains("Violated"));
+        }
     }
 }

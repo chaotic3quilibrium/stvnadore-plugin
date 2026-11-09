@@ -135,28 +135,14 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
 
         var text = entry.getText().trim();
-        if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-            // Physical storage #size is a Tier-1 non-overridable facet governed by Core W003 (on root types)
-            // and Core E040 / E008 (on derived nominal types). Never emit a local W003 override warning.
+        if (text.startsWith(StvnVocabulary.FACET_KW_SIZE)
+            || text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)
+            || text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+            // Tier-1 #size, #minSize, and #maxSize are non-overridable facets governed by Core W003 (on root types)
+            // and Core E040 (on derived nominal types). Never emit a local W003 override warning.
             return;
         }
-        if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-            extractBigInteger(text).ifPresent(val -> {
-                BigInteger parentVal = resolveParentMinSize(parentIr);
-                if (val.compareTo(parentVal) == 0) {
-                    registerRedundantProblem(entry, val.toString(), holder);
-                }
-            });
-        } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-            if (supportsMaxSizeFacet(ultimateBase, metaMap, irSchema, parentIr)) {
-                extractBigInteger(text).ifPresent(val -> {
-                    BigInteger parentVal = resolveParentMaxSize(parentIr);
-                    if (val.compareTo(parentVal) == 0) {
-                        registerRedundantProblem(entry, val.toString(), holder);
-                    }
-                });
-            }
-        } else if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
+        if (text.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
             extractBooleanLiteral(text).ifPresent(val -> {
                 boolean parentVal = resolveParentDefaultEquatable(typeDef, metaMap, ultimateBase, parentIr);
                 if (val == parentVal) {
@@ -171,27 +157,6 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 }
             });
         }
-    }
-
-    private static BigInteger resolveParentMinSize(@Nullable StvnSchema parentIr) {
-        return switch (parentIr) {
-            case StvnSchema.StringSchema s -> s.minSize();
-            case StvnSchema.SeqSchema sq -> sq.minSize();
-            case StvnSchema.SetSchema st -> st.minSize();
-            case StvnSchema.MapSchema mp -> mp.minSize();
-            case null, default -> BigInteger.ZERO;
-        };
-    }
-
-    private static BigInteger resolveParentMaxSize(@Nullable StvnSchema parentIr) {
-        return switch (parentIr) {
-            case StvnSchema.StringSchema s -> s.maxSize();
-            case StvnSchema.FloatSchema f -> f.exactMaxDigits();
-            case StvnSchema.SeqSchema sq -> sq.maxSize();
-            case StvnSchema.SetSchema st -> st.maxSize();
-            case StvnSchema.MapSchema mp -> mp.maxSize();
-            case null, default -> StvnVocabulary.DEFAULT_MAX_SIZE;
-        };
     }
 
     private static boolean resolveParentDefaultEquatable(
@@ -598,79 +563,6 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             }
         }
 
-        // 5. Default Capacity & Exact Float Precision Ceiling Tautologies (Rule W003)
-        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-            var valOpt = extractBigInteger(text);
-            if (valOpt.isPresent() && valOpt.get().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
-                if (supportsMaxSizeFacet(ultimateBase, metaMap, irSchema, parentIr)) {
-                    return parentIr == null
-                        || !hasAncestorExplicitFacet(typeDef, StvnVocabulary.FACET_KW_MAX_SIZE);
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean supportsMaxSizeFacet(
-        String ultimateBase,
-        @Nullable MetadataMap metaMap,
-        @Nullable StvnSchema irSchema,
-        @Nullable StvnSchema parentIr
-    ) {
-        if (StvnVocabulary.TYPE_STRING.equals(ultimateBase)
-            || StvnVocabulary.TYPE_SEQ.equals(ultimateBase)
-            || StvnVocabulary.TYPE_SET.equals(ultimateBase)
-            || StvnVocabulary.TYPE_MAP.equals(ultimateBase)) {
-            return true;
-        }
-        if (StvnVocabulary.TYPE_FLOAT.equals(ultimateBase)) {
-            return hasLocalExactFacet(metaMap)
-                || (irSchema instanceof StvnSchema.FloatSchema fs
-                    && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL)
-                || (parentIr instanceof StvnSchema.FloatSchema pfs
-                    && pfs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL);
-        }
-        return false;
-    }
-
-    private static boolean hasAncestorExplicitFacet(TypeDefinition startTypeDef, String facetKeyword) {
-        var visited = new HashSet<TypeDefinition>();
-        visited.add(startTypeDef);
-        TypeDefinition current = startTypeDef;
-        while (current != null) {
-            var schemaType = current.getSchemaType();
-            if (schemaType == null) {
-                return false;
-            }
-            var targetKw = schemaType.getTypeKeyword();
-            if (targetKw == null) {
-                return false;
-            }
-            String parentAlias = targetKw.getText().trim();
-            if (StvnVocabulary.isBaseScalarType(parentAlias)
-                || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(parentAlias)) {
-                return false;
-            }
-            var resolvedElem = StvnTypeReference.resolveTypeInFile(
-                current.getContainingFile(),
-                parentAlias,
-                new HashSet<>()
-            );
-            var parentDef = StvnPsiUtils.getParentTypeDefinition(resolvedElem);
-            if (parentDef == null || !visited.add(parentDef)) {
-                return false;
-            }
-            var parentMeta = parentDef.getMetadataMap();
-            if (parentMeta != null) {
-                for (var entry : parentMeta.getMetadataEntryList()) {
-                    if (entry.getText().trim().startsWith(facetKeyword)) {
-                        return true;
-                    }
-                }
-            }
-            current = parentDef;
-        }
         return false;
     }
 

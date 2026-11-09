@@ -910,17 +910,17 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .count();
         assertEquals("Lines 4, 8, 12 must report ERR_MUTUALLY_EXCLUSIVE on #exact", 3, exactMutexCount);
 
-        // Verify lines 5, 6, 10, 13 report mutual exclusivity on conflicting #size
+        // Verify lines 5, 6 report mutual exclusivity on #size over #exact
         long sizeMutexCount = errorHighlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("mutually exclusive") && h.getText().contains("#size"))
             .count();
-        assertEquals("Lines 5, 6, 10, 13 must report ERR_MUTUALLY_EXCLUSIVE on conflicting #size", 4, sizeMutexCount);
+        assertEquals("Lines 5, 6 must report ERR_MUTUALLY_EXCLUSIVE on #size over #exact", 2, sizeMutexCount);
 
-        // Verify lines 9, 14 report non-overridable facet on re-declared #size
+        // Verify lines 9, 10, 13, 14 report non-overridable facet on derived #size
         long nonOverridableCount = errorHighlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("non-overridable") && h.getText().contains("#size"))
             .count();
-        assertEquals("Lines 9, 14 must report ERR_NON_OVERRIDABLE_FACET on re-declared #size", 2, nonOverridableCount);
+        assertEquals("Lines 9, 10, 13, 14 must report ERR_NON_OVERRIDABLE_FACET on derived #size", 4, nonOverridableCount);
     }
 
     /**
@@ -2962,8 +2962,8 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 :ZoneTag  { #minSize 2 #maxSize 8 #regex "^[a-z]+$" } :String
                 :Priority { #unsigned #size 8 #minIncl 1 #maxExcl 64 } :Int
                 :RouteKey :Tuple( :ZoneTag :Priority )
-                :CompositeRoutingTable :Map( :RouteKey :Boolean )
-                :BoundedRouteMap { #minSize 1 #maxSize 4 } :CompositeRoutingTable
+                :CompositeRoutingTable { #minSize 1 #maxSize 4 } :Map( :RouteKey :Boolean )
+                :BoundedRouteMap :CompositeRoutingTable
               }
               :type :BoundedRouteMap
               :body [

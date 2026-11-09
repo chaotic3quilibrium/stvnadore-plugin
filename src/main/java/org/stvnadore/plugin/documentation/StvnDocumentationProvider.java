@@ -44,6 +44,7 @@ import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
+import org.stvnadore.psi.MapLiteral;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
@@ -3612,10 +3613,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var file = value.getContainingFile();
             var range = value.getTextRange();
             if (file != null && range != null) {
+                boolean isContainer = isContainerLiteral(value);
                 for (var diag : StvnCompiledDocumentCache.getSnapshot(file).diagnostics()) {
-                    if (diag.severity() == org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR
-                            && diag.startOffset() == range.getStartOffset()
-                            && diag.endOffset() == range.getEndOffset()) {
+                    if (diag.severity() != org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                        continue;
+                    }
+                    String diagCode = diag.errorCode().orElse("");
+                    boolean exactSpanMatch = diag.startOffset() == range.getStartOffset()
+                        && diag.endOffset() == range.getEndOffset();
+                    boolean containerSliceMatch = isContainer
+                        && diag.startOffset() >= range.getStartOffset()
+                        && diag.endOffset() <= range.getEndOffset()
+                        && (isExcessSliceDiagnostic(diagCode) || isContainerLevelDiagnostic(diagCode))
+                        && resolveOwningContainerValue(file, diag.startOffset()) == value;
+                    if (exactSpanMatch || containerSliceMatch) {
                         rawResult = new StvnValueComplianceResult(
                             false,
                             "Violated",
@@ -3642,6 +3653,34 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             rawResult.evaluatedConstraints(),
             rawResult.validLexicalForms()
         );
+    }
+
+    private static boolean isExcessSliceDiagnostic(String code) {
+        return DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH.equals(code)
+            || DiagnosticBag.ERR_CAPACITY_OVERFLOW.equals(code)
+            || DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION.equals(code);
+    }
+
+    private static boolean isContainerLevelDiagnostic(String code) {
+        return DiagnosticBag.ERR_DUPLICATE_SET_ELEMENT.equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_INVERTED_MAP_VALUE.equals(code);
+    }
+
+    private static @Nullable Value resolveOwningContainerValue(PsiFile file, int startOffset) {
+        var leaf = file.findElementAt(startOffset);
+        if (leaf == null) {
+            return null;
+        }
+        var elemVal = PsiTreeUtil.getParentOfType(leaf, Value.class, false);
+        if (elemVal == null) {
+            return null;
+        }
+        var parentVal = PsiTreeUtil.getParentOfType(elemVal, Value.class, true);
+        if (parentVal != null && parentVal.getParent() instanceof MapLiteral) {
+            return PsiTreeUtil.getParentOfType(parentVal, Value.class, true);
+        }
+        return parentVal;
     }
 
     private static boolean isGoverningSchemaDegraded(Value value, SchemaType schemaType) {
@@ -4201,6 +4240,60 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        // 6. Container literal arity and cardinality evaluation
+        if (value.getCollectionValue() != null) {
+            var coll = value.getCollectionValue();
+            if (coll.getTupleLiteral() != null && irSchema instanceof StvnSchema.TupleSchema ts) {
+                int actual = coll.getTupleLiteral().getValueList().size();
+                int expected = ts.fieldSchemas().size();
+                if (actual != expected) {
+                    return new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        "Tuple arity mismatch: expected " + expected + " element(s), found " + actual,
+                        Collections.emptyMap(),
+                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                    );
+                }
+            } else if (coll.getListLiteral() != null && irSchema instanceof StvnSchema.SeqSchema sq) {
+                var count = BigInteger.valueOf(coll.getListLiteral().getValueList().size());
+                if (count.compareTo(sq.minSize()) < 0 || count.compareTo(sq.maxSize()) > 0) {
+                    return new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        "Collection cardinality violation: :Seq contains " + count
+                            + " element(s), outside bounds [" + sq.minSize() + ", " + sq.maxSize() + "]",
+                        Collections.emptyMap(),
+                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                    );
+                }
+            } else if (coll.getListLiteral() != null && irSchema instanceof StvnSchema.SetSchema st) {
+                var count = BigInteger.valueOf(coll.getListLiteral().getValueList().size());
+                if (count.compareTo(st.minSize()) < 0 || count.compareTo(st.maxSize()) > 0) {
+                    return new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        "Collection cardinality violation: :Set contains " + count
+                            + " element(s), outside bounds [" + st.minSize() + ", " + st.maxSize() + "]",
+                        Collections.emptyMap(),
+                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                    );
+                }
+            } else if (coll.getMapLiteral() != null && irSchema instanceof StvnSchema.MapSchema mp) {
+                var count = BigInteger.valueOf(coll.getMapLiteral().getValueList().size());
+                if (count.compareTo(mp.minSize()) < 0 || count.compareTo(mp.maxSize()) > 0) {
+                    return new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        "Collection cardinality violation: :Map contains " + count
+                            + " entries, outside bounds [" + mp.minSize() + ", " + mp.maxSize() + "]",
+                        Collections.emptyMap(),
+                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                    );
+                }
+            }
+        }
+
         return new StvnValueComplianceResult(
             true,
             "Satisfied",
@@ -4284,10 +4377,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (coreVal != null) {
             var leafSchema = unwrapTerminalValueSchema(coreVal, schemaType);
             var cleanLeaf = unwrapPoisonedSchema(leafSchema);
-            if (cleanLeaf != null && !(cleanLeaf instanceof StvnSchema.TupleSchema
-                    || cleanLeaf instanceof StvnSchema.SeqSchema
-                    || cleanLeaf instanceof StvnSchema.SetSchema
-                    || cleanLeaf instanceof StvnSchema.MapSchema)) {
+            boolean isContainerSchema = cleanLeaf instanceof StvnSchema.TupleSchema
+                || cleanLeaf instanceof StvnSchema.SeqSchema
+                || cleanLeaf instanceof StvnSchema.SetSchema
+                || cleanLeaf instanceof StvnSchema.MapSchema;
+            if (cleanLeaf != null && (!isContainerSchema || value.getCollectionValue() != null)) {
                 return cleanLeaf;
             }
         }
@@ -4742,7 +4836,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     }
                     if (f.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
                         tags.add(StvnVocabulary.FACET_KW_EXACT);
-                        if (!f.exactMaxDigits().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
+                        if (isNominalDerivation || !f.exactMaxDigits().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) {
                             tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                         }
                     } else if (f.representation() == StvnSchema.FloatRepresentation.IEEE_32) {
@@ -4754,8 +4848,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         ub.kind() == StvnSchema.BoundKind.INCLUSIVE ? StvnVocabulary.FACET_KW_MAX_INCL : StvnVocabulary.FACET_KW_MAX_EXCL));
                 }
                 case StvnSchema.StringSchema s -> {
-                    if (!s.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
-                    if (!s.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+                    if (isNominalDerivation || !s.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+                    if (isNominalDerivation || !s.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                     if (s.rawRegexPattern().isPresent()) tags.add(StvnVocabulary.FACET_KW_REGEX);
                     if (s.preserveIndent()) tags.add(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
                     s.lowerBound().ifPresent(lb -> tags.add(
@@ -4778,20 +4872,31 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (dt.explicitMaxExclIso().isPresent()) tags.add(StvnVocabulary.FACET_KW_MAX_EXCL);
                 }
                 case StvnSchema.SeqSchema sq -> {
-                    if (!sq.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
-                    if (!sq.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+                    if (isNominalDerivation || !sq.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+                    if (isNominalDerivation || !sq.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                 }
                 case StvnSchema.SetSchema st -> {
-                    if (!st.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
-                    if (!st.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+                    if (isNominalDerivation || !st.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+                    if (isNominalDerivation || !st.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                 }
                 case StvnSchema.MapSchema mp -> {
                     if (isNominalDerivation || mp.invertible()) tags.add(StvnVocabulary.FACET_KW_INVERTIBLE);
-                    if (!mp.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
-                    if (!mp.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+                    if (isNominalDerivation || !mp.minSize().equals(BigInteger.ZERO)) tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+                    if (isNominalDerivation || !mp.maxSize().equals(StvnVocabulary.DEFAULT_MAX_SIZE)) tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
                 }
                 default -> {
                 }
+            }
+        } else if (isNominalDerivation && baseType != null) {
+            if (baseType.startsWith(StvnVocabulary.TYPE_STRING)
+                    || baseType.startsWith(StvnVocabulary.TYPE_SEQ)
+                    || baseType.startsWith(StvnVocabulary.TYPE_SET)
+                    || baseType.startsWith(StvnVocabulary.TYPE_MAP)) {
+                tags.add(StvnVocabulary.FACET_KW_MIN_SIZE);
+                tags.add(StvnVocabulary.FACET_KW_MAX_SIZE);
+            }
+            if (baseType.startsWith(StvnVocabulary.TYPE_MAP)) {
+                tags.add(StvnVocabulary.FACET_KW_INVERTIBLE);
             }
         }
         if (baseType != null && !StvnMetadataRegistry.getSupportedFacets(baseType).isEmpty() && !isCtor) {
