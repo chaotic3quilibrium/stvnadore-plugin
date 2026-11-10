@@ -50,6 +50,10 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             .toList();
         assertFalse("Expected LHS reserved type inspection error", errors.isEmpty());
         assertTrue(errors.get(0).getDescription().contains("Fundamental type ':Int' cannot be aliased"));
+        assertTrue(
+            "Expected canonical code E027 on LHS reserved keyword error, got: " + errors.get(0).getDescription(),
+            errors.get(0).getDescription().contains("[stvn-plugin:E027-ERR_RESERVED_KEYWORD_ON_LHS]")
+        );
 
         myFixture.configureByText("test_lhs_valid.stvn",
             """

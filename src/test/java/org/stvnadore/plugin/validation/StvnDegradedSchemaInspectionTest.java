@@ -114,4 +114,77 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
         assertNotNull(warningNeg456.getDescription());
         assertTrue(warningNeg456.getDescription().contains("Value bound to degraded schema ':FloatExactATo32'"));
     }
+
+    public void testStage12UnguardedTupleCycleSlotSuspensionAndFaultIsolation() {
+        var inspection = new StvnDegradedSchemaInspection();
+        inspection.highlightBodyValuesBoundToDegradedSchemas = true;
+        myFixture.enableInspections(inspection);
+
+        var content = """
+            {
+              :meta {
+                #name "inv_stage12_circular_type_body_suspension_and_fault_isolation"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta :CycleAlpha
+                :DerivedFromCycle :CycleAlpha
+                :NodeWeight { #unsigned #size 16 } :Int
+                :UnguardedTupleCycle :Tuple(:NodeWeight :UnguardedTupleCycle)
+                :TreeLabel { #minSize 1 #maxSize 32 } :String
+                :TreeNode :Tuple(
+                  :TreeLabel
+                  :Seq(:TreeNode)
+                )
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 65536 } :Int
+                :Stage12Envelope :Tuple(
+                  :CycleAlpha
+                  :DerivedFromCycle
+                  :UnguardedTupleCycle
+                  :TreeNode
+                  :BoundedPort
+                )
+              }
+              :type :Stage12Envelope
+              :body (
+                "ungrounded-slot-suspended"
+                999
+                ( 1 "bad" )
+                ( "root" [ ( "child-ok" [] ) ( "" [ ( "grandchild" [] ) ] ) ] )
+                80
+              )
+            }
+            """;
+        myFixture.configureByText("inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+
+        var weakWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Value bound to degraded schema"))
+            .toList();
+
+        assertEquals(
+            "Expected degraded warnings only on the 3 outer ungrounded slots, never on inner '1' or '\"bad\"'",
+            3,
+            weakWarnings.size()
+        );
+
+        var text = myFixture.getEditor().getDocument().getText();
+        int tupleSlotOffset = text.indexOf("( 1 \"bad\" )");
+        var tupleWarning = weakWarnings.stream()
+            .filter(w -> w.getStartOffset() == tupleSlotOffset)
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Outer '( 1 \"bad\" )' must receive degraded schema warning", tupleWarning);
+        assertTrue(
+            tupleWarning.getDescription().contains(
+                "Value bound to degraded schema ':UnguardedTupleCycle' (payload evaluation is suspended for ungrounded schema)"
+            )
+        );
+
+        int innerBadOffset = text.indexOf("\"bad\"");
+        boolean hasInnerWarning = weakWarnings.stream().anyMatch(w -> w.getStartOffset() == innerBadOffset);
+        assertFalse("Inner element '\"bad\"' must NOT receive a cascading degraded warning", hasInnerWarning);
+    }
 }

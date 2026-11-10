@@ -58,6 +58,7 @@ import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.SumType;
+import org.stvnadore.psi.TypeDefTarget;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
@@ -379,7 +380,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         // 1. Contextual Section Routing: Check if target is RHS base type in :defs
-        if ((target instanceof TypeKeyword || target instanceof AtomicType) && originalElement != null) {
+        boolean isInsideLhsTarget = (originalElement != null
+                && PsiTreeUtil.getParentOfType(originalElement, TypeDefTarget.class, false) != null)
+            || PsiTreeUtil.getParentOfType(target, TypeDefTarget.class, false) != null;
+        if (!isInsideLhsTarget && (target instanceof TypeKeyword || target instanceof AtomicType) && originalElement != null) {
             var enclosingDef = PsiTreeUtil.getParentOfType(originalElement, TypeDefinition.class);
             if (enclosingDef != null && enclosingDef.getTypeKeyword() != target) {
                 if (enclosingDef.getTypeDefTarget() != null
@@ -1601,6 +1605,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof TypeDefinition typeDef) {
+            var reservedLhs = extractReservedLhsTargetKeyword(typeDef);
+            if (reservedLhs != null) {
+                var specQuick = getBuiltInSpecificationQuickNavigateInfo(reservedLhs);
+                if (specQuick != null) {
+                    return specQuick;
+                }
+            }
             var keyword = typeDef.getTypeKeyword();
             if (keyword != null) {
                 var kwText = keyword.getText();
@@ -2163,6 +2174,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (metaDomainElem != null) return metaDomainElem;
 
         if (element instanceof LeafPsiElement) {
+            var lhsTargetParent = PsiTreeUtil.getParentOfType(element, TypeDefTarget.class, false);
+            if (lhsTargetParent != null) {
+                var td = PsiTreeUtil.getParentOfType(lhsTargetParent, TypeDefinition.class, false);
+                if (td != null) {
+                    return td;
+                }
+            }
             var valKwParent = PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false);
             if (valKwParent != null) {
                 return getDocumentationElement(valKwParent, originalElement);
@@ -2170,6 +2188,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var typeKwParent = PsiTreeUtil.getParentOfType(element, TypeKeyword.class, false);
             if (typeKwParent != null) {
                 return getDocumentationElement(typeKwParent, originalElement);
+            }
+        }
+
+        if (element instanceof TypeDefTarget || element instanceof org.stvnadore.psi.ReservedKeyword) {
+            var td = PsiTreeUtil.getParentOfType(element, TypeDefinition.class, false);
+            if (td != null) {
+                return td;
             }
         }
 
@@ -2316,6 +2341,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var metaEntry = PsiTreeUtil.getParentOfType(originalElement, MetadataEntry.class, false);
             if (metaEntry != null) return metaEntry;
 
+            var lhsTarget = PsiTreeUtil.getParentOfType(originalElement, TypeDefTarget.class, false);
+            if (lhsTarget != null) {
+                var td = PsiTreeUtil.getParentOfType(lhsTarget, TypeDefinition.class, false);
+                if (td != null) {
+                    return td;
+                }
+            }
             var typeKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class);
             if (typeKw != null) {
                 return getDocumentationElement(typeKw, null);
@@ -2326,6 +2358,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
             if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+                var ungroundedContainer = findEnclosingUngroundedContainerValue(valueAncestor);
+                if (ungroundedContainer != null) {
+                    return ungroundedContainer;
+                }
                 if (isContainerLiteral(valueAncestor) && !isScalarSlotArityOneTuple(valueAncestor)) {
                     if (!isExplicitContainerDelimiter(valueAncestor, originalElement)) {
                         return null;
@@ -2348,6 +2384,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (element instanceof Value && PsiTreeUtil.getParentOfType(element, BodyEntry.class) != null) {
+            var ungroundedContainer = findEnclosingUngroundedContainerValue((Value) element);
+            if (ungroundedContainer != null) {
+                return ungroundedContainer;
+            }
             if (isContainerLiteral((Value) element) && !isScalarSlotArityOneTuple((Value) element)) {
                 if (originalElement != null && !isExplicitContainerDelimiter((Value) element, originalElement)) {
                     return null;
@@ -2391,6 +2431,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (isContainerDocumentationSuppressionTarget(contextElement)) {
             return null;
         }
+        var lhsTarget = PsiTreeUtil.getParentOfType(contextElement, TypeDefTarget.class, false);
+        if (lhsTarget != null) {
+            var td = PsiTreeUtil.getParentOfType(lhsTarget, TypeDefinition.class, false);
+            if (td != null) {
+                return td;
+            }
+        }
         var typeKwAncestor = PsiTreeUtil.getParentOfType(contextElement, TypeKeyword.class);
         if (typeKwAncestor != null) {
             return typeKwAncestor;
@@ -2405,6 +2452,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var valueAncestor = PsiTreeUtil.getParentOfType(contextElement, Value.class);
         if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+            var ungroundedContainer = findEnclosingUngroundedContainerValue(valueAncestor);
+            if (ungroundedContainer != null) {
+                return ungroundedContainer;
+            }
             if (isContainerLiteral(valueAncestor) && !isScalarSlotArityOneTuple(valueAncestor)) {
                 if (!isExplicitContainerDelimiter(valueAncestor, contextElement)) {
                     return null;
@@ -2998,6 +3049,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      * Renders Zone 1, Zone 2, and Zone 3 for an LHS Type Alias in :defs.
      */
     private @NotNull String renderLhsTypeAliasCard(TypeDefinition typeDef, @Nullable PsiElement originalElement) {
+        var reservedLhs = extractReservedLhsTargetKeyword(typeDef);
+        if (reservedLhs != null) {
+            var specDoc = getBuiltInSpecificationDoc(reservedLhs);
+            if (specDoc != null) {
+                return specDoc;
+            }
+        }
         var keyword = typeDef.getTypeKeyword();
         if (keyword != null) {
             var kwText = keyword.getText();
@@ -3517,6 +3575,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      */
     private @NotNull String renderPayloadValueCard(Value value, @Nullable PsiElement originalElement) {
         var sb = new StringBuilder();
+        var ungroundedContainer = findEnclosingUngroundedContainerValue(value);
+        if (ungroundedContainer != null) {
+            value = ungroundedContainer;
+        }
         var info = StvnTypeResolver.resolveBaseTypeInfo(value);
         var resolvedType = StvnTypeResolver.resolveValueType(value);
         if ((info == null || info.getSchema() == null)
@@ -3593,14 +3655,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (epochDoc != null) {
             sb.append(epochDoc);
         }
-        StvnSchema leafIrSchema = targetSchemaForCompliance != null
-            ? resolveEffectiveIrSchemaForCompliance(targetValueForCompliance, targetSchemaForCompliance)
-            : null;
-        String exemplar = StvnExemplarValueGenerator.generateExemplar(targetSchemaForCompliance, leafIrSchema);
-        if (exemplar != null && !exemplar.isBlank()) {
-            sb.append("<b>Exemplar Value:</b> <code>")
-              .append(escapeHtmlBody(exemplar))
-              .append("</code><br/>");
+        if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())) {
+            StvnSchema leafIrSchema = targetSchemaForCompliance != null
+                ? resolveEffectiveIrSchemaForCompliance(targetValueForCompliance, targetSchemaForCompliance)
+                : null;
+            String exemplar = StvnExemplarValueGenerator.generateExemplar(targetSchemaForCompliance, leafIrSchema);
+            if (exemplar != null && !exemplar.isBlank()) {
+                sb.append("<b>Exemplar Value:</b> <code>")
+                  .append(escapeHtmlBody(exemplar))
+                  .append("</code><br/>");
+            }
         }
         sb.append("</div><hr/>");
 
@@ -3726,6 +3790,40 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return ir instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded();
     }
 
+    private @Nullable String extractReservedLhsTargetKeyword(@Nullable TypeDefinition typeDef) {
+        if (typeDef == null || typeDef.getTypeDefTarget() == null) {
+            return null;
+        }
+        var target = typeDef.getTypeDefTarget();
+        var rawText = target.getText().trim();
+        if (rawText.isEmpty()) {
+            return null;
+        }
+        if (target.getReservedKeyword() != null
+                || target.getAtomicType() != null
+                || StvnTypeResolver.isReservedFundamentalType(rawText)) {
+            return rawText;
+        }
+        if (typeDef.getContainingFile() != null
+                && typeDef.getContainingFile().getName().contains("prelude")
+                && getBuiltInSpecificationDoc(rawText) != null) {
+            return rawText;
+        }
+        return null;
+    }
+
+    private static @Nullable Value findEnclosingUngroundedContainerValue(@Nullable Value start) {
+        Value curr = start;
+        while (curr != null) {
+            var info = StvnTypeResolver.resolveBaseTypeInfo(curr);
+            if (info != null && info.getSchema() != null && isGoverningSchemaUngrounded(curr, info.getSchema())) {
+                return curr;
+            }
+            curr = PsiTreeUtil.getParentOfType(curr, Value.class, true);
+        }
+        return null;
+    }
+
     private static @NotNull StvnValueComplianceResult evaluateValueComplianceInternal(Value value, @Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return new StvnValueComplianceResult(true, "Unchecked", "No governing schema identified", Collections.emptyMap(), Collections.emptyList());
@@ -3738,9 +3836,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(
                     true,
                     "Suspended (Ungrounded Schema)",
-                    "Payload compliance evaluation is suspended because governing type <code>"
+                    "\u26A0 Suspended (governing schema is ungrounded \u2014 payload evaluation skipped): "
+                        + "Payload compliance evaluation is suspended because governing type <code>"
                         + escapeHtmlBody(schemaLabel)
-                        + "</code> does not resolve to a base type in <code>:defs</code> (circular or unresolved lineage).",
+                        + "</code> does not resolve to a base type in <code>"
+                        + StvnVocabulary.KEYWORD_DEFS
+                        + "</code> (circular or unresolved lineage).",
                     Collections.emptyMap(),
                     List.of("Standard STVN literal")
                 );

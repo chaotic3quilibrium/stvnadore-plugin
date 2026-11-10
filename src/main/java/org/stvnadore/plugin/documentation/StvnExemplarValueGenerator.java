@@ -66,7 +66,7 @@ public final class StvnExemplarValueGenerator {
         @Nullable SchemaType schemaType,
         @Nullable StvnSchema irSchema
     ) {
-        return generateExemplar(schemaType, irSchema, Clock.systemDefaultZone(), 0);
+        return generateExemplar(schemaType, irSchema, Clock.systemDefaultZone(), 0, new HashSet<>(), new HashSet<>());
     }
 
     /**
@@ -82,26 +82,126 @@ public final class StvnExemplarValueGenerator {
         @Nullable StvnSchema irSchema,
         Clock clock
     ) {
-        return generateExemplar(schemaType, irSchema, clock, 0);
+        return generateExemplar(schemaType, irSchema, clock, 0, new HashSet<>(), new HashSet<>());
+    }
+
+    private static boolean isRecursiveBackEdgeCode(@Nullable String code) {
+        return "INTERNAL_RECURSIVE_NOMINAL_REF".equals(code)
+            || "__RECURSIVE_BACK_EDGE__".equals(code)
+            || "RECURSIVE_BACK_EDGE".equals(code);
+    }
+
+    private static boolean isUngroundedPoisonedSchema(@Nullable StvnSchema irSchema, @Nullable PsiElement context) {
+        if (!(irSchema instanceof StvnSchema.PoisonedSchema poisoned) || !poisoned.isUngrounded()) {
+            return false;
+        }
+        if (isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode()) && poisoned.aliasName().isPresent()) {
+            if (context != null && context.getContainingFile() != null) {
+                StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaByAlias(
+                    context.getContainingFile(),
+                    poisoned.aliasName().get()
+                );
+                if (catalogIr != null && !(catalogIr instanceof StvnSchema.PoisonedSchema)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static @Nullable String generateExemplar(
         @Nullable SchemaType schemaType,
         @Nullable StvnSchema irSchema,
         Clock clock,
-        int depth
+        int depth,
+        Set<String> visitedIrAliases,
+        Set<PsiElement> visitedPsiElements
     ) {
-        if (depth > 8) {
+        if (depth > 16 || (schemaType == null && irSchema == null)) {
+            return null;
+        }
+        if (isUngroundedPoisonedSchema(irSchema, schemaType)) {
             return null;
         }
 
+        Set<String> nextIrAliases = new HashSet<>(visitedIrAliases);
+        Set<PsiElement> nextPsiElements = new HashSet<>(visitedPsiElements);
+
+        if (irSchema != null && irSchema.aliasName().isPresent()) {
+            String irAlias = irSchema.aliasName().get();
+            if (visitedIrAliases.contains(irAlias)) {
+                return null;
+            }
+            nextIrAliases.add(irAlias);
+        }
+
+        if (schemaType != null) {
+            if (visitedPsiElements.contains(schemaType)) {
+                return null;
+            }
+            nextPsiElements.add(schemaType);
+            if (schemaType.getParent() instanceof TypeDefinition parentTd
+                    && parentTd.getSchemaType() == schemaType
+                    && parentTd.getTypeKeyword() != null) {
+                String lhsAlias = parentTd.getTypeKeyword().getText().trim();
+                if (visitedIrAliases.contains(lhsAlias) || visitedPsiElements.contains(parentTd)) {
+                    return null;
+                }
+                if (schemaType.getContainingFile() != null) {
+                    StvnSchema lhsIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), lhsAlias);
+                    if (isUngroundedPoisonedSchema(lhsIr, schemaType)) {
+                        return null;
+                    }
+                }
+                nextIrAliases.add(lhsAlias);
+                nextPsiElements.add(parentTd);
+            }
+            if (schemaType.getTypeKeyword() != null) {
+                String kwAlias = schemaType.getTypeKeyword().getText().trim();
+                if (visitedIrAliases.contains(kwAlias)) {
+                    return null;
+                }
+                if (schemaType.getContainingFile() != null) {
+                    StvnSchema kwIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), kwAlias);
+                    if (isUngroundedPoisonedSchema(kwIr, schemaType)) {
+                        return null;
+                    }
+                }
+                nextIrAliases.add(kwAlias);
+            }
+        }
+
         StvnSchema effectiveIr = irSchema;
+        if (effectiveIr instanceof StvnSchema.PoisonedSchema poisoned
+                && isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode())
+                && poisoned.aliasName().isPresent()
+                && schemaType != null
+                && schemaType.getContainingFile() != null) {
+            effectiveIr = StvnTypeResolver.resolveIrSchemaByAlias(
+                schemaType.getContainingFile(),
+                poisoned.aliasName().get()
+            );
+        }
         while (effectiveIr instanceof StvnSchema.PoisonedSchema poisoned) {
-            effectiveIr = poisoned.bestEffortFallback().orElse(null);
+            if (poisoned.bestEffortFallback().isEmpty()) {
+                return null;
+            }
+            effectiveIr = poisoned.bestEffortFallback().get();
         }
 
         Map<String, String> psiMeta = schemaType != null ? extractLineageMetadata(schemaType) : Map.of();
-        SchemaType terminalPsi = schemaType != null ? resolveTerminalSchemaType(schemaType) : null;
+        SchemaType terminalPsi = schemaType != null
+            ? resolveTerminalSchemaTypeWithVisited(
+                schemaType,
+                visitedIrAliases,
+                visitedPsiElements,
+                nextIrAliases,
+                nextPsiElements
+            )
+            : null;
+        if (schemaType != null && terminalPsi == null) {
+            return null;
+        }
 
         // 1. Check lowered IR schema first when it matches a leaf scalar or enum
         if (effectiveIr instanceof StvnSchema.DateTimeSchema dtSchema) {
@@ -295,8 +395,11 @@ public final class StvnExemplarValueGenerator {
                                 && i < ts.fieldSchemas().size())
                             ? ts.fieldSchemas().get(i)
                             : null;
-                        String sub = generateExemplar(slots.get(i), slotIr, clock, depth + 1);
-                        slotExemplars.add(sub != null ? sub : "0");
+                        String sub = generateExemplar(slots.get(i), slotIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                        if (sub == null) {
+                            return null;
+                        }
+                        slotExemplars.add(sub);
                     }
                     return "(" + String.join(" ", slotExemplars) + ")";
                 }
@@ -306,23 +409,35 @@ public final class StvnExemplarValueGenerator {
                     long minSize = parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
                     var innerTypes = coll.getSchemaTypeList();
                     if (StvnVocabulary.TYPE_MAP.equals(kind)) {
-                        if (minSize <= 0 || innerTypes.size() < 2) {
+                        if (minSize <= 0) {
                             return "{}";
+                        }
+                        if (innerTypes.size() < 2) {
+                            return null;
                         }
                         StvnSchema keyIr = effectiveIr instanceof StvnSchema.MapSchema ms ? ms.keySchema() : null;
                         StvnSchema valIr = effectiveIr instanceof StvnSchema.MapSchema ms ? ms.valueSchema() : null;
-                        String k = generateExemplar(innerTypes.get(0), keyIr, clock, depth + 1);
-                        String v = generateExemplar(innerTypes.get(1), valIr, clock, depth + 1);
-                        return "{ [" + (k != null ? k : "\"key\"") + " " + (v != null ? v : "0") + "] }";
+                        String k = generateExemplar(innerTypes.get(0), keyIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                        String v = generateExemplar(innerTypes.get(1), valIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                        if (k == null || v == null) {
+                            return null;
+                        }
+                        return "{ [" + k + " " + v + "] }";
                     }
-                    if (minSize <= 0 || innerTypes.isEmpty()) {
+                    if (minSize <= 0) {
                         return "[]";
+                    }
+                    if (innerTypes.isEmpty()) {
+                        return null;
                     }
                     StvnSchema elemIr = effectiveIr instanceof StvnSchema.SeqSchema ss
                         ? ss.elementSchema()
                         : effectiveIr instanceof StvnSchema.SetSchema sets ? sets.elementSchema() : null;
-                    String elem = generateExemplar(innerTypes.get(0), elemIr, clock, depth + 1);
-                    return "[" + (elem != null ? elem : "0") + "]";
+                    String elem = generateExemplar(innerTypes.get(0), elemIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                    if (elem == null) {
+                        return null;
+                    }
+                    return "[" + elem + "]";
                 }
                 if (ctor.getSumType() != null) {
                     SumType sum = ctor.getSumType();
@@ -336,20 +451,20 @@ public final class StvnExemplarValueGenerator {
                             return StvnVocabulary.VAL_NONE;
                         }
                         StvnSchema innerIr = effectiveIr instanceof StvnSchema.OptionSchema os ? os.valueSchema() : null;
-                        String inner = generateExemplar(branches.get(0), innerIr, clock, depth + 1);
+                        String inner = generateExemplar(branches.get(0), innerIr, clock, depth + 1, nextIrAliases, nextPsiElements);
                         return inner != null ? StvnVocabulary.VAL_SOME + " " + inner : StvnVocabulary.VAL_NONE;
                     }
                     if (sumText.startsWith(StvnVocabulary.TYPE_EITHER)) {
                         if (branches.size() >= 2) {
                             StvnSchema rightIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.rightSchema() : null;
-                            String right = generateExemplar(branches.get(1), rightIr, clock, depth + 1);
+                            String right = generateExemplar(branches.get(1), rightIr, clock, depth + 1, nextIrAliases, nextPsiElements);
                             if (right != null) {
                                 return StvnVocabulary.VAL_RIGHT + " " + right;
                             }
                         }
                         if (!branches.isEmpty()) {
                             StvnSchema leftIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.leftSchema() : null;
-                            String left = generateExemplar(branches.get(0), leftIr, clock, depth + 1);
+                            String left = generateExemplar(branches.get(0), leftIr, clock, depth + 1, nextIrAliases, nextPsiElements);
                             if (left != null) {
                                 return StvnVocabulary.VAL_LEFT + " " + left;
                             }
@@ -357,11 +472,24 @@ public final class StvnExemplarValueGenerator {
                         return null;
                     }
                     if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && !branches.isEmpty()) {
-                        StvnSchema b0Ir = (effectiveIr instanceof StvnSchema.UnionSchema us && !us.branchSchemas().isEmpty())
-                            ? us.branchSchemas().get(0)
-                            : null;
-                        String branch0 = generateExemplar(branches.get(0), b0Ir, clock, depth + 1);
-                        return branch0 != null ? "#1 " + branch0 : null;
+                        for (int i = 0; i < branches.size(); i++) {
+                            StvnSchema branchIr = (effectiveIr instanceof StvnSchema.UnionSchema us
+                                    && i < us.branchSchemas().size())
+                                ? us.branchSchemas().get(i)
+                                : null;
+                            String branchVal = generateExemplar(
+                                branches.get(i),
+                                branchIr,
+                                clock,
+                                depth + 1,
+                                nextIrAliases,
+                                nextPsiElements
+                            );
+                            if (branchVal != null) {
+                                return StvnVocabulary.SIGIL_VALUE + (i + 1) + " " + branchVal;
+                            }
+                        }
+                        return null;
                     }
                 }
             }
@@ -371,8 +499,11 @@ public final class StvnExemplarValueGenerator {
         if (effectiveIr instanceof StvnSchema.TupleSchema ts) {
             List<String> slotExemplars = new ArrayList<>(ts.fieldSchemas().size());
             for (StvnSchema elem : ts.fieldSchemas()) {
-                String sub = generateExemplar(null, elem, clock, depth + 1);
-                slotExemplars.add(sub != null ? sub : "0");
+                String sub = generateExemplar(null, elem, clock, depth + 1, nextIrAliases, nextPsiElements);
+                if (sub == null) {
+                    return null;
+                }
+                slotExemplars.add(sub);
             }
             return "(" + String.join(" ", slotExemplars) + ")";
         }
@@ -380,35 +511,51 @@ public final class StvnExemplarValueGenerator {
             if (ss.minSize().compareTo(BigInteger.ZERO) <= 0) {
                 return "[]";
             }
-            String elem = generateExemplar(null, ss.elementSchema(), clock, depth + 1);
-            return "[" + (elem != null ? elem : "0") + "]";
+            String elem = generateExemplar(null, ss.elementSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            return elem != null ? "[" + elem + "]" : null;
         }
         if (effectiveIr instanceof StvnSchema.SetSchema sets) {
             if (sets.minSize().compareTo(BigInteger.ZERO) <= 0) {
                 return "[]";
             }
-            String elem = generateExemplar(null, sets.elementSchema(), clock, depth + 1);
-            return "[" + (elem != null ? elem : "0") + "]";
+            String elem = generateExemplar(null, sets.elementSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            return elem != null ? "[" + elem + "]" : null;
         }
         if (effectiveIr instanceof StvnSchema.MapSchema ms) {
             if (ms.minSize().compareTo(BigInteger.ZERO) <= 0) {
                 return "{}";
             }
-            String k = generateExemplar(null, ms.keySchema(), clock, depth + 1);
-            String v = generateExemplar(null, ms.valueSchema(), clock, depth + 1);
-            return "{ [" + (k != null ? k : "\"key\"") + " " + (v != null ? v : "0") + "] }";
+            String k = generateExemplar(null, ms.keySchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            String v = generateExemplar(null, ms.valueSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            return (k != null && v != null) ? "{ [" + k + " " + v + "] }" : null;
         }
         if (effectiveIr instanceof StvnSchema.OptionSchema os) {
-            String inner = generateExemplar(null, os.valueSchema(), clock, depth + 1);
+            String inner = generateExemplar(null, os.valueSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
             return inner != null ? StvnVocabulary.VAL_SOME + " " + inner : StvnVocabulary.VAL_NONE;
         }
         if (effectiveIr instanceof StvnSchema.EitherSchema es) {
-            String right = generateExemplar(null, es.rightSchema(), clock, depth + 1);
-            return right != null ? StvnVocabulary.VAL_RIGHT + " " + right : null;
+            String right = generateExemplar(null, es.rightSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            if (right != null) {
+                return StvnVocabulary.VAL_RIGHT + " " + right;
+            }
+            String left = generateExemplar(null, es.leftSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            return left != null ? StvnVocabulary.VAL_LEFT + " " + left : null;
         }
         if (effectiveIr instanceof StvnSchema.UnionSchema us && !us.branchSchemas().isEmpty()) {
-            String b0 = generateExemplar(null, us.branchSchemas().get(0), clock, depth + 1);
-            return b0 != null ? "#1 " + b0 : null;
+            for (int i = 0; i < us.branchSchemas().size(); i++) {
+                String bVal = generateExemplar(
+                    null,
+                    us.branchSchemas().get(i),
+                    clock,
+                    depth + 1,
+                    nextIrAliases,
+                    nextPsiElements
+                );
+                if (bVal != null) {
+                    return StvnVocabulary.SIGIL_VALUE + (i + 1) + " " + bVal;
+                }
+            }
+            return null;
         }
 
         return null;
@@ -1047,6 +1194,74 @@ public final class StvnExemplarValueGenerator {
             curr = next;
         }
         return curr != null ? curr : schemaType;
+    }
+
+    private static @Nullable SchemaType resolveTerminalSchemaTypeWithVisited(
+        SchemaType schemaType,
+        Set<String> ancestorIrAliases,
+        Set<PsiElement> ancestorPsiElements,
+        Set<String> nextIrAliases,
+        Set<PsiElement> nextPsiElements
+    ) {
+        Set<PsiElement> chainVisited = new HashSet<>();
+        if (schemaType.getParent() instanceof TypeDefinition startTd && startTd.getSchemaType() == schemaType) {
+            chainVisited.add(startTd);
+        }
+        SchemaType curr = schemaType;
+        while (curr != null && curr.getSchemaConstructor() == null && curr.getTypeKeyword() != null) {
+            if (!chainVisited.add(curr)) {
+                return null;
+            }
+            if (curr != schemaType && ancestorPsiElements.contains(curr)) {
+                return null;
+            }
+            String alias = curr.getTypeKeyword().getText().trim();
+            if (curr != schemaType && ancestorIrAliases.contains(alias)) {
+                return null;
+            }
+            if (curr.getContainingFile() != null) {
+                StvnSchema stepIr = StvnTypeResolver.resolveIrSchemaByAlias(curr.getContainingFile(), alias);
+                if (isUngroundedPoisonedSchema(stepIr, curr)) {
+                    return null;
+                }
+            }
+            nextIrAliases.add(alias);
+            nextPsiElements.add(curr);
+            SchemaType next = StvnTypeResolver.resolveNominalSchema(curr);
+            if (next == null || next == curr) {
+                var kw = curr.getTypeKeyword();
+                if (kw != null && !curr.getProject().isDisposed()) {
+                    var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(
+                        curr.getProject(),
+                        kw.getText().trim()
+                    );
+                    if (preludeDef != null && preludeDef.getSchemaType() != null) {
+                        next = preludeDef.getSchemaType();
+                    }
+                }
+            }
+            if (next == curr) {
+                return null;
+            }
+            if (next == null) {
+                break;
+            }
+            if (next.getParent() instanceof TypeDefinition td) {
+                if (!chainVisited.add(td) || ancestorPsiElements.contains(td)) {
+                    return null;
+                }
+                nextPsiElements.add(td);
+            }
+            curr = next;
+        }
+        if (curr != null) {
+            if (curr != schemaType && ancestorPsiElements.contains(curr)) {
+                return null;
+            }
+            nextPsiElements.add(curr);
+            return curr;
+        }
+        return null;
     }
 
     private static @Nullable Instant tryParseInstantBound(@Nullable String rawBound, ZoneId fallbackZone) {

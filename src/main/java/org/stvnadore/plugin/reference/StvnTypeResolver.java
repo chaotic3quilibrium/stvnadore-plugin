@@ -262,7 +262,8 @@ public final class StvnTypeResolver {
         // 1. Authoritative pure-IR PoisonedSchema check
         var irSchema = resolveIrSchemaByAlias(file, aliasName);
         if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
-                && (!"RECURSIVE_BACK_EDGE".equals(poisoned.primaryDiagnosticCode())
+                && ((!"RECURSIVE_BACK_EDGE".equals(poisoned.primaryDiagnosticCode())
+                        && !"INTERNAL_RECURSIVE_NOMINAL_REF".equals(poisoned.primaryDiagnosticCode()))
                     || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisoned.primaryDiagnosticCode()))) {
             return true;
         }
@@ -273,7 +274,8 @@ public final class StvnTypeResolver {
         if (typeDef != null) {
             var defIr = resolveNominalIrSchema(typeDef);
             if (defIr instanceof StvnSchema.PoisonedSchema poisonedDef
-                    && (!"RECURSIVE_BACK_EDGE".equals(poisonedDef.primaryDiagnosticCode())
+                    && ((!"RECURSIVE_BACK_EDGE".equals(poisonedDef.primaryDiagnosticCode())
+                            && !"INTERNAL_RECURSIVE_NOMINAL_REF".equals(poisonedDef.primaryDiagnosticCode()))
                         || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisonedDef.primaryDiagnosticCode()))) {
                 return true;
             }
@@ -1261,16 +1263,16 @@ public final class StvnTypeResolver {
             return null;
         }
 
-        if (!StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
-            return null;
-        }
-
         if (info.getSchema() != null && info.getSchema().getTypeKeyword() != null) {
             var governingAlias = info.getSchema().getTypeKeyword().getText().trim();
             var governingIr = resolveIrSchemaByAlias(value.getContainingFile(), governingAlias);
             if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
                 return "\u26A0 " + governingAlias;
             }
+        }
+
+        if (!StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+            return null;
         }
 
         var resolvedSchema = resolveNominalSchema(info.getSchema());
@@ -1779,10 +1781,38 @@ public final class StvnTypeResolver {
         return new ResolvedTypeInfo(currentSchema, finalLabel);
     }
 
-    private static SchemaType unwrapNominalSchemaChain(SchemaType schema) {
+    /**
+     * Checks whether a PSI {@link SchemaType} refers to an ungrounded {@link StvnSchema.PoisonedSchema}
+     * in the lowered IR or forms a pure PSI nominal alias cycle.
+     *
+     * @param schemaType the PSI schema type to evaluate
+     * @return {@code true} if the schema is ungrounded in IR or circular in PSI; {@code false} otherwise
+     */
+    public static boolean isUngroundedSchemaType(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return false;
+        }
+        if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
+            var aliasName = schemaType.getTypeKeyword().getText().trim();
+            var irSchema = resolveIrSchemaByAlias(schemaType.getContainingFile(), aliasName);
+            if (irSchema instanceof StvnSchema.PoisonedSchema poisoned) {
+                return poisoned.isUngrounded();
+            }
+            if (irSchema != null) {
+                return false;
+            }
+        }
+        var unwrapped = unwrapNominalSchemaChain(schemaType);
+        return unwrapped == null || unwrapped.getSchemaConstructor() == null;
+    }
+
+    private static @Nullable SchemaType unwrapNominalSchemaChain(SchemaType schema) {
         var current = schema;
         var visited = new HashSet<PsiElement>();
-        while (current.getSchemaConstructor() == null && visited.add(current)) {
+        while (current.getSchemaConstructor() == null) {
+            if (!visited.add(current)) {
+                return null;
+            }
             var next = resolveNominalSchema(current);
             if (next == null || next == current) {
                 break;
@@ -1795,8 +1825,14 @@ public final class StvnTypeResolver {
     private static @Nullable SchemaType descendSchemaPath(SchemaType rootSchema, Stack<PathStep> path) {
         var currentSchema = rootSchema;
         while (!path.isEmpty() && currentSchema != null) {
+            if (isUngroundedSchemaType(currentSchema)) {
+                return null;
+            }
             var step = path.pop();
             var schemaToInspect = unwrapNominalSchemaChain(currentSchema);
+            if (schemaToInspect == null) {
+                return null;
+            }
 
             var constructor = schemaToInspect.getSchemaConstructor();
             if (constructor == null) {
@@ -1820,7 +1856,13 @@ public final class StvnTypeResolver {
                 if (innerSchema == null) {
                     break;
                 }
+                if (isUngroundedSchemaType(innerSchema)) {
+                    return null;
+                }
                 schemaToInspect = unwrapNominalSchemaChain(innerSchema);
+                if (schemaToInspect == null) {
+                    return null;
+                }
                 var c = schemaToInspect.getSchemaConstructor();
                 if (c == null) {
                     break;
@@ -3076,6 +3118,9 @@ public final class StvnTypeResolver {
         }
         var info = resolveBaseTypeInfo(value);
         if (info != null) {
+            if (err.schema() instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
+                return true;
+            }
             var resolved = resolveNominalSchema(info.getSchema());
             var toInspect = resolved != null ? resolved : info.getSchema();
             if (StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {

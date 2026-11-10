@@ -345,4 +345,92 @@ public final class StvnTypeInlayHintsTest extends BasePlatformTestCase {
             StvnTypeResolver.resolveValueType(slot2Val)
         );
     }
+
+    public void testStage12UngroundedTupleCycleAndTreeNodeInlayHints() {
+        var text = """
+            {
+              :meta {
+                #name "inv_stage12_circular_type_body_suspension_and_fault_isolation"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta :CycleAlpha
+                :DerivedFromCycle :CycleAlpha
+                :NodeWeight { #unsigned #size 16 } :Int
+                :UnguardedTupleCycle :Tuple(:NodeWeight :UnguardedTupleCycle)
+                :TreeLabel { #minSize 1 #maxSize 32 } :String
+                :TreeNode :Tuple(
+                  :TreeLabel
+                  :Seq(:TreeNode)
+                )
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 65536 } :Int
+                :Stage12Envelope :Tuple(
+                  :CycleAlpha
+                  :DerivedFromCycle
+                  :UnguardedTupleCycle
+                  :TreeNode
+                  :BoundedPort
+                )
+              }
+              :type :Stage12Envelope
+              :body (
+                "ungrounded-slot-suspended"
+                999
+                ( 1 "bad" )
+                ( "root" [ ( "child-ok" [] ) ( "" [ ( "grandchild" [] ) ] ) ] )
+                80
+              )
+            }
+            """;
+        var file = myFixture.configureByText(
+            "inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i",
+            text
+        );
+
+        var rootTuple = PsiTreeUtil.findChildOfType(file, TupleLiteral.class);
+        assertNotNull("Root TupleLiteral must not be null", rootTuple);
+        var slots = rootTuple.getValueList();
+        assertEquals("Expected 5 envelope slots", 5, slots.size());
+
+        var unguardedTupleSlot = slots.get(2);
+        assertEquals("( 1 \"bad\" )", unguardedTupleSlot.getText().trim());
+        assertEquals(
+            "Unguarded tuple slot must render '⚠ :UnguardedTupleCycle'",
+            "\u26A0 :UnguardedTupleCycle",
+            StvnTypeResolver.resolveValueType(unguardedTupleSlot)
+        );
+
+        var innerTuple = unguardedTupleSlot.getCollectionValue().getTupleLiteral();
+        assertNotNull("Inner TupleLiteral must not be null", innerTuple);
+        var innerElems = innerTuple.getValueList();
+        assertEquals(2, innerElems.size());
+        assertNull(
+            "Inner element '1' inside ungrounded tuple must NOT resolve to ':NodeWeight (-> :Int)'",
+            StvnTypeResolver.resolveValueType(innerElems.get(0))
+        );
+        assertNull(
+            "Inner element '\"bad\"' inside ungrounded tuple must NOT resolve to duplicate '⚠ :UnguardedTupleCycle'",
+            StvnTypeResolver.resolveValueType(innerElems.get(1))
+        );
+
+        var treeNodeSlot = slots.get(3);
+        assertEquals(
+            "Sibling :TreeNode slot must retain its nominal inlay hint ':TreeNode'",
+            ":TreeNode",
+            StvnTypeResolver.resolveValueType(treeNodeSlot)
+        );
+        var treeRootElem = treeNodeSlot.getCollectionValue().getTupleLiteral().getValueList().get(0);
+        assertEquals(
+            "Inner root label inside :TreeNode must retain its scalar lineage hint ':TreeLabel (-> :String)'",
+            ":TreeLabel (-> :String)",
+            StvnTypeResolver.resolveValueType(treeRootElem)
+        );
+        var boundedPortSlot = slots.get(4);
+        assertEquals(
+            "Sibling :BoundedPort slot must retain its nominal inlay hint ':BoundedPort (-> :Int)'",
+            ":BoundedPort (-> :Int)",
+            StvnTypeResolver.resolveValueType(boundedPortSlot)
+        );
+    }
 }

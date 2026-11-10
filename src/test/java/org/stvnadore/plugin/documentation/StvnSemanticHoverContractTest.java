@@ -185,4 +185,32 @@ public final class StvnSemanticHoverContractTest extends BasePlatformTestCase {
         assertNotNull("Generated doc must not be null", doc);
         assertTrue("Hover latency must be strictly under 25ms, got " + elapsedMs + "ms", elapsedMs < 25);
     }
+
+    public void testUnionExemplarUsesOneBasedBranchSelectorAndReservedLhsRendersBuiltInCard() {
+        var text = """
+            {
+              :defs {
+                :UnionChoice :Union( :Int :String )
+                :Int :String
+              }
+              :type :UnionChoice
+              :body #1 0
+            }
+            """;
+        myFixture.configureByText("union_and_lhs.stvn", text);
+
+        int unionOffset = text.indexOf(":UnionChoice");
+        String unionDoc = getDocAtOffset(text, unionOffset + 1);
+        assertTrue(
+            "Union exemplar must use 1-based selector '#1 0', never 0-based '#0':\n" + unionDoc,
+            unionDoc.contains("#1 0") && !unionDoc.contains("#0")
+        );
+
+        int lhsIntOffset = text.indexOf(":Int :String") + 1;
+        String lhsIntDoc = getDocAtOffset(text, lhsIntOffset);
+        assertTrue(
+            "Reserved LHS ':Int' must render built-in :Int specification card:\n" + lhsIntDoc,
+            lhsIntDoc.contains(":Int") && !lhsIntDoc.contains("#preserveIndent")
+        );
+    }
 }

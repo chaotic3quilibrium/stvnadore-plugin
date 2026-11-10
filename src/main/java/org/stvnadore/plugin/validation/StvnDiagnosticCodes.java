@@ -125,8 +125,7 @@ public final class StvnDiagnosticCodes {
         }
         return switch (clean) {
             case ERR_TAB_CHARACTER_FORBIDDEN -> "E001";
-            case ERR_RESERVED_KEYWORD_ON_LHS,
-                 ERR_EMPTY_DEFS_BLOCK,
+            case ERR_EMPTY_DEFS_BLOCK,
                  ERR_NESTED_PACKAGE_PROHIBITED,
                  ERR_TRAILING_SLASH_PROHIBITED -> "E002";
             case ERR_EMPTY_METADATA_BLOCK -> "E003";
@@ -169,6 +168,7 @@ public final class StvnDiagnosticCodes {
                  ERR_FENCE_OPENING_TAG_MISMATCH,
                  ERR_FENCE_BLOCK_UNCLOSED -> "E025";
             case ERR_PROHIBITED_FENCE_ARROW -> "E026";
+            case ERR_RESERVED_KEYWORD_ON_LHS -> "E027";
             case ERR_FLAT_LIST_IN_MAP_SLOT,
                  ERR_INVALID_BOOLEAN_CASING,
                  ERR_INVALID_BOOLEAN_LITERAL -> "E028";

@@ -308,7 +308,13 @@ public final class StvnDiagnosticAnnotatorMapping {
     }
 
     private static boolean isExplicitlyUngovernedSymbolicId(String code) {
-        return DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
+        return DiagnosticBag.ERR_DUPLICATE_DEF.equals(code)
+            || "DUPLICATE_TYPE_DEFINITION".equals(code)
+            || "E006".equals(code)
+            || DiagnosticBag.ERR_CIRCULAR_TYPE.equals(code)
+            || "CIRCULAR_TYPE_DEFINITION".equals(code)
+            || "E007".equals(code)
+            || DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
             || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
             || "DUPLICATE_MAP_KEY".equals(code)
@@ -614,7 +620,8 @@ public final class StvnDiagnosticAnnotatorMapping {
             return "StvnTrailingSlash";
         }
         if (message.contains("Reserved type keyword cannot be declared on LHS")
-                || message.contains("Reserved type keyword cannot be used on left-hand side")) {
+                || message.contains("Reserved type keyword cannot be used on left-hand side")
+                || message.contains("Reserved fundamental type or keyword cannot be used on left-hand side")) {
             return "StvnLhsReservedType";
         }
         return null;

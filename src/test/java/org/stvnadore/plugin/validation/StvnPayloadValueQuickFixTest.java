@@ -734,4 +734,69 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
             myFixture.getEditor().getDocument().getText().contains(":body 1711929600")
         );
     }
+
+    public void testCycleSafeExemplarGenerationOnGuardedAndUnguardedSchemas() {
+        var text = """
+            {
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta :CycleAlpha
+                :DerivedFromCycle :CycleAlpha
+                :NodeWeight { #unsigned #size 16 #minIncl 1 } :Int
+                :UnguardedTupleCycle :Tuple(:NodeWeight :UnguardedTupleCycle)
+                :BadNonEmptySeqCycle :Tuple(:NodeWeight { #minSize 1 } :Seq(:BadNonEmptySeqCycle))
+                :BadEitherCycle :Either(:BadEitherCycle :BadEitherCycle)
+                :TreeNode :Tuple(:NodeWeight :Seq(:TreeNode))
+                :LinkedListNode :Tuple(:Int :Option(:LinkedListNode))
+                :DecisionNode :Either(:DecisionNode :Int)
+                :LeftDecisionNode :Either(:Int :LeftDecisionNode)
+                :UnionDecisionNode :Union(:UnionDecisionNode :Int)
+                :EvenForest :Seq(:OddBranch)
+                :OddBranch :Tuple(:Int :EvenForest)
+              }
+              :type :Int
+              :body 0
+            }
+            """;
+        var file = myFixture.configureByText("stage12_exemplars.stvn", text);
+
+        for (String unguardedAlias : List.of(
+                ":CycleAlpha",
+                ":CycleBeta",
+                ":DerivedFromCycle",
+                ":UnguardedTupleCycle",
+                ":BadNonEmptySeqCycle",
+                ":BadEitherCycle")) {
+            var td = org.stvnadore.plugin.reference.StvnTypeResolver.findTypeDefinition(file, unguardedAlias);
+            assertNotNull("TypeDefinition must exist for " + unguardedAlias, td);
+            var ir = org.stvnadore.plugin.reference.StvnTypeResolver.resolveIrSchemaByAlias(file, unguardedAlias);
+            assertNull(
+                "Unguarded cycle " + unguardedAlias + " must short-circuit to null exemplar (with IR)",
+                org.stvnadore.plugin.documentation.StvnExemplarValueGenerator.generateExemplar(td.getSchemaType(), ir)
+            );
+            assertNull(
+                "Unguarded cycle " + unguardedAlias + " must short-circuit to null exemplar (PSI only)",
+                org.stvnadore.plugin.documentation.StvnExemplarValueGenerator.generateExemplar(td.getSchemaType(), null)
+            );
+        }
+
+        assertExemplarForAlias(file, ":TreeNode", "(1 [])");
+        assertExemplarForAlias(file, ":LinkedListNode", "(0 #None)");
+        assertExemplarForAlias(file, ":DecisionNode", "#Right 0");
+        assertExemplarForAlias(file, ":LeftDecisionNode", "#Left 0");
+        assertExemplarForAlias(file, ":UnionDecisionNode", "#2 0");
+        assertExemplarForAlias(file, ":EvenForest", "[]");
+        assertExemplarForAlias(file, ":OddBranch", "(0 [])");
+    }
+
+    private void assertExemplarForAlias(com.intellij.psi.PsiFile file, String alias, String expectedExemplar) {
+        var td = org.stvnadore.plugin.reference.StvnTypeResolver.findTypeDefinition(file, alias);
+        assertNotNull("TypeDefinition must exist for " + alias, td);
+        var ir = org.stvnadore.plugin.reference.StvnTypeResolver.resolveIrSchemaByAlias(file, alias);
+        assertEquals(
+            "Guarded recursive schema " + alias + " must produce minimal finite exemplar",
+            expectedExemplar,
+            org.stvnadore.plugin.documentation.StvnExemplarValueGenerator.generateExemplar(td.getSchemaType(), ir)
+        );
+    }
 }

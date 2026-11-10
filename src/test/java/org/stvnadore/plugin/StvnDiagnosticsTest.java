@@ -6903,6 +6903,19 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertDiagnosticContract("syntax/invalid/defs/inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i");
     }
 
+    public void testInvalidReservedKeywordOnLhs() throws Exception {
+        assertDiagnosticContract("syntax/invalid/defs/inv_reserved_keyword_on_lhs.stvn_i");
+    }
+
+    public void testStage12CircularTypesNotSuppressedWithAllInspectionsEnabled() throws Exception {
+        myFixture.enableInspections(
+            new org.stvnadore.plugin.validation.StvnLhsReservedTypeInspection(),
+            new org.stvnadore.plugin.validation.StvnUnresolvedTypeInspection(),
+            new org.stvnadore.plugin.validation.StvnDegradedSchemaInspection()
+        );
+        assertDiagnosticContract("syntax/invalid/defs/inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i");
+    }
+
     public void testInvalidGauntletV4Stage1MetaMultiErrorAndBody() throws Exception {
         assertDiagnosticContract("syntax/invalid/metadata/gauntlet_v4_stage1_meta_multi_error_and_body.core_test.stvn_i");
     }

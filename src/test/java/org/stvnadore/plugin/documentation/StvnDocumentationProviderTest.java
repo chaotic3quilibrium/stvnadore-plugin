@@ -1796,4 +1796,103 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         assertFalse("Hover on 404 in Slot 13 must not unwrap into :ErrorCode:\n" + innerDoc,
             innerDoc.contains("Active Branch"));
     }
+
+    public void testStage12UngroundedTupleSlotHoverAndReservedLhsBuiltInCard() {
+        var stage12Text = """
+            {
+              :meta {
+                #name "inv_stage12_circular_type_body_suspension_and_fault_isolation"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :CycleAlpha :CycleBeta
+                :CycleBeta :CycleAlpha
+                :DerivedFromCycle :CycleAlpha
+                :NodeWeight { #unsigned #size 16 } :Int
+                :UnguardedTupleCycle :Tuple(:NodeWeight :UnguardedTupleCycle)
+                :TreeLabel { #minSize 1 #maxSize 32 } :String
+                :TreeNode :Tuple(
+                  :TreeLabel
+                  :Seq(:TreeNode)
+                )
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 65536 } :Int
+                :Stage12Envelope :Tuple(
+                  :CycleAlpha
+                  :DerivedFromCycle
+                  :UnguardedTupleCycle
+                  :TreeNode
+                  :BoundedPort
+                )
+              }
+              :type :Stage12Envelope
+              :body (
+                "ungrounded-slot-suspended"
+                999
+                ( 1 "bad" )
+                ( "root" [ ( "child-ok" [] ) ( "" [ ( "grandchild" [] ) ] ) ] )
+                80
+              )
+            }
+            """;
+        myFixture.configureByText(
+            "inv_stage12_circular_type_body_suspension_and_fault_isolation.stvn_i",
+            stage12Text
+        );
+
+        int slotOffset = stage12Text.indexOf("( 1 \"bad\" )");
+        int openParenOffset = slotOffset;
+        int oneOffset = stage12Text.indexOf("1", slotOffset);
+        int badOffset = stage12Text.indexOf("\"bad\"", slotOffset) + 1;
+        int closeParenOffset = slotOffset + "( 1 \"bad\" )".length() - 1;
+
+        for (int hoverOffset : new int[]{openParenOffset, oneOffset, badOffset, closeParenOffset}) {
+            String doc = getDocAtOffset(stage12Text, hoverOffset);
+            assertNotNull("Hover doc inside ungrounded tuple slot at offset " + hoverOffset + " must not be null", doc);
+            assertTrue(
+                "Hover doc at offset " + hoverOffset + " must show Suspended (Ungrounded Schema):\n" + doc,
+                doc.contains("Suspended (Ungrounded Schema)")
+            );
+            assertTrue(
+                "Hover doc at offset " + hoverOffset + " must include explicit Stage 12 suspension notice:\n" + doc,
+                doc.contains("\u26A0 Suspended (governing schema is ungrounded \u2014 payload evaluation skipped)")
+            );
+            assertFalse(
+                "Hover doc at offset " + hoverOffset + " must NEVER report Violated status:\n" + doc,
+                doc.contains("In Violation") || doc.contains(">Violated<")
+            );
+            assertFalse(
+                "Hover doc at offset " + hoverOffset + " must NEVER render an Exemplar Value row:\n" + doc,
+                doc.contains("Exemplar Value:")
+            );
+        }
+
+        var reservedLhsText = """
+            {
+              :meta {
+                #name "inv_reserved_keyword_on_lhs"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :Int :String
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("inv_reserved_keyword_on_lhs.stvn_i", reservedLhsText);
+
+        int lhsIntOffset = reservedLhsText.indexOf(":Int :String") + 1;
+        String lhsIntDoc = getDocAtOffset(reservedLhsText, lhsIntOffset);
+        assertNotNull("Hover on LHS ':Int' in ':Int :String' must not be null", lhsIntDoc);
+        assertTrue(
+            "Hover on LHS ':Int' must render built-in :Int specification card:\n" + lhsIntDoc,
+            lhsIntDoc.contains(":Int") && lhsIntDoc.contains("signed")
+        );
+        assertFalse(
+            "Hover on LHS ':Int' in ':Int :String' must NEVER leak RHS :String facets or exemplar '\"example\"':\n" + lhsIntDoc,
+            lhsIntDoc.contains("#preserveIndent")
+                || lhsIntDoc.contains("Underlying Structure:</b> <code>:String")
+                || lhsIntDoc.contains("\"example\"")
+        );
+    }
 }
