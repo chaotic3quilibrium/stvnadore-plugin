@@ -16,7 +16,7 @@ import java.util.Map;
 public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
 
     private static final Map<Class<? extends LocalInspectionTool>, List<String>> EXPECTED_INSPECTION_KEYWORDS = Map.ofEntries(
-        Map.entry(StvnDegradedSchemaInspection.class, List.of("degraded", "schema", "fallback", "defs")),
+        Map.entry(StvnDegradedSchemaInspection.class, List.of("degraded", "schema", "fallback", "suspended", "defs")),
         Map.entry(StvnMapStructuralInspection.class, List.of("map", "list", "Convert to Map Literal")),
         Map.entry(StvnVariantStyleInspection.class, List.of("variant", "tag", ":Union", ":Either", ":Option", "#Some", "#Right", "#1")),
         Map.entry(StvnBooleanValidityInspection.class, List.of("boolean", "#TRUE", "#FALSE", "#T", "#F")),

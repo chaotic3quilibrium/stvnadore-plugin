@@ -5273,7 +5273,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Expected exactly 1 WARNING on :type", 1, typeWarnings.size());
         assertNotNull(typeWarnings.get(0).getDescription());
-        assertTrue(typeWarnings.get(0).getDescription().contains("Operating on fallback base"));
+        assertTrue(typeWarnings.get(0).getDescription().contains("underlying base ':String' \u2014 payload evaluation is suspended"));
 
         var text = myFixture.getEditor().getDocument().getText();
         var typeOffset = text.lastIndexOf(":BrokenRegex");
@@ -5346,7 +5346,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var doc = provider.generateDoc(target, element);
         assertNotNull("Documentation must not be null", doc);
         assertTrue("Must contain warning banner icon/header", doc.contains("Degraded Schema Warning"));
-        assertTrue("Must contain fallback base description", doc.contains("fallback base"));
+        assertTrue("Must contain underlying base type description", doc.contains("underlying base type: <code>:String</code>"));
+        assertTrue("Must state payload evaluation is suspended", doc.contains("Payload evaluation is suspended."));
         assertTrue("Must contain alias name", doc.contains(":BrokenRegex"));
     }
 
@@ -6514,11 +6515,13 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var doc = provider.generateDoc(docElem, defElem);
         assertNotNull("Hover documentation must not be null", doc);
 
-        // 1. Amber warning banner must display clean fallback base type :Int
-        assertTrue("Expected clean fallback base type (:Int) in degraded warning banner",
-            doc.contains("fallback base type (<code>:Int</code>)"));
+        // 1. Amber warning banner must display clean underlying base type :Int and suspension notice
+        assertTrue("Expected clean underlying base type (:Int) in degraded warning banner",
+            doc.contains("underlying base type: <code>:Int</code>"));
+        assertTrue("Expected payload suspension notice in degraded warning banner",
+            doc.contains("Payload evaluation is suspended."));
         assertFalse("Degraded warning banner must NOT contain corrupted metadata map",
-            doc.contains("fallback base type (<code>{ #minIncl -2147483649 } :Int</code>)"));
+            doc.contains("underlying base type: <code>{ #minIncl -2147483649 } :Int</code>"));
 
         // 2. Zone 2 effective facets table must display #minIncl -2147483649 with status Invalid
         assertTrue("Zone 2 must display #minIncl facet", doc.contains("<code>#minIncl</code>"));
@@ -6930,6 +6933,28 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
     public void testInvalidStage7SingleBranchUnionPoisoning() throws Exception {
         assertDiagnosticContract("syntax/invalid/metadata/single_branch_union_poisoning.core_test.stvn_i");
+    }
+
+    public void testInvalidDuplicateMetaAndBodyFaultIsolation() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/duplicate_meta_and_body_fault_isolation.core_test.stvn_i");
+    }
+
+    public void testInvalidDuplicateMetaAndBodyFaultIsolationWithAllMetaInspectionsEnabled() throws Exception {
+        myFixture.enableInspections(
+            new org.stvnadore.plugin.validation.StvnMissingMetaInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataFacetInspection(),
+            new org.stvnadore.plugin.validation.StvnStemMismatchInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataOrderInspection()
+        );
+        assertDiagnosticContract("syntax/invalid/metadata/duplicate_meta_and_body_fault_isolation.core_test.stvn_i");
+    }
+
+    public void testInvalidGroundedPoisonedSchemaBodySuspension() throws Exception {
+        myFixture.enableInspections(
+            new org.stvnadore.plugin.validation.StvnDiscreteIntervalInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataFacetInspection()
+        );
+        assertDiagnosticContract("syntax/invalid/metadata/grounded_poisoned_schema_body_suspension.core_test.stvn_i");
     }
 }
 

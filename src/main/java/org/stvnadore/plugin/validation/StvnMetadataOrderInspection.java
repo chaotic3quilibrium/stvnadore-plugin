@@ -8,6 +8,7 @@ import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaEntry;
@@ -66,6 +67,9 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             @Override
             public void visitMetaEntry(@NotNull MetaEntry metaEntry) {
                 super.visitMetaEntry(metaEntry);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(metaEntry)) {
+                    return;
+                }
                 MetaBlock metaBlock = metaEntry.getMetaBlock();
                 if (metaBlock == null) {
                     return;

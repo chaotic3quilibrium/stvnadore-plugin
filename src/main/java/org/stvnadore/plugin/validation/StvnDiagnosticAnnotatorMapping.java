@@ -76,9 +76,6 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH, "StvnMissingMeta");
         map.put("DOCUMENT_KIND_MISMATCH", "StvnMissingMeta");
         map.put("E031", "StvnMissingMeta");
-        map.put(DiagnosticBag.ERR_META_POSITION_INVALID, "StvnMissingMeta");
-        map.put("META_POSITION_INVALID", "StvnMissingMeta");
-        map.put("E033", "StvnMissingMeta");
 
         // 5. Metadata Facet Canonical Order Inspection
         map.put(DiagnosticBag.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
@@ -314,6 +311,9 @@ public final class StvnDiagnosticAnnotatorMapping {
             || DiagnosticBag.ERR_CIRCULAR_TYPE.equals(code)
             || "CIRCULAR_TYPE_DEFINITION".equals(code)
             || "E007".equals(code)
+            || DiagnosticBag.ERR_META_POSITION_INVALID.equals(code)
+            || "META_POSITION_INVALID".equals(code)
+            || "E033".equals(code)
             || DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
             || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)

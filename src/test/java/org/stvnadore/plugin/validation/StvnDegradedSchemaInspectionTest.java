@@ -48,7 +48,9 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
             .toList();
 
         assertEquals("Exactly 1 weak warning expected on body payload when enabled", 1, weakWarnings.size());
-        assertTrue(weakWarnings.get(0).getDescription().contains("Value bound to degraded schema ':BrokenRegex'"));
+        assertTrue(weakWarnings.get(0).getDescription().contains(
+            "Value bound to degraded schema ':BrokenRegex' (underlying base ':String' \u2014 payload evaluation is suspended)"
+        ));
         
         var text = myFixture.getEditor().getDocument().getText();
         var bodyOffset = text.indexOf("\"payload_value\"");
@@ -102,7 +104,9 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
             .orElse(null);
         assertNotNull("Literal 1.23 must receive degraded warning", warning123);
         assertNotNull(warning123.getDescription());
-        assertTrue(warning123.getDescription().contains("Value bound to degraded schema ':FloatExactAToExact'"));
+        assertTrue(warning123.getDescription().contains(
+            "Value bound to degraded schema ':FloatExactAToExact' (underlying base ':Float' \u2014 payload evaluation is suspended)"
+        ));
 
         // Assert -4.56 has degraded schema warning for :FloatExactATo32
         int offsetNeg456 = text.indexOf("-4.56");
@@ -112,7 +116,9 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
             .orElse(null);
         assertNotNull("Literal -4.56 must receive degraded warning", warningNeg456);
         assertNotNull(warningNeg456.getDescription());
-        assertTrue(warningNeg456.getDescription().contains("Value bound to degraded schema ':FloatExactATo32'"));
+        assertTrue(warningNeg456.getDescription().contains(
+            "Value bound to degraded schema ':FloatExactATo32' (underlying base ':Float' \u2014 payload evaluation is suspended)"
+        ));
     }
 
     public void testStage12UnguardedTupleCycleSlotSuspensionAndFaultIsolation() {
@@ -186,5 +192,44 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
         int innerBadOffset = text.indexOf("\"bad\"");
         boolean hasInnerWarning = weakWarnings.stream().anyMatch(w -> w.getStartOffset() == innerBadOffset);
         assertFalse("Inner element '\"bad\"' must NOT receive a cascading degraded warning", hasInnerWarning);
+    }
+
+    public void testGroundedPoisonedSchemaBodySuspensionWeakWarnings() {
+        var inspection = new StvnDegradedSchemaInspection();
+        inspection.highlightBodyValuesBoundToDegradedSchemas = true;
+        myFixture.enableInspections(inspection);
+
+        var content = """
+            {
+              :meta {
+                #name "grounded_poisoned_schema_body_suspension"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :TrapIntMinExcl { #minExcl 10 #maxExcl 20 } :Int
+                :ChildUnsignedTrap { #unsigned } :TrapIntMinExcl
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :Tuple(:TrapIntMinExcl :TrapIntMinExcl :BoundedPort)
+              :body (15 999 5000)
+            }
+            """;
+        myFixture.configureByText("grounded_poisoned_schema_body_suspension.core_test.stvn_i", content);
+        var highlights = myFixture.doHighlighting();
+
+        var weakWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .toList();
+
+        assertEquals("Expected exactly 2 weak warnings on poisoned slots 15 and 999", 2, weakWarnings.size());
+        for (var warn : weakWarnings) {
+            assertTrue(
+                "Expected Option D grounded suspension wording, got: " + warn.getDescription(),
+                warn.getDescription().contains(
+                    "Value bound to degraded schema ':TrapIntMinExcl' (underlying base ':Int' \u2014 payload evaluation is suspended)"
+                )
+            );
+        }
     }
 }

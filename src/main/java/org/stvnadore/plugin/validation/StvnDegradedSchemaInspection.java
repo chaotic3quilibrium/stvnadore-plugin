@@ -78,12 +78,17 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                             rawMessage = "Value bound to degraded schema '" + aliasName
                                 + "' (payload evaluation is suspended for ungrounded schema)";
                         } else {
-                            var resolved = StvnTypeResolver.resolveNominalSchema(schema);
-                            var fallbackBase = resolved != null
-                                ? StvnSchemaFormatter.formatCleanSchema(resolved)
-                                : StvnSchemaFormatter.formatCleanSchema(schema);
+                            String fallbackBase;
+                            if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isGrounded()) {
+                                fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
+                            } else {
+                                var resolved = StvnTypeResolver.resolveNominalSchema(schema);
+                                fallbackBase = resolved != null
+                                    ? StvnSchemaFormatter.formatCleanSchema(resolved)
+                                    : StvnSchemaFormatter.formatCleanSchema(schema);
+                            }
                             rawMessage = "Value bound to degraded schema '" + aliasName
-                                + "' (operating on fallback base '" + fallbackBase + "')";
+                                + "' (underlying base '" + fallbackBase + "' \u2014 payload evaluation is suspended)";
                         }
                         var message = StvnDiagnosticFormatter.formatPlugin(
                             rawMessage,

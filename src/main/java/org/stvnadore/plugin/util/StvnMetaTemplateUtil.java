@@ -159,6 +159,31 @@ public final class StvnMetaTemplateUtil {
   }
 
   /**
+   * Determines whether the given PSI element belongs to the primary (first) {@link MetaEntry}
+   * in its containing file.
+   *
+   * @param element the PSI element to inspect
+   * @return {@code true} if the enclosing {@link MetaEntry} is the first {@link MetaEntry} in the file
+   */
+  public static boolean isPrimaryMetaEntry(@Nullable PsiElement element) {
+    if (element == null) {
+      return false;
+    }
+    MetaEntry enclosing = element instanceof MetaEntry meta
+        ? meta
+        : PsiTreeUtil.getParentOfType(element, MetaEntry.class, false);
+    if (enclosing == null) {
+      return false;
+    }
+    PsiFile file = enclosing.getContainingFile();
+    if (file == null) {
+      return false;
+    }
+    MetaEntry primary = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+    return enclosing.equals(primary);
+  }
+
+  /**
    * Inserts the canonical :meta block into the specified file document buffer.
    *
    * @param project current project

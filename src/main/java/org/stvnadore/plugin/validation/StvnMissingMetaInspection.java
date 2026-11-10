@@ -135,6 +135,9 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             @Override
             public void visitMetaEntry(@NotNull MetaEntry metaEntry) {
                 super.visitMetaEntry(metaEntry);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(metaEntry)) {
+                    return;
+                }
                 MetaBlock metaBlock = metaEntry.getMetaBlock();
                 if (metaBlock == null || metaBlock.getMetaElementList().isEmpty()) {
                     return;
@@ -166,6 +169,9 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             @Override
             public void visitMetaKindFacet(@NotNull MetaKindFacet facet) {
                 super.visitMetaKindFacet(facet);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(facet)) {
+                    return;
+                }
                 var file = facet.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();

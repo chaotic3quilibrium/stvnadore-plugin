@@ -173,12 +173,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (degradedInfo != null) {
             var detailsHtml = degradedInfo.fallbackBase() != null
                 ? """
-                    Nominal type <code>%s</code> contains constraint errors in <code>:defs</code>.<br/>
-                    Currently evaluating payload using fallback base type (<code>%s</code>).""".formatted(
-                        degradedInfo.aliasName(), degradedInfo.fallbackBase())
+                    Nominal type <code>%s</code> contains constraint errors in <code>%s</code> (underlying base type: <code>%s</code>).<br/>
+                    Payload evaluation is suspended.""".formatted(
+                        degradedInfo.aliasName(), StvnVocabulary.KEYWORD_DEFS, degradedInfo.fallbackBase())
                 : """
-                    Nominal type <code>%s</code> does not resolve to a base type in <code>:defs</code> (circular or unresolved lineage).<br/>
-                    Payload evaluation is suspended.""".formatted(degradedInfo.aliasName());
+                    Nominal type <code>%s</code> does not resolve to a base type in <code>%s</code> (circular or unresolved lineage).<br/>
+                    Payload evaluation is suspended.""".formatted(degradedInfo.aliasName(), StvnVocabulary.KEYWORD_DEFS);
             var banner = """
                 <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
                     <b style="font-size: 1.05em;">&#9888; Degraded Schema Warning</b><br/>
@@ -3643,7 +3643,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<div class='content'>");
         var compliance = evaluateValueCompliance(targetValueForCompliance, targetSchemaForCompliance);
         String badgeColor = ("Satisfied (Precision Loss)".equals(compliance.statusLabel())
-                || "Satisfied (Degraded Schema)".equals(compliance.statusLabel())
+                || "Suspended (Degraded Schema)".equals(compliance.statusLabel())
                 || "Suspended (Ungrounded Schema)".equals(compliance.statusLabel()))
             ? getWarningBadgeColorHex()
             : (compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex());
@@ -3655,7 +3655,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (epochDoc != null) {
             sb.append(epochDoc);
         }
-        if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())) {
+        if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())
+                && !"Suspended (Degraded Schema)".equals(compliance.statusLabel())) {
             StvnSchema leafIrSchema = targetSchemaForCompliance != null
                 ? resolveEffectiveIrSchemaForCompliance(targetValueForCompliance, targetSchemaForCompliance)
                 : null;
@@ -3688,7 +3689,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      */
     private static @NotNull StvnValueComplianceResult evaluateValueCompliance(Value value, @Nullable SchemaType schemaType) {
         var rawResult = evaluateValueComplianceInternal(value, schemaType);
-        if ("Suspended (Ungrounded Schema)".equals(rawResult.statusLabel())) {
+        if ("Suspended (Ungrounded Schema)".equals(rawResult.statusLabel())
+                || "Suspended (Degraded Schema)".equals(rawResult.statusLabel())) {
             return rawResult;
         }
         if (rawResult.isSatisfied()) {
@@ -3721,20 +3723,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
         }
-        if (schemaType == null || !isGoverningSchemaDegraded(value, schemaType)) {
-            return rawResult;
-        }
-        String schemaLabel = schemaType.getText().trim();
-        String degradedNote = "<b>Note:</b> Governing schema <code>" + schemaLabel
-            + "</code> is degraded (contains metadata facet errors); evaluated against best-effort fallback.<br/>";
-        String statusLabel = rawResult.isSatisfied() ? "Satisfied (Degraded Schema)" : "Violated (Degraded Schema)";
-        return new StvnValueComplianceResult(
-            rawResult.isSatisfied(),
-            statusLabel,
-            degradedNote + rawResult.detailExplanation(),
-            rawResult.evaluatedConstraints(),
-            rawResult.validLexicalForms()
-        );
+        return rawResult;
     }
 
     private static boolean isExcessSliceDiagnostic(String code) {
@@ -3813,10 +3802,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable Value findEnclosingUngroundedContainerValue(@Nullable Value start) {
+        boolean startUnresolved = start != null && StvnTypeResolver.resolveBaseTypeInfo(start) == null;
         Value curr = start;
         while (curr != null) {
             var info = StvnTypeResolver.resolveBaseTypeInfo(curr);
-            if (info != null && info.getSchema() != null && isGoverningSchemaUngrounded(curr, info.getSchema())) {
+            if (info != null && info.getSchema() != null
+                    && (isGoverningSchemaUngrounded(curr, info.getSchema())
+                        || (startUnresolved && isGoverningSchemaDegraded(curr, info.getSchema())))) {
                 return curr;
             }
             curr = PsiTreeUtil.getParentOfType(curr, Value.class, true);
@@ -3850,6 +3842,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         StvnSchema irSchema = resolveEffectiveIrSchemaForCompliance(value, schemaType);
+
+        if (isGoverningSchemaDegraded(value, schemaType)) {
+            String schemaLabel = schemaType.getText().trim();
+            String underlyingBase = (irSchema != null)
+                ? StvnSchemaFormatter.formatCleanIrSchema(irSchema)
+                : baseType;
+            if (underlyingBase == null || underlyingBase.isBlank()) {
+                underlyingBase = baseType;
+            }
+            return new StvnValueComplianceResult(
+                true,
+                "Suspended (Degraded Schema)",
+                "\u26A0 Suspended (governing schema is degraded \u2014 payload evaluation skipped): "
+                    + "Payload compliance evaluation is suspended because governing type <code>"
+                    + escapeHtmlBody(schemaLabel)
+                    + "</code> contains metadata constraint errors in <code>"
+                    + StvnVocabulary.KEYWORD_DEFS
+                    + "</code> (underlying base type: <code>"
+                    + escapeHtmlBody(underlyingBase)
+                    + "</code>).",
+                Collections.emptyMap(),
+                buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+            );
+        }
 
         if (value.getCollectionValue() != null
                 && value.getCollectionValue().getTupleLiteral() != null

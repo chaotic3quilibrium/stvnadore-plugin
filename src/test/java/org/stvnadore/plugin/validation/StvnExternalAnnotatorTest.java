@@ -3052,4 +3052,126 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var unwrapFixes = myFixture.filterAvailableIntentions("Unwrap degenerate composite to ':ErrorCode'");
         assertEquals("Expected unwrap quick-fix on single-branch :Union(:ErrorCode)", 1, unwrapFixes.size());
     }
+
+    public void testGauntletV5Batch1DuplicateMetaAndBodyFaultIsolationWithAllInspectionsAndQuickFix() {
+        myFixture.enableInspections(
+            new StvnMissingMetaInspection(),
+            new StvnMetadataFacetInspection(),
+            new StvnStemMismatchInspection(),
+            new StvnMetadataOrderInspection()
+        );
+
+        var code = """
+            {
+              :meta {
+                #kind #BODY_INCLUDE
+                #domain "stvn_reserved_trap"
+                #name "gauntlet_v4_stage1_wrong_stem"
+                #author "rogue_architect"
+              }
+              :meta {}
+              :meta { #name "duplicate_meta_and_body_fault_isolation" #kind #BODY_INCLUDE }
+              :defs {
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :BoundedPort
+              :body 5000
+            }""";
+        myFixture.configureByText("duplicate_meta_and_body_fault_isolation.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        var warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .toList();
+
+        // Exactly 7 ERRORs and 2 WARNINGs matching duplicate_meta_and_body_fault_isolation.contract.stvn_i 1:1
+        assertEquals("Expected strictly 7 ERROR highlights (zero false-positive E031/E039 and zero suppressed E033), got: " + errors,
+            7, errors.size());
+        assertEquals("Expected strictly 2 WARNING highlights (zero false-positive W002 on secondary :meta), got: " + warnings,
+            2, warnings.size());
+
+        // Verify both duplicate :meta blocks receive red E033 errors at exact offsets 147..152 and 158..163
+        assertTrue("Expected E033 on first duplicate ':meta {}' at [147, 152]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 147 && e.getEndOffset() == 152
+                && e.getDescription() != null && e.getDescription().contains("E033-ERR_META_POSITION_INVALID")));
+        assertTrue("Expected E033 on second duplicate ':meta { ... }' at [158, 163]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 158 && e.getEndOffset() == 163
+                && e.getDescription() != null && e.getDescription().contains("E033-ERR_META_POSITION_INVALID")));
+        assertTrue("Expected E012 on downstream ':body 5000' at [352, 356]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 352 && e.getEndOffset() == 356
+                && e.getDescription() != null && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
+
+        // Verify "Remove duplicate ':meta' block" quick-fix cleanly removes both duplicate :meta blocks
+        myFixture.getEditor().getCaretModel().moveToOffset(148);
+        var removeFirstDup = myFixture.findSingleIntention("Remove duplicate ':meta' block");
+        myFixture.launchAction(removeFirstDup);
+
+        int secondDupOffset = myFixture.getFile().getText().lastIndexOf(":meta");
+        myFixture.getEditor().getCaretModel().moveToOffset(secondDupOffset + 1);
+        myFixture.doHighlighting();
+        var removeSecondDup = myFixture.findSingleIntention("Remove duplicate ':meta' block");
+        myFixture.launchAction(removeSecondDup);
+
+        var postFixErrors = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertFalse("Expected zero E033 errors after removing both duplicate :meta blocks: " + postFixErrors,
+            postFixErrors.stream().anyMatch(e -> e.getDescription() != null && e.getDescription().contains("E033")));
+        assertTrue("Expected downstream :body 5000 E012 error to remain intact: " + postFixErrors,
+            postFixErrors.stream().anyMatch(e -> e.getDescription() != null && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
+    }
+
+    public void testGauntletV5Batch1GroundedPoisonedSchemaBodySuspension() {
+        myFixture.enableInspections(
+            new StvnDiscreteIntervalInspection(),
+            new StvnMetadataFacetInspection()
+        );
+
+        var code = """
+            {
+              :meta {
+                #name "grounded_poisoned_schema_body_suspension"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :TrapIntMinExcl { #minExcl 10 #maxExcl 20 } :Int
+                :ChildUnsignedTrap { #unsigned } :TrapIntMinExcl
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :Tuple(:TrapIntMinExcl :TrapIntMinExcl :BoundedPort)
+              :body (15 999 5000)
+            }""";
+        myFixture.configureByText("grounded_poisoned_schema_body_suspension.core_test.stvn_i", code);
+        var highlights = myFixture.doHighlighting();
+
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 3 ERRORs (E011 on #minExcl 10, E040 on #unsigned, E012 on 5000; 0 errors on poisoned slots 15 and 999): " + errors,
+            3, errors.size());
+        assertTrue("Expected E011 at [149, 160]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 149 && e.getEndOffset() == 160));
+        assertTrue("Expected E040 at [205, 214]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 205 && e.getEndOffset() == 214
+                && e.getDescription() != null && e.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET")));
+        assertTrue("Expected E012 at [387, 391] on healthy sibling 5000: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 387 && e.getEndOffset() == 391
+                && e.getDescription() != null && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
+
+        var typeWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .toList();
+        assertEquals("Expected 2 :type anchor warnings on the two :TrapIntMinExcl references: " + typeWarnings,
+            2, typeWarnings.size());
+        for (var warn : typeWarnings) {
+            assertEquals(
+                "Schema ':TrapIntMinExcl' has constraint errors at definition site in :defs (underlying base ':Int' \u2014 payload evaluation is suspended).",
+                warn.getDescription()
+            );
+        }
+    }
 }

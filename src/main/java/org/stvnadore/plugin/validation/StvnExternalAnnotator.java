@@ -58,6 +58,7 @@ import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
+import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
@@ -844,6 +845,18 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Duplicate :meta block quick-fix (E033 / ERR_META_POSITION_INVALID)
+                if ((DiagnosticBag.ERR_META_POSITION_INVALID.equals(diagnosticId) || "E033".equals(canonicalCode))
+                        && rawMessage.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_META + "' block prohibited")) {
+                    var dupElem = file.findElementAt(range.getStartOffset());
+                    var dupMetaEntry = PsiTreeUtil.getParentOfType(dupElem, MetaEntry.class, false);
+                    if (dupMetaEntry != null) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new RemoveDuplicateMetaBlockQuickFix(dupMetaEntry)
+                        );
+                    }
+                }
+
                 // Missing temporal mode/scale quick-fixes (ERR_MISSING_TEMPORAL_FACET)
                 if (DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING.equals(diagnosticId)
@@ -1049,13 +1062,17 @@ public final class StvnExternalAnnotator
             }
         }
 
-        // Validate DateTime literals in :body slots governed by degraded schemas that retain a valid mode
+        // Validate DateTime literals in healthy :body slots inside structurally recovered containers (skipping degraded schemas per VOP Option D)
         var bodyClause = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
         if (bodyClause != null) {
             for (var strLit : PsiTreeUtil.findChildrenOfType(bodyClause, StringLiteral.class)) {
                 if (strLit.getParent() instanceof Value valNode) {
                     var govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(valNode);
                     if (govSchema != null) {
+                        var govKw = govSchema.getTypeKeyword();
+                        if (govKw != null && StvnTypeResolver.isDegradedNominalAlias(file, govKw.getText().trim())) {
+                            continue;
+                        }
                         var termSchema = StvnTypeResolver.resolveNominalSchema(govSchema);
                         var inspectSchema = termSchema != null ? termSchema : govSchema;
                         var ctor = inspectSchema.getSchemaConstructor();
@@ -1135,10 +1152,13 @@ public final class StvnExternalAnnotator
                     }
                     var degradedMsg = fallbackBase != null
                         ? "Schema '" + aliasName
-                            + "' has constraint errors at definition site in :defs. Operating on fallback base ('"
-                            + fallbackBase + "')."
+                            + "' has constraint errors at definition site in "
+                            + StvnVocabulary.KEYWORD_DEFS
+                            + " (underlying base '" + fallbackBase + "' \u2014 payload evaluation is suspended)."
                         : "Schema '" + aliasName
-                            + "' does not resolve to a base type in :defs (circular or unresolved lineage). Payload evaluation is suspended.";
+                            + "' does not resolve to a base type in "
+                            + StvnVocabulary.KEYWORD_DEFS
+                            + " (circular or unresolved lineage). Payload evaluation is suspended.";
                     var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, degradedMsg)
                         .range(typeKw.getTextRange());
                     if (hasCrossFileInvertibleError || isTraitPoisoned) {
@@ -2093,6 +2113,49 @@ public final class StvnExternalAnnotator
             if (doc != null) {
                 var range = startElement.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), cleanedTarget);
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+        }
+    }
+
+    private static final class RemoveDuplicateMetaBlockQuickFix
+            extends com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement {
+
+        RemoveDuplicateMetaBlockQuickFix(@Nullable PsiElement element) {
+            super(element);
+        }
+
+        @Override
+        public String getText() {
+            return "Remove duplicate '" + StvnVocabulary.KEYWORD_META + "' block";
+        }
+
+        @Override
+        public String getFamilyName() {
+            return "Remove duplicate '" + StvnVocabulary.KEYWORD_META + "' block";
+        }
+
+        @Override
+        public void invoke(
+            Project project,
+            PsiFile file,
+            @Nullable Editor editor,
+            PsiElement startElement,
+            PsiElement endElement
+        ) {
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null) {
+                var range = startElement.getTextRange();
+                int deleteStart = range.getStartOffset();
+                int deleteEnd = range.getEndOffset();
+                CharSequence chars = doc.getCharsSequence();
+                while (deleteStart > 0 && (chars.charAt(deleteStart - 1) == ' ' || chars.charAt(deleteStart - 1) == '\t')) {
+                    deleteStart--;
+                }
+                if (deleteEnd < chars.length() && chars.charAt(deleteEnd) == '\n') {
+                    deleteEnd++;
+                }
+                doc.deleteString(deleteStart, deleteEnd);
                 com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(doc);
             }
         }

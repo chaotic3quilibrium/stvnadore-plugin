@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
@@ -79,6 +80,9 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             @Override
             public void visitMetaEntry(@NotNull MetaEntry entry) {
                 super.visitMetaEntry(entry);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(entry)) {
+                    return;
+                }
                 MetaBlock metaBlock = entry.getMetaBlock();
                 if (metaBlock == null || isMetaBlockEmpty(metaBlock)) {
                     return;
@@ -118,6 +122,9 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             @Override
             public void visitMetaNameFacet(@NotNull MetaNameFacet facet) {
                 super.visitMetaNameFacet(facet);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(facet)) {
+                    return;
+                }
                 var file = facet.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();
@@ -164,6 +171,9 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             @Override
             public void visitMetaDomainFacet(@NotNull MetaDomainFacet facet) {
                 super.visitMetaDomainFacet(facet);
+                if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(facet)) {
+                    return;
+                }
                 var file = facet.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();

@@ -95,6 +95,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @Override
             public void visitMetaBlock(@NotNull MetaBlock block) {
                 super.visitMetaBlock(block);
+                if (block.getParent() instanceof MetaEntry metaEntry && !StvnMetaTemplateUtil.isPrimaryMetaEntry(metaEntry)) {
+                    return;
+                }
                 var file = block.getContainingFile();
                 if (file == null) {
                     return;

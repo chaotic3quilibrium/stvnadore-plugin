@@ -1231,10 +1231,13 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
         myFixture.configureByText("degraded_slot_hover.stvn", text);
 
         var slot0Doc = getDocAtOffset(text, text.indexOf("\"2026-03-29T12:00:00Z\"") + 2);
-        assertTrue("Slot 0 governed by PoisonedSchema :OffsetTs must display Satisfied (Degraded Schema):\n" + slot0Doc,
-            slot0Doc.contains("Satisfied (Degraded Schema)"));
-        assertTrue("Slot 0 must include degraded schema explanation note:\n" + slot0Doc,
-            slot0Doc.contains("Governing schema <code>:OffsetTs</code> is degraded"));
+        assertTrue("Slot 0 governed by PoisonedSchema :OffsetTs must display Suspended (Degraded Schema):\n" + slot0Doc,
+            slot0Doc.contains("Suspended (Degraded Schema)"));
+        assertTrue("Slot 0 must include Option D suspended compliance explanation:\n" + slot0Doc,
+            slot0Doc.contains("\u26A0 Suspended (governing schema is degraded \u2014 payload evaluation skipped)")
+                && slot0Doc.contains("Payload compliance evaluation is suspended because governing type <code>:OffsetTs</code> contains metadata constraint errors in <code>:defs</code>"));
+        assertFalse("Slot 0 must omit Exemplar Value row when compliance is suspended:\n" + slot0Doc,
+            slot0Doc.contains("Exemplar Value:"));
 
         var slot1Doc = getDocAtOffset(text, text.indexOf("19.95") + 1);
         assertTrue("Healthy Slot 1 (:ExactPrice) must display Satisfied without degraded notice:\n" + slot1Doc,

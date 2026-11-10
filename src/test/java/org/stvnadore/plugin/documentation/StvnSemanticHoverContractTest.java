@@ -213,4 +213,74 @@ public final class StvnSemanticHoverContractTest extends BasePlatformTestCase {
             lhsIntDoc.contains(":Int") && !lhsIntDoc.contains("#preserveIndent")
         );
     }
+
+    public void testGroundedPoisonedSchemaBodySuspensionHoverContract() {
+        var text = """
+            {
+              :meta {
+                #name "grounded_poisoned_schema_body_suspension"
+                #domain "core_test"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :TrapIntMinExcl { #minExcl 10 #maxExcl 20 } :Int
+                :ChildUnsignedTrap { #unsigned } :TrapIntMinExcl
+                :BoundedPort { #unsigned #size 16 #minIncl 1024 #maxExcl 4096 } :Int
+              }
+              :type :Tuple(:TrapIntMinExcl :TrapIntMinExcl :BoundedPort)
+              :body (15 999 5000)
+            }
+            """;
+        myFixture.configureByText("grounded_poisoned_schema_body_suspension.core_test.stvn_i", text);
+
+        // 1. Hover on :TrapIntMinExcl in :defs: verify VOP Option D banner
+        int defsTrapOffset = text.indexOf(":TrapIntMinExcl");
+        String defsTrapDoc = getDocAtOffset(text, defsTrapOffset + 1);
+        assertTrue(
+            "Degraded Schema Warning banner on :TrapIntMinExcl must state underlying base and suspension:\n" + defsTrapDoc,
+            defsTrapDoc.contains("Nominal type <code>:TrapIntMinExcl</code> contains constraint errors in <code>:defs</code> (underlying base type: <code>:Int</code>).<br/>")
+                && defsTrapDoc.contains("Payload evaluation is suspended.")
+        );
+
+        // 2. Hover on poisoned :body slots '15' and '999': verify Zone 1, Zone 2 suspended compliance, omitted Exemplar, and Zone 3 lexical forms
+        int bodyIdx = text.indexOf(":body");
+        for (String slotLiteral : new String[]{"15", "999"}) {
+            int slotOffset = text.indexOf(slotLiteral, bodyIdx);
+            String slotDoc = getDocAtOffset(text, slotOffset);
+            assertTrue(
+                "Zone 1 must preserve Value Type with degraded indicator and (-> :Int) trace:\n" + slotDoc,
+                slotDoc.contains("<b>Value Type:</b> \u26A0 :TrapIntMinExcl (-> :Int)")
+            );
+            assertTrue(
+                "Zone 2 must report Compliance Status: Suspended (Degraded Schema):\n" + slotDoc,
+                slotDoc.contains("Suspended (Degraded Schema)")
+            );
+            assertTrue(
+                "Zone 2 must explain VOP Option D payload suspension with underlying base type :Int:\n" + slotDoc,
+                slotDoc.contains("\u26A0 Suspended (governing schema is degraded \u2014 payload evaluation skipped): "
+                    + "Payload compliance evaluation is suspended because governing type <code>:TrapIntMinExcl</code> "
+                    + "contains metadata constraint errors in <code>:defs</code> (underlying base type: <code>:Int</code>).")
+            );
+            assertFalse(
+                "Zone 2 must omit Exemplar Value row when compliance is suspended:\n" + slotDoc,
+                slotDoc.contains("<b>Exemplar Value:</b>")
+            );
+            assertTrue(
+                "Zone 3 must preserve Valid Lexical & Syntax Forms:\n" + slotDoc,
+                slotDoc.contains("<b>Valid Lexical &amp; Syntax Forms:</b>")
+            );
+        }
+
+        // 3. Hover on healthy sibling slot '5000': verify normal constraint violation and Exemplar Value presence
+        int port5000Offset = text.indexOf("5000", bodyIdx);
+        String port5000Doc = getDocAtOffset(text, port5000Offset + 1);
+        assertFalse(
+            "Healthy sibling slot 5000 must NOT report Suspended (Degraded Schema):\n" + port5000Doc,
+            port5000Doc.contains("Suspended (Degraded Schema)")
+        );
+        assertTrue(
+            "Healthy sibling slot 5000 must render Exemplar Value row:\n" + port5000Doc,
+            port5000Doc.contains("<b>Exemplar Value:</b>")
+        );
+    }
 }
