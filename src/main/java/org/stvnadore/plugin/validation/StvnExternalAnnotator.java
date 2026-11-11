@@ -2,6 +2,7 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.problems.ProblemImpl;
 import com.intellij.ide.projectView.ProjectView;
@@ -34,6 +35,7 @@ import org.stvnadore.core.StvnSchemaFlattener;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.formatting.StvnRootSectionReorderer;
 import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
@@ -845,15 +847,24 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Duplicate :meta block quick-fix (E033 / ERR_META_POSITION_INVALID)
-                if ((DiagnosticBag.ERR_META_POSITION_INVALID.equals(diagnosticId) || "E033".equals(canonicalCode))
-                        && rawMessage.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_META + "' block prohibited")) {
-                    var dupElem = file.findElementAt(range.getStartOffset());
-                    var dupMetaEntry = PsiTreeUtil.getParentOfType(dupElem, MetaEntry.class, false);
-                    if (dupMetaEntry != null) {
-                        annotationBuilder = annotationBuilder.withFix(
-                            new RemoveDuplicateMetaBlockQuickFix(dupMetaEntry)
-                        );
+                // Duplicate or misplaced root-section quick-fixes (ERR_DUPLICATE_ROOT_SECTION, ERR_SECTION_ORDER_VIOLATION, E033)
+                if (DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION.equals(diagnosticId)
+                        || DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION.equals(diagnosticId)
+                        || DiagnosticBag.ERR_META_POSITION_INVALID.equals(diagnosticId)
+                        || "E033".equals(canonicalCode)) {
+                    var secLeaf = file.findElementAt(range.getStartOffset());
+                    var rootSec = StvnMetaTemplateUtil.findEnclosingRootSection(secLeaf);
+                    if (rootSec != null && StvnMetaTemplateUtil.isInSecondaryRootSection(rootSec)) {
+                        String kw = StvnMetaTemplateUtil.resolveRootSectionKeyword(rootSec);
+                        if (kw != null) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new RemoveDuplicateSectionQuickFix(rootSec, kw)
+                            );
+                        }
+                    } else if (StvnRootSectionReorderer.canReorderRootSections(file)) {
+                        annotationBuilder = annotationBuilder.withFix(new ReorderRootSectionsQuickFix());
                     }
                 }
 
@@ -992,8 +1003,32 @@ public final class StvnExternalAnnotator
                 }
 
                 // Interactive bootstrapping intention actions for incomplete clauses
-                if (rawMessage.contains("':meta' requires a metadata block")) {
-                    annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
+                if (DiagnosticBag.ERR_MALFORMED_SECTION_STRUCTURE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE.equals(diagnosticId)) {
+                    var incLeaf = file.findElementAt(range.getStartOffset());
+                    String leafKw = incLeaf != null ? incLeaf.getText().trim() : null;
+                    String incKw;
+                    if (StvnVocabulary.KEYWORD_META.equals(leafKw)
+                            || StvnVocabulary.KEYWORD_DEFS.equals(leafKw)
+                            || StvnVocabulary.KEYWORD_TYPE.equals(leafKw)
+                            || StvnVocabulary.KEYWORD_BODY.equals(leafKw)) {
+                        incKw = leafKw;
+                    } else {
+                        var incSec = StvnMetaTemplateUtil.findEnclosingRootSection(incLeaf);
+                        incKw = incSec != null ? StvnMetaTemplateUtil.resolveRootSectionKeyword(incSec) : leafKw;
+                    }
+                    if (StvnVocabulary.KEYWORD_META.equals(incKw)) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertMetaBlockIntentionAction(range));
+                    } else if (StvnVocabulary.KEYWORD_DEFS.equals(incKw)) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
+                    } else if (StvnVocabulary.KEYWORD_TYPE.equals(incKw)) {
+                        String suggestedType = InsertSchemaTypeIntentionAction.inferSchemaTypeForRange(file, range);
+                        annotationBuilder = annotationBuilder.withFix(
+                            new InsertSchemaTypeIntentionAction(range, suggestedType)
+                        );
+                    } else if (StvnVocabulary.KEYWORD_BODY.equals(incKw)) {
+                        annotationBuilder = annotationBuilder.withFix(new InsertDefaultBodyValueIntentionAction(range));
+                    }
                 }
                 if (DiagnosticBag.ERR_EMPTY_META_BLOCK.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diagnosticId)) {
@@ -1002,18 +1037,8 @@ public final class StvnExternalAnnotator
                         new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind)
                     );
                 }
-                if (rawMessage.contains("':defs' requires definition block")) {
-                    annotationBuilder = annotationBuilder.withFix(new InsertDefinitionBlockIntentionAction(range));
-                }
-                if (rawMessage.contains("':type' requires a schema type")) {
-                    annotationBuilder = annotationBuilder.withFix(new InsertSchemaTypeIntentionAction(range));
-                }
-                if (rawMessage.contains("':body' requires a value payload")) {
-                    annotationBuilder = annotationBuilder.withFix(new InsertDefaultBodyValueIntentionAction(range));
-                }
                 if (DiagnosticBag.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)
-                        || rawMessage.contains("requires at least one type definition inside ':defs { ... }'")
-                        || rawMessage.contains("Empty definition block ':defs {}' is redundant")) {
+                        || StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)) {
                     var fileName = file.getName();
                     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
                         annotationBuilder = annotationBuilder.withFix(new InsertTypeDefinitionIntentionAction(range));
@@ -2118,21 +2143,25 @@ public final class StvnExternalAnnotator
         }
     }
 
-    private static final class RemoveDuplicateMetaBlockQuickFix
+    private static final class RemoveDuplicateSectionQuickFix
             extends com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement {
 
-        RemoveDuplicateMetaBlockQuickFix(@Nullable PsiElement element) {
+        @SafeFieldForPreview
+        private final String sectionKeyword;
+
+        RemoveDuplicateSectionQuickFix(@Nullable PsiElement element, String sectionKeyword) {
             super(element);
+            this.sectionKeyword = sectionKeyword;
         }
 
         @Override
         public String getText() {
-            return "Remove duplicate '" + StvnVocabulary.KEYWORD_META + "' block";
+            return "Remove duplicate '" + sectionKeyword + "' section";
         }
 
         @Override
         public String getFamilyName() {
-            return "Remove duplicate '" + StvnVocabulary.KEYWORD_META + "' block";
+            return "Remove duplicate '" + sectionKeyword + "' section";
         }
 
         @Override
@@ -2151,6 +2180,9 @@ public final class StvnExternalAnnotator
                 CharSequence chars = doc.getCharsSequence();
                 while (deleteStart > 0 && (chars.charAt(deleteStart - 1) == ' ' || chars.charAt(deleteStart - 1) == '\t')) {
                     deleteStart--;
+                }
+                if (deleteEnd < chars.length() && chars.charAt(deleteEnd) == '\r') {
+                    deleteEnd++;
                 }
                 if (deleteEnd < chars.length() && chars.charAt(deleteEnd) == '\n') {
                     deleteEnd++;

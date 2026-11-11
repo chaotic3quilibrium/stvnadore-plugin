@@ -26,6 +26,7 @@ import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.IntegerLiteral;
 import org.stvnadore.psi.SchemaType;
@@ -80,6 +81,9 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
             @Override
             public void visitIntegerLiteral(@NotNull IntegerLiteral literal) {
                 super.visitIntegerLiteral(literal);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(literal)) {
+                    return;
+                }
 
                 var bodyEntry = PsiTreeUtil.getParentOfType(literal, BodyEntry.class);
                 if (bodyEntry == null) return;

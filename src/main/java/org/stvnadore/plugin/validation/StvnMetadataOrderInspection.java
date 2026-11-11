@@ -111,6 +111,9 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             @Override
             public void visitMetadataMap(@NotNull MetadataMap metadataMap) {
                 super.visitMetadataMap(metadataMap);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(metadataMap)) {
+                    return;
+                }
                 List<MetadataEntry> entries = metadataMap.getMetadataEntryList();
                 if (entries.size() <= 1) {
                     return;

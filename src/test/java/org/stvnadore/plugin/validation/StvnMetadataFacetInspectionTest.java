@@ -688,7 +688,9 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .filter(h -> h.getDescription() != null && h.getDescription().contains("E039-ERR_EMPTY_META_BLOCK"))
             .toList();
         assertEquals("Expected 1 E039 error on empty :meta {}", 1, e039Errors.size());
-        assertTrue(e039Errors.get(0).getDescription().contains("Metadata block ':meta {}' must not be empty"));
+        assertTrue(e039Errors.get(0).getDescription().contains(
+            "Empty ':meta {}' section is prohibited; declare document identity facets (#name, #domain, #kind)"
+        ));
         assertEquals("{}", e039Errors.get(0).getText());
 
         var populateActions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
@@ -723,12 +725,12 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
         assertEquals("Expected 1 E002 error on empty :defs {} in payload document", 1, e002Errors.size());
         assertTrue(e002Errors.get(0).getDescription().contains(
-            "Empty definition block ':defs {}' is redundant; omit ':defs' or add definitions"
+            "Empty ':defs {}' section is prohibited; omit ':defs' or declare at least one type or constant definition"
         ));
         assertEquals("{}", e002Errors.get(0).getText());
 
-        var removeActions = myFixture.filterAvailableIntentions("Remove redundant ':defs {}' block");
-        assertFalse("Expected 'Remove redundant :defs {} block' quick-fix", removeActions.isEmpty());
+        var removeActions = myFixture.filterAvailableIntentions("Remove empty ':defs {}' section");
+        assertFalse("Expected 'Remove empty :defs {} section' quick-fix", removeActions.isEmpty());
         myFixture.launchAction(removeActions.get(0));
         assertFalse("Expected :defs {} to be removed", myFixture.getFile().getText().contains(":defs"));
     }
@@ -751,7 +753,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
             .toList();
         assertEquals("Expected 1 E002 error on empty :defs {} in schema document", 1, e002Errors.size());
         assertTrue(e002Errors.get(0).getDescription().contains(
-            "Definition schema ':defs {}' must declare at least one definition or include"
+            "Empty ':defs {}' section is prohibited; definitions schema (.stvn_d) requires at least one type or constant definition"
         ));
         assertEquals("{}", e002Errors.get(0).getText());
 

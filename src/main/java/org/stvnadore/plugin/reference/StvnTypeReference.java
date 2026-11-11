@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.PackageEnclosure;
@@ -316,7 +317,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         }
 
         // 1. Local definitions scanning
-        var definitions = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
+        var definitions = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class).stream()
+            .filter(def -> !StvnMetaTemplateUtil.isInSecondaryRootSection(def))
+            .toList();
         for (var def : definitions) {
             // Ignore definitions inside package enclosures when searching for bare root names
             if (PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class) != null && !allowUnqualifiedPackaged) {
@@ -329,7 +332,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         }
 
         // 1b. Package enclosure scanning (FQNI expansion and in-scope relative names)
-        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
+        var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class).stream()
+            .filter(pkg -> !StvnMetaTemplateUtil.isInSecondaryRootSection(pkg))
+            .toList();
         for (var pkg : packages) {
             var pkgPath = pkg.getPackagePath();
             if (pkgPath == null) continue;
@@ -350,7 +355,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         }
 
         // 1c. Scoped :use statement scanning
-        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class).stream()
+            .filter(use -> !StvnMetaTemplateUtil.isInSecondaryRootSection(use))
+            .toList();
         for (var use : useStmts) {
             var aliasBlock = use.getUseAliasBlock();
             if (aliasBlock != null) {
@@ -398,7 +405,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     }
 
                     // Check included files for FQNI
-                    var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+                    var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).stream()
+            .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
+            .toList();
                     for (var incl : includes) {
                         var stringLit = incl.getStringLiteral();
                         if (stringLit == null) continue;
@@ -420,7 +429,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         }
 
         // 2. Local include alias map scanning (first leg of multi-hop)
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).stream()
+            .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
+            .toList();
         for (var incl : includes) {
             var aliasBlock = incl.getIncludeAliasBlock();
             if (aliasBlock != null) {

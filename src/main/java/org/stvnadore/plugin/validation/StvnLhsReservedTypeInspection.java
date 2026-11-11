@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Visitor;
 
@@ -29,6 +30,9 @@ public final class StvnLhsReservedTypeInspection extends LocalInspectionTool {
         return new Visitor() {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
+                    return;
+                }
                 var target = def.getTypeDefTarget();
                 if (target == null) {
                     return;

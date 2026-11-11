@@ -15,6 +15,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 import java.util.Set;
@@ -59,6 +60,9 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
     }
 
     private static void checkBooleanValidity(PsiElement element, ProblemsHolder holder) {
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+            return;
+        }
         if (element.getParent() instanceof BooleanValue) {
             return;
         }

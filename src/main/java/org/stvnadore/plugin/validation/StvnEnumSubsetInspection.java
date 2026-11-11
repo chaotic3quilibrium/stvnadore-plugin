@@ -14,6 +14,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.*;
 
@@ -43,6 +44,9 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDef)) {
+                    return;
+                }
                 var metaMap = typeDef.getMetadataMap();
                 if (metaMap == null) return;
 
@@ -251,6 +255,9 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
             @Override
             public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
                 super.visitConstantDefinition(constDef);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)) {
+                    return;
+                }
                 var metaMap = constDef.getMetadataMap();
                 if (metaMap == null) return;
 
@@ -277,6 +284,9 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
             @Override
             public void visitValue(@NotNull Value value) {
                 super.visitValue(value);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(value)) {
+                    return;
+                }
                 var vkw = value.getValueKeyword();
                 if (vkw == null) return;
 

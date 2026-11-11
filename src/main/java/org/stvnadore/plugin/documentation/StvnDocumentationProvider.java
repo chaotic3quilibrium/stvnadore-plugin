@@ -34,6 +34,7 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
@@ -284,6 +285,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var localDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : localDefs) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
+                continue;
+            }
             var kw = def.getTypeKeyword();
             if (kw != null && text.equals(kw.getText()) && def != targetKw.getParent()) {
                 return null;
@@ -291,6 +295,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
         for (var use : useStmts) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
+                continue;
+            }
             var aliasBlock = use.getUseAliasBlock();
             if (aliasBlock != null) {
                 for (var alias : aliasBlock.getUseMapAliasList()) {

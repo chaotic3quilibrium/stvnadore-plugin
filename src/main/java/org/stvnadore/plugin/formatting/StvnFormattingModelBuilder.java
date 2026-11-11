@@ -13,6 +13,7 @@ import com.intellij.lang.ASTNode;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
+import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -31,6 +32,13 @@ import org.stvnadore.psi.StvnTypes;
  */
 @NullMarked
 public final class StvnFormattingModelBuilder implements FormattingModelBuilder {
+
+    private static final TokenSet ROOT_SECTION_ENTRIES = TokenSet.create(
+        StvnTypes.META_ENTRY,
+        StvnTypes.DEFS_ENTRY,
+        StvnTypes.TYPE_ENTRY,
+        StvnTypes.BODY_ENTRY
+    );
 
     /**
      * Default constructor for the STVN formatting model builder.
@@ -176,7 +184,8 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .after(StvnTypes.RBRACE).lineBreakInCode()
 
                 // Spacing between section entries and comments
-                .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).lineBreakInCode()
+                .between(StvnTypes.META_ENTRY, StvnTypes.COMMENT).spacing(1, Integer.MAX_VALUE, 0, true, 1)
+                .between(StvnTypes.DEFS_ENTRY, StvnTypes.COMMENT).spacing(1, Integer.MAX_VALUE, 0, true, 1)
                 .between(StvnTypes.TYPE_ENTRY, StvnTypes.COMMENT).spacing(1, Integer.MAX_VALUE, 0, true, 1)
                 .between(StvnTypes.BODY_ENTRY, StvnTypes.COMMENT).spacing(1, Integer.MAX_VALUE, 0, true, 1)
                 .between(StvnTypes.DEFS_ELEMENT, StvnTypes.COMMENT).spacing(1, Integer.MAX_VALUE, 0, true, 1)
@@ -196,12 +205,7 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
 
                 // Entries inside documents separated by line breaks
                 .between(StvnTypes.META_ELEMENT, StvnTypes.META_ELEMENT).lineBreakInCode()
-                .between(StvnTypes.META_ENTRY, StvnTypes.DEFS_ENTRY).lineBreakInCode()
-                .between(StvnTypes.META_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
-                .between(StvnTypes.META_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
-                .between(StvnTypes.DEFS_ENTRY, StvnTypes.TYPE_ENTRY).lineBreakInCode()
-                .between(StvnTypes.DEFS_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
-                .between(StvnTypes.TYPE_ENTRY, StvnTypes.BODY_ENTRY).lineBreakInCode()
+                .between(ROOT_SECTION_ENTRIES, ROOT_SECTION_ENTRIES).lineBreakInCode()
 
                 // Elements inside defs separated by line breaks
                 .between(StvnTypes.DEFS_ELEMENT, StvnTypes.DEFS_ELEMENT).lineBreakInCode()

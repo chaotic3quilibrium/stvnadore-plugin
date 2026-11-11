@@ -14,8 +14,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.TypeEntry;
 
 /**
  * Shared utility for generating and inserting canonical root :meta header templates
@@ -23,6 +26,8 @@ import org.stvnadore.psi.StvnTypes;
  */
 @NullMarked
 public final class StvnMetaTemplateUtil {
+
+  private static final String RESERVED_DOMAIN_PREFIX = "stvn_";
 
   private StvnMetaTemplateUtil() {}
 
@@ -46,17 +51,189 @@ public final class StvnMetaTemplateUtil {
   }
 
   /**
-   * Checks whether the file extension mandates a root :meta block under STVN Spec § 1.2.
+   * Checks whether the file extension strictly mandates a root {@code :meta} section
+   * when {@code :meta} is omitted altogether (STVN Spec § 1.2, {@code E031}).
    *
    * @param fileName file name to test
-   * @return true if :meta is mandatory, false if optional (such as .stvn)
+   * @return {@code true} if extension is {@code .stvn_i}, {@code .stvn_d}, {@code .stvn_di}, {@code .stvn_b}, or {@code .stvn_bd}
    */
-  public static boolean isMetaMandatory(@NotNull String fileName) {
+  public static boolean isMetaExtensionMandatory(@NotNull String fileName) {
     return fileName.endsWith(".stvn_i")
         || fileName.endsWith(".stvn_d")
         || fileName.endsWith(".stvn_di")
         || fileName.endsWith(".stvn_b")
         || fileName.endsWith(".stvn_bd");
+  }
+
+  /**
+   * Checks whether a root {@code :meta} section is mandatory for empty-section governance
+   * ({@code E039}), matching {@code StvnDefsLowerer.lowerAndValidateDocumentIdentity} 1:1
+   * across mandatory extensions and 2-stem {@code <name>.<domain>.stvn} filenames.
+   *
+   * @param fileName file name to test
+   * @return {@code true} if {@code :meta} cannot be omitted to resolve {@code :meta {}}
+   */
+  public static boolean isMetaMandatory(@NotNull String fileName) {
+    if (isMetaExtensionMandatory(fileName)) {
+      return true;
+    }
+    if (!fileName.endsWith(".stvn") || fileName.startsWith(".")) {
+      return false;
+    }
+    int lastDot = fileName.lastIndexOf('.');
+    if (lastDot <= 0) {
+      return false;
+    }
+    String stemPart = fileName.substring(0, lastDot);
+    String[] dotParts = stemPart.split("\\.", -1);
+    return dotParts.length == 2
+        && !dotParts[0].isEmpty()
+        && !dotParts[1].isEmpty()
+        && !dotParts[1].startsWith(RESERVED_DOMAIN_PREFIX);
+  }
+
+  /**
+   * Resolves the file extension including leading dot (for example {@code .stvn_d}),
+   * falling back to {@code fallbackExt} when absent.
+   *
+   * @param fileName file name to inspect
+   * @param fallbackExt fallback extension with leading dot
+   * @return resolved extension string
+   */
+  public static String resolveFileExtensionOrDefault(@NotNull String fileName, @NotNull String fallbackExt) {
+    int lastDot = fileName.lastIndexOf('.');
+    return lastDot >= 0 ? fileName.substring(lastDot) : fallbackExt;
+  }
+
+  /**
+   * Checks whether the element resides in (or is) the primary (first) {@code :defs} section of its file.
+   *
+   * @param element PSI element to test
+   * @return {@code true} if no {@code DefsEntry} encloses {@code element}, or the enclosing {@code DefsEntry} is primary
+   */
+  public static boolean isPrimaryDefsEntry(@Nullable PsiElement element) {
+    if (element == null) {
+      return false;
+    }
+    DefsEntry enclosing = element instanceof DefsEntry de
+        ? de
+        : PsiTreeUtil.getParentOfType(element, DefsEntry.class, false);
+    if (enclosing == null) {
+      return true;
+    }
+    PsiFile file = enclosing.getContainingFile();
+    return file != null && PsiTreeUtil.findChildOfType(file, DefsEntry.class) == enclosing;
+  }
+
+  /**
+   * Checks whether the element resides in (or is) the primary (first) {@code :type} section of its file.
+   *
+   * @param element PSI element to test
+   * @return {@code true} if no {@code TypeEntry} encloses {@code element}, or the enclosing {@code TypeEntry} is primary
+   */
+  public static boolean isPrimaryTypeEntry(@Nullable PsiElement element) {
+    if (element == null) {
+      return false;
+    }
+    TypeEntry enclosing = element instanceof TypeEntry te
+        ? te
+        : PsiTreeUtil.getParentOfType(element, TypeEntry.class, false);
+    if (enclosing == null) {
+      return true;
+    }
+    PsiFile file = enclosing.getContainingFile();
+    return file != null && PsiTreeUtil.findChildOfType(file, TypeEntry.class) == enclosing;
+  }
+
+  /**
+   * Checks whether the element resides in (or is) the primary (first) {@code :body} section of its file.
+   *
+   * @param element PSI element to test
+   * @return {@code true} if no {@code BodyEntry} encloses {@code element}, or the enclosing {@code BodyEntry} is primary
+   */
+  public static boolean isPrimaryBodyEntry(@Nullable PsiElement element) {
+    if (element == null) {
+      return false;
+    }
+    BodyEntry enclosing = element instanceof BodyEntry be
+        ? be
+        : PsiTreeUtil.getParentOfType(element, BodyEntry.class, false);
+    if (enclosing == null) {
+      return true;
+    }
+    PsiFile file = enclosing.getContainingFile();
+    return file != null && PsiTreeUtil.findChildOfType(file, BodyEntry.class) == enclosing;
+  }
+
+  /**
+   * Checks whether {@code element} is located inside a secondary ({@code index > 0}) duplicate root
+   * {@code MetaEntry}, {@code DefsEntry}, {@code TypeEntry}, or {@code BodyEntry}.
+   *
+   * @param element PSI element to inspect
+   * @return {@code true} whenever {@code element} belongs to a non-primary duplicate root section
+   */
+  public static boolean isInSecondaryRootSection(@Nullable PsiElement element) {
+    if (element == null) {
+      return false;
+    }
+    PsiElement rootSection = findEnclosingRootSection(element);
+    if (rootSection == null) {
+      return false;
+    }
+    PsiFile file = rootSection.getContainingFile();
+    if (file == null) {
+      return false;
+    }
+    if (rootSection instanceof MetaEntry) {
+      return PsiTreeUtil.findChildOfType(file, MetaEntry.class) != rootSection;
+    }
+    if (rootSection instanceof DefsEntry) {
+      return PsiTreeUtil.findChildOfType(file, DefsEntry.class) != rootSection;
+    }
+    if (rootSection instanceof TypeEntry) {
+      return PsiTreeUtil.findChildOfType(file, TypeEntry.class) != rootSection;
+    }
+    if (rootSection instanceof BodyEntry) {
+      return PsiTreeUtil.findChildOfType(file, BodyEntry.class) != rootSection;
+    }
+    return false;
+  }
+
+  /**
+   * Finds the enclosing root section PSI node ({@code MetaEntry}, {@code DefsEntry}, {@code TypeEntry}, or {@code BodyEntry}).
+   *
+   * @param element PSI element at or inside a root section
+   * @return enclosing root section PSI element, or {@code null} if outside root sections
+   */
+  public static @Nullable PsiElement findEnclosingRootSection(@Nullable PsiElement element) {
+    for (PsiElement cur = element; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
+      if (cur instanceof MetaEntry || cur instanceof DefsEntry || cur instanceof TypeEntry || cur instanceof BodyEntry) {
+        return cur;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Resolves the canonical keyword ({@code :meta}, {@code :defs}, {@code :type}, {@code :body}) for a root section PSI node.
+   *
+   * @param rootSection root section PSI node
+   * @return canonical keyword constant from {@link StvnVocabulary}, or {@code null} if not a root section
+   */
+  public static @Nullable String resolveRootSectionKeyword(@NotNull PsiElement rootSection) {
+    if (rootSection instanceof MetaEntry) {
+      return StvnVocabulary.KEYWORD_META;
+    }
+    if (rootSection instanceof DefsEntry) {
+      return StvnVocabulary.KEYWORD_DEFS;
+    }
+    if (rootSection instanceof TypeEntry) {
+      return StvnVocabulary.KEYWORD_TYPE;
+    }
+    if (rootSection instanceof BodyEntry) {
+      return StvnVocabulary.KEYWORD_BODY;
+    }
+    return null;
   }
 
   /**

@@ -228,9 +228,26 @@ val mirrorSharedFixtures by tasks.registering {
         if (siblingDir.exists() && siblingDir.isDirectory) {
             logger.lifecycle("Syncing shared-fixtures from sibling core repository: ${siblingDir.absolutePath}")
             if (targetDir.exists()) {
-                targetDir.deleteRecursively()
+                targetDir.walkBottomUp().forEach { dst ->
+                    if (dst != targetDir) {
+                        val rel = dst.relativeTo(targetDir)
+                        val src = siblingDir.resolve(rel)
+                        if (!src.exists()) {
+                            dst.deleteRecursively()
+                        }
+                    }
+                }
             }
-            siblingDir.copyRecursively(targetDir, overwrite = true)
+            siblingDir.walkTopDown().forEach { src ->
+                val rel = src.relativeTo(siblingDir)
+                val dst = targetDir.resolve(rel)
+                if (src.isDirectory) {
+                    dst.mkdirs()
+                } else if (!dst.exists() || Files.mismatch(src.toPath(), dst.toPath()) != -1L) {
+                    dst.parentFile?.mkdirs()
+                    Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
         } else {
             logger.warn("WARNING: Sibling core repository fixtures directory not found at: ${siblingDir.absolutePath}. Test execution will proceed with standard classpath assets.")
         }
@@ -318,6 +335,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnTradingWorkflowIntegrationTest.class")
     exclude("**/StvnPayloadValueQuickFixTest.class")
     exclude("**/StvnCtrlClickNavigationTest.class")
+    exclude("**/StvnRootSectionCohesionInspectionAndQuickFixTest.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

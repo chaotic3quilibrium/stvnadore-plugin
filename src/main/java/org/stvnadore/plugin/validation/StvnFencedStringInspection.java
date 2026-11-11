@@ -17,6 +17,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 
@@ -98,6 +99,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static void validateFencedString(PsiElement element, ProblemsHolder holder) {
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+            return;
+        }
         String text = element.getText();
         if (!text.startsWith("\"\"\"")) {
             return;

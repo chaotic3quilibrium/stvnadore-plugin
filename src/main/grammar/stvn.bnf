@@ -142,8 +142,11 @@ meta_unknown_facet        ::= value_keyword (value | schema_type)?
 
 
 // --- DEFINITIONS SECTION ---
-defs_entry                ::= KW_DEFS LBRACE defs_element* RBRACE {pin=1 recoverWhile=defs_recover}
-private defs_recover      ::= !(KW_TYPE | KW_BODY | RBRACE)
+private root_section_boundary ::= KW_META | KW_DEFS | KW_TYPE | KW_BODY | RBRACE
+
+defs_entry                ::= KW_DEFS defs_body {pin=1 recoverWhile=defs_recover}
+private defs_body         ::= LBRACE defs_element* RBRACE {pin=1}
+private defs_recover      ::= !root_section_boundary
 
 defs_element              ::= include_stmt
                             | package_enclosure
@@ -151,7 +154,7 @@ defs_element              ::= include_stmt
                             | type_definition
                             | constant_definition
                             { recoverWhile=defs_element_recover }
-private defs_element_recover ::= !(RBRACE | KW_TYPE | KW_BODY | KW_INCLUDE | KW_PACKAGE | KW_USE | type_keyword | value_keyword | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME | COLL_SEQ | COLL_SET | COLL_MAP)
+private defs_element_recover ::= !(root_section_boundary | KW_INCLUDE | KW_PACKAGE | KW_USE | type_keyword | value_keyword | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME | COLL_SEQ | COLL_SET | COLL_MAP)
 
 package_enclosure         ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 package_path              ::= type_keyword
@@ -176,10 +179,17 @@ private use_const_alias_pair ::= value_keyword value_keyword {pin=1}
 private use_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
 
 
-type_entry                ::= KW_TYPE type_entry_content {pin=1}
-private type_entry_content ::= schema_type {recoverWhile=type_recover}
-private type_recover      ::= !(KW_BODY | RBRACE)
-body_entry                ::= KW_BODY value {pin=1}
+private bare_type_entry_boundary ::= RBRACE
+                                   | KW_META !FSLASH
+                                   | (KW_DEFS | KW_TYPE | KW_BODY) !(FSLASH | KW_BODY)
+
+type_entry                ::= KW_TYPE type_entry_payload? {pin=1}
+private type_entry_payload ::= !bare_type_entry_boundary (schema_type | metadata_map) {recoverWhile=type_recover}
+private type_recover      ::= !root_section_boundary
+
+body_entry                ::= KW_BODY body_entry_payload? {pin=1}
+private body_entry_payload ::= !root_section_boundary value {recoverWhile=body_recover}
+private body_recover      ::= !root_section_boundary
 
 // --- IDENTIFIERS & BASE NAMESPACES ---
 type_keyword              ::= type_keyword_start ( FSLASH id_token )* {
@@ -294,7 +304,9 @@ metadata_value           ::= boolean_value | integer_literal | float_literal | s
 
 private metadata_entry_recover ::= !metadata_facet_boundary
 // --- TYPE SYSTEM CORE ---
-schema_type             ::= metadata_map? (schema_constructor | type_keyword)
+private schema_type_boundary ::= (KW_META | KW_DEFS | KW_TYPE | KW_BODY) !FSLASH | RBRACE
+schema_type             ::= metadata_map !schema_type_boundary (schema_constructor | type_keyword)
+                          | (schema_constructor | type_keyword)
 schema_constructor      ::= atomic_type | collection_type | product_type | sum_type
 atomic_type             ::= ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME
 structural_type         ::= product_type | sum_type

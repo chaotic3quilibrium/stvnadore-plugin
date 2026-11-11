@@ -11,6 +11,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.Visitor;
@@ -58,6 +59,9 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
             @Override
             public void visitValue(@NotNull Value value) {
                 super.visitValue(value);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(value)) {
+                    return;
+                }
 
                 // Only inspect values physically located inside :body
                 var bodyParent = PsiTreeUtil.getParentOfType(value, BodyEntry.class);

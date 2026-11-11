@@ -10,6 +10,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnSyntaxHighlighterColors;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
@@ -36,7 +37,8 @@ public final class StvnSemanticAnnotator implements Annotator {
         var type = node.getElementType();
 
         // 1. Validate in-flight Rule G Union tag bounds without 32-bit integer truncation
-        if (element instanceof ExplicitUnionValue explicitUnion) {
+        if (element instanceof ExplicitUnionValue explicitUnion
+                && !StvnMetaTemplateUtil.isInSecondaryRootSection(explicitUnion)) {
             var prefixElem = explicitUnion.getUnionTagPrefix();
             var prefixText = prefixElem.getText().trim();
             if (prefixText.startsWith(StvnVocabulary.SIGIL_VALUE)) {

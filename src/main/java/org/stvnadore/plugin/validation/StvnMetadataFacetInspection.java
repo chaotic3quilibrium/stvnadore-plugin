@@ -95,7 +95,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @Override
             public void visitMetaBlock(@NotNull MetaBlock block) {
                 super.visitMetaBlock(block);
-                if (block.getParent() instanceof MetaEntry metaEntry && !StvnMetaTemplateUtil.isPrimaryMetaEntry(metaEntry)) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(block)) {
                     return;
                 }
                 var file = block.getContainingFile();
@@ -109,18 +109,25 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     }
                     String fileName = file.getName();
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+                    boolean metaMandatory = StvnMetaTemplateUtil.isMetaMandatory(fileName);
                     List<LocalQuickFix> fixes = new ArrayList<>();
                     fixes.add(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
-                    fixes.add(new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(expectedKind));
-                    if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) {
+                    if (StvnMetaTemplateUtil.isMetaExtensionMandatory(fileName)) {
+                        fixes.add(new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(expectedKind));
+                    }
+                    if (!metaMandatory) {
                         fixes.add(new RemoveParentMetaEntryQuickFix());
                     }
+                    String facetTuple = "(" + StvnVocabulary.FACET_KW_META_NAME + ", "
+                        + StvnVocabulary.FACET_KW_META_DOMAIN + ", " + StvnVocabulary.FACET_KW_META_KIND + ")";
+                    String emptyMetaMsg = metaMandatory
+                        ? "Empty '" + StvnVocabulary.KEYWORD_META + " {}' section is prohibited; declare document identity facets "
+                            + facetTuple
+                        : "Empty '" + StvnVocabulary.KEYWORD_META + " {}' section is prohibited; omit '"
+                            + StvnVocabulary.KEYWORD_META + "' or declare document identity facets " + facetTuple;
                     holder.registerProblem(
                         block,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Metadata block '" + StvnVocabulary.KEYWORD_META + " {}' must not be empty",
-                            StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK
-                        ),
+                        StvnDiagnosticFormatter.formatPlugin(emptyMetaMsg, StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK),
                         ProblemHighlightType.GENERIC_ERROR,
                         fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
                     );
@@ -211,6 +218,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @Override
             public void visitDefsEntry(@NotNull DefsEntry defsEntry) {
                 super.visitDefsEntry(defsEntry);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(defsEntry)) {
+                    return;
+                }
                 if (!defsEntry.getDefsElementList().isEmpty()) {
                     return;
                 }
@@ -229,15 +239,19 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 );
                 var file = defsEntry.getContainingFile();
                 boolean isSchemaDoc = isDefsSchemaDocument(file, defsEntry);
+                String ext = file != null
+                    ? StvnMetaTemplateUtil.resolveFileExtensionOrDefault(file.getName(), ".stvn_d")
+                    : ".stvn_d";
                 String msg = isSchemaDoc
-                    ? "Definition schema '" + StvnVocabulary.KEYWORD_DEFS + " {}' must declare at least one definition or include"
-                    : "Empty definition block '" + StvnVocabulary.KEYWORD_DEFS + " {}' is redundant; omit '"
-                        + StvnVocabulary.KEYWORD_DEFS + "' or add definitions";
+                    ? "Empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section is prohibited; definitions schema ("
+                        + ext + ") requires at least one type or constant definition"
+                    : "Empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section is prohibited; omit '"
+                        + StvnVocabulary.KEYWORD_DEFS + "' or declare at least one type or constant definition";
                 LocalQuickFix primaryFix = isSchemaDoc
                     ? new InsertDefaultTypeDefinitionQuickFix()
                     : new RemoveElementQuickFix(
-                        "Remove redundant '" + StvnVocabulary.KEYWORD_DEFS + " {}' block",
-                        "Remove empty definition block"
+                        "Remove empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section",
+                        "Remove empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section"
                     );
                 holder.registerProblem(
                     defsEntry,
@@ -248,8 +262,81 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             }
 
             @Override
+            public void visitTypeEntry(@NotNull TypeEntry typeEntry) {
+                super.visitTypeEntry(typeEntry);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeEntry)) {
+                    return;
+                }
+                if (typeEntry.getSchemaType() != null) {
+                    return;
+                }
+                var metaMap = typeEntry.getMetadataMap();
+                if (metaMap == null) {
+                    return;
+                }
+                if (isGenuinelyEmptyConstraintBlock(metaMap)) {
+                    holder.registerProblem(
+                        metaMap,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Empty metadata block is invalid; remove '{}' or specify valid facets",
+                            StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveElementQuickFix("Remove empty metadata block")
+                    );
+                    return;
+                }
+                for (var entry : metaMap.getMetadataEntryList()) {
+                    var trait = entry.getMetadataTrait();
+                    if (trait != null && trait.getBooleanValue() == null && trait.getValueKeyword() == null) {
+                        var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
+                        holder.registerProblem(
+                            trait,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Metadata facet " + StvnVocabulary.FACET_KW_PRESERVE_INDENT
+                                    + " requires an explicit boolean value ("
+                                    + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
+                                StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                        );
+                    } else if (entry.getMetadataDirective() != null) {
+                        holder.registerProblem(
+                            entry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Constraint violation (<" + StvnVocabulary.KEYWORD_TYPE + ">): directive facet '"
+                                    + StvnVocabulary.FACET_KW_STRIP + "' is not permitted on type declarations; "
+                                    + "directive facets are valid strictly in " + StvnVocabulary.KEYWORD_USE
+                                    + " and " + StvnVocabulary.KEYWORD_INCLUDE + " blocks",
+                                StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove invalid directive facet")
+                        );
+                    } else if (entry.getMetadataUnknownEntry() != null) {
+                        var kw = entry.getMetadataUnknownEntry().getValueKeyword();
+                        String facetName = kw.getText().trim();
+                        holder.registerProblem(
+                            kw,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Metadata violation (<" + StvnVocabulary.KEYWORD_TYPE
+                                    + ">): Unrecognized constraint facet '" + facetName + "'",
+                                StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove unrecognized facet '" + facetName + "'", "Remove unrecognized facet")
+                        );
+                    }
+                }
+            }
+
+            @Override
             public void visitMetadataMap(@NotNull MetadataMap metaMap) {
                 super.visitMetadataMap(metaMap);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(metaMap)) {
+                    return;
+                }
                 Set<String> seenFacets = new HashSet<>();
                 for (var entry : metaMap.getMetadataEntryList()) {
                     String facetName = extractFacetName(entry);
@@ -271,6 +358,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition def) {
                 super.visitTypeDefinition(def);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
+                    return;
+                }
                 var metaMap = def.getMetadataMap();
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
@@ -307,6 +397,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @Override
             public void visitSchemaType(@NotNull SchemaType schemaType) {
                 super.visitSchemaType(schemaType);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(schemaType)) {
+                    return;
+                }
                 if (schemaType.getParent() instanceof ConstantDefinition
                         || schemaType.getParent() instanceof TypeDefinition) {
                     return; // Handled by visitConstantDefinition / visitTypeDefinition
@@ -331,6 +424,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
             @Override
             public void visitConstantDefinition(@NotNull ConstantDefinition def) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
+                    return;
+                }
                 var metaMap = def.getMetadataMap();
                 if (metaMap != null) {
                     if (isGenuinelyEmptyConstraintBlock(metaMap)) {
@@ -383,6 +479,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
             @Override
             public void visitUseStmt(@NotNull UseStmt stmt) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(stmt)) {
+                    return;
+                }
                 var optBlock = stmt.getUseOptionsBlock();
                 if (optBlock != null && optBlock.getText().replaceAll("\\s+", "").equals("{}")) {
                     holder.registerProblem(
@@ -411,6 +510,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
             @Override
             public void visitIncludeElement(@NotNull IncludeElement element) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+                    return;
+                }
                 var optBlock = element.getIncludeOptionsBlock();
                 if (optBlock != null && optBlock.getIncludeOptionList().isEmpty()) {
                     holder.registerProblem(
@@ -895,7 +997,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
     private static boolean isDefsSchemaDocument(@Nullable PsiFile file, @NotNull DefsEntry defsEntry) {
         if (file != null) {
-            var kindFacet = PsiTreeUtil.findChildOfType(file, MetaKindFacet.class);
+            MetaEntry primaryMeta = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+            var kindFacet = primaryMeta != null ? PsiTreeUtil.findChildOfType(primaryMeta, MetaKindFacet.class) : null;
             if (kindFacet != null && kindFacet.getMetaKindValue() != null) {
                 String kindText = kindFacet.getMetaKindValue().getText().trim();
                 return StvnVocabulary.KIND_KW_DEFS.equals(kindText)
@@ -917,7 +1020,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     private static final class RemoveParentMetaEntryQuickFix implements LocalQuickFix {
         @Override
         public @Nls @NotNull String getFamilyName() {
-            return "Remove empty '" + StvnVocabulary.KEYWORD_META + " {}' block";
+            return "Remove empty '" + StvnVocabulary.KEYWORD_META + " {}' section";
         }
 
         @Override

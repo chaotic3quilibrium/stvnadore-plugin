@@ -8,6 +8,7 @@ import com.intellij.psi.PsiElement;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.icons.StvnIcons;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 /**
@@ -31,6 +32,9 @@ public final class StvnSectionNavigationLineMarkerProvider implements LineMarker
 
         var elementType = node.getElementType();
         var parent = element.getParent();
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(parent)) {
+            return null;
+        }
 
         if (elementType == StvnTypes.KW_DEFS && parent instanceof DefsEntry) {
             return new LineMarkerInfo<>(

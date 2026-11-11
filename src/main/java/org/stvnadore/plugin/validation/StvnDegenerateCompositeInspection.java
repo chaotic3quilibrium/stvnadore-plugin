@@ -22,6 +22,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 /**
@@ -44,6 +45,9 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             @Override
             public void visitProductType(@NotNull ProductType o) {
                 super.visitProductType(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var types = o.getSchemaTypeList();
                 if (types.size() == 1) {
                     var innerType = types.get(0);
@@ -64,6 +68,9 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             @Override
             public void visitSumType(@NotNull SumType o) {
                 super.visitSumType(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var enumDef = o.getEnumDef();
                 if (enumDef != null) {
                     var variants = enumDef.getValueKeywordList();
@@ -84,6 +91,9 @@ public final class StvnDegenerateCompositeInspection extends LocalInspectionTool
             @Override
             public void visitCollectionType(@NotNull CollectionType o) {
                 super.visitCollectionType(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var firstChild = o.getFirstChild();
                 if (firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_TUPLE)) {
                     var types = o.getSchemaTypeList();

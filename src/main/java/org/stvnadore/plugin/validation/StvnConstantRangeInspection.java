@@ -14,6 +14,7 @@ import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetadataEntry;
@@ -45,6 +46,9 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
         return new Visitor() {
             @Override
             public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)) {
+                    return;
+                }
                 var schemaType = constDef.getSchemaType();
                 var value = constDef.getValue();
                 if (schemaType == null || value == null) {

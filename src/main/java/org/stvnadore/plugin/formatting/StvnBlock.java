@@ -387,7 +387,7 @@ public final class StvnBlock implements ASTBlock {
                     && t2 == StvnTypes.COMMENT) {
                 return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
-            if (t1 != StvnTypes.DEFS_ENTRY && t2 == StvnTypes.COMMENT) {
+            if (t2 == StvnTypes.COMMENT) {
                 return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
             if (parentType == StvnTypes.METADATA_MAP && isMultiLineMetadataMap(node)) {

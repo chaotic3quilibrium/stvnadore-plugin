@@ -16,6 +16,7 @@ import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 /**
@@ -70,6 +71,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
             @Override
             public void visitExplicitOptionValue(@NotNull ExplicitOptionValue o) {
                 super.visitExplicitOptionValue(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var coreVal = StvnTypeResolver.resolveCoreValue(o);
                 var optVal = findMatchingSumNode(coreVal, StvnValue.StvnOption.class);
                 if (optVal != null) {
@@ -118,6 +122,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
             @Override
             public void visitExplicitEitherValue(@NotNull ExplicitEitherValue o) {
                 super.visitExplicitEitherValue(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var coreVal = StvnTypeResolver.resolveCoreValue(o);
                 var either = findMatchingSumNode(coreVal, StvnValue.StvnEither.class);
                 if (either != null) {
@@ -192,6 +199,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
             @Override
             public void visitExplicitUnionValue(@NotNull ExplicitUnionValue o) {
                 super.visitExplicitUnionValue(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 var coreVal = StvnTypeResolver.resolveCoreValue(o);
                 var union = findMatchingSumNode(coreVal, StvnValue.StvnUnion.class);
                 if (union != null) {
@@ -252,6 +262,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
             @Override
             public void visitBooleanValue(@NotNull BooleanValue o) {
                 super.visitBooleanValue(o);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
+                    return;
+                }
                 if (!state.enableFormDiscrepancyInspection) {
                     return;
                 }

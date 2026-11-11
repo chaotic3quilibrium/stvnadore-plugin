@@ -16,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 import javax.swing.BoxLayout;
@@ -98,6 +99,9 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
             @Override
             public void visitMetadataEntry(@NotNull MetadataEntry entry) {
                 super.visitMetadataEntry(entry);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(entry)) {
+                    return;
+                }
 
                 // 1. Assert facet token is #maxSize
                 if (entry.getNode().findChildByType(StvnTypes.KW_MAX_SIZE) == null) {

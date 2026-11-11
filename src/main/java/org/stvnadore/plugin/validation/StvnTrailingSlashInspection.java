@@ -14,6 +14,7 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiWhiteSpace;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.UseTarget;
@@ -36,6 +37,9 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         return new Visitor() {
             @Override
             public void visitUseTarget(@NotNull UseTarget element) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+                    return;
+                }
                 if (hasTrailingSlash(element)) {
                     var cleaned = stripTrailingSlashes(extractNonCommentText(element));
                     holder.registerProblem(
@@ -52,6 +56,9 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
 
             @Override
             public void visitPackagePath(@NotNull PackagePath element) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+                    return;
+                }
                 if (hasTrailingSlash(element)) {
                     var cleaned = stripTrailingSlashes(extractNonCommentText(element));
                     holder.registerProblem(

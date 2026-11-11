@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.Visitor;
 
@@ -28,6 +29,9 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
         return new Visitor() {
             @Override
             public void visitIncludeStmt(@NotNull IncludeStmt stmt) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(stmt)) {
+                    return;
+                }
                 var file = stmt.getContainingFile();
                 if (StvnPsiUtils.isHermeticDocument(file)) {
                     holder.registerProblem(

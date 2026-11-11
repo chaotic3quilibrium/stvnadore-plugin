@@ -9,6 +9,7 @@ import com.intellij.psi.impl.source.codeStyle.PreFormatProcessor;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.validation.StvnMetadataOrderInspection;
 import org.stvnadore.plugin.validation.StvnReorderMetaEntriesQuickFix;
@@ -45,22 +46,35 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
             return range;
         }
         int initialElementLength = element.getTextLength();
+        TextRange activeRange = range;
+
+        if (psi instanceof StvnFile stvnFile) {
+            TextRange fileRange = stvnFile.getTextRange();
+            if (fileRange != null && range.contains(fileRange)) {
+                if (StvnRootSectionReorderer.reorderIfNeeded(stvnFile.getProject(), stvnFile)) {
+                    TextRange reorderedRange = stvnFile.getTextRange();
+                    if (reorderedRange != null) {
+                        activeRange = reorderedRange;
+                    }
+                }
+            }
+        }
 
         if (psi instanceof MetaBlock metaBlock) {
-            normalizeMetaBlockIfDisordered(metaBlock, range);
+            normalizeMetaBlockIfDisordered(metaBlock, activeRange);
         } else {
             Collection<MetaBlock> metaBlocks = PsiTreeUtil.findChildrenOfType(psi, MetaBlock.class);
             for (MetaBlock metaBlock : metaBlocks) {
-                normalizeMetaBlockIfDisordered(metaBlock, range);
+                normalizeMetaBlockIfDisordered(metaBlock, activeRange);
             }
         }
 
         if (psi instanceof MetadataMap map) {
-            normalizeMapIfDisordered(map, range);
+            normalizeMapIfDisordered(map, activeRange);
         } else {
             Collection<MetadataMap> maps = PsiTreeUtil.findChildrenOfType(psi, MetadataMap.class);
             for (MetadataMap map : maps) {
-                normalizeMapIfDisordered(map, range);
+                normalizeMapIfDisordered(map, activeRange);
             }
         }
         int lengthDelta = element.getTextLength() - initialElementLength;

@@ -20,6 +20,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.FloatLiteral;
@@ -89,6 +90,9 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
             @Override
             public void visitFloatLiteral(@NotNull FloatLiteral literal) {
                 super.visitFloatLiteral(literal);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(literal)) {
+                    return;
+                }
 
                 var rawText = literal.getText().trim();
                 var valOpt = StvnPsiLiteralEvaluator.parseBigDecimal(rawText);

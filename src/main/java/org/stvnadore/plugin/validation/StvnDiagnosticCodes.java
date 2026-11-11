@@ -64,6 +64,9 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_METADATA_FACET_ON_CONSTANT = "ERR_METADATA_FACET_ON_CONSTANT";
     public static final String ERR_EMPTY_DIRECTIVE_BLOCK = "ERR_EMPTY_DIRECTIVE_BLOCK";
     public static final String ERR_EMPTY_DEFS_BLOCK = "ERR_EMPTY_DEFS_BLOCK";
+    public static final String ERR_DUPLICATE_ROOT_SECTION = "ERR_DUPLICATE_ROOT_SECTION";
+    public static final String ERR_SECTION_ORDER_VIOLATION = "ERR_SECTION_ORDER_VIOLATION";
+    public static final String ERR_MALFORMED_SECTION_STRUCTURE = "ERR_MALFORMED_SECTION_STRUCTURE";
     public static final String ERR_STRIP_ON_TYPE_DEF = "ERR_STRIP_ON_TYPE_DEF";
     public static final String ERR_INVALID_METADATA_FACET = "ERR_INVALID_METADATA_FACET";
     public static final String ERR_UNRECOGNIZED_METADATA_FACET = "ERR_UNRECOGNIZED_METADATA_FACET";
@@ -126,6 +129,9 @@ public final class StvnDiagnosticCodes {
         return switch (clean) {
             case ERR_TAB_CHARACTER_FORBIDDEN -> "E001";
             case ERR_EMPTY_DEFS_BLOCK,
+                 ERR_DUPLICATE_ROOT_SECTION,
+                 ERR_SECTION_ORDER_VIOLATION,
+                 ERR_MALFORMED_SECTION_STRUCTURE,
                  ERR_NESTED_PACKAGE_PROHIBITED,
                  ERR_TRAILING_SLASH_PROHIBITED -> "E002";
             case ERR_EMPTY_METADATA_BLOCK -> "E003";

@@ -10,6 +10,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnBrandNominalTypeQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnImportUseQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnQualifyTypeQuickFix;
@@ -47,6 +48,9 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
     }
 
     private static void inspectTypeKeyword(TypeKeyword typeKw, ProblemsHolder holder) {
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeKw)) {
+            return;
+        }
         // Skip LHS declaration targets in :defs (they declare a new type, not reference an existing one)
         if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)
                 || typeKw.getParent() instanceof UseTarget
@@ -96,6 +100,9 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         // Check whether the type is locally shadowed or defined in :defs
         var localDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : localDefs) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
+                continue;
+            }
             var kw = def.getTypeKeyword();
             if (kw != null && text.equals(kw.getText()) && def != typeKw.getParent()) {
                 return;
@@ -105,6 +112,9 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         // Check whether the type is imported via :use
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : useStmts) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
+                continue;
+            }
             var aliasBlock = use.getUseAliasBlock();
             if (aliasBlock != null) {
                 for (var alias : aliasBlock.getUseMapAliasList()) {

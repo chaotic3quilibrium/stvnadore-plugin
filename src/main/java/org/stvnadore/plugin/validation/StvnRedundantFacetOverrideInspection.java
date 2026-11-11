@@ -15,6 +15,7 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BooleanValue;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
@@ -41,6 +42,9 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         return new Visitor() {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDef)) {
+                    return;
+                }
                 var metaMap = typeDef.getMetadataMap();
                 if (metaMap == null || metaMap.getMetadataEntryList().isEmpty()) {
                     return;

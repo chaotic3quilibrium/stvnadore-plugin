@@ -11,9 +11,10 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 
 /**
- * Intention action that removes an empty, redundant ':defs {}' clause from an STVN payload document (.stvn).
+ * Intention action that removes an empty {@code :defs {}} section from an STVN payload document.
  */
 @NullMarked
 public final class RemoveRedundantDefsBlockIntentionAction implements IntentionAction {
@@ -26,12 +27,12 @@ public final class RemoveRedundantDefsBlockIntentionAction implements IntentionA
 
     @Override
     public @NotNull String getText() {
-        return "Remove redundant ':defs {}' block";
+        return "Remove empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section";
     }
 
     @Override
     public @NotNull String getFamilyName() {
-        return "Remove redundant ':defs {}' block";
+        return "Remove empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section";
     }
 
     @Override

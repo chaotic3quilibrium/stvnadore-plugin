@@ -22,6 +22,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.CollectionType;
@@ -446,25 +447,34 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDefinition) {
                 super.visitTypeDefinition(typeDefinition);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDefinition)) {
+                    return;
+                }
                 inspectTypeDefinition(typeDefinition);
             }
 
             @Override
             public void visitConstantDefinition(@NotNull ConstantDefinition constantDefinition) {
                 super.visitConstantDefinition(constantDefinition);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constantDefinition)) {
+                    return;
+                }
                 inspectConstantDefinition(constantDefinition);
             }
 
             @Override
             public void visitTypeEntry(@NotNull TypeEntry typeEntry) {
                 super.visitTypeEntry(typeEntry);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeEntry)) {
+                    return;
+                }
                 inspectTypeEntry(typeEntry);
             }
 
             @Override
             public void visitStringLiteral(@NotNull StringLiteral literal) {
                 super.visitStringLiteral(literal);
-                if (!inspectPayload) {
+                if (!inspectPayload || StvnMetaTemplateUtil.isInSecondaryRootSection(literal)) {
                     return;
                 }
 

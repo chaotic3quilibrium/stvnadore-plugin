@@ -314,6 +314,12 @@ public final class StvnDiagnosticAnnotatorMapping {
             || DiagnosticBag.ERR_META_POSITION_INVALID.equals(code)
             || "META_POSITION_INVALID".equals(code)
             || "E033".equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(code)
+            || StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION.equals(code)
+            || DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(code)
+            || StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION.equals(code)
+            || DiagnosticBag.ERR_MALFORMED_SECTION_STRUCTURE.equals(code)
+            || StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE.equals(code)
             || DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
             || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
@@ -604,6 +610,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("Duplicate metadata facet tag")
                 || message.contains("does not match required atomic POSIX pattern")
                 || message.contains("Metadata block ':meta {}' must not be empty")
+                || message.contains("Empty '" + StvnVocabulary.KEYWORD_META + " {}' section is prohibited")
+                || message.contains("Empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section is prohibited")
                 || message.contains("Empty definition block ':defs {}' is redundant")
                 || message.contains("Definition schema ':defs {}' must declare at least one definition")) {
             return "StvnMetadataFacet";

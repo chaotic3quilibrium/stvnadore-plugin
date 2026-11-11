@@ -11,6 +11,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 import java.util.HashSet;
@@ -32,6 +33,9 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
             @Override
             public void visitListLiteral(@NotNull ListLiteral listLiteral) {
                 super.visitListLiteral(listLiteral);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(listLiteral)) {
+                    return;
+                }
                 var valueParent = PsiTreeUtil.getParentOfType(listLiteral, Value.class);
                 if (valueParent == null
                         || valueParent.getParent() instanceof ListLiteral

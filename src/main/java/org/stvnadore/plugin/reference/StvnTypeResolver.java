@@ -407,7 +407,7 @@ public final class StvnTypeResolver {
             ? typeDef.getContainingFile()
             : file;
         var bodyEntry = PsiTreeUtil.findChildOfType(diagFile, BodyEntry.class);
-        int bodyStartOffset = bodyEntry != null ? bodyEntry.getTextRange().getStartOffset() : Integer.MAX_VALUE;
+        var bodyRange = bodyEntry != null ? bodyEntry.getTextRange() : null;
         var snapshot = StvnCompiledDocumentCache.getSnapshot(diagFile);
         for (var diag : snapshot.diagnostics()) {
             if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
@@ -417,10 +417,15 @@ public final class StvnTypeResolver {
                 && !diag.sourcePath().get().equals(snapshot.normalizedDocPath())) {
                 continue;
             }
-            if (diag.startOffset() >= bodyStartOffset) {
+            if (bodyRange != null && bodyRange.containsRange(diag.startOffset(), diag.endOffset())) {
                 continue;
             }
             String symbolic = diag.symbolicId().orElse("");
+            if (DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(symbolic)
+                    || DiagnosticBag.ERR_META_POSITION_INVALID.equals(symbolic)
+                    || DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(symbolic)) {
+                continue;
+            }
             String canonical = diag.canonicalCode().orElse("");
             String fallback = diag.errorCode().orElse("");
             boolean isFatal = (!symbolic.isEmpty() && FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(symbolic))

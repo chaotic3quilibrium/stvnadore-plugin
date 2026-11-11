@@ -13,6 +13,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.reference.StvnTypeReference;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 /**
@@ -54,6 +55,9 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
             @Override
             public void visitTypeDefinition(@NotNull TypeDefinition typeDef) {
                 super.visitTypeDefinition(typeDef);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDef)) {
+                    return;
+                }
                 var schemaType = typeDef.getSchemaType();
                 var metaMap = typeDef.getMetadataMap() != null
                         ? typeDef.getMetadataMap()
@@ -66,6 +70,9 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
             @Override
             public void visitConstantDefinition(@NotNull ConstantDefinition constDef) {
                 super.visitConstantDefinition(constDef);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)) {
+                    return;
+                }
                 var schemaType = constDef.getSchemaType();
                 var metaMap = constDef.getMetadataMap() != null
                         ? constDef.getMetadataMap()
@@ -78,6 +85,9 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
             @Override
             public void visitSchemaType(@NotNull SchemaType schemaType) {
                 super.visitSchemaType(schemaType);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(schemaType)) {
+                    return;
+                }
                 if (schemaType.getParent() instanceof TypeDefinition
                         || schemaType.getParent() instanceof ConstantDefinition) {
                     return;

@@ -1577,15 +1577,15 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
 
         int defsStart = code.indexOf(":defs");
         assertEquals(new com.intellij.openapi.util.TextRange(defsStart, defsStart + 5), new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
-        assertTrue(errors.get(0).getDescription().contains("clause ':defs' requires definition block"));
+        assertTrue(errors.get(0).getDescription().contains("Incomplete ':defs' section"));
 
         int typeStart = code.indexOf(":type");
         assertEquals(new com.intellij.openapi.util.TextRange(typeStart, typeStart + 5), new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
-        assertTrue(errors.get(1).getDescription().contains("clause ':type' requires a schema type"));
+        assertTrue(errors.get(1).getDescription().contains("Incomplete ':type' section"));
 
         int bodyStart = code.indexOf(":body");
         assertEquals(new com.intellij.openapi.util.TextRange(bodyStart, bodyStart + 5), new com.intellij.openapi.util.TextRange(errors.get(2).getStartOffset(), errors.get(2).getEndOffset()));
-        assertTrue(errors.get(2).getDescription().contains("clause ':body' requires a value payload"));
+        assertTrue(errors.get(2).getDescription().contains("Incomplete ':body' section"));
 
         myFixture.getEditor().getCaretModel().moveToOffset(defsStart);
         assertNotNull(myFixture.findSingleIntention("Insert definition block '{ :Type :String }'"));
@@ -1606,10 +1606,12 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity().equals(com.intellij.lang.annotation.HighlightSeverity.ERROR))
             .toList();
         assertEquals("Expected exactly 1 error on empty :defs {}", 1, errors.size());
-        assertTrue(errors.get(0).getDescription().contains("Empty definition block ':defs {}' is redundant"));
+        assertTrue(errors.get(0).getDescription().contains(
+            "Empty ':defs {}' section is prohibited; omit ':defs' or declare at least one type or constant definition"
+        ));
 
         myFixture.getEditor().getCaretModel().moveToOffset(code.indexOf("{}"));
-        var fix = myFixture.findSingleIntention("Remove redundant ':defs {}' block");
+        var fix = myFixture.findSingleIntention("Remove empty ':defs {}' section");
         assertNotNull(fix);
         myFixture.launchAction(fix);
         myFixture.checkResult("{\n  :type :String\n  :body \"hello\"\n}\n");
@@ -1697,7 +1699,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var defsError = errors.get(1);
         int bracesStart = code.indexOf("{}");
         assertEquals("Empty defs error must pin to '{}' [10, 12)", new com.intellij.openapi.util.TextRange(bracesStart, bracesStart + 2), new com.intellij.openapi.util.TextRange(defsError.getStartOffset(), defsError.getEndOffset()));
-        assertTrue(defsError.getDescription().contains("requires at least one type definition inside ':defs { ... }'"));
+        assertTrue(defsError.getDescription().contains(
+            "Empty ':defs {}' section is prohibited; definitions schema (.stvn_d) requires at least one type or constant definition"
+        ));
 
         myFixture.getEditor().getCaretModel().moveToOffset(0);
         var metaFix = myFixture.findSingleIntention("Insert missing root :meta block");
@@ -1731,25 +1735,25 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         int metaIdx = code.indexOf(":meta");
         assertEquals(new com.intellij.openapi.util.TextRange(metaIdx, metaIdx + 5),
             new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
-        assertTrue(errors.get(0).getDescription().contains("clause ':meta' requires a metadata block"));
+        assertTrue(errors.get(0).getDescription().contains("Incomplete ':meta' section"));
 
         // Verify pinning to :defs
         int defsIdx = code.indexOf(":defs");
         assertEquals(new com.intellij.openapi.util.TextRange(defsIdx, defsIdx + 5),
             new com.intellij.openapi.util.TextRange(errors.get(1).getStartOffset(), errors.get(1).getEndOffset()));
-        assertTrue(errors.get(1).getDescription().contains("clause ':defs' requires definition block"));
+        assertTrue(errors.get(1).getDescription().contains("Incomplete ':defs' section"));
 
         // Verify pinning to :type
         int typeIdx = code.indexOf(":type");
         assertEquals(new com.intellij.openapi.util.TextRange(typeIdx, typeIdx + 5),
             new com.intellij.openapi.util.TextRange(errors.get(2).getStartOffset(), errors.get(2).getEndOffset()));
-        assertTrue(errors.get(2).getDescription().contains("clause ':type' requires a schema type"));
+        assertTrue(errors.get(2).getDescription().contains("Incomplete ':type' section"));
 
         // Verify pinning to :body
         int bodyIdx = code.indexOf(":body");
         assertEquals(new com.intellij.openapi.util.TextRange(bodyIdx, bodyIdx + 5),
             new com.intellij.openapi.util.TextRange(errors.get(3).getStartOffset(), errors.get(3).getEndOffset()));
-        assertTrue(errors.get(3).getDescription().contains("clause ':body' requires a value payload"));
+        assertTrue(errors.get(3).getDescription().contains("Incomplete ':body' section"));
     }
 
     /**
@@ -3104,15 +3108,15 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             errors.stream().anyMatch(e -> e.getStartOffset() == 352 && e.getEndOffset() == 356
                 && e.getDescription() != null && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
 
-        // Verify "Remove duplicate ':meta' block" quick-fix cleanly removes both duplicate :meta blocks
+        // Verify "Remove duplicate ':meta' section" quick-fix cleanly removes both duplicate :meta sections
         myFixture.getEditor().getCaretModel().moveToOffset(148);
-        var removeFirstDup = myFixture.findSingleIntention("Remove duplicate ':meta' block");
+        var removeFirstDup = myFixture.findSingleIntention("Remove duplicate ':meta' section");
         myFixture.launchAction(removeFirstDup);
 
         int secondDupOffset = myFixture.getFile().getText().lastIndexOf(":meta");
         myFixture.getEditor().getCaretModel().moveToOffset(secondDupOffset + 1);
         myFixture.doHighlighting();
-        var removeSecondDup = myFixture.findSingleIntention("Remove duplicate ':meta' block");
+        var removeSecondDup = myFixture.findSingleIntention("Remove duplicate ':meta' section");
         myFixture.launchAction(removeSecondDup);
 
         var postFixErrors = myFixture.doHighlighting().stream()

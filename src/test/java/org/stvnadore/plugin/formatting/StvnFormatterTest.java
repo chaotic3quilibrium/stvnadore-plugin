@@ -162,7 +162,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         var previousMode = settings.getState().reformatDelegationMode;
         try {
             settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
-            var unformatted = """
+            var sameLineUnformatted = """
                 {
                   :defs {
                     :UserID :Int
@@ -171,7 +171,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
                   :body 1001
                 }
                 """;
-            var psiFile = myFixture.configureByText("closing_brace_comment.stvn", unformatted);
+            var psiFile = myFixture.configureByText("closing_brace_comment.stvn", sameLineUnformatted);
 
             WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                 CodeStyleManager.getInstance(getProject()).reformat(psiFile);
@@ -180,19 +180,43 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             var text = psiFile.getText();
             assertFalse("Closing brace must not collapse directly against comment prefix:\n" + text,
                     text.contains("}//"));
-            assertTrue("Comment following closing brace in PSI mode must appear on dedicated indented line:\n" + text,
-                    text.contains("  }\n  // comment\n"));
+            assertTrue("Same-line comment following closing brace in PSI mode must remain on closing-brace line:\n" + text,
+                    text.contains("  } // comment\n"));
+
+            var nextLineUnformatted = """
+                {
+                  :defs {
+                    :UserID :Int
+                  }
+                // comment
+                  :type :UserID
+                  :body 1001
+                }
+                """;
+            var psiNextLineFile = myFixture.configureByText("closing_brace_next_line_comment.stvn", nextLineUnformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiNextLineFile);
+            });
+            assertTrue("Dedicated-line comment following closing brace in PSI mode must indent cleanly:\n" + psiNextLineFile.getText(),
+                    psiNextLineFile.getText().contains("  }\n  // comment\n"));
 
             settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
-            var coreFile = myFixture.configureByText("closing_brace_comment_core.stvn", unformatted);
+            var coreFile = myFixture.configureByText("closing_brace_comment_core.stvn", sameLineUnformatted);
             WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                 CodeStyleManager.getInstance(getProject()).reformat(coreFile);
             });
             var coreText = coreFile.getText();
             assertFalse("Closing brace must not collapse directly against comment prefix:\n" + coreText,
                     coreText.contains("}//"));
-            assertTrue("Comment following closing brace in Core Source Formatter mode must appear on dedicated indented line:\n" + coreText,
-                    coreText.contains("  }\n  // comment\n"));
+            assertTrue("Same-line comment following closing brace in Core Source Formatter mode must remain on closing-brace line:\n" + coreText,
+                    coreText.contains("  } // comment\n"));
+
+            var coreNextLineFile = myFixture.configureByText("closing_brace_next_line_core.stvn", nextLineUnformatted);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreNextLineFile);
+            });
+            assertTrue("Dedicated-line comment following closing brace in Core Source Formatter mode must indent cleanly:\n" + coreNextLineFile.getText(),
+                    coreNextLineFile.getText().contains("  }\n  // comment\n"));
         } finally {
             settings.getState().reformatDelegationMode = previousMode;
         }

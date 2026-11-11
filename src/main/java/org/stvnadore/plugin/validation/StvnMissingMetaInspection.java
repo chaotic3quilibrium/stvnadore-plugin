@@ -95,7 +95,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                     return;
                 }
                 var fileName = file.getName();
-                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
+                if (!StvnMetaTemplateUtil.isMetaExtensionMandatory(fileName)) return;
 
                 var metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
                 if (metaEntry == null && !StvnMetaTemplateUtil.hasMetaHeader(file)) {
@@ -145,7 +145,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 var file = metaEntry.getContainingFile();
                 if (file == null) return;
                 var fileName = file.getName();
-                if (!StvnMetaTemplateUtil.isMetaMandatory(fileName)) return;
+                if (!StvnMetaTemplateUtil.isMetaExtensionMandatory(fileName)) return;
 
                 var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
                 if (kindFacet == null) {
@@ -210,7 +210,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             @NotNull InspectionManager manager,
             boolean isOnTheFly
     ) {
-        if (!(file instanceof StvnFile) || !StvnMetaTemplateUtil.isMetaMandatory(file.getName())) {
+        if (!(file instanceof StvnFile) || !StvnMetaTemplateUtil.isMetaExtensionMandatory(file.getName())) {
             return null;
         }
         if (isOnTheFly) {
