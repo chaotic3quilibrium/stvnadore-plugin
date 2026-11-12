@@ -6956,6 +6956,32 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         );
         assertDiagnosticContract("syntax/invalid/metadata/grounded_poisoned_schema_body_suspension.core_test.stvn_i");
     }
+
+    public void testInvalidMetaOmittedDomainAndKindWithBodyErrorWithoutLocalInspections() throws Exception {
+        assertDiagnosticContract("syntax/invalid/metadata/meta_omitted_domain_with_body_error.core_test.stvn_i");
+        assertDiagnosticContract("syntax/invalid/metadata/meta_omitted_kind_with_body_error.core_test.stvn_i");
+    }
+
+    public void testInvalidMetaOmittedDomainAndKindWithBodyErrorWithAllLocalInspectionsEnabled() throws Exception {
+        var allStvnInspections = com.intellij.codeInspection.LocalInspectionEP.LOCAL_INSPECTION.getExtensionList().stream()
+            .filter(ep -> "STVN".equals(ep.language))
+            .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
+            .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
+        assertEquals("Expected all 26 STVN local inspections registered in plugin.xml", 26, allStvnInspections.length);
+        myFixture.enableInspections(allStvnInspections);
+
+        assertDiagnosticContract("syntax/invalid/metadata/meta_omitted_domain_with_body_error.core_test.stvn_i");
+        var domainHighlights = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 2 highlights (W002 + E012) with zero duplicates: " + domainHighlights, 2, domainHighlights.size());
+
+        assertDiagnosticContract("syntax/invalid/metadata/meta_omitted_kind_with_body_error.core_test.stvn_i");
+        var kindHighlights = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 2 highlights (E031 + E012) with zero duplicates: " + kindHighlights, 2, kindHighlights.size());
+    }
 }
 
 

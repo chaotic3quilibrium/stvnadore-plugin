@@ -1,10 +1,13 @@
 <html>
 <body>
-<p>Audits definitions schema documents (<code>.stvn_d</code> and <code>.stvn_di</code>) and modular payload documents (<code>.stvn_i</code>) for a mandatory root metadata (<code>:meta</code>) block.</p>
+<p>Audits definitions schema documents (<code>.stvn_d</code>, <code>.stvn_di</code>, and <code>.stvn_bd</code>) and modular payload documents (<code>.stvn_i</code> and <code>.stvn_b</code>) for a mandatory root metadata (<code>:meta</code>) section and a matching <code>#kind</code> facet.</p>
 
-<p>Every definitions schema and modular payload document must declare a root <code>:meta</code> block preceding its definitions or body block, specifying canonical metadata facets including <code>#name</code>, <code>#domain</code>, and <code>#kind</code>.</p>
+<p>Every definitions schema and modular payload document must declare a root <code>:meta</code> section before its definitions or body section, specifying canonical metadata facets (<code>#name</code>, <code>#domain</code>, and <code>#kind</code>).</p>
 
-<p><b>Quick-Fix:</b></p>
-<p>Inserts a canonical root <code>:meta</code> block with defaulted schema name, domain, and document kind matching the file extension.</p>
+<p><b>Quick-Fixes:</b></p>
+<ul>
+  <li>Inserts a canonical root <code>:meta</code> section with defaulted schema name, domain, and document kind matching the file extension.</li>
+  <li>Inserts a missing <code>#kind</code> facet at canonical Tier 3 inside an existing non-empty <code>:meta</code> section, or updates a mismatched <code>#kind</code> value.</li>
+</ul>
 </body>
 </html>

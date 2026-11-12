@@ -146,6 +146,10 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Expected 1 missing #kind facet error", 1, errors.size());
         assertEquals("Missing #kind diagnostic must pin strictly to 5-char ':meta' token", ":meta", errors.get(0).getText());
+        assertEquals(
+            "Root ':meta' section requires #kind facet matching file extension '.stvn_i' (expected '#BODY_INCLUDE') [stvn-plugin:E031-ERR_DOCUMENT_KIND_MISMATCH]",
+            errors.get(0).getDescription()
+        );
 
         var insertKind = myFixture.filterAvailableIntentions("Insert missing #kind facet");
         assertEquals("Expected InsertMissingMetaKindFacetQuickFix at ':meta'", 1, insertKind.size());
@@ -339,5 +343,83 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             .toList();
         assertTrue("Empty :meta {} must not emit false-positive E031 from StvnMissingMetaInspection: " + e031Errors,
             e031Errors.isEmpty());
+    }
+
+    /**
+     * Verifies 1:1 parity with Core TC-ID-48b: typing an incomplete in-flight '#kind' facet inside ':meta'
+     * suppresses secondary E031 cascades while still flagging genuine unknown facets like '#kindness' when '#kind' is omitted,
+     * and emits 1:1 mismatch prose when '#kind' declares a wrong kind keyword.
+     */
+    public void testInFlightKindFacetSuppressesSecondaryE031CascadeWithoutMaskingKindnessPrefix() {
+        var inFlightKind = """
+            {
+              :meta {
+                #name "inflight_doc"
+                #domain "app"
+                #kind
+              }
+              :defs {
+                :Port { #unsigned #size 16 #minIncl 1 } :Int
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("inflight_doc.app.stvn_i", inFlightKind);
+        var inFlightHighlights = myFixture.doHighlighting();
+        var inFlightE031 = inFlightHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DOCUMENT_KIND_MISMATCH"))
+            .toList();
+        assertTrue("Incomplete in-flight '#kind' inside ':meta' must not emit secondary E031: " + inFlightE031,
+            inFlightE031.isEmpty());
+
+        var unknownKindness = """
+            {
+              :meta {
+                #name "inflight_doc"
+                #domain "app"
+                #kindness 1
+              }
+              :defs {
+                :Port { #unsigned #size 16 #minIncl 1 } :Int
+              }
+              :type :Port
+              :body 8080
+            }
+            """;
+        myFixture.configureByText("inflight_doc.app.stvn_i", unknownKindness);
+        var kindnessHighlights = myFixture.doHighlighting();
+        var kindnessE031 = kindnessHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DOCUMENT_KIND_MISMATCH"))
+            .toList();
+        assertEquals("Unknown '#kindness' facet must not falsely suppress missing '#kind' E031", 1, kindnessE031.size());
+        assertEquals(":meta", kindnessE031.get(0).getText());
+
+        var wrongKind = """
+            {
+              :meta {
+                #name "inflight_doc"
+                #domain "app"
+                #kind #DEFS
+              }
+              :defs {
+                :Port { #unsigned #size 16 } :Int
+              }
+            }
+            """;
+        myFixture.configureByText("inflight_doc.app.stvn", wrongKind);
+        var wrongKindHighlights = myFixture.doHighlighting();
+        var wrongKindE031 = wrongKindHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DOCUMENT_KIND_MISMATCH"))
+            .toList();
+        assertEquals("Mismatched '#kind #DEFS' on .stvn must emit exactly 1 E031", 1, wrongKindE031.size());
+        assertEquals("#kind #DEFS", wrongKindE031.get(0).getText());
+        assertEquals(
+            "Document kind '#DEFS' does not match file extension '.stvn' (expected '#BODY') [stvn-plugin:E031-ERR_DOCUMENT_KIND_MISMATCH]",
+            wrongKindE031.get(0).getDescription()
+        );
     }
 }

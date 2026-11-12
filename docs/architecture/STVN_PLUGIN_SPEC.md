@@ -254,6 +254,16 @@ flowchart TD
 - **Capability Restoration:** Under STVN Spec § 6.2, `#exact` elevates `:Float` to discrete arbitrary-precision decimal representation, restoring `#equatable #TRUE` without requiring nominal wrapping in `:defs`.
 - **Conflict Prevention:** Purges any conflicting `#size` facet per STVN Spec § 6.1 mutual exclusivity rules.
 
+### 4.8 Comment-Preserving `:meta` & `MetadataMap` Reordering and `:meta` Token Authority
+- **Target Locus:** Root `:meta` sections (`StvnMetadataOrderInspection` / `StvnReorderMetaEntriesQuickFix`), schema `MetadataMap` constraint blocks (`StvnReorderMetadataFacetsQuickFix`), `Ctrl+Alt+L` pre/post-format processors (`StvnMetadataOrderPreFormatProcessor`, `StvnCoreDelegationPostFormatProcessor`), and root `:meta` identity inspections (`StvnMissingMetaInspection`, `StvnStemMismatchInspection`).
+- **Comment & Blank-Line Slice Invariant (Golden Quartet #14 Parity):**
+  - Partitioning attaches contiguous standalone `//` comments and same-line `//` comments to each `:meta` or `MetadataMap` entry slice (`CommentedEntrySlice`) while preserving trailing footer `//` comments before `}`.
+  - Blank lines emit strictly when `newlinesSincePrevItem >= 2`; consecutive standalone `//` comments (`newlines == 1`) never fabricate blank lines, and enclosure-top blank lines immediately after `{` (`entryIdx == 0`) never fabricate inter-entry blank lines after permutation.
+  - In `PSI_STRUCTURE_PRESERVING` mode, `StvnMetadataOrderPreFormatProcessor` snapshots pre-format coordinates so `StvnBlock` and `StvnCoreDelegationPostFormatProcessor.reanchorAlignedTrailingComments` collapse interior multi-spaces and pad aligned trailing comments (`>= 2` authored spaces) to their original target columns, matching `StvnSourceFormatter` (`source_pretty/14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i`) byte-for-byte.
+- **Authoritative 5-Character `KW_META` Pinning & In-Flight `#kind` Suppression:**
+  - `W002` (`WARN_DOCUMENT_DOMAIN_OMITTED_IN_META`) and non-empty `:meta` omitted-`#kind` `E031` (`ERR_DOCUMENT_KIND_MISMATCH`) anchor strictly to the 5-character `KW_META` (`:meta`) token across both `StvnExternalAnnotator` (via upstream `StvnDefsLowerer`) and governed local inspections (`StvnStemMismatchInspection`, `StvnMissingMetaInspection`) with zero downstream coordinate clamping and zero duplicate highlights.
+  - During active typing inside `:meta`, `StvnMissingMetaInspection` suppresses secondary `E031` cascades whenever `#kind` is pinned without a value (`MetaKindFacet.getMetaKindValue() == null`) or appears as an in-flight `#kind` tag inside `MetaBlock`.
+
 ---
 
 ## 5. Benchmarking & Quality Assurance Gates

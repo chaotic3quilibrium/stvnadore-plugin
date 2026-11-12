@@ -258,22 +258,21 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         List<CommentLine> pendingComments = new ArrayList<>();
         boolean sliceHadBlankLineBefore = false;
         boolean nextItemHasBlankLineBefore = false;
-        boolean seenNewlineAfterPrevAnchor = openBraceComment == null;
+        int newlinesSincePrevItem = 0;
         int entryIdx = 0;
 
         while (cursor != null && cursor != rbrace) {
             var type = cursor.getElementType();
             if (type == TokenType.WHITE_SPACE) {
-                int newlines = countNewlines(cursor.getText());
-                if (newlines >= 2 || (!seenNewlineAfterPrevAnchor && newlines >= 1 && !pendingComments.isEmpty())) {
+                newlinesSincePrevItem += countNewlines(cursor.getText());
+                if (newlinesSincePrevItem >= 2) {
                     if (pendingComments.isEmpty()) {
-                        sliceHadBlankLineBefore = true;
+                        if (entryIdx > 0) {
+                            sliceHadBlankLineBefore = true;
+                        }
                     } else {
                         nextItemHasBlankLineBefore = true;
                     }
-                }
-                if (newlines >= 1) {
-                    seenNewlineAfterPrevAnchor = true;
                 }
                 cursor = cursor.getTreeNext();
             } else if (type == StvnTypes.COMMENT) {
@@ -283,7 +282,7 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
                     !pendingComments.isEmpty() && nextItemHasBlankLineBefore
                 ));
                 nextItemHasBlankLineBefore = false;
-                seenNewlineAfterPrevAnchor = false;
+                newlinesSincePrevItem = 0;
                 cursor = cursor.getTreeNext();
             } else if (type == entryElementType) {
                 String trailing = extractSameLineTrailingComment(cursor);
@@ -310,9 +309,10 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
                 pendingComments.clear();
                 sliceHadBlankLineBefore = false;
                 nextItemHasBlankLineBefore = false;
-                seenNewlineAfterPrevAnchor = false;
+                newlinesSincePrevItem = 0;
                 cursor = next;
             } else {
+                newlinesSincePrevItem += countNewlines(cursor.getText());
                 cursor = cursor.getTreeNext();
             }
         }

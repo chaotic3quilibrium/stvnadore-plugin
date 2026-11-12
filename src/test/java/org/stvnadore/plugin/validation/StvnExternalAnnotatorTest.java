@@ -20,6 +20,10 @@ import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -3183,5 +3187,58 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 warn.getDescription()
             );
         }
+    }
+
+    public void testUpstreamKwMetaAuthorityWithoutClampingOnMirroredFixtures() throws IOException {
+        var metadataDir = Paths.get("src", "test", "resources", "shared-fixtures", "syntax", "invalid", "metadata");
+        var omittedDomainPath = metadataDir.resolve("meta_omitted_domain_with_body_error.core_test.stvn_i");
+        var omittedKindPath = metadataDir.resolve("meta_omitted_kind_with_body_error.core_test.stvn_i");
+        assertTrue("Mirrored omitted-domain fixture must exist: " + omittedDomainPath, Files.isRegularFile(omittedDomainPath));
+        assertTrue("Mirrored omitted-kind fixture must exist: " + omittedKindPath, Files.isRegularFile(omittedKindPath));
+
+        var omittedDomainCode = Files.readString(omittedDomainPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        var omittedDomainFile = myFixture.addFileToProject(
+            "syntax/invalid/metadata/meta_omitted_domain_with_body_error.core_test.stvn_i",
+            omittedDomainCode
+        );
+        myFixture.configureFromExistingVirtualFile(omittedDomainFile.getVirtualFile());
+        var coreOnlyDomainHighlights = myFixture.doHighlighting();
+        var coreW002 = coreOnlyDomainHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .toList();
+        var coreDomainBodyErr = coreOnlyDomainHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected 1 upstream W002 warning without local inspections: " + coreW002, 1, coreW002.size());
+        assertEquals(4, coreW002.get(0).getStartOffset());
+        assertEquals(9, coreW002.get(0).getEndOffset());
+        assertEquals(":meta", coreW002.get(0).getText());
+        assertEquals("Expected 1 downstream :body E012 error without sibling cascade: " + coreDomainBodyErr, 1, coreDomainBodyErr.size());
+        assertEquals(204, coreDomainBodyErr.get(0).getStartOffset());
+        assertEquals(208, coreDomainBodyErr.get(0).getEndOffset());
+        assertEquals("5000", coreDomainBodyErr.get(0).getText());
+
+        var omittedKindCode = Files.readString(omittedKindPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        var omittedKindFile = myFixture.addFileToProject(
+            "syntax/invalid/metadata/meta_omitted_kind_with_body_error.core_test.stvn_i",
+            omittedKindCode
+        );
+        myFixture.configureFromExistingVirtualFile(omittedKindFile.getVirtualFile());
+        var coreOnlyKindHighlights = myFixture.doHighlighting();
+        var coreKindErrors = coreOnlyKindHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected exactly 2 upstream ERRORs (E031 on ':meta' + E012 on '5000'): " + coreKindErrors,
+            2, coreKindErrors.size());
+        assertTrue("Expected upstream E031 pinned directly to [4, 9) ':meta': " + coreKindErrors,
+            coreKindErrors.stream().anyMatch(e -> e.getStartOffset() == 4 && e.getEndOffset() == 9
+                && ":meta".equals(e.getText())
+                && e.getDescription() != null
+                && e.getDescription().contains("Root ':meta' section requires #kind facet matching file extension '.stvn_i' (expected '#BODY_INCLUDE')")));
+        assertTrue("Expected downstream E012 pinned directly to [202, 206) '5000': " + coreKindErrors,
+            coreKindErrors.stream().anyMatch(e -> e.getStartOffset() == 202 && e.getEndOffset() == 206
+                && "5000".equals(e.getText())
+                && e.getDescription() != null
+                && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
     }
 }

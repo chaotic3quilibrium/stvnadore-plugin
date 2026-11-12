@@ -580,17 +580,6 @@ public final class StvnExternalAnnotator
                         range = new TextRange(s, s + 2);
                     }
                 }
-                if (DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META.equals(diagnosticId)
-                        || StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META.equals(diagnosticId)
-                        || ((DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH.equals(diagnosticId)
-                            || StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH.equals(diagnosticId))
-                            && rawMessage.contains("requires " + StvnVocabulary.FACET_KW_META_KIND))) {
-                    int kwLen = StvnVocabulary.KEYWORD_META.length();
-                    if (s >= 0 && s + kwLen <= textLength
-                            && StvnVocabulary.KEYWORD_META.equals(file.getText().substring(s, s + kwLen))) {
-                        range = new TextRange(s, s + kwLen);
-                    }
-                }
 
                 // Prevent IntelliJ HighlightInfoUpdater from dropping warnings whose range is identical to or inside an error range
                 if (severity.equals(HighlightSeverity.WARNING) || severity.equals(HighlightSeverity.WEAK_WARNING)) {

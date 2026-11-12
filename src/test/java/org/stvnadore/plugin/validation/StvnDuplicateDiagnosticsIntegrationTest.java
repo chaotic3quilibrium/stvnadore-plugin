@@ -5,13 +5,17 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * Platform integration test suite asserting zero duplicate diagnostic codes across overlapping
- * coordinate ranges when both annotators and all 25 registered local inspections run concurrently.
+ * coordinate ranges when both annotators and all 26 registered local inspections run concurrently.
  * <p>
  * Enforces the invariant: count(range, diagnosticCode) == 1.
  */
@@ -23,7 +27,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        // Enable all 25 registered STVN local inspections simultaneously
+        // Enable all 26 registered STVN local inspections simultaneously
         myFixture.enableInspections(
             new StvnVariantStyleInspection(),
             new StvnBooleanValidityInspection(),
@@ -49,7 +53,8 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             new StvnTabCharacterInspection(),
             new StvnMissingMetaInspection(),
             new StvnStemMismatchInspection(),
-            new StvnSuspiciousEpochMagnitudeInspection()
+            new StvnSuspiciousEpochMagnitudeInspection(),
+            new StvnFloatPrecisionLossInspection()
         );
     }
 
@@ -274,6 +279,46 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_RESERVED_PACKAGE_PROHIBITED"))
             .toList();
         assertEquals("Expected exactly 1 E037 ERR_RESERVED_PACKAGE_PROHIBITED highlight", 1, reservedPkgErrors.size());
+    }
+
+    /**
+     * Verifies that mirrored meta_omitted_domain_with_body_error and meta_omitted_kind_with_body_error
+     * deconflict cleanly across all enabled STVN local inspections with zero duplicate highlights,
+     * exact 5-char ':meta' [4, 9) pinning, and intact downstream ':body 5000' E012 validation.
+     */
+    public void testOmittedDomainAndOmittedKindInMetaDeconflictCleanlyWithBodyError() throws IOException {
+        var metadataDir = Paths.get("src", "test", "resources", "shared-fixtures", "syntax", "invalid", "metadata");
+        var omittedDomainPath = metadataDir.resolve("meta_omitted_domain_with_body_error.core_test.stvn_i");
+        var omittedKindPath = metadataDir.resolve("meta_omitted_kind_with_body_error.core_test.stvn_i");
+        assertTrue("Mirrored omitted-domain fixture must exist: " + omittedDomainPath, Files.isRegularFile(omittedDomainPath));
+        assertTrue("Mirrored omitted-kind fixture must exist: " + omittedKindPath, Files.isRegularFile(omittedKindPath));
+
+        var omittedDomain = Files.readString(omittedDomainPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        myFixture.configureByText("meta_omitted_domain_with_body_error.core_test.stvn_i", omittedDomain);
+        var domainHighlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("meta_omitted_domain_with_body_error.core_test.stvn_i", domainHighlights);
+        assertNoCoreHighlight("meta_omitted_domain_with_body_error.core_test.stvn_i", domainHighlights, "WARN_DOCUMENT_DOMAIN_OMITTED_IN_META");
+        assertEquals(1, domainHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING && h.getStartOffset() == 4 && h.getEndOffset() == 9)
+            .count());
+        assertEquals(1, domainHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == 204 && h.getEndOffset() == 208)
+            .count());
+
+        var omittedKind = Files.readString(omittedKindPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        myFixture.configureByText("meta_omitted_kind_with_body_error.core_test.stvn_i", omittedKind);
+        var kindHighlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("meta_omitted_kind_with_body_error.core_test.stvn_i", kindHighlights);
+        assertNoCoreHighlight("meta_omitted_kind_with_body_error.core_test.stvn_i", kindHighlights, "ERR_DOCUMENT_KIND_MISMATCH");
+        var metaErrors = kindHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == 4 && h.getEndOffset() == 9)
+            .toList();
+        assertEquals(1, metaErrors.size());
+        assertTrue(metaErrors.get(0).getDescription().contains(
+            "Root ':meta' section requires #kind facet matching file extension '.stvn_i' (expected '#BODY_INCLUDE')"));
+        assertEquals(1, kindHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == 202 && h.getEndOffset() == 206)
+            .count());
     }
 
     /**

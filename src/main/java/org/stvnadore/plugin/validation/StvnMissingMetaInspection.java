@@ -25,14 +25,11 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
-import org.stvnadore.psi.BodyEntry;
-import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.MetaBlock;
+import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
-import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.StvnTypes;
-import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Visitor;
 
 /**
@@ -151,11 +148,13 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 if (!StvnMetaTemplateUtil.isMetaExtensionMandatory(fileName)) return;
 
                 var kindFacet = PsiTreeUtil.findChildOfType(metaEntry, MetaKindFacet.class);
-                if (kindFacet == null) {
+                if (kindFacet == null && !containsInFlightFacetTag(metaBlock, StvnVocabulary.FACET_KW_META_KIND)) {
+                    String ext = StvnMetaTemplateUtil.resolveFileExtensionOrDefault(fileName, "");
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
                     String message = StvnDiagnosticFormatter.formatPlugin(
-                        "Root " + StvnVocabulary.KEYWORD_META + " block requires "
-                            + StvnVocabulary.FACET_KW_META_KIND + " facet matching file extension",
+                        "Root '" + StvnVocabulary.KEYWORD_META + "' section requires "
+                            + StvnVocabulary.FACET_KW_META_KIND + " facet matching file extension '" + ext
+                            + "' (expected '" + expectedKind + "')",
                         StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                     );
                     ASTNode kwMetaNode = metaEntry.getNode().findChildByType(StvnTypes.KW_META);
@@ -193,12 +192,20 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
                 if (expected != null) {
                     var kindValue = facet.getMetaKindValue();
-                    String actual = kindValue != null ? kindValue.getText().trim() : "";
+                    if (kindValue == null) {
+                        return;
+                    }
+                    String actual = kindValue.getText().trim();
                     if (!expected.equals(actual)) {
                         if (facet.getTextRange() != null && !facet.getTextRange().isEmpty()) {
+                            String ext = StvnMetaTemplateUtil.resolveFileExtensionOrDefault(fileName, "");
                             holder.registerProblem(
                                 facet,
-                                StvnDiagnosticFormatter.formatPlugin("Document kind mismatch: expected " + expected + " for file extension", StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH),
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Document kind '" + actual + "' does not match file extension '" + ext
+                                        + "' (expected '" + expected + "')",
+                                    StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
+                                ),
                                 ProblemHighlightType.GENERIC_ERROR,
                                 new UpdateMetaKindQuickFix(expected)
                             );
@@ -207,6 +214,32 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    private static boolean containsInFlightFacetTag(@NotNull MetaBlock metaBlock, @NotNull String tagText) {
+        for (MetaElement element : metaBlock.getMetaElementList()) {
+            var unknownFacet = element.getMetaUnknownFacet();
+            if (unknownFacet != null && tagText.equals(unknownFacet.getValueKeyword().getText().trim())) {
+                return true;
+            }
+        }
+        for (PsiElement child = metaBlock.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (hasExactFacetTagPrefix(child.getText().trim(), tagText)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasExactFacetTagPrefix(@NotNull String text, @NotNull String tagText) {
+        if (!text.startsWith(tagText)) {
+            return false;
+        }
+        if (text.length() == tagText.length()) {
+            return true;
+        }
+        char boundary = text.charAt(tagText.length());
+        return !Character.isLetterOrDigit(boundary) && boundary != '_';
     }
 
     @Override

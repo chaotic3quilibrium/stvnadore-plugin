@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 52 mirrored golden formatter quartet files
+ * Plugin-level Golden Formatter Conformance Suite verifying the 56 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
@@ -67,7 +67,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 13 mirrored golden formatter quartets", 13, inputNames.size());
+        assertEquals("Expected 14 mirrored golden formatter quartets", 14, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -218,7 +218,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "10_deep_recursive_nesting.core_fmt.stvn_i".equals(fileName)
                         || "11_trailing_comment_alignment_and_facet_sorting.core_fmt.stvn_i".equals(fileName)
                         || "12_multiline_parameterized_constructors_depth_fifteen.core_fmt.stvn_i".equals(fileName)
-                        || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)) {
+                        || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)
+                        || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }

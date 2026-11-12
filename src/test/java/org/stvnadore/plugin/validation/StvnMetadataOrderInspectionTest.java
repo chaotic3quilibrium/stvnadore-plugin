@@ -5,6 +5,7 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnSyntaxHighlighterColors;
+import org.stvnadore.plugin.settings.StvnSettings;
 
 /**
  * Platform integration test suite validating {@link StvnMetadataOrderInspection}
@@ -472,11 +473,27 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         String reorderedViaQuickFix = myFixture.getFile().getText();
         assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaQuickFix, true);
 
-        myFixture.configureByText("gauntlet_v6_stage1_reformat.core_test.stvn_i", text);
-        new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
-        com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
-        String reorderedViaReformat = myFixture.getFile().getText();
-        assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaReformat, false);
+        var settings = StvnSettings.getInstance(getProject());
+        var prevMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            myFixture.configureByText("gauntlet_v6_stage1_reformat_core.core_test.stvn_i", text);
+            new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
+            com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+            String reorderedViaCoreReformat = myFixture.getFile().getText();
+            assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaCoreReformat, true);
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            myFixture.configureByText("gauntlet_v6_stage1_reformat_psi.core_test.stvn_i", text);
+            new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
+            com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+            String reorderedViaPsiReformat = myFixture.getFile().getText();
+            assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaPsiReformat, true);
+            assertEquals("CORE_SOURCE_FORMATTER and PSI_STRUCTURE_PRESERVING must preserve blank lines identically",
+                reorderedViaCoreReformat, reorderedViaPsiReformat);
+        } finally {
+            settings.getState().reformatDelegationMode = prevMode;
+        }
     }
 
     private static void assertAllStage1MetaCommentsAndOrderPreserved(String actual, boolean expectBlankLinesPreserved) {
@@ -589,5 +606,62 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         );
         assertFalse("Closing '}' of MetadataMap must never collapse onto footer '//' comment line:\n" + actual,
             actual.contains("// Footer note inside MetadataMap }") || actual.contains("// Footer note inside MetadataMap}"));
+    }
+
+    public void testConsecutiveCommentsAndEnclosureTopBlankLineNeverFabricateSpuriousBlankLines() {
+        var text = """
+            {
+              :meta {
+
+                // kind line 1
+                // kind line 2
+                #kind #BODY_INCLUDE
+                // domain line 1
+                // domain line 2
+                #domain "core_fmt"
+                // name line 1
+                #name "consecutive_comment_guard"
+              }
+              :defs {
+                :BoundedChannel {
+
+                  // ceiling line 1
+                  // ceiling line 2
+                  #maxExcl 5000
+                  // floor line 1
+                  // floor line 2
+                  #minIncl 10
+                  #unsigned
+                } :Int
+              }
+              :type :BoundedChannel
+              :body 42
+            }
+            """;
+        myFixture.configureByText("consecutive_comment_guard.core_fmt.stvn_i", text);
+        myFixture.doHighlighting();
+
+        myFixture.getEditor().getCaretModel().moveToOffset(text.indexOf("#name \"consecutive_comment_guard\""));
+        var metaActions = myFixture.filterAvailableIntentions("Reorder ':meta' entries to canonical order (#name, #domain, #kind)");
+        assertEquals(1, metaActions.size());
+        myFixture.launchAction(metaActions.get(0));
+
+        String afterMetaFix = myFixture.getFile().getText();
+        myFixture.getEditor().getCaretModel().moveToOffset(afterMetaFix.indexOf("#unsigned"));
+        var facetActions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
+        assertEquals(1, facetActions.size());
+        myFixture.launchAction(facetActions.get(0));
+
+        String result = myFixture.getFile().getText();
+        assertFalse("Consecutive '//' comments and enclosure-top blank line must never fabricate blank lines in :meta or MetadataMap:\n" + result,
+            result.contains("\n\n"));
+        assertTrue(result.contains("    // domain line 1\n    // domain line 2\n    #domain \"core_fmt\""));
+        assertTrue(result.contains("    // kind line 1\n    // kind line 2\n    #kind #BODY_INCLUDE"));
+        assertTrue(result.contains("      // floor line 1\n      // floor line 2\n      #minIncl 10"));
+        assertTrue(result.contains("      // ceiling line 1\n      // ceiling line 2\n      #maxExcl 5000"));
+
+        var postHighlights = myFixture.doHighlighting();
+        assertTrue("Reordered document must have zero ERROR highlights: " + postHighlights,
+            postHighlights.stream().noneMatch(h -> h.getSeverity() == HighlightSeverity.ERROR));
     }
 }
