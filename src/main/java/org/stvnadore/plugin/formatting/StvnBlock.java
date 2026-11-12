@@ -379,7 +379,7 @@ public final class StvnBlock implements ASTBlock {
             if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT || t1 == StvnTypes.RBRACK) && t2 == StvnTypes.COMMENT) {
                 return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
-            if (t1 == StvnTypes.COMMENT && (t2 == StvnTypes.DEFS_ELEMENT || t2 == StvnTypes.PACKAGE_ELEMENT || t2 == StvnTypes.META_ELEMENT || t2 == StvnTypes.LBRACK)) {
+            if (t1 == StvnTypes.COMMENT) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
             IElementType parentType = node.getElementType();

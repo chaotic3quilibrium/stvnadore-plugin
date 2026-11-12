@@ -2870,8 +2870,14 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 && e.getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION")));
 
         myFixture.getEditor().getCaretModel().moveToOffset(offset750 + 1);
-        var exemplarFixes = myFixture.filterAvailableIntentions("Replace with exemplar value '1000'");
-        assertFalse("Expected \"Replace with exemplar value '1000'\" quick-fix on 750", exemplarFixes.isEmpty());
+        var minClampFixes = myFixture.filterAvailableIntentions("Clamp value to minimum bound '1000'");
+        assertFalse("Expected \"Clamp value to minimum bound '1000'\" quick-fix on 750", minClampFixes.isEmpty());
+        var maxClampFixes = myFixture.filterAvailableIntentions("Clamp value to maximum bound '1999'");
+        assertFalse("Expected \"Clamp value to maximum bound '1999'\" quick-fix on 750", maxClampFixes.isEmpty());
+        assertTrue(
+            "Duplicate \"Replace with exemplar value '1000'\" must be suppressed when '1000' clamp is already offered",
+            myFixture.filterAvailableIntentions("Replace with exemplar value '1000'").isEmpty()
+        );
 
         var docProvider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
         int strictDefOffset = code.indexOf(":StrictClusterId");

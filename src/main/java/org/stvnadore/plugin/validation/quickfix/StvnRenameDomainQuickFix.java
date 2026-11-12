@@ -1,7 +1,11 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -9,6 +13,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -27,11 +32,12 @@ import java.util.List;
  * the reserved domain segment with a compliant user domain placeholder ('domain').
  */
 @NullMarked
-public final class StvnRenameDomainQuickFix implements IntentionAction, PriorityAction {
+public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
 
     private static final Logger LOG = Logger.getInstance(StvnRenameDomainQuickFix.class);
     private static final String DEFAULT_USER_DOMAIN = "domain";
 
+    @SafeFieldForPreview
     private final String targetFileName;
 
     public StvnRenameDomainQuickFix(String targetFileName) {
@@ -65,6 +71,11 @@ public final class StvnRenameDomainQuickFix implements IntentionAction, Priority
     }
 
     @Override
+    public @NotNull String getName() {
+        return getText();
+    }
+
+    @Override
     public @NotNull String getFamilyName() {
         return "STVN Document Identity";
     }
@@ -82,6 +93,47 @@ public final class StvnRenameDomainQuickFix implements IntentionAction, Priority
         if (file.getName().equals(targetFileName)) return false;
         VirtualFile parent = vFile.getParent();
         return parent == null || parent.findChild(targetFileName) == null;
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        return renamePreview(file, targetFileName);
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull ProblemDescriptor previewDescriptor
+    ) {
+        PsiElement element = previewDescriptor.getPsiElement();
+        return renamePreview(element != null ? element.getContainingFile() : null, targetFileName);
+    }
+
+    private static @NotNull IntentionPreviewInfo renamePreview(@Nullable PsiFile file, String targetFileName) {
+        if (file == null) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        VirtualFile vFile = file.getOriginalFile().getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getVirtualFile();
+        }
+        return vFile != null ? IntentionPreviewInfo.rename(vFile, targetFileName) : IntentionPreviewInfo.EMPTY;
+    }
+
+    @Override
+    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+        PsiElement element = descriptor.getPsiElement();
+        if (element == null) {
+            return;
+        }
+        PsiFile file = element.getContainingFile();
+        if (file != null) {
+            invoke(project, null, file);
+        }
     }
 
     @Override

@@ -1,14 +1,20 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
@@ -16,6 +22,8 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -103,8 +111,10 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     String slot0 = dotParts[0];
                     String slot1 = dotParts[1];
                     if (!slot1.startsWith(RESERVED_DOMAIN_PREFIX)) {
+                        ASTNode kwMetaNode = entry.getNode().findChildByType(StvnTypes.KW_META);
+                        PsiElement kwMetaAnchor = kwMetaNode != null ? kwMetaNode.getPsi() : entry;
                         holder.registerProblem(
-                            entry,
+                            kwMetaAnchor,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Filename stem slot 1 declares domain '" + slot1 + "', but "
                                     + StvnVocabulary.KEYWORD_META + " omits "
@@ -145,7 +155,7 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     boolean isValidPosixName = POSIX_META_ID_PATTERN.matcher(declared).matches();
                     boolean hasReservedSlot1 = dotParts.length >= 2 && dotParts[1].startsWith(RESERVED_DOMAIN_PREFIX);
                     List<LocalQuickFix> fixes = new ArrayList<>();
-                    fixes.add(new AlignStemNameQuickFix(stem));
+                    fixes.add(new AlignStemNameQuickFix(stringLit, stem));
                     if (isValidPosixName && !hasReservedSlot1) {
                         var targetFileName = declared;
                         for (int i = 1; i < dotParts.length; i++) {
@@ -154,15 +164,17 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                         targetFileName += ext;
                         fixes.add(new RenameFileToDeclaredNameQuickFix(stringLit, targetFileName));
                     }
-                    PsiElement warnAnchor = resolveWarningAnchor(file, stringLit, facet, ! isValidPosixName);
-                    holder.registerProblem(
-                        warnAnchor,
+                    registerFacetIsolatedWarning(
+                        holder,
+                        file,
+                        facet,
+                        stringLit,
+                        !isValidPosixName,
                         StvnDiagnosticFormatter.formatPlugin(
                             "Declared " + StvnVocabulary.FACET_KW_META_NAME + " '" + declared
                                 + "' does not match filename stem slot 0 '" + stem + "'",
                             StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH
                         ),
-                        ProblemHighlightType.WARNING,
                         fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
                     );
                 }
@@ -191,15 +203,18 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 boolean isSystemFile = isSystemPreludeOrSubstrateFile(file);
                 boolean isReservedDomain = declared.startsWith(RESERVED_DOMAIN_PREFIX);
                 boolean isValidPosixDomain = POSIX_META_ID_PATTERN.matcher(declared).matches();
-                boolean hasErrorOnStringLit = (isReservedDomain && !isSystemFile) || !isValidPosixDomain;
+                boolean emitReservedDomainError = isReservedDomain && !isSystemFile;
+                boolean hasErrorOnStringLit = emitReservedDomainError || !isValidPosixDomain;
 
-                if (isReservedDomain && !isSystemFile) {
+                if (emitReservedDomainError) {
                     List<LocalQuickFix> e038Fixes = new ArrayList<>();
                     if (dotParts.length >= 2 && !dotParts[1].isEmpty() && !dotParts[1].startsWith(RESERVED_DOMAIN_PREFIX)) {
-                        e038Fixes.add(new AlignDomainWithStemQuickFix(dotParts[1]));
+                        e038Fixes.add(new AlignDomainWithStemQuickFix(stringLit, dotParts[1], false));
                     }
-                    e038Fixes.add(new RemoveMetaDomainQuickFix(facet));
                     e038Fixes.add(new StvnChangeReservedDomainQuickFix(stringLit));
+                    if (dotParts.length == 1) {
+                        e038Fixes.add(new RemoveMetaDomainQuickFix(facet));
+                    }
                     holder.registerProblem(
                         stringLit,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -213,26 +228,29 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     );
                 }
 
-                PsiElement warnAnchor = resolveWarningAnchor(file, stringLit, facet, hasErrorOnStringLit);
                 if (dotParts.length == 1) {
                     var targetFileName = dotParts[0] + "." + declared + ext;
-                    LocalQuickFix[] fixes = (!isReservedDomain && isValidPosixDomain)
-                        ? new LocalQuickFix[]{
-                            new IncludeDomainInFilenameQuickFix(stringLit, targetFileName),
-                            new RemoveMetaDomainQuickFix(facet)
+                    List<LocalQuickFix> fixes = new ArrayList<>();
+                    if (!emitReservedDomainError) {
+                        if (!isReservedDomain && isValidPosixDomain) {
+                            fixes.add(new IncludeDomainInFilenameQuickFix(stringLit, targetFileName));
                         }
-                        : new LocalQuickFix[]{
-                            new RemoveMetaDomainQuickFix(facet)
-                        };
-                    holder.registerProblem(
-                        warnAnchor,
+                        fixes.add(new RemoveMetaDomainQuickFix(facet));
+                    } else {
+                        fixes.add(new RemoveMetaDomainQuickFix(facet, true, stringLit));
+                    }
+                    registerFacetIsolatedWarning(
+                        holder,
+                        file,
+                        facet,
+                        stringLit,
+                        hasErrorOnStringLit,
                         StvnDiagnosticFormatter.formatPlugin(
                             "Declared " + StvnVocabulary.FACET_KW_META_DOMAIN + " '" + declared
                                 + "' is omitted from filename stem slot 1",
                             StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME
                         ),
-                        ProblemHighlightType.WARNING,
-                        fixes
+                        fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
                     );
                 } else {
                     var stemDomain = dotParts[1];
@@ -244,20 +262,22 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                         targetFileName += ext;
                         List<LocalQuickFix> fixes = new ArrayList<>();
                         if (!stemDomain.isEmpty() && !stemDomain.startsWith(RESERVED_DOMAIN_PREFIX)) {
-                            fixes.add(new AlignDomainWithStemQuickFix(stemDomain));
+                            fixes.add(new AlignDomainWithStemQuickFix(stringLit, stemDomain, emitReservedDomainError));
                         }
                         if (!isReservedDomain && isValidPosixDomain) {
                             fixes.add(new IncludeDomainInFilenameQuickFix(stringLit, targetFileName));
                         }
-                        fixes.add(new RemoveMetaDomainQuickFix(facet));
-                        holder.registerProblem(
-                            warnAnchor,
+                        registerFacetIsolatedWarning(
+                            holder,
+                            file,
+                            facet,
+                            stringLit,
+                            hasErrorOnStringLit,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Declared " + StvnVocabulary.FACET_KW_META_DOMAIN + " '" + declared
                                     + "' does not match filename stem slot 1 '" + stemDomain + "'",
                                 StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH
                             ),
-                            ProblemHighlightType.WARNING,
                             fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
                         );
                     }
@@ -266,20 +286,59 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
         };
     }
 
-    private static PsiElement resolveWarningAnchor(
+    /**
+     * Registers a facet-scoped warning strictly isolated to {@code stringLit} or {@code facet} on a single line.
+     * When {@code StvnMetadataOrderInspection} emits an active {@code E008} error across the enclosing
+     * {@link MetaElement}, expands the warning sub-range by a single adjacent horizontal whitespace character
+     * inside {@link MetaBlock} so IntelliJ {@code HighlightInfoUpdaterImpl.removeWarningsInsideErrors} retains
+     * the warning without highlighting {@code MetaBlock}, comments, or sibling facets.
+     */
+    private static void registerFacetIsolatedWarning(
+            @NotNull ProblemsHolder holder,
             @NotNull PsiFile file,
-            @NotNull StringLiteral stringLit,
             @NotNull PsiElement facet,
-            boolean hasErrorOnStringLit
+            @NotNull StringLiteral stringLit,
+            boolean hasErrorOnStringLit,
+            @NotNull String message,
+            LocalQuickFix @NotNull [] fixes
     ) {
         MetaElement metaEl = PsiTreeUtil.getParentOfType(facet, MetaElement.class, false);
         MetaBlock metaBlock = PsiTreeUtil.getParentOfType(facet, MetaBlock.class, false);
         if (metaEl != null && metaBlock != null
                 && isMetaElementOutOfOrder(metaBlock, metaEl)
                 && StvnDiagnosticAnnotatorMapping.isInspectionActive(file, "StvnMetadataOrder")) {
-            return metaBlock;
+            TextRange blockRange = metaBlock.getTextRange();
+            TextRange facetRange = facet.getTextRange();
+            if (blockRange != null && facetRange != null) {
+                CharSequence docChars = file.getViewProvider().getContents();
+                int wStart = facetRange.getStartOffset();
+                int wEnd = facetRange.getEndOffset();
+                if (wStart > blockRange.getStartOffset() + 1
+                        && (docChars.charAt(wStart - 1) == ' ' || docChars.charAt(wStart - 1) == '\t')) {
+                    wStart--;
+                } else if (wEnd < blockRange.getEndOffset() - 1
+                        && (docChars.charAt(wEnd) == ' ' || docChars.charAt(wEnd) == '\t')) {
+                    wEnd++;
+                } else if (wStart > blockRange.getStartOffset() + 1) {
+                    wStart--;
+                }
+                TextRange relRange = new TextRange(
+                    wStart - blockRange.getStartOffset(),
+                    wEnd - blockRange.getStartOffset()
+                );
+                holder.registerProblem(holder.getManager().createProblemDescriptor(
+                    metaBlock,
+                    relRange,
+                    message,
+                    ProblemHighlightType.WARNING,
+                    holder.isOnTheFly(),
+                    fixes
+                ));
+                return;
+            }
         }
-        return hasErrorOnStringLit ? facet : stringLit;
+        PsiElement anchor = hasErrorOnStringLit ? facet : stringLit;
+        holder.registerProblem(anchor, message, ProblemHighlightType.WARNING, fixes);
     }
 
     private static boolean isMetaElementOutOfOrder(@NotNull MetaBlock metaBlock, @NotNull MetaElement target) {
@@ -346,40 +405,71 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix updating #domain string literal to match the filename stem slot 1.
+     * Updates the {@code #domain} string literal to match filename stem slot 1.
      */
-    public static final class AlignDomainWithStemQuickFix implements LocalQuickFix {
+    public static final class AlignDomainWithStemQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
         private final String stemDomain;
+        @SafeFieldForPreview
+        private final boolean suppressInsideLiteralWhenReserved;
 
-        public AlignDomainWithStemQuickFix(String stemDomain) {
+        public AlignDomainWithStemQuickFix(
+                @NotNull PsiElement stringLit,
+                String stemDomain,
+                boolean suppressInsideLiteralWhenReserved
+        ) {
+            super(stringLit);
             this.stemDomain = stemDomain;
+            this.suppressInsideLiteralWhenReserved = suppressInsideLiteralWhenReserved;
         }
 
         @Override
-        public @NotNull String getName() {
-            return "Align " + StvnVocabulary.FACET_KW_META_DOMAIN + " with filename stem slot 1 ('" + stemDomain + "')";
+        public @NotNull String getText() {
+            return "Align '" + StvnVocabulary.FACET_KW_META_DOMAIN + "' with filename stem slot 1 ('" + stemDomain + "')";
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Align #domain with filename stem slot 1";
+            return "Align '" + StvnVocabulary.FACET_KW_META_DOMAIN + "' with filename stem slot 1";
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            PsiElement element = descriptor.getPsiElement();
-            if (element == null) return;
-            if (!(element instanceof StringLiteral)) {
-                MetaDomainFacet domainFacet = element instanceof MetaDomainFacet mdf
-                    ? mdf
-                    : PsiTreeUtil.findChildOfType(element, MetaDomainFacet.class);
-                if (domainFacet != null && domainFacet.getStringLiteral() != null) {
-                    element = domainFacet.getStringLiteral();
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public boolean isAvailable(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            if (!startElement.isValid()) {
+                return false;
+            }
+            if (suppressInsideLiteralWhenReserved && editor != null) {
+                TextRange litRange = startElement.getTextRange();
+                if (litRange != null && litRange.containsOffset(editor.getCaretModel().getOffset())) {
+                    return false;
                 }
             }
-            Document doc = PsiDocumentManager.getInstance(project).getDocument(element.getContainingFile());
+            return true;
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc != null) {
-                var range = element.getTextRange();
+                var range = startElement.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), "\"" + stemDomain + "\"");
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
             }
@@ -387,21 +477,28 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix stripping the reserved 'stvn_' prefix from a #domain string literal.
+     * Removes the reserved {@code stvn_} prefix from a {@code #domain} string literal.
      */
-    public static final class StvnChangeReservedDomainQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+    public static final class StvnChangeReservedDomainQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
         public StvnChangeReservedDomainQuickFix(@NotNull PsiElement element) {
             super(element);
         }
 
         @Override
         public @NotNull String getText() {
-            return "Remove reserved 'stvn_' prefix from " + StvnVocabulary.FACET_KW_META_DOMAIN;
+            return "Remove reserved '" + RESERVED_DOMAIN_PREFIX + "' prefix from '"
+                + StvnVocabulary.FACET_KW_META_DOMAIN + "'";
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Remove reserved 'stvn_' prefix from #domain";
+            return getText();
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.HIGH;
         }
 
         @Override
@@ -434,35 +531,50 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix updating #name string literal to match the file stem.
+     * Updates the {@code #name} string literal to match filename stem slot 0.
      */
-    public static final class AlignStemNameQuickFix implements LocalQuickFix {
+    public static final class AlignStemNameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
         private final String stem;
 
-        public AlignStemNameQuickFix(String stem) {
+        public AlignStemNameQuickFix(@NotNull PsiElement stringLit, String stem) {
+            super(stringLit);
             this.stem = stem;
         }
 
         @Override
-        public @NotNull String getFamilyName() {
-            return "Align #name with file stem";
+        public @NotNull String getText() {
+            return "Align '" + StvnVocabulary.FACET_KW_META_NAME + "' with filename stem slot 0 ('" + stem + "')";
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            PsiElement element = descriptor.getPsiElement();
-            if (element == null) return;
-            if (!(element instanceof StringLiteral)) {
-                MetaNameFacet nameFacet = element instanceof MetaNameFacet mnf
-                    ? mnf
-                    : PsiTreeUtil.findChildOfType(element, MetaNameFacet.class);
-                if (nameFacet != null && nameFacet.getStringLiteral() != null) {
-                    element = nameFacet.getStringLiteral();
-                }
-            }
-            Document doc = PsiDocumentManager.getInstance(project).getDocument(element.getContainingFile());
+        public @NotNull String getFamilyName() {
+            return "Align '" + StvnVocabulary.FACET_KW_META_NAME + "' with filename stem slot 0";
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public boolean isAvailable(@NotNull Project project,
+                                   @NotNull PsiFile file,
+                                   @NotNull PsiElement startElement,
+                                   @NotNull PsiElement endElement) {
+            return startElement.isValid();
+        }
+
+        @Override
+        public void invoke(@NotNull Project project,
+                           @NotNull PsiFile file,
+                           @Nullable Editor editor,
+                           @NotNull PsiElement startElement,
+                           @NotNull PsiElement endElement) {
+            Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc != null) {
-                var range = element.getTextRange();
+                var range = startElement.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), "\"" + stem + "\"");
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
             }
@@ -470,9 +582,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix renaming the active file to match declared #name in filename stem slot 0.
+     * Renames the active file to match declared {@code #name} in filename stem slot 0.
      */
-    public static final class RenameFileToDeclaredNameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+    public static final class RenameFileToDeclaredNameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
         private final String targetFileName;
 
         public RenameFileToDeclaredNameQuickFix(@NotNull PsiElement element, String targetFileName) {
@@ -487,7 +601,30 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Rename file to match declared #name";
+            return "Rename file to match declared " + StvnVocabulary.FACET_KW_META_NAME;
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.HIGH;
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull Editor editor,
+                @NotNull PsiFile file
+        ) {
+            return renamePreview(file, targetFileName);
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull ProblemDescriptor previewDescriptor
+        ) {
+            PsiElement element = previewDescriptor.getPsiElement();
+            return renamePreview(element != null ? element.getContainingFile() : null, targetFileName);
         }
 
         @Override
@@ -512,9 +649,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix renaming the active file to include the declared domain in filename stem slot 1.
+     * Renames the active file to include the declared domain in filename stem slot 1.
      */
-    public static final class IncludeDomainInFilenameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+    public static final class IncludeDomainInFilenameQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
         private final String targetFileName;
 
         public IncludeDomainInFilenameQuickFix(@NotNull PsiElement element, String targetFileName) {
@@ -533,6 +672,29 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
         }
 
         @Override
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull Editor editor,
+                @NotNull PsiFile file
+        ) {
+            return renamePreview(file, targetFileName);
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull ProblemDescriptor previewDescriptor
+        ) {
+            PsiElement element = previewDescriptor.getPsiElement();
+            return renamePreview(element != null ? element.getContainingFile() : null, targetFileName);
+        }
+
+        @Override
         public boolean isAvailable(@NotNull Project project,
                                    @NotNull PsiFile file,
                                    @NotNull PsiElement startElement,
@@ -554,29 +716,65 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix removing the optional #domain facet from the root :meta block.
+     * Removes the {@code #domain} facet from the root {@code :meta} block on 1-stem documents.
      */
-    public static final class RemoveMetaDomainQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+    public static final class RemoveMetaDomainQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
+        private final boolean suppressInsideLiteralWhenReserved;
+        @SafeFieldForPreview
+        private final @Nullable SmartPsiElementPointer<PsiElement> literalPointer;
+
         public RemoveMetaDomainQuickFix(@NotNull PsiElement element) {
+            this(element, false, null);
+        }
+
+        public RemoveMetaDomainQuickFix(
+                @NotNull PsiElement element,
+                boolean suppressInsideLiteralWhenReserved,
+                @Nullable PsiElement stringLit
+        ) {
             super(element);
+            this.suppressInsideLiteralWhenReserved = suppressInsideLiteralWhenReserved;
+            this.literalPointer = stringLit != null && stringLit.isValid()
+                ? SmartPointerManager.getInstance(stringLit.getProject()).createSmartPsiElementPointer(stringLit)
+                : null;
         }
 
         @Override
         public @NotNull String getText() {
-            return "Remove optional #domain attribute";
+            return "Remove '" + StvnVocabulary.FACET_KW_META_DOMAIN + "' facet";
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Remove optional #domain attribute";
+            return getText();
         }
 
         @Override
-        public boolean isAvailable(@NotNull Project project,
-                                   @NotNull PsiFile file,
-                                   @NotNull PsiElement startElement,
-                                   @NotNull PsiElement endElement) {
-            return startElement.isValid();
+        public @NotNull Priority getPriority() {
+            return Priority.NORMAL;
+        }
+
+        @Override
+        public boolean isAvailable(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            if (!startElement.isValid()) {
+                return false;
+            }
+            if (suppressInsideLiteralWhenReserved && editor != null && literalPointer != null) {
+                PsiElement lit = literalPointer.getElement();
+                if (lit != null && lit.getTextRange() != null
+                        && lit.getTextRange().containsOffset(editor.getCaretModel().getOffset())) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         @Override
@@ -609,10 +807,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Quick-fix inserting {@code #domain "<slot1>"} into {@code :meta} in canonical 3-tier order
+     * Inserts {@code #domain "<slot1>"} into {@code :meta} in canonical 3-tier order
      * (after {@code #name} if present, otherwise before {@code #kind}).
      */
-    public static final class InsertMetaDomainQuickFix implements LocalQuickFix {
+    public static final class InsertMetaDomainQuickFix implements LocalQuickFix, PriorityAction {
+        @SafeFieldForPreview
         private final String domainValue;
 
         public InsertMetaDomainQuickFix(String domainValue) {
@@ -626,7 +825,12 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Insert missing #domain facet in :meta";
+            return "Insert missing " + StvnVocabulary.FACET_KW_META_DOMAIN + " facet in " + StvnVocabulary.KEYWORD_META;
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
         }
 
         @Override
@@ -684,5 +888,16 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                 CodeStyleManager.getInstance(project).reformat(metaBlock);
             }
         }
+    }
+
+    private static @NotNull IntentionPreviewInfo renamePreview(@Nullable PsiFile file, String targetFileName) {
+        if (file == null) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        VirtualFile vFile = file.getOriginalFile().getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getVirtualFile();
+        }
+        return vFile != null ? IntentionPreviewInfo.rename(vFile, targetFileName) : IntentionPreviewInfo.EMPTY;
     }
 }

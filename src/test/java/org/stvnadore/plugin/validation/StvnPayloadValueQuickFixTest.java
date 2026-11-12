@@ -553,10 +553,10 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
             .filter(a -> !a.getText().startsWith("Open included module"))
             .toList();
         List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
-        assertTrue("Expected at least 3 quick-fixes on 500, found: " + labels, fixes.size() >= 3);
+        assertEquals("Expected 2 non-duplicate clamp quick-fixes on 500, found: " + labels, 2, fixes.size());
         assertEquals("Clamp value to minimum bound '1024'", fixes.get(0).getText());
         assertEquals("Clamp value to maximum bound '65535'", fixes.get(1).getText());
-        assertEquals("Replace with exemplar value '1024'", fixes.get(2).getText());
+        assertFalse("Exemplar duplicating minimum clamp '1024' must be suppressed", labels.contains("Replace with exemplar value '1024'"));
 
         myFixture.launchAction(fixes.get(0));
         assertTrue(myFixture.getEditor().getDocument().getText().contains(":body 1024"));
@@ -584,10 +584,10 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
 
         List<IntentionAction> belowFixes = myFixture.getAllQuickFixes();
         List<String> belowLabels = belowFixes.stream().map(IntentionAction::getText).toList();
-        assertTrue("Expected at least 3 quick-fixes on 512, found: " + belowLabels, belowFixes.size() >= 3);
+        assertEquals("Expected 2 proximity-ordered clamp quick-fixes on 512, found: " + belowLabels, 2, belowFixes.size());
         assertEquals("Clamp value to minimum bound '1024'", belowFixes.get(0).getText());
         assertEquals("Clamp value to maximum bound '4095'", belowFixes.get(1).getText());
-        assertEquals("Replace with exemplar value '1024'", belowFixes.get(2).getText());
+        assertFalse("Duplicate exemplar '1024' must be suppressed", belowLabels.contains("Replace with exemplar value '1024'"));
 
         var aboveMaxText = """
             {
@@ -610,10 +610,10 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
 
         List<IntentionAction> aboveFixes = myFixture.getAllQuickFixes();
         List<String> aboveLabels = aboveFixes.stream().map(IntentionAction::getText).toList();
-        assertTrue("Expected at least 3 quick-fixes on 8192, found: " + aboveLabels, aboveFixes.size() >= 3);
+        assertEquals("Expected 2 proximity-ordered clamp quick-fixes on 8192, found: " + aboveLabels, 2, aboveFixes.size());
         assertEquals("Clamp value to maximum bound '4095'", aboveFixes.get(0).getText());
         assertEquals("Clamp value to minimum bound '1024'", aboveFixes.get(1).getText());
-        assertEquals("Replace with exemplar value '1024'", aboveFixes.get(2).getText());
+        assertFalse("Duplicate exemplar '1024' must be suppressed", aboveLabels.contains("Replace with exemplar value '1024'"));
     }
 
     public void testTarget4UuidLowerCaseConvertCaseRandomUuidAndValidExemplar() {
@@ -797,6 +797,250 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
             "Guarded recursive schema " + alias + " must produce minimal finite exemplar",
             expectedExemplar,
             org.stvnadore.plugin.documentation.StvnExemplarValueGenerator.generateExemplar(td.getSchemaType(), ir)
+        );
+    }
+
+    public void testGauntletV6Stage3Slot12ExactDecimalCapacityOverflowPriorityAndZeroErrorCompilation() {
+        var template = """
+            {
+              :defs {
+                :PrecisionRate9 {
+                  #exact
+                  #maxSize 9
+                  #minIncl -1000.00000
+                  #maxExcl 1000.00000
+                } :Float
+              }
+              :type :PrecisionRate9
+              :body 1234.56<caret>7891
+            }
+            """;
+        myFixture.configureByText("stage3_slot12.stvn", template);
+        myFixture.doHighlighting();
+
+        List<String> labels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            "Slot 12 must offer [Round, Truncate, Clamp max, Clamp min, Exemplar] in exact priority order",
+            List.of(
+                "Round value to #maxSize 9 significant digits '1234.56789'",
+                "Truncate value to #maxSize 9 significant digits '1234.56789'",
+                "Clamp value to maximum bound '999.99999'",
+                "Clamp value to minimum bound '-1000.00000'",
+                "Replace with exemplar value '0.0'"
+            ),
+            labels
+        );
+
+        // Fixes [2], [3], and [4] resolve both #maxSize 9 and #maxExcl 1000.00000 in a single action!
+        assertQuickFixCompilesWithZeroErrors("stage3_slot12_max.stvn", template, "Clamp value to maximum bound '999.99999'");
+        assertQuickFixCompilesWithZeroErrors("stage3_slot12_min.stvn", template, "Clamp value to minimum bound '-1000.00000'");
+        assertQuickFixCompilesWithZeroErrors("stage3_slot12_ex.stvn", template, "Replace with exemplar value '0.0'");
+    }
+
+    public void testGauntletV6Stage3Slot13ExactDecimalMaxExclAndUnderflowProximityClampsCompileCleanly() {
+        var slot13Template = """
+            {
+              :defs {
+                :PrecisionRate9 {
+                  #exact
+                  #maxSize 9
+                  #minIncl -1000.00000
+                  #maxExcl 1000.00000
+                } :Float
+              }
+              :type :PrecisionRate9
+              :body 1000.00<caret>000
+            }
+            """;
+        myFixture.configureByText("stage3_slot13.stvn", slot13Template);
+        myFixture.doHighlighting();
+
+        List<String> slot13Labels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            "Slot 13 (#maxExcl 1000.00000) must step down by 1e-5 to '999.99999' ahead of '-1000.00000' and '0.0'",
+            List.of(
+                "Clamp value to maximum bound '999.99999'",
+                "Clamp value to minimum bound '-1000.00000'",
+                "Replace with exemplar value '0.0'"
+            ),
+            slot13Labels
+        );
+        assertQuickFixCompilesWithZeroErrors("stage3_slot13_max.stvn", slot13Template, "Clamp value to maximum bound '999.99999'");
+        assertQuickFixCompilesWithZeroErrors("stage3_slot13_min.stvn", slot13Template, "Clamp value to minimum bound '-1000.00000'");
+
+        var underflowTemplate = """
+            {
+              :defs {
+                :PrecisionRate9 {
+                  #exact
+                  #maxSize 9
+                  #minIncl -1000.00000
+                  #maxExcl 1000.00000
+                } :Float
+              }
+              :type :PrecisionRate9
+              :body -200<caret>0.0
+            }
+            """;
+        myFixture.configureByText("stage3_underflow.stvn", underflowTemplate);
+        myFixture.doHighlighting();
+
+        List<String> underflowLabels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            "Underflow (-2000.0) must rank minimum clamp '-1000.00000' (TOP) ahead of maximum clamp '999.99999' (HIGH)",
+            List.of(
+                "Clamp value to minimum bound '-1000.00000'",
+                "Clamp value to maximum bound '999.99999'",
+                "Replace with exemplar value '0.0'"
+            ),
+            underflowLabels
+        );
+        assertQuickFixCompilesWithZeroErrors("stage3_underflow_min.stvn", underflowTemplate, "Clamp value to minimum bound '-1000.00000'");
+        assertQuickFixCompilesWithZeroErrors("stage3_underflow_max.stvn", underflowTemplate, "Clamp value to maximum bound '999.99999'");
+    }
+
+    public void testGauntletV6Stage3Slot10OpenRatio32AndSlot11RawFloat32ClampsCompileCleanly() {
+        var slot10Template = """
+            {
+              :defs {
+                :OpenRatio32 {
+                  #size 32
+                  #minExcl -1.0
+                  #maxExcl 1.0
+                } :Float
+              }
+              :type :OpenRatio32
+              :body -1.<caret>0
+            }
+            """;
+        myFixture.configureByText("stage3_slot10.stvn", slot10Template);
+        myFixture.doHighlighting();
+
+        List<String> slot10Labels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            List.of(
+                "Clamp value to minimum bound '-0.9'",
+                "Clamp value to maximum bound '0.9'",
+                "Replace with exemplar value '0.0'"
+            ),
+            slot10Labels
+        );
+        assertQuickFixCompilesWithZeroErrors("stage3_slot10_min.stvn", slot10Template, "Clamp value to minimum bound '-0.9'");
+        assertQuickFixCompilesWithZeroErrors("stage3_slot10_max.stvn", slot10Template, "Clamp value to maximum bound '0.9'");
+
+        var slot11Template = """
+            {
+              :defs {
+                :RawFloat32 { #size 32 } :Float
+              }
+              :type :RawFloat32
+              :body 3.50<caret>e+38
+            }
+            """;
+        myFixture.configureByText("stage3_slot11.stvn", slot11Template);
+        myFixture.doHighlighting();
+
+        List<String> slot11Labels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            List.of(
+                "Clamp value to maximum bound '3.4028235e+38'",
+                "Clamp value to minimum bound '-3.4028235e+38'",
+                "Replace with exemplar value '0.0'"
+            ),
+            slot11Labels
+        );
+        assertQuickFixCompilesWithZeroErrors("stage3_slot11_max.stvn", slot11Template, "Clamp value to maximum bound '3.4028235e+38'");
+        assertQuickFixCompilesWithZeroErrors("stage3_slot11_min.stvn", slot11Template, "Clamp value to minimum bound '-3.4028235e+38'");
+    }
+
+    public void testNarrowOpenIntervalAndTightMaxSizeExactDecimalClampEdgeCases() {
+        var narrowTemplate = """
+            {
+              :defs {
+                :NarrowBand { #minExcl 0.0 #maxExcl 0.1 } :Float
+              }
+              :type :NarrowBand
+              :body 0.<caret>0
+            }
+            """;
+        myFixture.configureByText("narrow_band.stvn", narrowTemplate);
+        myFixture.doHighlighting();
+
+        List<String> narrowLabels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            "Narrow open interval (0.0, 0.1) must refine step scale to s=2 ('0.01' and '0.09') and suppress duplicate exemplar",
+            List.of(
+                "Clamp value to minimum bound '0.01'",
+                "Clamp value to maximum bound '0.09'"
+            ),
+            narrowLabels
+        );
+        assertQuickFixCompilesWithZeroErrors("narrow_band_min.stvn", narrowTemplate, "Clamp value to minimum bound '0.01'");
+        assertQuickFixCompilesWithZeroErrors("narrow_band_max.stvn", narrowTemplate, "Clamp value to maximum bound '0.09'");
+
+        var tightExactTemplate = """
+            {
+              :defs {
+                :TwoSigPercent { #exact #maxSize 2 #minIncl 0.0 #maxExcl 100.0 } :Float
+              }
+              :type :TwoSigPercent
+              :body 1.0<caret>e+2
+            }
+            """;
+        myFixture.configureByText("tight_exact.stvn", tightExactTemplate);
+        myFixture.doHighlighting();
+
+        List<String> tightLabels = myFixture.getAllQuickFixes().stream()
+            .map(IntentionAction::getText)
+            .toList();
+        assertEquals(
+            "Tight #maxSize 2 on #maxExcl 100.0 must format 99 as scientific '9.9e+1' (precision=2) and suppress duplicate '0.0' exemplar",
+            List.of(
+                "Clamp value to maximum bound '9.9e+1'",
+                "Clamp value to minimum bound '0.0'"
+            ),
+            tightLabels
+        );
+        assertQuickFixCompilesWithZeroErrors("tight_exact_max.stvn", tightExactTemplate, "Clamp value to maximum bound '9.9e+1'");
+        assertQuickFixCompilesWithZeroErrors("tight_exact_min.stvn", tightExactTemplate, "Clamp value to minimum bound '0.0'");
+    }
+
+    private void assertQuickFixCompilesWithZeroErrors(String fileName, String contentWithCaret, String targetFixLabel) {
+        myFixture.configureByText(fileName, contentWithCaret);
+        myFixture.doHighlighting();
+        IntentionAction fix = myFixture.getAllQuickFixes().stream()
+            .filter(a -> targetFixLabel.equals(a.getText()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Missing quick-fix: " + targetFixLabel));
+        String preview = myFixture.getIntentionPreviewText(fix);
+        assertNotNull("Intention Preview must render DIFF for: " + targetFixLabel, preview);
+        myFixture.launchAction(fix);
+
+        String updatedText = myFixture.getFile().getText();
+        var compileResult = org.stvnadore.core.StvnCompiler.compileToResult(
+            updatedText,
+            fileName,
+            org.stvnadore.core.StvnParserConfig.DEFAULT
+        );
+        var errors = compileResult.diagnostics().stream()
+            .filter(d -> d.severity() == org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR)
+            .toList();
+        assertTrue(
+            "Clamped document after '" + targetFixLabel + "' must compile with 0 errors, found: "
+                + errors + "\nUpdated text:\n" + updatedText,
+            errors.isEmpty()
         );
     }
 }

@@ -147,10 +147,10 @@ public final class StvnConstantRangeInspectionTest extends BasePlatformTestCase 
 
         List<IntentionAction> fixes = myFixture.getAllQuickFixes();
         List<String> labels = fixes.stream().map(IntentionAction::getText).toList();
-        assertTrue("Expected at least 3 quick-fixes on #ILLEGAL_DYNAMIC_PORT 512, found: " + labels, fixes.size() >= 3);
+        assertEquals("Expected 2 non-duplicate proximity clamp quick-fixes on #ILLEGAL_DYNAMIC_PORT 512, found: " + labels, 2, fixes.size());
         assertEquals("Clamp value to minimum bound '1024'", fixes.get(0).getText());
         assertEquals("Clamp value to maximum bound '4095'", fixes.get(1).getText());
-        assertEquals("Replace with exemplar value '1024'", fixes.get(2).getText());
+        assertFalse("Duplicate exemplar '1024' must be suppressed", labels.contains("Replace with exemplar value '1024'"));
 
         myFixture.launchAction(fixes.get(0));
         assertTrue(

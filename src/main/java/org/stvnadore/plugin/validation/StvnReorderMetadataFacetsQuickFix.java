@@ -1,6 +1,9 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.lang.ASTNode;
@@ -8,6 +11,8 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,13 +27,14 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Intention quick-fix that sorts metadata facets in a metadata map according to
- * the canonical 5-Tier Decimal Hierarchy (§ 6.1).
+ * Sorts metadata facets in a metadata map according to the canonical 5-Tier Decimal Hierarchy (§ 6.1)
+ * while preserving all leading, same-line trailing, and footer {@code //} comments.
  */
 @NullMarked
-public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, IntentionAction {
+public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
 
-    private final MetadataMap metadataMap;
+    @SafeFieldForPreview
+    private final SmartPsiElementPointer<MetadataMap> metadataMapPointer;
 
     /**
      * Constructs a reordering quick-fix for the specified metadata map.
@@ -36,7 +42,8 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
      * @param metadataMap the metadata map containing unordered facets
      */
     public StvnReorderMetadataFacetsQuickFix(MetadataMap metadataMap) {
-        this.metadataMap = metadataMap;
+        this.metadataMapPointer = SmartPointerManager.getInstance(metadataMap.getProject())
+            .createSmartPsiElementPointer(metadataMap);
     }
 
     @Override
@@ -50,15 +57,59 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
     }
 
     @Override
+    public @NotNull Priority getPriority() {
+        return Priority.NORMAL;
+    }
+
+    @Override
     public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        return metadataMap.isValid();
+        MetadataMap map = metadataMapPointer.getElement();
+        return map != null && map.isValid();
     }
 
     @Override
     public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        if (metadataMap.isValid()) {
-            reorderMetadataMap(project, metadataMap);
+        MetadataMap map = metadataMapPointer.getElement();
+        if (map != null && map.isValid()) {
+            reorderMetadataMap(project, map);
         }
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        MetadataMap original = metadataMapPointer.getElement();
+        if (original != null && original.isValid()) {
+            MetadataMap copyMap = PsiTreeUtil.findSameElementInCopy(original, file);
+            reorderMetadataMap(project, copyMap);
+            return IntentionPreviewInfo.DIFF;
+        }
+        PsiElement atCaret = file.findElementAt(editor.getCaretModel().getOffset());
+        MetadataMap copyAtCaret = PsiTreeUtil.getParentOfType(atCaret, MetadataMap.class, false);
+        if (copyAtCaret != null && copyAtCaret.isValid()) {
+            reorderMetadataMap(project, copyAtCaret);
+            return IntentionPreviewInfo.DIFF;
+        }
+        return IntentionPreviewInfo.EMPTY;
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull ProblemDescriptor previewDescriptor
+    ) {
+        PsiElement previewElement = previewDescriptor.getPsiElement();
+        MetadataMap copyMap = previewElement instanceof MetadataMap mm
+            ? mm
+            : PsiTreeUtil.getParentOfType(previewElement, MetadataMap.class, false);
+        if (copyMap == null || !copyMap.isValid()) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        reorderMetadataMap(project, copyMap);
+        return IntentionPreviewInfo.DIFF;
     }
 
     @Override
@@ -69,8 +120,11 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
         PsiElement targetElement = descriptor.getPsiElement();
-        MetadataMap targetMap = PsiTreeUtil.getParentOfType(targetElement, MetadataMap.class, false);
-        if (targetMap == null && metadataMap.isValid()) {
+        MetadataMap targetMap = targetElement instanceof MetadataMap mm
+            ? mm
+            : PsiTreeUtil.getParentOfType(targetElement, MetadataMap.class, false);
+        MetadataMap metadataMap = metadataMapPointer.getElement();
+        if (targetMap == null && metadataMap != null && metadataMap.isValid()) {
             targetMap = metadataMap;
         }
         if (targetMap != null && targetMap.isValid()) {
@@ -78,22 +132,16 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
         }
     }
 
-    private record FacetWithComment(
-        MetadataEntry entry,
-        int rank,
-        String entryText,
-        @Nullable String sameLineComment
-    ) {}
-
     /**
-     * Sorts the entries of the given metadata map in-place into the canonical 5-tier order.
+     * Sorts the entries of the given metadata map in-place into the canonical 5-tier order
+     * while preserving all leading, same-line trailing, and footer {@code //} comments.
      *
      * @param project the active project
      * @param map the metadata map to reorder
      */
     public static void reorderMetadataMap(@NotNull Project project, @NotNull MetadataMap map) {
         List<MetadataEntry> entries = map.getMetadataEntryList();
-        if (entries.size() <= 1) {
+        if (entries.size() <= 1 || PsiTreeUtil.hasErrorElements(map)) {
             return;
         }
 
@@ -103,46 +151,37 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
             }
         }
 
-        List<FacetWithComment> items = new ArrayList<>(entries.size());
-        boolean hasComments = map.getNode().findChildByType(StvnTypes.COMMENT) != null;
-        for (MetadataEntry entry : entries) {
-            String trailingComment = StvnReorderMetaEntriesQuickFix.extractSameLineTrailingComment(entry.getNode());
-            if (trailingComment != null) {
-                hasComments = true;
-            }
-            int rank = StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(entry));
-            items.add(new FacetWithComment(entry, rank, entry.getText().trim(), trailingComment));
+        var partitioned = StvnReorderMetaEntriesQuickFix.partitionBlockInterior(
+            map.getNode(),
+            StvnTypes.METADATA_ENTRY,
+            node -> node.getPsi() instanceof MetadataEntry entry
+                ? StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(entry))
+                : 5
+        );
+        if (partitioned.slices().size() <= 1 || StvnReorderMetaEntriesQuickFix.isAlreadySorted(partitioned.slices())) {
+            return;
         }
 
-        items.sort(Comparator.comparingInt(FacetWithComment::rank));
+        var sorted = new ArrayList<>(partitioned.slices());
+        sorted.sort(Comparator.comparingInt(StvnReorderMetaEntriesQuickFix.CommentedEntrySlice::rank)
+            .thenComparingInt(StvnReorderMetaEntriesQuickFix.CommentedEntrySlice::originalIndex));
 
         String rawMapText = map.getText();
-        boolean multiLine = rawMapText.indexOf('\n') >= 0 || hasComments;
+        boolean multiLine = rawMapText.indexOf('\n') >= 0 || partitioned.hasAnyComment();
         String baseIndent = StvnReorderMetaEntriesQuickFix.detectElementLineIndent(map, "    ");
         String entryIndent = StvnReorderMetaEntriesQuickFix.detectEntryIndent(rawMapText, baseIndent + "  ");
         String closingIndent = StvnReorderMetaEntriesQuickFix.detectClosingBraceIndent(rawMapText, baseIndent);
-        List<String> leadingComments = StvnReorderMetaEntriesQuickFix.extractStandaloneCommentsBeforeFirstEntry(map.getNode());
 
-        StringBuilder sb = new StringBuilder(multiLine ? "{\n" : "{");
-        if (multiLine) {
-            for (String leadComment : leadingComments) {
-                sb.append(entryIndent).append(leadComment).append("\n");
-            }
-        }
-        for (FacetWithComment item : items) {
-            if (multiLine) {
-                sb.append(entryIndent).append(item.entryText());
-                if (item.sameLineComment() != null) {
-                    sb.append(item.sameLineComment());
-                }
-                sb.append("\n");
-            } else {
-                sb.append(" ").append(item.entryText());
-            }
-        }
-        sb.append(multiLine ? closingIndent + "}" : " }");
-
-        MetadataMap newMap = StvnElementFactory.createMetadataMap(project, sb.toString());
+        String rebuiltText = StvnReorderMetaEntriesQuickFix.renderSortedBlockText(
+            partitioned.openBraceSameLineComment(),
+            sorted,
+            partitioned.footerComments(),
+            partitioned.footerHadBlankLineBefore(),
+            multiLine,
+            entryIndent,
+            closingIndent
+        );
+        MetadataMap newMap = StvnElementFactory.createMetadataMap(project, rebuiltText);
         replaceMetadataMapInteriorInPlace(map, newMap);
     }
 

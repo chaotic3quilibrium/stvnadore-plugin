@@ -1,14 +1,14 @@
 <html>
 <body>
-<p>Audits document metadata declarations to ensure that declared <code>#name</code> and <code>#domain</code> facets match the filename stem hierarchy.</p>
+<p>Verifies that document metadata declarations for <code>#name</code> and <code>#domain</code> facets in root <code>:meta</code> match the filename stem hierarchy.</p>
 
 <p>Filename stem slot 0 corresponds to the declared document <code>#name</code>. Filename stem slot 1 corresponds to the optional declared document <code>#domain</code>.</p>
 
-<p>When declared <code>#name</code> differs from slot 0, warning <code>WARN_DOCUMENT_NAME_MISMATCH</code> is emitted. When declared <code>#domain</code> is omitted from slot 1, warning <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> is emitted. When a user document declares a reserved system domain starting with <code>stvn_</code>, error <code>ERR_RESERVED_DOMAIN_PROHIBITED</code> (<code>E038</code>) is emitted.</p>
+<p>Reports <code>WARN_DOCUMENT_NAME_MISMATCH</code> (<code>W001</code>) when declared <code>#name</code> or <code>#domain</code> differs from its filename stem slot, <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> or <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_META</code> (<code>W002</code>) when only one side declares a domain, and <code>ERR_RESERVED_DOMAIN_PROHIBITED</code> (<code>E038</code>) when a user document declares a reserved <code>stvn_*</code> domain.</p>
 
 <p><b>Quick-Fix:</b></p>
-<p>Renames the <code>#name</code> or <code>#domain</code> string literal to match the active file stem slot.</p>
-<p>Renames the file to include a valid non-reserved declared domain in filename stem slot 1 (e.g. <code>name.domain.stvn_i</code>).</p>
-<p>Removes the optional <code>#domain</code> attribute or strips the reserved <code>stvn_</code> prefix from the root <code>:meta</code> block.</p>
+<p>Aligns the <code>#name</code> or <code>#domain</code> facet with filename stem slot 0 or slot 1.</p>
+<p>Renames the file to match a valid non-reserved declared <code>#name</code> or <code>#domain</code>.</p>
+<p>Removes the <code>#domain</code> facet on 1-stem filenames or strips the reserved <code>stvn_</code> prefix from <code>#domain</code>.</p>
 </body>
 </html>

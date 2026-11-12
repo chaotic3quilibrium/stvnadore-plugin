@@ -1,7 +1,9 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.command.WriteCommandAction;
@@ -35,6 +37,7 @@ public final class StvnOmitDomainQuickFix implements LocalQuickFix, IntentionAct
 
     private static final Logger LOG = Logger.getInstance(StvnOmitDomainQuickFix.class);
 
+    @SafeFieldForPreview
     private final String targetFileName;
 
     public StvnOmitDomainQuickFix(String targetFileName) {
@@ -90,6 +93,35 @@ public final class StvnOmitDomainQuickFix implements LocalQuickFix, IntentionAct
         if (file.getName().equals(targetFileName)) return false;
         VirtualFile parent = vFile.getParent();
         return parent == null || parent.findChild(targetFileName) == null;
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        return renamePreview(file, targetFileName);
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull ProblemDescriptor previewDescriptor
+    ) {
+        PsiElement element = previewDescriptor.getPsiElement();
+        return renamePreview(element != null ? element.getContainingFile() : null, targetFileName);
+    }
+
+    private static @NotNull IntentionPreviewInfo renamePreview(@Nullable PsiFile file, String targetFileName) {
+        if (file == null) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        VirtualFile vFile = file.getOriginalFile().getVirtualFile();
+        if (vFile == null) {
+            vFile = file.getVirtualFile();
+        }
+        return vFile != null ? IntentionPreviewInfo.rename(vFile, targetFileName) : IntentionPreviewInfo.EMPTY;
     }
 
     @Override

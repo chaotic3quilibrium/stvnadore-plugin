@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
@@ -32,9 +33,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -581,7 +584,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     }
                 }
 
-                addIntegerClampFixIfOutOfBounds(
+                Set<String> offeredIntClamps = addIntegerClampFixIfOutOfBounds(
                     fixes,
                     value,
                     rawValueText,
@@ -594,7 +597,7 @@ public final class StvnPayloadValueQuickFixProvider {
                 );
 
                 String exemplar = StvnExemplarValueGenerator.generateIntExemplar(unsigned, sizeBits, minIncl, maxExcl);
-                if (!exemplar.equals(rawValueText)) {
+                if (!exemplar.equals(rawValueText) && !offeredIntClamps.contains(exemplar)) {
                     fixes.add(
                         new PayloadValueQuickFix(
                             value,
@@ -608,32 +611,12 @@ public final class StvnPayloadValueQuickFixProvider {
                 }
             }
             case StvnVocabulary.TYPE_FLOAT -> {
-                Double minIncl = parseDoubleOrNull(value, meta.get(StvnVocabulary.FACET_KW_MIN_INCL));
-                Double minExcl = parseDoubleOrNull(value, meta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
-                Double maxIncl = parseDoubleOrNull(value, meta.get(StvnVocabulary.FACET_KW_MAX_INCL));
-                Double maxExcl = parseDoubleOrNull(value, meta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
-                if (irSchema instanceof StvnSchema.FloatSchema fs) {
-                    if (fs.lowerBound().isPresent()) {
-                        var lb = fs.lowerBound().get();
-                        if (lb.kind() == StvnSchema.BoundKind.INCLUSIVE) {
-                            minIncl = lb.value().doubleValue();
-                        } else {
-                            minExcl = lb.value().doubleValue();
-                        }
-                    }
-                    if (fs.upperBound().isPresent()) {
-                        var ub = fs.upperBound().get();
-                        if (ub.kind() == StvnSchema.BoundKind.INCLUSIVE) {
-                            maxIncl = ub.value().doubleValue();
-                        } else {
-                            maxExcl = ub.value().doubleValue();
-                        }
-                    }
-                }
+                FloatConstraintProfile floatProfile = resolveFloatConstraintProfile(value, meta, irSchema, message);
                 if (value.getIntegerLiteral() != null) {
                     String rawIntText = value.getIntegerLiteral().getText().trim();
                     String appended = rawIntText + ".0";
-                    if (isFloatWithinBounds(value, appended, minIncl, minExcl, maxIncl, maxExcl)) {
+                    BigDecimal appendedBd = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(value, appended).orElse(null);
+                    if (appendedBd != null && isValidFloatCandidate(appendedBd, floatProfile)) {
                         fixes.add(
                             new PayloadValueQuickFix(
                                 value,
@@ -646,20 +629,9 @@ public final class StvnPayloadValueQuickFixProvider {
                         );
                     }
                 }
+                boolean emittedPrecisionFixes = false;
                 if (value.getFloatLiteral() != null) {
-                    int maxDigits = -1;
-                    Matcher sigMatcher = SIGNIFICANT_DIGITS_MAX_PATTERN.matcher(message);
-                    if (sigMatcher.find()) {
-                        maxDigits = parseIntOrDefault(value, sigMatcher.group(1), -1);
-                    }
-                    if (maxDigits <= 0 && irSchema instanceof StvnSchema.FloatSchema fs
-                            && fs.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
-                        maxDigits = fs.exactMaxDigits().intValue();
-                    }
-                    if (maxDigits <= 0 && (meta.containsKey(StvnVocabulary.FACET_KW_EXACT)
-                            || meta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE))) {
-                        maxDigits = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_MAX_SIZE), -1);
-                    }
+                    int maxDigits = floatProfile.exactMaxDigits();
                     if (maxDigits > 0) {
                         BigDecimal bd = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(value, rawValueText).orElse(null);
                         if (bd != null && bd.precision() > maxDigits) {
@@ -686,15 +658,29 @@ public final class StvnPayloadValueQuickFixProvider {
                                     "STVN Exact Float Precision Truncation",
                                     truncatedStr,
                                     null,
-                                    PriorityAction.Priority.HIGH
+                                    PriorityAction.Priority.TOP
                                 )
                             );
+                            emittedPrecisionFixes = true;
                         }
                     }
                 }
-                addFloatClampFixIfOutOfBounds(fixes, value, rawValueText, minIncl, minExcl, maxIncl, maxExcl);
-                String exemplar = StvnExemplarValueGenerator.generateFloatExemplar(minIncl, minExcl, maxIncl, maxExcl);
-                if (!exemplar.equals(rawValueText)) {
+                PriorityAction.Priority nearestClampPriority = emittedPrecisionFixes
+                    ? PriorityAction.Priority.HIGH
+                    : PriorityAction.Priority.TOP;
+                PriorityAction.Priority oppositeClampPriority = emittedPrecisionFixes
+                    ? PriorityAction.Priority.NORMAL
+                    : PriorityAction.Priority.HIGH;
+                Set<String> offeredFloatClamps = addFloatClampFixesIfOutOfBounds(
+                    fixes,
+                    value,
+                    rawValueText,
+                    floatProfile,
+                    nearestClampPriority,
+                    oppositeClampPriority
+                );
+                String exemplar = computeSchemaValidFloatExemplar(floatProfile);
+                if (exemplar != null && !exemplar.equals(rawValueText) && !offeredFloatClamps.contains(exemplar)) {
                     fixes.add(
                         new PayloadValueQuickFix(
                             value,
@@ -1497,7 +1483,7 @@ public final class StvnPayloadValueQuickFixProvider {
         return false;
     }
 
-    private static void addIntegerClampFixIfOutOfBounds(
+    private static Set<String> addIntegerClampFixIfOutOfBounds(
         List<PayloadValueQuickFix> fixes,
         Value value,
         String rawValueText,
@@ -1510,7 +1496,7 @@ public final class StvnPayloadValueQuickFixProvider {
     ) {
         BigInteger actual = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(value, rawValueText).orElse(null);
         if (actual == null) {
-            return;
+            return Set.of();
         }
         BigInteger[] bounds = StvnExemplarValueGenerator.computeEffectiveIntegerBounds(
             unsigned,
@@ -1522,9 +1508,10 @@ public final class StvnPayloadValueQuickFixProvider {
         BigInteger effMaxIncl = bounds[1];
 
         if (actual.compareTo(effMin) >= 0 && actual.compareTo(effMaxIncl) <= 0) {
-            return;
+            return Set.of();
         }
 
+        Set<String> offered = new LinkedHashSet<>(2);
         BigInteger distToMin = actual.subtract(effMin).abs();
         BigInteger distToMax = actual.subtract(effMaxIncl).abs();
         String minStr = effMin.toString();
@@ -1541,6 +1528,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     primaryPriority
                 )
             );
+            offered.add(minStr);
             if (!effMaxIncl.equals(effMin)) {
                 fixes.add(
                     new PayloadValueQuickFix(
@@ -1552,6 +1540,7 @@ public final class StvnPayloadValueQuickFixProvider {
                         secondaryPriority
                     )
                 );
+                offered.add(maxStr);
             }
         } else {
             fixes.add(
@@ -1564,6 +1553,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     primaryPriority
                 )
             );
+            offered.add(maxStr);
             if (!effMin.equals(effMaxIncl)) {
                 fixes.add(
                     new PayloadValueQuickFix(
@@ -1575,99 +1565,369 @@ public final class StvnPayloadValueQuickFixProvider {
                         secondaryPriority
                     )
                 );
+                offered.add(minStr);
             }
         }
+        return offered;
     }
 
-    private static boolean isFloatWithinBounds(
+    private record FloatConstraintProfile(
+        StvnSchema.FloatRepresentation representation,
+        int exactMaxDigits,
+        @Nullable BigDecimal lowerBound,
+        boolean lowerExclusive,
+        @Nullable BigDecimal upperBound,
+        boolean upperExclusive
+    ) {}
+
+    private record EffectiveFloatClampEndpoints(
+        @Nullable BigDecimal minValue,
+        @Nullable String minLiteral,
+        @Nullable BigDecimal maxValue,
+        @Nullable String maxLiteral
+    ) {}
+
+    private static FloatConstraintProfile resolveFloatConstraintProfile(
         PsiElement context,
-        String rawValueText,
-        @Nullable Double minIncl,
-        @Nullable Double minExcl,
-        @Nullable Double maxIncl,
-        @Nullable Double maxExcl
+        Map<String, String> meta,
+        @Nullable StvnSchema irSchema,
+        String message
     ) {
-        Double actual = parseDoubleOrNull(context, rawValueText);
-        if (actual == null || Double.isNaN(actual)) {
-            return false;
+        StvnSchema.FloatRepresentation rep = StvnSchema.FloatRepresentation.IEEE_64;
+        int exactMaxDigits = -1;
+        BigDecimal lowerBound = null;
+        boolean lowerExclusive = false;
+        BigDecimal upperBound = null;
+        boolean upperExclusive = false;
+
+        if (meta.containsKey(StvnVocabulary.FACET_KW_EXACT)) {
+            rep = StvnSchema.FloatRepresentation.EXACT_DECIMAL;
+            exactMaxDigits = parseIntOrDefault(
+                context,
+                meta.get(StvnVocabulary.FACET_KW_MAX_SIZE),
+                StvnVocabulary.DEFAULT_MAX_SIZE.intValue()
+            );
+        } else if ("32".equals(meta.get(StvnVocabulary.FACET_KW_SIZE))) {
+            rep = StvnSchema.FloatRepresentation.IEEE_32;
         }
-        if (minIncl != null && actual < minIncl) {
-            return false;
+
+        BigDecimal psiMinIncl = parseBigDecimalOrNull(context, meta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+        BigDecimal psiMinExcl = parseBigDecimalOrNull(context, meta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
+        BigDecimal psiMaxIncl = parseBigDecimalOrNull(context, meta.get(StvnVocabulary.FACET_KW_MAX_INCL));
+        BigDecimal psiMaxExcl = parseBigDecimalOrNull(context, meta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+        if (psiMinIncl != null) {
+            lowerBound = psiMinIncl;
+            lowerExclusive = false;
+        } else if (psiMinExcl != null) {
+            lowerBound = psiMinExcl;
+            lowerExclusive = true;
         }
-        if (minExcl != null && actual <= minExcl) {
-            return false;
+        if (psiMaxIncl != null) {
+            upperBound = psiMaxIncl;
+            upperExclusive = false;
+        } else if (psiMaxExcl != null) {
+            upperBound = psiMaxExcl;
+            upperExclusive = true;
         }
-        if (maxIncl != null && actual > maxIncl) {
-            return false;
+
+        if (irSchema instanceof StvnSchema.FloatSchema fs) {
+            rep = fs.representation();
+            if (rep == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
+                exactMaxDigits = fs.exactMaxDigits().intValue();
+            }
+            if (fs.lowerBound().isPresent()) {
+                var lb = fs.lowerBound().get();
+                BigDecimal irLower = lb.value();
+                boolean irLowerExcl = lb.kind() == StvnSchema.BoundKind.EXCLUSIVE;
+                BigDecimal psiLower = irLowerExcl ? psiMinExcl : psiMinIncl;
+                if (psiLower == null && lowerBound != null && lowerBound.compareTo(irLower) == 0) {
+                    psiLower = lowerBound;
+                }
+                lowerBound = (psiLower != null && psiLower.compareTo(irLower) == 0 && psiLower.scale() > irLower.scale())
+                    ? psiLower
+                    : irLower;
+                lowerExclusive = irLowerExcl;
+            }
+            if (fs.upperBound().isPresent()) {
+                var ub = fs.upperBound().get();
+                BigDecimal irUpper = ub.value();
+                boolean irUpperExcl = ub.kind() == StvnSchema.BoundKind.EXCLUSIVE;
+                BigDecimal psiUpper = irUpperExcl ? psiMaxExcl : psiMaxIncl;
+                if (psiUpper == null && upperBound != null && upperBound.compareTo(irUpper) == 0) {
+                    psiUpper = upperBound;
+                }
+                upperBound = (psiUpper != null && psiUpper.compareTo(irUpper) == 0 && psiUpper.scale() > irUpper.scale())
+                    ? psiUpper
+                    : irUpper;
+                upperExclusive = irUpperExcl;
+            }
         }
-        if (maxExcl != null && actual >= maxExcl) {
-            return false;
+
+        Matcher sigMatcher = SIGNIFICANT_DIGITS_MAX_PATTERN.matcher(message);
+        if (sigMatcher.find()) {
+            int parsedDigits = parseIntOrDefault(context, sigMatcher.group(1), -1);
+            if (parsedDigits > 0) {
+                rep = StvnSchema.FloatRepresentation.EXACT_DECIMAL;
+                exactMaxDigits = parsedDigits;
+            }
+        }
+        return new FloatConstraintProfile(rep, exactMaxDigits, lowerBound, lowerExclusive, upperBound, upperExclusive);
+    }
+
+    private static @Nullable BigDecimal parseBigDecimalOrNull(PsiElement context, @Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(context, raw.trim()).orElse(null);
+    }
+
+    private static boolean isValidFloatCandidate(BigDecimal candidate, FloatConstraintProfile profile) {
+        if (profile.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
+            if (profile.exactMaxDigits() > 0 && candidate.precision() > profile.exactMaxDigits()) {
+                return false;
+            }
+        } else if (profile.representation() == StvnSchema.FloatRepresentation.IEEE_32) {
+            if (candidate.compareTo(StvnVocabulary.FLOAT32_MIN) < 0
+                    || candidate.compareTo(StvnVocabulary.FLOAT32_MAX) > 0) {
+                return false;
+            }
+        } else {
+            if (candidate.compareTo(StvnVocabulary.FLOAT64_MIN) < 0
+                    || candidate.compareTo(StvnVocabulary.FLOAT64_MAX) > 0) {
+                return false;
+            }
+        }
+        if (profile.lowerBound() != null) {
+            int cmp = candidate.compareTo(profile.lowerBound());
+            if (profile.lowerExclusive() ? cmp <= 0 : cmp < 0) {
+                return false;
+            }
+        }
+        if (profile.upperBound() != null) {
+            int cmp = candidate.compareTo(profile.upperBound());
+            if (profile.upperExclusive() ? cmp >= 0 : cmp > 0) {
+                return false;
+            }
         }
         return true;
     }
 
-    private static void addFloatClampFixIfOutOfBounds(
+    private static EffectiveFloatClampEndpoints computeFloatClampEndpoints(
+        FloatConstraintProfile profile,
+        boolean includeIeeePhysicalBounds
+    ) {
+        BigDecimal lower = profile.lowerBound();
+        boolean lowerExcl = profile.lowerExclusive();
+        BigDecimal upper = profile.upperBound();
+        boolean upperExcl = profile.upperExclusive();
+
+        if (includeIeeePhysicalBounds && profile.representation() != StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
+            BigDecimal physMin = profile.representation() == StvnSchema.FloatRepresentation.IEEE_32
+                ? StvnVocabulary.FLOAT32_MIN
+                : StvnVocabulary.FLOAT64_MIN;
+            BigDecimal physMax = profile.representation() == StvnSchema.FloatRepresentation.IEEE_32
+                ? StvnVocabulary.FLOAT32_MAX
+                : StvnVocabulary.FLOAT64_MAX;
+            if (lower == null || lower.compareTo(physMin) < 0) {
+                lower = physMin;
+                lowerExcl = false;
+            }
+            if (upper == null || upper.compareTo(physMax) > 0) {
+                upper = physMax;
+                upperExcl = false;
+            }
+        }
+
+        String minLit = lower != null ? computeSingleFloatEndpointLiteral(lower, lowerExcl, true, profile) : null;
+        BigDecimal minVal = minLit != null ? new BigDecimal(minLit) : null;
+        String maxLit = upper != null ? computeSingleFloatEndpointLiteral(upper, upperExcl, false, profile) : null;
+        BigDecimal maxVal = maxLit != null ? new BigDecimal(maxLit) : null;
+        return new EffectiveFloatClampEndpoints(minVal, minLit, maxVal, maxLit);
+    }
+
+    private static @Nullable String computeSingleFloatEndpointLiteral(
+        BigDecimal bound,
+        boolean exclusive,
+        boolean isLowerEndpoint,
+        FloatConstraintProfile profile
+    ) {
+        boolean isExact = profile.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL;
+        int maxDigits = isExact
+            ? profile.exactMaxDigits()
+            : (profile.representation() == StvnSchema.FloatRepresentation.IEEE_32
+                ? Math.max(bound.precision(), 8)
+                : Math.max(bound.precision(), 17));
+        RoundingMode directedMode = isLowerEndpoint ? RoundingMode.CEILING : RoundingMode.FLOOR;
+
+        if (!exclusive) {
+            BigDecimal normalized = isExact ? trimExcessFractionalZeros(bound, maxDigits) : bound;
+            if (isExact && maxDigits > 0 && normalized.precision() > maxDigits) {
+                normalized = normalized.round(new MathContext(maxDigits, directedMode));
+            }
+            String formatted = formatFloatCandidateLiteral(normalized, profile);
+            BigDecimal reparsed = new BigDecimal(formatted);
+            return isValidFloatCandidate(reparsed, profile) ? formatted : null;
+        }
+
+        int baseScale = bound.scale() < 0 ? bound.scale() + 1 : Math.max(bound.scale(), 1);
+        for (int scale = baseScale; scale <= baseScale + 16; scale++) {
+            BigDecimal step = BigDecimal.ONE.scaleByPowerOfTen(-scale);
+            BigDecimal stepped = isLowerEndpoint ? bound.add(step) : bound.subtract(step);
+            if (isExact) {
+                stepped = trimExcessFractionalZeros(stepped, maxDigits);
+            }
+            if (maxDigits > 0 && stepped.precision() > maxDigits) {
+                stepped = stepped.round(new MathContext(maxDigits, directedMode));
+            }
+            String formatted = formatFloatCandidateLiteral(stepped, profile);
+            BigDecimal reparsed = new BigDecimal(formatted);
+            if (isValidFloatCandidate(reparsed, profile)) {
+                return formatted;
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal trimExcessFractionalZeros(BigDecimal bd, int maxDigits) {
+        if (maxDigits <= 0 || bd.precision() <= maxDigits || bd.scale() <= 1) {
+            return bd;
+        }
+        BigDecimal current = bd;
+        while (current.precision() > maxDigits && current.scale() > 1) {
+            BigDecimal stripped = current.stripTrailingZeros();
+            if (stripped.scale() == current.scale()) {
+                break;
+            }
+            int nextScale = Math.max(1, current.scale() - (current.precision() - maxDigits));
+            nextScale = Math.max(nextScale, stripped.scale());
+            if (nextScale >= current.scale()) {
+                break;
+            }
+            current = current.setScale(nextScale, RoundingMode.UNNECESSARY);
+        }
+        return current;
+    }
+
+    private static String formatFloatCandidateLiteral(BigDecimal bd, FloatConstraintProfile profile) {
+        if (profile.representation() == StvnSchema.FloatRepresentation.EXACT_DECIMAL) {
+            return formatExactDecimalLiteral(bd, profile.exactMaxDigits());
+        }
+        String sciOrPlain = bd.toString().replace('E', 'e');
+        if (sciOrPlain.contains(".")) {
+            return sciOrPlain;
+        }
+        int eIdx = sciOrPlain.indexOf('e');
+        if (eIdx > 0) {
+            return sciOrPlain.substring(0, eIdx) + ".0" + sciOrPlain.substring(eIdx);
+        }
+        return sciOrPlain + ".0";
+    }
+
+    private static Set<String> addFloatClampFixesIfOutOfBounds(
         List<PayloadValueQuickFix> fixes,
         Value value,
         String rawValueText,
-        @Nullable Double minIncl,
-        @Nullable Double minExcl,
-        @Nullable Double maxIncl,
-        @Nullable Double maxExcl
+        FloatConstraintProfile profile,
+        PriorityAction.Priority nearestPriority,
+        PriorityAction.Priority oppositePriority
     ) {
-        Double actual = parseDoubleOrNull(value, rawValueText);
-        if (actual == null || Double.isNaN(actual)) {
-            return;
+        BigDecimal actual = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(value, rawValueText).orElse(null);
+        if (actual == null) {
+            return Set.of();
         }
-        if (minIncl != null && actual < minIncl) {
-            String clamped = formatFloatBound(minIncl);
-            fixes.add(
-                new PayloadValueQuickFix(
-                    value,
-                    "Clamp value to minimum bound '" + clamped + "'",
-                    "STVN Scalar Bound Clamping",
-                    clamped,
-                    null,
-                    PriorityAction.Priority.TOP
-                )
-            );
-        } else if (minExcl != null && actual <= minExcl) {
-            String clamped = StvnExemplarValueGenerator.generateFloatExemplar(minIncl, minExcl, maxIncl, maxExcl);
-            fixes.add(
-                new PayloadValueQuickFix(
-                    value,
-                    "Clamp value to minimum bound '" + clamped + "'",
-                    "STVN Scalar Bound Clamping",
-                    clamped,
-                    null,
-                    PriorityAction.Priority.TOP
-                )
-            );
-        } else if (maxIncl != null && actual > maxIncl) {
-            String clamped = formatFloatBound(maxIncl);
-            fixes.add(
-                new PayloadValueQuickFix(
-                    value,
-                    "Clamp value to maximum bound '" + clamped + "'",
-                    "STVN Scalar Bound Clamping",
-                    clamped,
-                    null,
-                    PriorityAction.Priority.TOP
-                )
-            );
-        } else if (maxExcl != null && actual >= maxExcl) {
-            String clamped = StvnExemplarValueGenerator.generateFloatExemplar(minIncl, minExcl, maxIncl, maxExcl);
-            fixes.add(
-                new PayloadValueQuickFix(
-                    value,
-                    "Clamp value to maximum bound '" + clamped + "'",
-                    "STVN Scalar Bound Clamping",
-                    clamped,
-                    null,
-                    PriorityAction.Priority.TOP
-                )
-            );
+        boolean ieeePhysicalOverflow = profile.representation() != StvnSchema.FloatRepresentation.EXACT_DECIMAL
+            && (profile.representation() == StvnSchema.FloatRepresentation.IEEE_32
+                ? (actual.compareTo(StvnVocabulary.FLOAT32_MIN) < 0 || actual.compareTo(StvnVocabulary.FLOAT32_MAX) > 0)
+                : (actual.compareTo(StvnVocabulary.FLOAT64_MIN) < 0 || actual.compareTo(StvnVocabulary.FLOAT64_MAX) > 0));
+        boolean belowLower = profile.lowerBound() != null
+            && (profile.lowerExclusive()
+                ? actual.compareTo(profile.lowerBound()) <= 0
+                : actual.compareTo(profile.lowerBound()) < 0);
+        boolean aboveUpper = profile.upperBound() != null
+            && (profile.upperExclusive()
+                ? actual.compareTo(profile.upperBound()) >= 0
+                : actual.compareTo(profile.upperBound()) > 0);
+        if (!belowLower && !aboveUpper && !ieeePhysicalOverflow) {
+            return Set.of();
         }
+
+        EffectiveFloatClampEndpoints endpoints = computeFloatClampEndpoints(profile, ieeePhysicalOverflow);
+        String minLit = endpoints.minLiteral();
+        String maxLit = endpoints.maxLiteral();
+        if (minLit == null && maxLit == null) {
+            return Set.of();
+        }
+
+        boolean minFirst;
+        if (belowLower || (ieeePhysicalOverflow && actual.signum() < 0)) {
+            minFirst = true;
+        } else if (aboveUpper || (ieeePhysicalOverflow && actual.signum() > 0)) {
+            minFirst = false;
+        } else {
+            minFirst = minLit != null && maxLit == null;
+        }
+
+        Set<String> offered = new LinkedHashSet<>(2);
+        if (minFirst) {
+            if (minLit != null) {
+                fixes.add(new PayloadValueQuickFix(
+                    value,
+                    "Clamp value to minimum bound '" + minLit + "'",
+                    "STVN Scalar Bound Clamping",
+                    minLit,
+                    null,
+                    nearestPriority
+                ));
+                offered.add(minLit);
+            }
+            if (maxLit != null && !maxLit.equals(minLit)) {
+                fixes.add(new PayloadValueQuickFix(
+                    value,
+                    "Clamp value to maximum bound '" + maxLit + "'",
+                    "STVN Scalar Bound Clamping",
+                    maxLit,
+                    null,
+                    minLit != null ? oppositePriority : nearestPriority
+                ));
+                offered.add(maxLit);
+            }
+        } else {
+            if (maxLit != null) {
+                fixes.add(new PayloadValueQuickFix(
+                    value,
+                    "Clamp value to maximum bound '" + maxLit + "'",
+                    "STVN Scalar Bound Clamping",
+                    maxLit,
+                    null,
+                    nearestPriority
+                ));
+                offered.add(maxLit);
+            }
+            if (minLit != null && !minLit.equals(maxLit)) {
+                fixes.add(new PayloadValueQuickFix(
+                    value,
+                    "Clamp value to minimum bound '" + minLit + "'",
+                    "STVN Scalar Bound Clamping",
+                    minLit,
+                    null,
+                    maxLit != null ? oppositePriority : nearestPriority
+                ));
+                offered.add(minLit);
+            }
+        }
+        return offered;
+    }
+
+    private static @Nullable String computeSchemaValidFloatExemplar(FloatConstraintProfile profile) {
+        BigDecimal zero = new BigDecimal("0.0");
+        if (isValidFloatCandidate(zero, profile)) {
+            return "0.0";
+        }
+        EffectiveFloatClampEndpoints endpoints = computeFloatClampEndpoints(profile, false);
+        if (endpoints.minLiteral() != null) {
+            return endpoints.minLiteral();
+        }
+        return endpoints.maxLiteral();
     }
 
     private static boolean isPayloadValueDiagnostic(String code, String message) {
@@ -1724,12 +1984,18 @@ public final class StvnPayloadValueQuickFixProvider {
         if (plain.contains(".")) {
             return plain;
         }
-        if (bd.precision() < maxDigits) {
+        if (maxDigits <= 0 || bd.precision() < maxDigits) {
             return plain + ".0";
         }
-        String sci = bd.toString();
-        if (sci.contains(".") || sci.contains("E") || sci.contains("e")) {
-            return sci;
+        boolean negative = bd.signum() < 0;
+        String digits = bd.abs().unscaledValue().toString();
+        int exp = bd.precision() - 1 - bd.scale();
+        if (digits.length() >= 2) {
+            return (negative ? "-" : "") + digits.charAt(0) + "." + digits.substring(1)
+                + "e" + (exp >= 0 ? "+" : "") + exp;
+        }
+        if (maxDigits >= 2) {
+            return (negative ? "-" : "") + digits + ".0e" + (exp >= 0 ? "+" : "") + exp;
         }
         return plain + ".0";
     }
@@ -1854,13 +2120,6 @@ public final class StvnPayloadValueQuickFixProvider {
         return parentVal;
     }
 
-    private static String formatFloatBound(double value) {
-        if (value == Math.rint(value) && !Double.isInfinite(value)) {
-            return String.format(Locale.ROOT, "%.1f", value);
-        }
-        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
-    }
-
     private static int parseIntOrDefault(@Nullable PsiElement context, @Nullable String raw, int defaultValue) {
         if (raw == null || raw.isBlank()) {
             return defaultValue;
@@ -1877,26 +2136,23 @@ public final class StvnPayloadValueQuickFixProvider {
         return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, raw).orElse(null);
     }
 
-    private static @Nullable Double parseDoubleOrNull(@Nullable PsiElement context, @Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        return StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(context, raw)
-            .map(BigDecimal::doubleValue)
-            .orElse(null);
-    }
-
     /**
      * Unified {@link IntentionAction} and {@link LocalQuickFix} that replaces an invalid STVN
      * {@link Value} node with a converted, clamped, or exemplar literal.
      */
     public static final class PayloadValueQuickFix implements IntentionAction, LocalQuickFix, PriorityAction {
 
+        @SafeFieldForPreview
         private final SmartPsiElementPointer<Value> targetPointer;
+        @SafeFieldForPreview
         private final String text;
+        @SafeFieldForPreview
         private final String familyName;
+        @SafeFieldForPreview
         private final String fallbackReplacement;
+        @SafeFieldForPreview
         private final @Nullable Supplier<String> dynamicReplacementSupplier;
+        @SafeFieldForPreview
         private final Priority priority;
 
         /**

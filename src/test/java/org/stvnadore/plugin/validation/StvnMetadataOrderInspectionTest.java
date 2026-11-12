@@ -425,4 +425,169 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             typeIdx = end;
         }
     }
+
+    public void testGauntletV6Stage1ReorderMetaEntriesPreservesAllLeadingTrailingAndFooterComments() {
+        var text = """
+            {
+              :meta { // Opening header comment
+                #kind #BODY_INCLUDE // Primary kind comment
+
+                // [ERROR E008 / ERR_FACET_ORDER_VIOLATION]: #domain (Tier 2) placed after #kind (Tier 3).
+                // [ERROR E038 / ERR_RESERVED_DOMAIN_PROHIBITED]: User document declares reserved "stvn_*" prefix.
+
+                // [WARN  W001 / WARN_DOCUMENT_NAME_MISMATCH]: "stvn_gate_trap" != filename stem[1] "core_test".
+                // Verify Alt+Enter -> More actions... opens Intention Preview cleanly and NEVER offers rename to `.stvn_gate_trap.stvn_i`!
+                #domain "stvn_gate_trap"
+
+                // [ERROR E008 / ERR_FACET_ORDER_VIOLATION]: #name (Tier 1) placed after #kind (Tier 3).
+                // [WARN  W001 / WARN_DOCUMENT_NAME_MISMATCH]: Does not match filename stem[0].
+                #name "gauntlet_v6_stage1_wrong_stem_id"
+
+                // [ERROR E008 / ERR_DUPLICATE_METADATA_FACET]: Duplicate #kind facet inside :meta (zero secondary order error).
+                #kind #BODY_INCLUDE
+
+                // [ERROR E008 / ERR_INVALID_METADATA_FACET]: Unknown facet inside closed :meta enclosure.
+                #reviewer "mct_director"
+
+                // Footer comment inside :meta before closing brace.
+              }
+              :type :Int
+              :body 42
+            }
+            """;
+        myFixture.configureByText("gauntlet_v6_stage1_meta_identity_and_section_boundaries.core_test.stvn_i", text);
+        myFixture.doHighlighting();
+
+        int offset = text.indexOf("#name \"gauntlet_v6_stage1_wrong_stem_id\"");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder ':meta' entries to canonical order (#name, #domain, #kind)");
+        assertEquals("Expected ':meta' reorder quick-fix once at #name", 1, actions.size());
+
+        String previewText = myFixture.getIntentionPreviewText(actions.get(0));
+        assertNotNull("Intention Preview must render non-null DIFF text", previewText);
+        assertEquals("Intention Preview must not mutate physical PSI file", text, myFixture.getFile().getText());
+        assertAllStage1MetaCommentsAndOrderPreserved(previewText, true);
+
+        myFixture.launchAction(actions.get(0));
+        String reorderedViaQuickFix = myFixture.getFile().getText();
+        assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaQuickFix, true);
+
+        myFixture.configureByText("gauntlet_v6_stage1_reformat.core_test.stvn_i", text);
+        new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
+        com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+        String reorderedViaReformat = myFixture.getFile().getText();
+        assertAllStage1MetaCommentsAndOrderPreserved(reorderedViaReformat, false);
+    }
+
+    private static void assertAllStage1MetaCommentsAndOrderPreserved(String actual, boolean expectBlankLinesPreserved) {
+        String[] requiredComments = {
+            "// Opening header comment",
+            "// Primary kind comment",
+            "// [ERROR E008 / ERR_FACET_ORDER_VIOLATION]: #domain (Tier 2) placed after #kind (Tier 3).",
+            "// [ERROR E038 / ERR_RESERVED_DOMAIN_PROHIBITED]: User document declares reserved \"stvn_*\" prefix.",
+            "// [WARN  W001 / WARN_DOCUMENT_NAME_MISMATCH]: \"stvn_gate_trap\" != filename stem[1] \"core_test\".",
+            "// Verify Alt+Enter -> More actions... opens Intention Preview cleanly",
+            "// [ERROR E008 / ERR_FACET_ORDER_VIOLATION]: #name (Tier 1) placed after #kind (Tier 3).",
+            "// [WARN  W001 / WARN_DOCUMENT_NAME_MISMATCH]: Does not match filename stem[0].",
+            "// [ERROR E008 / ERR_DUPLICATE_METADATA_FACET]: Duplicate #kind facet inside :meta (zero secondary order error).",
+            "// [ERROR E008 / ERR_INVALID_METADATA_FACET]: Unknown facet inside closed :meta enclosure.",
+            "// Footer comment inside :meta before closing brace."
+        };
+        for (String comment : requiredComments) {
+            assertTrue("Missing comment after :meta reorder: " + comment + "\nActual:\n" + actual, actual.contains(comment));
+        }
+        if (expectBlankLinesPreserved) {
+            assertTrue(
+                "Intra-comment blank line inside leading comment block must be preserved:\n" + actual,
+                actual.contains("reserved \"stvn_*\" prefix.\n\n    // [WARN  W001 / WARN_DOCUMENT_NAME_MISMATCH]: \"stvn_gate_trap\"")
+            );
+        }
+
+        int nameIdx = actual.indexOf("#name \"gauntlet_v6_stage1_wrong_stem_id\"");
+        int domainIdx = actual.indexOf("#domain \"stvn_gate_trap\"");
+        int firstKindIdx = actual.indexOf("#kind #BODY_INCLUDE // Primary kind comment");
+        int secondKindIdx = actual.indexOf("#kind #BODY_INCLUDE", firstKindIdx + 1);
+        int reviewerIdx = actual.indexOf("#reviewer \"mct_director\"");
+        int footerIdx = actual.indexOf("// Footer comment inside :meta before closing brace.");
+        assertTrue(
+            "Entries must sort stably into #name -> #domain -> #kind[0] -> #kind[1] -> #reviewer -> footer:\n" + actual,
+            nameIdx >= 0
+                && domainIdx > nameIdx
+                && firstKindIdx > domainIdx
+                && secondKindIdx > firstKindIdx
+                && reviewerIdx > secondKindIdx
+                && footerIdx > reviewerIdx
+        );
+        assertFalse("Closing '}' must never collapse onto footer '//' comment line:\n" + actual,
+            actual.contains("closing brace. }") || actual.contains("closing brace.}"));
+    }
+
+    public void testReorderMultilineMetadataFacetsPreservesLeadingSameLineAndFooterComments() {
+        var text = """
+            {
+              :defs {
+                :PrecisionRate9 {
+                  // Exclusive upper bound
+                  #maxExcl 1000.00000 // Tier 4 upper
+                  // Exact decimal mode
+                  #exact              // Tier 1.1 exact
+                  // Inclusive lower bound
+                  #minIncl -1000.00000 // Tier 4 lower
+                  // Max significant digits
+                  #maxSize 9          // Tier 1.3 capacity
+                  // Footer note inside MetadataMap
+                } :Float
+              }
+              :type :PrecisionRate9
+              :body 42.5
+            }
+            """;
+        myFixture.configureByText("stage1_metadata_map_comments.stvn", text);
+        myFixture.doHighlighting();
+
+        int offset = text.indexOf("#exact");
+        myFixture.getEditor().getCaretModel().moveToOffset(offset);
+        var actions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
+        assertEquals("Expected MetadataMap reorder quick-fix", 1, actions.size());
+
+        String previewText = myFixture.getIntentionPreviewText(actions.get(0));
+        assertNotNull("MetadataMap Intention Preview must return non-null DIFF", previewText);
+        assertAllMetadataMapCommentsAndOrderPreserved(previewText);
+
+        myFixture.launchAction(actions.get(0));
+        assertAllMetadataMapCommentsAndOrderPreserved(myFixture.getFile().getText());
+
+        myFixture.configureByText("stage1_metadata_map_reformat.stvn", text);
+        new com.intellij.codeInsight.actions.ReformatCodeProcessor(myFixture.getFile(), false).run();
+        com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+        assertAllMetadataMapCommentsAndOrderPreserved(myFixture.getFile().getText());
+    }
+
+    private static void assertAllMetadataMapCommentsAndOrderPreserved(String actual) {
+        String[] requiredComments = {
+            "// Exact decimal mode",
+            "// Tier 1.1 exact",
+            "// Max significant digits",
+            "// Tier 1.3 capacity",
+            "// Inclusive lower bound",
+            "// Tier 4 lower",
+            "// Exclusive upper bound",
+            "// Tier 4 upper",
+            "// Footer note inside MetadataMap"
+        };
+        for (String comment : requiredComments) {
+            assertTrue("Missing MetadataMap comment: " + comment + "\nActual:\n" + actual, actual.contains(comment));
+        }
+        int exactIdx = actual.indexOf("#exact");
+        int maxSizeIdx = actual.indexOf("#maxSize 9");
+        int minInclIdx = actual.indexOf("#minIncl -1000.00000");
+        int maxExclIdx = actual.indexOf("#maxExcl 1000.00000");
+        int footerIdx = actual.indexOf("// Footer note inside MetadataMap");
+        assertTrue(
+            "Expected #exact -> #maxSize -> #minIncl -> #maxExcl -> footer order:\n" + actual,
+            exactIdx >= 0 && maxSizeIdx > exactIdx && minInclIdx > maxSizeIdx && maxExclIdx > minInclIdx && footerIdx > maxExclIdx
+        );
+        assertFalse("Closing '}' of MetadataMap must never collapse onto footer '//' comment line:\n" + actual,
+            actual.contains("// Footer note inside MetadataMap }") || actual.contains("// Footer note inside MetadataMap}"));
+    }
 }

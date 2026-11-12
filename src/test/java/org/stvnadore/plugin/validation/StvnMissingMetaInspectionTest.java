@@ -126,24 +126,41 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that existing :meta block missing #kind facet triggers error diagnostic.
+     * Verifies that existing :meta block missing #kind facet triggers error diagnostic pinned strictly to ':meta'.
      */
     public void testMetaBlockMissingKindFacetTriggersError() {
         var content = """
             {
-              :meta {
-                #name "example"
+              <caret>:meta {
+                #name "incomplete_meta"
+                #domain "core_test"
               }
               :body [ 1 2 3 ]
             }
             """;
-        myFixture.configureByText("incomplete_meta.stvn_i", content);
+        myFixture.configureByText("incomplete_meta.core_test.stvn_i", content);
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("requires #kind facet"))
             .toList();
-        assertFalse("Expected missing #kind facet error", errors.isEmpty());
+        assertEquals("Expected 1 missing #kind facet error", 1, errors.size());
+        assertEquals("Missing #kind diagnostic must pin strictly to 5-char ':meta' token", ":meta", errors.get(0).getText());
+
+        var insertKind = myFixture.filterAvailableIntentions("Insert missing #kind facet");
+        assertEquals("Expected InsertMissingMetaKindFacetQuickFix at ':meta'", 1, insertKind.size());
+        String preview = myFixture.getIntentionPreviewText(insertKind.get(0));
+        assertNotNull("InsertMissingMetaKindFacetQuickFix Intention Preview must render DIFF", preview);
+        myFixture.launchAction(insertKind.get(0));
+
+        var updated = myFixture.getFile().getText();
+        int nameIdx = updated.indexOf("#name \"incomplete_meta\"");
+        int domainIdx = updated.indexOf("#domain \"core_test\"");
+        int kindIdx = updated.indexOf("#kind #BODY_INCLUDE");
+        assertTrue(
+            "Expected #kind #BODY_INCLUDE inserted at canonical Tier 3 after #name and #domain:\n" + updated,
+            nameIdx >= 0 && domainIdx > nameIdx && kindIdx > domainIdx
+        );
     }
 
     /**

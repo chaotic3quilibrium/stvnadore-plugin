@@ -1,12 +1,15 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -155,9 +158,11 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                             + StvnVocabulary.FACET_KW_META_KIND + " facet matching file extension",
                         StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                     );
-                    if (metaBlock.getTextRange() != null && !metaBlock.getTextRange().isEmpty()) {
+                    ASTNode kwMetaNode = metaEntry.getNode().findChildByType(StvnTypes.KW_META);
+                    PsiElement anchor = kwMetaNode != null ? kwMetaNode.getPsi() : metaBlock;
+                    if (anchor.getTextRange() != null && !anchor.getTextRange().isEmpty()) {
                         holder.registerProblem(
-                            metaBlock,
+                            anchor,
                             message,
                             ProblemHighlightType.GENERIC_ERROR,
                             new InsertMissingMetaKindFacetQuickFix(expectedKind)
@@ -241,6 +246,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
      * Quick-fix inserting a canonical :meta block into a definitions schema.
      */
     public static final class InsertMissingMetaBlockQuickFix implements LocalQuickFix, IntentionAction {
+        @SafeFieldForPreview
         private final String kind;
 
         public InsertMissingMetaBlockQuickFix(String kind) {
@@ -254,7 +260,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Insert missing root :meta block";
+            return "Insert missing root " + StvnVocabulary.KEYWORD_META + " block";
         }
 
         @Override
@@ -290,7 +296,8 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
     /**
      * Quick-fix inserting missing #kind facet into existing :meta block.
      */
-    public static final class InsertMissingMetaKindFacetQuickFix implements LocalQuickFix {
+    public static final class InsertMissingMetaKindFacetQuickFix implements LocalQuickFix, PriorityAction {
+        @SafeFieldForPreview
         private final String expectedKind;
 
         public InsertMissingMetaKindFacetQuickFix(String expectedKind) {
@@ -299,7 +306,12 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Insert missing #kind facet";
+            return "Insert missing " + StvnVocabulary.FACET_KW_META_KIND + " facet";
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
         }
 
         @Override
@@ -311,20 +323,24 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
             Document doc = PsiDocumentManager.getInstance(project).getDocument(file);
             if (doc == null) return;
 
-            MetaBlock metaBlock = element instanceof MetaBlock mb
-                ? mb
-                : PsiTreeUtil.getParentOfType(element, MetaBlock.class, false);
             MetaEntry metaEntry = element instanceof MetaEntry me
                 ? me
                 : PsiTreeUtil.getParentOfType(element, MetaEntry.class, false);
-            PsiElement anchor = metaBlock != null ? metaBlock : element;
-            int offset = anchor.getTextRange().getStartOffset() + 1;
-            doc.insertString(offset, "\n    " + StvnVocabulary.FACET_KW_META_KIND + " " + expectedKind);
+            MetaBlock metaBlock = element instanceof MetaBlock mb
+                ? mb
+                : PsiTreeUtil.getParentOfType(element, MetaBlock.class, false);
+            if (metaBlock == null && metaEntry != null) {
+                metaBlock = metaEntry.getMetaBlock();
+            }
+            if (metaBlock == null || metaBlock.getTextRange() == null) return;
+            ASTNode rbrace = metaBlock.getNode().findChildByType(StvnTypes.RBRACE);
+            int insertOffset = rbrace != null ? rbrace.getStartOffset() : metaBlock.getTextRange().getEndOffset() - 1;
+            doc.insertString(insertOffset, "\n    " + StvnVocabulary.FACET_KW_META_KIND + " " + expectedKind + "\n  ");
             PsiDocumentManager.getInstance(project).commitDocument(doc);
             if (metaEntry != null && metaEntry.isValid()) {
                 com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(metaEntry);
-            } else if (anchor.isValid()) {
-                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(anchor);
+            } else if (metaBlock.isValid()) {
+                com.intellij.psi.codeStyle.CodeStyleManager.getInstance(project).reformat(metaBlock);
             }
         }
     }
@@ -333,6 +349,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
      * Quick-fix updating #kind literal to match active file extension.
      */
     public static final class UpdateMetaKindQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String expectedKind;
 
         public UpdateMetaKindQuickFix(String expectedKind) {
