@@ -56,7 +56,8 @@ For every source document $s \in \Sigma^*$:
 1. **Token Taxonomy Identity:** Every terminal token recognized by `StvnLexer.g4` must have an exact equivalent token in `stvn.flex` with identical boundary rules.
 2. **Parse Tree Homomorphism:** The hierarchical structure of the ANTLR4 parse tree must map homomorphically to the Grammar-Kit generated PSI tree.
 3. **Compound Token Elimination:** All legacy compound tokens removed from ANTLR4 in STVN 2.0.0 (`:Uint4`, `:Int16`, `:String8`, `:StringFixed36`, `:SeqNonEmpty`, `:MapInv`) must be removed from `stvn.bnf` and `stvn.flex`. Both grammars parse base types qualified by metadata facet blocks.
-4. **Strict Fenced String Delimiter Invariant (Rule STR-04):** Both ANTLR4 (`StvnLexer.g4`) and JFlex (`stvn.flex`) strictly enforce delimiter pattern `"""[TAG]` without directional arrow syntax. The prohibited prefix `"""->[` is permanently rejected in both ANTLR4 and JFlex; encountering `"""->[` must trigger immediate fatal syntax rejection at the lexical boundary.
+4. **Strict Fenced String Delimiter & `MALFORMED_FENCE` Slot Isolation Invariant (Rule STR-04):** Both ANTLR4 (`StvnLexer.g4` / `StvnParser.g4`) and JFlex / Grammar-Kit (`stvn.flex` / `stvn.bnf`) strictly enforce delimiter pattern `"""[TAG]` without directional arrow syntax. Malformed triple-quoted openings (`"""->[TAG]`, inline `"""..."""`, untagged `"""\n...\n"""`, or invalid `[tag]`) scan as a single `MALFORMED_FENCE` token admitted into `string_literal` so enclosing `:Tuple`, `:Seq`, and `MetadataMap` slots preserve exact sibling positional arity while `StvnFencedStringInspection` highlights only the opening delimiter line (`[startOffset, endOffset)`) and offers body-preserving `RemoveProhibitedArrowQuickFix`.
+5. **27-Keyword `reserved_facet_keyword` Lookahead Boundary:** In `stvn.bnf`, `metadata_value` guards `facet_const_ref` with `!reserved_facet_keyword` across all 24 schema constraint facets plus `#name`, `#domain`, and `#kind`, preventing bare boolean traits (`#preserveIndent`, `#equatable`, `#comparable`) from consuming a following sibling facet as a `#CONST` argument.
 
 ```mermaid
 flowchart LR
@@ -162,13 +163,15 @@ Code completion must adhere to strict sigil prefix matching:
 
 ### 3.4 Degraded Schema Sentinel Preservation
 
-When a schema in `:defs` contains constraint errors (such as discrete bound violations, invalid facets, or syntax errors), the PSI resolver must not crash with `NullPointerException` or discard the schema entirely.
+When a schema in `:defs` contains constraint errors (such as discrete bound violations, conflicting mutually exclusive facets, incomplete trait facets, invalid facets, or syntax errors), the PSI resolver must not crash with `NullPointerException` or discard the schema entirely.
 
 The plugin treats the schema as a **Degraded Schema Sentinel**:
-- On hover, the editor renders a prominent yellow warning banner:
+- Concise base-type formatting (`StvnSchemaFormatter.formatDegradedUnderlyingBaseIr` / `formatDegradedUnderlyingBasePsi`) collapses degraded `:Enum` and `:EnumSubset` schemas to `:Enum` without inline variant lists across `PW006`, `:type` warnings, and hover banners.
+- Hovering over a `:body` value governed by a degraded or ungrounded schema routes `StvnDocumentationProvider` to the governed `Value` compliance card, rendering the yellow **Degraded Schema Warning** banner and `Compliance Status: Suspended (Degraded Schema)` while keeping `PsiReference.resolve()` (`Ctrl+Click`) symbol navigation intact:
   > **⚠️ Degraded Schema Warning**  
-  > Nominal type `:<alias>` contains constraint errors in `:defs`. Currently evaluating payload using fallback base type (`:<base>`).
-- Payloads in `:body` continue to receive syntax highlighting and basic base-type auto-completion based on the fallback schema.
+  > Nominal type `:<alias>` contains constraint errors in `:defs` (underlying base type: `:<base>`).  
+  > Payload evaluation is suspended.
+- Payloads in `:body` continue to receive syntax highlighting, multi-hop degraded type traces (`⚠ :Child -> :Parent -> :Enum`), and basic base-type auto-completion based on the fallback schema.
 
 ---
 
@@ -216,11 +219,11 @@ flowchart TD
 ### 4.3 `StvnTemporalModeInspection`
 - **Target Locus:** Declarations of `:TimeEpoch` and `:DateTime`.
 - **Defect Detection:**
-  - Flags bare `:TimeEpoch` lacking an explicit standalone scale flag (`#s`, `#ms`, `#us`, `#ns`).
-  - Flags bare `:DateTime` lacking an explicit mode facet (`#offset`, `#zoned`, `#audited`).
-  - Flags mutually exclusive temporal modes declared simultaneously on the same type.
-- **Diagnostic Codes:** `ERR_TEMPORAL_SCALE_MISSING`, `ERR_DATETIME_MODE_MISSING`, `ERR_MUTUALLY_EXCLUSIVE`.
-- **Intention Quick-Fix:** Appends canonical standalone flags (`{ #ms } :TimeEpoch` or `{ #offset } :DateTime`).
+  - Flags bare `:TimeEpoch` lacking an explicit standalone scale flag (`#ns`, `#us`, `#ms`, `#s`), pinned directly to the `:TimeEpoch` `AtomicType` token.
+  - Flags bare `:DateTime` lacking an explicit mode facet (`#offset`, `#zoned`, `#audited`), pinned directly to the `:DateTime` `AtomicType` token.
+  - Flags mutually exclusive temporal scale or mode facets declared simultaneously in the same metadata block, pinning `GENERIC_ERROR` strictly to conflicting facets (`i >= 1`) while exposing silent `INFORMATION`-level `Alt+Enter` fixes on `i == 0`.
+- **Diagnostic Codes:** `ERR_MISSING_TEMPORAL_FACET` (`E008`), `MUTUALLY_EXCLUSIVE_BOUNDS` (`E008`).
+- **Intention Quick-Fixes:** Inserts default standalone temporal flags (`{ #ms } :TimeEpoch` or `{ #offset } :DateTime`), keeps only the selected facet, or removes a conflicting facet (`Remove conflicting facet '<facet>'`).
 
 ### 4.4 `StvnMapStructuralInspection`
 - **Target Locus:** Map literals and map collection type declarations.
@@ -231,14 +234,12 @@ flowchart TD
 - **Diagnostic Code:** `ERR_MAP_STRUCTURE_INVALID`.
 - **Intention Quick-Fix:** `StvnMapAutoHealerQuickFix` automatically restructures flat list entries into paired bracket tuples `[ key value ]` inside outer curly braces.
 
-### 4.5 `StvnEnumSubsetInspection`
-- **Target Locus:** Type definitions declaring `#filterIncl` or `#filterExcl`.
+### 4.5 `StvnEnumSubsetInspection` & Per-Variant Enum Quick-Fixes
+- **Target Locus:** Type definitions declaring `#filterIncl` or `#filterExcl`, plus `:body` and `ConstantDefinition` values governed by `:Enum` or `:EnumSubset` schemas.
 - **Defect Detection:**
-  - Enforces monotonic narrowing: filtered variants must exist within the immediate parent enum.
-  - Enforces declaration order: filtered variant lists must follow the relative declaration ordering of the root enum.
-  - Enforces mutual exclusivity of `#filterIncl` and `#filterExcl`.
-- **Diagnostic Codes:** `ERR_VARIANT_NOT_IN_ROOT_ENUM`, `ERR_ORDER_MISMATCH`, `ERR_MUTUALLY_EXCLUSIVE`.
-- **Intention Quick-Fix:** `StvnReorderEnumFilterVariantsQuickFix` automatically sorts variants to match the canonical root enum declaration order.
+  - Enforces monotonic narrowing (`E014 / ENUM_SUBSET_NOT_SUBSET`), root declaration ordering (`E015 / ENUM_SUBSET_ORDER_VIOLATION`), non-empty active subsets (`E016 / ENUM_SUBSET_EMPTY`), and `#filterIncl` / `#filterExcl` mutual exclusivity (`E008 / MUTUALLY_EXCLUSIVE_BOUNDS` pinned to `i >= 1`).
+  - Flags subset-excluded variants with `E012 / ERR_CONSTRAINT_VIOLATION` and undeclared variants with `E028 / ERR_TYPE_MISMATCH` across both `:body` slots and nominal `#CONST` RHS values while exempting declared `#CONST` references.
+- **Intention Quick-Fixes:** `StvnReorderEnumFilterVariantsQuickFix` sorts filter variants into root declaration order; `RemoveRedundantFacetQuickFix` (`Remove conflicting facet '<facet>'`) removes a conflicting filter facet; `StvnPayloadValueQuickFixProvider` offers ordered per-variant `Replace with '<#VARIANT>'` actions across all active variants.
 
 ### 4.6 `RemoveInvertibleFacetQuickFix`
 - **Target Locus:** `#invertible` `MetadataEntry` nodes and non-equatable map values in inverted map declarations.
@@ -259,7 +260,8 @@ flowchart TD
 - **Comment & Blank-Line Slice Invariant (Golden Quartet #14 Parity):**
   - Partitioning attaches contiguous standalone `//` comments and same-line `//` comments to each `:meta` or `MetadataMap` entry slice (`CommentedEntrySlice`) while preserving trailing footer `//` comments before `}`.
   - Blank lines emit strictly when `newlinesSincePrevItem >= 2`; consecutive standalone `//` comments (`newlines == 1`) never fabricate blank lines, and enclosure-top blank lines immediately after `{` (`entryIdx == 0`) never fabricate inter-entry blank lines after permutation.
-  - In `PSI_STRUCTURE_PRESERVING` mode, `StvnMetadataOrderPreFormatProcessor` snapshots pre-format coordinates so `StvnBlock` and `StvnCoreDelegationPostFormatProcessor.reanchorAlignedTrailingComments` collapse interior multi-spaces and pad aligned trailing comments (`>= 2` authored spaces) to their original target columns, matching `StvnSourceFormatter` (`source_pretty/14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i`) byte-for-byte.
+  - In `PSI_STRUCTURE_PRESERVING` mode, `StvnMetadataOrderPreFormatProcessor` snapshots pre-format coordinates so `StvnBlock` and `StvnCoreDelegationPostFormatProcessor.reanchorAlignedTrailingComments` collapse interior multi-spaces and pad aligned trailing comments (`>= 2` authored spaces) to their original target columns, matching `StvnSourceFormatter` (`source_pretty/14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i` and `source_pretty/15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i`) byte-for-byte.
+  - **Mutex-Group Rank Stabilization (`createMutexStabilizedEntryRanker`):** Across all 6 mutually exclusive facet groups (`#ns..#s`, `#offset..#audited`, `#size`/`#exact`, `#minIncl`/`#minExcl`, `#maxIncl`/`#maxExcl`, `#filterIncl`/`#filterExcl`), `StvnMetadataOrderInspection` suppresses secondary `E037 / ERR_FACET_ORDER_VIOLATION` cascades on 2nd+ co-occurring group members and stabilizes their sort rank to the first encountered group member so `Ctrl+Alt+L` and `StvnReorderMetadataFacetsQuickFix` never flip reverse-ordered mutually exclusive pairs (`{ #s #ms }`).
 - **Authoritative 5-Character `KW_META` Pinning & In-Flight `#kind` Suppression:**
   - `W002` (`WARN_DOCUMENT_DOMAIN_OMITTED_IN_META`) and non-empty `:meta` omitted-`#kind` `E031` (`ERR_DOCUMENT_KIND_MISMATCH`) anchor strictly to the 5-character `KW_META` (`:meta`) token across both `StvnExternalAnnotator` (via upstream `StvnDefsLowerer`) and governed local inspections (`StvnStemMismatchInspection`, `StvnMissingMetaInspection`) with zero downstream coordinate clamping and zero duplicate highlights.
   - During active typing inside `:meta`, `StvnMissingMetaInspection` suppresses secondary `E031` cascades whenever `#kind` is pinned without a value (`MetaKindFacet.getMetaKindValue() == null`) or appears as an in-flight `#kind` tag inside `MetaBlock`.

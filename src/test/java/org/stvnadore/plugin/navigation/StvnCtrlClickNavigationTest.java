@@ -565,4 +565,56 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
         var listInlayPresentation = collector.buildInlayPresentation(listValue, ":Seq( :TreeNode )");
         assertNotNull(listInlayPresentation);
     }
+
+    /**
+     * Safeguard 4: Verifies that routing hover to the degraded :body Value slot on #CREATED
+     * preserves PsiReference.resolve() to the EnumDef variant and GotoDeclaration navigation.
+     */
+    public void testSafeguard4DegradedEnumSubsetBodySlotPreservesPsiReferenceAndGotoDeclaration() {
+        var code = """
+            {
+              :defs {
+                :SettlementState :Enum [ #CREATED #AUTHORIZED #CAPTURED #SETTLED ]
+                :TrapConflictFilter { #filterIncl [ #CREATED #AUTHORIZED ] #filterExcl [ #AUTHORIZED ] } :SettlementState
+              }
+              :type :TrapConflictFilter
+              :body #CREATED
+            }
+            """;
+        var file = myFixture.configureByText("safeguard4_degraded_enum_nav.stvn", code);
+
+        int enumCreatedOffset = code.indexOf("#CREATED #AUTHORIZED #CAPTURED");
+        int trapTypeDefOffset = code.indexOf(":TrapConflictFilter {");
+        int filterCreatedOffset = code.indexOf("#CREATED #AUTHORIZED ]");
+        int bodyCreatedOffset = code.indexOf("#CREATED", code.indexOf(":body"));
+
+        // 1. PsiReference.resolve() on #CREATED in degraded :body slot still resolves directly to EnumDef's #CREATED
+        var bodyLeaf = file.findElementAt(bodyCreatedOffset + 1);
+        assertNotNull(bodyLeaf);
+        var bodyValKw = PsiTreeUtil.getParentOfType(bodyLeaf, ValueKeyword.class, false);
+        assertNotNull(bodyValKw);
+        var ref = bodyValKw.getReference();
+        assertNotNull("PsiReference on #CREATED in degraded :body slot must remain attached", ref);
+        var resolved = ref.resolve();
+        assertNotNull("PsiReference.resolve() on #CREATED must resolve to EnumDef variant", resolved);
+        assertEquals(enumCreatedOffset, resolved.getTextOffset());
+
+        // 2. GotoDeclaration on #CREATED in :body navigates to governing nominal TypeDefinition :TrapConflictFilter
+        var bodyTargets = gotoHandler.getGotoDeclarationTargets(bodyLeaf, bodyCreatedOffset + 1, myFixture.getEditor());
+        assertNotNull(bodyTargets);
+        assertEquals(1, bodyTargets.length);
+        assertTrue(bodyTargets[0] instanceof TypeDefinition);
+        assertEquals(trapTypeDefOffset, bodyTargets[0].getTextOffset());
+
+        myFixture.getEditor().getCaretModel().moveToOffset(bodyCreatedOffset + 1);
+        myFixture.performEditorAction("GotoDeclaration");
+        assertEquals(trapTypeDefOffset, myFixture.getEditor().getCaretModel().getOffset());
+
+        // 3. GotoDeclaration on #CREATED inside #filterIncl jumps directly to EnumDef #CREATED
+        var filterLeaf = file.findElementAt(filterCreatedOffset + 1);
+        var filterTargets = gotoHandler.getGotoDeclarationTargets(filterLeaf, filterCreatedOffset + 1, myFixture.getEditor());
+        assertNotNull(filterTargets);
+        assertEquals(1, filterTargets.length);
+        assertEquals(enumCreatedOffset, filterTargets[0].getTextOffset());
+    }
 }

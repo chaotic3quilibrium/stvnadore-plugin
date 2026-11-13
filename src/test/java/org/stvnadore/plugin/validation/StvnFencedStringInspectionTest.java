@@ -386,8 +386,8 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         assertTrue("Error description must originate from stvn-core external annotator", errorHighlight.getDescription().contains("[stvn-core:E025-FENCE_DELIMITER_MISMATCH]"));
 
         int expectedStart = code.indexOf("\"\"\"");
-        assertEquals("Error highlight must pin strictly to opening triple-quote delimiter [startOffset, startOffset + 3)",
-            new com.intellij.openapi.util.TextRange(expectedStart, expectedStart + 3),
+        assertEquals("Error highlight must pin strictly to opening triple-quote delimiter line [startOffset, startOffset + 4)",
+            new com.intellij.openapi.util.TextRange(expectedStart, expectedStart + 4),
             new com.intellij.openapi.util.TextRange(errorHighlight.getStartOffset(), errorHighlight.getEndOffset()));
 
         var action = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[FENCE]...[FENCE]\"\"\"'");
@@ -593,5 +593,83 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         List<HighlightInfo> highlights = myFixture.doHighlighting();
         boolean hasErrors = highlights.stream().anyMatch(h -> h.getSeverity().equals(HighlightSeverity.ERROR));
         assertFalse("Arbitrary closing fence patterns inside payload body must not trigger errors on valid outer block", hasErrors);
+    }
+
+    public void testSafeguard1ProhibitedArrowOpeningLineSpanAndBodyPreservingQuickFix() {
+        String code = """
+            {
+              :type :String
+              :body \"\"\"->[SQL]<caret>
+                SELECT 1
+                FROM dual;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.configureByText("safeguard1_arrow.stvn", code);
+        List<HighlightInfo> highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertEquals("Expected strictly 1 E025 arrow error with zero duplicate highlights: " + errors, 1, errors.size());
+
+        String docText = myFixture.getEditor().getDocument().getText();
+        int openStart = docText.indexOf("\"\"\"->[SQL]");
+        int openLineEndInclusiveNewline = docText.indexOf('\n', openStart) + 1;
+        assertEquals("Arrow fence highlight must match Core opening-line span [start, arrowLineEnd + 1)",
+            new com.intellij.openapi.util.TextRange(openStart, openLineEndInclusiveNewline),
+            new com.intellij.openapi.util.TextRange(errors.get(0).getStartOffset(), errors.get(0).getEndOffset()));
+
+        var fix = myFixture.findSingleIntention("Remove prohibited '->' arrow");
+        assertNotNull("Expected RemoveProhibitedArrowQuickFix on prohibited arrow fence", fix);
+        myFixture.launchAction(fix);
+
+        String expected = """
+            {
+              :type :String
+              :body \"\"\"[SQL]
+                SELECT 1
+                FROM dual;
+              [SQL]\"\"\"
+            }
+            """;
+        myFixture.checkResult(expected);
+        List<HighlightInfo> afterHighlights = myFixture.doHighlighting();
+        assertTrue("Document must compile cleanly after removing prohibited '->'",
+            afterHighlights.stream().noneMatch(h -> h.getSeverity() == HighlightSeverity.ERROR));
+    }
+
+    public void testMalformedFencedStringTupleSlotIsolationPreservesSixSlotArityAndTrailingHover() {
+        String code = """
+            {
+              :defs {
+                :Port { #unsigned #size 16 #minIncl 1024 #maxExcl 65536 } :Int
+                :Envelope :Tuple( :String :Port :String :Port :String :Boolean )
+              }
+              :type :Envelope
+              :body (
+                \"\"\"inline\"\"\"
+                8080
+                \"\"\"->[SQL]
+                SELECT 1;
+                [SQL]\"\"\"
+                443
+                \"\"\"
+                untagged
+                \"\"\"
+                #TRUE
+              )
+            }
+            """;
+        var file = myFixture.configureByText("slot_isolation.stvn", code);
+        var tuple = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, org.stvnadore.psi.TupleLiteral.class);
+        assertNotNull("TupleLiteral must be parsed", tuple);
+        assertEquals("Expected all 6 positional TupleLiteral Value slots preserved", 6, tuple.getValueList().size());
+
+        assertEquals(":Port",
+            org.stvnadore.plugin.reference.StvnTypeResolver.resolveValueType(tuple.getValueList().get(1)));
+        assertEquals(":Port",
+            org.stvnadore.plugin.reference.StvnTypeResolver.resolveValueType(tuple.getValueList().get(3)));
+        assertEquals(":Boolean",
+            org.stvnadore.plugin.reference.StvnTypeResolver.resolveValueType(tuple.getValueList().get(5)));
     }
 }

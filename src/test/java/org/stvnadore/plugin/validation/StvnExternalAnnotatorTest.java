@@ -1553,8 +1553,8 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals("Must report exactly 1 syntax error squiggle across entire document", 1, errors.size());
         var err = errors.get(0);
         int tripleOffset = code.indexOf("\"\"\"");
-        assertEquals("Highlight range must pin strictly to opening triple quotes (Rule STR-04 § 7.3)",
-            new com.intellij.openapi.util.TextRange(tripleOffset, tripleOffset + 3),
+        assertEquals("Highlight range must pin strictly to opening fence line including newline (Rule STR-04 § 7.3)",
+            new com.intellij.openapi.util.TextRange(tripleOffset, tripleOffset + 4),
             new com.intellij.openapi.util.TextRange(err.getStartOffset(), err.getEndOffset()));
 
         var fix = myFixture.findSingleIntention("Convert to fenced string '\"\"\"[FENCE]...[FENCE]\"\"\"'");
@@ -2540,13 +2540,13 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 && e.type != HighlightInfoType.WRONG_REF
                 && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
 
-        // 2. Verify #offset, #zoned, and #audited on :AuditedDualTs are flagged as mutually exclusive
+        // 2. Verify 2nd+ conflicting mode facets (#zoned and #audited) on :AuditedDualTs are flagged as mutually exclusive while 1st (#offset) is preserved
         int auditedIdx = code.indexOf(":AuditedDualTs");
         int auditedOffset = code.indexOf("#offset", auditedIdx);
         int auditedZoned = code.indexOf("#zoned", auditedIdx);
         int auditedAudited = code.indexOf("#audited", auditedIdx);
-        assertTrue("Expected mutual exclusivity error on #offset in :AuditedDualTs",
-            errors.stream().anyMatch(e -> e.getStartOffset() == auditedOffset && "#offset".equals(e.getText())));
+        assertTrue("First mode facet #offset (i == 0) in :AuditedDualTs must not receive an error",
+            errors.stream().noneMatch(e -> e.getStartOffset() == auditedOffset && "#offset".equals(e.getText())));
         assertTrue("Expected mutual exclusivity error on #zoned in :AuditedDualTs",
             errors.stream().anyMatch(e -> e.getStartOffset() == auditedZoned && "#zoned".equals(e.getText())));
         assertTrue("Expected mutual exclusivity error on #audited in :AuditedDualTs",

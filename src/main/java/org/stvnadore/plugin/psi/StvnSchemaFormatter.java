@@ -294,6 +294,60 @@ public final class StvnSchemaFormatter {
     }
 
     /**
+     * Formats the underlying base constructor for degraded schema diagnostics and hover banners,
+     * collapsing enum definitions and enum subsets to {@code :Enum} without inline variant lists.
+     *
+     * @param schema pure-IR schema record, or {@code null}
+     * @return concise underlying base type string, or an empty string if {@code null}
+     */
+    public static @NotNull String formatDegradedUnderlyingBaseIr(@Nullable StvnSchema schema) {
+        if (schema == null) {
+            return "";
+        }
+        if (schema instanceof StvnSchema.EnumSchema || schema instanceof StvnSchema.EnumSubsetSchema) {
+            return StvnVocabulary.TYPE_ENUM;
+        }
+        if (schema instanceof StvnSchema.PoisonedSchema p) {
+            return p.bestEffortFallback()
+                .map(StvnSchemaFormatter::formatDegradedUnderlyingBaseIr)
+                .orElseGet(() -> p.aliasName().orElse("<poisoned>"));
+        }
+        return formatCleanIrSchema(schema);
+    }
+
+    /**
+     * Formats the underlying base constructor from PSI for degraded schema diagnostics and hover banners,
+     * collapsing enum definitions to {@code :Enum} without inline variant lists.
+     *
+     * @param element PSI schema element, or {@code null}
+     * @return concise underlying base type string, or an empty string if {@code null}
+     */
+    public static @NotNull String formatDegradedUnderlyingBasePsi(@Nullable PsiElement element) {
+        if (element == null) {
+            return "";
+        }
+        if (element instanceof TypeDefinition typeDef) {
+            return formatDegradedUnderlyingBasePsi(typeDef.getSchemaType());
+        }
+        if (element instanceof ConstantDefinition constDef) {
+            return formatDegradedUnderlyingBasePsi(constDef.getSchemaType());
+        }
+        if (element instanceof SchemaType schemaType) {
+            var ctor = schemaType.getSchemaConstructor();
+            if (ctor != null && ctor.getSumType() != null
+                    && ctor.getSumType().getNode().findChildByType(StvnTypes.KW_ENUM) != null) {
+                return StvnVocabulary.TYPE_ENUM;
+            }
+        } else if (element instanceof SchemaConstructor ctor) {
+            if (ctor.getSumType() != null
+                    && ctor.getSumType().getNode().findChildByType(StvnTypes.KW_ENUM) != null) {
+                return StvnVocabulary.TYPE_ENUM;
+            }
+        }
+        return formatCleanSchema(element);
+    }
+
+    /**
      * Formats an enum structure from an explicit list of variant keywords.
      *
      * @param variants the list of variant keywords (for example, {@code ["#KNIGHT", "#BISHOP"]})

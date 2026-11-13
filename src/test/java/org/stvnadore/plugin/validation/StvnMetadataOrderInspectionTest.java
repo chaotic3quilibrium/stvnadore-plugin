@@ -664,4 +664,43 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
         assertTrue("Reordered document must have zero ERROR highlights: " + postHighlights,
             postHighlights.stream().noneMatch(h -> h.getSeverity() == HighlightSeverity.ERROR));
     }
+
+    public void testAllSixMutexGroupsSuppressSecondaryOrderCascadeAndNeverFlipInQuickFix() {
+        var text = """
+            {
+              :defs {
+                :BaseEnum :Enum [ #A #B #C ]
+                :Group1Scale { #s #ms } :TimeEpoch
+                :Group2Mode { #audited #offset } :DateTime
+                :Group3ExactSize { #size 64 #exact } :Float
+                :Group4Lower { #minExcl 0.0 #minIncl 1.0 } :Float
+                :Group5Upper { #maxExcl 10.0 #maxIncl 9.0 } :Float
+                :Group6Filter { #filterExcl [ #A ] #filterIncl [ #B ] } :BaseEnum
+                :MixedCrossTierAndMutex { #minIncl 0 #s #ms } :TimeEpoch
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        myFixture.configureByText("six_mutex_groups.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var orderErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_FACET_ORDER_VIOLATION"))
+            .toList();
+
+        assertEquals("Only genuine cross-tier disorder (#s after #minIncl 0) must emit ERR_FACET_ORDER_VIOLATION: " + orderErrors,
+            1, orderErrors.size());
+        assertEquals("Order error must pin strictly to '#s' in :MixedCrossTierAndMutex",
+            "#s", orderErrors.get(0).getText());
+
+        myFixture.getEditor().getCaretModel().moveToOffset(orderErrors.get(0).getStartOffset() + 1);
+        var reorderActions = myFixture.filterAvailableIntentions("Reorder metadata facets to canonical 5-tier order");
+        assertEquals(1, reorderActions.size());
+        myFixture.launchAction(reorderActions.get(0));
+
+        String reordered = myFixture.getFile().getText();
+        assertTrue("StvnReorderMetadataFacetsQuickFix must move '#s #ms' before '#minIncl 0' without flipping '#s #ms' to '#ms #s':\n" + reordered,
+            reordered.contains(":MixedCrossTierAndMutex { #s #ms #minIncl 0 } :TimeEpoch"));
+    }
 }

@@ -413,7 +413,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         }
     }
 
-    private static final int METADATA_FIXTURES_INVALID_COUNT = 38;
+    private static final int METADATA_FIXTURES_INVALID_COUNT = 39;
 
     public void testInvalidMetadataFixtures() throws Exception {
         var invalidDir = Paths.get(getTestDataPath(), "metadata", "invalid");
@@ -6981,6 +6981,50 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
         assertEquals("Expected strictly 2 highlights (E031 + E012) with zero duplicates: " + kindHighlights, 2, kindHighlights.size());
+    }
+
+    private static final java.util.List<String> GAUNTLET_V7_BATCH2_CONTRACT_FIXTURES = java.util.List.of(
+        "syntax/invalid/strings/malformed_fenced_string_tuple_slot_isolation.stvn",
+        "syntax/invalid/strings/unfenced_block_string_prohibited.stvn",
+        "syntax/invalid/lexical/fenced_string_prohibited_arrow_rejected.stvn",
+        "syntax/invalid/metadata/incomplete_trait_facets_and_reserved_keyword_boundary.stvn",
+        "syntax/invalid/composites/const_nominal_enum_branding_and_conflict_filter_fallback.stvn",
+        "syntax/invalid/composites/enum_subset_monotonic_narrowing_violation.stvn",
+        "syntax/invalid/composites/enum_subset_root_ordering_violation.stvn",
+        "syntax/invalid/composites/enum_subset_complete_exclusion_violation.stvn",
+        "syntax/invalid/composites/enum_subset_mutual_exclusivity_violation.stvn",
+        "syntax/invalid/composites/enum_subset_payload_not_in_subset.stvn",
+        "syntax/invalid/composites/inline_metadata_missing_temporal_scale.stvn",
+        "syntax/invalid/facets/temporal_epoch_missing_unit.stvn",
+        "syntax/invalid/facets/temporal_datetime_missing_mode.stvn",
+        "syntax/invalid/facets/temporal_epoch_conflicting_scales.stvn",
+        "syntax/invalid/facets/temporal_datetime_conflicting_modes.stvn",
+        "syntax/invalid/intervals/discrete_bound_prohibited_datetime_max_incl.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_reverse_tier_no_order_cascade.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_time_epoch_scales.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_datetime_modes.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_float_minincl_minexcl.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_float_maxincl_maxexcl.stvn",
+        "metadata/invalid/mutual_exclusion/inv_mutex_enum_filter_incl_excl.stvn"
+    );
+
+    public void testGauntletV7Batch2ContractsWithoutLocalInspections() throws Exception {
+        for (String relativePath : GAUNTLET_V7_BATCH2_CONTRACT_FIXTURES) {
+            assertDiagnosticContract(relativePath);
+        }
+    }
+
+    public void testGauntletV7Batch2ContractsWithAll26LocalInspectionsEnabled() throws Exception {
+        var allStvnInspections = com.intellij.codeInspection.LocalInspectionEP.LOCAL_INSPECTION.getExtensionList().stream()
+            .filter(ep -> "STVN".equals(ep.language))
+            .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
+            .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
+        assertEquals("Expected all 26 STVN local inspections registered in plugin.xml", 26, allStvnInspections.length);
+        myFixture.enableInspections(allStvnInspections);
+
+        for (String relativePath : GAUNTLET_V7_BATCH2_CONTRACT_FIXTURES) {
+            assertDiagnosticContract(relativePath);
+        }
     }
 }
 

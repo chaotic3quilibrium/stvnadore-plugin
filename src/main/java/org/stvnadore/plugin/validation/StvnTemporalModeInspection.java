@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -70,7 +71,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     return;
                 }
                 var metaMap = typeDef.getMetadataMap() != null ? typeDef.getMetadataMap() : schemaType.getMetadataMap();
-                validateTemporalSchema(schemaType, metaMap, holder);
+                validateTemporalSchema(schemaType, metaMap, holder, isOnTheFly);
             }
 
             @Override
@@ -84,7 +85,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                     return;
                 }
                 var metaMap = constDef.getMetadataMap() != null ? constDef.getMetadataMap() : schemaType.getMetadataMap();
-                validateTemporalSchema(schemaType, metaMap, holder);
+                validateTemporalSchema(schemaType, metaMap, holder, isOnTheFly);
             }
 
             @Override
@@ -103,7 +104,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                         || schemaType.getParent() instanceof ConstantDefinition) {
                     return; // Handled by visitTypeDefinition / visitConstantDefinition
                 }
-                validateTemporalSchema(schemaType, schemaType.getMetadataMap(), holder);
+                validateTemporalSchema(schemaType, schemaType.getMetadataMap(), holder, isOnTheFly);
             }
         };
     }
@@ -111,9 +112,14 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
     private static void validateTemporalSchema(
             @NotNull SchemaType schemaType,
             @Nullable MetadataMap metaMap,
-            @NotNull ProblemsHolder holder
+            @NotNull ProblemsHolder holder,
+            boolean isOnTheFly
     ) {
         var typeText = StvnSchemaFormatter.formatCleanSchema(schemaType).trim();
+        var ctor = schemaType.getSchemaConstructor();
+        var pinTarget = (ctor != null && ctor.getAtomicType() != null)
+            ? ctor.getAtomicType()
+            : schemaType;
         if (StvnVocabulary.TYPE_TIME_EPOCH.equals(typeText)) {
             var scaleEntries = new ArrayList<MetadataEntry>();
             var scaleKeywords = new ArrayList<String>();
@@ -135,23 +141,37 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                             others.add(scaleKeywords.get(j));
                         }
                     }
-                    holder.registerProblem(
-                        scaleEntry,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Temporal scale facets (#s, #ms, #us, #ns) are mutually exclusive",
-                            StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR,
+                    var fixes = new LocalQuickFix[] {
                         new KeepOnlyTemporalFacetQuickFix(scaleEntry, clickedKw, others, false),
-                        new RemoveRedundantFacetQuickFix(scaleEntry, clickedKw)
-                    );
+                        new RemoveRedundantFacetQuickFix(scaleEntry, clickedKw, "Remove conflicting facet")
+                    };
+                    if (i >= 1) {
+                        holder.registerProblem(
+                            scaleEntry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Temporal scale facets ('" + StvnVocabulary.FACET_KW_SCALE_NS + "', '"
+                                    + StvnVocabulary.FACET_KW_SCALE_US + "', '"
+                                    + StvnVocabulary.FACET_KW_SCALE_MS + "', '"
+                                    + StvnVocabulary.FACET_KW_SCALE_S + "') are mutually exclusive",
+                                DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
+                        );
+                    } else if (isOnTheFly) {
+                        holder.registerProblem(scaleEntry, "", ProblemHighlightType.INFORMATION, fixes);
+                    }
                 }
             } else if (scaleEntries.isEmpty()) {
                 holder.registerProblem(
-                    schemaType,
+                    pinTarget,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Temporal type ':TimeEpoch' requires a scale facet: '#s', '#ms', '#us', or '#ns'",
-                        StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING
+                        "Temporal primitive '" + StvnVocabulary.TYPE_TIME_EPOCH
+                            + "' requires exactly one scale facet ('" + StvnVocabulary.FACET_KW_SCALE_NS
+                            + "', '" + StvnVocabulary.FACET_KW_SCALE_US + "', '"
+                            + StvnVocabulary.FACET_KW_SCALE_MS + "', or '"
+                            + StvnVocabulary.FACET_KW_SCALE_S + "')",
+                        DiagnosticBag.ERR_MISSING_TEMPORAL_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     createTimeEpochScaleQuickFixes(schemaType)
@@ -178,23 +198,35 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                             others.add(modeKeywords.get(j));
                         }
                     }
-                    holder.registerProblem(
-                        modeEntry,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Temporal facets '#offset', '#zoned', and '#audited' are mutually exclusive",
-                            StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR,
+                    var fixes = new LocalQuickFix[] {
                         new KeepOnlyTemporalFacetQuickFix(modeEntry, clickedKw, others, true),
-                        new RemoveRedundantFacetQuickFix(modeEntry, clickedKw)
-                    );
+                        new RemoveRedundantFacetQuickFix(modeEntry, clickedKw, "Remove conflicting facet")
+                    };
+                    if (i >= 1) {
+                        holder.registerProblem(
+                            modeEntry,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Temporal mode facets ('" + StvnVocabulary.FACET_KW_OFFSET + "', '"
+                                    + StvnVocabulary.FACET_KW_ZONED + "', '"
+                                    + StvnVocabulary.FACET_KW_AUDITED + "') are mutually exclusive",
+                                DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            fixes
+                        );
+                    } else if (isOnTheFly) {
+                        holder.registerProblem(modeEntry, "", ProblemHighlightType.INFORMATION, fixes);
+                    }
                 }
             } else if (modeEntries.isEmpty()) {
                 holder.registerProblem(
-                    schemaType,
+                    pinTarget,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Temporal type ':DateTime' requires explicit mode facet: '#offset', '#zoned', or '#audited'",
-                        StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING
+                        "Temporal primitive '" + StvnVocabulary.TYPE_DATE_TIME
+                            + "' requires exactly one mode facet ('" + StvnVocabulary.FACET_KW_OFFSET
+                            + "', '" + StvnVocabulary.FACET_KW_ZONED + "', or '"
+                            + StvnVocabulary.FACET_KW_AUDITED + "')",
+                        DiagnosticBag.ERR_MISSING_TEMPORAL_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     createDateTimeModeQuickFixes(schemaType)

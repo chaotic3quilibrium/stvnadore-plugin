@@ -67,7 +67,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 14 mirrored golden formatter quartets", 14, inputNames.size());
+        assertEquals("Expected 15 mirrored golden formatter quartets", 15, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -219,7 +219,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "11_trailing_comment_alignment_and_facet_sorting.core_fmt.stvn_i".equals(fileName)
                         || "12_multiline_parameterized_constructors_depth_fifteen.core_fmt.stvn_i".equals(fileName)
                         || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)
-                        || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)) {
+                        || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
+                        || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }
@@ -230,6 +231,41 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                     StvnCompiler.toCanonicalString(expectedDoc),
                     StvnCompiler.toCanonicalString(psiFormattedDoc));
             }
+        } finally {
+            settings.getState().reformatDelegationMode = prevMode;
+        }
+    }
+
+    public void testReverseOrderedMutexFacetsNeverReorderInPsiOrCoreSourceFormatter() {
+        var settings = StvnSettings.getInstance(getProject());
+        var prevMode = settings.getState().reformatDelegationMode;
+        String input = """
+            {
+              :defs {
+                :RevScale { #s #ms } :TimeEpoch
+                :RevMode { #audited #offset } :DateTime
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("rev_mutex_core.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            String coreFormatted = coreFile.getText();
+            assertTrue("Core source formatter must preserve '{ #s #ms }' order", coreFormatted.contains("{ #s #ms }"));
+            assertTrue("Core source formatter must preserve '{ #audited #offset }' order", coreFormatted.contains("{ #audited #offset }"));
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("rev_mutex_psi.stvn", input);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            assertEquals("PSI_STRUCTURE_PRESERVING and CORE_SOURCE_FORMATTER must match byte-for-byte on reverse mutex pairs",
+                coreFormatted, psiFile.getText());
         } finally {
             settings.getState().reformatDelegationMode = prevMode;
         }

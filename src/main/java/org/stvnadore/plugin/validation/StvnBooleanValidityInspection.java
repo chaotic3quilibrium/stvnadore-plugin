@@ -12,8 +12,8 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
@@ -32,7 +32,12 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
     public StvnBooleanValidityInspection() {
     }
 
-    private static final Set<String> BOOLEAN_WHITELIST = Set.of(StvnVocabulary.VAL_TRUE, StvnVocabulary.VAL_TRUE_SHORT, StvnVocabulary.VAL_FALSE, StvnVocabulary.VAL_FALSE_SHORT);
+    private static final Set<String> BOOLEAN_WHITELIST = Set.of(
+        StvnVocabulary.VAL_TRUE,
+        StvnVocabulary.VAL_TRUE_SHORT,
+        StvnVocabulary.VAL_FALSE,
+        StvnVocabulary.VAL_FALSE_SHORT
+    );
 
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
@@ -71,6 +76,13 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
         if (BOOLEAN_WHITELIST.contains(text)) {
             return;
         }
+        if (element instanceof ValueKeyword valKw) {
+            var resolved = StvnConstantReference.resolveConstantWithContext(valKw);
+            if (resolved instanceof ConstantDefinition
+                    || (resolved != null && resolved.getParent() instanceof ConstantDefinition)) {
+                return;
+            }
+        }
 
         var valueParent = PsiTreeUtil.getParentOfType(element, Value.class);
         if (valueParent == null) {
@@ -87,11 +99,14 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
 
         if (isNearMiss) {
             var isTrue = lower.equals("#true") || lower.equals("#t");
-            var targetTag = isTrue 
-                ? (useLong ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_TRUE_SHORT) 
+            var targetTag = isTrue
+                ? (useLong ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_TRUE_SHORT)
                 : (useLong ? StvnVocabulary.VAL_FALSE : StvnVocabulary.VAL_FALSE_SHORT);
 
-            var message = StvnDiagnosticFormatter.formatPlugin("Invalid boolean literal casing: '" + text + "'. Valid forms are case-sensitive: #TRUE, #T, #FALSE, #F", StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING);
+            var message = StvnDiagnosticFormatter.formatPlugin(
+                "Invalid boolean literal casing: '" + text + "'. Valid forms are case-sensitive: #TRUE, #T, #FALSE, #F",
+                StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING
+            );
             holder.registerProblem(
                 element,
                 message,
@@ -99,7 +114,10 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
                 new StvnVariantStyleInspection.ChangeVariantTagFormQuickFix(targetTag)
             );
         } else {
-            var message = StvnDiagnosticFormatter.formatPlugin("Value '" + text + "' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F", StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_LITERAL);
+            var message = StvnDiagnosticFormatter.formatPlugin(
+                "Value '" + text + "' is not a valid boolean literal. Expected exactly #TRUE, #T, #FALSE, or #F",
+                StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_LITERAL
+            );
             if (useLong) {
                 holder.registerProblem(
                     element,

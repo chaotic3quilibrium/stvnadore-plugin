@@ -84,12 +84,12 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                         } else {
                             String fallbackBase;
                             if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isGrounded()) {
-                                fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
+                                fallbackBase = StvnSchemaFormatter.formatDegradedUnderlyingBaseIr(poisoned.bestEffortFallback().get());
                             } else {
                                 var resolved = StvnTypeResolver.resolveNominalSchema(schema);
                                 fallbackBase = resolved != null
-                                    ? StvnSchemaFormatter.formatCleanSchema(resolved)
-                                    : StvnSchemaFormatter.formatCleanSchema(schema);
+                                    ? StvnSchemaFormatter.formatDegradedUnderlyingBasePsi(resolved)
+                                    : StvnSchemaFormatter.formatDegradedUnderlyingBasePsi(schema);
                             }
                             rawMessage = "Value bound to degraded schema '" + aliasName
                                 + "' (underlying base '" + fallbackBase + "' \u2014 payload evaluation is suspended)";

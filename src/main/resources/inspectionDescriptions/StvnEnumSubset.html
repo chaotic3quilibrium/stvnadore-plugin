@@ -1,24 +1,27 @@
 <html>
 <body>
-<p>Reports violations of Strong Typed Value Notation (STVN) Enum Subset Filtering rules (STVN Spec &sect;4.8):</p>
+<p>Reports violations of Strong Typed Value Notation (STVN) Enum and Enum Subset rules across <code>:defs</code>, <code>:type</code>, and <code>:body</code> (STVN Spec &sect;4.8):</p>
 <!-- tooltip end -->
 <ul>
-    <li><b>Relative Root Order Violation:</b> Variants inside <code>#filterIncl</code> or <code>#filterExcl</code> must match the relative declaration order of the root <code>:Enum</code>. Provides an automatic in-place reordering quick-fix.</li>
-    <li><b>Monotonic Narrowing Violation:</b> Every variant in a filter facet must exist in the immediate parent type's allowed variant set.</li>
-    <li><b>Mutual Exclusivity Violation:</b> A single metadata block must not contain both <code>#filterIncl</code> and <code>#filterExcl</code>.</li>
-    <li><b>Target Attachment Violations:</b> Filter facets must not attach to inline enum constructors, non-enum primitives, or constants.</li>
-    <li><b>Non-Empty Constraints:</b> Filter bracket lists must not be empty, and <code>#filterExcl</code> must not exclude all parent variants.</li>
+    <li><b>Relative Root Order Violation (<code>E015</code> / <code>ENUM_SUBSET_ORDER_VIOLATION</code>):</b> Variants inside <code>#filterIncl</code> or <code>#filterExcl</code> must match the monotonic declaration order of the root <code>:Enum</code>. Provides an automatic in-place reordering quick-fix.</li>
+    <li><b>Monotonic Narrowing Violation (<code>E014</code> / <code>ENUM_SUBSET_NOT_SUBSET</code>):</b> Every variant in a filter facet must be active in the immediate parent enum.</li>
+    <li><b>Complete Exclusion Violation (<code>E016</code> / <code>ENUM_SUBSET_EMPTY</code>):</b> Filtered enum subsets must retain at least one active variant.</li>
+    <li><b>Mutual Exclusivity Violation (<code>E008</code> / <code>MUTUALLY_EXCLUSIVE_BOUNDS</code>):</b> A single metadata block must not contain both <code>#filterIncl</code> and <code>#filterExcl</code>; pins the error to the second filter facet with <code>Remove conflicting facet '&lt;facet&gt;'</code>.</li>
+    <li><b>Subset-Excluded Payload &amp; Constant Values (<code>E012</code> / <code>ERR_CONSTRAINT_VIOLATION</code>):</b> Flags root enum variants excluded by a governing <code>:EnumSubset</code> in both <code>:body</code> slots and nominal <code>#CONST</code> definitions while exempting declared <code>#CONST</code> references.</li>
+    <li><b>Undeclared Enum Variants (<code>E028</code> / <code>ERR_TYPE_MISMATCH</code>):</b> Flags undeclared variant tags against nominal or inline <code>:Enum</code> and <code>:EnumSubset</code> schemas in both <code>:body</code> slots and <code>#CONST</code> definitions.</li>
 </ul>
 
 <p><b>Quick-Fixes Available:</b></p>
 <ul>
-    <li><b>Sort variants to match root enum declaration order:</b> In-place AST rewrite that reorders out-of-order variants in the filter list to match the canonical root enum declaration order.</li>
+    <li><b>Sort variants to match root enum declaration order:</b> Reorders out-of-order variants in a filter list to match the canonical root enum declaration order.</li>
+    <li><b>Remove conflicting facet:</b> Deletes a conflicting <code>#filterIncl</code> or <code>#filterExcl</code> facet.</li>
+    <li><b>Replace with '&lt;#VARIANT&gt;':</b> Offers deterministic per-variant replacement actions for every active variant in declaration order.</li>
 </ul>
 
 <p><b>Example (Root Ordering Violation):</b></p>
 <pre><code>:defs {
   :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-  // Error: Root ordering violation: variant #MEDIUM does not match relative declaration order of root :Enum :Priority
+  // Error: Root ordering violation (:InvalidOrder): variant '#MEDIUM' violates monotonic root enum declaration order
   :InvalidOrder { #filterIncl [ #HIGH #MEDIUM ] } :Priority
 }
 </code></pre>

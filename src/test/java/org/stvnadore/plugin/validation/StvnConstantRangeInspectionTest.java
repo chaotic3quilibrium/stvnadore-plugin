@@ -143,7 +143,8 @@ public final class StvnConstantRangeInspectionTest extends BasePlatformTestCase 
             .filter(h -> "512".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on out-of-range constant literal '512'", 1, boundErrors.size());
-        assertTrue(boundErrors.get(0).getDescription().contains("ERR_CONSTANT_INTEGER_OVERFLOW"));
+        assertTrue(boundErrors.get(0).getDescription().contains("E012-ERR_CONSTRAINT_VIOLATION"));
+        assertTrue(boundErrors.get(0).getDescription().contains(":DynamicPortChannel"));
 
         List<IntentionAction> fixes = myFixture.getAllQuickFixes();
         List<String> labels = fixes.stream().map(IntentionAction::getText).toList();

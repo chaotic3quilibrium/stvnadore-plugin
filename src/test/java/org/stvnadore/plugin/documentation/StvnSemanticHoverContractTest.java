@@ -283,4 +283,60 @@ public final class StvnSemanticHoverContractTest extends BasePlatformTestCase {
             port5000Doc.contains("<b>Exemplar Value:</b>")
         );
     }
+
+    public void testSafeguard4DegradedEnumSubsetBodySlotHoverRendersWarningBannerAndSuspendedCompliance() {
+        var text = """
+            {
+              :defs {
+                :SettlementState :Enum [ #CREATED #AUTHORIZED #CAPTURED #SETTLED ]
+                :TrapConflictFilter { #filterIncl [ #CREATED #AUTHORIZED ] #filterExcl [ #AUTHORIZED ] } :SettlementState
+              }
+              :type :TrapConflictFilter
+              :body #CREATED
+            }
+            """;
+        var file = myFixture.configureByText("safeguard4_degraded_enum_hover.stvn", text);
+
+        int defsTrapOffset = text.indexOf(":TrapConflictFilter");
+        String defsTrapDoc = getDocAtOffset(text, defsTrapOffset + 1);
+        assertTrue(
+            "Degraded :TrapConflictFilter in :defs must display underlying base type ':Enum' without variant list noise:\n" + defsTrapDoc,
+            defsTrapDoc.contains("(underlying base type: <code>:Enum</code>)")
+                && !defsTrapDoc.contains("underlying base type: <code>:Enum [")
+        );
+
+        int bodyIdx = text.indexOf(":body");
+        int bodyCreatedOffset = text.indexOf("#CREATED", bodyIdx);
+        String customHoverDoc = getDocAtOffset(text, bodyCreatedOffset + 1);
+        assertTrue(
+            "Custom hover on degraded :body slot #CREATED must render Value Type trace with :TrapConflictFilter -> :SettlementState -> :Enum:\n" + customHoverDoc,
+            customHoverDoc.contains("<b>Value Type:</b> \u26A0 :TrapConflictFilter (-> :SettlementState -> :Enum)")
+        );
+        assertTrue(
+            "Custom hover on degraded :body slot #CREATED must report Suspended (Degraded Schema):\n" + customHoverDoc,
+            customHoverDoc.contains("Suspended (Degraded Schema)")
+        );
+        assertTrue(
+            "Custom hover on degraded :body slot #CREATED must report clean underlying base ':Enum':\n" + customHoverDoc,
+            customHoverDoc.contains("(underlying base type: <code>:Enum</code>)")
+        );
+
+        // Simulate live IDE DocumentationManager path where PsiReference.resolve() resolves #CREATED to EnumDef's ValueKeyword
+        var bodyLeaf = file.findElementAt(bodyCreatedOffset + 1);
+        assertNotNull(bodyLeaf);
+        var bodyValKw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(bodyLeaf, org.stvnadore.psi.ValueKeyword.class, false);
+        assertNotNull(bodyValKw);
+        var ref = bodyValKw.getReference();
+        assertNotNull(ref);
+        var resolvedEnumVariant = ref.resolve();
+        assertNotNull("PsiReference on #CREATED must still resolve to EnumDef ValueKeyword", resolvedEnumVariant);
+
+        String liveHoverDoc = provider.generateDoc(resolvedEnumVariant, bodyLeaf);
+        assertNotNull(liveHoverDoc);
+        assertTrue(
+            "Live mouse hover via resolved EnumDef target + originalElement in :body must also render degraded Value card:\n" + liveHoverDoc,
+            liveHoverDoc.contains("Suspended (Degraded Schema)")
+                && liveHoverDoc.contains("<b>Value Type:</b> \u26A0 :TrapConflictFilter (-> :SettlementState -> :Enum)")
+        );
+    }
 }

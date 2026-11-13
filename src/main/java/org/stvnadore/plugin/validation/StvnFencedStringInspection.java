@@ -3,7 +3,6 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
-import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -14,7 +13,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.TokenType;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -50,7 +48,11 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             public void visitElement(@NotNull PsiElement element) {
                 super.visitElement(element);
                 var node = element.getNode();
-                if (node != null && (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED || (node.getElementType() == TokenType.BAD_CHARACTER && element.getText().startsWith("\"\"\""))) && !(element.getParent() instanceof StringLiteral)) {
+                if (node != null
+                        && (node.getElementType() == StvnTypes.LITERAL_STRING_FENCED
+                            || node.getElementType() == StvnTypes.MALFORMED_FENCE
+                            || (node.getElementType() == TokenType.BAD_CHARACTER && element.getText().startsWith("\"\"\"")))
+                        && !(element.getParent() instanceof StringLiteral)) {
                     validateFencedString(element, holder);
                 }
             }
@@ -59,7 +61,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             public void visitStringLiteral(@NotNull StringLiteral element) {
                 super.visitStringLiteral(element);
                 var node = element.getNode();
-                if (node != null && node.findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
+                if (node != null
+                        && (node.findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null
+                            || node.findChildByType(StvnTypes.MALFORMED_FENCE) != null)) {
                     validateFencedString(element, holder);
                 }
             }
@@ -108,13 +112,15 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         if (text.startsWith("\"\"\"->")) {
+            int arrowLineEnd = text.indexOf('\n');
+            TextRange arrowRange = new TextRange(0, arrowLineEnd >= 0 ? arrowLineEnd + 1 : text.length());
             holder.registerProblem(
                 element,
+                arrowRange,
                 StvnDiagnosticFormatter.formatPlugin(
                     "Rule STR-04 violation: Fenced string delimiter arrow '->' is prohibited",
                     StvnDiagnosticCodes.ERR_PROHIBITED_FENCE_ARROW
                 ),
-                ProblemHighlightType.GENERIC_ERROR,
                 new RemoveProhibitedArrowQuickFix()
             );
             return;
@@ -230,8 +236,11 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             }
         }
 
-        // Fallback strictly for BAD_CHARACTER tokens swallowed to EOF: locate first depth-0 closing delimiter
-        if (candidateClosingTag == null && element.getNode() != null && element.getNode().getElementType() == TokenType.BAD_CHARACTER) {
+        // Fallback for unclosed or malformed tokens swallowed to EOF: locate first depth-0 closing delimiter
+        if (candidateClosingTag == null && element.getNode() != null
+                && (element.getNode().getElementType() == TokenType.BAD_CHARACTER
+                    || element.getNode().getElementType() == StvnTypes.MALFORMED_FENCE
+                    || element.getNode().findChildByType(StvnTypes.MALFORMED_FENCE) != null)) {
             var delimiterMatcher = DELIMITER_BOUNDARY_PATTERN.matcher(text);
             int depth = 0;
             int searchStart = openDelimiterEnd;
@@ -661,7 +670,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
             String text = element.getText();
-            int arrowIdx = text.indexOf("->");
+            int arrowIdx = text.startsWith("\"\"\"->") ? 3 : text.indexOf("->");
             if (arrowIdx >= 0) {
                 if (doc != null) {
                     int startOffset = element.getTextRange().getStartOffset();
@@ -677,4 +686,3 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
     }
 }
-

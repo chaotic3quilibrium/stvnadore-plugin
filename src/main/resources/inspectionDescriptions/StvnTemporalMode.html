@@ -2,13 +2,13 @@
 <body>
 <p>Reports missing or conflicting mode and scale facets on temporal type declarations (<code>:TimeEpoch</code> and <code>:DateTime</code>) to enforce STVN 2.0.0 temporal governance.</p>
 
-<p><b>Temporal Mode &amp; Scale Invariants (ERR_MISSING_TEMPORAL_FACET / ERR_MUTUALLY_EXCLUSIVE):</b></p>
+<p><b>Temporal Mode &amp; Scale Invariants (<code>E008</code> / <code>ERR_MISSING_TEMPORAL_FACET</code> &amp; <code>MUTUALLY_EXCLUSIVE_BOUNDS</code>):</b></p>
 <ul>
-    <li>The <code>:TimeEpoch</code> temporal type requires an explicit bare scale facet (<code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>, e.g. <code>{ #ms } :TimeEpoch</code>). Legacy <code>#unit</code> is prohibited.</li>
-    <li>The <code>:DateTime</code> temporal type requires an explicit mode facet (<code>#offset</code>, <code>#zoned</code>, or <code>#audited</code>).</li>
-    <li>Temporal mode facets <code>#offset</code>, <code>#zoned</code>, and <code>#audited</code> are mutually exclusive on a single type declaration.</li>
+    <li>The <code>:TimeEpoch</code> temporal primitive requires one explicit scale facet (<code>#ns</code>, <code>#us</code>, <code>#ms</code>, or <code>#s</code>, e.g. <code>{ #ms } :TimeEpoch</code>), pinned directly to the <code>:TimeEpoch</code> constructor token when omitted.</li>
+    <li>The <code>:DateTime</code> temporal primitive requires one explicit mode facet (<code>#offset</code>, <code>#zoned</code>, or <code>#audited</code>), pinned directly to the <code>:DateTime</code> constructor token when omitted.</li>
+    <li>Temporal scale facets (<code>#ns</code>, <code>#us</code>, <code>#ms</code>, <code>#s</code>) and temporal mode facets (<code>#offset</code>, <code>#zoned</code>, <code>#audited</code>) are mutually exclusive within a single metadata block, pinning <code>E008 / MUTUALLY_EXCLUSIVE_BOUNDS</code> to each conflicting facet beyond the first.</li>
 </ul>
 
-<p>Provides automated intention quick-fixes to supply default temporal facets.</p>
+<p>Provides automated intention quick-fixes to insert default temporal facets, retain a single scale or mode facet, or remove a conflicting facet (<code>Remove conflicting facet '&lt;facet&gt;'</code>).</p>
 </body>
 </html>

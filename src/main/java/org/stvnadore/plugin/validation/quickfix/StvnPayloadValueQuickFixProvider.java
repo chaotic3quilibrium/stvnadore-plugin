@@ -903,24 +903,59 @@ public final class StvnPayloadValueQuickFixProvider {
                 }
             }
             case StvnVocabulary.TYPE_ENUM -> {
-                String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
-                if (exemplar != null && !exemplar.equals(rawValueText)) {
+                List<String> allowedVariants = resolveActiveEnumVariants(irSchema, rawSchema, terminalSchema);
+                boolean first = true;
+                for (String variant : allowedVariants) {
+                    if (variant.equals(rawValueText)) {
+                        continue;
+                    }
                     fixes.add(
                         new PayloadValueQuickFix(
                             value,
-                            "Replace with exemplar value '" + exemplar + "'",
-                            "STVN Exemplar Value Replacement",
-                            exemplar,
+                            "Replace with '" + variant + "'",
+                            "STVN Enum Variant Replacement",
+                            variant,
                             null,
-                            PriorityAction.Priority.LOW
+                            first ? PriorityAction.Priority.HIGH : PriorityAction.Priority.NORMAL
                         )
                     );
+                    first = false;
                 }
             }
             default -> {
             }
         }
         return fixes;
+    }
+
+    private static List<String> resolveActiveEnumVariants(
+        @Nullable StvnSchema irSchema,
+        @Nullable SchemaType rawSchema,
+        @Nullable SchemaType terminalSchema
+    ) {
+        if (irSchema instanceof StvnSchema.EnumSubsetSchema subsetIr) {
+            return subsetIr.activeVariants();
+        }
+        if (irSchema instanceof StvnSchema.EnumSchema enumIr) {
+            return enumIr.rootVariants();
+        }
+        if (rawSchema != null) {
+            var subsetInfo = StvnTypeResolver.resolveEnumSubset(rawSchema);
+            if (subsetInfo != null) {
+                return subsetInfo.allowedVariants();
+            }
+        }
+        SchemaType target = terminalSchema != null ? terminalSchema : rawSchema;
+        if (target != null
+                && target.getSchemaConstructor() != null
+                && target.getSchemaConstructor().getSumType() != null
+                && target.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            return target.getSchemaConstructor().getSumType().getEnumDef()
+                .getValueKeywordList().stream()
+                .map(vk -> vk.getText().trim())
+                .toList();
+        }
+        return List.of();
     }
 
     private static boolean isStringWithinSizeAndLexBounds(
@@ -1964,6 +1999,7 @@ public final class StvnPayloadValueQuickFixProvider {
             || message.contains("meets or exceeds")
             || message.contains("IANA time zone")
             || message.contains("UTC offset")
+            || message.contains("Invalid enum value")
             || message.contains("Invalid {");
     }
 

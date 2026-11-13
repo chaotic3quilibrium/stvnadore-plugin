@@ -74,6 +74,7 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_REDUNDANT_FACET_OVERRIDE = "WARN_REDUNDANT_FACET_OVERRIDE";
 
     // Temporal Mode & Scale
+    public static final String ERR_MISSING_TEMPORAL_FACET = "ERR_MISSING_TEMPORAL_FACET";
     public static final String ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE = "ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE";
     public static final String ERR_TEMPORAL_SCALE_MISSING = "ERR_TEMPORAL_SCALE_MISSING";
     public static final String ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE = "ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE";

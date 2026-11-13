@@ -48,12 +48,13 @@ public final class StvnTradingWorkflowIntegrationTest extends BasePlatformTestCa
         assertEquals(text.indexOf("#milli"), unrecErrors.get(0).getStartOffset());
         assertEquals(text.indexOf("#milli") + 6, unrecErrors.get(0).getEndOffset());
 
-        // 2. Verify ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE on #offset and #zoned
+        // 2. Verify MUTUALLY_EXCLUSIVE_BOUNDS pinned to conflicting 2nd mode (#zoned)
         var mutexErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("MUTUALLY_EXCLUSIVE_BOUNDS"))
             .toList();
-        assertFalse("Mutual exclusivity must not be suppressed by #milli", mutexErrors.isEmpty());
+        assertEquals("Mutual exclusivity must be pinned strictly to #zoned", 1, mutexErrors.size());
+        assertEquals(text.indexOf("#zoned"), mutexErrors.get(0).getStartOffset());
 
         // 3. Verify quick-fix removes #milli cleanly
         int offset = text.indexOf("#milli");
@@ -151,7 +152,7 @@ public final class StvnTradingWorkflowIntegrationTest extends BasePlatformTestCa
         int rbrace = text.indexOf('}', lbrace);
 
         for (var h : highlights) {
-            if (h.getDescription() != null && h.getDescription().contains("ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE")) {
+            if (h.getDescription() != null && h.getDescription().contains("MUTUALLY_EXCLUSIVE_BOUNDS")) {
                 assertFalse("#ms must not carry mode mutual exclusivity", h.getStartOffset() <= msOffset && msOffset < h.getEndOffset());
                 assertFalse("Opening brace must not carry mode mutual exclusivity", h.getStartOffset() == lbrace);
                 assertFalse("Closing brace must not carry mode mutual exclusivity", h.getEndOffset() == rbrace + 1);

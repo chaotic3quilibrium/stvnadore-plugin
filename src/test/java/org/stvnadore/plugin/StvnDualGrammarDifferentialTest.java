@@ -220,13 +220,13 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
 
     /**
      * V10: Rejection of Legacy Unfenced Block Strings (Rule STR-04)
-     * Assert '\"\"\"\r\nHello\r\n\"\"\"' emits BAD_CHARACTER and does NOT produce any valid string token.
+     * Assert '"""\r\nHello\r\n"""' emits MALFORMED_FENCE (mirroring ANTLR4 MALFORMED_FENCE) and does NOT produce any valid string token.
      */
     public void testV10_UnfencedCrlfBlockStringRejection() {
         var input = "\"\"\"\r\nHello\r\n\"\"\"";
         var tokens = tokenize(input);
-        var hasBadCharacter = tokens.stream().anyMatch(t -> t.type() == TokenType.BAD_CHARACTER);
-        assertTrue("V10: Legacy unfenced block string must emit BAD_CHARACTER under Rule STR-04", hasBadCharacter);
+        var hasMalformedFence = tokens.stream().anyMatch(t -> t.type() == StvnTypes.MALFORMED_FENCE);
+        assertTrue("V10: Legacy unfenced block string must emit MALFORMED_FENCE under Rule STR-04", hasMalformedFence);
 
         var validStringTokens = tokens.stream()
             .filter(t -> t.type() == StvnTypes.LITERAL_STRING_SIMPLE || t.type() == StvnTypes.LITERAL_STRING_FENCED)
@@ -236,7 +236,7 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
 
     /**
      * V11: Unclosed Fenced String at EOF Rejection
-     * Assert '\"\"\"[TAG]\nUnclosed' reaching EOF emits BAD_CHARACTER.
+     * Assert '"""[TAG]\nUnclosed' reaching EOF emits BAD_CHARACTER.
      */
     public void testV11_UnclosedFencedStringAtEofRejection() {
         var input = "\"\"\"[TAG]\nUnclosed content reaching EOF";
@@ -250,13 +250,13 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
 
     /**
      * V12: Malformed Fence Arrow Rejection
-     * Assert '\"\"\"->[TAG]' emits BAD_CHARACTER.
+     * Assert '"""->[TAG]\nContent\n[TAG]"""' emits a single MALFORMED_FENCE token (mirroring ANTLR4 MALFORMED_FENCE).
      */
     public void testV12_MalformedFenceArrowRejection() {
         var input = "\"\"\"->[TAG]\nContent\n[TAG]\"\"\"";
         var tokens = tokenize(input);
-        var badChars = tokens.stream().filter(t -> t.type() == TokenType.BAD_CHARACTER).toList();
-        assertFalse("V12: Malformed fence arrow '->' must emit BAD_CHARACTER", badChars.isEmpty());
+        var malformedFences = tokens.stream().filter(t -> t.type() == StvnTypes.MALFORMED_FENCE).toList();
+        assertEquals("V12: Malformed fence arrow '->' must emit exactly 1 MALFORMED_FENCE token", 1, malformedFences.size());
     }
 
     // =========================================================================
@@ -534,8 +534,9 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         var traits = PsiTreeUtil.findChildrenOfType(file, MetadataTrait.class);
         assertFalse("V31: MetadataTrait element must exist", traits.isEmpty());
         var trait = traits.iterator().next();
-        assertNotNull("V31: PreserveIndent trait must retain its boolean value", trait.getBooleanValue());
-        assertEquals("#TRUE", trait.getBooleanValue().getText());
+        assertNotNull("V31: PreserveIndent trait must retain its MetadataValue", trait.getMetadataValue());
+        assertNotNull("V31: PreserveIndent trait must retain its boolean value", trait.getMetadataValue().getBooleanValue());
+        assertEquals("#TRUE", trait.getMetadataValue().getBooleanValue().getText());
     }
 
     /**
@@ -661,5 +662,73 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         assertNoSyntaxErrors(cyclicFile);
         var resolvedCyclic = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(cyclicFile, ":A", new HashSet<>());
         assertNotNull("V40: Cyclic reference must resolve without infinite recursion", resolvedCyclic);
+    }
+
+    /**
+     * V41: 27-Keyword reserved_facet_keyword Lookahead Boundary
+     * Assert bare '#preserveIndent', '#equatable', and '#comparable' never swallow a following sibling facet
+     * as a #CONST argument, while still admitting genuine boolean #CONST references like '#PRIMARY_SWITCH'.
+     */
+    public void testV41_Reserved27FacetKeywordLookaheadBoundary() {
+        var input = """
+            {
+              :defs {
+                #PRIMARY_SWITCH :Boolean #TRUE
+                :BarePreserveWithSibling { #preserveIndent #maxSize 64 } :String
+                :BareEquatableWithSibling { #equatable #comparable #TRUE #minIncl 0 } :Int
+                :ConstPreserve { #preserveIndent #PRIMARY_SWITCH } :String
+              }
+              :type :Int
+              :body 1
+            }
+            """;
+        var file = myFixture.configureByText("v41_reserved_boundary.stvn", input);
+        assertNoSyntaxErrors(file);
+
+        var maps = PsiTreeUtil.findChildrenOfType(file, MetadataMap.class).stream().toList();
+        assertEquals("Expected 3 MetadataMap blocks", 3, maps.size());
+        assertEquals("First map must retain 2 separate MetadataEntry children (#preserveIndent and #maxSize 64)",
+            2, maps.get(0).getMetadataEntryList().size());
+        assertNull("Bare #preserveIndent must not consume #maxSize",
+            maps.get(0).getMetadataEntryList().get(0).getMetadataTrait().getMetadataValue());
+        assertEquals("Second map must retain 3 separate MetadataEntry children",
+            3, maps.get(1).getMetadataEntryList().size());
+        assertNull("Bare #equatable must not consume #comparable",
+            maps.get(1).getMetadataEntryList().get(0).getMetadataBool().getMetadataValue());
+        assertNotNull("#preserveIndent #PRIMARY_SWITCH must bind #PRIMARY_SWITCH as MetadataValue",
+            maps.get(2).getMetadataEntryList().get(0).getMetadataTrait().getMetadataValue());
+    }
+
+    /**
+     * V42: MALFORMED_FENCE 6-Slot Tuple Positional Arity Isolation
+     * Assert inline, arrow-prefixed, and untagged malformed fenced strings parse as individual StringLiteral
+     * slots inside a 6-element TupleLiteral without shifting sibling slots.
+     */
+    public void testV42_MalformedFencedStringTupleSlotIsolationSixSlotArity() {
+        var input = """
+            {
+              :defs {
+                :Row :Tuple( :String :Int :String :Int :String :Boolean )
+              }
+              :type :Row
+              :body (
+                \"\"\"inline malformed\"\"\"
+                100
+                \"\"\"->[TAG]
+                arrow malformed
+                [TAG]\"\"\"
+                200
+                \"\"\"
+                untagged malformed
+                \"\"\"
+                #TRUE
+              )
+            }
+            """;
+        var file = myFixture.configureByText("v42_fence_slots.stvn", input);
+        var tuple = PsiTreeUtil.findChildOfType(file, TupleLiteral.class);
+        assertNotNull("TupleLiteral must exist in :body", tuple);
+        assertEquals("TupleLiteral must preserve all 6 positional Value slots despite 3 malformed fenced strings",
+            6, tuple.getValueList().size());
     }
 }

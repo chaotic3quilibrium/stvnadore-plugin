@@ -2,11 +2,11 @@
 <body>
 <p>Reports payload values in the <code>:body</code> block that are bound to degraded nominal schemas whose metadata constraints or lineage failed validation in <code>:defs</code>, causing Pass 3 payload evaluation to be suspended.</p>
 <!-- tooltip end -->
-<p>When an STVN schema definition contains invalid metadata constraints (such as an invalid regex pattern in <code>#regex</code>, inapplicable facets, or contradictory bounds) or an unresolved/circular lineage, the STVN compiler marks the nominal schema as a <code>PoisonedSchema</code>. Grounded degraded schemas retain their underlying fallback base type strictly for Pass 2 child type derivation in <code>:defs</code> and structural display context, while Pass 3 suspends <code>:body</code> payload evaluation for all degraded schema slots.</p>
+<p>When an STVN schema definition contains invalid metadata constraints (such as an invalid regex pattern in <code>#regex</code>, conflicting mutually exclusive facets, incomplete trait facets, or contradictory bounds) or an unresolved/circular lineage, the STVN compiler marks the nominal schema as a <code>PoisonedSchema</code>. Grounded degraded schemas retain their concise underlying base constructor fallback (such as <code>:String</code>, <code>:Int</code>, or <code>:Enum</code> without inline variant lists) strictly for Pass 2 child type derivation in <code>:defs</code> and structural hover context, while Pass 3 suspends <code>:body</code> payload evaluation for all degraded schema slots.</p>
 
 <p><b>Inspection Options:</b></p>
 <ul>
-    <li><b>Highlight body values bound to degraded schemas</b>: When enabled, every leaf value in the document payload bound to a degraded schema is highlighted with a weak warning, identifying the affected schema, its underlying base type (when grounded), and the suspension of payload evaluation. When disabled (default), degraded schema errors are reported only at the definition site in <code>:defs</code> (and anchored as warnings in <code>:type</code>).</li>
+    <li><b>Highlight body values bound to degraded schemas</b>: When enabled, every leaf value in the document payload bound to a degraded schema is highlighted with weak warning <code>PW006</code>, identifying the affected schema, its concise underlying base type (when grounded), and the suspension of payload evaluation. Hovering over a degraded <code>:body</code> value renders the yellow <code>Degraded Schema Warning</code> banner while preserving <code>Ctrl+Click</code> symbol navigation.</li>
 </ul>
 
 <p><b>Example (Degraded Schema):</b></p>

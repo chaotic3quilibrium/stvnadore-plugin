@@ -103,7 +103,6 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.METADATA_MAP).spacing(1, 1, 0, true, 1)
                 .betweenInside(StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_ENTRY, StvnTypes.METADATA_MAP).spacing(1, 1, 0, true, 1)
                 .before(StvnTypes.METADATA_VALUE).spaces(1)
-                .after(StvnTypes.KW_PRESERVE_INDENT).spaces(1)
                 .after(StvnTypes.KW_FILTER_INCL).spaces(1)
                 .after(StvnTypes.KW_FILTER_EXCL).spaces(1)
 

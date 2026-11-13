@@ -3,6 +3,7 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.lang.ASTNode;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
@@ -16,9 +17,12 @@ import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.Visitor;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.ToIntFunction;
 
 /**
  * Validates the canonical 5-Tier Decimal Hierarchy of metadata facets (§ 6.1).
@@ -128,12 +132,17 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                 }
 
                 int currentMaxRank = -1;
+                Set<Integer> seenMutexGroups = new HashSet<>();
                 for (MetadataEntry entry : entries) {
                     if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
                         continue;
                     }
                     String keyword = extractFacetKeyword(entry);
                     int rank = getFacetRank(keyword);
+                    int mutexGroup = getMutexGroupId(keyword);
+                    if (mutexGroup > 0 && !seenMutexGroups.add(mutexGroup)) {
+                        continue;
+                    }
                     if (rank < currentMaxRank) {
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
                         var fixes = hasIllegalFacets
@@ -237,14 +246,85 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             }
         }
         int maxRank = -1;
+        Set<Integer> seenMutexGroups = new HashSet<>();
         for (MetadataEntry entry : entries) {
-            int rank = getFacetRank(extractFacetKeyword(entry));
+            String keyword = extractFacetKeyword(entry);
+            int mutexGroup = getMutexGroupId(keyword);
+            if (mutexGroup > 0 && !seenMutexGroups.add(mutexGroup)) {
+                continue;
+            }
+            int rank = getFacetRank(keyword);
             if (rank < maxRank) {
                 return true;
             }
             maxRank = rank;
         }
         return false;
+    }
+
+    /**
+     * Returns the mutual-exclusivity group identifier (1..6) for the given facet keyword,
+     * or {@code 0} when the facet does not belong to a same-block mutual-exclusivity group.
+     *
+     * @param keyword the facet keyword string
+     * @return mutex group identifier in {@code 1..6}, or {@code 0}
+     */
+    public static int getMutexGroupId(String keyword) {
+        if (StvnVocabulary.FACET_KW_SCALE_NS.equals(keyword)
+                || StvnVocabulary.FACET_KW_SCALE_US.equals(keyword)
+                || StvnVocabulary.FACET_KW_SCALE_MS.equals(keyword)
+                || StvnVocabulary.FACET_KW_SCALE_S.equals(keyword)) {
+            return 1;
+        }
+        if (StvnVocabulary.FACET_KW_OFFSET.equals(keyword)
+                || StvnVocabulary.FACET_KW_ZONED.equals(keyword)
+                || StvnVocabulary.FACET_KW_AUDITED.equals(keyword)) {
+            return 2;
+        }
+        if (StvnVocabulary.FACET_KW_SIZE.equals(keyword)
+                || StvnVocabulary.FACET_KW_EXACT.equals(keyword)) {
+            return 3;
+        }
+        if (StvnVocabulary.FACET_KW_MIN_INCL.equals(keyword)
+                || StvnVocabulary.FACET_KW_MIN_EXCL.equals(keyword)) {
+            return 4;
+        }
+        if (StvnVocabulary.FACET_KW_MAX_INCL.equals(keyword)
+                || StvnVocabulary.FACET_KW_MAX_EXCL.equals(keyword)) {
+            return 5;
+        }
+        if (StvnVocabulary.FACET_KW_FILTER_INCL.equals(keyword)
+                || StvnVocabulary.FACET_KW_FILTER_EXCL.equals(keyword)) {
+            return 6;
+        }
+        return 0;
+    }
+
+    /**
+     * Creates a stateful AST-node ranker that pins 2nd+ members of the same mutual-exclusivity group
+     * to the first member's rank so reverse-subtier conflicts preserve relative source order.
+     *
+     * @return a stateful rank function over {@link ASTNode} children of a metadata map
+     */
+    public static ToIntFunction<ASTNode> createMutexStabilizedEntryRanker() {
+        Map<Integer, Integer> firstRankByGroup = new HashMap<>();
+        return node -> {
+            if (node.getPsi() instanceof MetadataEntry entry) {
+                String keyword = extractFacetKeyword(entry);
+                int rawRank = getFacetRank(keyword);
+                int group = getMutexGroupId(keyword);
+                if (group == 0) {
+                    return rawRank;
+                }
+                Integer existing = firstRankByGroup.get(group);
+                if (existing != null) {
+                    return existing;
+                }
+                firstRankByGroup.put(group, rawRank);
+                return rawRank;
+            }
+            return 500;
+        };
     }
 
     /**

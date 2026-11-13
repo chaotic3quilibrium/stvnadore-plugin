@@ -154,9 +154,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
         var partitioned = StvnReorderMetaEntriesQuickFix.partitionBlockInterior(
             map.getNode(),
             StvnTypes.METADATA_ENTRY,
-            node -> node.getPsi() instanceof MetadataEntry entry
-                ? StvnMetadataOrderInspection.getFacetRank(StvnMetadataOrderInspection.extractFacetKeyword(entry))
-                : 5
+            StvnMetadataOrderInspection.createMutexStabilizedEntryRanker()
         );
         if (partitioned.slices().size() <= 1 || StvnReorderMetaEntriesQuickFix.isAlreadySorted(partitioned.slices())) {
             return;

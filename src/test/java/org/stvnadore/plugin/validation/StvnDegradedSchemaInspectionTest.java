@@ -232,4 +232,36 @@ public final class StvnDegradedSchemaInspectionTest extends BasePlatformTestCase
             );
         }
     }
+
+    public void testPoisonedEnumSubsetConflictFilterReportsCleanEnumBaseTypeWithoutVariantNoise() {
+        var inspection = new StvnDegradedSchemaInspection();
+        inspection.highlightBodyValuesBoundToDegradedSchemas = true;
+        myFixture.enableInspections(inspection);
+
+        var content = """
+            {
+              :defs {
+                :SettlementState :Enum [ #CREATED #AUTHORIZED #CAPTURED #SETTLED ]
+                :TrapConflictFilter { #filterIncl [ #CREATED ] #filterExcl [ #SETTLED ] } :SettlementState
+              }
+              :type :TrapConflictFilter
+              :body #CREATED
+            }
+            """;
+        myFixture.configureByText("degraded_enum_conflict_filter.stvn", content);
+        var highlights = myFixture.doHighlighting();
+
+        var weakWarnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WEAK_WARNING)
+            .toList();
+
+        assertEquals("Expected strictly 1 PW006 weak warning on #CREATED bound to degraded :TrapConflictFilter", 1, weakWarnings.size());
+        var desc = weakWarnings.get(0).getDescription();
+        assertNotNull(desc);
+        assertTrue(
+            "PW006 must report clean underlying base ':Enum' without raw variant list noise, got: " + desc,
+            desc.contains("Value bound to degraded schema ':TrapConflictFilter' (underlying base ':Enum' \u2014 payload evaluation is suspended)")
+        );
+        assertFalse("PW006 must not leak raw enum variant list into underlying base label: " + desc, desc.contains("[ #CREATED"));
+    }
 }

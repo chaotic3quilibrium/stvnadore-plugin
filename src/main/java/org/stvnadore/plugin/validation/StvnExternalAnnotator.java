@@ -567,9 +567,6 @@ public final class StvnExternalAnnotator
                         }
                     }
                 }
-                if (rawMessage.contains("Unfenced block strings are prohibited")) {
-                    range = new TextRange(s, Math.min(s + 3, textLength));
-                }
                 if (DiagnosticBag.ERR_EMPTY_METADATA_BLOCK.equals(diagnosticId)
                         || DiagnosticBag.ERR_EMPTY_META_BLOCK.equals(diagnosticId)
                         || DiagnosticBag.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)
@@ -745,14 +742,23 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Incomplete #preserveIndent trait quick-fixes
-                if (rawMessage.contains("Metadata facet #preserveIndent requires an explicit boolean value")
-                        || (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
-                            && rawMessage.contains(StvnVocabulary.FACET_KW_PRESERVE_INDENT))) {
+                // Incomplete boolean trait quick-fixes (#preserveIndent, #equatable, #comparable)
+                if (DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET.equals(diagnosticId)
+                        || rawMessage.contains("requires an explicit boolean value")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     if (targetElem != null) {
-                        for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
-                            annotationBuilder = annotationBuilder.withFix(fix);
+                        var trait = targetElem instanceof org.stvnadore.psi.MetadataTrait mt
+                            ? mt
+                            : PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetadataTrait.class, false);
+                        var boolFacet = targetElem instanceof org.stvnadore.psi.MetadataBool mb
+                            ? mb
+                            : PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetadataBool.class, false);
+                        if ((trait != null && trait.getMetadataValue() == null)
+                                || (boolFacet != null && boolFacet.getMetadataValue() == null)) {
+                            for (var fix : CompleteTraitFacetQuickFix.createFixes(targetElem)) {
+                                annotationBuilder = annotationBuilder.withFix(fix);
+                            }
                         }
                     }
                 }
@@ -857,7 +863,11 @@ public final class StvnExternalAnnotator
                                         .withFix(new KeepOnlyTemporalFacetQuickFix(entry, clickedKw, others, isMode));
                                 }
                                 annotationBuilder = annotationBuilder
-                                    .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw));
+                                    .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw, "Remove conflicting facet"));
+                            } else {
+                                String clickedKw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
+                                annotationBuilder = annotationBuilder
+                                    .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw, "Remove conflicting facet"));
                             }
                         }
                     }
@@ -889,7 +899,9 @@ public final class StvnExternalAnnotator
                         || StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING.equals(diagnosticId)
                         || rawMessage.contains("requires explicit mode facet")
-                        || rawMessage.contains("requires a scale facet")) {
+                        || rawMessage.contains("requires a scale facet")
+                        || rawMessage.contains("requires exactly one mode facet")
+                        || rawMessage.contains("requires exactly one scale facet")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var schemaType = PsiTreeUtil.getParentOfType(targetElem, SchemaType.class, false);
                     if (schemaType != null) {
@@ -1211,14 +1223,14 @@ public final class StvnExternalAnnotator
                 if (isDegraded || hasCrossFileInvertibleError || isTraitPoisoned) {
                     @Nullable String fallbackBase = null;
                     if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isGrounded()) {
-                        fallbackBase = StvnSchemaFormatter.formatCleanIrSchema(poisoned.bestEffortFallback().get());
+                        fallbackBase = StvnSchemaFormatter.formatDegradedUnderlyingBaseIr(poisoned.bestEffortFallback().get());
                     } else if (!(irSchema instanceof StvnSchema.PoisonedSchema)) {
                         var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
                         var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
                         if (td != null && td.getSchemaType() != null) {
                             var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                             if (resolved != null && resolved.getSchemaConstructor() != null) {
-                                fallbackBase = StvnSchemaFormatter.formatCleanSchema(resolved);
+                                fallbackBase = StvnSchemaFormatter.formatDegradedUnderlyingBasePsi(resolved);
                             }
                         }
                     }

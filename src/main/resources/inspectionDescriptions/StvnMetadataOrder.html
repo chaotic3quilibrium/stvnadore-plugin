@@ -1,6 +1,6 @@
 <html>
 <body>
-<p>Audits metadata facet sequence in root <code>:meta</code> blocks (canonical 3-tier order: <code>#name</code> &rarr; <code>#domain</code> &rarr; <code>#kind</code>, STVN Spec &sect;3.10.1) and in nominal type definitions and compile-time constants to enforce the canonical 5-tier Semantic Category Order hierarchy (STVN Spec &sect;6.1).</p>
+<p>Audits metadata facet sequence in root <code>:meta</code> blocks (canonical 3-tier order: <code>#name</code> &rarr; <code>#domain</code> &rarr; <code>#kind</code>, STVN Spec &sect;3.10.1) and in nominal type definitions and schema expressions to enforce the canonical 5-tier Semantic Category Order hierarchy (STVN Spec &sect;6.1).</p>
 
 <p><b>Canonical 5-Tier Semantic Category Order:</b></p>
 <ol>
@@ -11,6 +11,9 @@
     <li><b>Tier 5 (Directive):</b> <code>#strip</code></li>
 </ol>
 
-<p>Facets declared out of tier order trigger a compile error. An automated quick-fix is provided to restore canonical 5-tier order.</p>
+<p><b>Mutex-Group Rank Stabilization:</b></p>
+<p>When two facets from the same mutually exclusive group co-occur in reverse sub-rank order (<code>#ns..#s</code>, <code>#offset..#audited</code>, <code>#size</code>/<code>#exact</code>, <code>#minIncl</code>/<code>#minExcl</code>, <code>#maxIncl</code>/<code>#maxExcl</code>, or <code>#filterIncl</code>/<code>#filterExcl</code>), secondary order cascades are suppressed and <code>StvnReorderMetadataFacetsQuickFix</code> preserves the authored relative order within that group so <code>E008 / MUTUALLY_EXCLUSIVE_BOUNDS</code> remains pinned exclusively to the conflicting facet.</p>
+
+<p>Facets declared out of tier order trigger <code>E037 / ERR_FACET_ORDER_VIOLATION</code> with an automated quick-fix to restore canonical 5-tier order.</p>
 </body>
 </html>

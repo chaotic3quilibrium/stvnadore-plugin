@@ -120,7 +120,8 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
 
         var trait = entry.getMetadataTrait();
         if (trait != null) {
-            var bVal = trait.getBooleanValue();
+            var mv = trait.getMetadataValue();
+            var bVal = mv != null ? mv.getBooleanValue() : null;
             if (bVal != null) {
                 boolean declared = isBooleanTrue(bVal);
                 boolean parentEff = parentIr instanceof StvnSchema.StringSchema s && s.preserveIndent();

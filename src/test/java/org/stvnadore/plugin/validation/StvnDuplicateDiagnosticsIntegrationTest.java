@@ -234,14 +234,14 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             .filter(h -> "#SHORT".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on excluded enum subset variant '#SHORT'", 1, shortErrors.size());
-        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:E012-ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION]"));
+        assertTrue(shortErrors.get(0).getDescription().contains("[stvn-plugin:E012-ERR_CONSTRAINT_VIOLATION]"));
 
         var constErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> "500".equals(h.getText()))
             .toList();
         assertEquals("Expected exactly 1 error highlight on out-of-bounds #FALLBACK_CHANNEL value '500'", 1, constErrors.size());
-        assertTrue(constErrors.get(0).getDescription().contains("[stvn-plugin:E009-ERR_CONSTANT_INTEGER_OVERFLOW]"));
+        assertTrue(constErrors.get(0).getDescription().contains("[stvn-plugin:E012-ERR_CONSTRAINT_VIOLATION]"));
     }
 
     /**
@@ -319,6 +319,48 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
         assertEquals(1, kindHighlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR && h.getStartOffset() == 202 && h.getEndOffset() == 206)
             .count());
+    }
+
+    /**
+     * Verifies zero duplicate diagnostics across Gauntlet v7 Batch 2 mirrored fixtures
+     * const_nominal_enum_branding_and_conflict_filter_fallback.stvn and
+     * incomplete_trait_facets_and_reserved_keyword_boundary.stvn when all 26 local inspections are active.
+     */
+    public void testGauntletV7Batch2EnumBrandingAndTraitBoundaryFixturesHaveZeroDuplicates() throws IOException {
+        var enumBrandingPath = Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "composites",
+            "const_nominal_enum_branding_and_conflict_filter_fallback.stvn"
+        );
+        var traitBoundaryPath = Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "metadata",
+            "incomplete_trait_facets_and_reserved_keyword_boundary.stvn"
+        );
+        assertTrue("Mirrored enum branding fixture must exist: " + enumBrandingPath, Files.isRegularFile(enumBrandingPath));
+        assertTrue("Mirrored trait boundary fixture must exist: " + traitBoundaryPath, Files.isRegularFile(traitBoundaryPath));
+
+        var enumBranding = Files.readString(enumBrandingPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        myFixture.configureByText("const_nominal_enum_branding_and_conflict_filter_fallback.stvn", enumBranding);
+        var enumHighlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("const_nominal_enum_branding_and_conflict_filter_fallback.stvn", enumHighlights);
+        assertNoCoreHighlight("const_nominal_enum_branding_and_conflict_filter_fallback.stvn", enumHighlights, "MUTUALLY_EXCLUSIVE_BOUNDS");
+        assertNoCoreHighlight("const_nominal_enum_branding_and_conflict_filter_fallback.stvn", enumHighlights, "ERR_CONSTRAINT_VIOLATION");
+        assertNoCoreHighlight("const_nominal_enum_branding_and_conflict_filter_fallback.stvn", enumHighlights, "ERR_TYPE_MISMATCH");
+        assertEquals(
+            "Expected strictly 5 deduplicated ERROR highlights matching contract",
+            5,
+            enumHighlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).count()
+        );
+
+        var traitBoundary = Files.readString(traitBoundaryPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        myFixture.configureByText("incomplete_trait_facets_and_reserved_keyword_boundary.stvn", traitBoundary);
+        var traitHighlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("incomplete_trait_facets_and_reserved_keyword_boundary.stvn", traitHighlights);
+        assertNoCoreHighlight("incomplete_trait_facets_and_reserved_keyword_boundary.stvn", traitHighlights, "ERR_INCOMPLETE_TRAIT_FACET");
+        assertEquals(
+            "Expected strictly 4 deduplicated ERROR highlights matching contract",
+            4,
+            traitHighlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).count()
+        );
     }
 
     /**

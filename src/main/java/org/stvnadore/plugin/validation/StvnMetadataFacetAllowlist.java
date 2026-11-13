@@ -202,6 +202,10 @@ public final class StvnMetadataFacetAllowlist {
         if (entry.getMetadataUnknownEntry() != null) {
             return false;
         }
+        if ((entry.getMetadataBool() != null && entry.getMetadataBool().getMetadataValue() == null)
+                || (entry.getMetadataTrait() != null && entry.getMetadataTrait().getMetadataValue() == null)) {
+            return false;
+        }
         String facetKeyword = StvnMetadataOrderInspection.extractFacetKeyword(entry);
         if (facetKeyword.isEmpty()) {
             return false;

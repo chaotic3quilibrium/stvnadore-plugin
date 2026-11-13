@@ -199,13 +199,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             @Nullable PsiElement psiElement) {
         if (ir instanceof StvnSchema.PoisonedSchema p) {
             return p.isGrounded()
-                ? StvnSchemaFormatter.formatCleanIrSchema(p.bestEffortFallback().get())
+                ? StvnSchemaFormatter.formatDegradedUnderlyingBaseIr(p.bestEffortFallback().get())
                 : null;
         }
         if (psiElement != null) {
             var terminal = resolveTerminalSchemaType(psiElement, new HashSet<>());
             if (terminal != null && terminal.getSchemaConstructor() != null) {
-                return StvnSchemaFormatter.formatCleanSchema(terminal);
+                return StvnSchemaFormatter.formatDegradedUnderlyingBasePsi(terminal);
             }
         }
         return null;
@@ -2284,6 +2284,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (element instanceof ValueKeyword valKw) {
+            var degradedBodyVal = resolveDegradedOrUngroundedBodyValue(originalElement != null ? originalElement : valKw);
+            if (degradedBodyVal != null) {
+                return degradedBodyVal;
+            }
             var parent = valKw.getParent();
             if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
                 var list = alias.getValueKeywordList();
@@ -2318,6 +2322,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             element instanceof org.stvnadore.psi.LeftShortLiteral || element instanceof org.stvnadore.psi.RightShortLiteral ||
             element instanceof org.stvnadore.psi.TrueShortLiteral || element instanceof org.stvnadore.psi.FalseShortLiteral ||
             element instanceof org.stvnadore.psi.BooleanValue) {
+            var degradedBodyVal = resolveDegradedOrUngroundedBodyValue(originalElement != null ? originalElement : element);
+            if (degradedBodyVal != null) {
+                return degradedBodyVal;
+            }
             var ref = element.getReference();
             var resolved = ref != null ? ref.resolve() : null;
             if (resolved != null && resolved.getParent() instanceof ConstantDefinition targetConstDef) {
@@ -2361,6 +2369,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var valKw = PsiTreeUtil.getParentOfType(originalElement, ValueKeyword.class);
             if (valKw != null) {
+                var degradedBodyVal = resolveDegradedOrUngroundedBodyValue(valKw);
+                if (degradedBodyVal != null) {
+                    return degradedBodyVal;
+                }
                 return getDocumentationElement(valKw, null);
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
@@ -2451,6 +2463,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var valKwAncestor = PsiTreeUtil.getParentOfType(contextElement, ValueKeyword.class);
         if (valKwAncestor != null) {
+            var degradedBodyVal = resolveDegradedOrUngroundedBodyValue(valKwAncestor);
+            if (degradedBodyVal != null) {
+                return degradedBodyVal;
+            }
             return valKwAncestor;
         }
         var metaEntry = PsiTreeUtil.getParentOfType(contextElement, MetadataEntry.class, false);
@@ -3823,6 +3839,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return null;
     }
 
+    private static @Nullable Value resolveDegradedOrUngroundedBodyValue(@Nullable PsiElement anchor) {
+        if (anchor == null) {
+            return null;
+        }
+        var bodyVal = PsiTreeUtil.getParentOfType(anchor, Value.class, false);
+        if (bodyVal == null || PsiTreeUtil.getParentOfType(bodyVal, BodyEntry.class) == null) {
+            return null;
+        }
+        var ungroundedContainer = findEnclosingUngroundedContainerValue(bodyVal);
+        if (ungroundedContainer != null) {
+            return ungroundedContainer;
+        }
+        var info = StvnTypeResolver.resolveBaseTypeInfo(bodyVal);
+        if (info != null && info.getSchema() != null && isGoverningSchemaDegraded(bodyVal, info.getSchema())) {
+            return bodyVal;
+        }
+        return null;
+    }
+
     private static @NotNull StvnValueComplianceResult evaluateValueComplianceInternal(Value value, @Nullable SchemaType schemaType) {
         if (schemaType == null) {
             return new StvnValueComplianceResult(true, "Unchecked", "No governing schema identified", Collections.emptyMap(), Collections.emptyList());
@@ -3853,7 +3888,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (isGoverningSchemaDegraded(value, schemaType)) {
             String schemaLabel = schemaType.getText().trim();
             String underlyingBase = (irSchema != null)
-                ? StvnSchemaFormatter.formatCleanIrSchema(irSchema)
+                ? StvnSchemaFormatter.formatDegradedUnderlyingBaseIr(irSchema)
                 : baseType;
             if (underlyingBase == null || underlyingBase.isBlank()) {
                 underlyingBase = baseType;

@@ -33,7 +33,7 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("reject closed upper bound '#maxIncl'"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("prohibits bound '#maxIncl'; use half-open bound '#maxExcl'"))
             .toList();
         assertFalse("Expected discrete interval error for #maxIncl on :Int", errors.isEmpty());
 
@@ -62,7 +62,7 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("reject open lower bound '#minExcl'"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("prohibits bound '#minExcl'; use half-open bound '#minIncl'"))
             .toList();
         assertFalse("Expected discrete interval error for #minExcl on :Int", errors.isEmpty());
 
@@ -91,7 +91,8 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         var highlights = myFixture.doHighlighting();
         var intervalErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .filter(h -> h.getDescription() != null
+                && (h.getDescription().contains("prohibits bound '#maxIncl'") || h.getDescription().contains("prohibits bound '#minExcl'")))
             .toList();
         assertEquals("Expected 2 discrete bound errors on exact float", 2, intervalErrors.size());
     }
@@ -109,7 +110,8 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         myFixture.configureByText("continuous_float.stvn", text);
         var highlights = myFixture.doHighlighting();
         var intervalErrors = highlights.stream()
-            .filter(h -> h.getDescription() != null && (h.getDescription().contains("reject closed upper bound") || h.getDescription().contains("reject open lower bound")))
+            .filter(h -> h.getDescription() != null
+                && (h.getDescription().contains("prohibits bound '#maxIncl'") || h.getDescription().contains("prohibits bound '#minExcl'")))
             .toList();
         assertTrue("Continuous float must permit #minExcl and #maxIncl", intervalErrors.isEmpty());
     }

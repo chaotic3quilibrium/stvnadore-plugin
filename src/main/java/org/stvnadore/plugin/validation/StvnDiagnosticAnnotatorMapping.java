@@ -9,6 +9,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.reference.StvnConstantReference;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -106,6 +107,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
         map.put(StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
+        map.put(DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
         map.put("INVALID_FACET_TARGET", "StvnMetadataFacet");
         map.put("EMPTY_METADATA_BLOCK", "StvnMetadataFacet");
         map.put("EMPTY_META_BLOCK", "StvnMetadataFacet");
@@ -137,6 +139,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
         map.put(DiagnosticBag.ERR_DATETIME_MODE_INVALID, "StvnTemporalMode");
         map.put(DiagnosticBag.ERR_MISSING_TEMPORAL_FACET, "StvnTemporalMode");
+        map.put(StvnDiagnosticCodes.ERR_MISSING_TEMPORAL_FACET, "StvnTemporalMode");
         map.put("ERR_LEGACY_UNIT_FACET_PURGED", "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
         map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
@@ -197,6 +200,9 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // 19. Enum Subset Filtering Inspection
         map.put(DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT, "StvnEnumSubset");
+        map.put(DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET, "StvnEnumSubset");
+        map.put(DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION, "StvnEnumSubset");
+        map.put(DiagnosticBag.ERR_ENUM_SUBSET_EMPTY, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM, "StvnEnumSubset");
         map.put(StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE, "StvnEnumSubset");
@@ -386,9 +392,11 @@ public final class StvnDiagnosticAnnotatorMapping {
                 if (offset >= 0 && offset < file.getTextLength()) {
                     var elem = file.findElementAt(offset);
                     var vkw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ValueKeyword.class, false);
-                    if (vkw != null && com.intellij.psi.util.PsiTreeUtil.getParentOfType(vkw, org.stvnadore.psi.ConstantDefinition.class) == null) {
-                        var ref = vkw.getReference();
-                        if (ref == null || !(ref.resolve() instanceof org.stvnadore.psi.ConstantDefinition)) {
+                    if (vkw != null) {
+                        var resolved = StvnConstantReference.resolveConstantWithContext(vkw);
+                        boolean isConstRef = resolved instanceof org.stvnadore.psi.ConstantDefinition
+                            || (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+                        if (!isConstRef) {
                             if (!ApplicationManager.getApplication().isUnitTestMode()) {
                                 return true;
                             }
@@ -426,6 +434,29 @@ public final class StvnDiagnosticAnnotatorMapping {
                 return true;
             }
             return isInspectionActive(file, "StvnMapStructural");
+        }
+
+        if ((DiagnosticBag.ERR_TYPE_MISMATCH.equals(sym)
+                || "E028".equals(canon)
+                || DiagnosticBag.ERR_TYPE_MISMATCH.equals(err))
+                && message.startsWith("Invalid enum value for '")
+                && message.contains("is not declared; allowed variants:")) {
+            int offset = diag.startOffset();
+            if (offset >= 0 && offset < file.getTextLength()) {
+                var elem = file.findElementAt(offset);
+                var vkw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ValueKeyword.class, false);
+                if (vkw != null) {
+                    var resolved = StvnConstantReference.resolveConstantWithContext(vkw);
+                    boolean isConstRef = resolved instanceof org.stvnadore.psi.ConstantDefinition
+                        || (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+                    if (!isConstRef) {
+                        if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                            return true;
+                        }
+                        return isInspectionActive(file, "StvnEnumSubset");
+                    }
+                }
+            }
         }
 
         if ((sym != null && isExplicitlyUngovernedSymbolicId(sym))
@@ -597,6 +628,10 @@ public final class StvnDiagnosticAnnotatorMapping {
         }
         if (message.contains(":TimeEpoch requires explicit scale facet")
                 || message.contains(":DateTime requires explicit mode facet")
+                || message.contains("Temporal primitive '" + StvnVocabulary.TYPE_TIME_EPOCH + "' requires")
+                || message.contains("Temporal primitive '" + StvnVocabulary.TYPE_DATE_TIME + "' requires")
+                || message.contains("Temporal scale facets (")
+                || message.contains("Temporal mode facets (")
                 || message.contains("Mutually exclusive temporal scale")) {
             return "StvnTemporalMode";
         }

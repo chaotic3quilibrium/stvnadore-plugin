@@ -648,6 +648,7 @@ public final class StvnBlock implements ASTBlock {
         IElementType type = node.getElementType();
         return type == StvnTypes.LITERAL_STRING_FENCED
                 || type == StvnTypes.LITERAL_STRING_SIMPLE
+                || type == StvnTypes.MALFORMED_FENCE
                 || type == StvnTypes.COMMENT
                 || node.getFirstChildNode() == null;
     }

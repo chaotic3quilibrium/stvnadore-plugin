@@ -87,15 +87,15 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_MUTUALLY_EXCLUSIVE"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("MUTUALLY_EXCLUSIVE_BOUNDS"))
             .toList();
-        assertFalse("Expected ERR_MUTUALLY_EXCLUSIVE for #exact and #size on :Float", errors.isEmpty());
-        assertTrue(errors.get(0).getDescription().contains("facet '#size' is mutually exclusive with '#exact'"));
+        assertFalse("Expected MUTUALLY_EXCLUSIVE_BOUNDS for #exact and #size on :Float", errors.isEmpty());
+        assertTrue(errors.get(0).getDescription().contains("Constraint violation (:InvalidFloat): facet '#size' is mutually exclusive with '#exact'"));
 
         int offset = text.indexOf("#size");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Remove mutually exclusive facet");
-        assertFalse("Expected 'Remove mutually exclusive facet' quick-fix to be available", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Remove conflicting facet");
+        assertFalse("Expected 'Remove conflicting facet' quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         var result = myFixture.getFile().getText();
@@ -105,7 +105,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
 
     /**
      * Asserts that declaring :ConflictedRate { #exact #size 64 } :Float emits strictly
-     * ERR_MUTUALLY_EXCLUSIVE and zero redundant metadata facet warnings (Rule W003).
+     * MUTUALLY_EXCLUSIVE_BOUNDS and zero redundant metadata facet warnings (Rule W003).
      */
     public void testConflictedExactAndSize64SuppressesRedundancyWarning() {
         var text = """
@@ -122,10 +122,10 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
 
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_MUTUALLY_EXCLUSIVE"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("MUTUALLY_EXCLUSIVE_BOUNDS"))
             .toList();
-        assertFalse("Expected ERR_MUTUALLY_EXCLUSIVE on #size 64", errors.isEmpty());
-        assertTrue(errors.get(0).getDescription().contains("facet '#size' is mutually exclusive with '#exact'"));
+        assertFalse("Expected MUTUALLY_EXCLUSIVE_BOUNDS on #size 64", errors.isEmpty());
+        assertTrue(errors.get(0).getDescription().contains("Constraint violation (:ConflictedRate): facet '#size' is mutually exclusive with '#exact'"));
 
         var redundancyWarnings = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)

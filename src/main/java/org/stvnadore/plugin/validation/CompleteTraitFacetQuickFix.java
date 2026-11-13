@@ -16,7 +16,11 @@ import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.MetadataBool;
 import org.stvnadore.psi.MetadataTrait;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeDefinition;
 
 import java.util.ArrayList;
@@ -100,16 +104,28 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
 
         var range = startElement.getTextRange();
         var rawText = startElement.getText().trim();
-        String replacement = rawText.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
-            ? "#preserveIndent " + replacementValue
-            : rawText + " " + replacementValue;
+        String facetKw = extractTraitKeyword(rawText);
+        String replacement = facetKw + " " + replacementValue;
 
         doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
 
-        if (editor != null) {
+        if (editor != null && file.isPhysical()) {
             editor.getCaretModel().moveToOffset(range.getStartOffset() + replacement.length());
         }
+    }
+
+    private static String extractTraitKeyword(String rawText) {
+        if (rawText.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+            return StvnVocabulary.FACET_KW_PRESERVE_INDENT;
+        }
+        if (rawText.startsWith(StvnVocabulary.FACET_KW_EQUATABLE)) {
+            return StvnVocabulary.FACET_KW_EQUATABLE;
+        }
+        if (rawText.startsWith(StvnVocabulary.FACET_KW_COMPARABLE)) {
+            return StvnVocabulary.FACET_KW_COMPARABLE;
+        }
+        return rawText;
     }
 
     /**
@@ -120,22 +136,34 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
      */
     public static List<CompleteTraitFacetQuickFix> createFixes(PsiElement element) {
         var fixes = new ArrayList<CompleteTraitFacetQuickFix>();
-        var targetElement = (element instanceof MetadataTrait mt)
-            ? mt
+        PsiElement targetElement = (element instanceof MetadataTrait || element instanceof MetadataBool)
+            ? element
             : PsiTreeUtil.getParentOfType(element, MetadataTrait.class, false);
+        if (targetElement == null) {
+            targetElement = PsiTreeUtil.getParentOfType(element, MetadataBool.class, false);
+        }
         var anchor = (targetElement != null) ? targetElement : element;
+        boolean isBoolTrait = anchor instanceof MetadataBool;
+        boolean isEquatable = isBoolTrait && anchor.getNode().findChildByType(StvnTypes.KW_EQUATABLE) != null;
 
         var typeDef = PsiTreeUtil.getParentOfType(element, TypeDefinition.class);
-        if (typeDef == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
-            return fixes;
-        }
-
-        var schemaType = typeDef.getSchemaType();
-        if (schemaType == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
+        var constDef = PsiTreeUtil.getParentOfType(element, ConstantDefinition.class);
+        SchemaType schemaType = typeDef != null
+            ? typeDef.getSchemaType()
+            : (constDef != null ? constDef.getSchemaType() : PsiTreeUtil.getParentOfType(element, SchemaType.class));
+        if (schemaType == null || (constDef != null && isBoolTrait)) {
+            fixes.add(new CompleteTraitFacetQuickFix(
+                anchor,
+                StvnVocabulary.VAL_TRUE,
+                "Complete trait with '" + StvnVocabulary.VAL_TRUE + "'",
+                Priority.HIGH
+            ));
+            fixes.add(new CompleteTraitFacetQuickFix(
+                anchor,
+                StvnVocabulary.VAL_FALSE,
+                "Complete trait with '" + StvnVocabulary.VAL_FALSE + "'",
+                Priority.NORMAL
+            ));
             return fixes;
         }
 
@@ -152,55 +180,130 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
         }
 
         if (parentAlias == null) {
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
-            fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
-            return fixes;
-        }
-
-        // Direct primitive base :String defaults to preserveIndent = false
-        if (StvnVocabulary.TYPE_STRING.equals(parentAlias)) {
             fixes.add(new CompleteTraitFacetQuickFix(
                 anchor,
                 StvnVocabulary.VAL_TRUE,
-                "Complete trait with '#TRUE' (overrides parent :String)",
+                "Complete trait with '" + StvnVocabulary.VAL_TRUE + "'",
                 Priority.HIGH
+            ));
+            fixes.add(new CompleteTraitFacetQuickFix(
+                anchor,
+                StvnVocabulary.VAL_FALSE,
+                "Complete trait with '" + StvnVocabulary.VAL_FALSE + "'",
+                Priority.NORMAL
             ));
             return fixes;
         }
 
-        // Nominal ancestor resolution via pure-IR StvnSchema
+        if (!isBoolTrait) {
+            // Direct primitive base :String defaults to preserveIndent = false
+            if (StvnVocabulary.TYPE_STRING.equals(parentAlias)) {
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    StvnVocabulary.VAL_TRUE,
+                    "Complete trait with '" + StvnVocabulary.VAL_TRUE + "' (overrides parent " + StvnVocabulary.TYPE_STRING + ")",
+                    Priority.HIGH
+                ));
+                return fixes;
+            }
+
+            // Nominal ancestor resolution via pure-IR StvnSchema
+            StvnSchema parentIr = resolveParentIr(element, parentAlias);
+            if (parentIr instanceof StvnSchema.StringSchema strSchema) {
+                boolean parentEff = strSchema.preserveIndent();
+                if (!parentEff) {
+                    fixes.add(new CompleteTraitFacetQuickFix(
+                        anchor,
+                        StvnVocabulary.VAL_TRUE,
+                        "Complete trait with '" + StvnVocabulary.VAL_TRUE + "' (overrides parent " + parentAlias + ")",
+                        Priority.HIGH
+                    ));
+                } else {
+                    fixes.add(new CompleteTraitFacetQuickFix(
+                        anchor,
+                        StvnVocabulary.VAL_FALSE,
+                        "Complete trait with '" + StvnVocabulary.VAL_FALSE + "' (overrides parent " + parentAlias + ")",
+                        Priority.HIGH
+                    ));
+                }
+                return fixes;
+            }
+        } else {
+            // Boolean traits (#equatable / #comparable) on scalar primitives default to #TRUE
+            if (StvnVocabulary.TYPE_FLOAT.equals(parentAlias)) {
+                var enclosingMap = typeDef != null
+                    ? typeDef.getMetadataMap()
+                    : (constDef != null ? constDef.getMetadataMap() : schemaType.getMetadataMap());
+                boolean hasExact = enclosingMap != null && enclosingMap.getMetadataEntryList().stream()
+                    .anyMatch(e -> e.getNode().findChildByType(StvnTypes.KW_EXACT) != null);
+                boolean defaultTrait = hasExact || !isEquatable;
+                String overrideVal = defaultTrait ? StvnVocabulary.VAL_FALSE : StvnVocabulary.VAL_TRUE;
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    overrideVal,
+                    "Complete trait with '" + overrideVal + "' (overrides parent " + parentAlias + ")",
+                    Priority.HIGH
+                ));
+                return fixes;
+            }
+            if (StvnVocabulary.TYPE_STRING.equals(parentAlias)
+                    || StvnVocabulary.TYPE_INT.equals(parentAlias)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(parentAlias)
+                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(parentAlias)
+                    || StvnVocabulary.TYPE_DATE_TIME.equals(parentAlias)) {
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    StvnVocabulary.VAL_FALSE,
+                    "Complete trait with '" + StvnVocabulary.VAL_FALSE + "' (overrides parent " + parentAlias + ")",
+                    Priority.HIGH
+                ));
+                return fixes;
+            }
+
+            StvnSchema parentIr = resolveParentIr(element, parentAlias);
+            if (parentIr != null && !(parentIr instanceof StvnSchema.PoisonedSchema)) {
+                boolean parentEff = isEquatable ? parentIr.traits().equatable() : parentIr.traits().comparable();
+                String overrideVal = parentEff ? StvnVocabulary.VAL_FALSE : StvnVocabulary.VAL_TRUE;
+                fixes.add(new CompleteTraitFacetQuickFix(
+                    anchor,
+                    overrideVal,
+                    "Complete trait with '" + overrideVal + "' (overrides parent " + parentAlias + ")",
+                    Priority.HIGH
+                ));
+                return fixes;
+            }
+        }
+
+        // Unresolvable parent fallback
+        fixes.add(new CompleteTraitFacetQuickFix(
+            anchor,
+            StvnVocabulary.VAL_TRUE,
+            "Complete trait with '" + StvnVocabulary.VAL_TRUE + "'",
+            Priority.HIGH
+        ));
+        fixes.add(new CompleteTraitFacetQuickFix(
+            anchor,
+            StvnVocabulary.VAL_FALSE,
+            "Complete trait with '" + StvnVocabulary.VAL_FALSE + "'",
+            Priority.NORMAL
+        ));
+        return fixes;
+    }
+
+    private static @Nullable StvnSchema resolveParentIr(PsiElement context, String parentAlias) {
+        var file = context.getContainingFile();
+        if (file == null) {
+            return null;
+        }
         StvnSchema parentIr = null;
-        var resolvedParent = StvnTypeReference.resolveTypeInFile(typeDef.getContainingFile(), parentAlias, new HashSet<>());
+        var resolvedParent = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
         var parentTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedParent);
         if (parentTypeDef != null) {
             parentIr = StvnTypeResolver.resolveNominalIrSchema(parentTypeDef);
         }
         if (parentIr == null) {
-            parentIr = StvnTypeResolver.resolveIrSchemaByAlias(typeDef.getContainingFile(), parentAlias);
+            parentIr = StvnTypeResolver.resolveIrSchemaByAlias(file, parentAlias);
         }
-        if (parentIr instanceof StvnSchema.StringSchema strSchema) {
-            boolean parentEff = strSchema.preserveIndent();
-            if (!parentEff) {
-                fixes.add(new CompleteTraitFacetQuickFix(
-                    anchor,
-                    StvnVocabulary.VAL_TRUE,
-                    "Complete trait with '#TRUE' (overrides parent " + parentAlias + ")",
-                    Priority.HIGH
-                ));
-            } else {
-                fixes.add(new CompleteTraitFacetQuickFix(
-                    anchor,
-                    StvnVocabulary.VAL_FALSE,
-                    "Complete trait with '#FALSE' (overrides parent " + parentAlias + ")",
-                    Priority.HIGH
-                ));
-            }
-            return fixes;
-        }
-
-        // Unresolvable parent fallback
-        fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_TRUE, "Complete trait with '#TRUE'", Priority.HIGH));
-        fixes.add(new CompleteTraitFacetQuickFix(anchor, StvnVocabulary.VAL_FALSE, "Complete trait with '#FALSE'", Priority.NORMAL));
-        return fixes;
+        return parentIr;
     }
 }

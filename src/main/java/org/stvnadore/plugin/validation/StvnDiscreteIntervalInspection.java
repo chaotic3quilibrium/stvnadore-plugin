@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
@@ -87,7 +88,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                         ? typeDef.getMetadataMap()
                         : (schemaType != null ? schemaType.getMetadataMap() : null);
                 if (schemaType != null && metaMap != null) {
-                    validateIntervalBounds(schemaType, metaMap, holder);
+                    validateIntervalBounds(schemaType, metaMap, holder, isOnTheFly);
                 }
             }
 
@@ -102,7 +103,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                         ? constDef.getMetadataMap()
                         : (schemaType != null ? schemaType.getMetadataMap() : null);
                 if (schemaType != null && metaMap != null) {
-                    validateIntervalBounds(schemaType, metaMap, holder);
+                    validateIntervalBounds(schemaType, metaMap, holder, isOnTheFly);
                 }
             }
 
@@ -120,7 +121,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 if (metaMap == null) {
                     return;
                 }
-                validateIntervalBounds(schemaType, metaMap, holder);
+                validateIntervalBounds(schemaType, metaMap, holder, isOnTheFly);
             }
         };
     }
@@ -128,7 +129,8 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     private static void validateIntervalBounds(
             @NotNull SchemaType schemaType,
             @NotNull MetadataMap metaMap,
-            @NotNull ProblemsHolder holder
+            @NotNull ProblemsHolder holder,
+            boolean isOnTheFly
     ) {
         boolean discrete = isDiscreteType(schemaType);
         var baseType = resolveBaseTypeString(schemaType);
@@ -139,6 +141,13 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         if (!discrete && !isDateTime && !isString && !isFloat) {
             return;
         }
+
+        String ownerLabel = resolveIntervalOwnerLabel(metaMap, baseType);
+        String discreteDesc = formatDiscreteTypeDescription(baseType);
+
+        MetadataEntry firstValidLower = null;
+        MetadataEntry firstValidUpper = null;
+        boolean sameSideConflict = false;
 
         MetadataEntry maxExclEntry = null;
         MetadataEntry lowerEntry = null;
@@ -175,16 +184,43 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     holder.registerProblem(
                         entry,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Discrete types reject closed upper bound '"
+                            discreteDesc + " prohibits bound '"
                                 + StvnVocabulary.FACET_KW_MAX_INCL
                                 + "'; use half-open bound '"
                                 + StvnVocabulary.FACET_KW_MAX_EXCL + "'",
-                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         quickFixes
                     );
                 }
+                if (firstValidUpper != null) {
+                    sameSideConflict = true;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + ownerLabel + "): "
+                                + StvnVocabulary.FACET_KW_MAX_INCL + " and "
+                                + StvnVocabulary.FACET_KW_MAX_EXCL + " are mutually exclusive",
+                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_INCL, "Remove conflicting facet")
+                    );
+                    if (isOnTheFly) {
+                        var firstKw = firstValidUpper.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
+                            ? StvnVocabulary.FACET_KW_MAX_EXCL
+                            : StvnVocabulary.FACET_KW_MAX_INCL;
+                        holder.registerProblem(
+                            firstValidUpper,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            new RemoveRedundantFacetQuickFix(firstValidUpper, firstKw, "Remove conflicting facet")
+                        );
+                    }
+                    continue;
+                }
+                firstValidUpper = entry;
                 maxVal = extractBoundBigDecimal(entry);
                 maxInstant = isDateTime ? extractBoundInstant(entry) : null;
                 maxStr = extractBoundString(entry);
@@ -208,16 +244,43 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     holder.registerProblem(
                         entry,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Discrete types reject open lower bound '"
+                            discreteDesc + " prohibits bound '"
                                 + StvnVocabulary.FACET_KW_MIN_EXCL
                                 + "'; use half-open bound '"
                                 + StvnVocabulary.FACET_KW_MIN_INCL + "'",
-                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         quickFixes
                     );
                 }
+                if (firstValidLower != null) {
+                    sameSideConflict = true;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + ownerLabel + "): "
+                                + StvnVocabulary.FACET_KW_MIN_INCL + " and "
+                                + StvnVocabulary.FACET_KW_MIN_EXCL + " are mutually exclusive",
+                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_EXCL, "Remove conflicting facet")
+                    );
+                    if (isOnTheFly) {
+                        var firstKw = firstValidLower.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null
+                            ? StvnVocabulary.FACET_KW_MIN_EXCL
+                            : StvnVocabulary.FACET_KW_MIN_INCL;
+                        holder.registerProblem(
+                            firstValidLower,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            new RemoveRedundantFacetQuickFix(firstValidLower, firstKw, "Remove conflicting facet")
+                        );
+                    }
+                    continue;
+                }
+                firstValidLower = entry;
                 minVal = extractBoundBigDecimal(entry);
                 minInstant = isDateTime ? extractBoundInstant(entry) : null;
                 minStr = extractBoundString(entry);
@@ -227,6 +290,33 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 lowerExcl = true;
             } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
+                if (firstValidLower != null) {
+                    sameSideConflict = true;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + ownerLabel + "): "
+                                + StvnVocabulary.FACET_KW_MIN_INCL + " and "
+                                + StvnVocabulary.FACET_KW_MIN_EXCL + " are mutually exclusive",
+                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_INCL, "Remove conflicting facet")
+                    );
+                    if (isOnTheFly) {
+                        var firstKw = firstValidLower.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null
+                            ? StvnVocabulary.FACET_KW_MIN_EXCL
+                            : StvnVocabulary.FACET_KW_MIN_INCL;
+                        holder.registerProblem(
+                            firstValidLower,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            new RemoveRedundantFacetQuickFix(firstValidLower, firstKw, "Remove conflicting facet")
+                        );
+                    }
+                    continue;
+                }
+                firstValidLower = entry;
                 minVal = extractBoundBigDecimal(entry);
                 minInstant = isDateTime ? extractBoundInstant(entry) : null;
                 minStr = extractBoundString(entry);
@@ -236,6 +326,33 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 lowerExcl = false;
             } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
+                if (firstValidUpper != null) {
+                    sameSideConflict = true;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + ownerLabel + "): "
+                                + StvnVocabulary.FACET_KW_MAX_INCL + " and "
+                                + StvnVocabulary.FACET_KW_MAX_EXCL + " are mutually exclusive",
+                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_EXCL, "Remove conflicting facet")
+                    );
+                    if (isOnTheFly) {
+                        var firstKw = firstValidUpper.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
+                            ? StvnVocabulary.FACET_KW_MAX_EXCL
+                            : StvnVocabulary.FACET_KW_MAX_INCL;
+                        holder.registerProblem(
+                            firstValidUpper,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            new RemoveRedundantFacetQuickFix(firstValidUpper, firstKw, "Remove conflicting facet")
+                        );
+                    }
+                    continue;
+                }
+                firstValidUpper = entry;
                 maxExclEntry = entry;
                 maxVal = extractBoundBigDecimal(entry);
                 maxInstant = isDateTime ? extractBoundInstant(entry) : null;
@@ -245,6 +362,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                 maxRaw = rawVal;
                 upperExcl = true;
             }
+        }
+
+        if (sameSideConflict) {
+            return;
         }
 
         MetadataEntry localLowerEntry = lowerEntry;
@@ -756,5 +877,33 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             lowerEntry.replace(newLower);
             upperEntry.replace(newUpper);
         }
+    }
+
+    private static String resolveIntervalOwnerLabel(MetadataMap metaMap, @Nullable String fallbackBaseType) {
+        var typeDef = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class);
+        if (typeDef != null && typeDef.getTypeKeyword() != null) {
+            return typeDef.getTypeKeyword().getText().trim();
+        }
+        var constDef = PsiTreeUtil.getParentOfType(metaMap, ConstantDefinition.class);
+        if (constDef != null && constDef.getValueKeyword() != null) {
+            return constDef.getValueKeyword().getText().trim();
+        }
+        if (PsiTreeUtil.getParentOfType(metaMap, org.stvnadore.psi.TypeEntry.class) != null) {
+            return "<" + StvnVocabulary.KEYWORD_TYPE + ">";
+        }
+        return fallbackBaseType != null ? fallbackBaseType : "";
+    }
+
+    private static String formatDiscreteTypeDescription(@Nullable String baseType) {
+        if (StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+            return "Discrete temporal type '" + StvnVocabulary.TYPE_TIME_EPOCH + "'";
+        }
+        if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+            return "Discrete temporal type '" + StvnVocabulary.TYPE_DATE_TIME + "'";
+        }
+        if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+            return "Discrete exact float '{ " + StvnVocabulary.FACET_KW_EXACT + " } " + StvnVocabulary.TYPE_FLOAT + "'";
+        }
+        return "Discrete type '" + StvnVocabulary.TYPE_INT + "'";
     }
 }

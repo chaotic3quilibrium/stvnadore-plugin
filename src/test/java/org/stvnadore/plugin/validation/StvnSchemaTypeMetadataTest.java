@@ -96,7 +96,7 @@ public final class StvnSchemaTypeMetadataTest extends BasePlatformTestCase {
 
         assertFalse("Must flag '#maxIncl' on discrete child :Int", highlights.isEmpty());
         var hasDiscreteBoundError = highlights.stream()
-                .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Discrete types reject closed upper bound '#maxIncl'"));
+                .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Discrete type ':Int' prohibits bound '#maxIncl'; use half-open bound '#maxExcl'"));
         assertTrue("Error message must reject closed upper bound. Actual highlights: " + highlights.stream().map(com.intellij.codeInsight.daemon.impl.HighlightInfo::getDescription).toList(),
                 hasDiscreteBoundError);
     }

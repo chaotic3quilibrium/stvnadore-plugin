@@ -6,12 +6,15 @@ import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import java.time.Clock;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -100,19 +103,34 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     return;
                 }
 
-                // Mutual exclusivity check
+                // Mutual exclusivity check (#filterIncl and #filterExcl): pin GENERIC_ERROR strictly to i >= 1
                 boolean hasIncl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null);
                 boolean hasExcl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null);
                 if (hasIncl && hasExcl) {
-                    for (var filter : filterEntries) {
-                        holder.registerProblem(
-                            filter,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Constraint violation (" + kw + "): #filterIncl and #filterExcl are mutually exclusive",
-                                StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
+                    for (int i = 0; i < filterEntries.size(); i++) {
+                        var filter = filterEntries.get(i);
+                        var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
+                        var fKw = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
+                            ? StvnVocabulary.FACET_KW_FILTER_INCL
+                            : StvnVocabulary.FACET_KW_FILTER_EXCL;
+                        var fixes = parentEntry != null
+                            ? new LocalQuickFix[]{new RemoveRedundantFacetQuickFix(parentEntry, fKw, "Remove conflicting facet")}
+                            : LocalQuickFix.EMPTY_ARRAY;
+                        if (i >= 1) {
+                            holder.registerProblem(
+                                filter,
+                                StvnDiagnosticFormatter.formatPlugin(
+                                    "Constraint violation (" + kw + "): "
+                                        + StvnVocabulary.FACET_KW_FILTER_INCL + " and "
+                                        + StvnVocabulary.FACET_KW_FILTER_EXCL + " are mutually exclusive",
+                                    DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                                ),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                fixes
+                            );
+                        } else if (isOnTheFly && fixes.length > 0) {
+                            holder.registerProblem(filter, "", ProblemHighlightType.INFORMATION, fixes);
+                        }
                     }
                     return;
                 }
@@ -181,8 +199,8 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                             holder.registerProblem(
                                 vkw,
                                 StvnDiagnosticFormatter.formatPlugin(
-                                    "Constraint violation (" + kw + "): Monotonic narrowing violation: variant " + text + " does not exist in immediate parent type " + parentName,
-                                    StvnDiagnosticCodes.ERR_FILTER_MONOTONIC_NARROWING_VIOLATION
+                                    "Monotonic narrowing violation (" + kw + "): variant '" + text + "' is not active in parent enum",
+                                    DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
@@ -212,8 +230,8 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var outOfOrderText = outOfOrderNode.getText();
                         var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
                         var msg = StvnDiagnosticFormatter.formatPlugin(
-                            "Constraint violation (" + kw + "): Root ordering violation: variant " + outOfOrderText + " does not match relative declaration order of root :Enum " + rootEnumName,
-                            StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION
+                            "Root ordering violation (" + kw + "): variant '" + outOfOrderText + "' violates monotonic root enum declaration order",
+                            DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION
                         );
                         for (var vkw : valueKeywords) {
                             if (vkw == outOfOrderNode) {
@@ -240,10 +258,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var remaining = parentAllowed.stream().filter(v -> !facetList.contains(v)).toList();
                         if (remaining.isEmpty()) {
                             holder.registerProblem(
-                                variantList,
+                                filter,
                                 StvnDiagnosticFormatter.formatPlugin(
-                                    "Constraint violation (" + kw + "): Complete exclusion violation: enum subset results in empty variant list",
-                                    StvnDiagnosticCodes.ERR_FILTER_COMPLETE_EXCLUSION_VIOLATION
+                                    "Complete exclusion violation (" + kw + "): filtered enum subset evaluates to zero active variants",
+                                    DiagnosticBag.ERR_ENUM_SUBSET_EMPTY
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
@@ -287,40 +305,129 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(value)) {
                     return;
                 }
+                if (PsiTreeUtil.getParentOfType(value, MetadataMap.class) != null) {
+                    return;
+                }
                 var vkw = value.getValueKeyword();
                 if (vkw == null) return;
 
-                var typeInfo = StvnTypeResolver.resolveBaseTypeInfo(value);
-                if (typeInfo == null) return;
-
-                if (isGovernedByPoisonedOrDegradedEnumSubset(value.getContainingFile(), typeInfo.getSchema())) {
+                // Exempt declared #CONST references so valid enum constants never trigger undeclared/subset errors
+                var resolvedConst = StvnConstantReference.resolveConstantWithContext(vkw);
+                if (resolvedConst instanceof ConstantDefinition
+                        || (resolvedConst != null && resolvedConst.getParent() instanceof ConstantDefinition)) {
                     return;
                 }
 
-                var subset = StvnTypeResolver.resolveEnumSubset(typeInfo.getSchema());
-                if (subset == null) return;
+                var enclosingConst = PsiTreeUtil.getParentOfType(value, ConstantDefinition.class);
+                if (enclosingConst != null && enclosingConst.getMetadataMap() != null
+                        && enclosingConst.getMetadataMap().getMetadataEntryList().stream().anyMatch(e -> e.getMetadataFilter() != null)) {
+                    return;
+                }
 
-                var text = vkw.getText();
-                if (subset.rootVariants().contains(text) && !subset.containsVariant(text)) {
+                var governingSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(value);
+                if (governingSchema == null) return;
+
+                if (isGovernedByPoisonedOrDegradedEnumSubset(value.getContainingFile(), governingSchema)) {
+                    var fallbackRootInfo = resolveDirectEnumInfo(value, governingSchema, true);
+                    if (fallbackRootInfo != null && !fallbackRootInfo.variants().contains(vkw.getText())) {
+                        var text = vkw.getText();
+                        var msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Invalid enum value for '" + fallbackRootInfo.label() + "': variant '" + text
+                                + "' is not declared; allowed variants: " + fallbackRootInfo.variants(),
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
+                        holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
+                    }
+                    return;
+                }
+
+                var subset = StvnTypeResolver.resolveEnumSubset(governingSchema);
+                if (subset != null) {
+                    var text = vkw.getText();
+                    if (subset.containsVariant(text)) {
+                        return;
+                    }
+                    if (subset.rootVariants().contains(text)) {
+                        var msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Invalid enum value: variant '" + text + "' is not permitted in enum subset '"
+                                + subset.name() + "'; allowed variants: " + subset.allowedVariants(),
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value, DiagnosticBag.ERR_CONSTRAINT_VIOLATION, msg, Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
+                        holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
+                    } else {
+                        var msg = StvnDiagnosticFormatter.formatPlugin(
+                            "Invalid enum value for '" + subset.name() + "': variant '" + text
+                                + "' is not declared; allowed variants: " + subset.allowedVariants(),
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        );
+                        var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
+                            value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
+                        ).toArray(LocalQuickFix.EMPTY_ARRAY);
+                        holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
+                    }
+                    return;
+                }
+
+                var directEnumInfo = resolveDirectEnumInfo(value, governingSchema, false);
+                if (directEnumInfo != null && !directEnumInfo.variants().contains(vkw.getText())) {
+                    var text = vkw.getText();
                     var msg = StvnDiagnosticFormatter.formatPlugin(
-                        "Payload variant '" + text + "' is not a member of active enum subset '" + subset.name() + "'",
-                        StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION
+                        "Invalid enum value for '" + directEnumInfo.label() + "': variant '" + text
+                            + "' is not declared; allowed variants: " + directEnumInfo.variants(),
+                        DiagnosticBag.ERR_TYPE_MISMATCH
                     );
                     var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
-                        value,
-                        StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION,
-                        msg,
-                        Clock.systemDefaultZone()
+                        value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
                     ).toArray(LocalQuickFix.EMPTY_ARRAY);
-                    holder.registerProblem(
-                        vkw,
-                        msg,
-                        ProblemHighlightType.GENERIC_ERROR,
-                        fixes
-                    );
+                    holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
                 }
             }
         };
+    }
+
+    private record DirectEnumInfo(String label, List<String> variants) {}
+
+    private static @Nullable DirectEnumInfo resolveDirectEnumInfo(
+            @NotNull Value value,
+            @NotNull SchemaType governingSchema,
+            boolean useHealthyRootAliasForDegraded
+    ) {
+        if (governingSchema.getTypeKeyword() != null) {
+            String directLabel = governingSchema.getTypeKeyword().getText().trim();
+            var resolved = StvnTypeResolver.resolveNominalSchema(governingSchema);
+            if (resolved != null
+                    && resolved.getSchemaConstructor() != null
+                    && resolved.getSchemaConstructor().getSumType() != null
+                    && resolved.getSchemaConstructor().getSumType().getEnumDef() != null) {
+                var variants = resolved.getSchemaConstructor().getSumType().getEnumDef()
+                    .getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+                String label = directLabel;
+                if (useHealthyRootAliasForDegraded && resolved.getParent() instanceof TypeDefinition rootTd
+                        && rootTd.getTypeKeyword() != null) {
+                    label = rootTd.getTypeKeyword().getText().trim();
+                }
+                return new DirectEnumInfo(label, variants);
+            }
+            return null;
+        }
+        if (governingSchema.getSchemaConstructor() != null
+                && governingSchema.getSchemaConstructor().getSumType() != null
+                && governingSchema.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            var constDef = PsiTreeUtil.getParentOfType(value, ConstantDefinition.class);
+            String label = (constDef != null && value.getParent() == constDef && constDef.getValueKeyword() != null)
+                ? constDef.getValueKeyword().getText().trim()
+                : StvnVocabulary.TYPE_ENUM;
+            var variants = governingSchema.getSchemaConstructor().getSumType().getEnumDef()
+                .getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+            return new DirectEnumInfo(label, variants);
+        }
+        return null;
     }
 
     private static boolean isGovernedByPoisonedOrDegradedEnumSubset(

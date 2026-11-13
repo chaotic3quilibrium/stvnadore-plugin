@@ -41,7 +41,8 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
         if (tokenType.equals(StvnTypes.COMMENT)) {
             return COMMENT_KEYS;
         } else if (tokenType.equals(StvnTypes.LITERAL_STRING_SIMPLE) ||
-                   tokenType.equals(StvnTypes.LITERAL_STRING_FENCED)) {
+                   tokenType.equals(StvnTypes.LITERAL_STRING_FENCED) ||
+                   tokenType.equals(StvnTypes.MALFORMED_FENCE)) {
             return STRING_KEYS;
         } else if (tokenType.equals(StvnTypes.LITERAL_INTEGER) ||
                    tokenType.equals(StvnTypes.LITERAL_FLOAT)) {
@@ -141,4 +142,4 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
                type.equals(StvnTypes.KW_FILTER_INCL) ||
                type.equals(StvnTypes.KW_FILTER_EXCL);
     }
-}
+}

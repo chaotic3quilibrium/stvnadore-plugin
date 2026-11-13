@@ -314,16 +314,36 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
             @Nullable BigInteger maxExcl,
             @NotNull String baseType
     ) {
-        String constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
-        String lowerStr = minIncl != null ? minIncl.toString() : "-inf";
-        String upperStr = maxExcl != null ? maxExcl.toString() : "+inf";
+        String ownerLabel = constDef.getValueKeyword() != null
+            ? constDef.getValueKeyword().getText()
+            : (StvnVocabulary.SIGIL_VALUE + "CONST");
+        var schemaType = constDef.getSchemaType();
+        if (schemaType != null && schemaType.getTypeKeyword() != null) {
+            String typeKw = schemaType.getTypeKeyword().getText().trim();
+            if (!StvnVocabulary.isBaseScalarType(typeKw)) {
+                ownerLabel = typeKw;
+            }
+        }
+        String rawMsg;
+        if (minIncl != null && val.compareTo(minIncl) < 0) {
+            rawMsg = "Constraint violation (" + ownerLabel + "): Value " + val
+                + " is outside allowable range (must be >= " + minIncl + ")";
+        } else if (maxExcl != null && val.compareTo(maxExcl) >= 0) {
+            rawMsg = "Constraint violation (" + ownerLabel + "): Value " + val
+                + " is outside allowable range (must be < " + maxExcl + ")";
+        } else {
+            String lowerStr = minIncl != null ? minIncl.toString() : "-inf";
+            String upperStr = maxExcl != null ? maxExcl.toString() : "+inf";
+            rawMsg = "Constraint violation (" + ownerLabel + "): Value " + val
+                + " is outside allowable range [" + lowerStr + ", " + upperStr + ") for " + baseType;
+        }
         String msg = StvnDiagnosticFormatter.formatPlugin(
-            "Constraint violation (" + constName + "): Value " + val + " is outside allowable range [" + lowerStr + ", " + upperStr + ") for " + baseType,
-            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW
+            rawMsg,
+            org.stvnadore.core.validation.DiagnosticBag.ERR_CONSTRAINT_VIOLATION
         );
         var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
             value,
-            StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW,
+            org.stvnadore.core.validation.DiagnosticBag.ERR_CONSTRAINT_VIOLATION,
             msg,
             Clock.systemDefaultZone()
         ).toArray(LocalQuickFix.EMPTY_ARRAY);

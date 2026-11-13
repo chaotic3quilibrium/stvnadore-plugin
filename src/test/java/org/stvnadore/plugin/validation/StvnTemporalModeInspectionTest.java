@@ -33,11 +33,13 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires a scale facet"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires exactly one scale facet"))
             .toList();
-        assertFalse("Expected missing temporal facet error on bare :TimeEpoch", errors.isEmpty());
-
+        assertEquals("Expected 1 missing temporal facet error on bare :TimeEpoch", 1, errors.size());
         int offset = text.indexOf(":TimeEpoch");
+        assertEquals("Error must pin strictly to :TimeEpoch AtomicType token", offset, errors.get(0).getStartOffset());
+        assertEquals(offset + ":TimeEpoch".length(), errors.get(0).getEndOffset());
+
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         var actions = myFixture.filterAvailableIntentions("Add temporal facet '#ms'");
         assertFalse("Expected quick-fix to add '#ms' to be available", actions.isEmpty());
@@ -51,7 +53,7 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var text = """
             {
               :defs {
-                :EventTimestamp :DateTime
+                :EventTimestamp { #equatable #TRUE } :DateTime
               }
               :type :EventTimestamp
               :body "2026-09-21T12:00:00Z"
@@ -61,11 +63,15 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var highlights = myFixture.doHighlighting();
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires explicit mode facet"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("requires exactly one mode facet"))
             .toList();
-        assertFalse("Expected missing temporal facet error on bare :DateTime", errors.isEmpty());
+        assertEquals("Expected 1 missing temporal facet error on :DateTime", 1, errors.size());
 
         int offset = text.indexOf(":DateTime");
+        assertEquals("Error must pin strictly to :DateTime AtomicType token (excluding preceding MetadataMap)",
+            offset, errors.get(0).getStartOffset());
+        assertEquals(offset + ":DateTime".length(), errors.get(0).getEndOffset());
+
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         var actions = myFixture.filterAvailableIntentions("Add temporal facet '#offset'");
         assertFalse("Expected quick-fix to add '#offset' to be available", actions.isEmpty());
@@ -164,17 +170,25 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         var mutexErrors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .filter(h -> h.getDescription() != null
-                && h.getDescription().contains("ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE"))
+                && h.getDescription().contains("MUTUALLY_EXCLUSIVE_BOUNDS"))
             .toList();
-        assertEquals("Expected 3 mutually exclusive mode errors (#offset, #zoned, #audited)", 3, mutexErrors.size());
+        assertEquals("Expected 2 mutually exclusive mode errors pinned strictly to i >= 1 (#zoned, #audited)", 2, mutexErrors.size());
 
-        // 1. At #audited, verify KeepOnlyTemporalFacetQuickFix and RemoveRedundantFacetQuickFix are offered
+        // 0. At #offset (i == 0), verify Alt+Enter intentions are still available via INFORMATION problem
+        int offsetModeIdx = text.indexOf("#offset");
+        myFixture.getEditor().getCaretModel().moveToOffset(offsetModeIdx + 2);
+        assertFalse("Expected 'Keep only #offset' quick-fix on first mode facet",
+            myFixture.filterAvailableIntentions("Keep only '#offset' (remove '#zoned', '#audited')").isEmpty());
+        assertFalse("Expected 'Remove conflicting facet #offset' quick-fix on first mode facet",
+            myFixture.filterAvailableIntentions("Remove conflicting facet '#offset'").isEmpty());
+
+        // 1. At #audited, verify KeepOnlyTemporalFacetQuickFix and RemoveRedundantFacetQuickFix ("Remove conflicting facet") are offered
         int auditedOffset = text.indexOf("#audited");
         myFixture.getEditor().getCaretModel().moveToOffset(auditedOffset + 2);
         var keepAuditedActions = myFixture.filterAvailableIntentions("Keep only '#audited' (remove '#offset', '#zoned')");
         assertFalse("Expected 'Keep only #audited' quick-fix", keepAuditedActions.isEmpty());
-        var removeAuditedActions = myFixture.filterAvailableIntentions("Remove redundant facet '#audited'");
-        assertFalse("Expected 'Remove redundant facet #audited' quick-fix", removeAuditedActions.isEmpty());
+        var removeAuditedActions = myFixture.filterAvailableIntentions("Remove conflicting facet '#audited'");
+        assertFalse("Expected 'Remove conflicting facet #audited' quick-fix", removeAuditedActions.isEmpty());
         myFixture.launchAction(keepAuditedActions.get(0));
 
         // 2. At #us, invoke Remove inapplicable facet '#us'
@@ -208,8 +222,8 @@ public final class StvnTemporalModeInspectionTest extends BasePlatformTestCase {
         myFixture.getEditor().getCaretModel().moveToOffset(msOffset + 1);
         var keepMsActions = myFixture.filterAvailableIntentions("Keep only '#ms' (remove '#s', '#us')");
         assertFalse("Expected 'Keep only #ms' quick-fix", keepMsActions.isEmpty());
-        var removeMsActions = myFixture.filterAvailableIntentions("Remove redundant facet '#ms'");
-        assertFalse("Expected 'Remove redundant facet #ms' quick-fix", removeMsActions.isEmpty());
+        var removeMsActions = myFixture.filterAvailableIntentions("Remove conflicting facet '#ms'");
+        assertFalse("Expected 'Remove conflicting facet #ms' quick-fix", removeMsActions.isEmpty());
         myFixture.launchAction(keepMsActions.get(0));
 
         var finalResult = myFixture.getEditor().getDocument().getText();

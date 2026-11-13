@@ -80,6 +80,7 @@ public final class StvnTypeResolver {
         "E035",
         "E040",
         DiagnosticBag.ERR_INVALID_METADATA_FACET,
+        DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET,
         "E036",
         DiagnosticBag.ERR_DUPLICATE_METADATA_FACET,
         DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT,
@@ -286,10 +287,28 @@ public final class StvnTypeResolver {
                 var hasMinExcl = false;
                 var hasMaxIncl = false;
                 var hasMaxExcl = false;
+                var hasFilterIncl = false;
+                var hasFilterExcl = false;
+                var hasSize = false;
+                var hasExact = false;
                 BigDecimal minVal = null;
                 BigDecimal maxVal = null;
 
                 for (var entry : entries) {
+                    var trait = entry.getMetadataTrait();
+                    if (trait != null) {
+                        var mv = trait.getMetadataValue();
+                        if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
+                            return true;
+                        }
+                    }
+                    var boolFacet = entry.getMetadataBool();
+                    if (boolFacet != null) {
+                        var mv = boolFacet.getMetadataValue();
+                        if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
+                            return true;
+                        }
+                    }
                     var entryText = entry.getText();
                     if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_REGEX)) {
                         var strLit = PsiTreeUtil.findChildOfType(entry, StringLiteral.class);
@@ -322,13 +341,24 @@ public final class StvnTypeResolver {
                         hasMaxExcl = true;
                         var num = extractNumericValue(entry);
                         if (num != null) maxVal = num;
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_INCL)) {
+                        hasFilterIncl = true;
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_EXCL)) {
+                        hasFilterExcl = true;
+                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_EXACT)) {
+                        hasExact = true;
                     } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SIZE)) {
+                        hasSize = true;
                         var schemaType = typeDef.getSchemaType();
                         var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
                         if (schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
                             return true;
                         }
                     }
+                }
+
+                if ((hasFilterIncl && hasFilterExcl) || (hasSize && hasExact)) {
+                    return true;
                 }
 
                 var schemaType = typeDef.getSchemaType();
@@ -340,14 +370,23 @@ public final class StvnTypeResolver {
                 var hasOffset = false;
                 var hasZoned = false;
                 var hasAudited = false;
+                var hasScaleNs = false;
+                var hasScaleUs = false;
+                var hasScaleMs = false;
+                var hasScaleS = false;
                 for (var entry : entries) {
                     var entryText = entry.getText();
                     if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
                     if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
                     if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_NS)) hasScaleNs = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_US)) hasScaleUs = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_MS)) hasScaleMs = true;
+                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_S)) hasScaleS = true;
                 }
                 int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
-                if (modeCount > 1) {
+                int scaleCount = (hasScaleNs ? 1 : 0) + (hasScaleUs ? 1 : 0) + (hasScaleMs ? 1 : 0) + (hasScaleS ? 1 : 0);
+                if (modeCount > 1 || scaleCount > 1) {
                     return true;
                 }
 
@@ -1384,13 +1423,14 @@ public final class StvnTypeResolver {
                         }
                     }
                 } else if (sumType.getEnumDef() != null) {
-                    if (matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
+                    if (degradedSum || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
                         if (info.getSchema().getTypeKeyword() != null) {
+                            var prefix = degradedSum ? "\u26A0 " : "";
                             var trace = StvnTypeReference.extractResolutionTrace(info.getSchema().getTypeKeyword());
                             if (trace.size() > 1) {
-                                return trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
+                                return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
                             }
-                            return info.getLabel();
+                            return baseLabel;
                         }
                         return StvnVocabulary.TYPE_ENUM;
                     }
@@ -1399,19 +1439,20 @@ public final class StvnTypeResolver {
         }
 
         var keyword = info.getSchema().getTypeKeyword();
+        var isDegraded = keyword != null && isDegradedNominalAlias(value.getContainingFile(), keyword.getText());
         if (keyword != null) {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
-            if (trace.size() > 1 && matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
+            if (trace.size() > 1 && (isDegraded || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema()))) {
                 if (!StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(keyword.getText())) {
-                    var isDegraded = isDegradedNominalAlias(value.getContainingFile(), keyword.getText());
                     var prefix = isDegraded ? "\u26A0 " : "";
                     return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
                 }
                 return info.getLabel();
             }
         }
-        if (matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
-            return info.getLabel();
+        if (isDegraded || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
+            var prefix = isDegraded ? "\u26A0 " : "";
+            return prefix + info.getLabel();
         }
         if (value.getCollectionValue() != null) {
             return info.getLabel();

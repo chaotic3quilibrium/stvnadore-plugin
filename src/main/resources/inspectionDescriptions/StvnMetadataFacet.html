@@ -1,6 +1,6 @@
 <html>
 <body>
-<p>Reports invalid metadata facets, empty blocks, and prohibited interval bounds on type declarations and constant definitions to enforce STVN 2.0.0 language governance (STVN Spec § 3 &amp; § 5).</p>
+<p>Reports invalid metadata facets, incomplete boolean trait facets, empty blocks, and conflicting facets on type declarations and constant definitions to enforce STVN 2.0.0 language governance (STVN Spec &sect;3 &amp; &sect;5).</p>
 
 <p><b>Empty Sections and Metadata Blocks (ERR_EMPTY_META_BLOCK / ERR_EMPTY_DEFS_BLOCK / ERR_EMPTY_METADATA_BLOCK / ERR_EMPTY_DIRECTIVE_BLOCK):</b></p>
 <ul>
@@ -10,14 +10,21 @@
     <li>Empty directive blocks <code>{}</code> in <code>:use</code> or <code>:include</code> statements are invalid. Specify <code>{#strip}</code>, alias mappings, or delete <code>{}</code>.</li>
 </ul>
 
+<p><b>Incomplete &amp; Invalid Boolean Trait Facets (<code>E008</code> / <code>ERR_INCOMPLETE_TRAIT_FACET</code> &amp; <code>ERR_INVALID_METADATA_FACET</code>):</b></p>
+<ul>
+    <li>Trait and formatting facets <code>#preserveIndent</code>, <code>#equatable</code>, and <code>#comparable</code> require an explicit boolean argument (<code>#TRUE</code>, <code>#FALSE</code>, or a boolean <code>#CONST</code> reference).</li>
+    <li>Bare declarations (such as <code>{ #preserveIndent }</code>, <code>{ #equatable }</code>, or <code>{ #comparable }</code>) report <code>E008 / ERR_INCOMPLETE_TRAIT_FACET</code> and offer <code>CompleteTraitFacetQuickFix</code> to append a non-redundant boolean literal while preserving sibling facets.</li>
+</ul>
+
 <p><b>Root <code>:meta</code> Facet Governance (ERR_INVALID_METADATA_FACET / ERR_DUPLICATE_METADATA_FACET):</b></p>
 <ul>
     <li>Only <code>#name</code>, <code>#domain</code>, and <code>#kind</code> are permitted in <code>:meta</code> blocks. Unknown facet tags (such as <code>#author</code>) and duplicate facets are rejected with <code>E008</code>.</li>
 </ul>
 
-<p><b>Duplicate Facets (ERR_DUPLICATE_METADATA_FACET):</b></p>
+<p><b>Duplicate &amp; Conflicting Facets (ERR_DUPLICATE_METADATA_FACET / MUTUALLY_EXCLUSIVE_BOUNDS):</b></p>
 <ul>
     <li>Each facet keyword may appear at most once per metadata block. Duplicate declarations (e.g. <code>{ #size 53 #size 1 }</code>) are prohibited.</li>
+    <li>Co-declaring <code>#size</code> and <code>#exact</code> on <code>:Float</code> triggers <code>E008 / MUTUALLY_EXCLUSIVE_BOUNDS</code> on the second conflicting facet with <code>Remove conflicting facet '&lt;facet&gt;'</code>.</li>
 </ul>
 
 <p><b>Nominal Type Resolution and Undeclared Type Bailout:</b></p>
@@ -26,21 +33,21 @@
     <li>If a nominal base type is undeclared or unresolved, facet validation bails out immediately without emitting facet rejection errors. Type resolution errors are reported exclusively by compiler diagnostic <code>ERR_UNDEFINED_TYPE</code> on the type token.</li>
 </ul>
 
-<p><b>Permitted Facet Matrix (STVN Spec § 3 &amp; § 5):</b></p>
+<p><b>Permitted Facet Matrix (STVN Spec &sect;3 &amp; &sect;5):</b></p>
 <ul>
     <li><b>Discrete Integer (<code>:Int</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#size</code>, <code>#unsigned</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Closed upper bounds (<code>#maxIncl</code>) and open lower bounds (<code>#minExcl</code>) are strictly prohibited (<code>ERR_DISCRETE_BOUND_KIND_PROHIBITED</code>).</li>
     <li><b>Continuous Floating-Point (<code>:Float</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#size</code>, <code>#minIncl</code>, <code>#maxIncl</code>, <code>#minExcl</code>, <code>#maxExcl</code>.</li>
     <li><b>Exact Decimal (<code>{ #exact } :Float</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#exact</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Discrete exact floats prohibit <code>#maxIncl</code> and <code>#minExcl</code>.</li>
     <li><b>String (<code>:String</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#regex</code>, <code>#minSize</code>, <code>#maxSize</code>, <code>#preserveIndent</code>. Fixed dimension <code>#size</code> is prohibited.</li>
     <li><b>Boolean (<code>:Boolean</code>):</b> <code>#equatable</code>.</li>
-    <li><b>Temporal Epoch (<code>:TimeEpoch</code>):</b> Requires bare scale flag <code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>. Permits <code>#equatable</code>, <code>#comparable</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Prohibits <code>#maxIncl</code> and <code>#minExcl</code>.</li>
+    <li><b>Temporal Epoch (<code>:TimeEpoch</code>):</b> Requires bare scale flag <code>#ns</code>, <code>#us</code>, <code>#ms</code>, or <code>#s</code>. Permits <code>#equatable</code>, <code>#comparable</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Prohibits <code>#maxIncl</code> and <code>#minExcl</code>.</li>
     <li><b>Temporal DateTime (<code>:DateTime</code>):</b> Requires mode facet <code>#offset</code>, <code>#zoned</code>, or <code>#audited</code>. Permits <code>#equatable</code>, <code>#comparable</code>, <code>#minIncl</code>, <code>#maxExcl</code>. Prohibits <code>#maxIncl</code> and <code>#minExcl</code>.</li>
-    <li><b>Enum Types (<code>:Enum</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#filterIncl</code>, <code>#filterExcl</code></li>
+    <li><b>Enum Types (<code>:Enum</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#filterIncl</code>, <code>#filterExcl</code>.</li>
     <li><b>Associative Map (<code>:Map</code>):</b> <code>#invertible</code>.</li>
     <li><b>Constants:</b> Metadata facets are strictly prohibited on constant definitions.</li>
     <li><b>Directives:</b> <code>#strip</code> is valid strictly in <code>:use</code> and <code>:include</code> statements and prohibited on type declarations.</li>
 </ul>
 
-<p>Provides automated quick-fixes to delete empty blocks, remove invalid facets, or remove duplicate facets.</p>
+<p>Provides automated quick-fixes to complete bare trait facets, delete empty blocks, remove invalid facets, remove duplicate facets, or remove conflicting facets.</p>
 </body>
 </html>

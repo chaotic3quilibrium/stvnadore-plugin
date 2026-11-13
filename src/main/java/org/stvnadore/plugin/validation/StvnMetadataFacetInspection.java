@@ -20,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
@@ -287,21 +288,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     return;
                 }
                 for (var entry : metaMap.getMetadataEntryList()) {
-                    var trait = entry.getMetadataTrait();
-                    if (trait != null && trait.getBooleanValue() == null && trait.getValueKeyword() == null) {
-                        var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
-                        holder.registerProblem(
-                            trait,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Metadata facet " + StvnVocabulary.FACET_KW_PRESERVE_INDENT
-                                    + " requires an explicit boolean value ("
-                                    + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
-                                StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
-                        );
-                    } else if (entry.getMetadataDirective() != null) {
+                    if (checkIncompleteTraitEntry(entry, holder) || checkInvalidTraitArgument(entry, holder)) {
+                        continue;
+                    }
+                    if (entry.getMetadataDirective() != null) {
                         holder.registerProblem(
                             entry,
                             StvnDiagnosticFormatter.formatPlugin(
@@ -364,19 +354,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 var metaMap = def.getMetadataMap();
                 if (metaMap != null) {
                     for (var entry : metaMap.getMetadataEntryList()) {
-                        var trait = entry.getMetadataTrait();
-                        if (trait != null && trait.getBooleanValue() == null && trait.getValueKeyword() == null) {
-                            var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
-                            holder.registerProblem(
-                                trait,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Metadata facet #preserveIndent requires an explicit boolean value (#TRUE or #FALSE)",
-                                    StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR,
-                                fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
-                            );
-                        }
+                        checkIncompleteTraitEntry(entry, holder);
                     }
                     if (isGenuinelyEmptyConstraintBlock(metaMap)) {
                         holder.registerProblem(
@@ -406,6 +384,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 }
                 var metaMap = schemaType.getMetadataMap();
                 if (metaMap != null) {
+                    for (var entry : metaMap.getMetadataEntryList()) {
+                        checkIncompleteTraitEntry(entry, holder);
+                    }
                     if (isGenuinelyEmptyConstraintBlock(metaMap)) {
                         holder.registerProblem(
                             metaMap,
@@ -441,6 +422,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         );
                     } else {
                         for (var entry : metaMap.getMetadataEntryList()) {
+                            if (checkIncompleteTraitEntry(entry, holder)) {
+                                continue;
+                            }
                             String facetName = extractFacetName(entry);
                             if (facetName == null) continue;
 
@@ -572,31 +556,41 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         boolean isMap = isMapType(baseType);
         boolean isCollection = isCollectionType(baseType);
         boolean isEnum = isEnumConstructor(baseType);
+        String ownerLabel = resolveOwnerLabel(metaMap, baseType);
 
-        // Local Trap 12 enforcement: #exact and #size co-declared on :Float
+        // Local Trap 12 enforcement: #exact and #size co-declared on :Float (pinned to 2nd co-occurring facet)
         if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
-            boolean hasLocalExact = hasLocalExactFacet(metaMap);
-            MetadataEntry localSizeEntry = null;
+            boolean seenSizeOrExact = false;
             for (var entry : metaMap.getMetadataEntryList()) {
-                if (hasToken(entry, TokenSet.create(StvnTypes.KW_SIZE))) {
-                    localSizeEntry = entry;
-                    break;
+                boolean isExact = hasToken(entry, TokenSet.create(StvnTypes.KW_EXACT));
+                boolean isSize = hasToken(entry, TokenSet.create(StvnTypes.KW_SIZE));
+                if (!isExact && !isSize) {
+                    continue;
                 }
-            }
-            if (hasLocalExact && localSizeEntry != null) {
-                holder.registerProblem(
-                    localSizeEntry,
-                    StvnDiagnosticFormatter.formatPlugin(
-                        "Constraint violation: facet '#size' is mutually exclusive with '#exact'",
-                        StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
-                    ),
-                    ProblemHighlightType.GENERIC_ERROR,
-                    new RemoveElementQuickFix("Remove mutually exclusive facet", "Remove mutually exclusive facet")
-                );
+                if (seenSizeOrExact) {
+                    String curKw = isSize ? StvnVocabulary.FACET_KW_SIZE : StvnVocabulary.FACET_KW_EXACT;
+                    String peerKw = isSize ? StvnVocabulary.FACET_KW_EXACT : StvnVocabulary.FACET_KW_SIZE;
+                    holder.registerProblem(
+                        entry,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + ownerLabel + "): facet '" + curKw
+                                + "' is mutually exclusive with '" + peerKw + "'",
+                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new RemoveRedundantFacetQuickFix(entry, curKw, "Remove conflicting facet")
+                    );
+                } else {
+                    seenSizeOrExact = true;
+                }
             }
         }
 
         for (var entry : metaMap.getMetadataEntryList()) {
+            if ((entry.getMetadataTrait() != null && entry.getMetadataTrait().getMetadataValue() == null)
+                    || (entry.getMetadataBool() != null && entry.getMetadataBool().getMetadataValue() == null)) {
+                continue;
+            }
             if (entry.getMetadataDirective() != null) {
                 continue;
             }
@@ -607,8 +601,8 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 holder.registerProblem(
                     kw,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Unrecognized metadata facet '" + facetName + "'",
-                        StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET
+                        "Metadata violation (" + ownerLabel + "): Unrecognized constraint facet '" + facetName + "'",
+                        DiagnosticBag.ERR_UNRECOGNIZED_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     new RemoveElementQuickFix("Remove unrecognized facet '" + facetName + "'", "Remove unrecognized facet")
@@ -795,19 +789,108 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix
                 );
+            } else {
+                checkInvalidTraitArgument(entry, holder);
             }
         }
     }
 
-    private static boolean hasLocalExactFacet(@Nullable MetadataMap metaMap) {
-        if (metaMap == null) return false;
-        for (var entry : metaMap.getMetadataEntryList()) {
-            var bare = entry.getMetadataBareFlag();
-            if (bare != null && bare.getNode().findChildByType(StvnTypes.KW_EXACT) != null) {
+    private static boolean checkIncompleteTraitEntry(MetadataEntry entry, ProblemsHolder holder) {
+        var trait = entry.getMetadataTrait();
+        if (trait != null && trait.getMetadataValue() == null) {
+            var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
+            holder.registerProblem(
+                trait,
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Metadata facet '" + StvnVocabulary.FACET_KW_PRESERVE_INDENT
+                        + "' requires an explicit boolean value ("
+                        + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
+                    DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET
+                ),
+                ProblemHighlightType.GENERIC_ERROR,
+                fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+            );
+            return true;
+        }
+
+        var boolFacet = entry.getMetadataBool();
+        if (boolFacet != null && boolFacet.getMetadataValue() == null) {
+            String kw = boolFacet.getNode().findChildByType(StvnTypes.KW_EQUATABLE) != null
+                ? StvnVocabulary.FACET_KW_EQUATABLE
+                : StvnVocabulary.FACET_KW_COMPARABLE;
+            var fixes = CompleteTraitFacetQuickFix.createFixes(boolFacet);
+            holder.registerProblem(
+                boolFacet,
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Metadata facet '" + kw + "' requires an explicit boolean value ("
+                        + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
+                    DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET
+                ),
+                ProblemHighlightType.GENERIC_ERROR,
+                fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+            );
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean checkInvalidTraitArgument(MetadataEntry entry, ProblemsHolder holder) {
+        var trait = entry.getMetadataTrait();
+        if (trait != null && trait.getMetadataValue() != null) {
+            var mv = trait.getMetadataValue();
+            if (mv.getBooleanValue() == null && mv.getValueKeyword() == null
+                    && (mv.getStringLiteral() == null
+                        || mv.getStringLiteral().getNode().findChildByType(StvnTypes.MALFORMED_FENCE) == null)) {
+                holder.registerProblem(
+                    mv,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Metadata facet '" + StvnVocabulary.FACET_KW_PRESERVE_INDENT
+                            + "' requires an explicit boolean value ("
+                            + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
+                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
+                return true;
+            }
+        }
+        var boolFacet = entry.getMetadataBool();
+        if (boolFacet != null && boolFacet.getMetadataValue() != null) {
+            var mv = boolFacet.getMetadataValue();
+            if (mv.getBooleanValue() == null && mv.getValueKeyword() == null
+                    && (mv.getStringLiteral() == null
+                        || mv.getStringLiteral().getNode().findChildByType(StvnTypes.MALFORMED_FENCE) == null)) {
+                String kw = boolFacet.getNode().findChildByType(StvnTypes.KW_EQUATABLE) != null
+                    ? StvnVocabulary.FACET_KW_EQUATABLE
+                    : StvnVocabulary.FACET_KW_COMPARABLE;
+                holder.registerProblem(
+                    mv,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Metadata facet '" + kw + "' requires an explicit boolean value ("
+                            + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
+                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR
+                );
                 return true;
             }
         }
         return false;
+    }
+
+    private static String resolveOwnerLabel(MetadataMap metaMap, String fallbackBaseType) {
+        var typeDef = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class);
+        if (typeDef != null && typeDef.getTypeKeyword() != null) {
+            return typeDef.getTypeKeyword().getText().trim();
+        }
+        var constDef = PsiTreeUtil.getParentOfType(metaMap, ConstantDefinition.class);
+        if (constDef != null && constDef.getValueKeyword() != null) {
+            return constDef.getValueKeyword().getText().trim();
+        }
+        if (PsiTreeUtil.getParentOfType(metaMap, TypeEntry.class) != null) {
+            return "<" + StvnVocabulary.KEYWORD_TYPE + ">";
+        }
+        return fallbackBaseType;
     }
 
     private static boolean hasLocalPreserveIndentTrue(@Nullable MetadataMap metaMap) {
@@ -832,7 +915,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             return true;
         }
         var trait = entry.getMetadataTrait();
-        return trait != null && trait.getNode().findChildByType(tokenSet) != null;
+        if (trait != null && trait.getNode().findChildByType(tokenSet) != null) {
+            return true;
+        }
+        var boolFacet = entry.getMetadataBool();
+        return boolFacet != null && boolFacet.getNode().findChildByType(tokenSet) != null;
     }
 
     private static boolean isStringType(String baseType) {
@@ -975,7 +1062,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             @NotNull String facetKeyword,
             @NotNull ProblemsHolder holder
     ) {
-        if (stringLit == null) {
+        if (stringLit == null || stringLit.getNode().findChildByType(StvnTypes.MALFORMED_FENCE) != null) {
             return;
         }
         String raw = stringLit.getText();

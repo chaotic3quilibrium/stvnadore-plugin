@@ -13,6 +13,63 @@ import static org.stvnadore.psi.StvnTypes.*;
   public _StvnLexer() {
     this((java.io.Reader)null);
   }
+
+  private static boolean isValidFenceTag(String tag) {
+    if (tag.isEmpty() || tag.length() > 256) {
+      return false;
+    }
+    for (int i = 0; i < tag.length(); i++) {
+      char ch = tag.charAt(i);
+      boolean ok = (ch >= 'a' && ch <= 'z')
+          || (ch >= 'A' && ch <= 'Z')
+          || (ch >= '0' && ch <= '9')
+          || ch == '_'
+          || ch == '-';
+      if (!ok) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private IElementType scanMalformedFenceBody() {
+    zzCurrentPos = zzMarkedPos;
+    while (zzCurrentPos < zzEndRead) {
+      char c = zzBuffer.charAt(zzCurrentPos++);
+      if (c == '[') {
+        int p = zzCurrentPos;
+        while (p < zzEndRead && zzBuffer.charAt(p) != ']' && zzBuffer.charAt(p) != '\r' && zzBuffer.charAt(p) != '\n') {
+          p++;
+        }
+        if (p + 3 < zzEndRead
+            && zzBuffer.charAt(p) == ']'
+            && zzBuffer.charAt(p + 1) == '"'
+            && zzBuffer.charAt(p + 2) == '"'
+            && zzBuffer.charAt(p + 3) == '"') {
+          zzCurrentPos = p + 4;
+          zzMarkedPos = zzCurrentPos;
+          return MALFORMED_FENCE;
+        }
+      } else if (c == '"' && zzCurrentPos + 1 < zzEndRead
+          && zzBuffer.charAt(zzCurrentPos) == '"'
+          && zzBuffer.charAt(zzCurrentPos + 1) == '"') {
+        zzCurrentPos += 2;
+        if (zzCurrentPos < zzEndRead && zzBuffer.charAt(zzCurrentPos) == '[') {
+          int p = zzCurrentPos + 1;
+          while (p < zzEndRead && zzBuffer.charAt(p) != ']' && zzBuffer.charAt(p) != '\r' && zzBuffer.charAt(p) != '\n') {
+            p++;
+          }
+          if (p < zzEndRead && zzBuffer.charAt(p) == ']') {
+            zzCurrentPos = p + 1;
+          }
+        }
+        zzMarkedPos = zzCurrentPos;
+        return MALFORMED_FENCE;
+      }
+    }
+    zzMarkedPos = zzCurrentPos;
+    return MALFORMED_FENCE;
+  }
 %}
 
 %public
@@ -131,8 +188,8 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
   // outside fenced string bodies to prevent block-string fallback triggers
   \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
 
-  // Intercept prohibited Rule STR-04 fenced string arrow delimiter
-  \"\"\"->\[[^\r\n\]]*\][ \r]*\n { return BAD_CHARACTER; }
+  // Intercept prohibited Rule STR-04 fenced string arrow delimiter while preserving container slot arity
+  \"\"\"->\[[^\r\n]*\n          { return scanMalformedFenceBody(); }
 
   // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG]
   \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
@@ -140,6 +197,9 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);
     String tag = text.substring(start, end);
+    if (!isValidFenceTag(tag)) {
+      return scanMalformedFenceBody();
+    }
     String closingFence = "[" + tag + "]\"\"\"";
     
     int matchIdx = 0;
@@ -163,9 +223,14 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
     // Fail closed on unclosed fence reaching EOF
     return BAD_CHARACTER;
   }
-  // Prohibit legacy unfenced block strings (Rule STR-04 fallback interceptors)
-  \"\"\"[ \r]*\n([^\"]|\"[^\"]|\"\"[^\"])*\"\"\" { return BAD_CHARACTER; }
-  \"\"\"                                             { return BAD_CHARACTER; }
+
+  // Single-line malformed triple-quoted string (Rule STR-04)
+  \"\"\"[^\r\n]*?\"\"\"          { return MALFORMED_FENCE; }
+
+  // Malformed multi-line or EOF triple-quoted fence opener (untagged, unclosed bracket, or trailing tokens)
+  \"\"\"([^\r\n\"]|\"[^\r\n\"]|\"\"[^\r\n\"])*\n { return scanMalformedFenceBody(); }
+  \"\"\"([^\r\n\"]|\"[^\r\n\"]|\"\"[^\r\n\"])*   { return MALFORMED_FENCE; }
+
   {LITERAL_STRING_SIMPLE}        { return LITERAL_STRING_SIMPLE; }
   {TYPE_KEYWORD_BASE}            { return TYPE_KEYWORD_BASE; }
   {UNION_TAG_PREFIX}             { return UNION_TAG_PREFIX; }
