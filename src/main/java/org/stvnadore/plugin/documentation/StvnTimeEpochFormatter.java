@@ -3,6 +3,7 @@ package org.stvnadore.plugin.documentation;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.settings.StvnSettings;
 
 import java.math.BigInteger;
@@ -22,7 +23,13 @@ public final class StvnTimeEpochFormatter {
 
     private static final BigInteger THOUSAND = BigInteger.valueOf(1000L);
     private static final BigInteger MILLION = BigInteger.valueOf(1_000_000L);
-    private static final BigInteger BILLION = BigInteger.valueOf(1_000_000_000L);
+    private static final BigInteger BILLION = BigInteger.valueOf(1_000_000L * 1000L);
+    private static final BigInteger SECONDS_PER_DAY = BigInteger.valueOf(86_400L);
+    private static final BigInteger DAYS_0000_TO_1970 = BigInteger.valueOf(719_468L);
+    private static final BigInteger DAYS_PER_400Y_ERA = BigInteger.valueOf(146_097L);
+    private static final BigInteger DAYS_PER_400Y_MINUS_ONE = BigInteger.valueOf(146_096L);
+    private static final BigInteger FOUR_HUNDRED = BigInteger.valueOf(400L);
+    private static final BigInteger YEAR_9999 = BigInteger.valueOf(9_999L);
 
     private static final BigInteger INSTANT_MAX_SECONDS = BigInteger.valueOf(31556889864403199L);
     private static final BigInteger INSTANT_MIN_SECONDS = BigInteger.valueOf(-31557014167219200L);
@@ -36,6 +43,7 @@ public final class StvnTimeEpochFormatter {
      * Temporal epoch de-scaling and formatting result.
      *
      * @param formattedUtc human-readable UTC timestamp
+     * @param isoUtcPreview deterministic ISO-8601 UTC timestamp preview (including 128-bit ticks), or null if invalid
      * @param year computed calendar year, or null if astronomical
      * @param isCivilWindowViolation true if year &lt; 1900 or year &gt; 2100
      * @param isMagnitudeMismatch true if digit length deviates from declared scale band
@@ -45,6 +53,7 @@ public final class StvnTimeEpochFormatter {
      */
     public record EpochFormatResult(
         String formattedUtc,
+        @Nullable String isoUtcPreview,
         @Nullable Integer year,
         boolean isCivilWindowViolation,
         boolean isMagnitudeMismatch,
@@ -67,12 +76,11 @@ public final class StvnTimeEpochFormatter {
         StvnSettings.TimeEpochHourFormat hourFormat
     ) {
         String cleanTicks = rawTicks.trim();
-        BigInteger ticks;
-        try {
-            ticks = new BigInteger(cleanTicks);
-        } catch (Exception e) {
+        var ticksOpt = StvnPsiLiteralEvaluator.parseBigInteger(cleanTicks);
+        if (ticksOpt.isEmpty()) {
             return new EpochFormatResult(
                 "Invalid Integer Literal: " + rawTicks,
+                null,
                 null,
                 true,
                 true,
@@ -81,6 +89,7 @@ public final class StvnTimeEpochFormatter {
                 null
             );
         }
+        BigInteger ticks = ticksOpt.get();
 
         BigInteger divisor;
         long nanoMultiplier;
@@ -130,6 +139,7 @@ public final class StvnTimeEpochFormatter {
         }
 
         long nanos = rem.multiply(BigInteger.valueOf(nanoMultiplier)).longValue();
+        String isoUtcPreview = formatBigEpochIsoUtc(sec, nanos);
 
         boolean astronomical = sec.compareTo(INSTANT_MAX_SECONDS) > 0 || sec.compareTo(INSTANT_MIN_SECONDS) < 0;
         Integer year = null;
@@ -152,12 +162,12 @@ public final class StvnTimeEpochFormatter {
         }
 
         // Magnitude band evaluation
-        String digitStr = cleanTicks.startsWith("-") ? cleanTicks.substring(1) : cleanTicks;
-        int digitCount = digitStr.length();
+        String decimalAbs = ticks.abs().toString(10);
+        int digitCount = decimalAbs.length();
 
         String detectedScale = detectScaleBand(digitCount);
         boolean magnitudeMismatch = false;
-        if (digitCount > 0 && !cleanTicks.equals("0")) {
+        if (ticks.signum() != 0) {
             if (digitCount < minExpectedDigits || digitCount > maxExpectedDigits) {
                 if (detectedScale != null && !detectedScale.equals(scaleFlag)) {
                     magnitudeMismatch = true;
@@ -174,6 +184,7 @@ public final class StvnTimeEpochFormatter {
 
         return new EpochFormatResult(
             formattedTime,
+            isoUtcPreview,
             year,
             civilWindowViolation,
             magnitudeMismatch,
@@ -181,6 +192,80 @@ public final class StvnTimeEpochFormatter {
             detectedDesc,
             detectedScale
         );
+    }
+
+    /**
+     * Formats a validated {@link Instant} as a deterministic ISO-8601 UTC timestamp,
+     * omitting zero fractional seconds and preserving non-zero fractional digits up to nanoseconds.
+     *
+     * @param instant validated UTC instant
+     * @return deterministic ISO-8601 UTC string ending in {@code Z}
+     */
+    public static String formatInstantIsoUtc(Instant instant) {
+        return formatBigEpochIsoUtc(BigInteger.valueOf(instant.getEpochSecond()), instant.getNano());
+    }
+
+    /**
+     * Formats arbitrary-precision epoch seconds and non-negative nanosecond adjustment {@code [0, 999_999_999]}
+     * into a proleptic Gregorian ISO-8601 UTC string without 64-bit {@link Instant} range overflow.
+     *
+     * @param epochSeconds signed epoch seconds relative to {@code 1970-01-01T00:00:00Z}
+     * @param nanos non-negative nanosecond-of-second in {@code [0, 999_999_999]}
+     * @return deterministic ISO-8601 UTC string ending in {@code Z}
+     */
+    public static String formatBigEpochIsoUtc(BigInteger epochSeconds, long nanos) {
+        BigInteger[] dayDiv = epochSeconds.divideAndRemainder(SECONDS_PER_DAY);
+        BigInteger days = dayDiv[0];
+        BigInteger secOfDay = dayDiv[1];
+        if (secOfDay.signum() < 0) {
+            days = days.subtract(BigInteger.ONE);
+            secOfDay = secOfDay.add(SECONDS_PER_DAY);
+        }
+        int sod = secOfDay.intValueExact();
+        int hour = sod / 3600;
+        int minute = (sod % 3600) / 60;
+        int second = sod % 60;
+
+        // Hinnant proleptic Gregorian civil-from-days over exact 146,097-day (400-year) eras
+        BigInteger z = days.add(DAYS_0000_TO_1970);
+        BigInteger era = z.signum() >= 0
+            ? z.divide(DAYS_PER_400Y_ERA)
+            : z.subtract(DAYS_PER_400Y_MINUS_ONE).divide(DAYS_PER_400Y_ERA);
+        int doe = z.subtract(era.multiply(DAYS_PER_400Y_ERA)).intValueExact();
+        int yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        BigInteger year = era.multiply(FOUR_HUNDRED).add(BigInteger.valueOf(yoe));
+        int doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        int mp = (5 * doy + 2) / 153;
+        int day = doy - (153 * mp + 2) / 5 + 1;
+        int month = mp < 10 ? mp + 3 : mp - 9;
+        if (month <= 2) {
+            year = year.add(BigInteger.ONE);
+        }
+
+        var sb = new StringBuilder(32);
+        if (year.signum() < 0) {
+            String absStr = year.abs().toString(10);
+            sb.append('-');
+            for (int pad = absStr.length(); pad < 4; pad++) {
+                sb.append('0');
+            }
+            sb.append(absStr);
+        } else if (year.compareTo(YEAR_9999) > 0) {
+            sb.append('+').append(year.toString(10));
+        } else {
+            sb.append(String.format(Locale.US, "%04d", year.intValueExact()));
+        }
+        sb.append(String.format(Locale.US, "-%02d-%02dT%02d:%02d:%02d", month, day, hour, minute, second));
+        if (nanos > 0) {
+            String frac = String.format(Locale.US, "%09d", nanos);
+            int end = frac.length();
+            while (end > 0 && frac.charAt(end - 1) == '0') {
+                end--;
+            }
+            sb.append('.').append(frac, 0, end);
+        }
+        sb.append('Z');
+        return sb.toString();
     }
 
     /**

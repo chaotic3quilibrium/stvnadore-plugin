@@ -364,6 +364,39 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     }
 
     /**
+     * Verifies that W003 redundant metadata facets across root defaults and nominal overrides
+     * produce strictly 1 [stvn-plugin:W003-WARN_REDUNDANT_METADATA_FACET] highlight per entry
+     * and zero [stvn-core:W003-...] duplicates when all 26 local inspections are enabled.
+     */
+    public void testW003RedundantMetadataFacetsHaveZeroDuplicatesAcrossAll26Inspections() {
+        var content = """
+            {
+              :defs {
+                :RedundantStringDefaults { #minSize 0 #maxSize 16777216 #preserveIndent #FALSE } :String
+                :ParentEpoch { #s #minIncl 1700000000 } :TimeEpoch
+                :ChildEpoch { #minIncl 1700000000 } :ParentEpoch
+                :Status :Enum [ #OPEN #CLOSED ]
+                :StatusIdentity { #filterIncl [ #OPEN #CLOSED ] } :Status
+              }
+              :type :ChildEpoch
+              :body 1750000000
+            }
+            """;
+        myFixture.configureByText("w003_dedup_integration.stvn", content);
+        var highlights = myFixture.doHighlighting();
+
+        assertZeroDuplicateDiagnostics("w003_dedup_integration.stvn", highlights);
+        assertNoCoreHighlight("w003_dedup_integration.stvn", highlights, "WARN_REDUNDANT_METADATA_FACET");
+        assertNoCoreHighlight("w003_dedup_integration.stvn", highlights, "W003");
+
+        var w003Highlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("[stvn-plugin:W003-WARN_REDUNDANT_METADATA_FACET]"))
+            .toList();
+        assertEquals("Expected strictly 5 deduplicated W003 highlights", 5, w003Highlights.size());
+    }
+
+    /**
      * Asserts that zero [stvn-core:...] highlights exist for the specified diagnostic code.
      */
     private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {

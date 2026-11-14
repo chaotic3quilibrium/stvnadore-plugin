@@ -58,6 +58,7 @@ For every source document $s \in \Sigma^*$:
 3. **Compound Token Elimination:** All legacy compound tokens removed from ANTLR4 in STVN 2.0.0 (`:Uint4`, `:Int16`, `:String8`, `:StringFixed36`, `:SeqNonEmpty`, `:MapInv`) must be removed from `stvn.bnf` and `stvn.flex`. Both grammars parse base types qualified by metadata facet blocks.
 4. **Strict Fenced String Delimiter & `MALFORMED_FENCE` Slot Isolation Invariant (Rule STR-04):** Both ANTLR4 (`StvnLexer.g4` / `StvnParser.g4`) and JFlex / Grammar-Kit (`stvn.flex` / `stvn.bnf`) strictly enforce delimiter pattern `"""[TAG]` without directional arrow syntax. Malformed triple-quoted openings (`"""->[TAG]`, inline `"""..."""`, untagged `"""\n...\n"""`, or invalid `[tag]`) scan as a single `MALFORMED_FENCE` token admitted into `string_literal` so enclosing `:Tuple`, `:Seq`, and `MetadataMap` slots preserve exact sibling positional arity while `StvnFencedStringInspection` highlights only the opening delimiter line (`[startOffset, endOffset)`) and offers body-preserving `RemoveProhibitedArrowQuickFix`.
 5. **27-Keyword `reserved_facet_keyword` Lookahead Boundary:** In `stvn.bnf`, `metadata_value` guards `facet_const_ref` with `!reserved_facet_keyword` across all 24 schema constraint facets plus `#name`, `#domain`, and `#kind`, preventing bare boolean traits (`#preserveIndent`, `#equatable`, `#comparable`) from consuming a following sibling facet as a `#CONST` argument.
+6. **Layered Single-Line Escape Highlighting Invariant:** `StvnParserDefinition.createLexer()` preserves single-token `StvnTypes.LITERAL_STRING_SIMPLE` PSI `StringLiteral` nodes for exact AST homology with `StvnParser.g4`, whereas `StvnSyntaxHighlighter.getHighlightingLexer()` wraps `FlexAdapter(_StvnLexer)` in an IntelliJ `LayeredLexer` registering `StvnSimpleStringHighlightingLexer` strictly on `StvnTypes.LITERAL_STRING_SIMPLE`. Valid STVN escapes (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`) emit `StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN` (`VALID_STRING_ESCAPE`), invalid escapes emit `INVALID_CHARACTER_ESCAPE_TOKEN` or `INVALID_UNICODE_ESCAPE_TOKEN` (`INVALID_STRING_ESCAPE`), and Rule STR-04 verbatim fenced strings (`LITERAL_STRING_FENCED`, `MALFORMED_FENCE`) remain completely unsplit.
 
 ```mermaid
 flowchart LR
@@ -173,6 +174,16 @@ The plugin treats the schema as a **Degraded Schema Sentinel**:
   > Payload evaluation is suspended.
 - Payloads in `:body` continue to receive syntax highlighting, multi-hop degraded type traces (`⚠ :Child -> :Parent -> :Enum`), and basic base-type auto-completion based on the fallback schema.
 
+### 3.5 Four-Locus Temporal `UTC Preview` & Concise `Default (:Enum)` Origin Contracts
+
+- **Four-Locus Temporal Hover Parity (`:TimeEpoch` & `:DateTime`):** `StvnDocumentationProvider` renders deterministic ISO-8601 `UTC Preview` rows across all four temporal authoring and reference loci:
+  1. `:defs` LHS `#CONST` declaration (`ConstantDefinition` card),
+  2. `:defs` RHS literal or chained `#CONST` value (`Constant Value` card with `Locus: Constant Definition (:defs clause)`),
+  3. `:body` `#CONST` reference across top-level, nested `:Tuple`/`:Seq`/`:Set`/`:Map`, and implicit `:Option`/`:Either`/`:Union` slots (`Slot Schema` + `Temporal Scale` / `Temporal Mode` + `UTC Preview`), and
+  4. `:body` direct integer or string literal (`Payload Value` card).
+- **128-Bit Floor-Adjusted Epoch & DST-Gap Safety:** `StvnTimeEpochFormatter` parses decimal, underscore, hexadecimal (`0x`), binary (`0b`), and octal (`0o`) tick literals via `StvnPsiLiteralEvaluator.parseBigInteger`, floor-adjusts negative sub-second remainders (`-1` `#ms` -> `1969-12-31T23:59:59.999Z`), and converts arbitrary-precision 128-bit ticks into proleptic Gregorian ISO-8601 UTC strings using pure-`BigInteger` 400-year (`146,097`-day) era arithmetic without `Instant` range overflow. For `:DateTime` (`#offset`, `#zoned`, `#audited`), `UTC Preview` renders strictly when `StvnCompiler.validateDateTimeLiteral(rawQuoted, mode).isEmpty()`, suppressing nonexistent Spring-forward DST-gap timestamps and mismatched `#audited` offsets without throwing exceptions.
+- **Concise `Default (:Enum)` Origin:** In `Effective Facets & Traits` hover tables, `formatDefaultOriginBaseType` normalizes `:Enum [...]` constructor signatures to `:Enum` so default trait rows display `Default (:Enum)` (`STE-07`) while `Underlying Structure:` continues to display the full active variant list.
+
 ---
 
 ## 4. Live Inspection & Intention Quick-Fix Contracts
@@ -265,6 +276,11 @@ flowchart TD
 - **Authoritative 5-Character `KW_META` Pinning & In-Flight `#kind` Suppression:**
   - `W002` (`WARN_DOCUMENT_DOMAIN_OMITTED_IN_META`) and non-empty `:meta` omitted-`#kind` `E031` (`ERR_DOCUMENT_KIND_MISMATCH`) anchor strictly to the 5-character `KW_META` (`:meta`) token across both `StvnExternalAnnotator` (via upstream `StvnDefsLowerer`) and governed local inspections (`StvnStemMismatchInspection`, `StvnMissingMetaInspection`) with zero downstream coordinate clamping and zero duplicate highlights.
   - During active typing inside `:meta`, `StvnMissingMetaInspection` suppresses secondary `E031` cascades whenever `#kind` is pinned without a value (`MetaKindFacet.getMetaKindValue() == null`) or appears as an in-flight `#kind` tag inside `MetaBlock`.
+
+### 4.9 `StvnRedundantFacetOverrideInspection` (`W003 / WARN_REDUNDANT_METADATA_FACET` 1:1 Deconfliction)
+- **Target Locus:** All schema `MetadataMap` blocks across `:defs` (`TypeDefinition`, `ConstantDefinition`), root `:type` (`TypeEntry`), and inline schema constructors (`SchemaType`).
+- **1:1 Core Deconfliction:** Mapped in `StvnDiagnosticAnnotatorMapping` to `DiagnosticBag.WARN_REDUNDANT_METADATA_FACET` (`W003`). When enabled, `StvnExternalAnnotator` yields `W003` emission exclusively to `StvnRedundantFacetOverrideInspection` (`[stvn-plugin:W003-WARN_REDUNDANT_METADATA_FACET]` + `RemoveRedundantFacetQuickFix`). When disabled in the user's inspection profile, `StvnExternalAnnotator` surfaces the identical `[startOffset, endOffset)` `MetadataEntry` spans and STE prose as `[stvn-core:W003-WARN_REDUNDANT_METADATA_FACET]` with zero stacked warnings (`count(range, code) == 1`).
+- **Pure-PSI Fallback:** When unrelated Pass 1 syntax errors prevent full Pass 2 compilation, the inspection evaluates root tautologies (`#size 32` on `:Int`, `#size 64` on continuous `:Float`, `#minSize 0`, `#maxSize 16777216`, `#preserveIndent #FALSE` on `:String`, natural bit-width bounds, intrinsic `#equatable` / `#comparable` traits) and nominal-parent overrides across `:Int`, `:Float`, `:String`, `:TimeEpoch`, `:DateTime`, and `:Enum` `#filterIncl` subsets directly over PSI and `#CONST` chains.
 
 ---
 

@@ -339,4 +339,32 @@ public final class StvnSemanticHoverContractTest extends BasePlatformTestCase {
                 && liveHoverDoc.contains("<b>Value Type:</b> \u26A0 :TrapConflictFilter (-> :SettlementState -> :Enum)")
         );
     }
+
+    /**
+     * Verifies the Three-Zone Semantic Hover Contract on {@code :defs} RHS temporal literals:
+     * Zone 1 renders {@code Constant Value:} and {@code Constant Definition (:defs clause)},
+     * and Zone 2 renders {@code Satisfied} plus deterministic {@code UTC Preview}.
+     */
+    public void testDefsRhsTemporalLiteralDisplaysConstantValueLocusAndUtcPreview() {
+        var text = """
+            {
+              :defs {
+                :OffsetTs { #offset } :DateTime
+                #RELEASE_TS :OffsetTs "2026-11-12T17:30:00Z"
+              }
+              :type :OffsetTs
+              :body #RELEASE_TS
+            }
+            """;
+        myFixture.configureByText("defs_rhs_temporal_contract.stvn", text);
+        int rhsLitOffset = text.indexOf("\"2026-11-12T17:30:00Z\"") + 2;
+        String doc = getDocAtOffset(text, rhsLitOffset);
+
+        assertTrue("Zone 1 must render Constant Value header:\n" + doc,
+            doc.contains("<b>Constant Value:</b> <code>\"2026-11-12T17:30:00Z\"</code>"));
+        assertTrue("Zone 1 must identify Locus as :defs clause:\n" + doc,
+            doc.contains("Constant Definition (<code>:defs</code> clause)"));
+        assertTrue("Zone 2 must render deterministic UTC Preview:\n" + doc,
+            doc.contains("<b>UTC Preview:</b> <code>2026-11-12T17:30:00Z</code>"));
+    }
 }

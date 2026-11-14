@@ -290,7 +290,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     || p.toString().endsWith(".stvn_di") || p.toString().endsWith(".stvn_i"))
                 .filter(p -> {
                     var name = p.getFileName().toString();
-                    return !name.contains(".stvn_ir.") && !name.contains(".stvn_core.") && !name.contains(".stvn_cas.");
+                    return !name.endsWith(".contract.stvn_i")
+                        && !name.contains(".stvn_ir.") && !name.contains(".stvn_core.") && !name.contains(".stvn_cas.");
                 })
                 .sorted()
                 .toList();
@@ -7024,6 +7025,128 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         for (String relativePath : GAUNTLET_V7_BATCH2_CONTRACT_FIXTURES) {
             assertDiagnosticContract(relativePath);
+        }
+    }
+
+    public void testValidMetadataWarningContractsZeroAndAllInspections() throws Exception {
+        var warningsDir = Paths.get(getTestDataPath(), "syntax", "valid", "metadata_warnings");
+        assertTrue("Metadata warnings directory must exist: " + warningsDir, Files.isDirectory(warningsDir));
+
+        java.util.List<Path> fixtureFiles;
+        try (var stream = Files.walk(warningsDir)) {
+            fixtureFiles = stream
+                .filter(Files::isRegularFile)
+                .filter(p -> {
+                    var name = p.getFileName().toString();
+                    return (name.endsWith(".stvn") || name.endsWith(".stvn_i"))
+                        && !name.endsWith(".contract.stvn_i")
+                        && !name.contains(".stvn_ir.");
+                })
+                .sorted()
+                .toList();
+        }
+        assertEquals("Expected all 7 metadata warning fixtures in syntax/valid/metadata_warnings", 7, fixtureFiles.size());
+
+        int totalContractRows = 0;
+
+        // Pass A: 0 local inspections enabled — StvnExternalAnnotator surfaces [stvn-core:...] warnings
+        for (var fixturePath : fixtureFiles) {
+            var fileName = fixturePath.getFileName().toString();
+            var contractPath = resolveContractPath(fixturePath);
+            assertNotNull("Missing .contract.stvn_i sidecar for " + fileName, contractPath);
+            var expectations = parseErrorContract(contractPath, fileName);
+            totalContractRows += expectations.size();
+
+            var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
+            myFixture.configureByFile(relativePath);
+            var highlights = myFixture.doHighlighting();
+            assertZeroRawCompilerJargon(highlights, fileName);
+
+            var errors = highlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).toList();
+            assertTrue("Expected 0 ERROR highlights in Pass A for " + fileName + ", got: " + errors, errors.isEmpty());
+
+            var warnings = highlights.stream()
+                .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING)
+                    || h.getSeverity().equals(HighlightSeverity.WEAK_WARNING))
+                .toList();
+            assertEquals("Expected exact warning count in Pass A (0 inspections) for " + fileName + ": " + warnings,
+                expectations.size(), warnings.size());
+
+            for (var exp : expectations) {
+                String expectedTag = "[stvn-core:" + exp.canonicalCode() + "-" + exp.symbolicId() + "]";
+                boolean matched = warnings.stream().anyMatch(h ->
+                    h.getStartOffset() == exp.startOffset()
+                        && h.getEndOffset() == exp.endOffset()
+                        && h.getDescription() != null
+                        && h.getDescription().contains(expectedTag)
+                        && h.getDescription().contains(exp.messageSubstring())
+                );
+                assertTrue("Pass A missing exact warning [" + expectedTag + "] at [" + exp.startOffset() + ", "
+                    + exp.endOffset() + ") in " + fileName + ". Actual warnings: " + warnings, matched);
+            }
+        }
+        assertEquals("Expected 61 total warning contract rows across the 7 sidecars", 61, totalContractRows);
+
+        // Pass B: All 26 STVN local inspections enabled — governed inspections surface [stvn-plugin:...] with 0 duplicates
+        var allStvnInspections = com.intellij.codeInspection.LocalInspectionEP.LOCAL_INSPECTION.getExtensionList().stream()
+            .filter(ep -> "STVN".equals(ep.language))
+            .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
+            .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
+        assertEquals("Expected all 26 STVN local inspections registered in plugin.xml", 26, allStvnInspections.length);
+        myFixture.enableInspections(allStvnInspections);
+        try {
+            var tagPattern = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_-]+)\\]");
+            for (var fixturePath : fixtureFiles) {
+                var fileName = fixturePath.getFileName().toString();
+                var contractPath = resolveContractPath(fixturePath);
+                assertNotNull(contractPath);
+                var expectations = parseErrorContract(contractPath, fileName);
+
+                var relativePath = Paths.get(getTestDataPath()).relativize(fixturePath).toString().replace('\\', '/');
+                myFixture.configureByFile(relativePath);
+                var highlights = myFixture.doHighlighting();
+                assertZeroRawCompilerJargon(highlights, fileName);
+
+                var errors = highlights.stream().filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR)).toList();
+                assertTrue("Expected 0 ERROR highlights in Pass B for " + fileName + ", got: " + errors, errors.isEmpty());
+
+                // Verify zero [stvn-core:...] leaks and zero duplicate (start, end, code) across all 26 inspections
+                var seenKeys = new java.util.HashSet<String>();
+                for (var h : highlights) {
+                    var desc = h.getDescription();
+                    if (desc == null) continue;
+                    assertFalse("Governed warning in Pass B leaked [stvn-core:] in " + fileName + ": " + desc,
+                        desc.contains("[stvn-core:"));
+                    var m = tagPattern.matcher(desc);
+                    if (m.find()) {
+                        String key = h.getStartOffset() + ":" + h.getEndOffset() + ":" + m.group(2);
+                        assertTrue("Duplicate diagnostic at " + key + " in " + fileName + ": " + desc, seenKeys.add(key));
+                    }
+                }
+
+                var contractWarnings = highlights.stream()
+                    .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING)
+                        || h.getSeverity().equals(HighlightSeverity.WEAK_WARNING))
+                    .filter(h -> h.getDescription() != null && !h.getDescription().contains("[stvn-plugin:PW"))
+                    .toList();
+                assertEquals("Expected exact W001/W002/W003 warning count in Pass B (26 inspections) for "
+                    + fileName + ": " + contractWarnings, expectations.size(), contractWarnings.size());
+
+                for (var exp : expectations) {
+                    String expectedTag = "[stvn-plugin:" + exp.canonicalCode() + "-" + exp.symbolicId() + "]";
+                    boolean matched = contractWarnings.stream().anyMatch(h ->
+                        h.getStartOffset() == exp.startOffset()
+                            && h.getEndOffset() == exp.endOffset()
+                            && h.getDescription() != null
+                            && h.getDescription().contains(expectedTag)
+                            && h.getDescription().contains(exp.messageSubstring())
+                    );
+                    assertTrue("Pass B missing exact warning [" + expectedTag + "] at [" + exp.startOffset() + ", "
+                        + exp.endOffset() + ") in " + fileName + ". Actual warnings: " + contractWarnings, matched);
+                }
+            }
+        } finally {
+            myFixture.disableInspections(allStvnInspections);
         }
     }
 }

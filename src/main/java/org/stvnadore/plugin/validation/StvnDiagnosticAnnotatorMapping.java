@@ -84,7 +84,10 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put("FACET_ORDER_VIOLATION", "StvnMetadataOrder");
 
         // 6. Redundant Metadata Facet Override Inspection
+        map.put(DiagnosticBag.WARN_REDUNDANT_METADATA_FACET, "StvnRedundantFacetOverride");
         map.put(StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE, "StvnRedundantFacetOverride");
+        map.put("WARN_REDUNDANT_METADATA_FACET", "StvnRedundantFacetOverride");
+        map.put("W003", "StvnRedundantFacetOverride");
 
         // 7. Metadata Facet Governance Inspection
         map.put(DiagnosticBag.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
@@ -625,6 +628,9 @@ public final class StvnDiagnosticAnnotatorMapping {
         if (message.contains("violates 3-tier monotonic progression")
                 || message.contains("violates canonical 5-tier order")) {
             return "StvnMetadataOrder";
+        }
+        if (message.contains(" is redundant;")) {
+            return "StvnRedundantFacetOverride";
         }
         if (message.contains(":TimeEpoch requires explicit scale facet")
                 || message.contains(":DateTime requires explicit mode facet")

@@ -1,10 +1,12 @@
 package org.stvnadore.plugin;
 
 import com.intellij.lexer.FlexAdapter;
+import com.intellij.lexer.LayeredLexer;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterBase;
+import com.intellij.psi.StringEscapesTokenTypes;
 import com.intellij.psi.tree.IElementType;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.parser._StvnLexer;
@@ -18,6 +20,8 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
 
     private static final TextAttributesKey[] COMMENT_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.LINE_COMMENT};
     private static final TextAttributesKey[] STRING_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.STRING};
+    private static final TextAttributesKey[] VALID_ESCAPE_KEYS = new TextAttributesKey[]{StvnSyntaxHighlighterColors.VALID_STRING_ESCAPE};
+    private static final TextAttributesKey[] INVALID_ESCAPE_KEYS = new TextAttributesKey[]{StvnSyntaxHighlighterColors.INVALID_STRING_ESCAPE};
     private static final TextAttributesKey[] NUMBER_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.NUMBER};
     private static final TextAttributesKey[] BRACKET_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.BRACKETS};
     private static final TextAttributesKey[] BRACE_KEYS = new TextAttributesKey[]{DefaultLanguageHighlighterColors.BRACES};
@@ -33,13 +37,24 @@ public final class StvnSyntaxHighlighter extends SyntaxHighlighterBase {
 
     @Override
     public Lexer getHighlightingLexer() {
-        return new FlexAdapter(new _StvnLexer(null));
+        var layeredLexer = new LayeredLexer(new FlexAdapter(new _StvnLexer(null)));
+        layeredLexer.registerSelfStoppingLayer(
+            new StvnSimpleStringHighlightingLexer(),
+            new IElementType[]{StvnTypes.LITERAL_STRING_SIMPLE},
+            IElementType.EMPTY_ARRAY
+        );
+        return layeredLexer;
     }
 
     @Override
     public TextAttributesKey[] getTokenHighlights(IElementType tokenType) {
         if (tokenType.equals(StvnTypes.COMMENT)) {
             return COMMENT_KEYS;
+        } else if (tokenType.equals(StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN)) {
+            return VALID_ESCAPE_KEYS;
+        } else if (tokenType.equals(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN) ||
+                   tokenType.equals(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN)) {
+            return INVALID_ESCAPE_KEYS;
         } else if (tokenType.equals(StvnTypes.LITERAL_STRING_SIMPLE) ||
                    tokenType.equals(StvnTypes.LITERAL_STRING_FENCED) ||
                    tokenType.equals(StvnTypes.MALFORMED_FENCE)) {

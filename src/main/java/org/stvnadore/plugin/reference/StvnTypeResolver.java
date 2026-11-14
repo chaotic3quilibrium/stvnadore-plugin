@@ -32,6 +32,7 @@ import org.stvnadore.psi.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -217,6 +218,115 @@ public final class StvnTypeResolver {
             }
         }
         return null;
+    }
+
+    /**
+     * Resolves the lowered pure-IR {@link StvnSchema} corresponding to a {@link SchemaType} PSI node
+     * across nominal {@code :defs} declarations, root {@code :type} clauses, inline composite children,
+     * and nominal alias references.
+     *
+     * @param schemaType target schema PSI node
+     * @return resolved pure-IR {@link StvnSchema}, or {@code null} if unresolvable
+     */
+    public static @Nullable StvnSchema resolveIrSchema(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return null;
+        }
+        var file = schemaType.getContainingFile();
+        if (file == null) {
+            return null;
+        }
+        var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+        if (parentDef != null) {
+            if (parentDef.getSchemaType() == schemaType) {
+                return resolveNominalIrSchema(parentDef);
+            }
+            var rootIr = resolveNominalIrSchema(parentDef);
+            var rootPsi = parentDef.getSchemaType();
+            if (rootIr != null && rootPsi != null) {
+                var descended = descendIrSchemaChild(rootPsi, rootIr, schemaType);
+                if (descended != null) {
+                    return descended;
+                }
+            }
+        }
+        var typeEntry = PsiTreeUtil.getParentOfType(schemaType, TypeEntry.class);
+        if (typeEntry != null && typeEntry.getSchemaType() != null) {
+            var rootTypeOpt = StvnCompiledDocumentCache.getSnapshot(file).rootType();
+            if (rootTypeOpt.isPresent()) {
+                var rootIr = rootTypeOpt.get();
+                if (typeEntry.getSchemaType() == schemaType) {
+                    return rootIr;
+                }
+                var descended = descendIrSchemaChild(typeEntry.getSchemaType(), rootIr, schemaType);
+                if (descended != null) {
+                    return descended;
+                }
+            }
+        }
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null && schemaType.getMetadataMap() == null) {
+            return resolveIrSchemaByAlias(file, kw.getText().trim());
+        }
+        return null;
+    }
+
+    private static @Nullable StvnSchema descendIrSchemaChild(
+        SchemaType rootPsi,
+        StvnSchema rootIr,
+        SchemaType targetChildPsi
+    ) {
+        var steps = new ArrayDeque<Integer>();
+        PsiElement curr = targetChildPsi;
+        while (curr != null && curr != rootPsi) {
+            var parent = curr.getParent();
+            if (parent instanceof ProductType pt && curr instanceof SchemaType st) {
+                int idx = pt.getSchemaTypeList().indexOf(st);
+                if (idx < 0) {
+                    return null;
+                }
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(pt, SchemaType.class);
+            } else if (parent instanceof CollectionType ct && curr instanceof SchemaType st) {
+                int idx = ct.getSchemaTypeList().indexOf(st);
+                if (idx < 0) {
+                    return null;
+                }
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(ct, SchemaType.class);
+            } else if (parent instanceof SumType stSum && curr instanceof SchemaType st) {
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(stSum, SchemaType.class);
+                int idx = branches.indexOf(st);
+                if (idx < 0) {
+                    return null;
+                }
+                steps.push(idx);
+                curr = PsiTreeUtil.getParentOfType(stSum, SchemaType.class);
+            } else {
+                curr = parent;
+            }
+        }
+        if (curr != rootPsi) {
+            return null;
+        }
+        StvnSchema active = rootIr;
+        while (!steps.isEmpty() && active != null) {
+            int idx = steps.pop();
+            if (active instanceof StvnSchema.PoisonedSchema p) {
+                active = p.bestEffortFallback().orElse(null);
+            }
+            active = switch (active) {
+                case StvnSchema.TupleSchema ts -> (idx < ts.fieldSchemas().size()) ? ts.fieldSchemas().get(idx) : null;
+                case StvnSchema.SeqSchema sq -> (idx == 0) ? sq.elementSchema() : null;
+                case StvnSchema.SetSchema st -> (idx == 0) ? st.elementSchema() : null;
+                case StvnSchema.MapSchema mp -> (idx == 0) ? mp.keySchema() : (idx == 1 ? mp.valueSchema() : null);
+                case StvnSchema.OptionSchema op -> (idx == 0) ? op.valueSchema() : null;
+                case StvnSchema.EitherSchema ei -> (idx == 0) ? ei.leftSchema() : (idx == 1 ? ei.rightSchema() : null);
+                case StvnSchema.UnionSchema un -> (idx < un.branchSchemas().size()) ? un.branchSchemas().get(idx) : null;
+                case null, default -> null;
+            };
+        }
+        return active;
     }
 
     private static @Nullable TypeDefinition resolveUnderlyingTypeDefinition(@Nullable PsiElement targetElem) {
@@ -1600,24 +1710,36 @@ public final class StvnTypeResolver {
      * @return {@code true} if the value matches the schema pattern, {@code false} otherwise
      */
     public static boolean matchesSchemaPattern(@Nullable Value value, SchemaType schema) {
-        return matchesSchemaPattern(value, schema, new HashSet<>());
+        return matchesSchemaPattern(value, schema, new HashSet<>(), new HashSet<>());
     }
 
-    private static boolean matchesSchemaPattern(@Nullable Value value, SchemaType schema, Set<SchemaType> visited) {
-        if (value == null || !visited.add(schema)) {
-            return false;
-        }
-        var resolved = resolveNominalSchema(schema);
-        var schemaToInspect = (resolved != null) ? resolved : schema;
-        if (schemaToInspect != schema && !visited.add(schemaToInspect)) {
+    private static boolean matchesSchemaPattern(
+        @Nullable Value value,
+        SchemaType schema,
+        Set<SchemaType> visitedSchemas,
+        Set<String> visitedConstants
+    ) {
+        if (value == null) {
             return false;
         }
         var valKwForConst = value.getValueKeyword();
         if (valKwForConst != null && value.getContainingFile() != null) {
-            var constDef = findConstantDefinition(value.getContainingFile(), valKwForConst.getText());
-            if (constDef != null && constDef.getValue() != null) {
-                return matchesSchemaPattern(constDef.getValue(), schemaToInspect, visited);
+            String constName = valKwForConst.getText().trim();
+            if (!visitedConstants.add(constName)) {
+                return false;
             }
+            var constDef = StvnPsiLiteralEvaluator.resolveConstantDefinition(value, constName);
+            if (constDef != null && constDef.getValue() != null) {
+                return matchesSchemaPattern(constDef.getValue(), schema, visitedSchemas, visitedConstants);
+            }
+        }
+        if (!visitedSchemas.add(schema)) {
+            return false;
+        }
+        var resolved = resolveNominalSchema(schema);
+        var schemaToInspect = (resolved != null) ? resolved : schema;
+        if (schemaToInspect != schema && !visitedSchemas.add(schemaToInspect)) {
+            return false;
         }
         var text = StvnSchemaFormatter.formatSchema(schemaToInspect);
         var stripped = (text.startsWith("{") && text.contains("}"))
@@ -1658,7 +1780,7 @@ public final class StvnTypeResolver {
             if (constructor != null && constructor.getSumType() != null) {
                 var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
                 if (!innerSchemas.isEmpty()) {
-                    return matchesSchemaPattern(value, innerSchemas.get(0), visited);
+                    return matchesSchemaPattern(value, innerSchemas.get(0), visitedSchemas, new HashSet<>(visitedConstants));
                 }
             }
             return false;
@@ -1671,7 +1793,7 @@ public final class StvnTypeResolver {
             if (constructor != null && constructor.getSumType() != null) {
                 var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(constructor.getSumType(), SchemaType.class);
                 if (innerSchemas.size() >= 2) {
-                    return matchesSchemaPattern(value, innerSchemas.get(1), visited);
+                    return matchesSchemaPattern(value, innerSchemas.get(1), visitedSchemas, new HashSet<>(visitedConstants));
                 }
             }
             return false;
@@ -1687,7 +1809,8 @@ public final class StvnTypeResolver {
                     var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
                     if (resolvedIdx.isPresent()) {
                         var innerVal = expUnion.getValue();
-                        return innerVal == null || matchesSchemaPattern(innerVal, innerSchemas.get(resolvedIdx.getAsInt()), visited);
+                        return innerVal == null
+                            || matchesSchemaPattern(innerVal, innerSchemas.get(resolvedIdx.getAsInt()), visitedSchemas, new HashSet<>(visitedConstants));
                     }
                 }
                 return false;
@@ -1714,7 +1837,7 @@ public final class StvnTypeResolver {
                     }
                 }
                 var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                return innerSchemas.stream().anyMatch(s -> matchesSchemaPattern(value, s, visited));
+                return innerSchemas.stream().anyMatch(s -> matchesSchemaPattern(value, s, visitedSchemas, new HashSet<>(visitedConstants)));
             }
         }
         return false;

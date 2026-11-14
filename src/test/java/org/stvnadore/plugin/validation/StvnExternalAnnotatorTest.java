@@ -2599,11 +2599,16 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 // 5. Incompatible Facet Argument Value Type (#minIncl integer on :DateTime -> Expect E009!)
                 :BadArgType { #offset #minIncl 12345 } :DateTime
 
-                // 6. Prohibited #regex on Fenced String (#preserveIndent #TRUE + #regex -> Expect E036!)
-                :IllegalFencedRegex {
+                // 6. Valid #preserveIndent #TRUE + #regex emits 0 errors; malformed #regex pattern emits ERR_INVALID_REGEX
+                :ValidFencedRegex {
                   #maxSize 256
                   #preserveIndent #TRUE
                   #regex "^[a-z]+$"
+                } :String
+                :IllegalFencedRegex {
+                  #maxSize 256
+                  #preserveIndent #TRUE
+                  #regex "[unclosed"
                 } :String
 
                 // 7. Healthy Sibling Slot in Tuple alongside 6 Broken Schemas Above
@@ -2653,6 +2658,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         int invertedLexStart = code.indexOf(":InvertedLex");
         int fixedCodeStart = code.indexOf(":FixedCode");
         int badArgTypeStart = code.indexOf(":BadArgType");
+        int validFencedRegexStart = code.indexOf(":ValidFencedRegex");
         int illegalFencedRegexStart = code.indexOf(":IllegalFencedRegex");
         int healthyPortStart = code.indexOf(":HealthyPort");
 
@@ -2665,7 +2671,9 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
                 && e.type != HighlightInfoType.WRONG_REF
                 && CodeInsightColors.ERRORS_ATTRIBUTES.equals(e.type.getAttributesKey())));
         assertTrue("Expected ERROR diagnostic inside :BadArgType",
-            errors.stream().anyMatch(e -> e.getStartOffset() >= badArgTypeStart && e.getEndOffset() <= illegalFencedRegexStart));
+            errors.stream().anyMatch(e -> e.getStartOffset() >= badArgTypeStart && e.getEndOffset() <= validFencedRegexStart));
+        assertTrue("Valid #preserveIndent #TRUE + #regex on :String must emit 0 ERROR diagnostics, got: " + errors,
+            errors.stream().noneMatch(e -> e.getStartOffset() >= validFencedRegexStart && e.getEndOffset() <= illegalFencedRegexStart));
         assertTrue("Expected ERROR diagnostic inside :IllegalFencedRegex, got: " + errors,
             errors.stream().anyMatch(e -> e.getStartOffset() >= illegalFencedRegexStart && e.getEndOffset() <= healthyPortStart));
 

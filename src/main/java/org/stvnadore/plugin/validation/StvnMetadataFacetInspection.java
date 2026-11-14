@@ -707,16 +707,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     ProblemHighlightType.GENERIC_ERROR,
                     inapplicableFix
                 );
-            } else if (isString && hasToken(entry, TokenSet.create(StvnTypes.KW_REGEX)) && hasLocalPreserveIndentTrue(metaMap)) {
-                holder.registerProblem(
-                    entry,
-                    StvnDiagnosticFormatter.formatPlugin(
-                        "Facet '#regex' cannot be combined with '#preserveIndent #TRUE' on " + baseType,
-                        StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
-                    ),
-                    ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFix
-                );
             } else if (hasToken(entry, MIN_SIZE_FACET_TOKENS) && !isString && !isCollection) {
                 var cleanBase = StvnMetadataFacetAllowlist.extractCleanBaseType(baseType);
                 holder.registerProblem(
@@ -891,19 +881,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             return "<" + StvnVocabulary.KEYWORD_TYPE + ">";
         }
         return fallbackBaseType;
-    }
-
-    private static boolean hasLocalPreserveIndentTrue(@Nullable MetadataMap metaMap) {
-        if (metaMap == null) return false;
-        for (var entry : metaMap.getMetadataEntryList()) {
-            if (hasToken(entry, TokenSet.create(StvnTypes.KW_PRESERVE_INDENT))) {
-                String text = entry.getText().trim();
-                if (text.endsWith(StvnVocabulary.VAL_TRUE) || text.endsWith(StvnVocabulary.VAL_TRUE_SHORT)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private static boolean hasToken(MetadataEntry entry, TokenSet tokenSet) {

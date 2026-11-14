@@ -884,4 +884,28 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var removeActions = myFixture.filterAvailableIntentions("Remove inapplicable facet '#minSize'");
         assertFalse("Expected 'Remove inapplicable facet' quick-fix on #minSize", removeActions.isEmpty());
     }
+
+    /**
+     * Verifies that co-declaring {@code #preserveIndent #TRUE} and {@code #regex} on {@code :String}
+     * and derived nominal {@code :String} aliases produces zero {@code StvnMetadataFacet} errors.
+     */
+    public void testPreserveIndentTrueAndRegexPermittedTogetherOnString() {
+        var text = """
+            {
+              :defs {
+                :ParentStrHalfOpen { #minIncl "aaa" #maxExcl "zzz" #preserveIndent #TRUE #regex "^[a-z]+$" } :String
+                :ChildStrHalfOpen { #minIncl "aaa" #maxExcl "zz" #regex "^[a-z]{3,4}$" } :ParentStrHalfOpen
+              }
+              :type :ChildStrHalfOpen
+              :body "abcd"
+            }
+            """;
+        myFixture.configureByText("preserve_indent_with_regex.stvn", text);
+        var highlights = myFixture.doHighlighting();
+        var errors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .toList();
+        assertTrue("Expected zero errors when combining #preserveIndent #TRUE and #regex on :String: " + errors,
+            errors.isEmpty());
+    }
 }

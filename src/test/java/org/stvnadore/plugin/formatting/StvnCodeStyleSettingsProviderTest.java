@@ -105,5 +105,14 @@ public final class StvnCodeStyleSettingsProviderTest extends BasePlatformTestCas
         var result = StvnCompiler.compile(stripped);
         assertTrue("Stripped demo text must compile cleanly with 0 errors:\n"
                 + result.diagnostics(), result.isSuccess());
+
+        var tagMap = page.getAdditionalHighlightingTagToDescriptorMap();
+        assertNotNull("Additional highlighting tag map must not be null", tagMap);
+        assertTrue("Tag map must bind 'valid_esc' to VALID_STRING_ESCAPE",
+                tagMap.containsKey("valid_esc"));
+        assertTrue("Tag map must bind 'invalid_esc' to INVALID_STRING_ESCAPE",
+                tagMap.containsKey("invalid_esc"));
+        assertTrue("Demo text must showcase <valid_esc> highlighting inside single-line strings",
+                rawDemo.contains("<valid_esc>"));
     }
 }

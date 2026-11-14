@@ -208,6 +208,43 @@ public final class StvnPsiLiteralEvaluator {
     }
 
     /**
+     * Resolves an STVN boolean literal ({@code #TRUE}, {@code #T}, {@code #FALSE}, {@code #F}) or a
+     * {@code #CONST} reference chain to its boolean value.
+     *
+     * @param context PSI context element for resolving {@code :defs}, {@code :use}, {@code :include}, or Prelude constants
+     * @param rawText raw boolean token or {@code #CONST} reference text
+     * @return resolved boolean value, or empty if unresolvable or cyclic
+     */
+    public static Optional<Boolean> resolveBooleanOrConst(@Nullable PsiElement context, @Nullable String rawText) {
+        return resolveBooleanOrConstInternal(context, rawText, new HashSet<>());
+    }
+
+    private static Optional<Boolean> resolveBooleanOrConstInternal(
+        @Nullable PsiElement context,
+        @Nullable String rawText,
+        Set<String> visited
+    ) {
+        if (rawText == null || rawText.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = rawText.trim();
+        if (StvnVocabulary.VAL_TRUE.equals(trimmed) || StvnVocabulary.VAL_TRUE_SHORT.equals(trimmed)) {
+            return Optional.of(true);
+        }
+        if (StvnVocabulary.VAL_FALSE.equals(trimmed) || StvnVocabulary.VAL_FALSE_SHORT.equals(trimmed)) {
+            return Optional.of(false);
+        }
+        if (trimmed.startsWith(StvnVocabulary.SIGIL_VALUE) && context != null && visited.size() < MAX_CONST_RESOLUTION_DEPTH && visited.add(trimmed)) {
+            ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
+            if (constDef != null && constDef.getValue() != null) {
+                Value val = constDef.getValue();
+                return resolveBooleanOrConstInternal(val, val.getText(), visited);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Resolves a {@link ConstantDefinition} across local {@code :defs}, {@code :package}, {@code :use},
      * {@code :include}, and Standard Library Prelude scopes.
      *

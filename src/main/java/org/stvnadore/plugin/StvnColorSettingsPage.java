@@ -33,6 +33,8 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
             new AttributesDescriptor("Metadata//Metadata targets (e.g., #equatable, #regex)", StvnSyntaxHighlighterColors.STVN_METADATA_TARGET),
             new AttributesDescriptor("Comments//Line comment", DefaultLanguageHighlighterColors.LINE_COMMENT),
             new AttributesDescriptor("Strings//String literal", DefaultLanguageHighlighterColors.STRING),
+            new AttributesDescriptor("Strings//Escape sequence (valid)", StvnSyntaxHighlighterColors.VALID_STRING_ESCAPE),
+            new AttributesDescriptor("Strings//Escape sequence (invalid)", StvnSyntaxHighlighterColors.INVALID_STRING_ESCAPE),
             new AttributesDescriptor("Numbers//Number", DefaultLanguageHighlighterColors.NUMBER),
             new AttributesDescriptor("Brackets and Operators//Brackets", DefaultLanguageHighlighterColors.BRACKETS),
             new AttributesDescriptor("Brackets and Operators//Braces", DefaultLanguageHighlighterColors.BRACES),
@@ -78,7 +80,7 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
                 "  <primitive>:body</primitive> (\n" +
                 "    <value>#org/example/service/DEFAULT_PORT</value>\n" +
                 "    <value>#ACTIVE</value>\n" +
-                "    <value>#Some</value> <string>\"Escaped string \\n \\t \\\"quotes\\\"\"</string>\n" +
+                "    <value>#Some</value> <string>\"Escaped string <valid_esc>\\n</valid_esc> <valid_esc>\\t</valid_esc> <valid_esc>\\\"</valid_esc>quotes<valid_esc>\\\"</valid_esc>\"</string>\n" +
                 "    <value>#Left</value> <string>\"primary\"</string>\n" +
                 "    <value>#2</value> <string>\"fallback\"</string>\n" +
                 "    <string>\"Standard string literal\"</string>\n" +
@@ -101,6 +103,8 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
         map.put("metadata", StvnSyntaxHighlighterColors.STVN_METADATA_TARGET);
         map.put("comment", DefaultLanguageHighlighterColors.LINE_COMMENT);
         map.put("string", DefaultLanguageHighlighterColors.STRING);
+        map.put("valid_esc", StvnSyntaxHighlighterColors.VALID_STRING_ESCAPE);
+        map.put("invalid_esc", StvnSyntaxHighlighterColors.INVALID_STRING_ESCAPE);
         map.put("number", DefaultLanguageHighlighterColors.NUMBER);
         return map;
     }

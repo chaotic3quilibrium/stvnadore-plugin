@@ -566,9 +566,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (schemaType != null) {
                 sb.append("<b>Type:</b> ").append(StvnSchemaFormatter.formatSchema(schemaType)).append("<br/>");
             }
+            appendConstantContextAndTemporalPreview(sb, constDef, originalElement);
             if (value != null) {
                 sb.append("<hr/>");
                 sb.append("<b>Value:</b> ").append(value.getText());
+                var chainResolution = resolveConstantTerminalValue(constDef);
+                if (chainResolution.hops().size() > 1 && chainResolution.terminalValue() != null) {
+                    sb.append("<br/><b>Resolved Value:</b> <code>")
+                      .append(escapeHtmlBody(chainResolution.terminalValue().getText().trim()))
+                      .append("</code> (via <code>")
+                      .append(String.join(" &rarr; ", chainResolution.hops()))
+                      .append("</code>)");
+                }
             }
             return sb.toString();
         }
@@ -749,47 +758,195 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return null;
     }
 
-    private @Nullable String buildTimeEpochValueHoverDoc(Value value, String typeLabel) {
-        var intLit = value.getIntegerLiteral();
-        if (intLit == null) {
-            return null;
-        }
-        var bodyEntry = PsiTreeUtil.getParentOfType(value, BodyEntry.class);
-        if (bodyEntry == null) {
-            return null;
-        }
-        var info = StvnTypeResolver.resolveBaseTypeInfo(value);
-        if (info == null) {
-            return null;
-        }
-        var baseType = resolveBaseTypeString(info.getSchema(), new HashSet<>());
-        if (!StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
-            return null;
-        }
-        var scale = extractScaleFlag(info.getSchema());
-        var settings = StvnSettings.getInstance(value.getProject());
-        var hourFormat = settings.getState().timeEpochHourFormat;
-        var result = StvnTimeEpochFormatter.format(intLit.getText().trim(), scale, hourFormat);
+    private record ConstantChainResolution(List<String> hops, @Nullable Value terminalValue, @Nullable SchemaType terminalSchema) {}
 
-        var sb = new StringBuilder();
-        sb.append("<br/><b>UTC Time:</b> ").append(result.formattedUtc());
+    private static ConstantChainResolution resolveConstantTerminalValue(ConstantDefinition startDef) {
+        var hops = new ArrayList<String>();
+        var visited = new HashSet<String>();
+        ConstantDefinition current = startDef;
+        Value lastValue = startDef.getValue();
+        SchemaType lastSchema = startDef.getSchemaType();
 
-        if (settings.getState().showEpochMagnitudeWarnings && (result.isCivilWindowViolation() || result.isMagnitudeMismatch())) {
-            sb.append("<br/><br/>");
-            sb.append("""
-                <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-top: 6px; border-radius: 2px; font-family: sans-serif;">
-                    <b style="font-size: 1.05em;">&#9888; Suspicious Epoch Magnitude Warning</b><br/>
-                """);
-            if (result.isCivilWindowViolation() && result.year() != null) {
-                sb.append(String.format("Computed year <b>%d</b> falls outside civil window [1900, 2100].<br/>", result.year()));
+        while (current != null && hops.size() < 16) {
+            String name = current.getValueKeyword() != null ? current.getValueKeyword().getText().trim() : "";
+            if (!name.isEmpty()) {
+                if (!visited.add(name)) {
+                    break;
+                }
+                hops.add(name);
             }
-            if (result.isMagnitudeMismatch()) {
-                sb.append(String.format("Literal has %s, but declared scale is <b>%s</b> (expected %s).",
-                    result.detectedBandDescription(), scale, result.expectedBandDescription()));
+            lastValue = current.getValue();
+            if (current.getSchemaType() != null) {
+                lastSchema = current.getSchemaType();
             }
-            sb.append("</div>");
+            if (lastValue == null || lastValue.getValueKeyword() == null) {
+                break;
+            }
+            var nextKw = lastValue.getValueKeyword();
+            var ref = nextKw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnConstantReference(nextKw).resolve();
+            if (resolved instanceof ConstantDefinition nextDef) {
+                current = nextDef;
+            } else if (resolved != null && resolved.getParent() instanceof ConstantDefinition nextDef) {
+                current = nextDef;
+            } else {
+                var fallbackDef = StvnPsiLiteralEvaluator.resolveConstantDefinition(current, nextKw.getText().trim());
+                if (fallbackDef != null) {
+                    current = fallbackDef;
+                } else {
+                    break;
+                }
+            }
         }
-        return sb.toString();
+        return new ConstantChainResolution(hops, lastValue, lastSchema);
+    }
+
+    private void appendConstantContextAndTemporalPreview(
+        StringBuilder sb,
+        ConstantDefinition constDef,
+        @Nullable PsiElement originalElement
+    ) {
+        SchemaType slotSchema = null;
+        if (originalElement != null) {
+            var bodyVal = PsiTreeUtil.getParentOfType(originalElement, Value.class);
+            if (bodyVal != null && PsiTreeUtil.getParentOfType(bodyVal, BodyEntry.class) != null) {
+                var slotInfo = StvnTypeResolver.resolveBaseTypeInfo(bodyVal);
+                if (slotInfo != null && slotInfo.getSchema() != null) {
+                    slotSchema = slotInfo.getSchema();
+                    sb.append("<b>Slot Schema:</b> <code>")
+                      .append(escapeHtmlBody(StvnSchemaFormatter.formatSchema(slotSchema)))
+                      .append("</code><br/>");
+                }
+            } else {
+                var callerConst = PsiTreeUtil.getParentOfType(originalElement, ConstantDefinition.class);
+                if (callerConst != null && callerConst != constDef && callerConst.getValueKeyword() != null) {
+                    sb.append("<b>Referenced From:</b> <code>")
+                      .append(escapeHtmlBody(callerConst.getValueKeyword().getText().trim()))
+                      .append("</code><br/>");
+                }
+            }
+        }
+
+        var chain = resolveConstantTerminalValue(constDef);
+        SchemaType effectiveSchema = constDef.getSchemaType() != null
+            ? constDef.getSchemaType()
+            : (chain.terminalSchema() != null ? chain.terminalSchema() : slotSchema);
+        if (effectiveSchema == null) {
+            return;
+        }
+        String temporalFragment = renderTemporalPreviewDetails(
+            chain.terminalValue(),
+            effectiveSchema,
+            constDef.getProject()
+        );
+        if (temporalFragment != null) {
+            sb.append(temporalFragment);
+        }
+    }
+
+    private @Nullable String buildTemporalValueHoverDoc(Value value, @Nullable SchemaType explicitSchema) {
+        if (PsiTreeUtil.getParentOfType(value, BodyEntry.class, ConstantDefinition.class) == null) {
+            return null;
+        }
+        SchemaType schema = explicitSchema;
+        if (schema == null) {
+            var info = StvnTypeResolver.resolveBaseTypeInfo(value);
+            schema = info != null ? info.getSchema() : null;
+        }
+        if (schema == null) {
+            return null;
+        }
+        Value targetLiteral = value;
+        if (value.getValueKeyword() != null) {
+            var ref = value.getValueKeyword().getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnConstantReference(value.getValueKeyword()).resolve();
+            ConstantDefinition cd = resolved instanceof ConstantDefinition c ? c
+                : (resolved != null && resolved.getParent() instanceof ConstantDefinition c ? c
+                : StvnPsiLiteralEvaluator.resolveConstantDefinition(value, value.getValueKeyword().getText().trim()));
+            if (cd != null) {
+                var chain = resolveConstantTerminalValue(cd);
+                if (chain.terminalValue() != null) {
+                    targetLiteral = chain.terminalValue();
+                }
+            }
+        }
+        String details = renderTemporalPreviewDetails(targetLiteral, schema, value.getProject());
+        return details != null ? "<br/>" + details : null;
+    }
+
+    private @Nullable String renderTemporalPreviewDetails(
+        @Nullable Value literalValue,
+        SchemaType schemaType,
+        com.intellij.openapi.project.Project project
+    ) {
+        var baseType = resolveBaseTypeString(schemaType, new HashSet<>());
+        if (StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)) {
+            String scale = extractScaleFlag(schemaType);
+            var sb = new StringBuilder();
+            sb.append("<b>Temporal Scale:</b> <code>{ ").append(scale).append(" } ")
+              .append(StvnVocabulary.TYPE_TIME_EPOCH).append("</code><br/>");
+            if (literalValue == null || literalValue.getIntegerLiteral() == null) {
+                return sb.toString();
+            }
+            var settings = StvnSettings.getInstance(project);
+            var hourFormat = settings.getState().timeEpochHourFormat;
+            var result = StvnTimeEpochFormatter.format(literalValue.getIntegerLiteral().getText().trim(), scale, hourFormat);
+            if (result.isoUtcPreview() != null) {
+                sb.append("<b>UTC Preview:</b> <code>").append(result.isoUtcPreview()).append("</code><br/>");
+            }
+            sb.append("<b>UTC Time:</b> ").append(result.formattedUtc());
+            if (settings.getState().showEpochMagnitudeWarnings && (result.isCivilWindowViolation() || result.isMagnitudeMismatch())) {
+                sb.append("<br/><br/>");
+                sb.append("""
+                    <div style="padding: 6px 10px; border-left: 4px solid #F5A623; background-color: rgba(245, 166, 35, 0.12); color: #D68910; margin-top: 6px; border-radius: 2px; font-family: sans-serif;">
+                        <b style="font-size: 1.05em;">&#9888; Suspicious Epoch Magnitude Warning</b><br/>
+                    """);
+                if (result.isCivilWindowViolation() && result.year() != null) {
+                    sb.append(String.format("Computed year <b>%d</b> falls outside civil window [1900, 2100].<br/>", result.year()));
+                }
+                if (result.isMagnitudeMismatch()) {
+                    sb.append(String.format("Literal has %s, but declared scale is <b>%s</b> (expected %s).",
+                        result.detectedBandDescription(), scale, result.expectedBandDescription()));
+                }
+                sb.append("</div>");
+            } else {
+                sb.append("<br/>");
+            }
+            return sb.toString();
+        }
+
+        if (StvnVocabulary.TYPE_DATE_TIME.equals(baseType)) {
+            var irSchema = StvnTypeResolver.resolveIrSchema(schemaType);
+            StvnSchema.DateTimeMode mode = irSchema instanceof StvnSchema.DateTimeSchema dt
+                ? dt.mode()
+                : extractDateTimeModeFromPsiChain(schemaType, new HashSet<>());
+            if (mode == null) {
+                return null;
+            }
+            String modeFlag = switch (mode) {
+                case OFFSET -> StvnVocabulary.FACET_KW_OFFSET;
+                case ZONED -> StvnVocabulary.FACET_KW_ZONED;
+                case AUDITED -> StvnVocabulary.FACET_KW_AUDITED;
+            };
+            var sb = new StringBuilder();
+            sb.append("<b>Temporal Mode:</b> <code>{ ").append(modeFlag).append(" } ")
+              .append(StvnVocabulary.TYPE_DATE_TIME).append("</code><br/>");
+            if (literalValue != null && literalValue.getStringLiteral() != null) {
+                String rawQuoted = literalValue.getStringLiteral().getText().trim();
+                if (StvnCompiler.validateDateTimeLiteral(rawQuoted, mode).isEmpty()) {
+                    String unescapedIso = StvnPsiLiteralEvaluator.decodeStringLiteral(rawQuoted, false)
+                        .orElseGet(() -> stripSimpleQuotes(rawQuoted));
+                    Instant instant = parseValidatedDateTimeInstant(unescapedIso, mode);
+                    if (instant != null) {
+                        sb.append("<b>UTC Preview:</b> <code>")
+                          .append(StvnTimeEpochFormatter.formatInstantIsoUtc(instant))
+                          .append("</code><br/>");
+                    }
+                }
+            }
+            return sb.toString();
+        }
+        return null;
     }
 
     private static String extractScaleFlag(SchemaType schemaType) {
@@ -1427,7 +1584,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return resolveDerivedTraitOrigin(rootTypeDef, baseType, facetKey, effectiveValue);
         }
 
-        return new OriginInfo("Default (" + baseType + ")", "Default");
+        return new OriginInfo("Default (" + formatDefaultOriginBaseType(baseType) + ")", "Default");
+    }
+
+    private static String formatDefaultOriginBaseType(String baseType) {
+        String trimmed = baseType.trim();
+        if (trimmed.equals(StvnVocabulary.TYPE_ENUM)
+                || trimmed.startsWith(StvnVocabulary.TYPE_ENUM + " ")
+                || trimmed.startsWith(StvnVocabulary.TYPE_ENUM + "[")) {
+            return StvnVocabulary.TYPE_ENUM;
+        }
+        return trimmed;
     }
 
     private static OriginInfo resolveDerivedTraitOrigin(
@@ -2376,7 +2543,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return getDocumentationElement(valKw, null);
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
-            if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+            if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class, ConstantDefinition.class) != null) {
                 var ungroundedContainer = findEnclosingUngroundedContainerValue(valueAncestor);
                 if (ungroundedContainer != null) {
                     return ungroundedContainer;
@@ -2402,7 +2569,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return element;
         }
 
-        if (element instanceof Value && PsiTreeUtil.getParentOfType(element, BodyEntry.class) != null) {
+        if (element instanceof Value && PsiTreeUtil.getParentOfType(element, BodyEntry.class, ConstantDefinition.class) != null) {
             var ungroundedContainer = findEnclosingUngroundedContainerValue((Value) element);
             if (ungroundedContainer != null) {
                 return ungroundedContainer;
@@ -2474,7 +2641,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return metaEntry;
         }
         var valueAncestor = PsiTreeUtil.getParentOfType(contextElement, Value.class);
-        if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class) != null) {
+        if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class, ConstantDefinition.class) != null) {
             var ungroundedContainer = findEnclosingUngroundedContainerValue(valueAncestor);
             if (ungroundedContainer != null) {
                 return ungroundedContainer;
@@ -2880,6 +3047,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 reason = targetDesc;
             }
         }
+        // 5b. String #preserveIndent #FALSE default
+        else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+            var parts = text.split("\\s+");
+            if (parts.length >= 2
+                    && (StvnVocabulary.VAL_FALSE.equals(parts[1].trim()) || StvnVocabulary.VAL_FALSE_SHORT.equals(parts[1].trim()))
+                    && schemaType != null && schemaType.getTypeKeyword() == null
+                    && (baseType.endsWith(StvnVocabulary.TYPE_STRING) || baseType.equals(StvnVocabulary.TYPE_STRING))) {
+                reason = "fenced strings trim common leading indentation by default.";
+            }
+        }
         // 6. Primitive and composite default traits
         else if (hasExactFacetTag(text, StvnVocabulary.FACET_KW_EQUATABLE) || hasExactFacetTag(text, StvnVocabulary.FACET_KW_COMPARABLE)) {
             var parts = text.split("\\s+");
@@ -2891,6 +3068,33 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (isIntrinsicallyConforming) {
                     String category = resolveTypeCategoryNoun(baseType);
                     reason = category + " <code>" + baseType + "</code> is intrinsically " + (isEq ? "equatable" : "comparable") + ".";
+                }
+            } else if (parts.length >= 2 && (StvnVocabulary.VAL_FALSE.equals(parts[1].trim()) || StvnVocabulary.VAL_FALSE_SHORT.equals(parts[1].trim()))) {
+                boolean isEq = hasExactFacetTag(text, StvnVocabulary.FACET_KW_EQUATABLE);
+                if (isEq && schemaType != null && schemaType.getTypeKeyword() == null
+                        && (baseType.endsWith(StvnVocabulary.TYPE_FLOAT) || baseType.equals(StvnVocabulary.TYPE_FLOAT))
+                        && !isExact) {
+                    reason = "continuous <code>:Float</code> is non-equatable by default.";
+                } else if (!isEq && schemaType != null && schemaType.getTypeKeyword() == null
+                        && (baseType.startsWith(StvnVocabulary.TYPE_SET) || baseType.startsWith(StvnVocabulary.TYPE_MAP))) {
+                    String head = baseType.startsWith(StvnVocabulary.TYPE_SET) ? StvnVocabulary.TYPE_SET : StvnVocabulary.TYPE_MAP;
+                    reason = "<code>" + head + "</code> already resolves to <code>#comparable #FALSE</code>.";
+                }
+            }
+        }
+
+        // 7. Nominal-parent W003 fallback from authoritative compiled snapshot
+        if (reason == null && containingFile != null && entryRange != null) {
+            for (var diag : StvnCompiledDocumentCache.getSnapshot(containingFile).diagnostics()) {
+                if (diag.severity() == org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.WARNING
+                        && DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diag.symbolicId().orElse(""))
+                        && diag.startOffset() == entryRange.getStartOffset()
+                        && diag.endOffset() == entryRange.getEndOffset()) {
+                    int sep = diag.message().indexOf("is redundant; ");
+                    if (sep >= 0) {
+                        reason = escapeHtmlBody(diag.message().substring(sep + "is redundant; ".length())) + ".";
+                    }
+                    break;
                 }
             }
         }
@@ -3654,11 +3858,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         // Zone 1: Identity & Structural Trace
+        var enclosingConstDef = PsiTreeUtil.getParentOfType(value, ConstantDefinition.class);
         sb.append("<div class='definition'>");
-        sb.append("<b>Payload Value:</b> <code>").append(value.getText()).append("</code><br/>");
+        sb.append(enclosingConstDef != null ? "<b>Constant Value:</b> <code>" : "<b>Payload Value:</b> <code>")
+          .append(value.getText()).append("</code><br/>");
         sb.append("<b>Value Type:</b> ").append(displayType).append("<br/>");
         sb.append("<b>Expression:</b> ").append(value.getText()).append("<br/>");
-        sb.append("<b>Locus:</b> Document Payload Body (<code>:body</code> clause)<br/>");
+        if (enclosingConstDef != null) {
+            sb.append("<b>Locus:</b> Constant Definition (<code>").append(StvnVocabulary.KEYWORD_DEFS).append("</code> clause)<br/>");
+        } else {
+            sb.append("<b>Locus:</b> Document Payload Body (<code>").append(StvnVocabulary.KEYWORD_BODY).append("</code> clause)<br/>");
+        }
         sb.append("<b>Governing Schema:</b> <code>").append(governingSchema).append("</code><br/>");
         sb.append("</div><hr/>");
 
@@ -3674,9 +3884,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(badgeColor).append(";\">").append(badgeText).append("</b><br/>");
         sb.append(compliance.detailExplanation()).append("<br/>");
 
-        var epochDoc = buildTimeEpochValueHoverDoc(targetValueForCompliance, displayType);
-        if (epochDoc != null) {
-            sb.append(epochDoc);
+        var temporalDoc = buildTemporalValueHoverDoc(targetValueForCompliance, targetSchemaForCompliance);
+        if (temporalDoc != null) {
+            sb.append(temporalDoc);
         }
         if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())
                 && !"Suspended (Degraded Schema)".equals(compliance.statusLabel())) {

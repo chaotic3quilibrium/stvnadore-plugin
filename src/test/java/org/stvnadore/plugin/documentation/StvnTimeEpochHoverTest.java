@@ -39,6 +39,7 @@ public final class StvnTimeEpochHoverTest extends BasePlatformTestCase {
 
         assertTrue("Expected Value Type: { #s } :TimeEpoch", doc.contains("<b>Value Type:</b> { #s } :TimeEpoch"));
         assertTrue("Expected Expression: 1704067200", doc.contains("<b>Expression:</b> 1704067200"));
+        assertTrue("Expected deterministic ISO-8601 UTC Preview", doc.contains("<b>UTC Preview:</b> <code>2024-01-01T00:00:00Z</code>"));
         assertTrue("Expected 12-hour UTC timestamp", doc.contains("Monday, January 1, 2024, at 12:00:00 AM UTC"));
         assertFalse("Clean timestamp must NOT contain warning banner", doc.contains("Suspicious Epoch Magnitude Warning"));
     }
@@ -57,6 +58,8 @@ public final class StvnTimeEpochHoverTest extends BasePlatformTestCase {
         var offset = text.indexOf("1789241400006");
         var doc = getDocAtOffset(text, offset);
 
+        assertTrue("Expected deterministic ISO-8601 UTC Preview with milliseconds",
+            doc.contains("<b>UTC Preview:</b> <code>2026-09-12T19:30:00.006Z</code>"));
         assertTrue("Expected 24-hour UTC timestamp with milliseconds",
             doc.contains("Saturday, September 12, 2026, at 19:30:00.006 UTC"));
         assertFalse("Clean timestamp must NOT contain warning banner", doc.contains("Suspicious Epoch Magnitude Warning"));

@@ -34,6 +34,18 @@ public final class StvnSyntaxHighlighterColors {
             DefaultLanguageHighlighterColors.METADATA
     );
 
+    /** Text attributes key for valid escape sequences inside single-line STVN strings. */
+    public static final TextAttributesKey VALID_STRING_ESCAPE = TextAttributesKey.createTextAttributesKey(
+            "STVN_VALID_STRING_ESCAPE",
+            DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE
+    );
+
+    /** Text attributes key for invalid escape sequences inside single-line STVN strings. */
+    public static final TextAttributesKey INVALID_STRING_ESCAPE = TextAttributesKey.createTextAttributesKey(
+            "STVN_INVALID_STRING_ESCAPE",
+            DefaultLanguageHighlighterColors.INVALID_STRING_ESCAPE
+    );
+
     private StvnSyntaxHighlighterColors() {
         // Prevent instantiation
     }

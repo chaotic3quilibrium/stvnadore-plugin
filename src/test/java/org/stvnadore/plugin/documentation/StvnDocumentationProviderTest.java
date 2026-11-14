@@ -1898,4 +1898,72 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
                 || lhsIntDoc.contains("\"example\"")
         );
     }
+
+    public void testSingletonEnumAndEnumSubsetHoverRenderConciseDefaultEnumOriginAndNullInFlightTokens() {
+        var text = """
+            {
+              :defs {
+                :TrapSingletonEnum :Enum[
+                  #ONLY_ONE
+                ]
+                :MultiEnum :Enum [ #ALPHA #BETA #GAMMA ]
+                :DerivedEnum { #filterIncl [ #ALPHA #BETA ] } :MultiEnum
+                :RootPreserveDefault { #preserveIndent #FALSE } :String
+                :ParentInt { #minIncl 10 } :Int
+                :ChildInt { #minIncl 10 } :ParentInt
+              }
+              :type :DerivedEnum
+              :body #ALPHA
+            }
+            """;
+        myFixture.configureByText("enum_default_origin_and_w003_hover.stvn", text);
+
+        String singletonDoc = getDocAtOffset(text, text.indexOf(":TrapSingletonEnum") + 1);
+        assertTrue("Singleton enum hover must display Default (:Enum):\n" + singletonDoc,
+            singletonDoc.contains("Default (:Enum)"));
+        assertFalse("Singleton enum hover must NEVER leak inline variant list in Origin cell:\n" + singletonDoc,
+            singletonDoc.contains("Default (:Enum [") || singletonDoc.contains("Default (:Enum["));
+        assertTrue("Singleton enum hover must retain Underlying Structure variant list:\n" + singletonDoc,
+            singletonDoc.contains("<b>Underlying Structure:</b>") && singletonDoc.contains("#ONLY_ONE"));
+
+        String subsetDoc = getDocAtOffset(text, text.indexOf(":DerivedEnum") + 1);
+        assertTrue("Derived enum subset hover must display Default (:Enum):\n" + subsetDoc,
+            subsetDoc.contains("Default (:Enum)"));
+        assertFalse("Derived enum subset hover must NEVER leak inline variant list in Origin cell:\n" + subsetDoc,
+            subsetDoc.contains("Default (:Enum [") || subsetDoc.contains("Default (:Enum["));
+
+        String preserveDoc = getDocAtOffset(text, text.indexOf("#preserveIndent #FALSE") + 1);
+        assertTrue("Redundant #preserveIndent #FALSE hover card must state default indentation rule:\n" + preserveDoc,
+            preserveDoc.contains("Warning W003: Redundant Metadata Facet")
+                && preserveDoc.contains("fenced strings trim common leading indentation by default."));
+
+        String nominalW003Doc = getDocAtOffset(text, text.lastIndexOf("#minIncl 10") + 1);
+        assertTrue("Nominal W003 #minIncl 10 hover card must state ancestor ':ParentInt':\n" + nominalW003Doc,
+            nominalW003Doc.contains("Warning W003: Redundant Metadata Facet")
+                && nominalW003Doc.contains(":ParentInt"));
+
+        // In-flight incomplete tokens and interior container whitespace in :defs and :body must return null
+        var inFlightText = """
+            {
+              :defs {
+                #PAIR :Tuple(:Int :String) (   1 "ok" )
+                #BROKEN :String "hello\\
+              }
+              :type :Tuple(:Int :String)
+              :body (   1 # )
+            }
+            """;
+        myFixture.configureByText("in_flight_hover_null.stvn", inFlightText);
+        int defsInteriorWs = inFlightText.indexOf("(   1 \"ok\"") + 2;
+        int unclosedEscape = inFlightText.indexOf("\"hello\\") + 6;
+        int bodyInteriorWs = inFlightText.indexOf("(   1 #") + 2;
+        int bareHash = inFlightText.indexOf("1 # )") + 2;
+
+        for (int off : new int[]{defsInteriorWs, unclosedEscape, bodyInteriorWs, bareHash}) {
+            var elem = myFixture.getFile().findElementAt(off);
+            var docElem = provider.getCustomDocumentationElement(myFixture.getEditor(), myFixture.getFile(), elem, off);
+            String generated = docElem != null ? provider.generateDoc(docElem, elem) : null;
+            assertNull("In-flight / interior whitespace hover at offset " + off + " must return null, got: " + generated, generated);
+        }
+    }
 }

@@ -1006,4 +1006,46 @@ public final class StvnRedundantFacetAlignmentTest extends BasePlatformTestCase 
         invalidDoc.contains("Warning W003")
     );
   }
+
+  /**
+   * Verifies 1:1 deconfliction between {@code StvnExternalAnnotator} and
+   * {@code StvnRedundantFacetOverrideInspection} on {@code #preserveIndent #FALSE}:
+   * emits strictly 1 {@code [stvn-core:W003-WARN_REDUNDANT_METADATA_FACET]} highlight when
+   * local inspection is disabled and strictly 1 {@code [stvn-plugin:W003-WARN_REDUNDANT_METADATA_FACET]}
+   * highlight with identical span and prose when local inspection is enabled.
+   */
+  public void testPreserveIndentFalseDeconflictionZeroStackedDuplicates() {
+    var text = """
+        {
+          :defs {
+            :RedundantStringDefaults { #preserveIndent #FALSE } :String
+          }
+          :type :RedundantStringDefaults
+          :body "ok"
+        }
+        """;
+    myFixture.configureByText("preserve_indent_deconfliction.stvn", text);
+    var coreWarnings = myFixture.doHighlighting().stream()
+        .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+        .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_REDUNDANT_METADATA_FACET"))
+        .toList();
+    assertEquals("Expected strictly 1 W003 warning with local inspection disabled", 1, coreWarnings.size());
+    assertTrue(coreWarnings.get(0).getDescription().contains("[stvn-core:W003-WARN_REDUNDANT_METADATA_FACET]"));
+
+    myFixture.enableInspections(new StvnRedundantFacetOverrideInspection());
+    try {
+      myFixture.configureByText("preserve_indent_deconfliction_plugin.stvn", text);
+      var pluginWarnings = myFixture.doHighlighting().stream()
+          .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+          .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_REDUNDANT_METADATA_FACET"))
+          .toList();
+      assertEquals("Expected strictly 1 W003 warning with zero stacked duplicates when local inspection enabled",
+          1, pluginWarnings.size());
+      assertTrue(pluginWarnings.get(0).getDescription().contains("[stvn-plugin:W003-WARN_REDUNDANT_METADATA_FACET]"));
+      assertEquals(coreWarnings.get(0).getStartOffset(), pluginWarnings.get(0).getStartOffset());
+      assertEquals(coreWarnings.get(0).getEndOffset(), pluginWarnings.get(0).getEndOffset());
+    } finally {
+      myFixture.disableInspections(new StvnRedundantFacetOverrideInspection());
+    }
+  }
 }
