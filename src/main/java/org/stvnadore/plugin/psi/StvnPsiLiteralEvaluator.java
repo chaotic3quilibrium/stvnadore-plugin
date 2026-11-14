@@ -8,9 +8,13 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.Value;
@@ -18,9 +22,11 @@ import org.stvnadore.psi.Value;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Pure Java 21 CPU-bias-free PSI literal evaluator for standalone editor inspections,
@@ -33,6 +39,7 @@ public final class StvnPsiLiteralEvaluator {
     public static final int MAX_EAGER_SHIFT_BIT_WIDTH = 16_384;
 
     private static final int MAX_CONST_RESOLUTION_DEPTH = 16;
+    private static final Pattern VALID_FENCE_TAG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,256}$");
 
     private StvnPsiLiteralEvaluator() {
     }
@@ -201,10 +208,69 @@ public final class StvnPsiLiteralEvaluator {
             ConstantDefinition constDef = resolveConstantDefinition(context, trimmed);
             if (constDef != null && constDef.getValue() != null) {
                 Value val = constDef.getValue();
-                return resolveStringOrConstInternal(val, val.getText(), preserveIndent, visited);
+                boolean constPreserveIndent = extractPreserveIndentFromSchema(constDef.getSchemaType());
+                return resolveStringOrConstInternal(val, val.getText(), constPreserveIndent, visited);
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Extracts the effective {@code #preserveIndent} flag declared on a PSI {@link SchemaType} chain.
+     *
+     * @param schemaType governing PSI schema type, or {@code null}
+     * @return {@code true} when {@code #preserveIndent} is enabled; {@code false} otherwise
+     */
+    public static boolean extractPreserveIndentFromSchema(@Nullable SchemaType schemaType) {
+        return extractPreserveIndentFromSchema(schemaType, new HashSet<>());
+    }
+
+    private static boolean extractPreserveIndentFromSchema(@Nullable SchemaType schemaType, Set<String> visited) {
+        if (schemaType == null) {
+            return false;
+        }
+        MetadataMap metaMap = schemaType.getMetadataMap();
+        if (metaMap == null && schemaType.getParent() instanceof TypeDefinition td) {
+            metaMap = td.getMetadataMap();
+        }
+        if (metaMap != null) {
+            for (var entry : metaMap.getMetadataEntryList()) {
+                String text = entry.getText().trim();
+                if (text.equals(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+                    return true;
+                }
+                if (text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
+                        && Character.isWhitespace(text.charAt(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()))) {
+                    String arg = text.substring(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()).trim();
+                    return resolveBooleanOrConst(entry, arg).orElse(false);
+                }
+            }
+        }
+        if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
+            String alias = schemaType.getTypeKeyword().getText().trim();
+            if (visited.add(alias)) {
+                var target = StvnTypeReference.resolveTypeInFile(
+                    schemaType.getContainingFile(), alias, new HashSet<>());
+                var parentDef = StvnPsiUtils.getParentTypeDefinition(target);
+                if (parentDef != null) {
+                    if (parentDef.getMetadataMap() != null) {
+                        for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                            String text = entry.getText().trim();
+                            if (text.equals(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+                                return true;
+                            }
+                            if (text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
+                                    && Character.isWhitespace(text.charAt(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()))) {
+                                String arg = text.substring(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()).trim();
+                                return resolveBooleanOrConst(entry, arg).orElse(false);
+                            }
+                        }
+                    }
+                    return extractPreserveIndentFromSchema(parentDef.getSchemaType(), visited);
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -374,29 +440,36 @@ public final class StvnPsiLiteralEvaluator {
             return Optional.empty();
         }
         if (rawLiteral.startsWith("\"\"\"[")) {
-            int openCloseBracket = rawLiteral.indexOf(']', 4);
-            if (openCloseBracket < 0) {
+            String normalized = rawLiteral.replace("\r\n", "\n").replace("\r", "\n");
+            int openCloseBracket = normalized.indexOf(']', 4);
+            if (openCloseBracket <= 4) {
                 return Optional.empty();
             }
-            String tag = rawLiteral.substring(4, openCloseBracket);
+            String tag = normalized.substring(4, openCloseBracket);
+            if (!VALID_FENCE_TAG_PATTERN.matcher(tag).matches()) {
+                return Optional.empty();
+            }
             String closeDelim = "[" + tag + "]\"\"\"";
-            if (!rawLiteral.endsWith(closeDelim)) {
+            if (!normalized.endsWith(closeDelim)) {
                 return Optional.empty();
             }
-            int firstNewline = rawLiteral.indexOf('\n', openCloseBracket + 1);
+            int firstNewline = normalized.indexOf('\n', openCloseBracket + 1);
             if (firstNewline < 0) {
                 return Optional.empty();
             }
-            int payloadEnd = rawLiteral.length() - closeDelim.length();
-            if (payloadEnd > firstNewline && rawLiteral.charAt(payloadEnd - 1) == '\n') {
-                payloadEnd--;
-                if (payloadEnd > firstNewline && rawLiteral.charAt(payloadEnd - 1) == '\r') {
-                    payloadEnd--;
+            for (int i = openCloseBracket + 1; i < firstNewline; i++) {
+                char ch = normalized.charAt(i);
+                if (ch != ' ' && ch != '\t') {
+                    return Optional.empty();
                 }
             }
-            String body = rawLiteral.substring(firstNewline + 1, Math.max(firstNewline + 1, payloadEnd))
-                .replace("\r\n", "\n");
-            return Optional.of(preserveIndent ? body : stripCommonLeadingSpaces(body));
+            int payloadStart = firstNewline + 1;
+            int payloadEnd = normalized.length() - closeDelim.length();
+            if (payloadStart > payloadEnd) {
+                return Optional.empty();
+            }
+            String body = normalized.substring(payloadStart, payloadEnd);
+            return Optional.of(preserveIndent ? body : trimCommonIndent(body));
         }
         if (rawLiteral.startsWith("\"") && rawLiteral.endsWith("\"") && !rawLiteral.startsWith("\"\"\"")) {
             String inner = rawLiteral.substring(1, rawLiteral.length() - 1);
@@ -441,30 +514,85 @@ public final class StvnPsiLiteralEvaluator {
         return Optional.empty();
     }
 
-    private static String stripCommonLeadingSpaces(String body) {
-        String[] lines = body.split("\n", -1);
+    /**
+     * Strips common leading ASCII space ({@code 0x20}) indentation across non-empty lines while
+     * preserving verbatim horizontal tabs ({@code 0x09}) per STVN 2.0.0 Rule {@code STR-04}.
+     *
+     * @param text LF-normalized fenced string payload
+     * @return dedented string payload matching {@code StvnPayloadLowerer.trimCommonIndent} 1:1
+     */
+    public static String trimCommonIndent(String text) {
+        if (text.isEmpty()) {
+            return text;
+        }
+        String[] lines = text.split("\n", -1);
         int minIndent = Integer.MAX_VALUE;
         for (String line : lines) {
-            if (line.isBlank()) {
+            if (isAsciiSpacesOnly(line)) {
                 continue;
             }
-            int spaces = 0;
-            while (spaces < line.length() && line.charAt(spaces) == ' ') {
-                spaces++;
+            int indent = 0;
+            while (indent < line.length() && line.charAt(indent) == ' ') {
+                indent++;
             }
-            minIndent = Math.min(minIndent, spaces);
+            if (indent < minIndent) {
+                minIndent = indent;
+            }
         }
-        if (minIndent == 0 || minIndent == Integer.MAX_VALUE) {
-            return body;
+        if (minIndent == Integer.MAX_VALUE) {
+            minIndent = 0;
         }
-        StringBuilder out = new StringBuilder(body.length());
+        StringBuilder out = new StringBuilder(text.length());
         for (int i = 0; i < lines.length; i++) {
             if (i > 0) {
                 out.append('\n');
             }
             String line = lines[i];
-            out.append(line.length() >= minIndent ? line.substring(minIndent) : "");
+            if (!isAsciiSpacesOnly(line)) {
+                out.append(minIndent <= line.length() ? line.substring(minIndent) : "");
+            }
         }
         return out.toString();
+    }
+
+    private static boolean isAsciiSpacesOnly(String line) {
+        for (int i = 0; i < line.length(); i++) {
+            if (line.charAt(i) != ' ') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Formats a decoded UTF-8 string as a canonical single-line STVN simple string literal {@code "..."}.
+     *
+     * @param decoded decoded string content
+     * @return canonically escaped STVN quoted string literal
+     */
+    public static String formatCanonicalQuotedString(String decoded) {
+        StringBuilder sb = new StringBuilder(decoded.length() + 4);
+        sb.append('"');
+        for (int i = 0; i < decoded.length(); i++) {
+            char c = decoded.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        sb.append('"');
+        return sb.toString();
     }
 }

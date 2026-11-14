@@ -206,6 +206,29 @@ public final class StvnTimeEpochFormatter {
     }
 
     /**
+     * Formats a validated {@link Instant} into a human-readable UTC timestamp respecting the user's
+     * 12-hour or 24-hour presentation setting and preserving minimal canonical sub-second precision.
+     *
+     * @param instant    validated UTC instant
+     * @param hourFormat 12-hour vs 24-hour presentation setting
+     * @return human-readable UTC string (for example, {@code Thursday, November 12, 2026, at 5:30:00 PM UTC})
+     */
+    public static String formatInstantHumanUtc(Instant instant, StvnSettings.TimeEpochHourFormat hourFormat) {
+        int nano = instant.getNano();
+        int fractionDigits;
+        if (nano == 0) {
+            fractionDigits = 0;
+        } else if (nano % 1_000_000 == 0) {
+            fractionDigits = 3;
+        } else if (nano % 1_000 == 0) {
+            fractionDigits = 6;
+        } else {
+            fractionDigits = 9;
+        }
+        return formatZdt(instant.atZone(ZoneOffset.UTC), fractionDigits, hourFormat);
+    }
+
+    /**
      * Formats arbitrary-precision epoch seconds and non-negative nanosecond adjustment {@code [0, 999_999_999]}
      * into a proleptic Gregorian ISO-8601 UTC string without 64-bit {@link Instant} range overflow.
      *

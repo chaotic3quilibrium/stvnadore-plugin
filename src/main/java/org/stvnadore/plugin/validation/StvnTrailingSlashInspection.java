@@ -75,7 +75,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         };
     }
 
-    private static boolean hasTrailingSlash(@NotNull PsiElement targetElement) {
+    static boolean hasTrailingSlash(@NotNull PsiElement targetElement) {
         if (targetElement instanceof UseTarget useTarget && useTarget.getUseTargetIllegal() != null) {
             return true;
         }
@@ -97,7 +97,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         return siblingText.startsWith("/") && !siblingText.startsWith("//") && !siblingText.startsWith("/*");
     }
 
-    private static @NotNull String extractNonCommentText(@NotNull PsiElement element) {
+    static @NotNull String extractNonCommentText(@NotNull PsiElement element) {
         StringBuilder sb = new StringBuilder();
         for (PsiElement child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (!(child instanceof PsiComment) && !(child instanceof PsiWhiteSpace)) {

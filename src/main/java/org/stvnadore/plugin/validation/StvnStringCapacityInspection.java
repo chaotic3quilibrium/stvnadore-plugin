@@ -78,6 +78,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      */
     private static final Pattern CAPACITY_LEXICAL_PATTERN =
         Pattern.compile("#[a-zA-Z0-9_]*size", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FENCED_STRING_SANITIZE_PATTERN =
+        Pattern.compile("(?s)\"\"\"\\[([a-zA-Z0-9_-]{1,256})].*?\\[\\1]\"\"\"");
 
     /**
      * Default capacity threshold in characters for schema and diagnostic analyzers (4,096 characters).
@@ -503,19 +505,22 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                String content = extractLiteralContent(literal.getText());
-                var contentLenBI = BigInteger.valueOf(content.length());
+                boolean preserveIndent = StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(schemaType);
+                String content = StvnPsiLiteralEvaluator.decodeStringLiteral(literal.getText(), preserveIndent)
+                    .orElseGet(() -> extractLiteralContent(literal.getText()));
+                int decodedLength = content.length();
+                var contentLenBI = BigInteger.valueOf(decodedLength);
                 if (contentLenBI.compareTo(capBI) > 0) {
                     int capInt = capBI.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0 ? Integer.MAX_VALUE : capBI.intValue();
                     holder.registerProblem(
                         literal,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "String literal length (" + content.length() + ") exceeds declared schema capacity (" + capBI + ")",
+                            "String literal length (" + decodedLength + ") exceeds declared schema capacity (" + capBI + ")",
                             StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW
                         ),
                         ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                         new TruncateStringLiteralQuickFix(capInt),
-                        new WidenSchemaCapacityQuickFix(schemaType, content.length())
+                        new WidenSchemaCapacityQuickFix(schemaType, decodedLength)
                     );
                 }
             }
@@ -652,7 +657,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         if (rawText == null || rawText.isEmpty()) {
             return "";
         }
-        String noComments = rawText.replaceAll("(?m)//.*$", "");
+        String noFenced = FENCED_STRING_SANITIZE_PATTERN.matcher(rawText).replaceAll("");
+        String noComments = noFenced.replaceAll("(?m)//.*$", "");
         return noComments.replaceAll("\"(\\\\.|[^\"\\\\])*\"", "");
     }
 
@@ -890,6 +896,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * @return unquoted string content
      */
     public static String extractLiteralContent(String raw) {
+        var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(raw, false);
+        if (decoded.isPresent()) {
+            return decoded.get();
+        }
         if (raw.startsWith("\"\"\"")) {
             int firstNl = raw.indexOf('\n');
             int lastFence = raw.lastIndexOf("\"\"\"");

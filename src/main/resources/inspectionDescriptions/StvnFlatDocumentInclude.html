@@ -1,15 +1,19 @@
 <html>
 <body>
-<p>Detects forbidden <code>:include</code> statements inside hermetic documents (<code>.stvn</code>) and hermetic definitions schemas (<code>.stvn_d</code>).</p>
+<p>Detects prohibited <code>:include</code> statements and external-package <code>:use</code> directives inside hermetic documents (<code>.stvn</code>, <code>.stvn_d</code>, <code>.stvn_b</code>, <code>.stvn_bd</code>).</p>
 <!-- tooltip end -->
-<p>Hermetic documents and definitions schemas must remain completely self-contained and cannot contain include directives under STVN 2.0.0 Specification § 1.2.</p>
+<p>Hermetic compilation units must remain self-contained under STVN 2.0.0 Specification § 1.2 and § 3.9. A hermetic file cannot declare <code>:include</code> directives (<code>E005</code>), and scoped <code>:use</code> directives can target only Standard Library Prelude packages or non-reserved packages declared locally in the same <code>:defs</code> section (<code>E035</code>).</p>
 
-<p><b>Example (Prohibited Include in Hermetic Document):</b></p>
+<p><b>Example (Prohibited Include and External Package Import in Hermetic Document):</b></p>
 <pre><code>// Inside file.stvn
 :defs {
-  // Error: Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements
+  // E005: Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements
   :include [ "types.stvn_d" ]
+
+  // E035: Scoped :use in hermetic document cannot target external package
+  :use [ :external/unloaded/billing { #strip } ]
 }
 </code></pre>
+<p>Convert the file to a modular format (<code>.stvn_i</code> or <code>.stvn_di</code>) when importing external workspace packages.</p>
 </body>
 </html>

@@ -668,6 +668,10 @@ public final class StvnDiagnosticAnnotatorMapping {
         if (message.contains("Trailing slash prohibited")) {
             return "StvnTrailingSlash";
         }
+        if (message.contains("cannot contain include statements")
+                || message.contains("Scoped " + StvnVocabulary.KEYWORD_USE + " in hermetic document")) {
+            return "StvnFlatDocumentInclude";
+        }
         if (message.contains("Reserved type keyword cannot be declared on LHS")
                 || message.contains("Reserved type keyword cannot be used on left-hand side")
                 || message.contains("Reserved fundamental type or keyword cannot be used on left-hand side")) {

@@ -15,6 +15,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnNamespaceRules;
+import org.stvnadore.plugin.validation.StvnFlatDocumentIncludeInspection;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.UseStmt;
@@ -88,8 +89,10 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
                             .withIcon(AllIcons.Nodes.PpLib)
                             .withTypeText("Standard Library Metadata", true));
 
-                        // Propose workspace user packages
-                        var candidatePackages = collectWorkspacePackages(project);
+                        // In hermetic files, propose only local non-reserved packages (Rule E035); in modular files, propose workspace packages
+                        var candidatePackages = StvnFlatDocumentIncludeInspection.isHermeticCompilationUnit(file)
+                            ? StvnFlatDocumentIncludeInspection.collectLocalNonReservedPackages(file)
+                            : collectWorkspacePackages(project);
                         for (var pkg : candidatePackages) {
                             if (!StvnNamespaceRules.isReservedPackage(pkg)) {
                                 targetResult.addElement(LookupElementBuilder.create(pkg)

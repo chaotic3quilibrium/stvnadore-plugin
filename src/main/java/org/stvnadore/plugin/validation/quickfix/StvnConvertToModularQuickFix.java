@@ -14,7 +14,6 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
-import org.stvnadore.psi.TypeKeyword;
 
 import java.io.IOException;
 
@@ -29,10 +28,10 @@ public final class StvnConvertToModularQuickFix extends LocalQuickFixAndIntentio
     /**
      * Constructs a modular format conversion quick-fix.
      *
-     * @param element offending TypeKeyword element
-     * @param isDefsSchema true for .stvn_d -> .stvn_di; false for .stvn -> .stvn_i
+     * @param element offending PSI anchor element (such as {@code TypeKeyword} or {@code UseTarget})
+     * @param isDefsSchema true for .stvn_d to .stvn_di; false for .stvn to .stvn_i
      */
-    public StvnConvertToModularQuickFix(TypeKeyword element, boolean isDefsSchema) {
+    public StvnConvertToModularQuickFix(PsiElement element, boolean isDefsSchema) {
         super(element);
         this.isDefsSchema = isDefsSchema;
     }

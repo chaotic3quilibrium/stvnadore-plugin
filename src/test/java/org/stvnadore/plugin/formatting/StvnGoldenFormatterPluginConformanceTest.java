@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 56 mirrored golden formatter quartet files
+ * Plugin-level Golden Formatter Conformance Suite verifying the 64 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
@@ -67,7 +67,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 15 mirrored golden formatter quartets", 15, inputNames.size());
+        assertEquals("Expected 16 mirrored golden formatter quartets", 16, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -220,7 +220,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "12_multiline_parameterized_constructors_depth_fifteen.core_fmt.stvn_i".equals(fileName)
                         || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)
                         || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
-                        || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)) {
+                        || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)
+                        || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }
@@ -231,6 +232,35 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                     StvnCompiler.toCanonicalString(expectedDoc),
                     StvnCompiler.toCanonicalString(psiFormattedDoc));
             }
+        } finally {
+            settings.getState().reformatDelegationMode = prevMode;
+        }
+    }
+
+    public void testPreludeSourceFormattingByteForByteParity() throws IOException {
+        Path preludePath = Paths.get("src", "test", "resources", "shared-fixtures", "syntax", "valid", "modules", "prelude.stvn_core.stvn_d");
+        assertTrue("Missing mirrored prelude.stvn_core.stvn_d: " + preludePath, Files.isRegularFile(preludePath));
+        String preludeSource = Files.readString(preludePath, StandardCharsets.UTF_8);
+
+        var settings = StvnSettings.getInstance(getProject());
+        var prevMode = settings.getState().reformatDelegationMode;
+        try {
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+            var coreFile = myFixture.configureByText("prelude.stvn_core.stvn_d", preludeSource);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+            });
+            assertEquals("CORE_SOURCE_FORMATTER must preserve prelude.stvn_core.stvn_d byte-for-byte",
+                preludeSource, coreFile.getText());
+
+            settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            var psiFile = myFixture.configureByText("prelude.stvn_core.stvn_d", preludeSource);
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+            });
+            assertEquals("PSI_STRUCTURE_PRESERVING must preserve prelude.stvn_core.stvn_d byte-for-byte",
+                preludeSource, psiFile.getText());
+            assertZeroStructuralTabsOutsideFencedBodies(psiFile.getText(), "PSI prelude.stvn_core.stvn_d");
         } finally {
             settings.getState().reformatDelegationMode = prevMode;
         }

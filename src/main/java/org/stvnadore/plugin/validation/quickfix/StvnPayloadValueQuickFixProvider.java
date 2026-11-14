@@ -778,7 +778,13 @@ public final class StvnPayloadValueQuickFixProvider {
                     regexPattern = resolveStringOrConstOrNull(value, meta.get(StvnVocabulary.FACET_KW_REGEX));
                 }
 
-                String authored = value.getStringLiteral() != null ? stripQuotesOrFences(rawValueText) : null;
+                boolean preserveIndent = (irSchema instanceof StvnSchema.StringSchema ss)
+                    ? ss.preserveIndent()
+                    : StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(rawSchema);
+                String authored = value.getStringLiteral() != null
+                    ? StvnPsiLiteralEvaluator.decodeStringLiteral(rawValueText, preserveIndent)
+                        .orElseGet(() -> stripQuotesOrFences(rawValueText))
+                    : null;
                 if (authored != null && regexPattern != null && !regexPattern.isBlank()) {
                     try {
                         Pattern compiledRegex = Pattern.compile(regexPattern);
@@ -2107,6 +2113,10 @@ public final class StvnPayloadValueQuickFixProvider {
             return null;
         }
         String trimmed = raw.trim();
+        var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(trimmed, false);
+        if (decoded.isPresent()) {
+            return decoded.get();
+        }
         if (trimmed.startsWith("\"\"\"") && trimmed.endsWith("\"\"\"") && trimmed.length() >= 6) {
             String inner = trimmed.substring(3, trimmed.length() - 3).trim();
             int firstNewline = inner.indexOf('\n');

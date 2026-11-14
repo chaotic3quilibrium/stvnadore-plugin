@@ -31,6 +31,8 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_TRAILING_SLASH_PROHIBITED = "ERR_TRAILING_SLASH_PROHIBITED";
     public static final String ERR_NESTED_PACKAGE_PROHIBITED = "ERR_NESTED_PACKAGE_PROHIBITED";
     public static final String ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT = "ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT";
+    /** Error code emitted when a scoped {@code :use} in a hermetic document targets an external package (SPEC § 3.9, E035). */
+    public static final String ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT = "ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT";
 
     // Reserved Namespace & System Domain Invariants (§ 3.9 Invariant 8, § 3.10.1 Rule 6)
     public static final String ERR_RESERVED_PACKAGE_PROHIBITED = "ERR_RESERVED_PACKAGE_PROHIBITED";
@@ -182,6 +184,7 @@ public final class StvnDiagnosticCodes {
             case ERR_UNRESOLVED_TYPE -> "E030";
             case ERR_DOCUMENT_KIND_MISMATCH -> "E031";
             case ERR_INVALID_FILENAME_STEM -> "E032";
+            case ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT -> "E035";
             case ERR_UNRECOGNIZED_METADATA_FACET -> "E036";
             case ERR_RESERVED_PACKAGE_PROHIBITED -> "E037";
             case ERR_RESERVED_DOMAIN_PROHIBITED -> "E038";

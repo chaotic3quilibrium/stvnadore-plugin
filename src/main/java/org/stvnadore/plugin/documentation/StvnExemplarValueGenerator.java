@@ -287,10 +287,18 @@ public final class StvnExemplarValueGenerator {
             }
             String minIncl = strSchema.lowerBound()
                 .map(StvnSchema.ContinuousBound::value)
-                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)));
+                .orElseGet(() -> resolveStringOrConstOrNull(
+                    schemaType,
+                    psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
+                        ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+                        : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)));
             String maxExcl = strSchema.upperBound()
                 .map(StvnSchema.ContinuousBound::value)
-                .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)));
+                .orElseGet(() -> resolveStringOrConstOrNull(
+                    schemaType,
+                    psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)
+                        ? psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+                        : psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)));
             String regexPattern = strSchema.rawRegexPattern()
                 .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_REGEX)));
             return generateStringExemplar(minSize, maxSize, minIncl, maxExcl, regexPattern, strSchema.preserveIndent());
@@ -380,7 +388,7 @@ public final class StvnExemplarValueGenerator {
                                 minIncl,
                                 maxExcl,
                                 regexPattern,
-                                psiMeta.containsKey(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
+                                resolvePsiPreserveIndentFlag(schemaType, psiMeta)
                             );
                         }
                         case StvnVocabulary.TYPE_BOOLEAN -> StvnVocabulary.VAL_TRUE;
@@ -1336,6 +1344,17 @@ public final class StvnExemplarValueGenerator {
         return StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(context, raw)
             .map(BigDecimal::doubleValue)
             .orElse(null);
+    }
+
+    private static boolean resolvePsiPreserveIndentFlag(@Nullable PsiElement context, Map<String, String> psiMeta) {
+        if (!psiMeta.containsKey(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+            return false;
+        }
+        String rawArg = psiMeta.get(StvnVocabulary.FACET_KW_PRESERVE_INDENT);
+        if (rawArg == null || rawArg.isBlank()) {
+            return true;
+        }
+        return StvnPsiLiteralEvaluator.resolveBooleanOrConst(context, rawArg).orElse(false);
     }
 
     private static @Nullable String resolveStringOrConstOrNull(@Nullable PsiElement context, @Nullable String raw) {

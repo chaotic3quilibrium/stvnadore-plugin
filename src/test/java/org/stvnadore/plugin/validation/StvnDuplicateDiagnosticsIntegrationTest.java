@@ -397,6 +397,51 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
     }
 
     /**
+     * Verifies that Stage 9 hermetic :use E035 and modular :use E030 shared fixtures produce
+     * strictly deduplicated highlights across all 26 enabled inspections.
+     */
+    public void testStage9HermeticE035AndModularE030HaveZeroDuplicatesAcrossAll26Inspections() throws IOException {
+        var stage9Path = Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "packages",
+            "gauntlet_v7_stage9_packages_scoped_use_and_prelude_types.core_test.stvn"
+        );
+        var stage9Source = Files.readString(stage9Path, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        myFixture.configureByText("gauntlet_v7_stage9_packages_scoped_use_and_prelude_types.core_test.stvn", stage9Source);
+        var stage9Highlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("gauntlet_v7_stage9_packages_scoped_use_and_prelude_types.core_test.stvn", stage9Highlights);
+        assertNoCoreHighlight("gauntlet_v7_stage9_packages_scoped_use_and_prelude_types.core_test.stvn", stage9Highlights, "ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT");
+        assertNoCoreHighlight("gauntlet_v7_stage9_packages_scoped_use_and_prelude_types.core_test.stvn", stage9Highlights, "E035");
+        assertEquals(
+            "Expected strictly 6 deduplicated ERROR highlights matching Stage 9 contract",
+            6,
+            stage9Highlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).count()
+        );
+
+        var netPrimitivesPath = Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "valid", "modules",
+            "network_primitives.stvn_d"
+        );
+        myFixture.addFileToProject(
+            "syntax/valid/modules/network_primitives.stvn_d",
+            Files.readString(netPrimitivesPath, StandardCharsets.UTF_8).replace("\r\n", "\n")
+        );
+        var modularPath = Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "modules",
+            "modular_unresolved_package_use.stvn_i"
+        );
+        var modularSource = Files.readString(modularPath, StandardCharsets.UTF_8).replace("\r\n", "\n");
+        var modularPsiFile = myFixture.addFileToProject("syntax/invalid/modules/modular_unresolved_package_use.stvn_i", modularSource);
+        myFixture.configureFromExistingVirtualFile(modularPsiFile.getVirtualFile());
+        var modularHighlights = myFixture.doHighlighting();
+        assertZeroDuplicateDiagnostics("modular_unresolved_package_use.stvn_i", modularHighlights);
+        assertEquals(
+            "Expected strictly 3 deduplicated E030 ERROR highlights matching modular_unresolved_package_use contract",
+            3,
+            modularHighlights.stream().filter(h -> h.getSeverity() == HighlightSeverity.ERROR).count()
+        );
+    }
+
+    /**
      * Asserts that zero [stvn-core:...] highlights exist for the specified diagnostic code.
      */
     private void assertNoCoreHighlight(String fileName, java.util.List<HighlightInfo> highlights, String code) {
