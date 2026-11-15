@@ -503,9 +503,14 @@ public final class StvnPsiLiteralEvaluator {
                                 return Optional.empty();
                             }
                         }
-                        default -> sb.append(next);
+                        default -> {
+                            return Optional.empty();
+                        }
                     }
                 } else {
+                    if (c < 0x20) {
+                        return Optional.empty();
+                    }
                     sb.append(c);
                 }
             }
@@ -553,6 +558,110 @@ public final class StvnPsiLiteralEvaluator {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * Evaluates whether a decoded simple string satisfies the STVN 2.0.0 Fenced-String Bias trigger
+     * and 100% lossless round-trip soundness guard ({@code decode(print(s)) == s}).
+     *
+     * @param decoded        decoded UTF-16 string value
+     * @param preserveIndent effective {@code #preserveIndent} flag for the target slot
+     * @return {@code true} when fenced string emission is triggered and round-trip lossless
+     */
+    public static boolean shouldEmitFencedPretty(String decoded, boolean preserveIndent) {
+        if (!containsSimpleEscapeTrigger(decoded) || containsForbiddenFencedControlChar(decoded)) {
+            return false;
+        }
+        if (preserveIndent) {
+            return true;
+        }
+        return !isAsciiSpacesOnly(decoded)
+            && !hasNonEmptyAsciiSpaceOnlyLine(decoded)
+            && trimCommonIndent(decoded).equals(decoded);
+    }
+
+    /**
+     * Checks whether {@code text} contains any non-empty line consisting exclusively of ASCII spaces ({@code 0x20}).
+     *
+     * @param text LF-normalized string content
+     * @return {@code true} if any non-empty line contains only ASCII spaces
+     */
+    public static boolean hasNonEmptyAsciiSpaceOnlyLine(String text) {
+        int lineStart = 0;
+        int len = text.length();
+        for (int i = 0; i <= len; i++) {
+            if (i == len || text.charAt(i) == '\n') {
+                if (i > lineStart) {
+                    boolean allSpaces = true;
+                    for (int j = lineStart; j < i; j++) {
+                        if (text.charAt(j) != ' ') {
+                            allSpaces = false;
+                            break;
+                        }
+                    }
+                    if (allSpaces) {
+                        return true;
+                    }
+                }
+                lineStart = i + 1;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Selects a collision-free Rule {@code STR-04} fence tag ({@code baseTag}, {@code baseTag_1}, ...)
+     * whose closing delimiter {@code [TAG]"""} does not appear in {@code decoded}.
+     *
+     * @param decoded decoded string body
+     * @param baseTag preferred base tag ({@code RAW} or {@code REGEX})
+     * @return collision-free fence tag
+     */
+    public static String chooseSafeFenceTag(String decoded, String baseTag) {
+        String candidate = baseTag;
+        int suffix = 0;
+        while (decoded.contains("[" + candidate + "]\"\"\"")) {
+            suffix++;
+            candidate = baseTag + "_" + suffix;
+        }
+        return candidate;
+    }
+
+    /**
+     * Determines whether a constant identifier ends with {@code REGEX} or {@code _REGEX}.
+     *
+     * @param rawConstIdentifier constant identifier text (local or FQNI)
+     * @return {@code true} if the constant identifier denotes a regex pattern constant
+     */
+    public static boolean isRegexConstantIdentifier(String rawConstIdentifier) {
+        int slashIdx = rawConstIdentifier.lastIndexOf('/');
+        String localName = slashIdx >= 0
+            ? rawConstIdentifier.substring(slashIdx + 1)
+            : (rawConstIdentifier.startsWith(StvnVocabulary.SIGIL_VALUE)
+                ? rawConstIdentifier.substring(StvnVocabulary.SIGIL_VALUE.length())
+                : rawConstIdentifier);
+        return localName.endsWith("_" + StvnVocabulary.FENCE_TAG_REGEX)
+            || localName.endsWith(StvnVocabulary.FENCE_TAG_REGEX);
+    }
+
+    private static boolean containsSimpleEscapeTrigger(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\\' || c == '"' || c == '\n' || c == '\t') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsForbiddenFencedControlChar(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c < 0x20 && c != '\n' && c != '\t') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isAsciiSpacesOnly(String line) {

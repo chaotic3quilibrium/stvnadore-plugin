@@ -486,6 +486,14 @@
             <description>Convert bare triple-quote string to fenced string block</description>
         </intentionAction>
 
+        <!-- 13e. Intention Action for Escaped String to Fenced String Block -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnConvertEscapedStringToFencedIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnConvertEscapedStringToFencedIntention</descriptionDirectoryName>
+            <description>Convert escaped string to fenced string</description>
+        </intentionAction>
+
         <!-- 14. Schema-Driven Skeleton Generator Intention Action -->
         <intentionAction>
             <className>org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction</className>
@@ -513,28 +521,22 @@
     </extensions>
 
     <actions>
-        <action id="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
-                class="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
-                text="Flatten STVN Workspace"
-                description="Resolves workspace dependencies and exports a canonical hermetic .stvn_d schema">
-            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="WeighingAction"/>
-            <add-to-group group-id="BuildMenu" anchor="last"/>
-        </action>
-
         <action id="org.stvnadore.plugin.actions.PublishSchemaAction"
                 class="org.stvnadore.plugin.actions.PublishSchemaAction"
                 text="Publish Schema to STVN Repository"
                 description="Publishes flattened STVN schema to the configured remote STVN Schema Repository"
                 icon="/icons/stvn_file.svg">
-            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 
         <group id="org.stvnadore.plugin.actions.StvnEditorPopupMenu"
                text="STVN"
-               description="STVN data projection and formatting actions"
-               popup="true">
+               description="STVN data projection, workspace flattening, and formatting actions"
+               popup="true"
+               icon="/icons/stvn_file.svg">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <action id="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
                     class="org.stvnadore.plugin.browser.StvnBrowseNamespaceAction"
                     text="Browse Namespace Dependencies"
@@ -544,6 +546,20 @@
                 <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt N"/>
                 <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
             </action>
+            <separator/>
+            <action id="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
+                    class="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
+                    text="Flatten STVN Workspace"
+                    description="Resolves workspace dependencies and exports a canonical hermetic .stvn_d schema"
+                    icon="/icons/stvn_file.svg">
+                <add-to-group group-id="BuildMenu" anchor="last"/>
+            </action>
+            <action id="org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction"
+                    class="org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction"
+                    text="Flatten Active STVN Schema to Clipboard"
+                    description="Resolves workspace dependencies and copies the canonical pretty-printed hermetic schema to the system clipboard"
+                    icon="/icons/stvn_file.svg"/>
+            <separator/>
             <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
                     text="Canonicalize &amp; Pretty Print"

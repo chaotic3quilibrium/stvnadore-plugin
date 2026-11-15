@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.CyclicDependencyException;
 import org.stvnadore.core.validation.DuplicateModuleImportException;
 import org.stvnadore.core.validation.NamespaceCollisionException;
@@ -87,6 +88,25 @@ public final class StvnWorkspaceNotificationHelper {
      */
     public static void showSuccess(Project project, String entryFileName, String outputFileName) {
         showNotification(project, "STVN Workspace Flattened", String.format("Successfully flattened workspace for <b>%s</b>. Output written to <b>%s</b>.", entryFileName, outputFileName), NotificationType.INFORMATION);
+    }
+
+    /**
+     * Displays a notification when the flattened hermetic schema for the active file is copied to the clipboard.
+     *
+     * @param project       the active IntelliJ project
+     * @param entryFileName name of the flattened source file
+     */
+    public static void showClipboardFlattenSuccess(Project project, String entryFileName) {
+        showNotification(
+            project,
+            "STVN Schema Flattened to Clipboard",
+            String.format(
+                "Copied flattened canonical <code>%s</code> schema for <b>%s</b> to the clipboard.",
+                StvnVocabulary.KIND_KW_DEFS,
+                entryFileName
+            ),
+            NotificationType.INFORMATION
+        );
     }
 
     @SuppressWarnings("deprecation")

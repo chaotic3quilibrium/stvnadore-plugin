@@ -563,8 +563,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     sb.append("<hr/>");
                     sb.append("<b>Target Constant:</b> ").append(remoteName);
                 } else {
-                    var bareRemote = remoteName.startsWith(StvnVocabulary.SIGIL_VALUE) ? remoteName.substring(1) : remoteName;
-                    var fqni = targetText + "/" + bareRemote;
+                    var fqni = StvnConstantReference.buildPackageConstantFqni(targetText, remoteName);
                     sb.append("<b>Renamed Reference:</b> ").append(localName).append(" &rarr; ").append(fqni).append("<br/>");
                     sb.append("<b>Source Namespace:</b> ").append(targetText);
                 }
@@ -638,6 +637,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (valKw.getParent() instanceof ConstantDefinition constDef) {
                 return buildTargetDocumentation(constDef, originalElement);
             }
+            if (valKw.getParent() instanceof org.stvnadore.psi.UseMapAlias parentAlias) {
+                return buildTargetDocumentation(parentAlias, originalElement);
+            }
             var ref = valKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnConstantReference(valKw).resolve();
             if (resolved instanceof ConstantDefinition cDef) {
@@ -645,6 +647,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             if (resolved != null && resolved.getParent() instanceof ConstantDefinition cDef) {
                 return buildTargetDocumentation(cDef, originalElement);
+            }
+            if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
+                return buildTargetDocumentation(targetAlias, originalElement);
             }
             if (valKw.getParent() instanceof org.stvnadore.psi.EnumDef enumDef) {
                 var typeDef = PsiTreeUtil.getParentOfType(enumDef, TypeDefinition.class);
@@ -836,10 +841,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var nextKw = lastValue.getValueKeyword();
             var ref = nextKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnConstantReference(nextKw).resolve();
-            if (resolved instanceof ConstantDefinition nextDef) {
-                current = nextDef;
-            } else if (resolved != null && resolved.getParent() instanceof ConstantDefinition nextDef) {
-                current = nextDef;
+            var hoppedConstDef = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+            if (hoppedConstDef != null) {
+                current = hoppedConstDef;
             } else {
                 var fallbackDef = StvnPsiLiteralEvaluator.resolveConstantDefinition(current, nextKw.getText().trim());
                 if (fallbackDef != null) {
@@ -911,9 +915,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (value.getValueKeyword() != null) {
             var ref = value.getValueKeyword().getReference();
             var resolved = ref != null ? ref.resolve() : new StvnConstantReference(value.getValueKeyword()).resolve();
-            ConstantDefinition cd = resolved instanceof ConstantDefinition c ? c
-                : (resolved != null && resolved.getParent() instanceof ConstantDefinition c ? c
-                : StvnPsiLiteralEvaluator.resolveConstantDefinition(value, value.getValueKeyword().getText().trim()));
+            ConstantDefinition cd = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+            if (cd == null) {
+                cd = StvnPsiLiteralEvaluator.resolveConstantDefinition(value, value.getValueKeyword().getText().trim());
+            }
             if (cd != null) {
                 var chain = resolveConstantTerminalValue(cd);
                 if (chain.terminalValue() != null) {
@@ -1024,23 +1029,28 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (td != null) {
-                    if (td.getMetadataMap() != null) {
-                        for (var entry : td.getMetadataMap().getMetadataEntryList()) {
-                            var text = entry.getText().trim();
-                            if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
-                                || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
-                                return text;
-                            }
+            var ref = kw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
+            var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            if (td == null) {
+                var file = schemaType.getContainingFile();
+                if (file != null) {
+                    var fallback = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+                    td = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
+                }
+            }
+            if (td != null) {
+                if (td.getMetadataMap() != null) {
+                    for (var entry : td.getMetadataMap().getMetadataEntryList()) {
+                        var text = entry.getText().trim();
+                        if (text.equals(StvnVocabulary.FACET_KW_SCALE_S) || text.equals(StvnVocabulary.FACET_KW_SCALE_MS)
+                            || text.equals(StvnVocabulary.FACET_KW_SCALE_US) || text.equals(StvnVocabulary.FACET_KW_SCALE_NS)) {
+                            return text;
                         }
                     }
-                    if (td.getSchemaType() != null) {
-                        return extractScaleFlag(td.getSchemaType(), visited);
-                    }
+                }
+                if (td.getSchemaType() != null) {
+                    return extractScaleFlag(td.getSchemaType(), visited);
                 }
             }
         }
@@ -1065,13 +1075,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (!visited.add(text)) {
                 return null;
             }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                var td = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (td != null && td.getSchemaType() != null) {
-                    return resolveBaseTypeString(td.getSchemaType(), visited);
+            var ref = kw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
+            var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            if (td == null) {
+                var file = schemaType.getContainingFile();
+                if (file != null) {
+                    var fallback = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
+                    td = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
                 }
+            }
+            if (td != null && td.getSchemaType() != null) {
+                return resolveBaseTypeString(td.getSchemaType(), visited);
             }
         }
         return null;
@@ -1132,10 +1147,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (resolved == null) {
                 resolved = StvnConstantReference.resolveConstantInFile(file, remoteName, new HashSet<>());
             }
-            if (resolved != null && resolved.getParent() instanceof ConstantDefinition constDef) {
-                return buildTargetDocumentation(constDef, originalElement);
-            } else if (resolved instanceof ConstantDefinition constDef) {
-                return buildTargetDocumentation(constDef, originalElement);
+            var targetConstDef = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+            if (targetConstDef != null) {
+                return buildTargetDocumentation(targetConstDef, originalElement);
             }
         }
         return null;
@@ -1901,8 +1915,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (remote.equals(local)) {
                     return "Scoped Import: " + local + " from " + targetText;
                 } else {
-                    var bare = remote.startsWith(StvnVocabulary.SIGIL_VALUE) ? remote.substring(1) : remote;
-                    return "Renamed Reference: " + local + " -> " + targetText + "/" + bare;
+                    return "Renamed Reference: " + local + " -> "
+                        + StvnConstantReference.buildPackageConstantFqni(targetText, remote);
                 }
             }
         }
@@ -2544,6 +2558,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (resolved != null && resolved.getParent() instanceof ConstantDefinition targetConstDef) {
                 return targetConstDef;
             }
+            if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
+                return targetAlias;
+            }
             if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.EnumDef) {
                 return resolved;
             }
@@ -2565,6 +2582,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var resolved = ref != null ? ref.resolve() : null;
             if (resolved != null && resolved.getParent() instanceof ConstantDefinition targetConstDef) {
                 return targetConstDef;
+            }
+            if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
+                return targetAlias;
             }
             if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.EnumDef) {
                 return resolved;
@@ -5158,11 +5178,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (kw != null) {
             var alias = kw.getText().trim();
             if (visited.add(alias)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                    var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                    if (td != null && td.getSchemaType() != null) {
+                var ref = kw.getReference();
+                var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
+                var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+                if (td == null) {
+                    var file = schemaType.getContainingFile();
+                    if (file != null) {
+                        var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+                        td = StvnPsiUtils.resolveTargetTypeDefinition(target);
+                    }
+                }
+                if (td != null) {
+                    if (td.getMetadataMap() != null) {
+                        for (var entry : td.getMetadataMap().getMetadataEntryList()) {
+                            var txt = entry.getText().trim();
+                            if (StvnVocabulary.FACET_KW_OFFSET.equals(txt)) return StvnSchema.DateTimeMode.OFFSET;
+                            if (StvnVocabulary.FACET_KW_ZONED.equals(txt)) return StvnSchema.DateTimeMode.ZONED;
+                            if (StvnVocabulary.FACET_KW_AUDITED.equals(txt)) return StvnSchema.DateTimeMode.AUDITED;
+                        }
+                    }
+                    if (td.getSchemaType() != null) {
                         return extractDateTimeModeFromPsiChain(td.getSchemaType(), visited);
                     }
                 }

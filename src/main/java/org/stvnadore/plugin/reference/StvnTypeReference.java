@@ -249,6 +249,18 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                             }
                         }
                     }
+                    var optBlock = useStmt.getUseOptionsBlock();
+                    if (optBlock != null
+                            && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)
+                            && useStmt.getUseTarget() != null
+                            && targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                            && !targetTypeName.substring(1).contains("/")) {
+                        var stripFqni = useStmt.getUseTarget().getText().trim() + "/" + targetTypeName.substring(1);
+                        var strippedResolved = StvnTypeReference.resolveTypeInFile(containingFile, stripFqni, new HashSet<>());
+                        if (strippedResolved != null) {
+                            return new ResolveResult[]{new PsiElementResolveResult(strippedResolved)};
+                        }
+                    }
                 }
             }
             var pkgPath = enclosingPkg.getPackagePath();
@@ -354,8 +366,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
         }
 
-        // 1c. Scoped :use statement scanning
+        // 1c. Scoped :use statement scanning (root-level only; package-local :use stays isolated inside its package)
         var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class).stream()
+            .filter(use -> PsiTreeUtil.getParentOfType(use, org.stvnadore.psi.PackageEnclosure.class) == null)
             .filter(use -> !StvnMetaTemplateUtil.isInSecondaryRootSection(use))
             .toList();
         for (var use : useStmts) {
@@ -406,8 +419,8 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
                     // Check included files for FQNI
                     var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).stream()
-            .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
-            .toList();
+                        .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
+                        .toList();
                     for (var incl : includes) {
                         var stringLit = incl.getStringLiteral();
                         if (stringLit == null) continue;

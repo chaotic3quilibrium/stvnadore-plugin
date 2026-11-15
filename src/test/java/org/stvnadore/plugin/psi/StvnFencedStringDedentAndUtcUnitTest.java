@@ -2,6 +2,7 @@ package org.stvnadore.plugin.psi;
 
 import junit.framework.TestCase;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction;
 import org.stvnadore.plugin.documentation.StvnTimeEpochFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
 
@@ -88,6 +89,58 @@ public final class StvnFencedStringDedentAndUtcUnitTest extends TestCase {
         assertEquals(
             "Thursday, November 12, 2026, at 5:30:00.123456789 PM UTC",
             StvnTimeEpochFormatter.formatInstantHumanUtc(nanos, StvnSettings.TimeEpochHourFormat.HOUR_12)
+        );
+    }
+
+    public void testDecodeStringLiteralSupportsSolidusEscapeAndRejectsMalformedEscapesOrControlChars() {
+        assertEquals(
+            "https://example.com/api",
+            StvnPsiLiteralEvaluator.decodeStringLiteral("\"https:\\/\\/example.com\\/api\"", false).orElseThrow()
+        );
+        assertEquals(
+            "A\tB\n\"C\"\\D",
+            StvnPsiLiteralEvaluator.decodeStringLiteral("\"\\u0041\\tB\\n\\\"C\\\"\\\\D\"", false).orElseThrow()
+        );
+        assertTrue(StvnPsiLiteralEvaluator.decodeStringLiteral("\"bad\\qescape\"", false).isEmpty());
+        assertTrue(StvnPsiLiteralEvaluator.decodeStringLiteral("\"bad\\u12G4\"", false).isEmpty());
+        assertTrue(StvnPsiLiteralEvaluator.decodeStringLiteral("\"raw\nnewline\"", false).isEmpty());
+    }
+
+    public void testShouldEmitFencedPrettySoundnessGuardsAndSafeFenceTags() {
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("^[a-z]+\\.[0-9]+$", false));
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("line1\nline2", false));
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("\t$(CC) -o app", false));
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("say \"hello\"", false));
+
+        assertFalse(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("plain_token", false));
+        assertFalse(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("line1\r\nline2", false));
+        assertFalse(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("bell\u0007\nnext", false));
+        assertFalse(StvnPsiLiteralEvaluator.shouldEmitFencedPretty(" leading\\space", false));
+        assertFalse(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("alpha\n   \nbeta", false));
+
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty(" leading\\space", true));
+        assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("alpha\n   \nbeta", true));
+
+        assertEquals("RAW", StvnPsiLiteralEvaluator.chooseSafeFenceTag("clean body", "RAW"));
+        assertEquals("RAW_1", StvnPsiLiteralEvaluator.chooseSafeFenceTag("has [RAW]\"\"\" marker", "RAW"));
+        assertEquals("RAW_2", StvnPsiLiteralEvaluator.chooseSafeFenceTag("has [RAW]\"\"\" and [RAW_1]\"\"\"", "RAW"));
+        assertEquals("REGEX_1", StvnPsiLiteralEvaluator.chooseSafeFenceTag("^[REGEX]\"\"\"$", "REGEX"));
+
+        assertTrue(StvnPsiLiteralEvaluator.isRegexConstantIdentifier("#SLUG_REGEX"));
+        assertTrue(StvnPsiLiteralEvaluator.isRegexConstantIdentifier("#EMAILREGEX"));
+        assertTrue(StvnPsiLiteralEvaluator.isRegexConstantIdentifier("#acme/net/HOST_REGEX"));
+        assertFalse(StvnPsiLiteralEvaluator.isRegexConstantIdentifier("#BANNER_LINE"));
+    }
+
+    public void testDeriveDefsStemNameSupportsOneStemAndTwoStemFilenames() {
+        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn_i"));
+        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn_di"));
+        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn"));
+        assertEquals(
+            "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_d",
+            StvnCopyFlattenedSchemaAction.deriveDefsStemName(
+                "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_i"
+            )
         );
     }
 }

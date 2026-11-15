@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.formatting;
 
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.command.WriteCommandAction;
@@ -13,9 +14,11 @@ import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnDocument;
 import org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction;
 import org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction;
+import org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 
+import java.awt.datatransfer.DataFlavor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +32,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 64 mirrored golden formatter quartet files
+ * Plugin-level Golden Formatter Conformance Suite verifying the 68 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
@@ -67,7 +70,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 16 mirrored golden formatter quartets", 16, inputNames.size());
+        assertEquals("Expected 17 mirrored golden formatter quartets", 17, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -99,6 +102,21 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 prettyAction.actionPerformed(TestActionEvent.createTestEvent(prettyAction, prettyCtx));
                 assertEquals("StvnConvertToPrettyPrintAction mismatch for " + fileName,
                     expectedPretty, myFixture.getEditor().getDocument().getText() + "\n");
+
+                if ("17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)) {
+                    var copyPrettyFile = myFixture.configureByText(fileName, inputSource);
+                    var copyPrettyAction = new StvnCopyCanonicalPrettyPrintAction();
+                    var copyPrettyCtx = SimpleDataContext.builder()
+                        .add(CommonDataKeys.PROJECT, getProject())
+                        .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+                        .add(CommonDataKeys.PSI_FILE, copyPrettyFile)
+                        .build();
+                    copyPrettyAction.actionPerformed(TestActionEvent.createTestEvent(copyPrettyAction, copyPrettyCtx));
+                    String copiedText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+                    assertNotNull("Clipboard must contain canonical pretty-printed Quartet #17", copiedText);
+                    assertEquals("StvnCopyCanonicalPrettyPrintAction mismatch for " + fileName,
+                        expectedPretty, copiedText.endsWith("\n") ? copiedText : copiedText + "\n");
+                }
 
                 // 2. Verify StvnConvertToCompactPrintAction on input/
                 var compactActionFile = myFixture.configureByText(fileName, inputSource);
@@ -221,7 +239,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)
                         || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
                         || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)
-                        || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)) {
+                        || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)
+                        || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }

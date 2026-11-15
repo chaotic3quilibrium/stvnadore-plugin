@@ -17,6 +17,7 @@ public final class StvnActionThreadingTest extends BasePlatformTestCase {
 
     private static final List<String> REGISTERED_ACTION_IDS = List.of(
         "org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction",
+        "org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction",
         "org.stvnadore.plugin.actions.PublishSchemaAction",
         "org.stvnadore.plugin.browser.StvnBrowseNamespaceAction",
         "org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction",
@@ -27,6 +28,7 @@ public final class StvnActionThreadingTest extends BasePlatformTestCase {
 
     private static final List<Class<? extends AnAction>> ACTION_CLASSES = List.of(
         StvnFlattenWorkspaceAction.class,
+        StvnCopyFlattenedSchemaAction.class,
         PublishSchemaAction.class,
         org.stvnadore.plugin.browser.StvnBrowseNamespaceAction.class,
         StvnConvertToPrettyPrintAction.class,

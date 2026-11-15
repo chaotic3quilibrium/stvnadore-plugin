@@ -88,22 +88,49 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
             return target != null ? new PsiElement[]{ target } : null;
         }
 
-        // 5. ValueKeyword (#CONST reference, UseMapAlias remote constant, or :Enum variant)
+        // 5. ValueKeyword (#CONST reference, UseMapAlias constant entry, or :Enum variant)
         var valKw = PsiTreeUtil.getParentOfType(sourceElement, ValueKeyword.class, false);
         if (valKw != null) {
-            if (StvnPsiUtils.isConstantDefinitionTarget(valKw) || valKw.getParent() instanceof EnumDef) {
+            if ((valKw.getParent() instanceof ConstantDefinition cDef && cDef.getValueKeyword() == valKw)
+                    || valKw.getParent() instanceof EnumDef) {
                 return null;
             }
 
-            // Rule 1: ConstantDefinition reference takes precedence over governing nominal type jump
+            // Hop 2 on UseMapAlias constant entry (either LHS index 0 or RHS index 1) -> upstream ConstantDefinition
+            if (valKw.getParent() instanceof UseMapAlias alias) {
+                var kws = alias.getValueKeywordList();
+                if (!kws.isEmpty() && (kws.get(0) == valKw || (kws.size() >= 2 && kws.get(1) == valKw))) {
+                    var upstreamConst = StvnPsiUtils.resolveTargetConstantDefinition(alias);
+                    if (upstreamConst != null) {
+                        return new PsiElement[]{ upstreamConst };
+                    }
+                    var remoteResolved = StvnConstantReference.resolveConstantWithContext(kws.get(0));
+                    if (remoteResolved != null) {
+                        var hopped = StvnPsiUtils.resolveTargetConstantDefinition(remoteResolved);
+                        return new PsiElement[]{ hopped != null ? hopped : remoteResolved };
+                    }
+                    return null;
+                }
+            }
+
+            // Rule 1: ConstantDefinition reference takes precedence over governing nominal type jump.
+            // Hop 1: If resolved via a local UseMapAlias, land on the local UseMapAlias RHS keyword first.
             var constResolved = StvnConstantReference.resolveConstantWithContext(valKw);
             if (constResolved != null) {
+                if (constResolved.getParent() instanceof UseMapAlias && constResolved != valKw) {
+                    return new PsiElement[]{ constResolved };
+                }
                 var targetConstDef = StvnPsiUtils.resolveTargetConstantDefinition(constResolved);
                 return new PsiElement[]{ targetConstDef != null ? targetConstDef : constResolved };
             }
 
-            // Rule 2: :Enum variant in :body or ConstantDefinition jumps to governing nominal TypeDefinition
-            // (or falls through to inline EnumDef variant if governed by an anonymous :Enum)
+            // Rule 2: :Enum variant in :body, ConstantDefinition, or #filterIncl/#filterExcl navigates to
+            // nearest explicit #VARIANT declaration (guarded by #filterExcl stopping at TypeDefinition).
+            var enumTarget = StvnTypeResolver.resolveEnumVariantNavigationTarget(valKw);
+            if (enumTarget != null) {
+                return new PsiElement[]{ enumTarget };
+            }
+
             var enclosingVal = PsiTreeUtil.getParentOfType(valKw, Value.class, false);
             if (enclosingVal != null && isInsideBodyOrConstantValue(enclosingVal)) {
                 var governingTypeDef = StvnTypeResolver.resolveGoverningNominalTypeDefinition(enclosingVal);
@@ -112,11 +139,6 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
                 }
             }
 
-            // Variant in #filterIncl / #filterExcl or anonymous inline :Enum jumps to EnumDef variant keyword
-            var enumVariant = StvnTypeResolver.resolveGoverningEnumVariant(valKw);
-            if (enumVariant != null) {
-                return new PsiElement[]{ enumVariant };
-            }
             var ref = valKw.getReference();
             var fallbackResolved = ref != null ? ref.resolve() : new StvnConstantReference(valKw).resolve();
             if (fallbackResolved != null && fallbackResolved != valKw) {
@@ -125,19 +147,37 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
             }
         }
 
-        // 6. TypeKeyword inside UseMapAlias at index 0 (remote type symbol)
+        // 6. TypeKeyword (Two-Hop UseMapAlias navigation + regular TypeDefinition resolution)
         var typeKw = PsiTreeUtil.getParentOfType(sourceElement, TypeKeyword.class, false);
         if (typeKw != null) {
+            if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)) {
+                return null;
+            }
             if (typeKw.getParent() instanceof UseMapAlias alias) {
                 var list = alias.getTypeKeywordList();
-                if (list.size() >= 2 && list.get(0) == typeKw) {
-                    var ref = typeKw.getReference();
-                    var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
+                if (!list.isEmpty() && (list.get(0) == typeKw || (list.size() >= 2 && list.get(1) == typeKw))) {
+                    var upstreamTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(alias);
+                    if (upstreamTypeDef != null) {
+                        return new PsiElement[]{ upstreamTypeDef };
+                    }
+                    var remoteKw = list.get(0);
+                    var ref = remoteKw.getReference();
+                    var resolved = ref != null ? ref.resolve() : new StvnTypeReference(remoteKw).resolve();
                     if (resolved != null) {
                         var target = resolved.getParent() instanceof TypeDefinition tDef ? tDef : resolved;
                         return new PsiElement[]{ target };
                     }
                 }
+                return null;
+            }
+            var ref = typeKw.getReference();
+            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
+            if (resolved != null && resolved != typeKw) {
+                if (resolved.getParent() instanceof UseMapAlias) {
+                    return new PsiElement[]{ resolved };
+                }
+                var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+                return new PsiElement[]{ targetDef != null ? targetDef : resolved };
             }
         }
 

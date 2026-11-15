@@ -1,0 +1,10 @@
+{
+  :defs {
+    :SlugId {
+      #minSize 3
+      #maxSize 64
+      #regex """[REGEX]
+        ^[a-z0-9]+(?:\.[a-z0-9]+)+$[REGEX]"""
+    } :String
+  }
+}

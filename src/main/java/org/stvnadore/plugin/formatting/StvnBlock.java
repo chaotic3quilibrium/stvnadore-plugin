@@ -417,10 +417,17 @@ public final class StvnBlock implements ASTBlock {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
-            if (parentType == StvnTypes.LIST_LITERAL && hasNestedValueContainer(node)) {
+            if (parentType == StvnTypes.LIST_LITERAL && requiresMultiLinePayloadContainer(node)) {
                 if ((t1 == StvnTypes.LBRACK && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.RBRACK)) {
+                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
+            if (parentType == StvnTypes.TUPLE_LITERAL && requiresMultiLinePayloadContainer(node)) {
+                if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.VALUE)
+                        || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
+                        || (t1 == StvnTypes.VALUE && t2 == StvnTypes.RPAREN)) {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
@@ -550,11 +557,34 @@ public final class StvnBlock implements ASTBlock {
         return false;
     }
 
-    private static boolean hasNestedValueContainer(ASTNode containerNode) {
+    private static boolean requiresMultiLinePayloadContainer(ASTNode containerNode) {
         for (ASTNode child = containerNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
             if (child.getElementType() == StvnTypes.VALUE
-                    && child.findChildByType(StvnTypes.COLLECTION_VALUE) != null) {
+                    && isStructuredOrFencedPayloadValue(child)) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isStructuredOrFencedPayloadValue(@Nullable ASTNode valueNode) {
+        if (valueNode == null) {
+            return false;
+        }
+        if (valueNode.findChildByType(StvnTypes.COLLECTION_VALUE) != null) {
+            return true;
+        }
+        ASTNode strNode = valueNode.findChildByType(StvnTypes.STRING_LITERAL);
+        if (strNode != null && strNode.findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
+            return true;
+        }
+        for (IElementType wrapperType : List.of(
+                StvnTypes.EXPLICIT_OPTION_VALUE,
+                StvnTypes.EXPLICIT_EITHER_VALUE,
+                StvnTypes.EXPLICIT_UNION_VALUE)) {
+            ASTNode wrapped = valueNode.findChildByType(wrapperType);
+            if (wrapped != null) {
+                return isStructuredOrFencedPayloadValue(wrapped.findChildByType(StvnTypes.VALUE));
             }
         }
         return false;

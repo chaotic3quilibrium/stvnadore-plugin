@@ -2375,6 +2375,163 @@ public final class StvnTypeResolver {
         return null;
     }
 
+    /**
+     * Resolves the {@code Ctrl+Click} navigation target for an {@code :Enum} variant
+     * {@link ValueKeyword} in {@code :body}, {@link ConstantDefinition}, or
+     * {@code #filterIncl}/{@code #filterExcl} {@link VariantList}:
+     * <ul>
+     *   <li>Root {@code :Enum[...]} or unconstrained nominal alias / {@code #strip} projection:
+     *       returns the declaration {@link ValueKeyword} inside {@link EnumDef}.</li>
+     *   <li>Positive {@code #filterIncl [...]} restriction (without {@code #filterExcl}):
+     *       Hop 1 returns the explicit {@link ValueKeyword} inside {@code #filterIncl};
+     *       Hop 2 from {@code #filterIncl} returns the ancestor {@code #filterIncl} or root
+     *       {@link EnumDef} {@link ValueKeyword}.</li>
+     *   <li>Negative {@code #filterExcl [...]} restriction (or Safeguard 4 mutex-conflicted filter):
+     *       stops at the restricting schema and returns the governing {@link TypeDefinition}
+     *       (or inline {@link SchemaType}).</li>
+     * </ul>
+     *
+     * @param valKw the enum variant value keyword
+     * @return the target {@link ValueKeyword}, {@link TypeDefinition}, or {@link SchemaType}, or {@code null}
+     */
+    public static @Nullable PsiElement resolveEnumVariantNavigationTarget(ValueKeyword valKw) {
+        var variantName = valKw.getText().trim();
+        if (PsiTreeUtil.getParentOfType(valKw, VariantList.class) != null) {
+            var enclosingSchema = PsiTreeUtil.getParentOfType(valKw, SchemaType.class);
+            if (enclosingSchema == null) {
+                var enclosingTypeDef = PsiTreeUtil.getParentOfType(valKw, TypeDefinition.class);
+                enclosingSchema = enclosingTypeDef != null ? enclosingTypeDef.getSchemaType() : null;
+            }
+            if (enclosingSchema == null) {
+                return null;
+            }
+            var inlineCtor = enclosingSchema.getSchemaConstructor();
+            if (inlineCtor != null && inlineCtor.getSumType() != null && inlineCtor.getSumType().getEnumDef() != null) {
+                for (var kw : inlineCtor.getSumType().getEnumDef().getValueKeywordList()) {
+                    if (variantName.equals(kw.getText().trim())) {
+                        return kw;
+                    }
+                }
+            }
+            var currentDef = resolveNominalTypeDefinitionFromSchema(enclosingSchema);
+            var visited = new HashSet<PsiElement>();
+            while (currentDef != null && visited.size() < 32 && visited.add(currentDef)) {
+                var defSchema = currentDef.getSchemaType();
+                if (defSchema == null) {
+                    break;
+                }
+                var target = evaluateSchemaVariantTarget(defSchema, variantName, currentDef, true);
+                if (target != null) {
+                    return target;
+                }
+                currentDef = resolveNominalTypeDefinitionFromSchema(defSchema);
+            }
+            return null;
+        }
+
+        var enclosingValue = PsiTreeUtil.getParentOfType(valKw, Value.class, false);
+        if (enclosingValue == null) {
+            return null;
+        }
+        var info = resolveBaseTypeInfo(enclosingValue);
+        if (info == null) {
+            return null;
+        }
+        var slotSchema = info.getSchema();
+        if (slotSchema.getTypeKeyword() == null
+                && enclosingValue.getExplicitOptionValue() == null
+                && enclosingValue.getExplicitEitherValue() == null
+                && enclosingValue.getExplicitUnionValue() == null) {
+            var unwrapped = unwrapImplicitSumBranchSchema(slotSchema, enclosingValue);
+            if (unwrapped != null) {
+                slotSchema = unwrapped;
+            }
+        }
+
+        var inlineOwnerTypeDef = PsiTreeUtil.getParentOfType(slotSchema, TypeDefinition.class);
+        PsiElement inlineFallbackOwner = (inlineOwnerTypeDef != null && inlineOwnerTypeDef.getSchemaType() == slotSchema)
+            ? inlineOwnerTypeDef
+            : slotSchema;
+        var inlineTarget = evaluateSchemaVariantTarget(slotSchema, variantName, inlineFallbackOwner, false);
+        if (inlineTarget != null) {
+            return inlineTarget;
+        }
+
+        var currentDef = resolveNominalTypeDefinitionFromSchema(slotSchema);
+        var visitedDefs = new HashSet<PsiElement>();
+        while (currentDef != null && visitedDefs.size() < 32 && visitedDefs.add(currentDef)) {
+            var defSchema = currentDef.getSchemaType();
+            if (defSchema == null) {
+                break;
+            }
+            if (defSchema.getTypeKeyword() == null
+                    && enclosingValue.getExplicitOptionValue() == null
+                    && enclosingValue.getExplicitEitherValue() == null
+                    && enclosingValue.getExplicitUnionValue() == null) {
+                var unwrappedBranch = unwrapImplicitSumBranchSchema(defSchema, enclosingValue);
+                if (unwrappedBranch != null && unwrappedBranch != defSchema) {
+                    defSchema = unwrappedBranch;
+                }
+            }
+            var target = evaluateSchemaVariantTarget(defSchema, variantName, currentDef, false);
+            if (target != null) {
+                return target;
+            }
+            currentDef = resolveNominalTypeDefinitionFromSchema(defSchema);
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement evaluateSchemaVariantTarget(
+            SchemaType schema,
+            String variantName,
+            @Nullable PsiElement governingOwner,
+            boolean inVariantList
+    ) {
+        var metaMap = schema.getMetadataMap();
+        if (metaMap != null) {
+            org.stvnadore.psi.MetadataFilter filterInclFilter = null;
+            boolean hasFilterExcl = false;
+            for (var entry : metaMap.getMetadataEntryList()) {
+                var filter = entry.getMetadataFilter();
+                if (filter == null || filter.getFirstChild() == null) {
+                    continue;
+                }
+                var facetText = filter.getFirstChild().getText().trim();
+                if (StvnVocabulary.FACET_KW_FILTER_INCL.equals(facetText)) {
+                    filterInclFilter = filter;
+                } else if (StvnVocabulary.FACET_KW_FILTER_EXCL.equals(facetText)) {
+                    hasFilterExcl = true;
+                }
+            }
+            if (!inVariantList && hasFilterExcl) {
+                return governingOwner;
+            }
+            if (filterInclFilter != null && (!hasFilterExcl || !inVariantList)) {
+                var variantList = filterInclFilter.getVariantList();
+                if (variantList != null) {
+                    for (var kw : variantList.getValueKeywordList()) {
+                        if (variantName.equals(kw.getText().trim())) {
+                            return kw;
+                        }
+                    }
+                }
+                if (!inVariantList) {
+                    return governingOwner;
+                }
+            }
+        }
+        var ctor = schema.getSchemaConstructor();
+        if (ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+            for (var kw : ctor.getSumType().getEnumDef().getValueKeywordList()) {
+                if (variantName.equals(kw.getText().trim())) {
+                    return kw;
+                }
+            }
+        }
+        return null;
+    }
+
     private static @Nullable BodyEntry findBodyEntryParent(PsiElement element) {
         var curr = element;
         while (curr != null) {
@@ -3208,14 +3365,29 @@ public final class StvnTypeResolver {
                         }
                     }
                     var useStmt = elem.getUseStmt();
-                    if (useStmt != null && useStmt.getUseAliasBlock() != null) {
-                        for (var alias : useStmt.getUseAliasBlock().getUseMapAliasList()) {
-                            var kws = alias.getTypeKeywordList();
-                            if (kws.size() >= 2 && kws.get(1) != null && kws.get(1).getText().equals(typeName)) {
-                                var hopped = StvnPsiUtils.resolveTargetTypeDefinition(alias);
-                                if (hopped != null) {
-                                    return hopped;
+                    if (useStmt != null) {
+                        if (useStmt.getUseAliasBlock() != null) {
+                            for (var alias : useStmt.getUseAliasBlock().getUseMapAliasList()) {
+                                var kws = alias.getTypeKeywordList();
+                                if (kws.size() >= 2 && kws.get(1) != null && kws.get(1).getText().equals(typeName)) {
+                                    var hopped = StvnPsiUtils.resolveTargetTypeDefinition(alias);
+                                    if (hopped != null) {
+                                        return hopped;
+                                    }
                                 }
+                            }
+                        }
+                        var optBlock = useStmt.getUseOptionsBlock();
+                        if (optBlock != null
+                                && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)
+                                && useStmt.getUseTarget() != null
+                                && typeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                                && !typeName.substring(1).contains("/")) {
+                            var stripFqni = useStmt.getUseTarget().getText().trim() + "/" + typeName.substring(1);
+                            var strippedResolved = StvnTypeReference.resolveTypeInFile(file, stripFqni, new HashSet<>());
+                            var strippedDef = StvnPsiUtils.resolveTargetTypeDefinition(strippedResolved);
+                            if (strippedDef != null) {
+                                return strippedDef;
                             }
                         }
                     }

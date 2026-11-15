@@ -629,8 +629,9 @@ public final class StvnPreludeFencedRegexHermeticUseAndHoverParityTest extends B
         var enumTargets = gotoHandler.getGotoDeclarationTargets(psiFile.findElementAt(enumChildOffset), enumChildOffset, myFixture.getEditor());
         assertNotNull("Ctrl+Click on #CREATED must resolve", enumTargets);
         assertEquals(1, enumTargets.length);
-        assertTrue(enumTargets[0] instanceof TypeDefinition);
-        assertEquals(":SettlementState", ((TypeDefinition) enumTargets[0]).getTypeDefTarget().getText());
+        assertTrue(enumTargets[0] instanceof org.stvnadore.psi.ValueKeyword
+            && enumTargets[0].getParent() instanceof org.stvnadore.psi.EnumDef);
+        assertEquals("#CREATED", enumTargets[0].getText());
 
         var constTargets = gotoHandler.getGotoDeclarationTargets(psiFile.findElementAt(constChildOffset), constChildOffset, myFixture.getEditor());
         assertNotNull("Ctrl+Click on #DEFAULT_PORT must resolve", constTargets);

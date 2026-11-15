@@ -9,13 +9,17 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 import org.stvnadore.plugin.hints.StvnInlayHintsCollector;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TupleLiteral;
 import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
@@ -157,13 +161,21 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
         assertEquals(1, useRemoteTargets.length);
         assertEquals(text.indexOf("#DEFAULT_PORT {"), useRemoteTargets[0].getTextOffset());
 
-        // 4. UseMapAlias usage (#GATEWAY_PORT in #ALIAS_PORT :Int #GATEWAY_PORT) hops to underlying ConstantDefinition
+        // 4. UseMapAlias usage (#GATEWAY_PORT in #ALIAS_PORT :Int #GATEWAY_PORT) executes Two-Hop navigation:
+        // Hop 1 -> local UseMapAlias RHS #GATEWAY_PORT; Hop 2 -> upstream ConstantDefinition #DEFAULT_PORT
+        var useAliasRhsOffset = text.indexOf("#GATEWAY_PORT", useBlockStart);
         var gatewayPortUsageOffset = text.indexOf("#GATEWAY_PORT", text.indexOf("#ALIAS_PORT"));
-        var gatewayPortTargets = gotoHandler.getGotoDeclarationTargets(
+        var gatewayPortHop1Targets = gotoHandler.getGotoDeclarationTargets(
             file.findElementAt(gatewayPortUsageOffset + 1), gatewayPortUsageOffset + 1, myFixture.getEditor());
-        assertNotNull(gatewayPortTargets);
-        assertEquals(1, gatewayPortTargets.length);
-        assertEquals(text.indexOf("#DEFAULT_PORT {"), gatewayPortTargets[0].getTextOffset());
+        assertNotNull(gatewayPortHop1Targets);
+        assertEquals(1, gatewayPortHop1Targets.length);
+        assertEquals(useAliasRhsOffset, gatewayPortHop1Targets[0].getTextOffset());
+
+        var gatewayPortHop2Targets = gotoHandler.getGotoDeclarationTargets(
+            file.findElementAt(useAliasRhsOffset + 1), useAliasRhsOffset + 1, myFixture.getEditor());
+        assertNotNull(gatewayPortHop2Targets);
+        assertEquals(1, gatewayPortHop2Targets.length);
+        assertEquals(text.indexOf("#DEFAULT_PORT {"), gatewayPortHop2Targets[0].getTextOffset());
 
         // 5. Package-local :use { #strip } reference (#DEFAULT_PORT in :com/acme/stripped)
         var strippedRefOffset = text.indexOf("#DEFAULT_PORT", text.indexOf("#STRIPPED_REF"));
@@ -345,18 +357,20 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
         assertNotNull(trueTargets);
         assertEquals(text.indexOf(":RouteActiveFlag :Boolean"), trueTargets[0].getTextOffset());
 
-        // 3. :Enum variant #PENDING in :body jumps to governing nominal alias :PreDeployPhase,
-        // while #PENDING in :defs #filterIncl jumps to #PENDING inside :LifecyclePhase
+        // 3. :Enum variant #PENDING in :body (governed by :PreDeployPhase #filterIncl) executes Two-Hop navigation:
+        // Hop 1 -> #PENDING inside :PreDeployPhase #filterIncl; Hop 2 -> #PENDING inside :LifecyclePhase :Enum
+        var filterPendingOffset = text.indexOf("#PENDING", text.indexOf("#filterIncl"));
         var bodyPendingOffset = text.indexOf("#PENDING", bodyStart);
         var bodyPendingTargets = gotoHandler.getGotoDeclarationTargets(
             file.findElementAt(bodyPendingOffset + 1), bodyPendingOffset + 1, myFixture.getEditor());
         assertNotNull(bodyPendingTargets);
-        assertEquals(text.indexOf(":PreDeployPhase {"), bodyPendingTargets[0].getTextOffset());
+        assertEquals(1, bodyPendingTargets.length);
+        assertEquals(filterPendingOffset, bodyPendingTargets[0].getTextOffset());
 
-        var filterPendingOffset = text.indexOf("#PENDING", text.indexOf("#filterIncl"));
         var filterPendingTargets = gotoHandler.getGotoDeclarationTargets(
             file.findElementAt(filterPendingOffset + 1), filterPendingOffset + 1, myFixture.getEditor());
         assertNotNull(filterPendingTargets);
+        assertEquals(1, filterPendingTargets.length);
         assertEquals(text.indexOf("#PENDING #ACTIVE"), filterPendingTargets[0].getTextOffset());
 
         // 4. Explicit sum tag #Some -> :EndpointOption; inner payload "api.internal" -> :HostName
@@ -616,5 +630,277 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
         assertNotNull(filterTargets);
         assertEquals(1, filterTargets.length);
         assertEquals(enumCreatedOffset, filterTargets[0].getTextOffset());
+    }
+
+    /**
+     * Verifies Deliverables 4 &amp; 5 across a multi-file Stage 10A/10B/10C modular workspace:
+     * Two-Hop navigation on renamed :use constant (#ACTIVE_RELEASE) and type (:ReleaseTag) aliases,
+     * 1-hop navigation on #strip (:SettlementEntry) and FQNI (#acme/security/SEC_CONTACT),
+     * transitive hover documentation on #ACTIVE_RELEASE and temporal #ALIASED_EPOCH,
+     * and nearest-explicit #VARIANT navigation guarded by #filterExcl across root :Enum,
+     * bare unconstrained alias, :Option(:SettlementState), #filterIncl, and #filterExcl.
+     */
+    public void testStage10TwoHopUseAliasTransitiveHoverAndNearestVariantNavigation() {
+        var file10A = myFixture.addFileToProject("stage10a_ledger_base.stvn_di", """
+            {
+              :meta {
+                #name "stage10a_ledger_base"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :package :acme/ledger {
+                  :LedgerRelease { #minSize 1 #maxSize 64 } :String
+                  #LEDGER_VERSION :LedgerRelease "2.0.0-rc.2+build.108"
+                  :EpochSec { #s } :TimeEpoch
+                  #GENESIS_EPOCH :EpochSec 1794681000
+                }
+                :package :acme/security {
+                  :Contact { #minSize 3 #maxSize 128 } :String
+                  #SEC_CONTACT :Contact "security@acme.example"
+                }
+              }
+            }
+            """);
+
+        var file10B = myFixture.addFileToProject("stage10b_settlement_models.stvn_di", """
+            {
+              :meta {
+                #name "stage10b_settlement_models"
+                #kind #DEFS_INCLUDE
+              }
+              :defs {
+                :include [ "stage10a_ledger_base.stvn_di" ]
+                :package :acme/settlement {
+                  :use [ :acme/security { #strip } ]
+                  :TxId { #minSize 1 #maxSize 32 } :String
+                  :Amount { #unsigned #size 64 } :Int
+                  :SettlementState :Enum [ #QUEUED #CLEARED #REJECTED ]
+                  :SettlementEntry :Tuple( :TxId :Amount :SettlementState :Contact )
+                }
+              }
+            }
+            """);
+
+        var code10C = """
+            {
+              :meta {
+                #name "stage10c_batch_ingress"
+                #kind #BODY_INCLUDE
+              }
+              :defs {
+                :include [
+                  "stage10a_ledger_base.stvn_di"
+                  "stage10b_settlement_models.stvn_di"
+                ]
+                :use [
+                  :acme/ledger {
+                    :LedgerRelease :ReleaseTag
+                    :EpochSec :LocalEpochSec
+                    #LEDGER_VERSION #ACTIVE_RELEASE
+                    #GENESIS_EPOCH #ALIASED_EPOCH
+                  }
+                ]
+                :use [ :acme/settlement { #strip } ]
+                :AliasState :SettlementState
+                :OptionalState :Option( :SettlementState )
+                :OpenState { #filterIncl [ #QUEUED #CLEARED ] } :SettlementState
+                :NonRejected { #filterExcl [ #REJECTED ] } :SettlementState
+                #DERIVED_RELEASE :ReleaseTag #ACTIVE_RELEASE
+                #DEF_CLEARED :SettlementState #CLEARED
+                :BatchEnvelope :Tuple(
+                  :ReleaseTag
+                  :SettlementEntry
+                  :AliasState
+                  :OptionalState
+                  :OpenState
+                  :NonRejected
+                  :acme/security/Contact
+                  :LocalEpochSec
+                )
+              }
+              :type :BatchEnvelope
+              :body (
+                #ACTIVE_RELEASE
+                ( "tx-01" 500 #CLEARED #acme/security/SEC_CONTACT )
+                #CLEARED
+                #CLEARED
+                #CLEARED
+                #CLEARED
+                #acme/security/SEC_CONTACT
+                #ALIASED_EPOCH
+              )
+            }
+            """;
+        var file10C = myFixture.configureByText("stage10c_batch_ingress.stvn_i", code10C);
+
+        int useSectionStart = code10C.indexOf(":use [");
+        int useLhsTypeOffset = code10C.indexOf(":LedgerRelease", useSectionStart);
+        int useRhsTypeOffset = code10C.indexOf(":ReleaseTag", useSectionStart);
+        int useLhsConstOffset = code10C.indexOf("#LEDGER_VERSION", useSectionStart);
+        int useRhsConstOffset = code10C.indexOf("#ACTIVE_RELEASE", useSectionStart);
+
+        // 1. Two-Hop on #ACTIVE_RELEASE: from :body AND from ConstantDefinition RHS (#DERIVED_RELEASE)
+        int derivedRhsConstOffset = code10C.indexOf("#ACTIVE_RELEASE", code10C.indexOf("#DERIVED_RELEASE"));
+        var derivedHop1 = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(derivedRhsConstOffset + 1), derivedRhsConstOffset + 1, myFixture.getEditor());
+        assertNotNull(derivedHop1);
+        assertEquals(useRhsConstOffset, derivedHop1[0].getTextOffset());
+
+        int bodyStart = code10C.indexOf(":body (");
+        int bodyActiveReleaseOffset = code10C.indexOf("#ACTIVE_RELEASE", bodyStart);
+        var bodyConstHop1 = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(bodyActiveReleaseOffset + 1), bodyActiveReleaseOffset + 1, myFixture.getEditor());
+        assertNotNull(bodyConstHop1);
+        assertEquals(useRhsConstOffset, bodyConstHop1[0].getTextOffset());
+
+        // Hop 2 from both RHS and LHS of UseMapAlias -> ConstantDefinition #LEDGER_VERSION in 10A
+        var constHop2FromRhs = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(useRhsConstOffset + 1), useRhsConstOffset + 1, myFixture.getEditor());
+        assertNotNull(constHop2FromRhs);
+        assertTrue(constHop2FromRhs[0] instanceof ConstantDefinition);
+        assertEquals(file10A, constHop2FromRhs[0].getContainingFile());
+        assertEquals("#LEDGER_VERSION", ((ConstantDefinition) constHop2FromRhs[0]).getValueKeyword().getText());
+
+        var constHop2FromLhs = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(useLhsConstOffset + 1), useLhsConstOffset + 1, myFixture.getEditor());
+        assertNotNull(constHop2FromLhs);
+        assertEquals(constHop2FromRhs[0], constHop2FromLhs[0]);
+
+        // 2. Two-Hop on :ReleaseTag: Hop 1 at usage site -> UseMapAlias RHS :ReleaseTag; Hop 2 -> :LedgerRelease in 10A
+        int releaseTagUsageOffset = code10C.indexOf(":ReleaseTag", code10C.indexOf("#DERIVED_RELEASE"));
+        var typeHop1 = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(releaseTagUsageOffset + 1), releaseTagUsageOffset + 1, myFixture.getEditor());
+        assertNotNull(typeHop1);
+        assertEquals(useRhsTypeOffset, typeHop1[0].getTextOffset());
+
+        // PsiReference.resolve() caller isolation: still resolves to local UseMapAlias RHS keyword for Shift+F6 safety
+        var usageTypeKw = PsiTreeUtil.getParentOfType(file10C.findElementAt(releaseTagUsageOffset + 1), TypeKeyword.class, false);
+        assertNotNull(usageTypeKw);
+        var refResolved = usageTypeKw.getReference().resolve();
+        assertNotNull(refResolved);
+        assertTrue(refResolved.getParent() instanceof UseMapAlias);
+        assertEquals(useRhsTypeOffset, refResolved.getTextOffset());
+
+        var typeHop2FromRhs = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(useRhsTypeOffset + 1), useRhsTypeOffset + 1, myFixture.getEditor());
+        assertNotNull(typeHop2FromRhs);
+        assertTrue(typeHop2FromRhs[0] instanceof TypeDefinition);
+        assertEquals(file10A, typeHop2FromRhs[0].getContainingFile());
+        assertEquals(":LedgerRelease", ((TypeDefinition) typeHop2FromRhs[0]).getTypeKeyword().getText());
+
+        var typeHop2FromLhs = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(useLhsTypeOffset + 1), useLhsTypeOffset + 1, myFixture.getEditor());
+        assertNotNull(typeHop2FromLhs);
+        assertEquals(typeHop2FromRhs[0], typeHop2FromLhs[0]);
+
+        // 3. 1-Hop #strip (:SettlementEntry) and 1-Hop FQNI (#acme/security/SEC_CONTACT)
+        int settlementEntryUsageOffset = code10C.indexOf(":SettlementEntry", code10C.indexOf(":BatchEnvelope"));
+        var stripTypeTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(settlementEntryUsageOffset + 1), settlementEntryUsageOffset + 1, myFixture.getEditor());
+        assertNotNull(stripTypeTargets);
+        assertTrue(stripTypeTargets[0] instanceof TypeDefinition);
+        assertEquals(file10B, stripTypeTargets[0].getContainingFile());
+        assertEquals(":SettlementEntry", ((TypeDefinition) stripTypeTargets[0]).getTypeKeyword().getText());
+
+        int fqniConstOffset = code10C.indexOf("#acme/security/SEC_CONTACT", bodyStart);
+        var fqniConstTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(fqniConstOffset + 1), fqniConstOffset + 1, myFixture.getEditor());
+        assertNotNull(fqniConstTargets);
+        assertTrue(fqniConstTargets[0] instanceof ConstantDefinition);
+        assertEquals(file10A, fqniConstTargets[0].getContainingFile());
+
+        // 4. Transitive hover documentation on #ACTIVE_RELEASE and temporal #ALIASED_EPOCH
+        var docProvider = new StvnDocumentationProvider();
+        var useConstLeaf = file10C.findElementAt(useRhsConstOffset + 1);
+        var useConstDocElem = docProvider.getCustomDocumentationElement(
+            myFixture.getEditor(), file10C, useConstLeaf, useRhsConstOffset + 1);
+        assertNotNull(useConstDocElem);
+        String activeReleaseHover = docProvider.generateDoc(useConstDocElem, useConstLeaf);
+        assertNotNull(activeReleaseHover);
+        assertTrue("Hover must display canonical #pkg/CONST FQNI:\n" + activeReleaseHover,
+            activeReleaseHover.contains("<b>Renamed Reference:</b> #ACTIVE_RELEASE &rarr; #acme/ledger/LEDGER_VERSION"));
+        assertTrue("Hover must chain upstream :LedgerRelease type:\n" + activeReleaseHover,
+            activeReleaseHover.contains(":LedgerRelease"));
+        assertTrue("Hover must chain upstream constant value:\n" + activeReleaseHover,
+            activeReleaseHover.contains("2.0.0-rc.2+build.108"));
+
+        int useEpochAliasOffset = code10C.indexOf("#ALIASED_EPOCH", useSectionStart);
+        var useEpochLeaf = file10C.findElementAt(useEpochAliasOffset + 1);
+        var useEpochDocElem = docProvider.getCustomDocumentationElement(
+            myFixture.getEditor(), file10C, useEpochLeaf, useEpochAliasOffset + 1);
+        assertNotNull(useEpochDocElem);
+        String aliasedEpochHover = docProvider.generateDoc(useEpochDocElem, useEpochLeaf);
+        assertNotNull(aliasedEpochHover);
+        assertTrue("Temporal constant alias hover must render UTC Preview:\n" + aliasedEpochHover,
+            aliasedEpochHover.contains("UTC Preview:"));
+        assertTrue("Temporal constant alias hover must render UTC Time:\n" + aliasedEpochHover,
+            aliasedEpochHover.contains("UTC Time:"));
+
+        // 5. Nearest-Explicit #VARIANT Navigation across all 6 enum slots in 10C
+        int enumClearedIn10B = file10B.getText().indexOf("#CLEARED #REJECTED");
+
+        // 5a. ConstantDefinition RHS (#DEF_CLEARED :SettlementState #CLEARED) -> #CLEARED inside :Enum in 10B
+        int defClearedRhsOffset = code10C.indexOf("#CLEARED", code10C.indexOf("#DEF_CLEARED"));
+        var defClearedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(defClearedRhsOffset + 1), defClearedRhsOffset + 1, myFixture.getEditor());
+        assertNotNull(defClearedTargets);
+        assertEquals(file10B, defClearedTargets[0].getContainingFile());
+        assertEquals(enumClearedIn10B, defClearedTargets[0].getTextOffset());
+
+        // 5b. Tuple slot inside :SettlementEntry ("tx-01" 500 #CLEARED ...) -> #CLEARED inside :Enum in 10B
+        int tupleClearedOffset = code10C.indexOf("#CLEARED", code10C.indexOf("\"tx-01\""));
+        var tupleClearedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(tupleClearedOffset + 1), tupleClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(tupleClearedTargets);
+        assertEquals(file10B, tupleClearedTargets[0].getContainingFile());
+        assertEquals(enumClearedIn10B, tupleClearedTargets[0].getTextOffset());
+
+        // 5c. Bare unconstrained local alias (:AliasState :SettlementState) -> #CLEARED inside :Enum in 10B
+        int aliasClearedOffset = code10C.indexOf("#CLEARED", tupleClearedOffset + 8);
+        var aliasClearedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(aliasClearedOffset + 1), aliasClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(aliasClearedTargets);
+        assertEquals(file10B, aliasClearedTargets[0].getContainingFile());
+        assertEquals(enumClearedIn10B, aliasClearedTargets[0].getTextOffset());
+
+        // 5d. Nominal :Option(:SettlementState) wrapper (:OptionalState) -> #CLEARED inside :Enum in 10B
+        int optionalClearedOffset = code10C.indexOf("#CLEARED", aliasClearedOffset + 8);
+        var optionalClearedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(optionalClearedOffset + 1), optionalClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(optionalClearedTargets);
+        assertEquals(file10B, optionalClearedTargets[0].getContainingFile());
+        assertEquals(enumClearedIn10B, optionalClearedTargets[0].getTextOffset());
+
+        // 5e. Positive #filterIncl (:OpenState) -> Hop 1 lands on #CLEARED in #filterIncl; Hop 2 lands on :Enum in 10B
+        int openStateFilterClearedOffset = code10C.indexOf("#CLEARED", code10C.indexOf(":OpenState"));
+        int openStateBodyClearedOffset = code10C.indexOf("#CLEARED", optionalClearedOffset + 8);
+        var openHop1 = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(openStateBodyClearedOffset + 1), openStateBodyClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(openHop1);
+        assertEquals(file10C, openHop1[0].getContainingFile());
+        assertEquals(openStateFilterClearedOffset, openHop1[0].getTextOffset());
+
+        var openHop2 = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(openStateFilterClearedOffset + 1), openStateFilterClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(openHop2);
+        assertEquals(file10B, openHop2[0].getContainingFile());
+        assertEquals(enumClearedIn10B, openHop2[0].getTextOffset());
+
+        // 5f. Negative #filterExcl (:NonRejected) -> stops at TypeDefinition :NonRejected in 10C
+        int nonRejectedBodyClearedOffset = code10C.indexOf("#CLEARED", openStateBodyClearedOffset + 8);
+        var nonRejectedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(nonRejectedBodyClearedOffset + 1), nonRejectedBodyClearedOffset + 1, myFixture.getEditor());
+        assertNotNull(nonRejectedTargets);
+        assertTrue(nonRejectedTargets[0] instanceof TypeDefinition);
+        assertEquals(code10C.indexOf(":NonRejected {"), nonRejectedTargets[0].getTextOffset());
+
+        // Clicking #REJECTED inside #filterExcl [ #REJECTED ] still navigates to #REJECTED inside :Enum in 10B
+        int filterExclRejectedOffset = code10C.indexOf("#REJECTED", code10C.indexOf(":NonRejected"));
+        var filterExclRejectedTargets = gotoHandler.getGotoDeclarationTargets(
+            file10C.findElementAt(filterExclRejectedOffset + 1), filterExclRejectedOffset + 1, myFixture.getEditor());
+        assertNotNull(filterExclRejectedTargets);
+        assertEquals(file10B, filterExclRejectedTargets[0].getContainingFile());
+        assertEquals(file10B.getText().indexOf("#REJECTED ]"), filterExclRejectedTargets[0].getTextOffset());
+        assertTrue(filterExclRejectedTargets[0].getParent() instanceof EnumDef);
     }
 }
