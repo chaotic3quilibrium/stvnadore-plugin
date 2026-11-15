@@ -7,13 +7,13 @@
 <p><b>Example (Prohibited Include and External Package Import in Hermetic Document):</b></p>
 <pre><code>// Inside file.stvn
 :defs {
-  // E005: Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements
+  // E005: Hermetic document or schema (.stvn, .stvn_d, .stvn_b, .stvn_bd) cannot contain include statements: file.stvn
   :include [ "types.stvn_d" ]
 
   // E035: Scoped :use in hermetic document cannot target external package
   :use [ :external/unloaded/billing { #strip } ]
 }
 </code></pre>
-<p>Convert the file to a modular format (<code>.stvn_i</code> or <code>.stvn_di</code>) when importing external workspace packages.</p>
+<p>Use the quick-fixes to remove the prohibited <code>:include</code> or <code>:use</code> directive, or convert a textual file to modular format (<code>.stvn_i</code> or <code>.stvn_di</code>) when importing external workspace modules.</p>
 </body>
 </html>

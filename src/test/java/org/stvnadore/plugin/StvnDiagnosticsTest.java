@@ -5199,7 +5199,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         // 1. Hermetic Schema Include Restriction
         assertTrue("Must report hermetic schema include violation", errors.stream().anyMatch(e ->
-            e.getDescription() != null && e.getDescription().contains("Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements")
+            e.getDescription() != null && e.getDescription().contains(
+                "Hermetic document or schema (.stvn, .stvn_d, .stvn_b, .stvn_bd) cannot contain include statements: header_multi_error.stvn_d")
         ));
 
         // 2. Mutually Exclusive / Prohibited Discrete Bounds

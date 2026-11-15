@@ -114,7 +114,8 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
             .filter(h -> h.getDescription() != null && h.getDescription().contains("Hermetic document or schema"))
             .toList();
         assertEquals("Expected include in hermetic document to be flagged", 1, errors.size());
-        assertTrue(errors.get(0).getDescription().contains("Hermetic document or schema (.stvn / .stvn_d) cannot contain include statements"));
+        assertTrue(errors.get(0).getDescription().contains(
+            "Hermetic document or schema (.stvn, .stvn_d, .stvn_b, .stvn_bd) cannot contain include statements: test_flat.stvn"));
     }
 
     public void testNestedPackageInspection() {

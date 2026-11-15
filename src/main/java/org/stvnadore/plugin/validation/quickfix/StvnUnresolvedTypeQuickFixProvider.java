@@ -92,8 +92,9 @@ public final class StvnUnresolvedTypeQuickFixProvider {
                     }
                 } else {
                     builder = builder.withFix(new StvnCreateNominalTypeQuickFix(typeKw, StvnVocabulary.TYPE_STRING));
-                    boolean isSchema = file.getName().endsWith(".stvn_d");
-                    builder = builder.withFix(new StvnConvertToModularQuickFix(typeKw, isSchema));
+                    if (StvnConvertToModularQuickFix.canConvertToModular(file)) {
+                        builder = builder.withFix(new StvnConvertToModularQuickFix(typeKw, file.getName().endsWith(".stvn_d")));
+                    }
                 }
                 return builder;
             }
@@ -128,8 +129,9 @@ public final class StvnUnresolvedTypeQuickFixProvider {
             builder = builder.withFix(new StvnCreateNominalTypeQuickFix(typeKw, StvnVocabulary.TYPE_STRING));
         } else {
             builder = builder.withFix(new StvnCreateNominalTypeQuickFix(typeKw, StvnVocabulary.TYPE_STRING));
-            boolean isSchema = file.getName().endsWith(".stvn_d");
-            builder = builder.withFix(new StvnConvertToModularQuickFix(typeKw, isSchema));
+            if (StvnConvertToModularQuickFix.canConvertToModular(file)) {
+                builder = builder.withFix(new StvnConvertToModularQuickFix(typeKw, file.getName().endsWith(".stvn_d")));
+            }
         }
 
         return builder;
