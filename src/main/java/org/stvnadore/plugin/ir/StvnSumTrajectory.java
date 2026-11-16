@@ -7,6 +7,7 @@ import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.stdlib.StvnPrelude;
+import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.Value;
 
 import java.util.ArrayList;
@@ -31,11 +32,46 @@ public record StvnSumTrajectory(
     /**
      * Single sum-constructor traversal step.
      *
-     * @param inferred  {@code true} when inferred via Happy-Path Rules A-C; {@code false} when written explicitly
-     * @param shortTag  canonical short tag ({@code #S}, {@code #N}, {@code #L}, {@code #R}, or {@code #1}, {@code #2}, ...)
-     * @param sumSchema pure-IR schema of the enclosing {@code :Option}, {@code :Either}, or {@code :Union}
+     * @param inferred       {@code true} when inferred via Happy-Path Rules A-C; {@code false} when written explicitly
+     * @param shortTag       canonical short tag ({@code #S}, {@code #N}, {@code #L}, {@code #R}, or {@code #1}, {@code #2}, ...)
+     * @param sumSchema      pure-IR schema of the enclosing {@code :Option}, {@code :Either}, or {@code :Union}
+     * @param anchorPsiValue PSI {@link Value} node at which this step's tag is anchored for materialization
      */
-    public record Step(boolean inferred, String shortTag, StvnSchema sumSchema) {
+    public record Step(
+        boolean inferred,
+        String shortTag,
+        StvnSchema sumSchema,
+        @Nullable Value anchorPsiValue
+    ) {
+        /**
+         * Constructs a {@link Step} without an explicit PSI anchor node.
+         *
+         * @param inferred  {@code true} when inferred via Happy-Path Rules A-C; {@code false} when explicit
+         * @param shortTag  canonical short tag
+         * @param sumSchema pure-IR schema of the enclosing sum constructor
+         */
+        public Step(boolean inferred, String shortTag, StvnSchema sumSchema) {
+            this(inferred, shortTag, sumSchema, null);
+        }
+
+        /**
+         * Formats {@link #shortTag()} using long-form or short-form sum keywords.
+         *
+         * @param useLong {@code true} to emit {@code #Some}/{@code #None}/{@code #Left}/{@code #Right}; {@code false} for short tags
+         * @return formatted STVN sum tag token
+         */
+        public String formatTag(boolean useLong) {
+            if (!useLong) {
+                return shortTag;
+            }
+            return switch (shortTag) {
+                case StvnVocabulary.VAL_SOME_SHORT -> StvnVocabulary.VAL_SOME;
+                case StvnVocabulary.VAL_NONE_SHORT -> StvnVocabulary.VAL_NONE;
+                case StvnVocabulary.VAL_LEFT_SHORT -> StvnVocabulary.VAL_LEFT;
+                case StvnVocabulary.VAL_RIGHT_SHORT -> StvnVocabulary.VAL_RIGHT;
+                default -> shortTag;
+            };
+        }
     }
 
     /**
@@ -65,17 +101,17 @@ public record StvnSumTrajectory(
                 var explicitOpt = currPsi != null ? currPsi.getExplicitOptionValue() : null;
                 if (explicitOpt != null) {
                     String tag = opt.value().isPresent() ? StvnVocabulary.VAL_SOME_SHORT : StvnVocabulary.VAL_NONE_SHORT;
-                    steps.add(new Step(false, tag, opt.schema()));
+                    steps.add(new Step(false, tag, opt.schema(), currPsi));
                     if (opt.value().isEmpty()) {
                         break;
                     }
                     currPsi = explicitOpt.getValue();
                     currIr = opt.value().get();
                 } else if (opt.value().isPresent()) {
-                    steps.add(new Step(true, StvnVocabulary.VAL_SOME_SHORT, opt.schema()));
+                    steps.add(new Step(true, StvnVocabulary.VAL_SOME_SHORT, opt.schema(), currPsi));
                     currIr = opt.value().get();
                 } else {
-                    steps.add(new Step(false, StvnVocabulary.VAL_NONE_SHORT, opt.schema()));
+                    steps.add(new Step(false, StvnVocabulary.VAL_NONE_SHORT, opt.schema(), currPsi));
                     break;
                 }
             } else if (currIr instanceof StvnValue.StvnEither either) {
@@ -84,22 +120,22 @@ public record StvnSumTrajectory(
                     : StvnVocabulary.VAL_RIGHT_SHORT;
                 var explicitEither = currPsi != null ? currPsi.getExplicitEitherValue() : null;
                 if (explicitEither != null) {
-                    steps.add(new Step(false, tag, either.schema()));
+                    steps.add(new Step(false, tag, either.schema(), currPsi));
                     currPsi = explicitEither.getValue();
                     currIr = either.value();
                 } else {
-                    steps.add(new Step(true, tag, either.schema()));
+                    steps.add(new Step(true, tag, either.schema(), currPsi));
                     currIr = either.value();
                 }
             } else if (currIr instanceof StvnValue.StvnUnion union) {
                 String tag = StvnVocabulary.SIGIL_VALUE + union.oneBasedBranchIndex();
                 var explicitUnion = currPsi != null ? currPsi.getExplicitUnionValue() : null;
                 if (explicitUnion != null) {
-                    steps.add(new Step(false, tag, union.schema()));
+                    steps.add(new Step(false, tag, union.schema(), currPsi));
                     currPsi = explicitUnion.getValue();
                     currIr = union.value();
                 } else {
-                    steps.add(new Step(true, tag, union.schema()));
+                    steps.add(new Step(true, tag, union.schema(), currPsi));
                     currIr = union.value();
                 }
             }
@@ -167,6 +203,21 @@ public record StvnSumTrajectory(
         StvnDefsCatalog.StvnConstant matched = findCatalogConstant(text, catalog);
         if (matched == null) {
             matched = findCatalogConstant(text, StvnPrelude.preludeCatalog());
+        }
+        if (matched == null) {
+            var ref = vk.getReference();
+            var resolved = ref != null ? ref.resolve() : null;
+            if (resolved != null
+                    && resolved.getParent() instanceof UseMapAlias alias
+                    && !alias.getValueKeywordList().isEmpty()) {
+                String remoteName = alias.getValueKeywordList().get(0).getText().trim();
+                if (!remoteName.isEmpty()) {
+                    matched = findCatalogConstant(remoteName, catalog);
+                    if (matched == null) {
+                        matched = findCatalogConstant(remoteName, StvnPrelude.preludeCatalog());
+                    }
+                }
+            }
         }
         if (matched == null) {
             return false;

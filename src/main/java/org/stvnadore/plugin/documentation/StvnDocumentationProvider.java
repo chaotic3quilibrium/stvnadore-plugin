@@ -17,6 +17,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnCompiler;
+import org.stvnadore.core.StvnDiagnostic;
+import org.stvnadore.core.StvnSchemaFlattener;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnValue;
@@ -42,6 +44,8 @@ import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsElement;
 import org.stvnadore.psi.EnumDef;
+import org.stvnadore.psi.ExplicitEitherValue;
+import org.stvnadore.psi.ExplicitOptionValue;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
@@ -629,6 +633,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                       .append("</code>)");
                 }
             }
+            appendBodyConstantComplianceSection(sb, constDef, originalElement);
             return sb.toString();
         }
 
@@ -663,6 +668,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (idx >= 0) {
                     sb.append("<b>Variant Index:</b> ").append(idx);
                 }
+                appendBodyEnumVariantSlotAndComplianceSection(sb, valKw, enumDef, originalElement);
                 return sb.toString();
             }
             if (text.equals(StvnVocabulary.KIND_KW_BODY)
@@ -674,6 +680,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     <b>Enclosing Enum:</b> <code>:org/stvnadore/prelude/meta/StvnDocumentKind</code> (<code>:StvnDocumentKind</code>)<br/>
                     <b>Allowed Variants:</b> <code>[ #BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE ]</code>
                     """.formatted(text);
+            }
+            if (valKw.getParent() instanceof Value enclosingVal
+                    && PsiTreeUtil.getParentOfType(enclosingVal, BodyEntry.class, ConstantDefinition.class) != null) {
+                return renderPayloadValueCard(enclosingVal, originalElement);
             }
         }
 
@@ -865,11 +875,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (originalElement != null) {
             var bodyVal = PsiTreeUtil.getParentOfType(originalElement, Value.class);
             if (bodyVal != null && PsiTreeUtil.getParentOfType(bodyVal, BodyEntry.class) != null) {
-                var slotInfo = StvnTypeResolver.resolveBaseTypeInfo(bodyVal);
+                Value slotRootVal = findEnclosingSlotRootValue(bodyVal);
+                var slotInfo = StvnTypeResolver.resolveBaseTypeInfo(slotRootVal);
                 if (slotInfo != null && slotInfo.getSchema() != null) {
                     slotSchema = slotInfo.getSchema();
+                    String formattedSlot = formatBodySlotSchemaForHover(slotRootVal, slotSchema);
                     sb.append("<nobr><b>Slot Schema:</b> <code>")
-                      .append(escapeHtmlBody(StvnSchemaFormatter.formatSchema(slotSchema)))
+                      .append(escapeHtmlBody(formattedSlot))
                       .append("</code></nobr><br/>");
                 }
             } else {
@@ -897,6 +909,323 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (temporalFragment != null) {
             sb.append(temporalFragment);
         }
+    }
+
+    private static Value findEnclosingSlotRootValue(Value start) {
+        Value curr = start;
+        while (curr != null) {
+            var parent = curr.getParent();
+            if ((parent instanceof ExplicitOptionValue
+                    || parent instanceof ExplicitEitherValue
+                    || parent instanceof ExplicitUnionValue)
+                    && parent.getParent() instanceof Value outerVal) {
+                curr = outerVal;
+            } else {
+                break;
+            }
+        }
+        return curr;
+    }
+
+    private static Value unwrapExplicitWrapperValue(Value start) {
+        Value curr = start;
+        for (int depth = 0; depth < 16 && curr != null; depth++) {
+            if (curr.getExplicitOptionValue() != null && curr.getExplicitOptionValue().getValue() != null) {
+                curr = curr.getExplicitOptionValue().getValue();
+            } else if (curr.getExplicitEitherValue() != null && curr.getExplicitEitherValue().getValue() != null) {
+                curr = curr.getExplicitEitherValue().getValue();
+            } else if (curr.getExplicitUnionValue() != null && curr.getExplicitUnionValue().getValue() != null) {
+                curr = curr.getExplicitUnionValue().getValue();
+            } else {
+                break;
+            }
+        }
+        return curr != null ? curr : start;
+    }
+
+    private static boolean isCoproductSumSchemaType(SchemaType schemaType) {
+        var resolved = StvnTypeResolver.resolveNominalSchema(schemaType);
+        var target = resolved != null ? resolved : schemaType;
+        var ctor = target.getSchemaConstructor();
+        return ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() == null;
+    }
+
+    private static String formatBodySlotSchemaForHover(Value slotRootVal, SchemaType slotSchema) {
+        if (isCoproductSumSchemaType(slotSchema)) {
+            var sumSteps = StvnTypeResolver.resolveSumTrajectorySteps(slotRootVal);
+            if (!sumSteps.isEmpty()) {
+                String trajectory = StvnTypeResolver.formatHoverSlotTrajectory(slotRootVal);
+                if (trajectory != null && !trajectory.isBlank()) {
+                    return trajectory;
+                }
+            }
+        }
+        return StvnSchemaFormatter.formatSchema(slotSchema);
+    }
+
+    private void appendBodyEnumVariantSlotAndComplianceSection(
+        StringBuilder sb,
+        ValueKeyword resolvedEnumVariantKw,
+        EnumDef declaredEnumDef,
+        @Nullable PsiElement originalElement
+    ) {
+        if (originalElement == null || PsiTreeUtil.getParentOfType(originalElement, BodyEntry.class) == null) {
+            return;
+        }
+        var bodyVal = PsiTreeUtil.getParentOfType(originalElement, Value.class, false);
+        if (bodyVal == null || PsiTreeUtil.getParentOfType(bodyVal, BodyEntry.class) == null) {
+            return;
+        }
+        Value slotRootVal = findEnclosingSlotRootValue(bodyVal);
+        var rootSlotInfo = StvnTypeResolver.resolveBaseTypeInfo(slotRootVal);
+        SchemaType rootSlotSchema = rootSlotInfo != null ? rootSlotInfo.getSchema() : null;
+        if (rootSlotSchema == null) {
+            return;
+        }
+        String slotDisplay = formatBodySlotSchemaForHover(slotRootVal, rootSlotSchema);
+        sb.append("<br/><nobr><b>Slot Schema:</b> <code>")
+          .append(escapeHtmlBody(slotDisplay))
+          .append("</code></nobr>");
+
+        SchemaType leafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
+        if (leafSchema == null) {
+            leafSchema = rootSlotSchema;
+        }
+        StvnSchema rawLeafIr = resolveRawLeafIrSchemaForCompliance(bodyVal, leafSchema);
+        if (rawLeafIr instanceof StvnSchema.PoisonedSchema poisoned
+                || isGoverningSchemaUngrounded(bodyVal, leafSchema)
+                || isGoverningSchemaDegraded(bodyVal, leafSchema)) {
+            boolean ungrounded = (rawLeafIr instanceof StvnSchema.PoisonedSchema p && p.isUngrounded())
+                || isGoverningSchemaUngrounded(bodyVal, leafSchema);
+            appendSuspendedComplianceFooter(sb, leafSchema, ungrounded);
+            return;
+        }
+        StvnSchema leafIr = unwrapPoisonedSchema(rawLeafIr);
+        String variantText = resolvedEnumVariantKw.getText().trim();
+        String leafSchemaLabel = StvnSchemaFormatter.formatSchema(leafSchema);
+
+        String compilerErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
+        boolean satisfied = compilerErr == null;
+        String detail;
+        if (!satisfied) {
+            detail = escapeHtmlBody(compilerErr);
+        } else if (leafIr instanceof StvnSchema.EnumSubsetSchema subsetIr) {
+            if (subsetIr.activeVariants().contains(variantText)
+                    && isSameRootEnum(declaredEnumDef, leafSchema, subsetIr.rootEnum())) {
+                detail = "Variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            } else if (isSameRootEnum(declaredEnumDef, leafSchema, subsetIr.rootEnum())) {
+                satisfied = false;
+                detail = "Variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            } else {
+                satisfied = false;
+                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            }
+        } else if (leafIr instanceof StvnSchema.EnumSchema enumIr) {
+            if (enumIr.rootVariants().contains(variantText)
+                    && isSameRootEnum(declaredEnumDef, leafSchema, enumIr)) {
+                detail = "Variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            } else {
+                satisfied = false;
+                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            }
+        } else {
+            EnumDef slotRootEnumDef = StvnTypeResolver.resolveRootEnumDef(leafSchema);
+            boolean sameRootPsi = slotRootEnumDef != null
+                && (slotRootEnumDef == declaredEnumDef || slotRootEnumDef.isEquivalentTo(declaredEnumDef));
+            var subsetPsi = StvnTypeResolver.resolveEnumSubset(leafSchema);
+            if (!sameRootPsi) {
+                satisfied = false;
+                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> cannot be assigned to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            } else if (subsetPsi != null) {
+                satisfied = subsetPsi.allowedVariants().contains(variantText);
+                detail = satisfied
+                    ? "Variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>"
+                    : "Variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            } else {
+                detail = "Variant <code>" + escapeHtmlBody(variantText)
+                    + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+            }
+        }
+
+        sb.append("<hr/>");
+        String colorHex = satisfied ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
+        String badge = satisfied ? "Satisfied" : "In Violation";
+        sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(colorHex).append(";\">")
+          .append(badge).append("</b><br/>")
+          .append(detail);
+        if (!satisfied) {
+            String exemplar = StvnExemplarValueGenerator.generateExemplar(leafSchema, leafIr);
+            if (exemplar != null && !exemplar.isBlank()) {
+                sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
+            }
+        }
+    }
+
+    private static boolean isSameRootEnum(
+        EnumDef declaredEnumDef,
+        SchemaType leafSchema,
+        StvnSchema.EnumSchema rootEnumIr
+    ) {
+        EnumDef resolvedLeafRootEnumDef = StvnTypeResolver.resolveRootEnumDef(leafSchema);
+        if (resolvedLeafRootEnumDef != null) {
+            return resolvedLeafRootEnumDef == declaredEnumDef
+                || resolvedLeafRootEnumDef.isEquivalentTo(declaredEnumDef);
+        }
+        var declaredTd = PsiTreeUtil.getParentOfType(declaredEnumDef, TypeDefinition.class);
+        if (declaredTd != null && declaredTd.getTypeKeyword() != null && rootEnumIr.aliasName().isPresent()) {
+            String localName = declaredTd.getTypeKeyword().getText().trim();
+            var pkg = PsiTreeUtil.getParentOfType(declaredTd, PackageEnclosure.class);
+            String declaredIdentity = localName;
+            if (pkg != null && pkg.getPackagePath() != null) {
+                String pkgText = pkg.getPackagePath().getText().trim();
+                String cleanPkg = pkgText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? pkgText.substring(1) : pkgText;
+                String cleanLocal = localName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? localName.substring(1) : localName;
+                declaredIdentity = StvnVocabulary.SIGIL_TYPIC + cleanPkg + "/" + cleanLocal;
+            }
+            return declaredIdentity.equals(rootEnumIr.aliasName().get());
+        }
+        return false;
+    }
+
+    private void appendBodyConstantComplianceSection(
+        StringBuilder sb,
+        ConstantDefinition constDef,
+        @Nullable PsiElement originalElement
+    ) {
+        if (originalElement == null || PsiTreeUtil.getParentOfType(originalElement, BodyEntry.class) == null) {
+            return;
+        }
+        var bodyVal = PsiTreeUtil.getParentOfType(originalElement, Value.class, false);
+        if (bodyVal == null || PsiTreeUtil.getParentOfType(bodyVal, BodyEntry.class) == null) {
+            return;
+        }
+        Value slotRootVal = findEnclosingSlotRootValue(bodyVal);
+        var rootSlotInfo = StvnTypeResolver.resolveBaseTypeInfo(slotRootVal);
+        SchemaType rootSlotSchema = rootSlotInfo != null ? rootSlotInfo.getSchema() : null;
+        if (rootSlotSchema == null) {
+            return;
+        }
+        SchemaType leafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
+        if (leafSchema == null) {
+            leafSchema = rootSlotSchema;
+        }
+        StvnSchema rawLeafIr = resolveRawLeafIrSchemaForCompliance(bodyVal, leafSchema);
+        SchemaType constSchema = constDef.getSchemaType();
+        if (rawLeafIr instanceof StvnSchema.PoisonedSchema
+                || isGoverningSchemaUngrounded(bodyVal, leafSchema)
+                || isGoverningSchemaDegraded(bodyVal, leafSchema)
+                || (constSchema != null
+                    && (isGoverningSchemaUngrounded(bodyVal, constSchema)
+                        || isGoverningSchemaDegraded(bodyVal, constSchema)))) {
+            boolean ungrounded = (rawLeafIr instanceof StvnSchema.PoisonedSchema p && p.isUngrounded())
+                || isGoverningSchemaUngrounded(bodyVal, leafSchema)
+                || (constSchema != null && isGoverningSchemaUngrounded(bodyVal, constSchema));
+            appendSuspendedComplianceFooter(sb, leafSchema, ungrounded);
+            return;
+        }
+
+        String compilerErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
+        if (compilerErr == null) {
+            var coreVal = StvnTypeResolver.resolveCoreValue(bodyVal);
+            if (coreVal instanceof StvnValue.StvnErrorValue errVal) {
+                compilerErr = errVal.diagnostic().message();
+            }
+        }
+        boolean satisfied = compilerErr == null;
+        String constLabel = bodyVal.getText().trim();
+        String leafLabel = StvnSchemaFormatter.formatSchema(leafSchema);
+        String detail = satisfied
+            ? "Constant <code>" + escapeHtmlBody(constLabel)
+                + "</code> conforms to slot schema <code>" + escapeHtmlBody(leafLabel) + "</code>"
+            : escapeHtmlBody(compilerErr);
+
+        sb.append("<hr/>");
+        String colorHex = satisfied ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
+        String badge = satisfied ? "Satisfied" : "In Violation";
+        sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(colorHex).append(";\">")
+          .append(badge).append("</b><br/>")
+          .append(detail);
+        if (!satisfied) {
+            StvnSchema leafIr = unwrapPoisonedSchema(rawLeafIr);
+            String exemplar = StvnExemplarValueGenerator.generateExemplar(leafSchema, leafIr);
+            if (exemplar != null && !exemplar.isBlank()) {
+                sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
+            }
+        }
+    }
+
+    private void appendSuspendedComplianceFooter(StringBuilder sb, SchemaType leafSchema, boolean ungrounded) {
+        String badge = ungrounded ? "Suspended (Ungrounded Schema)" : "Suspended (Degraded Schema)";
+        String schemaLabel = StvnSchemaFormatter.formatSchema(leafSchema);
+        sb.append("<hr/>");
+        sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(getWarningBadgeColorHex()).append(";\">")
+          .append(badge).append("</b><br/>");
+        sb.append("Payload compliance evaluation is suspended because governing schema <code>")
+          .append(escapeHtmlBody(schemaLabel))
+          .append("</code> contains errors in <code>")
+          .append(StvnVocabulary.KEYWORD_DEFS)
+          .append("</code>.");
+    }
+
+    private static boolean isDiagnosticForActiveFile(
+        PsiFile file,
+        StvnDiagnostic diag,
+        String activeNormalizedPath
+    ) {
+        if (diag.sourcePath().isEmpty()) {
+            return true;
+        }
+        String diagPath = StvnSchemaFlattener.normalizePath(diag.sourcePath().get());
+        if (!activeNormalizedPath.isEmpty()) {
+            return diagPath.equals(activeNormalizedPath);
+        }
+        var virtualFile = file.getVirtualFile();
+        if (virtualFile == null) {
+            return true;
+        }
+        String vfPath = StvnSchemaFlattener.normalizePath(virtualFile.getPath());
+        String strippedVf = vfPath.replaceFirst("^/+", "");
+        return diagPath.equals(vfPath)
+            || (!strippedVf.isEmpty() && diagPath.endsWith("/" + strippedVf));
+    }
+
+    private static @Nullable String findExactSpanCompilerErrorMessage(Value targetVal, Value slotRootVal) {
+        var file = targetVal.getContainingFile();
+        if (file == null) {
+            return null;
+        }
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+        String activeNormalizedPath = snapshot.normalizedDocPath();
+        var targetRange = targetVal.getTextRange();
+        var rootRange = slotRootVal.getTextRange();
+        for (var diag : snapshot.diagnostics()) {
+            if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                continue;
+            }
+            if (!isDiagnosticForActiveFile(file, diag, activeNormalizedPath)) {
+                continue;
+            }
+            if (targetRange != null
+                    && diag.startOffset() == targetRange.getStartOffset()
+                    && diag.endOffset() == targetRange.getEndOffset()) {
+                return diag.message();
+            }
+            if (rootRange != null
+                    && slotRootVal != targetVal
+                    && diag.startOffset() == rootRange.getStartOffset()
+                    && diag.endOffset() == rootRange.getEndOffset()) {
+                return diag.message();
+            }
+        }
+        return null;
     }
 
     private @Nullable String buildTemporalValueHoverDoc(Value value, @Nullable SchemaType explicitSchema) {
@@ -2564,6 +2893,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.EnumDef) {
                 return resolved;
             }
+            String kwText = valKw.getText().trim();
+            if (!kwText.equals(StvnVocabulary.KIND_KW_BODY)
+                    && !kwText.equals(StvnVocabulary.KIND_KW_DEFS)
+                    && !kwText.equals(StvnVocabulary.KIND_KW_BODY_INCLUDE)
+                    && !kwText.equals(StvnVocabulary.KIND_KW_DEFS_INCLUDE)
+                    && valKw.getParent() instanceof Value enclosingVal
+                    && PsiTreeUtil.getParentOfType(enclosingVal, BodyEntry.class, ConstantDefinition.class) != null) {
+                return enclosingVal;
+            }
             return valKw;
         }
 
@@ -3909,16 +4247,41 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var schemaType = info != null ? info.getSchema() : null;
         var displayType = resolvedType != null ? resolvedType : (info != null ? info.getLabel() : "Unknown");
+        Value slotRootVal = findEnclosingSlotRootValue(value);
+        if (slotRootVal != value && schemaType != null && isCoproductSumSchemaType(schemaType)) {
+            String rootTrajectory = StvnTypeResolver.resolveValueType(slotRootVal);
+            if (rootTrajectory != null && !rootTrajectory.isBlank()) {
+                displayType = rootTrajectory;
+            }
+        }
 
         // Resolve union variant context if value resides in or is an ExplicitUnionValue
         var unionContext = resolveUnionVariantHoverContext(value, originalElement);
-        var governingSchema = (unionContext != null) ? unionContext.governingSchema() : displayType;
+        String hoverSlotTrajectory = StvnTypeResolver.formatHoverSlotTrajectory(slotRootVal);
+        var governingSchema = (unionContext != null)
+            ? unionContext.governingSchema()
+            : (hoverSlotTrajectory != null ? hoverSlotTrajectory : displayType);
         var targetSchemaForCompliance = (unionContext != null && unionContext.branchSchema() != null)
             ? unionContext.branchSchema()
             : schemaType;
         var targetValueForCompliance = (unionContext != null && unionContext.payloadValue() != null)
             ? unionContext.payloadValue()
             : value;
+        if (unionContext == null
+                && targetSchemaForCompliance != null
+                && isCoproductSumSchemaType(targetSchemaForCompliance)
+                && !isGoverningSchemaUngrounded(targetValueForCompliance, targetSchemaForCompliance)
+                && !isGoverningSchemaDegraded(targetValueForCompliance, targetSchemaForCompliance)) {
+            Value unwrappedLeafVal = unwrapExplicitWrapperValue(targetValueForCompliance);
+            String headToken = unwrappedLeafVal.getText().trim().split("\\s+")[0];
+            if (!StvnVocabulary.VAL_NONE.equals(headToken) && !StvnVocabulary.VAL_NONE_SHORT.equals(headToken)) {
+                SchemaType unwrappedLeafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, unwrappedLeafVal);
+                if (unwrappedLeafSchema != null) {
+                    targetSchemaForCompliance = unwrappedLeafSchema;
+                    targetValueForCompliance = unwrappedLeafVal;
+                }
+            }
+        }
 
         Value enclosingIllegalTuple = null;
         if (isScalarSlotArityOneTuple(value)) {
@@ -4019,9 +4382,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var file = value.getContainingFile();
             var range = value.getTextRange();
             if (file != null && range != null) {
+                var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+                String activeNormalizedPath = snapshot.normalizedDocPath();
                 boolean isContainer = isContainerLiteral(value);
-                for (var diag : StvnCompiledDocumentCache.getSnapshot(file).diagnostics()) {
-                    if (diag.severity() != org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                for (var diag : snapshot.diagnostics()) {
+                    if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                        continue;
+                    }
+                    if (!isDiagnosticForActiveFile(file, diag, activeNormalizedPath)) {
                         continue;
                     }
                     String diagCode = diag.errorCode().orElse("");
@@ -4764,11 +5132,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // 5. Value keyword / Enum variant evaluation
         if (value.getValueKeyword() != null) {
             var rawKwText = value.getValueKeyword().getText().trim();
+            String exactErr = findExactSpanCompilerErrorMessage(value, findEnclosingSlotRootValue(value));
+            if (exactErr != null) {
+                return new StvnValueComplianceResult(
+                    false,
+                    "In Violation",
+                    escapeHtmlBody(exactErr),
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
             if (irSchema instanceof StvnSchema.EnumSubsetSchema subsetSchema) {
                 boolean allowed = subsetSchema.activeVariants().contains(rawKwText);
                 return new StvnValueComplianceResult(
                     allowed,
-                    allowed ? "Satisfied" : "Violated",
+                    allowed ? "Satisfied" : "In Violation",
                     allowed
                         ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is permitted in active enum subset"
                         : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is excluded from active enum subset",
@@ -4780,7 +5158,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 boolean allowed = enumSchema.rootVariants().contains(rawKwText);
                 return new StvnValueComplianceResult(
                     allowed,
-                    allowed ? "Satisfied" : "Violated",
+                    allowed ? "Satisfied" : "In Violation",
                     allowed
                         ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is a declared member of governing <code>:Enum</code>"
                         : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is not a declared member of governing <code>:Enum</code>",
@@ -4788,6 +5166,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
             }
+            return new StvnValueComplianceResult(
+                false,
+                "In Violation",
+                "Undeclared value keyword or constant: <code>" + escapeHtmlBody(rawKwText) + "</code>",
+                Collections.emptyMap(),
+                buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+            );
         }
 
         // 6. Container literal arity and cardinality evaluation
@@ -4923,16 +5308,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
      * without climbing from inline composite child schemas to enclosing {@link TypeDefinition} parents.
      */
     private static @Nullable StvnSchema resolveEffectiveIrSchemaForCompliance(Value value, SchemaType schemaType) {
+        return unwrapPoisonedSchema(resolveRawLeafIrSchemaForCompliance(value, schemaType));
+    }
+
+    private static @Nullable StvnSchema resolveRawLeafIrSchemaForCompliance(Value value, SchemaType schemaType) {
         var coreVal = StvnTypeResolver.resolveCoreValue(value);
-        if (coreVal != null) {
+        if (coreVal != null && !(coreVal instanceof StvnValue.StvnErrorValue)) {
             var leafSchema = unwrapTerminalValueSchema(coreVal, schemaType);
             var cleanLeaf = unwrapPoisonedSchema(leafSchema);
             boolean isContainerSchema = cleanLeaf instanceof StvnSchema.TupleSchema
                 || cleanLeaf instanceof StvnSchema.SeqSchema
                 || cleanLeaf instanceof StvnSchema.SetSchema
                 || cleanLeaf instanceof StvnSchema.MapSchema;
-            if (cleanLeaf != null && (!isContainerSchema || value.getCollectionValue() != null)) {
-                return cleanLeaf;
+            if (leafSchema != null && (!isContainerSchema || value.getCollectionValue() != null)) {
+                return leafSchema;
             }
         }
 
@@ -4943,7 +5332,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
                 var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
                 if (td != null) {
-                    return unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(td));
+                    return StvnTypeResolver.resolveNominalIrSchema(td);
                 }
             }
         }
@@ -4951,14 +5340,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
         if (parentDef != null) {
             if (parentDef.getSchemaType() == schemaType) {
-                return unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(parentDef));
+                return StvnTypeResolver.resolveNominalIrSchema(parentDef);
             }
             var rootIr = unwrapPoisonedSchema(StvnTypeResolver.resolveNominalIrSchema(parentDef));
             var rootPsi = parentDef.getSchemaType();
             if (rootIr != null && rootPsi != null) {
                 var descended = descendChildIrSchema(rootPsi, rootIr, schemaType);
                 if (descended != null) {
-                    return unwrapPoisonedSchema(descended);
+                    return descended;
                 }
             }
         }
@@ -4969,14 +5358,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (file != null) {
                 var rootTypeOpt = StvnCompiledDocumentCache.getSnapshot(file).rootType();
                 if (rootTypeOpt.isPresent()) {
-                    var rootIr = unwrapPoisonedSchema(rootTypeOpt.get());
+                    var rawRootIr = rootTypeOpt.get();
+                    if (typeEntry.getSchemaType() == schemaType) {
+                        return rawRootIr;
+                    }
+                    var rootIr = unwrapPoisonedSchema(rawRootIr);
                     if (rootIr != null) {
-                        if (typeEntry.getSchemaType() == schemaType) {
-                            return rootIr;
-                        }
                         var descended = descendChildIrSchema(typeEntry.getSchemaType(), rootIr, schemaType);
                         if (descended != null) {
-                            return unwrapPoisonedSchema(descended);
+                            return descended;
                         }
                     }
                 }
@@ -4993,11 +5383,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable StvnSchema unwrapTerminalValueSchema(StvnValue rootVal, SchemaType targetSchemaType) {
-        var ctor = targetSchemaType.getSchemaConstructor();
-        boolean targetIsSum = ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() == null;
-        if (targetIsSum) {
-            return rootVal.schema();
-        }
         StvnValue curr = rootVal;
         while (true) {
             if (curr instanceof StvnValue.StvnOption opt && opt.value().isPresent()) {
@@ -5554,6 +5939,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (outerVal == null) {
             return null;
         }
+        if (findEnclosingSlotRootValue(outerVal) != outerVal) {
+            return null;
+        }
 
         var info = StvnTypeResolver.resolveBaseTypeInfo(outerVal);
         if (info == null || info.getSchema() == null) {
@@ -5590,17 +5978,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         var branchSchema = branches.get(branchIdx);
-        var nominalName = "";
-        if (unionSchema.getTypeKeyword() != null) {
-            nominalName = unionSchema.getTypeKeyword().getText().trim();
-        } else {
-            var parentDef = PsiTreeUtil.getParentOfType(unionSchema, TypeDefinition.class);
-            if (parentDef != null && parentDef.getTypeKeyword() != null) {
-                nominalName = parentDef.getTypeKeyword().getText().trim();
-            } else {
-                nominalName = StvnVocabulary.TYPE_UNION;
-            }
+        if (branchSchema.getTypeKeyword() != null || isCoproductSumSchemaType(branchSchema)) {
+            return null;
         }
+        if (unionSchema.getTypeKeyword() == null) {
+            return null;
+        }
+        var nominalName = unionSchema.getTypeKeyword().getText().trim();
 
         // Format branch representation: ({ #size 32 } :Float) or (:Float)
         var branchRepr = StvnSchemaFormatter.formatSchema(branchSchema);

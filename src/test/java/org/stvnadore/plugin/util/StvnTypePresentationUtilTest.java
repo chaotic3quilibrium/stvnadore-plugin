@@ -39,4 +39,29 @@ public final class StvnTypePresentationUtilTest extends TestCase {
         assertEquals(Optional.of(":FinalStatus (-> :Enum)"), StvnTypePresentationUtil.formatAliasChain(PARENTHESIZED_CHAIN, AliasExpansionMode.ALIAS_TO_BASE));
         assertEquals(Optional.of(PARENTHESIZED_CHAIN), StvnTypePresentationUtil.formatAliasChain(PARENTHESIZED_CHAIN, AliasExpansionMode.FULL));
     }
+
+    public void testMultiHopCoproductAndNestedNominalExpansionModes() {
+        String anonymousInnerMultiHop = ":DeepTrajectory [#Some] [#Right] [#2] (-> :AckToken -> :String)";
+        assertEquals(Optional.empty(), StvnTypePresentationUtil.formatAliasChain(anonymousInnerMultiHop, AliasExpansionMode.NONE));
+        assertEquals(Optional.of(":DeepTrajectory [#Some] [#Right] [#2]"),
+            StvnTypePresentationUtil.formatAliasChain(anonymousInnerMultiHop, AliasExpansionMode.SYMBOL_ONLY));
+        assertEquals(Optional.of(":DeepTrajectory [#Some] [#Right] [#2] (-> :AckToken)"),
+            StvnTypePresentationUtil.formatAliasChain(anonymousInnerMultiHop, AliasExpansionMode.FIRST_HOP));
+        assertEquals(Optional.of(":DeepTrajectory [#Some] [#Right] [#2] (-> :String)"),
+            StvnTypePresentationUtil.formatAliasChain(anonymousInnerMultiHop, AliasExpansionMode.ALIAS_TO_BASE));
+        assertEquals(Optional.of(anonymousInnerMultiHop),
+            StvnTypePresentationUtil.formatAliasChain(anonymousInnerMultiHop, AliasExpansionMode.FULL));
+
+        String nestedNominalMultiHop =
+            ":OuterOpt [#Some] (-> :MidEither [#Right] (-> :LeafUnion [#2] (-> :AckToken -> :String)))";
+        assertEquals(Optional.empty(), StvnTypePresentationUtil.formatAliasChain(nestedNominalMultiHop, AliasExpansionMode.NONE));
+        assertEquals(Optional.of(":OuterOpt [#Some]"),
+            StvnTypePresentationUtil.formatAliasChain(nestedNominalMultiHop, AliasExpansionMode.SYMBOL_ONLY));
+        assertEquals(Optional.of(":OuterOpt [#Some] (-> :MidEither [#Right])"),
+            StvnTypePresentationUtil.formatAliasChain(nestedNominalMultiHop, AliasExpansionMode.FIRST_HOP));
+        assertEquals(Optional.of(":OuterOpt [#Some] (-> :String)"),
+            StvnTypePresentationUtil.formatAliasChain(nestedNominalMultiHop, AliasExpansionMode.ALIAS_TO_BASE));
+        assertEquals(Optional.of(nestedNominalMultiHop),
+            StvnTypePresentationUtil.formatAliasChain(nestedNominalMultiHop, AliasExpansionMode.FULL));
+    }
 }

@@ -963,78 +963,21 @@ public final class StvnTypeResolver {
             var isDegraded = isDegradedNominalAlias(file, rootAlias);
             var prefix = isDegraded ? "\u26A0 " : "";
 
-            if (resolvedNode instanceof StvnValue.StvnUnion union) {
-                var trajectory = StvnSumTrajectory.evaluate(value, union, catalog);
-                BigInteger explicitOneBased = extractExplicitUnionOneBasedIndex(value);
-                BigInteger activeOneBased = explicitOneBased != null
-                    ? explicitOneBased
-                    : union.oneBasedBranchIndex();
-                var branchTag = StvnVocabulary.SIGIL_VALUE + activeOneBased;
-                boolean isExplicit = trajectory.stoppedAtConstantReference()
-                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
-                    || explicitOneBased != null
-                    || value.getExplicitUnionValue() != null
-                    || (value.getParent() instanceof ExplicitUnionValue);
-                var tagText = isExplicit ? branchTag : "[" + branchTag + "]";
-
-                int activeTagIndex = toSafeZeroBasedIndex(activeOneBased);
-                var branchPsi = getNominalUnionBranchPsi(file, rootAlias, activeTagIndex);
-                var innerVal = value.getExplicitUnionValue() != null ? value.getExplicitUnionValue().getValue() : value;
-                var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
-                if (branchTrace.isEmpty()) {
-                    var childVal = union.value();
-                    branchTrace = unspoolBranchTrajectory(childVal.schema(), childVal, file, project, useLong);
-                }
-                return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
-            }
-
-            if (resolvedNode instanceof StvnValue.StvnOption opt) {
-                var trajectory = StvnSumTrajectory.evaluate(value, opt, catalog);
-                var isExplicit = trajectory.stoppedAtConstantReference()
-                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
-                    || value.getExplicitOptionValue() != null
-                    || isExplicitOptionText(value.getText().trim());
-
-                if (opt.value().isEmpty()) {
-                    var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
-                    return prefix + rootAlias + " " + tag;
-                }
-
-                var tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
-                var tagText = isExplicit ? tag : "[" + tag + "]";
-
-                var branchPsi = getNominalOptionBranchPsi(file, rootAlias);
-                var innerVal = value.getExplicitOptionValue() != null ? value.getExplicitOptionValue().getValue() : value;
-                var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
-                if (branchTrace.isEmpty()) {
-                    var childVal = opt.value().orElse(null);
-                    if (childVal != null) {
-                        branchTrace = unspoolBranchTrajectory(childVal.schema(), childVal, file, project, useLong);
-                    }
-                }
-                return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
-            }
-
-            if (resolvedNode instanceof StvnValue.StvnEither either) {
-                var trajectory = StvnSumTrajectory.evaluate(value, either, catalog);
-                var isExplicit = trajectory.stoppedAtConstantReference()
-                    || (!trajectory.steps().isEmpty() && !trajectory.steps().get(0).inferred())
-                    || value.getExplicitEitherValue() != null
-                    || isExplicitEitherText(value.getText().trim());
-                var isRight = either.branch() == StvnValue.EitherBranch.RIGHT;
-                var tag = isRight
-                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
-                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
-                var tagText = isExplicit ? tag : "[" + tag + "]";
-
-                var branchPsi = getNominalEitherBranchPsi(file, rootAlias, isRight);
-                var innerVal = value.getExplicitEitherValue() != null ? value.getExplicitEitherValue().getValue() : value;
-                var branchTrace = branchPsi != null ? resolvePsiBranchTrace(branchPsi, innerVal, project) : "";
-                if (branchTrace.isEmpty()) {
-                    var childVal = either.value();
-                    branchTrace = unspoolBranchTrajectory(childVal.schema(), childVal, file, project, useLong);
-                }
-                return prefix + (!branchTrace.isEmpty() ? rootAlias + " " + tagText + " (-> " + branchTrace + ")" : rootAlias + " " + tagText);
+            if (StvnSumTrajectory.isSumValue(resolvedNode)) {
+                var rootDef = findTypeDefinition(file, rootAlias, value);
+                var rootRhsPsi = rootDef != null ? rootDef.getSchemaType() : null;
+                String formattedNominalSum = formatNominalSumMultiHopTrajectory(
+                    rootAlias,
+                    rootRhsPsi,
+                    value,
+                    resolvedNode,
+                    catalog,
+                    file,
+                    project,
+                    useLong,
+                    new HashSet<>()
+                );
+                return prefix + formattedNominalSum;
             }
 
             var alias = rootAlias;
@@ -1273,6 +1216,347 @@ public final class StvnTypeResolver {
             || text.startsWith("#R ") || text.equals(StvnVocabulary.VAL_RIGHT_SHORT);
     }
 
+    /**
+     * Immutable descriptor for an explicit or Happy-Path inferred sum-constructor step on a payload {@link Value}.
+     *
+     * @param inferred          {@code true} when inferred via Happy-Path Rules A-C; {@code false} when explicit in source
+     * @param displayTag        rendered badge token ({@code "[#Some]"}, {@code "#Some"}, {@code "[#2]"}, {@code "#2"}, ...)
+     * @param insertToken       canonical STVN tag token inserted upon clicking an inferred badge ({@code "#Some"}, {@code "#S"}, {@code "#2"}, ...)
+     * @param anchorStartOffset document character offset of the PSI {@link Value} before which {@code insertToken} is inserted
+     */
+    public record SumTrajectoryStep(
+        boolean inferred,
+        String displayTag,
+        String insertToken,
+        int anchorStartOffset
+    ) {
+    }
+
+    /**
+     * Evaluates the ordered list of explicit and inferred sum-constructor steps for a {@code :body} {@link Value},
+     * preferring lowered Pure-IR {@link StvnSumTrajectory} provenance and falling back to PSI sum-branch resolution
+     * when a leaf constraint diagnostic prevents full payload lowering.
+     *
+     * @param value the payload {@link Value} element
+     * @return immutable ordered list of sum trajectory steps (empty when {@code value} is not governed by a sum schema)
+     */
+    public static List<SumTrajectoryStep> resolveSumTrajectorySteps(Value value) {
+        var file = value.getContainingFile();
+        if (file == null) {
+            return List.of();
+        }
+        boolean useLong = useLongFormSumTypes(value.getProject());
+        int defaultAnchor = value.getTextRange().getStartOffset();
+        var coreNode = resolveCoreValue(value);
+        if (coreNode != null && !(coreNode instanceof StvnValue.StvnErrorValue) && StvnSumTrajectory.isSumValue(coreNode)) {
+            var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+            var trajectory = StvnSumTrajectory.evaluate(value, coreNode, catalog);
+            if (trajectory.steps().isEmpty()) {
+                return List.of();
+            }
+            var result = new ArrayList<SumTrajectoryStep>(trajectory.steps().size());
+            for (var step : trajectory.steps()) {
+                String token = step.formatTag(useLong);
+                String display = step.inferred()
+                    ? StvnVocabulary.DELIM_OPEN_BRACKET + token + StvnVocabulary.DELIM_CLOSE_BRACKET
+                    : token;
+                int anchor = step.anchorPsiValue() != null
+                    ? step.anchorPsiValue().getTextRange().getStartOffset()
+                    : defaultAnchor;
+                result.add(new SumTrajectoryStep(step.inferred(), display, token, anchor));
+            }
+            return List.copyOf(result);
+        }
+
+        var info = resolveBaseTypeInfo(value);
+        if (info == null || info.getSchema() == null) {
+            return List.of();
+        }
+        var steps = new ArrayList<SumTrajectoryStep>();
+        collectPsiFallbackSumSteps(info.getSchema(), value, useLong, steps, new HashSet<>());
+        return List.copyOf(steps);
+    }
+
+    /**
+     * Formats the full multi-hop sum trajectory for hover {@code Governing Schema:} and {@code Slot Schema:} rows,
+     * appending {@code (-> <nominalLeafTrace>)} even when the outer slot constructor is an anonymous sum wrapping
+     * a nominal leaf alias (such as {@code :Option(:Either(:CommandFaultCode :AckToken))}).
+     *
+     * @param slotRootValue the outer slot {@link Value} inside {@code :body} or {@code ConstantDefinition}
+     * @return formatted multi-hop trajectory string, or {@code null} if unresolvable
+     */
+    public static @Nullable String formatHoverSlotTrajectory(Value slotRootValue) {
+        String baseTrajectory = resolveValueType(slotRootValue);
+        if (baseTrajectory == null || baseTrajectory.isEmpty()) {
+            return null;
+        }
+        var info = resolveBaseTypeInfo(slotRootValue);
+        if (info == null || info.getSchema() == null || info.getSchema().getTypeKeyword() != null) {
+            return baseTrajectory;
+        }
+        var ctor = info.getSchema().getSchemaConstructor();
+        if (ctor == null || ctor.getSumType() == null || ctor.getSumType().getEnumDef() != null) {
+            return baseTrajectory;
+        }
+        if (baseTrajectory.contains("(-> ")) {
+            return baseTrajectory;
+        }
+        SchemaType leafSchema = resolveTerminalPayloadSchema(slotRootValue, unwrapExplicitPsiValue(slotRootValue));
+        if (leafSchema != null && leafSchema.getTypeKeyword() != null) {
+            String kwText = leafSchema.getTypeKeyword().getText().trim();
+            if (!StvnNamespaceRules.isReservedFundamentalType(kwText)) {
+                var trace = StvnTypeReference.extractResolutionTrace(leafSchema.getTypeKeyword());
+                if (!trace.isEmpty()) {
+                    return baseTrajectory + " (-> " + String.join(" -> ", trace) + ")";
+                }
+            }
+        }
+        return baseTrajectory;
+    }
+
+    /**
+     * Unwraps all explicit and implicit {@code :Option}, {@code :Either}, and {@code :Union} sum layers
+     * between {@code slotRootValue} and {@code targetLeafValue} to locate the terminal leaf {@link SchemaType}.
+     *
+     * @param slotRootValue   the outer slot {@link Value}
+     * @param targetLeafValue the inner leaf {@link Value} being evaluated for compliance or exemplar synthesis
+     * @return the unwrapped terminal {@link SchemaType}, or the base schema of {@code targetLeafValue} if not a sum
+     */
+    public static @Nullable SchemaType resolveTerminalPayloadSchema(Value slotRootValue, Value targetLeafValue) {
+        var leafInfo = resolveBaseTypeInfo(targetLeafValue);
+        SchemaType startSchema = leafInfo != null ? leafInfo.getSchema() : null;
+        if (startSchema == null) {
+            var rootInfo = resolveBaseTypeInfo(slotRootValue);
+            startSchema = rootInfo != null ? rootInfo.getSchema() : null;
+        }
+        if (startSchema == null) {
+            return null;
+        }
+        var coreNode = resolveCoreValue(targetLeafValue);
+        if (coreNode == null) {
+            coreNode = resolveCoreValue(slotRootValue);
+        }
+        return unwrapAllSumLayersToLeafSchema(startSchema, targetLeafValue, coreNode, new HashSet<>());
+    }
+
+    /**
+     * Resolves the root {@link EnumDef} PSI node declared for an {@code :Enum} or {@code :EnumSubset}
+     * {@link SchemaType}, walking through nominal derivation parents.
+     *
+     * @param schemaType the candidate {@link SchemaType}
+     * @return the root {@link EnumDef} PSI node, or {@code null} if {@code schemaType} does not resolve to an {@code :Enum}
+     */
+    public static @Nullable EnumDef resolveRootEnumDef(SchemaType schemaType) {
+        var target = unwrapNominalSchemaChain(schemaType);
+        if (target == null) {
+            return null;
+        }
+        var ctor = target.getSchemaConstructor();
+        return (ctor != null && ctor.getSumType() != null)
+            ? ctor.getSumType().getEnumDef()
+            : null;
+    }
+
+    private static Value unwrapExplicitPsiValue(Value start) {
+        Value curr = start;
+        for (int depth = 0; depth < 16 && curr != null; depth++) {
+            if (curr.getExplicitOptionValue() != null && curr.getExplicitOptionValue().getValue() != null) {
+                curr = curr.getExplicitOptionValue().getValue();
+            } else if (curr.getExplicitEitherValue() != null && curr.getExplicitEitherValue().getValue() != null) {
+                curr = curr.getExplicitEitherValue().getValue();
+            } else if (curr.getExplicitUnionValue() != null && curr.getExplicitUnionValue().getValue() != null) {
+                curr = curr.getExplicitUnionValue().getValue();
+            } else {
+                break;
+            }
+        }
+        return curr != null ? curr : start;
+    }
+
+    private static String formatNominalSumMultiHopTrajectory(
+        String nominalAlias,
+        @Nullable SchemaType sumRhsPsi,
+        @Nullable Value psiCursor,
+        @Nullable StvnValue irCursor,
+        StvnDefsCatalog catalog,
+        PsiFile file,
+        Project project,
+        boolean useLong,
+        Set<String> visitedAliases
+    ) {
+        if (!visitedAliases.add(nominalAlias)) {
+            return nominalAlias;
+        }
+        List<String> renderedTags = new ArrayList<>();
+        SchemaType currSchemaPsi = sumRhsPsi != null ? unwrapNominalSchemaChain(sumRhsPsi) : null;
+        Value currPsi = psiCursor;
+        StvnValue currIr = irCursor;
+        boolean terminatedAtNone = false;
+        boolean hitConstantBarrier = false;
+
+        for (int hop = 0; hop < 16; hop++) {
+            if (hop > 0 && currSchemaPsi != null && currSchemaPsi.getTypeKeyword() != null) {
+                break;
+            }
+            SumType sumPsi = (currSchemaPsi != null && currSchemaPsi.getSchemaConstructor() != null)
+                ? currSchemaPsi.getSchemaConstructor().getSumType()
+                : null;
+            if (sumPsi != null && sumPsi.getEnumDef() != null) {
+                break;
+            }
+            boolean irIsSum = StvnSumTrajectory.isSumValue(currIr);
+            if (sumPsi == null && !irIsSum) {
+                break;
+            }
+            if (!hitConstantBarrier && currPsi != null && currIr != null) {
+                var probeTraj = StvnSumTrajectory.evaluate(currPsi, currIr, catalog);
+                if (probeTraj.steps().isEmpty() && probeTraj.stoppedAtConstantReference()) {
+                    hitConstantBarrier = true;
+                }
+            }
+
+            String sumKindText = sumPsi != null ? sumPsi.getText().trim() : "";
+            List<SchemaType> branches = sumPsi != null
+                ? PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class)
+                : List.of();
+
+            if ((currIr instanceof StvnValue.StvnOption) || sumKindText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                var explicitOpt = currPsi != null ? currPsi.getExplicitOptionValue() : null;
+                boolean isNone = false;
+                if (currIr instanceof StvnValue.StvnOption optIr) {
+                    isNone = optIr.value().isEmpty();
+                } else if (explicitOpt != null) {
+                    String head = explicitOpt.getText().trim().split("\\s+")[0];
+                    isNone = StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head);
+                } else if (currPsi != null) {
+                    String head = currPsi.getText().trim().split("\\s+")[0];
+                    isNone = StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head);
+                }
+                if (isNone) {
+                    renderedTags.add(useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT);
+                    terminatedAtNone = true;
+                    break;
+                }
+                boolean isExplicit = hitConstantBarrier
+                    || explicitOpt != null
+                    || (currPsi != null && isExplicitOptionText(currPsi.getText().trim()));
+                String tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
+                renderedTags.add(isExplicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitOpt != null) {
+                    currPsi = explicitOpt.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnOption optIr) {
+                    currIr = optIr.value().orElse(null);
+                }
+                currSchemaPsi = !branches.isEmpty() ? branches.get(0) : null;
+            } else if ((currIr instanceof StvnValue.StvnEither) || sumKindText.startsWith(StvnVocabulary.TYPE_EITHER)) {
+                var explicitEither = currPsi != null ? currPsi.getExplicitEitherValue() : null;
+                boolean isRight;
+                if (currIr instanceof StvnValue.StvnEither eitherIr) {
+                    isRight = eitherIr.branch() == StvnValue.EitherBranch.RIGHT;
+                } else if (explicitEither != null) {
+                    String head = explicitEither.getText().trim().split("\\s+")[0];
+                    isRight = !(StvnVocabulary.VAL_LEFT.equals(head) || StvnVocabulary.VAL_LEFT_SHORT.equals(head));
+                } else if (currPsi != null && !branches.isEmpty()) {
+                    isRight = branches.size() > 1 || !matchesSchemaPattern(currPsi, branches.get(0));
+                } else {
+                    isRight = true;
+                }
+                boolean isExplicit = hitConstantBarrier
+                    || explicitEither != null
+                    || (currPsi != null && isExplicitEitherText(currPsi.getText().trim()));
+                String tag = isRight
+                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
+                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
+                renderedTags.add(isExplicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitEither != null) {
+                    currPsi = explicitEither.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnEither eitherIr) {
+                    currIr = eitherIr.value();
+                }
+                currSchemaPsi = isRight
+                    ? (branches.size() > 1 ? branches.get(1) : null)
+                    : (!branches.isEmpty() ? branches.get(0) : null);
+            } else if ((currIr instanceof StvnValue.StvnUnion) || sumKindText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                var explicitUnion = currPsi != null ? currPsi.getExplicitUnionValue() : null;
+                BigInteger explicitOneBased = (!hitConstantBarrier && currPsi != null)
+                    ? extractExplicitUnionOneBasedIndex(currPsi)
+                    : null;
+                int zeroIdx;
+                String rawTag;
+                if (explicitOneBased != null) {
+                    rawTag = StvnVocabulary.SIGIL_VALUE + explicitOneBased;
+                    zeroIdx = toSafeZeroBasedIndex(explicitOneBased);
+                } else if (currIr instanceof StvnValue.StvnUnion unionIr) {
+                    rawTag = StvnVocabulary.SIGIL_VALUE + unionIr.oneBasedBranchIndex();
+                    zeroIdx = toSafeZeroBasedIndex(unionIr.oneBasedBranchIndex());
+                } else {
+                    zeroIdx = selectBestMatchingPsiUnionBranch(currPsi, branches);
+                    rawTag = StvnVocabulary.SIGIL_VALUE + (zeroIdx + 1);
+                }
+                boolean isExplicit = hitConstantBarrier
+                    || explicitUnion != null
+                    || explicitOneBased != null
+                    || (currPsi != null && currPsi.getParent() instanceof ExplicitUnionValue);
+                renderedTags.add(isExplicit
+                    ? rawTag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + rawTag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitUnion != null) {
+                    currPsi = explicitUnion.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnUnion unionIr) {
+                    currIr = unionIr.value();
+                }
+                currSchemaPsi = (zeroIdx >= 0 && zeroIdx < branches.size()) ? branches.get(zeroIdx) : null;
+            } else {
+                break;
+            }
+        }
+
+        String headWithTags = renderedTags.isEmpty()
+            ? nominalAlias
+            : nominalAlias + " " + String.join(" ", renderedTags);
+        if (terminatedAtNone) {
+            return headWithTags;
+        }
+
+        String leafTrace = "";
+        if (currSchemaPsi != null) {
+            leafTrace = resolvePsiBranchTraceWithIr(
+                currSchemaPsi,
+                hitConstantBarrier ? null : currPsi,
+                currIr,
+                catalog,
+                file,
+                project,
+                useLong,
+                new HashSet<>(),
+                visitedAliases
+            );
+        }
+        if (leafTrace.isEmpty() && currIr != null) {
+            leafTrace = unspoolBranchTrajectory(currIr.schema(), currIr, file, project, useLong);
+        }
+        return !leafTrace.isEmpty() ? headWithTags + " (-> " + leafTrace + ")" : headWithTags;
+    }
+
+    private static int selectBestMatchingPsiUnionBranch(@Nullable Value value, List<SchemaType> branches) {
+        if (value == null || branches.isEmpty()) {
+            return 0;
+        }
+        for (int i = 0; i < branches.size(); i++) {
+            if (matchesSchemaPattern(value, branches.get(i))) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
     private static String unspoolBranchTrajectory(
         StvnSchema branchSchema,
         @Nullable StvnValue branchValue,
@@ -1281,45 +1565,38 @@ public final class StvnTypeResolver {
         boolean useLong
     ) {
         if (StvnSumTrajectory.isSumValue(branchValue) && branchValue != null) {
-            var innerBase = branchValue.schema();
-            var innerAlias = innerBase.aliasName().orElse(null);
-            if (branchValue instanceof StvnValue.StvnUnion innerUnion) {
-                var innerTag = StvnVocabulary.SIGIL_VALUE + innerUnion.oneBasedBranchIndex();
-                var innerChild = innerUnion.value();
-                var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
-                if (innerAlias != null) {
-                    return innerAlias + " " + innerTag + (!innerChildTrace.isEmpty() ? " (-> " + innerChildTrace + ")" : "");
-                } else {
-                    return !innerChildTrace.isEmpty() ? innerChildTrace + " " + innerTag : innerTag;
+            StvnValue curr = branchValue;
+            while (StvnSumTrajectory.isSumValue(curr)) {
+                String stepAlias = curr.schema().aliasName().orElse(null);
+                if (stepAlias != null) {
+                    var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+                    var td = findTypeDefinition(file, stepAlias);
+                    return formatNominalSumMultiHopTrajectory(
+                        stepAlias,
+                        td != null ? td.getSchemaType() : null,
+                        null,
+                        curr,
+                        catalog,
+                        file,
+                        project,
+                        useLong,
+                        new HashSet<>()
+                    );
                 }
-            } else if (branchValue instanceof StvnValue.StvnOption innerOpt) {
-                if (innerOpt.value().isEmpty()) {
-                    var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
-                    return innerAlias != null ? innerAlias + " " + tag : tag;
-                }
-                var innerTag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
-                var innerChild = innerOpt.value().orElse(null);
-                if (innerChild != null) {
-                    var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
-                    if (innerAlias != null) {
-                        return innerAlias + " " + innerTag + (!innerChildTrace.isEmpty() ? " (-> " + innerChildTrace + ")" : "");
-                    } else {
-                        return !innerChildTrace.isEmpty() ? innerChildTrace + " " + innerTag : innerTag;
+                if (curr instanceof StvnValue.StvnOption opt) {
+                    if (opt.value().isEmpty()) {
+                        return useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
                     }
-                }
-                return innerAlias != null ? innerAlias + " " + innerTag : innerTag;
-            } else if (branchValue instanceof StvnValue.StvnEither innerEither) {
-                var innerTag = innerEither.branch() == StvnValue.EitherBranch.RIGHT
-                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
-                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
-                var innerChild = innerEither.value();
-                var innerChildTrace = unspoolBranchTrajectory(innerChild.schema(), innerChild, file, project, useLong);
-                if (innerAlias != null) {
-                    return innerAlias + " " + innerTag + (!innerChildTrace.isEmpty() ? " (-> " + innerChildTrace + ")" : "");
+                    curr = opt.value().get();
+                } else if (curr instanceof StvnValue.StvnEither either) {
+                    curr = either.value();
+                } else if (curr instanceof StvnValue.StvnUnion union) {
+                    curr = union.value();
                 } else {
-                    return !innerChildTrace.isEmpty() ? innerChildTrace + " " + innerTag : innerTag;
+                    break;
                 }
             }
+            return curr != null ? unspoolBranchTrajectory(curr.schema(), curr, file, project, useLong) : "";
         }
 
         if (branchValue instanceof StvnValue.StvnEnum && branchSchema.aliasName().isEmpty()) {
@@ -1466,99 +1743,32 @@ public final class StvnTypeResolver {
                     && isDegradedNominalAlias(value.getContainingFile(), info.getSchema().getTypeKeyword().getText().trim());
                 var baseLabel = (degradedSum ? "\u26A0 " : "") + info.getLabel();
                 var useLong = useLongFormSumTypes(value.getProject());
-                if (sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-                    var eitherVal = value.getExplicitEitherValue();
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    if (eitherVal != null) {
-                        var txt = eitherVal.getText().trim().split("\\s+")[0];
-                        var isLeft = txt.equals(StvnVocabulary.VAL_LEFT) || txt.equals(StvnVocabulary.VAL_LEFT_SHORT);
-                        var tagText = isLeft ? (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT) : (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT);
-                        var branchSchema = (isLeft && !innerSchemas.isEmpty()) ? innerSchemas.get(0) : (innerSchemas.size() > 1 ? innerSchemas.get(1) : null);
-                        var innerVal = eitherVal.getValue();
-                        var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, innerVal, value.getProject()) : "";
-                        if (info.getSchema().getTypeKeyword() != null) {
-                            return baseLabel + " " + tagText + (!branchTrace.isEmpty() ? " (-> " + branchTrace + ")" : "");
-                        } else {
-                            return !branchTrace.isEmpty() ? branchTrace + " " + tagText : baseLabel + " " + tagText;
-                        }
-                    } else {
-                        var tagText = useLong ? "[#Right]" : "[#R]";
-                        var branchSchema = innerSchemas.size() > 1 ? innerSchemas.get(1) : null;
-                        var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, value, value.getProject()) : "";
-                        if (info.getSchema().getTypeKeyword() != null) {
-                            return baseLabel + " " + tagText + (!branchTrace.isEmpty() ? " (-> " + branchTrace + ")" : "");
-                        } else {
-                            return !branchTrace.isEmpty() ? branchTrace + " " + tagText : baseLabel + " " + tagText;
-                        }
+                if (sumType.getEnumDef() == null) {
+                    var file = value.getContainingFile();
+                    if (info.getSchema().getTypeKeyword() != null && file != null) {
+                        String rootAlias = info.getSchema().getTypeKeyword().getText().trim();
+                        var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+                        String formatted = formatNominalSumMultiHopTrajectory(
+                            rootAlias,
+                            schemaToInspect,
+                            value,
+                            null,
+                            catalog,
+                            file,
+                            value.getProject(),
+                            useLong,
+                            new HashSet<>()
+                        );
+                        return (degradedSum ? "\u26A0 " : "") + formatted;
                     }
-                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-                    var optVal = value.getExplicitOptionValue();
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    var payloadSchema = !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
-                    var innerVal = optVal != null ? optVal.getValue() : null;
-                    var payloadTrace = payloadSchema != null ? resolvePsiBranchTrace(payloadSchema, innerVal, value.getProject()) : "";
-
-                    if (optVal != null) {
-                        var txt = optVal.getText().trim().split("\\s+")[0];
-                        var isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
-                        var tagText = isNone ? (useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT) : (useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT);
-                        if (isNone) {
-                            return baseLabel + " " + tagText;
-                        }
-                        if (info.getSchema().getTypeKeyword() != null) {
-                            return baseLabel + " " + tagText + (!payloadTrace.isEmpty() ? " (-> " + payloadTrace + ")" : "");
-                        } else {
-                            return baseLabel + " " + tagText;
-                        }
-                    } else {
-                        var txt = value.getText().trim().split("\\s+")[0];
-                        if (txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT)) {
-                            var tagText = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
-                            return baseLabel + " " + tagText;
-                        } else {
-                            var tagText = useLong ? "[#Some]" : "[#S]";
-                            payloadTrace = payloadSchema != null ? resolvePsiBranchTrace(payloadSchema, value, value.getProject()) : "";
-                            if (info.getSchema().getTypeKeyword() != null) {
-                                return baseLabel + " " + tagText + (!payloadTrace.isEmpty() ? " (-> " + payloadTrace + ")" : "");
-                            } else {
-                                return !payloadTrace.isEmpty() ? payloadTrace + " " + tagText : baseLabel + " " + tagText;
-                            }
-                        }
+                    var anonSteps = new ArrayList<SumTrajectoryStep>();
+                    collectPsiFallbackSumSteps(info.getSchema(), value, useLong, anonSteps, new HashSet<>());
+                    if (!anonSteps.isEmpty()) {
+                        var tagsJoined = String.join(" ", anonSteps.stream().map(SumTrajectoryStep::displayTag).toList());
+                        return baseLabel + " " + tagsJoined;
                     }
-                } else if (sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                    var unionVal = value.getExplicitUnionValue();
-                    var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                    if (unionVal != null) {
-                        var firstChild = unionVal.getFirstChild();
-                        var tagText = firstChild != null ? firstChild.getText() : "#1";
-                        var resolvedIdx = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerSchemas.size());
-                        var branchSchema = resolvedIdx.isPresent() ? innerSchemas.get(resolvedIdx.getAsInt()) : null;
-                        var innerVal = unionVal.getValue();
-                        var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, innerVal, value.getProject()) : "";
-                        if (info.getSchema().getTypeKeyword() != null) {
-                            return baseLabel + " " + tagText + (!branchTrace.isEmpty() ? " (-> " + branchTrace + ")" : "");
-                        } else {
-                            return !branchTrace.isEmpty() ? branchTrace + " " + tagText : baseLabel + " " + tagText;
-                        }
-                    } else {
-                        var tagIndex = 0;
-                        for (int i = 0; i < innerSchemas.size(); i++) {
-                            var schema = innerSchemas.get(i);
-                            if (matchesSchemaPattern(value, schema)) {
-                                tagIndex = i;
-                                break;
-                            }
-                        }
-                        var branchSchema = (tagIndex >= 0 && tagIndex < innerSchemas.size()) ? innerSchemas.get(tagIndex) : null;
-                        var branchTrace = branchSchema != null ? resolvePsiBranchTrace(branchSchema, value, value.getProject()) : "";
-                        var tagText = "[#" + (tagIndex + 1) + "]";
-                        if (info.getSchema().getTypeKeyword() != null) {
-                            return baseLabel + " " + tagText + (!branchTrace.isEmpty() ? " (-> " + branchTrace + ")" : "");
-                        } else {
-                            return !branchTrace.isEmpty() ? branchTrace : baseLabel;
-                        }
-                    }
-                } else if (sumType.getEnumDef() != null) {
+                    return baseLabel;
+                } else {
                     if (degradedSum || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
                         if (info.getSchema().getTypeKeyword() != null) {
                             var prefix = degradedSum ? "\u26A0 " : "";
@@ -1601,16 +1811,33 @@ public final class StvnTypeResolver {
         @Nullable Value innerValue,
         Project project
     ) {
-        return resolvePsiBranchTrace(branchSchema, innerValue, project, new HashSet<>());
+        var file = branchSchema.getContainingFile();
+        var catalog = file != null ? StvnCompiledDocumentCache.getSnapshot(file).catalog() : StvnDefsCatalog.EMPTY;
+        return resolvePsiBranchTraceWithIr(
+            branchSchema,
+            innerValue,
+            null,
+            catalog,
+            file,
+            project,
+            useLongFormSumTypes(project),
+            new HashSet<>(),
+            new HashSet<>()
+        );
     }
 
-    private static String resolvePsiBranchTrace(
+    private static String resolvePsiBranchTraceWithIr(
         SchemaType branchSchema,
         @Nullable Value innerValue,
+        @Nullable StvnValue innerIr,
+        StvnDefsCatalog catalog,
+        @Nullable PsiFile file,
         Project project,
-        Set<SchemaType> visited
+        boolean useLong,
+        Set<SchemaType> visitedSchemas,
+        Set<String> visitedAliases
     ) {
-        if (!visited.add(branchSchema)) {
+        if (!visitedSchemas.add(branchSchema)) {
             return "";
         }
         var keyword = branchSchema.getTypeKeyword();
@@ -1621,87 +1848,30 @@ public final class StvnTypeResolver {
             if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortKw)) {
                 return shortKw;
             }
-            var file = keyword.getContainingFile();
-            var resolvedTarget = StvnTypeReference.resolveTypeInFile(file, keyword.getText(), new HashSet<>());
+            var lookupFile = file != null ? file : keyword.getContainingFile();
+            var resolvedTarget = lookupFile != null
+                ? StvnTypeReference.resolveTypeInFile(lookupFile, keyword.getText(), new HashSet<>())
+                : null;
             var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
             if (targetDef != null) {
                 var targetSchema = targetDef.getSchemaType();
-                if (targetSchema != null && targetSchema.getSchemaConstructor() != null) {
-                    var targetConstructor = targetSchema.getSchemaConstructor();
-                    var targetSum = targetConstructor.getSumType();
-                    if (targetSum != null) {
-                        var useLong = useLongFormSumTypes(project);
-                        var targetAlias = keyword.getText();
-                        if (targetSum.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
-                            int activeTagIndex = 0;
-                            String branchTag = null;
-                            if (innerValue != null && innerValue.getExplicitUnionValue() != null) {
-                                var firstChild = innerValue.getExplicitUnionValue().getFirstChild();
-                                if (firstChild != null && firstChild.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
-                                    branchTag = firstChild.getText().trim();
-                                    var resolvedIdx = StvnPsiLiteralEvaluator
-                                        .resolveZeroBasedUnionBranchIndex(branchTag, innerSchemas.size());
-                                    activeTagIndex = resolvedIdx.isPresent() ? resolvedIdx.getAsInt() : -1;
-                                }
-                            } else if (innerValue != null) {
-                                for (int i = 0; i < innerSchemas.size(); i++) {
-                                    if (matchesSchemaPattern(innerValue, innerSchemas.get(i))) {
-                                        activeTagIndex = i;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (branchTag == null) {
-                                branchTag = StvnVocabulary.SIGIL_VALUE + (activeTagIndex + 1);
-                            }
-                            var isExplicit = innerValue != null && (innerValue.getExplicitUnionValue() != null || (innerValue.getParent() instanceof ExplicitUnionValue));
-                            var tagText = isExplicit ? branchTag : "[" + branchTag + "]";
-                            var nestedBranch = (activeTagIndex >= 0 && activeTagIndex < innerSchemas.size()) ? innerSchemas.get(activeTagIndex) : null;
-                            var nestedVal = innerValue != null && innerValue.getExplicitUnionValue() != null ? innerValue.getExplicitUnionValue().getValue() : innerValue;
-                            var nestedTrace = nestedBranch != null ? resolvePsiBranchTrace(nestedBranch, nestedVal, project, visited) : "";
-                            return targetAlias + " " + tagText + (!nestedTrace.isEmpty() ? " (-> " + nestedTrace + ")" : "");
-                        } else if (targetSum.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
-                            var eitherVal = innerValue != null ? innerValue.getExplicitEitherValue() : null;
-                            var isLeft = false;
-                            if (eitherVal != null) {
-                                var txt = eitherVal.getText().trim().split("\\s+")[0];
-                                isLeft = txt.equals(StvnVocabulary.VAL_LEFT) || txt.equals(StvnVocabulary.VAL_LEFT_SHORT);
-                            } else if (innerValue != null && !innerSchemas.isEmpty()) {
-                                isLeft = matchesSchemaPattern(innerValue, innerSchemas.get(0));
-                            }
-                            var isExplicit = eitherVal != null;
-                            var tag = isLeft ? (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT) : (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT);
-                            var tagText = isExplicit ? tag : "[" + tag + "]";
-                            var nestedBranch = (isLeft && !innerSchemas.isEmpty()) ? innerSchemas.get(0) : (innerSchemas.size() > 1 ? innerSchemas.get(1) : null);
-                            var nestedVal = eitherVal != null ? eitherVal.getValue() : innerValue;
-                            var nestedTrace = nestedBranch != null ? resolvePsiBranchTrace(nestedBranch, nestedVal, project, visited) : "";
-                            return targetAlias + " " + tagText + (!nestedTrace.isEmpty() ? " (-> " + nestedTrace + ")" : "");
-                        } else if (targetSum.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-                            var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(targetSum, SchemaType.class);
-                            var optVal = innerValue != null ? innerValue.getExplicitOptionValue() : null;
-                            var isNone = false;
-                            if (optVal != null) {
-                                var txt = optVal.getText().trim().split("\\s+")[0];
-                                isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
-                            } else if (innerValue != null) {
-                                var txt = innerValue.getText().trim().split("\\s+")[0];
-                                isNone = txt.equals(StvnVocabulary.VAL_NONE) || txt.equals(StvnVocabulary.VAL_NONE_SHORT);
-                            }
-                            if (isNone) {
-                                var tag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
-                                return targetAlias + " " + tag;
-                            }
-                            var isExplicit = optVal != null;
-                            var tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
-                            var tagText = isExplicit ? tag : "[" + tag + "]";
-                            var nestedBranch = !innerSchemas.isEmpty() ? innerSchemas.get(0) : null;
-                            var nestedVal = optVal != null ? optVal.getValue() : innerValue;
-                            var nestedTrace = nestedBranch != null ? resolvePsiBranchTrace(nestedBranch, nestedVal, project, visited) : "";
-                            return targetAlias + " " + tagText + (!nestedTrace.isEmpty() ? " (-> " + nestedTrace + ")" : "");
-                        }
-                    }
+                var unwrappedTarget = targetSchema != null ? unwrapNominalSchemaChain(targetSchema) : null;
+                if (unwrappedTarget != null
+                        && unwrappedTarget.getSchemaConstructor() != null
+                        && unwrappedTarget.getSchemaConstructor().getSumType() != null
+                        && unwrappedTarget.getSchemaConstructor().getSumType().getEnumDef() == null
+                        && lookupFile != null) {
+                    return formatNominalSumMultiHopTrajectory(
+                        keyword.getText().trim(),
+                        targetSchema,
+                        innerValue,
+                        innerIr,
+                        catalog,
+                        lookupFile,
+                        project,
+                        useLong,
+                        visitedAliases
+                    );
                 }
             }
 
@@ -1715,6 +1885,169 @@ public final class StvnTypeResolver {
             return StvnVocabulary.TYPE_ENUM;
         }
         return StvnSchemaFormatter.formatSchema(branchSchema);
+    }
+
+    private static void collectPsiFallbackSumSteps(
+        SchemaType startSchema,
+        @Nullable Value startValue,
+        boolean useLong,
+        List<SumTrajectoryStep> outSteps,
+        Set<SchemaType> visited
+    ) {
+        SchemaType currSchema = startSchema;
+        Value currVal = startValue;
+        for (int depth = 0; depth < 16 && currSchema != null; depth++) {
+            SchemaType inspected = unwrapNominalSchemaChain(currSchema);
+            if (inspected == null || !visited.add(inspected)) {
+                break;
+            }
+            var ctor = inspected.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+            if (sum == null || sum.getEnumDef() != null) {
+                break;
+            }
+            int anchorOffset = currVal != null ? currVal.getTextRange().getStartOffset() : 0;
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            String sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                var optVal = currVal != null ? currVal.getExplicitOptionValue() : null;
+                String firstToken = currVal != null ? currVal.getText().trim().split("\\s+")[0] : "";
+                boolean isNone = StvnVocabulary.VAL_NONE.equals(firstToken) || StvnVocabulary.VAL_NONE_SHORT.equals(firstToken);
+                if (isNone) {
+                    String noneTag = useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT;
+                    outSteps.add(new SumTrajectoryStep(false, noneTag, noneTag, anchorOffset));
+                    break;
+                }
+                boolean explicit = optVal != null || (currVal != null && isExplicitOptionText(currVal.getText().trim()));
+                String someTag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
+                String display = explicit
+                    ? someTag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + someTag + StvnVocabulary.DELIM_CLOSE_BRACKET;
+                outSteps.add(new SumTrajectoryStep(!explicit, display, someTag, anchorOffset));
+                if (optVal != null) {
+                    currVal = optVal.getValue();
+                }
+                currSchema = !branches.isEmpty() ? branches.get(0) : null;
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_EITHER)) {
+                var eitherVal = currVal != null ? currVal.getExplicitEitherValue() : null;
+                boolean isLeft = false;
+                if (eitherVal != null) {
+                    String head = eitherVal.getText().trim().split("\\s+")[0];
+                    isLeft = StvnVocabulary.VAL_LEFT.equals(head) || StvnVocabulary.VAL_LEFT_SHORT.equals(head);
+                } else if (currVal != null && !branches.isEmpty() && branches.size() == 1) {
+                    isLeft = matchesSchemaPattern(currVal, branches.get(0));
+                }
+                boolean explicit = eitherVal != null || (currVal != null && isExplicitEitherText(currVal.getText().trim()));
+                String tag = isLeft
+                    ? (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT)
+                    : (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT);
+                String display = explicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET;
+                outSteps.add(new SumTrajectoryStep(!explicit, display, tag, anchorOffset));
+                if (eitherVal != null) {
+                    currVal = eitherVal.getValue();
+                }
+                currSchema = isLeft
+                    ? (!branches.isEmpty() ? branches.get(0) : null)
+                    : (branches.size() > 1 ? branches.get(1) : null);
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                var unionVal = currVal != null ? currVal.getExplicitUnionValue() : null;
+                BigInteger explicitIdx = currVal != null ? extractExplicitUnionOneBasedIndex(currVal) : null;
+                int zeroIdx = explicitIdx != null
+                    ? toSafeZeroBasedIndex(explicitIdx)
+                    : selectBestMatchingPsiUnionBranch(currVal, branches);
+                String tag = explicitIdx != null
+                    ? StvnVocabulary.SIGIL_VALUE + explicitIdx
+                    : StvnVocabulary.SIGIL_VALUE + (zeroIdx + 1);
+                boolean explicit = unionVal != null || explicitIdx != null;
+                String display = explicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET;
+                outSteps.add(new SumTrajectoryStep(!explicit, display, tag, anchorOffset));
+                if (unionVal != null) {
+                    currVal = unionVal.getValue();
+                }
+                currSchema = (zeroIdx >= 0 && zeroIdx < branches.size()) ? branches.get(zeroIdx) : null;
+            } else {
+                break;
+            }
+        }
+    }
+
+    private static @Nullable SchemaType unwrapAllSumLayersToLeafSchema(
+        SchemaType startSchema,
+        @Nullable Value psiCursor,
+        @Nullable StvnValue irCursor,
+        Set<SchemaType> visited
+    ) {
+        SchemaType current = startSchema;
+        Value currPsi = psiCursor;
+        StvnValue currIr = irCursor;
+        for (int depth = 0; depth < 16 && current != null; depth++) {
+            if (isUngroundedSchemaType(current)) {
+                break;
+            }
+            SchemaType inspected = unwrapNominalSchemaChain(current);
+            if (inspected == null || !visited.add(inspected)) {
+                break;
+            }
+            var ctor = inspected.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+            if (sum == null || sum.getEnumDef() != null) {
+                break;
+            }
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            if (branches.isEmpty()) {
+                break;
+            }
+            String sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                String head = currPsi != null ? currPsi.getText().trim().split("\\s+")[0] : "";
+                if (StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head)
+                        || (currIr instanceof StvnValue.StvnOption optIr && optIr.value().isEmpty())) {
+                    return current;
+                }
+                if (currPsi != null && currPsi.getExplicitOptionValue() != null) {
+                    currPsi = currPsi.getExplicitOptionValue().getValue();
+                }
+                if (currIr instanceof StvnValue.StvnOption optIr) {
+                    currIr = optIr.value().orElse(null);
+                }
+                current = branches.get(0);
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() >= 2) {
+                boolean isLeft = false;
+                if (currIr instanceof StvnValue.StvnEither eitherIr) {
+                    isLeft = eitherIr.branch() == StvnValue.EitherBranch.LEFT;
+                    currIr = eitherIr.value();
+                } else if (currPsi != null && currPsi.getExplicitEitherValue() != null) {
+                    String head = currPsi.getExplicitEitherValue().getText().trim().split("\\s+")[0];
+                    isLeft = StvnVocabulary.VAL_LEFT.equals(head) || StvnVocabulary.VAL_LEFT_SHORT.equals(head);
+                } else if (currPsi != null) {
+                    isLeft = !matchesSchemaPattern(currPsi, branches.get(1)) && matchesSchemaPattern(currPsi, branches.get(0));
+                }
+                if (currPsi != null && currPsi.getExplicitEitherValue() != null) {
+                    currPsi = currPsi.getExplicitEitherValue().getValue();
+                }
+                current = isLeft ? branches.get(0) : branches.get(1);
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                int idx = -1;
+                if (currIr instanceof StvnValue.StvnUnion unionIr) {
+                    idx = toSafeZeroBasedIndex(unionIr.oneBasedBranchIndex());
+                    currIr = unionIr.value();
+                } else if (currPsi != null) {
+                    BigInteger expIdx = extractExplicitUnionOneBasedIndex(currPsi);
+                    idx = expIdx != null ? toSafeZeroBasedIndex(expIdx) : selectBestMatchingPsiUnionBranch(currPsi, branches);
+                }
+                if (currPsi != null && currPsi.getExplicitUnionValue() != null) {
+                    currPsi = currPsi.getExplicitUnionValue().getValue();
+                }
+                current = (idx >= 0 && idx < branches.size()) ? branches.get(idx) : null;
+            } else {
+                break;
+            }
+        }
+        return current;
     }
 
     /**
@@ -2269,10 +2602,11 @@ public final class StvnTypeResolver {
     private static @Nullable SchemaType unwrapImplicitSumBranchSchema(SchemaType schema, Value value) {
         SchemaType current = schema;
         var coreNode = resolveCoreValue(value);
-        for (int depth = 0; depth < 8 && current != null; depth++) {
-            var ctor = current.getSchemaConstructor();
+        for (int depth = 0; depth < 16 && current != null; depth++) {
+            var inspected = unwrapNominalSchemaChain(current);
+            var ctor = inspected != null ? inspected.getSchemaConstructor() : null;
             var sum = ctor != null ? ctor.getSumType() : null;
-            if (sum == null) {
+            if (sum == null || sum.getEnumDef() != null) {
                 break;
             }
             var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
@@ -2316,7 +2650,11 @@ public final class StvnTypeResolver {
                 break;
             }
             if (current != null && current.getTypeKeyword() != null) {
-                return current;
+                var nextInspected = unwrapNominalSchemaChain(current);
+                var nextCtor = nextInspected != null ? nextInspected.getSchemaConstructor() : null;
+                if (nextCtor == null || nextCtor.getSumType() == null || nextCtor.getSumType().getEnumDef() != null) {
+                    return current;
+                }
             }
         }
         return current;

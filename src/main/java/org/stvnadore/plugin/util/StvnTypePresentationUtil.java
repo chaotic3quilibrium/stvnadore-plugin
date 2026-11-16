@@ -48,10 +48,18 @@ public final class StvnTypePresentationUtil {
                 return Optional.of(prefixAndHead);
             }
 
+            String cleanFirstHop = hops.getFirst();
+            if (cleanFirstHop.endsWith("(")) {
+                cleanFirstHop = cleanFirstHop.substring(0, cleanFirstHop.length() - 1).trim();
+            }
+            String cleanLastHop = trimUnmatchedTrailingCloseParens(hops.getLast());
+            final String firstHopVal = cleanFirstHop;
+            final String lastHopVal = cleanLastHop;
+
             return switch (mode) {
                 case SYMBOL_ONLY -> Optional.of(prefixAndHead);
-                case FIRST_HOP -> Optional.of(prefixAndHead + " (-> " + hops.getFirst() + ")");
-                case ALIAS_TO_BASE -> Optional.of(prefixAndHead + " (-> " + hops.getLast() + ")");
+                case FIRST_HOP -> Optional.of(prefixAndHead + " (-> " + firstHopVal + ")");
+                case ALIAS_TO_BASE -> Optional.of(prefixAndHead + " (-> " + lastHopVal + ")");
                 case NONE, FULL -> Optional.of(fullChain);
             };
         }
@@ -76,5 +84,24 @@ public final class StvnTypePresentationUtil {
             case ALIAS_TO_BASE -> Optional.of(head + " -> " + base);
             case NONE, FULL -> Optional.of(fullChain);
         };
+    }
+
+    private static String trimUnmatchedTrailingCloseParens(String segment) {
+        int openCount = 0;
+        int closeCount = 0;
+        for (int i = 0; i < segment.length(); i++) {
+            char ch = segment.charAt(i);
+            if (ch == '(') {
+                openCount++;
+            } else if (ch == ')') {
+                closeCount++;
+            }
+        }
+        String result = segment;
+        while (closeCount > openCount && result.endsWith(")")) {
+            result = result.substring(0, result.length() - 1).trim();
+            closeCount--;
+        }
+        return result;
     }
 }
