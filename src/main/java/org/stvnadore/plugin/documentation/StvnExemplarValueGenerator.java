@@ -4,7 +4,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -21,8 +20,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
@@ -34,6 +31,7 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnStringConstraintUtil;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.SumType;
@@ -285,14 +283,21 @@ public final class StvnExemplarValueGenerator {
                 minSize = fixedSize;
                 maxSize = fixedSize;
             }
-            String minIncl = strSchema.lowerBound()
+            boolean lowerExclusive = strSchema.lowerBound()
+                .map(b -> b.kind() == StvnSchema.BoundKind.EXCLUSIVE)
+                .orElseGet(() -> !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
+                    && psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_EXCL));
+            String lowerBound = strSchema.lowerBound()
                 .map(StvnSchema.ContinuousBound::value)
                 .orElseGet(() -> resolveStringOrConstOrNull(
                     schemaType,
                     psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
                         ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
                         : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)));
-            String maxExcl = strSchema.upperBound()
+            boolean upperExclusive = strSchema.upperBound()
+                .map(b -> b.kind() == StvnSchema.BoundKind.EXCLUSIVE)
+                .orElseGet(() -> psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL));
+            String upperBound = strSchema.upperBound()
                 .map(StvnSchema.ContinuousBound::value)
                 .orElseGet(() -> resolveStringOrConstOrNull(
                     schemaType,
@@ -301,7 +306,16 @@ public final class StvnExemplarValueGenerator {
                         : psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)));
             String regexPattern = strSchema.rawRegexPattern()
                 .orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_REGEX)));
-            return generateStringExemplar(minSize, maxSize, minIncl, maxExcl, regexPattern, strSchema.preserveIndent());
+            return generateStringExemplar(
+                minSize,
+                maxSize,
+                lowerBound,
+                lowerExclusive,
+                upperBound,
+                upperExclusive,
+                regexPattern,
+                strSchema.preserveIndent()
+            );
         }
         if (effectiveIr instanceof StvnSchema.BooleanSchema) {
             return StvnVocabulary.VAL_TRUE;
@@ -366,13 +380,16 @@ public final class StvnExemplarValueGenerator {
                             Long maxSize = fixedSize != null
                                 ? fixedSize
                                 : parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE));
-                            String minIncl = resolveStringOrConstOrNull(
+                            boolean lowerExclusive = !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
+                                && psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_EXCL);
+                            String lowerBound = resolveStringOrConstOrNull(
                                 schemaType,
                                 psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
                                     ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
                                     : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)
                             );
-                            String maxExcl = resolveStringOrConstOrNull(
+                            boolean upperExclusive = psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL);
+                            String upperBound = resolveStringOrConstOrNull(
                                 schemaType,
                                 psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)
                                     ? psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
@@ -385,8 +402,10 @@ public final class StvnExemplarValueGenerator {
                             yield generateStringExemplar(
                                 minSize,
                                 maxSize,
-                                minIncl,
-                                maxExcl,
+                                lowerBound,
+                                lowerExclusive,
+                                upperBound,
+                                upperExclusive,
                                 regexPattern,
                                 resolvePsiPreserveIndentFlag(schemaType, psiMeta)
                             );
@@ -841,7 +860,18 @@ public final class StvnExemplarValueGenerator {
      * @param preserveIndent whether {@code #preserveIndent} is active
      * @return a compliant quoted string literal
      */
-    public static String generateStringExemplar(
+    /**
+     * Generates a valid STVN {@code :String} literal respecting Unicode code-point length and
+     * lexicographical bounds.
+     *
+     * @param minSize        optional minimum code-point size
+     * @param maxSize        optional maximum code-point size
+     * @param minIncl        optional minimum inclusive lexicographical bound
+     * @param maxExcl        optional maximum exclusive lexicographical bound
+     * @param preserveIndent whether {@code #preserveIndent} is active
+     * @return a compliant quoted string literal, or {@code null} if uninhabited
+     */
+    public static @Nullable String generateStringExemplar(
         @Nullable Long minSize,
         @Nullable Long maxSize,
         @Nullable String minIncl,
@@ -852,18 +882,18 @@ public final class StvnExemplarValueGenerator {
     }
 
     /**
-     * Generates a valid STVN {@code :String} literal respecting UTF-8 byte size, lexicographical
+     * Generates a valid STVN {@code :String} literal respecting Unicode code-point length, lexicographical
      * bounds, and an optional regular expression pattern.
      *
-     * @param minSize        optional minimum UTF-8 byte size
-     * @param maxSize        optional maximum UTF-8 byte size
+     * @param minSize        optional minimum code-point size
+     * @param maxSize        optional maximum code-point size
      * @param minIncl        optional minimum inclusive lexicographical bound
      * @param maxExcl        optional maximum exclusive lexicographical bound
      * @param regexPattern   optional unquoted regular expression pattern
      * @param preserveIndent whether {@code #preserveIndent} is active
-     * @return a compliant quoted string literal
+     * @return a compliant quoted string literal, or {@code null} if uninhabited
      */
-    public static String generateStringExemplar(
+    public static @Nullable String generateStringExemplar(
         @Nullable Long minSize,
         @Nullable Long maxSize,
         @Nullable String minIncl,
@@ -871,95 +901,76 @@ public final class StvnExemplarValueGenerator {
         @Nullable String regexPattern,
         boolean preserveIndent
     ) {
-        long minBytes = minSize != null ? Math.max(0L, minSize) : 0L;
-        long maxBytes = maxSize != null ? Math.max(0L, maxSize) : StvnVocabulary.DEFAULT_MAX_SIZE.longValue();
-
-        if (maxBytes == 0L) {
-            return "\"\"";
-        }
-
-        if (regexPattern != null && !regexPattern.isBlank()) {
-            String regexSynthesized = synthesizeRegexConformingString(regexPattern, minBytes, maxBytes);
-            if (regexSynthesized != null) {
-                String escaped = regexSynthesized.replace("\\", "\\\\").replace("\"", "\\\"");
-                return "\"" + escaped + "\"";
-            }
-        }
-
-        String base = "example";
-        if (minIncl != null && !minIncl.isEmpty() && base.compareTo(minIncl) < 0) {
-            base = minIncl;
-        }
-        if (maxExcl != null && base.compareTo(maxExcl) >= 0) {
-            base = minIncl != null ? minIncl : "a";
-        }
-
-        byte[] utf8 = base.getBytes(StandardCharsets.UTF_8);
-        if (utf8.length > maxBytes) {
-            base = new String(utf8, 0, (int) maxBytes, StandardCharsets.UTF_8);
-        } else if (utf8.length < minBytes && minBytes <= 4096) {
-            StringBuilder sb = new StringBuilder(base);
-            while (sb.toString().getBytes(StandardCharsets.UTF_8).length < minBytes) {
-                sb.append('a');
-            }
-            base = sb.toString();
-        }
-
-        String escaped = base.replace("\\", "\\\\").replace("\"", "\\\"");
-        return "\"" + escaped + "\"";
+        return generateStringExemplar(
+            minSize,
+            maxSize,
+            minIncl,
+            false,
+            maxExcl,
+            maxExcl != null,
+            regexPattern,
+            preserveIndent
+        );
     }
 
     /**
-     * Synthesizes an unquoted string conforming to {@code regexPattern} and {@code [minBytes, maxBytes]}
-     * when the pattern matches a known Standard Library Prelude or common structural regex.
+     * Generates a verified STVN {@code :String} exemplar literal respecting Unicode code-point bounds,
+     * inclusive/exclusive UTF-8 lexicographical bounds, and compiled regular expressions.
+     *
+     * @param minSize        optional minimum code-point count
+     * @param maxSize        optional maximum code-point count
+     * @param lowerBound     optional unquoted lower bound
+     * @param lowerExclusive {@code true} for {@code #minExcl}, {@code false} for {@code #minIncl}
+     * @param upperBound     optional unquoted upper bound
+     * @param upperExclusive {@code true} for {@code #maxExcl}, {@code false} for {@code #maxIncl}
+     * @param regexPattern   optional unquoted regular expression
+     * @param preserveIndent whether {@code #preserveIndent #TRUE} is active
+     * @return verified canonically quoted STVN string literal, or {@code null} if uninhabited
+     */
+    public static @Nullable String generateStringExemplar(
+        @Nullable Long minSize,
+        @Nullable Long maxSize,
+        @Nullable String lowerBound,
+        boolean lowerExclusive,
+        @Nullable String upperBound,
+        boolean upperExclusive,
+        @Nullable String regexPattern,
+        boolean preserveIndent
+    ) {
+        String cleanRegex = regexPattern != null ? unquoteOrNull(regexPattern) : null;
+        var profile = StvnStringConstraintUtil.createProfile(
+            minSize,
+            maxSize,
+            lowerBound,
+            lowerExclusive,
+            upperBound,
+            upperExclusive,
+            cleanRegex
+        );
+        String inhabitant = StvnStringConstraintUtil.synthesizeExemplarInhabitant(profile);
+        return inhabitant != null ? StvnPsiLiteralEvaluator.formatCanonicalQuotedString(inhabitant) : null;
+    }
+
+    /**
+     * Synthesizes an unquoted string conforming to {@code regexPattern} and {@code [minSize, maxSize]}
+     * when the pattern matches a known Standard Library Prelude or anchored structural regex.
      *
      * @param regexPattern unquoted regular expression pattern
-     * @param minBytes     minimum UTF-8 byte length
-     * @param maxBytes     maximum UTF-8 byte length
+     * @param minSize      minimum Unicode code-point length
+     * @param maxSize      maximum Unicode code-point length
      * @return conforming unquoted string, or {@code null} if no deterministic synthesis matches
      */
     public static @Nullable String synthesizeRegexConformingString(
         String regexPattern,
-        long minBytes,
-        long maxBytes
+        long minSize,
+        long maxSize
     ) {
         String clean = unquoteOrNull(regexPattern);
         if (clean == null || clean.isBlank()) {
             return null;
         }
-        List<String> candidates = List.of(
-            CANONICAL_UUID_LOWER_EXEMPLAR,
-            "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "1.0.0",
-            "user@example.com",
-            "127.0.0.1",
-            "example_id",
-            "example",
-            "EXAMPLE",
-            "12345"
-        );
-        try {
-            Pattern compiled = Pattern.compile(clean);
-            for (String candidate : candidates) {
-                int len = candidate.getBytes(StandardCharsets.UTF_8).length;
-                if (len >= minBytes && len <= maxBytes && compiled.matcher(candidate).matches()) {
-                    return candidate;
-                }
-            }
-            // Length-adjusted repetition for simple character-class patterns
-            int targetLen = (int) Math.max(1L, Math.min(maxBytes, Math.max(minBytes, 7L)));
-            if (targetLen <= 4096) {
-                for (char fill : new char[]{'a', 'A', '0', '1'}) {
-                    String repeated = String.valueOf(fill).repeat(targetLen);
-                    if (compiled.matcher(repeated).matches()) {
-                        return repeated;
-                    }
-                }
-            }
-        } catch (PatternSyntaxException ignored) {
-        }
-        return null;
+        var profile = StvnStringConstraintUtil.createProfile(minSize, maxSize, null, false, null, false, clean);
+        return StvnStringConstraintUtil.synthesizeExemplarInhabitant(profile);
     }
 
     private static String generateEnumSubsetExemplarFromIr(

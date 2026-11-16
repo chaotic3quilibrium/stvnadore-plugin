@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
@@ -204,6 +205,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 @NotNull PsiElement target,
                 @NotNull SchemaType schemaType
             ) {
+                // Tier-1 #minSize/#maxSize are permanently locked at the root constructor (STVN Spec § 6.1 & § 9.1.1);
+                // derived nominal aliases (:Child ... :ParentNominal) cannot re-declare them without fatal E040.
+                if (schemaType.getSchemaConstructor() == null) {
+                    return;
+                }
                 String declaredName = target.getText().trim();
                 var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
 
@@ -219,9 +225,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         var text = entry.getText();
                         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                             hasDirectCapacityFacet = true;
-                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                            if (intLit != null) {
-                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
+                            var metaVal = entry.getMetadataValue();
+                            if (metaVal != null) {
+                                directCapacity = StvnPsiLiteralEvaluator
+                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
+                                    .orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -272,9 +280,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     // Blame Attribution Invariant: register problem strictly on LHS TypeDefTarget
                     registerCapacityProblem(holder, target, formattedMsg, isError);
                     PsiElement rhsAnchor = resolveHighlightAnchor(schemaType);
-                    registerCapacityIntentions(holder, rhsAnchor, isError);
-                    if (metaMap != null && metaMap != rhsAnchor) {
-                        registerCapacityIntentions(holder, metaMap, isError);
+                    if (isOnTheFly) {
+                        registerCapacityIntentions(holder, rhsAnchor, isError);
                     }
                 }
             }
@@ -302,6 +309,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             }
 
             private void inspectTopLevelTypeEntry(@NotNull TypeEntry typeEntry, @NotNull SchemaType schemaType) {
+                if (schemaType.getSchemaConstructor() == null) {
+                    return;
+                }
                 var resolvedInfo = resolveEffectiveTypeCapacity(schemaType, typeEntry.getContainingFile(), new HashSet<>());
                 if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) return;
 
@@ -319,9 +329,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         var text = entry.getText();
                         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                             hasDirectCapacityFacet = true;
-                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                            if (intLit != null) {
-                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
+                            var metaVal = entry.getMetadataValue();
+                            if (metaVal != null) {
+                                directCapacity = StvnPsiLiteralEvaluator
+                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
+                                    .orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -406,9 +418,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                         var text = entry.getText();
                         if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
                             hasDirectCapacityFacet = true;
-                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                            if (intLit != null) {
-                                directCapacity = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
+                            var metaVal = entry.getMetadataValue();
+                            if (metaVal != null) {
+                                directCapacity = StvnPsiLiteralEvaluator
+                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
+                                    .orElse(null);
                             }
                         } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
                             hasDirectCapacityFacet = true;
@@ -556,7 +570,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         if (isError) {
             holder.registerProblem(
                 targetElem,
-                "",
+                "Set nominal capacity",
                 ProblemHighlightType.INFORMATION,
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
@@ -565,7 +579,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         } else {
             holder.registerProblem(
                 targetElem,
-                "",
+                "Set nominal capacity",
                 ProblemHighlightType.INFORMATION,
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
                 new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
@@ -946,8 +960,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * Structural QuickFix injecting explicit capacity facets immediately before the type constructor.
      */
     public static class ApplyNominalCapacityQuickFix implements LocalQuickFix, PriorityAction {
+        @SafeFieldForPreview
         private final String actionName;
+        @SafeFieldForPreview
         private final String facetSnippet;
+        @SafeFieldForPreview
         private final Priority priority;
 
         /**
@@ -1030,44 +1047,31 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 var entries = metaMap.getMetadataEntryList();
                 String sanitized = sanitizeMetadataText(metaMap.getText());
                 boolean hasLexicalCap = containsCapacityFacetLexically(sanitized);
-
-                boolean allCapacity = entries.isEmpty() || entries.stream().allMatch(ApplyNominalCapacityQuickFix::isCapacityFacet);
-                if (allCapacity) {
-                    // Replace the entire metadata map text range with the new snippet
-                    var range = metaMap.getTextRange();
-                    doc.replaceString(range.getStartOffset(), range.getEndOffset(), facetSnippet);
-                } else {
-                    // Mixed facets: delete existing capacity entries and insert snippet before closing '}'
-                    var capacityEntries = entries.stream()
-                        .filter(ApplyNominalCapacityQuickFix::isCapacityFacet)
-                        .sorted((a, b) -> Integer.compare(b.getTextRange().getStartOffset(), a.getTextRange().getStartOffset()))
-                        .toList();
-
-                    if (hasLexicalCap && capacityEntries.isEmpty()) {
-                        // Capacity facet is already present lexically but degraded in AST; do not append duplicate facet
-                        return;
-                    }
-
-                    for (var capEntry : capacityEntries) {
-                        int start = capEntry.getTextRange().getStartOffset();
-                        int end = capEntry.getTextRange().getEndOffset();
-                        if (start > 0 && doc.getCharsSequence().charAt(start - 1) == ' ') {
-                            start--;
-                        }
-                        doc.deleteString(start, end);
-                    }
-
-                    int openOffset = metaMap.getTextRange().getStartOffset();
-                    int closeOffset = doc.getText().indexOf('}', openOffset);
-                    if (closeOffset >= 0) {
-                        String innerFacets = facetSnippet.replace("{", "").replace("}", "").trim();
-                        if (closeOffset > 0 && doc.getCharsSequence().charAt(closeOffset - 1) == ' ') {
-                            doc.insertString(closeOffset - 1, " " + innerFacets);
-                        } else {
-                            doc.insertString(closeOffset, " " + innerFacets + " ");
-                        }
+                var capacityEntries = entries.stream()
+                    .filter(ApplyNominalCapacityQuickFix::isCapacityFacet)
+                    .toList();
+                if (hasLexicalCap && capacityEntries.isEmpty()) {
+                    // Capacity facet is already present lexically but degraded in AST; do not append duplicate facet
+                    return;
+                }
+                String inner = facetSnippet.replace("{", "").replace("}", "").trim();
+                String[] tokens = inner.split("\\s+");
+                String minSizeVal = null;
+                String maxSizeVal = String.valueOf(StvnVocabulary.DEFAULT_MAX_SIZE);
+                for (int i = 0; i + 1 < tokens.length; i++) {
+                    if (StvnVocabulary.FACET_KW_MIN_SIZE.equals(tokens[i])) {
+                        minSizeVal = tokens[i + 1];
+                    } else if (StvnVocabulary.FACET_KW_MAX_SIZE.equals(tokens[i])) {
+                        maxSizeVal = tokens[i + 1];
                     }
                 }
+                StvnMetadataFacetInsertionUtil.insertOrReplaceCapacityFacets(
+                    doc,
+                    metaMap,
+                    minSizeVal,
+                    maxSizeVal,
+                    minSizeVal == null
+                );
             } else {
                 // Unadorned type constructor: insert metadata map immediately before constructor
                 int startOffset;
@@ -1104,6 +1108,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * QuickFix truncating string literal values to declared schema capacity.
      */
     public static final class TruncateStringLiteralQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final int maxCapacity;
 
         /**

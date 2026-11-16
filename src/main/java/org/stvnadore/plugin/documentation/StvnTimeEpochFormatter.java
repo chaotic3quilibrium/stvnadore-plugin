@@ -178,9 +178,10 @@ public final class StvnTimeEpochFormatter {
         }
 
         String expectedDesc = minExpectedDigits + ".." + maxExpectedDigits + " digits for " + scaleFlag;
+        String digitWord = digitCount == 1 ? "1 digit" : digitCount + " digits";
         String detectedDesc = detectedScale != null
-            ? digitCount + " digits (suggesting " + detectedScale + ")"
-            : digitCount + " digits";
+            ? digitWord + " (suggesting " + detectedScale + ")"
+            : digitWord;
 
         return new EpochFormatResult(
             formattedTime,

@@ -476,6 +476,20 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.startsWith("Unrecognized STVN file extension")) {
             return false;
         }
+        if (DiagnosticBag.ERR_FENCE_DELIMITER_MISMATCH.equals(sym) || "E025".equals(canon)) {
+            int offset = diag.startOffset();
+            if (offset >= 0 && offset < file.getTextLength()) {
+                var elem = file.findElementAt(offset);
+                if (elem != null) {
+                    String tokText = elem.getText();
+                    if (tokText.startsWith("\"\"\"")
+                            && !tokText.startsWith("\"\"\"[")
+                            && !tokText.startsWith("\"\"\"->")) {
+                        return false;
+                    }
+                }
+            }
+        }
 
         // Guard: Schema facet numeric/capacity domain violations not covered by PSI inspections remain with core
         if (message.contains("is out of bounds for physical capacity")
@@ -641,7 +655,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("Mutually exclusive temporal scale")) {
             return "StvnTemporalMode";
         }
-        if (message.contains("Storage sizing #size is prohibited on :String")) {
+        if (message.contains("Storage sizing #size is prohibited on :String")
+                || message.contains("Facet '" + StvnVocabulary.FACET_KW_SIZE + "' is prohibited on " + StvnVocabulary.TYPE_STRING)) {
             return "StvnStringCardinality";
         }
         if (message.contains("Unrecognized constraint facet")

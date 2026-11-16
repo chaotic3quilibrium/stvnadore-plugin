@@ -824,6 +824,27 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Invalid #regex pattern quick-fix (E013 / INVALID_REGEX_PATTERN)
+                if (DiagnosticBag.ERR_INVALID_REGEX.equals(diagnosticId)
+                        || "INVALID_REGEX_PATTERN".equals(diagnosticId)
+                        || rawMessage.contains("Invalid regex pattern:")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var regexEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (regexEntry == null && range.getStartOffset() + 1 < textLength) {
+                        regexEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(
+                            file.findElementAt(range.getStartOffset() + 1)
+                        );
+                    }
+                    if (regexEntry != null) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            RemoveRedundantFacetQuickFix.createRemoveInvalidFacetFix(
+                                regexEntry,
+                                StvnVocabulary.FACET_KW_REGEX
+                            )
+                        );
+                    }
+                }
+
                 // Mutually exclusive temporal mode/scale quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
                 if ((DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
@@ -1012,9 +1033,24 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Unfenced block string quick-fix (Rule STR-04)
-                if (rawMessage.contains("Unfenced block strings are prohibited")) {
-                    annotationBuilder = annotationBuilder.withFix(new ConvertToFencedStringIntentionAction(range));
+                // Untagged triple-quoted block or inline string quick-fixes (Rule STR-04, E025)
+                var fenceLeaf = file.findElementAt(range.getStartOffset());
+                String fenceLeafText = fenceLeaf != null ? fenceLeaf.getText() : "";
+                boolean isUntaggedTripleQuote = fenceLeafText.startsWith("\"\"\"")
+                    && !fenceLeafText.startsWith("\"\"\"[")
+                    && !fenceLeafText.startsWith("\"\"\"->");
+                if (rawMessage.contains("Unfenced block strings are prohibited") || isUntaggedTripleQuote) {
+                    String rawInner = (fenceLeafText.endsWith("\"\"\"") && fenceLeafText.length() >= 6)
+                        ? fenceLeafText.substring(3, fenceLeafText.length() - 3)
+                        : fenceLeafText;
+                    String safeTag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(rawInner, "FENCE");
+                    annotationBuilder = annotationBuilder.withFix(
+                        new ConvertToFencedStringIntentionAction(range, safeTag)
+                    );
+                    var simpleFix = ConvertToSimpleStringIntentionAction.createIfSingleLineUntagged(file, range);
+                    if (simpleFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(simpleFix);
+                    }
                 }
 
                 // Tab character quick-fix (Rule STR-01 / E001)

@@ -1,6 +1,9 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
@@ -8,21 +11,35 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
+import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.Value;
 
 /**
- * Intention action that converts legacy unfenced block strings into canonical fenced string blocks
- * under Rule STR-04 ("""[TEXT]...[TEXT]""").
+ * Intention action that converts untagged triple-quoted strings (both multi-line and single-line inline)
+ * into canonical Rule STR-04 fenced string blocks ({@code """[TAG]\n...[TAG]"""}) with collision-safe
+ * tag selection and {@code #preserveIndent}-aware body indentation.
  */
 @NullMarked
-public final class ConvertToFencedStringIntentionAction implements IntentionAction {
+public final class ConvertToFencedStringIntentionAction implements IntentionAction, PriorityAction {
 
     private static final String DEFAULT_TAG = "FENCE";
+    @SafeFieldForPreview
     private final TextRange targetRange;
+    @SafeFieldForPreview
+    private final String safeTag;
 
     /**
      * Constructs a new intention action bound to the opening delimiter coordinate span.
@@ -30,12 +47,28 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
      * @param targetRange the text range of the opening triple quotes
      */
     public ConvertToFencedStringIntentionAction(TextRange targetRange) {
+        this(targetRange, DEFAULT_TAG);
+    }
+
+    /**
+     * Constructs a new intention action bound to the opening delimiter span with a precomputed collision-safe tag.
+     *
+     * @param targetRange the text range of the opening triple quotes
+     * @param safeTag     collision-safe delimiter tag (for example, {@code FENCE} or {@code FENCE_1})
+     */
+    public ConvertToFencedStringIntentionAction(TextRange targetRange, String safeTag) {
         this.targetRange = targetRange;
+        this.safeTag = safeTag;
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return Priority.HIGH;
     }
 
     @Override
     public @NotNull String getText() {
-        return "Convert to fenced string '\"\"\"[" + DEFAULT_TAG + "]...[" + DEFAULT_TAG + "]\"\"\"'";
+        return "Convert to fenced string '\"\"\"[" + safeTag + "]...[" + safeTag + "]\"\"\"'";
     }
 
     @Override
@@ -53,6 +86,21 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
     @Override
     public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) throws IncorrectOperationException {
         if (file == null) return;
+        applyConversion(project, editor, file, file.isPhysical());
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+        applyConversion(project, editor, file, false);
+        return IntentionPreviewInfo.DIFF;
+    }
+
+    private void applyConversion(
+            @NotNull Project project,
+            @Nullable Editor editor,
+            @NotNull PsiFile file,
+            boolean moveCaret
+    ) {
         Document doc = file.getViewProvider().getDocument();
         if (doc == null && editor != null) {
             doc = editor.getDocument();
@@ -64,6 +112,9 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
 
         var element = file.findElementAt(startOffset);
         String text = (element != null && element.getText().startsWith("\"\"\"")) ? element.getText() : null;
+        CharSequence chars = doc.getCharsSequence();
+        boolean preserveIndent = resolveEffectivePreserveIndent(file, startOffset);
+        String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
 
         String updated;
         int replaceEndOffset;
@@ -71,12 +122,13 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
         if (text != null && text.startsWith("\"\"\"") && text.endsWith("\"\"\"") && text.length() >= 6) {
             int elemStart = element.getTextRange().getStartOffset();
             String body = text.substring(3, text.length() - 3);
-            updated = "\"\"\"[" + DEFAULT_TAG + "]" + body + "[" + DEFAULT_TAG + "]\"\"\"";
+            String indent = computeOpeningIndent(chars, elemStart);
+            String tag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(body, safeTag);
+            updated = formatFencedReplacement(body, tag, indent, preserveIndent, lineSep);
             replaceEndOffset = elemStart + text.length();
             startOffset = elemStart;
         } else {
             // Scan forward in document buffer for matching closing delimiter
-            CharSequence chars = doc.getCharsSequence();
             int closingIdx = -1;
             for (int i = startOffset + 3; i + 2 < chars.length(); i++) {
                 if (chars.charAt(i) == '"' && chars.charAt(i + 1) == '"' && chars.charAt(i + 2) == '"') {
@@ -87,21 +139,120 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
 
             if (closingIdx >= 0) {
                 String body = doc.getText(new TextRange(startOffset + 3, closingIdx));
-                updated = "\"\"\"[" + DEFAULT_TAG + "]" + body + "[" + DEFAULT_TAG + "]\"\"\"";
+                String indent = computeOpeningIndent(chars, startOffset);
+                String tag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(body, safeTag);
+                updated = formatFencedReplacement(body, tag, indent, preserveIndent, lineSep);
                 replaceEndOffset = closingIdx + 3;
             } else {
                 // Fallback for unclosed block string: append closing fence with newline and indentation
-                String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
-                String indent = computeOpeningIndent(chars, startOffset);
+                String indent = computeOpeningIndent(chars, startOffset).replace("\t", "  ");
                 String rest = doc.getText(new TextRange(startOffset + 3, doc.getTextLength()));
-                updated = "\"\"\"[" + DEFAULT_TAG + "]" + rest + lineSep + indent + "[" + DEFAULT_TAG + "]\"\"\"";
+                String tag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(rest, safeTag);
+                String headerSep = startsWithHorizontalPlusNewline(rest)
+                    ? ""
+                    : lineSep + (preserveIndent ? "" : indent + "  ");
+                updated = "\"\"\"[" + tag + "]" + headerSep + rest + lineSep + (preserveIndent ? "" : indent) + "[" + tag + "]\"\"\"";
                 replaceEndOffset = doc.getTextLength();
             }
         }
 
         doc.replaceString(startOffset, replaceEndOffset, updated);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
-        repositionCaretToBodyLine(project, doc, startOffset);
+        if (moveCaret) {
+            repositionCaretToBodyLine(project, doc, startOffset);
+        }
+    }
+
+    /**
+     * Formats an untagged inner body into a syntactically valid Rule STR-04 fenced string literal.
+     *
+     * @param rawBody        content strictly between opening {@code """} and closing {@code """}
+     * @param tag            collision-safe fence tag
+     * @param lineIndent     spaces preceding the opening {@code """} on its line
+     * @param preserveIndent whether {@code #preserveIndent #TRUE} governs this literal
+     * @param lineSep        line separator ({@code "\n"} or {@code "\r\n"})
+     * @return valid {@code """[TAG]\n...[TAG]"""} source text
+     */
+    public static String formatFencedReplacement(
+            String rawBody,
+            String tag,
+            String lineIndent,
+            boolean preserveIndent,
+            String lineSep
+    ) {
+        String cleanIndent = lineIndent.replace("\t", "  ");
+        if (startsWithHorizontalPlusNewline(rawBody)) {
+            return "\"\"\"[" + tag + "]" + rawBody + "[" + tag + "]\"\"\"";
+        }
+        String normalized = rawBody.replace("\r\n", "\n").replace('\r', '\n');
+        if (normalized.isEmpty()) {
+            String closePrefix = preserveIndent ? "" : cleanIndent;
+            return "\"\"\"[" + tag + "]" + lineSep + closePrefix + "[" + tag + "]\"\"\"";
+        }
+        String bodyMargin = preserveIndent ? "" : cleanIndent + "  ";
+        boolean endsWithNewline = normalized.endsWith("\n");
+        String core = endsWithNewline ? normalized.substring(0, normalized.length() - 1) : normalized;
+        String[] lines = core.split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        sb.append("\"\"\"[").append(tag).append("]").append(lineSep);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append(lineSep);
+            }
+            String line = lines[i];
+            if (!line.isEmpty()) {
+                sb.append(bodyMargin).append(line);
+            }
+        }
+        if (endsWithNewline) {
+            sb.append(lineSep).append(preserveIndent ? "" : cleanIndent).append("[").append(tag).append("]\"\"\"");
+        } else {
+            sb.append("[").append(tag).append("]\"\"\"");
+        }
+        return sb.toString();
+    }
+
+    private static boolean startsWithHorizontalPlusNewline(String s) {
+        int i = 0;
+        while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t' || s.charAt(i) == '\r')) {
+            i++;
+        }
+        return i < s.length() && s.charAt(i) == '\n';
+    }
+
+    /**
+     * Resolves whether {@code #preserveIndent #TRUE} governs the string literal at {@code offset}.
+     *
+     * @param file   the enclosing PSI file
+     * @param offset character offset of the string literal
+     * @return {@code true} if {@code #preserveIndent #TRUE} applies; {@code false} otherwise
+     */
+    public static boolean resolveEffectivePreserveIndent(PsiFile file, int offset) {
+        PsiElement elem = file.findElementAt(offset);
+        if (elem == null) {
+            return false;
+        }
+        MetadataEntry metaEntry = PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+        if (metaEntry != null) {
+            String kw = StvnMetadataOrderInspection.extractFacetKeyword(metaEntry);
+            if (StvnVocabulary.FACET_KW_REGEX.equals(kw)) {
+                return false;
+            }
+            SchemaType enclosingSchema = PsiTreeUtil.getParentOfType(metaEntry, SchemaType.class);
+            return enclosingSchema != null && StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(enclosingSchema);
+        }
+        Value val = PsiTreeUtil.getParentOfType(elem, Value.class, false);
+        if (val != null) {
+            SchemaType govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(val);
+            if (govSchema != null) {
+                StvnSchema ir = StvnTypeResolver.resolveIrSchema(govSchema);
+                if (ir instanceof StvnSchema.StringSchema ss) {
+                    return ss.preserveIndent();
+                }
+                return StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(govSchema);
+            }
+        }
+        return false;
     }
 
     @Override

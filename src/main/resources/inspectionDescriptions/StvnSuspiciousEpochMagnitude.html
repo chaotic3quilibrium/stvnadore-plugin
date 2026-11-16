@@ -1,6 +1,6 @@
 <html>
 <body>
-<p>Reports integer literals in <code>:body</code> bound to <code>:TimeEpoch</code> whose digit length mismatches the declared scale flag by &ge; 3 orders of magnitude.</p>
+<p>Reports <code>:TimeEpoch</code> constants in <code>:defs</code> and values in <code>:body</code> whose tick magnitude mismatches the declared scale flag by &ge; 3 orders of magnitude or resolves outside the civil window <code>[1900, 2100]</code>.</p>
 
 <p>Under STVN Language Specification &sect; 5.6.1, <code>:TimeEpoch</code> denotes discrete duration since Unix Epoch (<code>1970-01-01T00:00:00Z</code>) qualified by an explicit bare scale flag (<code>#s</code>, <code>#ms</code>, <code>#us</code>, or <code>#ns</code>).</p>
 

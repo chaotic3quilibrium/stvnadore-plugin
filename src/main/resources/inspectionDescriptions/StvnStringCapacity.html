@@ -5,8 +5,10 @@
 <p>
   STVN defines a default allocation capacity of 16 MiB (16,777,216 characters or elements) for unadorned <code>:String</code>,
   <code>:Seq</code>, <code>:Set</code>, and <code>:Map</code> types.
-  This inspection identifies unadorned tokens lacking capacity metadata facets
-  and explicit capacity bounds exceeding the configured threshold (default: 4,096 characters or elements).
+  This inspection flags root constructor declarations lacking explicit capacity facets or exceeding the configured
+  threshold (default: 4,096 characters, elements, or entries). Derived nominal aliases (<code>:Child :ParentAlias</code>)
+  inherit locked Tier-1 capacity bounds from their root definition and are not flagged. Quick-fixes insert
+  <code>#minSize</code> and <code>#maxSize</code> at their canonical 5-tier position inside <code>{ ... }</code>.
 </p>
 
 <p><b>QuickFix Resolution Protocol:</b></p>

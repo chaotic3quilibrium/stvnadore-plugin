@@ -214,7 +214,7 @@ public final class StvnDefsOverhaulInspectionsTest extends BasePlatformTestCase 
         myFixture.doHighlighting();
 
         var errors = myFixture.doHighlighting().stream()
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("Facet '#size' is prohibited on ':String'"))
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("Facet '#size' is prohibited on :String"))
             .toList();
 
         assertTrue("Nominal :StringList must not be flagged by StvnStringCardinalityInspection", errors.isEmpty());

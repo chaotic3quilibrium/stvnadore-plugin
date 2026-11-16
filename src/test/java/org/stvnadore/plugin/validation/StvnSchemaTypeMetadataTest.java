@@ -81,8 +81,9 @@ public final class StvnSchemaTypeMetadataTest extends BasePlatformTestCase {
 
         assertFalse("Must flag '#size' facet on child :String", highlights.isEmpty());
         var hasSizeProhibitedError = highlights.stream()
-                .anyMatch(h -> h.getDescription() != null && h.getDescription().contains("Facet '#size' is prohibited on ':String'"));
-        assertTrue("Error message must cite Rule MCT § 3.1.3. Actual highlights: " + highlights.stream().map(com.intellij.codeInsight.daemon.impl.HighlightInfo::getDescription).toList(),
+                .anyMatch(h -> h.getDescription() != null
+                    && h.getDescription().contains("Facet '#size' is prohibited on :String; use '#minSize' and '#maxSize'"));
+        assertTrue("Error message must match Core E008 STE prose. Actual highlights: " + highlights.stream().map(com.intellij.codeInsight.daemon.impl.HighlightInfo::getDescription).toList(),
                 hasSizeProhibitedError);
     }
 

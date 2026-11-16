@@ -15,6 +15,8 @@
 <ul>
   <li>Atomically supply default tag <code>[FENCE]</code> and generate matching closing delimiter.</li>
   <li>Strip whitespace and illegal characters from delimiter tags.</li>
+  <li>Insert a mandatory newline after <code>"""[TAG]</code> when inline body text appears on the opening line.</li>
+  <li>Convert untagged inline or multi-line triple-quoted blocks into valid fenced strings or simple double-quoted strings.</li>
   <li>Balance mismatched closing tags to match the opening tag (available on both opening and closing lines).</li>
   <li>Balance mismatched opening tags to match the closing tag (available on both opening and closing lines).</li>
   <li>Append missing closing delimiter directly on the line below unclosed blocks.</li>

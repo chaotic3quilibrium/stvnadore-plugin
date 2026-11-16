@@ -95,8 +95,10 @@ public final class StvnTradingWorkflowIntegrationTest extends BasePlatformTestCa
 
         int offset = text.indexOf("#size");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var fixes = myFixture.filterAvailableIntentions("Convert '#size' to '#minSize 1 #maxSize <N>'");
+        var fixes = myFixture.filterAvailableIntentions("Convert '#size 32' to '#minSize 1 #maxSize 32'");
         assertEquals(1, fixes.size());
+        var fixedLengthFixes = myFixture.filterAvailableIntentions("Convert '#size 32' to '#minSize 32 #maxSize 32'");
+        assertEquals(1, fixedLengthFixes.size());
         myFixture.launchAction(fixes.get(0));
 
         var healed = myFixture.getFile().getText();

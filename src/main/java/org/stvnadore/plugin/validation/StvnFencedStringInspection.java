@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -11,10 +12,13 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.TokenType;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
@@ -126,15 +130,24 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             return;
         }
 
-        // Guard against legacy unfenced block strings or non-fenced tokens:
-        // If '[' is missing or appears after the first newline, yield completely to StvnExternalAnnotator
-        int newline = text.indexOf('\n');
-        int openBracket = text.indexOf('[');
-        if (openBracket < 0 || (newline >= 0 && openBracket > newline)) {
+        // Partition strictly on """[TAG]: untagged triple-quotes yield completely to StvnExternalAnnotator
+        if (!text.startsWith("\"\"\"[")) {
             return;
         }
-        int closeBracket = text.indexOf(']', openBracket >= 0 ? openBracket : 0);
-        if (openBracket < 0 || closeBracket <= openBracket) {
+        int newline = text.indexOf('\n');
+        int openBracket = 3;
+        int closeBracket = text.indexOf(']', openBracket + 1);
+        if (closeBracket < 0 || (newline >= 0 && closeBracket > newline)) {
+            int unclosedEnd = newline >= 0 ? newline + 1 : text.length();
+            holder.registerProblem(
+                element,
+                new TextRange(0, unclosedEnd),
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Fenced string opening delimiter is missing closing ']' before newline",
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID
+                ),
+                new SupplyMissingCloseBracketQuickFix()
+            );
             return;
         }
 
@@ -197,6 +210,23 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID
                 ),
                 new SanitizeFenceTagQuickFix(openTag)
+            );
+            return;
+        }
+
+        // Enforce mandatory newline immediately after """[TAG] (with optional spaces/CR only)
+        String trailingOnOpeningLine = newline >= 0
+            ? text.substring(closeBracket + 1, newline)
+            : text.substring(closeBracket + 1);
+        if (newline < 0 || !trailingOnOpeningLine.replace(" ", "").replace("\t", "").replace("\r", "").isEmpty()) {
+            holder.registerProblem(
+                element,
+                openRange,
+                StvnDiagnosticFormatter.formatPlugin(
+                    "Rule STR-04 violation: Opening fence delimiter '\"\"\"[" + openTag + "]' must be followed immediately by a newline",
+                    StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID
+                ),
+                new InsertOpeningFenceNewlineQuickFix(openTag)
             );
             return;
         }
@@ -304,6 +334,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class SupplyDefaultTagQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String defaultTag;
 
         public SupplyDefaultTagQuickFix(String defaultTag) {
@@ -336,11 +367,18 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             int startOffset = element.getTextRange().getStartOffset();
 
             if (closeEmptyIdx >= 0 && closeEmptyIdx > openBracket) {
-                String updated = text.substring(0, openBracket)
-                        + "[" + defaultTag + "]"
-                        + text.substring(openBracket + 2, closeEmptyIdx)
-                        + "[" + defaultTag + "]\"\"\""
-                        + text.substring(closeEmptyIdx + 5);
+                String rawInner = text.substring(openBracket + 2, closeEmptyIdx);
+                String safe = StvnPsiLiteralEvaluator.chooseSafeFenceTag(rawInner, defaultTag);
+                boolean preserveIndent = doc != null && ConvertToFencedStringIntentionAction.resolveEffectivePreserveIndent(file, startOffset);
+                String indent = doc != null ? computeOpeningIndent(doc.getCharsSequence(), startOffset) : "  ";
+                String lineSep = doc != null && doc.getText().contains("\r\n") ? "\r\n" : "\n";
+                String updated = ConvertToFencedStringIntentionAction.formatFencedReplacement(
+                    rawInner,
+                    safe,
+                    indent,
+                    preserveIndent,
+                    lineSep
+                ) + text.substring(closeEmptyIdx + 5);
                 if (doc != null) {
                     doc.replaceString(startOffset, startOffset + text.length(), updated);
                     docManager.commitDocument(doc);
@@ -387,6 +425,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class SanitizeFenceTagQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String rawTag;
 
         public SanitizeFenceTagQuickFix(String rawTag) {
@@ -414,7 +453,13 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             String sanitized = rawTag.replaceAll("[^a-zA-Z0-9_-]", "");
             if (sanitized.isEmpty()) sanitized = "RAW";
             String text = element.getText();
-            String replaced = text.replace("[" + rawTag + "]", "[" + sanitized + "]");
+            String replaced = ensureNewlineAfterOpeningTag(
+                text.replace("[" + rawTag + "]", "[" + sanitized + "]"),
+                sanitized,
+                doc,
+                element.getTextRange().getStartOffset(),
+                file
+            );
             if (doc != null) {
                 var range = element.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), replaced);
@@ -428,6 +473,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class TruncateTagQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String rawTag;
 
         public TruncateTagQuickFix(String rawTag) {
@@ -454,7 +500,13 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             var doc = file.getViewProvider().getDocument();
             String truncated = rawTag.substring(0, 256);
             String text = element.getText();
-            String replaced = text.replace("[" + rawTag + "]", "[" + truncated + "]");
+            String replaced = ensureNewlineAfterOpeningTag(
+                text.replace("[" + rawTag + "]", "[" + truncated + "]"),
+                truncated,
+                doc,
+                element.getTextRange().getStartOffset(),
+                file
+            );
             if (doc != null) {
                 var range = element.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), replaced);
@@ -491,8 +543,11 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class BalanceClosingTagQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String expectedTag;
+        @SafeFieldForPreview
         private final String currentClosingTag;
+        @SafeFieldForPreview
         private final int closingRelativeOffset;
 
         public BalanceClosingTagQuickFix(String expectedTag, String currentClosingTag, int closingRelativeOffset) {
@@ -528,7 +583,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     int startOffset = elementStart + closingRelativeOffset;
                     doc.replaceString(startOffset, startOffset + targetClosing.length(), balancedClosing);
                     docManager.commitDocument(doc);
-                    repositionCaretToBodyLine(project, doc, elementStart);
+                    if (file.isPhysical()) {
+                        repositionCaretToBodyLine(project, doc, elementStart);
+                    }
                 } else {
                     String updated = text.substring(0, closingRelativeOffset) + balancedClosing + text.substring(closingRelativeOffset + targetClosing.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
@@ -540,7 +597,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class BalanceOpeningTagQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String currentOpeningTag;
+        @SafeFieldForPreview
         private final String expectedOpeningTag;
 
         public BalanceOpeningTagQuickFix(String currentOpeningTag, String expectedOpeningTag) {
@@ -576,7 +635,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     int startOffset = elementStart + firstIdx;
                     doc.replaceString(startOffset, startOffset + targetOpening.length(), balancedOpening);
                     docManager.commitDocument(doc);
-                    repositionCaretToBodyLine(project, doc, elementStart);
+                    if (file.isPhysical()) {
+                        repositionCaretToBodyLine(project, doc, elementStart);
+                    }
                 } else {
                     String updated = text.substring(0, firstIdx) + balancedOpening + text.substring(firstIdx + targetOpening.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
@@ -588,6 +649,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
     }
 
     private static final class AppendClosingFenceQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
         private final String tag;
 
         public AppendClosingFenceQuickFix(String tag) {
@@ -630,7 +692,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     doc.insertString(insertOffset, fence);
                 }
                 docManager.commitDocument(doc);
-                repositionCaretToBodyLine(project, doc, startOffset);
+                if (file.isPhysical()) {
+                    repositionCaretToBodyLine(project, doc, startOffset);
+                }
             } else {
                 if (newlineIndex >= 0) {
                     String lineSep = (newlineIndex > 0 && text.charAt(newlineIndex - 1) == '\r') ? "\r\n" : "\n";
@@ -683,6 +747,96 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     element.replace(newLiteral != null ? newLiteral : dummy);
                 }
             }
+        }
+    }
+
+    private static String ensureNewlineAfterOpeningTag(
+            String replaced,
+            String tag,
+            @Nullable Document doc,
+            int startOffset,
+            PsiFile file
+    ) {
+        String openPrefix = "\"\"\"[" + tag + "]";
+        String closeSuffix = "[" + tag + "]\"\"\"";
+        if (!replaced.startsWith(openPrefix)) {
+            return replaced;
+        }
+        int nl = replaced.indexOf('\n');
+        if (nl >= openPrefix.length()
+                && replaced.substring(openPrefix.length(), nl).replace(" ", "").replace("\t", "").replace("\r", "").isEmpty()) {
+            return replaced;
+        }
+        String lineSep = doc != null && doc.getText().contains("\r\n") ? "\r\n" : "\n";
+        if (replaced.endsWith(closeSuffix) && replaced.length() >= openPrefix.length() + closeSuffix.length()) {
+            String rawInner = replaced.substring(openPrefix.length(), replaced.length() - closeSuffix.length());
+            String indent = doc != null ? computeOpeningIndent(doc.getCharsSequence(), startOffset) : "  ";
+            boolean preserveIndent = doc != null && ConvertToFencedStringIntentionAction.resolveEffectivePreserveIndent(file, startOffset);
+            return ConvertToFencedStringIntentionAction.formatFencedReplacement(rawInner, tag, indent, preserveIndent, lineSep);
+        }
+        String indent = doc != null ? computeOpeningIndent(doc.getCharsSequence(), startOffset) : "  ";
+        return openPrefix + lineSep + indent + "  " + replaced.substring(openPrefix.length());
+    }
+
+    private static final class InsertOpeningFenceNewlineQuickFix implements LocalQuickFix {
+        @SafeFieldForPreview
+        private final String openTag;
+
+        InsertOpeningFenceNewlineQuickFix(String openTag) {
+            this.openTag = openTag;
+        }
+
+        @Override
+        public @NotNull String getName() {
+            return "Insert newline after opening fence '\"\"\"[" + openTag + "]'";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Insert newline after opening fence";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var doc = file.getViewProvider().getDocument();
+            int startOffset = element.getTextRange().getStartOffset();
+            String updated = ensureNewlineAfterOpeningTag(element.getText(), openTag, doc, startOffset, file);
+            if (doc != null) {
+                doc.replaceString(startOffset, element.getTextRange().getEndOffset(), updated);
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+        }
+    }
+
+    private static final class SupplyMissingCloseBracketQuickFix implements LocalQuickFix {
+        @Override
+        public @NotNull String getName() {
+            return "Close opening fence tag with ']'";
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return "Close opening fence tag";
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            var element = descriptor.getPsiElement();
+            if (element == null) return;
+            var file = element.getContainingFile();
+            if (file == null) return;
+            var doc = file.getViewProvider().getDocument();
+            if (doc == null) return;
+            String text = element.getText();
+            int nl = text.indexOf('\n');
+            int relEnd = nl >= 0 ? (nl > 0 && text.charAt(nl - 1) == '\r' ? nl - 1 : nl) : text.length();
+            int insertAt = element.getTextRange().getStartOffset() + relEnd;
+            doc.insertString(insertAt, "]");
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
         }
     }
 }

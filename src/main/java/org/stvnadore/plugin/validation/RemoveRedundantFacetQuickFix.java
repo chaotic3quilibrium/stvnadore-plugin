@@ -1,9 +1,11 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
@@ -26,8 +28,13 @@ import org.stvnadore.psi.MetadataMap;
 @NullMarked
 public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
 
+  @SafeFieldForPreview
   private final String facetSnippet;
+  @SafeFieldForPreview
   private final String actionPrefix;
+  @SafeFieldForPreview
+  private final String actionSuffix;
+  @SafeFieldForPreview
   private final Priority priority;
 
   /**
@@ -89,10 +96,42 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       String actionPrefix,
       @NotNull Priority priority
   ) {
+    this(element, facetSnippet, actionPrefix, "", priority);
+  }
+
+  private RemoveRedundantFacetQuickFix(
+      @NotNull PsiElement element,
+      String facetSnippet,
+      String actionPrefix,
+      String actionSuffix,
+      @NotNull Priority priority
+  ) {
     super(element);
     this.facetSnippet = facetSnippet;
     this.actionPrefix = actionPrefix;
+    this.actionSuffix = actionSuffix;
     this.priority = priority;
+  }
+
+  /**
+   * Creates a high-priority quick-fix with exact label {@code "Remove invalid '#regex' facet"}
+   * for malformed {@code E013 / INVALID_REGEX_PATTERN} metadata entries.
+   *
+   * @param element      the offending {@code #regex} metadata entry
+   * @param facetKeyword the canonical {@code #regex} keyword constant
+   * @return configured {@link RemoveRedundantFacetQuickFix}
+   */
+  public static RemoveRedundantFacetQuickFix createRemoveInvalidFacetFix(
+      @NotNull PsiElement element,
+      String facetKeyword
+  ) {
+    return new RemoveRedundantFacetQuickFix(
+        element,
+        facetKeyword,
+        "Remove invalid",
+        " facet",
+        Priority.HIGH
+    );
   }
 
   @Override
@@ -102,12 +141,14 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
 
   @Override
   public @Nls @NotNull String getText() {
-    return facetSnippet.isEmpty() ? actionPrefix : actionPrefix + " '" + facetSnippet + "'";
+    return facetSnippet.isEmpty()
+        ? actionPrefix + actionSuffix
+        : actionPrefix + " '" + facetSnippet + "'" + actionSuffix;
   }
 
   @Override
   public @Nls @NotNull String getFamilyName() {
-    return actionPrefix;
+    return actionSuffix.isEmpty() ? actionPrefix : actionPrefix + actionSuffix;
   }
 
   @Override
@@ -175,7 +216,7 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     MetadataMap map = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
     if (map != null && map.isValid()) {
       var entries = map.getMetadataEntryList();
-      if (entries.size() <= 1) {
+      if (entries.size() <= 1 && PsiTreeUtil.findChildOfType(map, PsiComment.class) == null) {
         // Excising the entire MetadataMap avoids creating an invalid empty block '{}' (SPEC § 3.5.1, E003)
         var prev = map.getPrevSibling();
         var next = map.getNextSibling();

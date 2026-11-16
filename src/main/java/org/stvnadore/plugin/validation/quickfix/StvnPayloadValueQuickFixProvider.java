@@ -20,7 +20,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,7 +41,6 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
@@ -731,39 +729,44 @@ public final class StvnPayloadValueQuickFixProvider {
             }
             case StvnVocabulary.TYPE_STRING -> {
                 String rawMin = null;
+                boolean minExclusive = false;
                 String rawMax = null;
+                boolean maxExclusive = false;
                 String regexPattern = null;
-                long minBytes = 0L;
-                long maxBytes = StvnVocabulary.DEFAULT_MAX_SIZE.longValue();
+                long minSize = 0L;
+                long maxSize = StvnVocabulary.DEFAULT_MAX_SIZE.longValue();
                 if (irSchema instanceof StvnSchema.StringSchema ss) {
                     if (ss.lowerBound().isPresent()) {
                         rawMin = ss.lowerBound().get().value();
+                        minExclusive = ss.lowerBound().get().kind() == StvnSchema.BoundKind.EXCLUSIVE;
                     }
                     if (ss.upperBound().isPresent()) {
                         rawMax = ss.upperBound().get().value();
+                        maxExclusive = ss.upperBound().get().kind() == StvnSchema.BoundKind.EXCLUSIVE;
                     }
                     if (ss.rawRegexPattern().isPresent()) {
                         regexPattern = ss.rawRegexPattern().get();
                     }
-                    minBytes = ss.minSize().longValue();
-                    maxBytes = ss.maxSize().longValue();
+                    minSize = ss.minSize().longValue();
+                    maxSize = ss.maxSize().longValue();
                 }
                 if (meta.containsKey(StvnVocabulary.FACET_KW_SIZE)) {
-                    long fixedSize = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_SIZE), (int) minBytes);
-                    minBytes = fixedSize;
-                    maxBytes = fixedSize;
+                    long fixedSize = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_SIZE), (int) minSize);
+                    minSize = fixedSize;
+                    maxSize = fixedSize;
                 } else {
                     if (meta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                        minBytes = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_MIN_SIZE), (int) minBytes);
+                        minSize = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_MIN_SIZE), (int) minSize);
                     }
                     if (meta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                        maxBytes = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_MAX_SIZE), (int) maxBytes);
+                        maxSize = parseIntOrDefault(value, meta.get(StvnVocabulary.FACET_KW_MAX_SIZE), (int) maxSize);
                     }
                 }
                 if (rawMin == null) {
                     String metaMin = meta.get(StvnVocabulary.FACET_KW_MIN_INCL);
                     if (metaMin == null) {
                         metaMin = meta.get(StvnVocabulary.FACET_KW_MIN_EXCL);
+                        minExclusive = metaMin != null;
                     }
                     rawMin = resolveStringOrConstOrNull(value, metaMin);
                 }
@@ -771,6 +774,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     String metaMax = meta.get(StvnVocabulary.FACET_KW_MAX_INCL);
                     if (metaMax == null) {
                         metaMax = meta.get(StvnVocabulary.FACET_KW_MAX_EXCL);
+                        maxExclusive = metaMax != null;
                     }
                     rawMax = resolveStringOrConstOrNull(value, metaMax);
                 }
@@ -778,6 +782,16 @@ public final class StvnPayloadValueQuickFixProvider {
                     regexPattern = resolveStringOrConstOrNull(value, meta.get(StvnVocabulary.FACET_KW_REGEX));
                 }
 
+                var profile = StvnStringConstraintUtil.createProfile(
+                    minSize,
+                    maxSize,
+                    rawMin,
+                    minExclusive,
+                    rawMax,
+                    maxExclusive,
+                    regexPattern
+                );
+                Set<String> offeredQuotedLiterals = new HashSet<>();
                 boolean preserveIndent = (irSchema instanceof StvnSchema.StringSchema ss)
                     ? ss.preserveIndent()
                     : StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(rawSchema);
@@ -785,117 +799,170 @@ public final class StvnPayloadValueQuickFixProvider {
                     ? StvnPsiLiteralEvaluator.decodeStringLiteral(rawValueText, preserveIndent)
                         .orElseGet(() -> stripQuotesOrFences(rawValueText))
                     : null;
-                if (authored != null && regexPattern != null && !regexPattern.isBlank()) {
-                    try {
-                        Pattern compiledRegex = Pattern.compile(regexPattern);
-                        if (!compiledRegex.matcher(authored).matches()) {
-                            String lower = authored.toLowerCase(Locale.ROOT);
-                            if (!lower.equals(authored)
-                                    && compiledRegex.matcher(lower).matches()
-                                    && isStringWithinSizeAndLexBounds(lower, minBytes, maxBytes, rawMin, rawMax)) {
-                                String quotedLower = "\"" + escapeStvnString(lower) + "\"";
-                                fixes.add(
-                                    new PayloadValueQuickFix(
-                                        value,
-                                        "Convert string to lowercase '" + quotedLower + "'",
-                                        "STVN String Case Conversion",
-                                        quotedLower,
-                                        null,
-                                        PriorityAction.Priority.TOP
-                                    )
-                                );
-                            }
-                            String upper = authored.toUpperCase(Locale.ROOT);
-                            if (!upper.equals(authored)
-                                    && compiledRegex.matcher(upper).matches()
-                                    && isStringWithinSizeAndLexBounds(upper, minBytes, maxBytes, rawMin, rawMax)) {
-                                String quotedUpper = "\"" + escapeStvnString(upper) + "\"";
-                                fixes.add(
-                                    new PayloadValueQuickFix(
-                                        value,
-                                        "Convert string to uppercase '" + quotedUpper + "'",
-                                        "STVN String Case Conversion",
-                                        quotedUpper,
-                                        null,
-                                        PriorityAction.Priority.TOP
-                                    )
-                                );
-                            }
-                        }
-                    } catch (PatternSyntaxException ignored) {
+
+                if (authored != null && profile.compiledRegex() != null && !profile.compiledRegex().matcher(authored).matches()) {
+                    String lower = authored.toLowerCase(Locale.ROOT);
+                    if (!lower.equals(authored) && StvnStringConstraintUtil.isValidCandidate(lower, profile)) {
+                        String quotedLower = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(lower);
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Convert string to lowercase '" + quotedLower + "'",
+                                "STVN String Case Conversion",
+                                quotedLower,
+                                null,
+                                PriorityAction.Priority.TOP
+                            )
+                        );
+                    }
+                    String upper = authored.toUpperCase(Locale.ROOT);
+                    if (!upper.equals(authored) && StvnStringConstraintUtil.isValidCandidate(upper, profile)) {
+                        String quotedUpper = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(upper);
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Convert string to uppercase '" + quotedUpper + "'",
+                                "STVN String Case Conversion",
+                                quotedUpper,
+                                null,
+                                PriorityAction.Priority.TOP
+                            )
+                        );
                     }
                 }
 
-                if (authored != null && (rawMin != null || rawMax != null)) {
-                    String quotedMin = rawMin != null ? "\"" + rawMin + "\"" : null;
-                    String quotedMax = rawMax != null ? "\"" + rawMax + "\"" : null;
-                    if (rawMax != null && quotedMax != null && authored.compareTo(rawMax) > 0) {
-                        fixes.add(
-                            new PayloadValueQuickFix(
-                                value,
-                                "Clamp value to maximum bound '" + quotedMax + "'",
-                                "STVN Scalar Bound Clamping",
-                                quotedMax,
-                                null,
-                                PriorityAction.Priority.TOP
-                            )
-                        );
-                        if (quotedMin != null) {
-                            fixes.add(
-                                new PayloadValueQuickFix(
-                                    value,
-                                    "Clamp value to minimum bound '" + quotedMin + "'",
-                                    "STVN Scalar Bound Clamping",
-                                    quotedMin,
-                                    null,
-                                    PriorityAction.Priority.HIGH
-                                )
-                            );
+                if (authored != null) {
+                    int cpLen = StvnStringConstraintUtil.codePointLength(authored);
+                    boolean lengthOverflow = cpLen > profile.maxSize();
+                    boolean lengthUnderflow = cpLen < profile.minSize();
+                    boolean lowerViolated = StvnStringConstraintUtil.violatesLowerBound(authored, profile);
+                    boolean upperViolated = StvnStringConstraintUtil.violatesUpperBound(authored, profile);
+
+                    if (lengthOverflow) {
+                        String truncated = StvnStringConstraintUtil.computeTruncatedCandidate(authored, profile);
+                        if (truncated != null) {
+                            String quotedTrunc = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(truncated);
+                            if (offeredQuotedLiterals.add(quotedTrunc)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Truncate string to maximum length " + profile.maxSize() + " '" + quotedTrunc + "'",
+                                        "STVN String Length Clamping",
+                                        quotedTrunc,
+                                        null,
+                                        PriorityAction.Priority.TOP
+                                    )
+                                );
+                            }
                         }
-                    } else if (rawMin != null && quotedMin != null && authored.compareTo(rawMin) < 0) {
-                        fixes.add(
-                            new PayloadValueQuickFix(
-                                value,
-                                "Clamp value to minimum bound '" + quotedMin + "'",
-                                "STVN Scalar Bound Clamping",
-                                quotedMin,
-                                null,
-                                PriorityAction.Priority.TOP
-                            )
-                        );
-                        if (quotedMax != null) {
-                            fixes.add(
-                                new PayloadValueQuickFix(
-                                    value,
-                                    "Clamp value to maximum bound '" + quotedMax + "'",
-                                    "STVN Scalar Bound Clamping",
-                                    quotedMax,
-                                    null,
-                                    PriorityAction.Priority.HIGH
-                                )
-                            );
+                    } else if (lengthUnderflow) {
+                        String padded = StvnStringConstraintUtil.computePaddedCandidate(authored, profile);
+                        if (padded != null) {
+                            String quotedPad = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(padded);
+                            if (offeredQuotedLiterals.add(quotedPad)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Pad string to minimum length " + profile.minSize() + " '" + quotedPad + "'",
+                                        "STVN String Length Clamping",
+                                        quotedPad,
+                                        null,
+                                        PriorityAction.Priority.TOP
+                                    )
+                                );
+                            }
+                        }
+                    }
+
+                    if (lowerViolated || upperViolated || lengthUnderflow || lengthOverflow) {
+                        String minCand = StvnStringConstraintUtil.computeMinBoundCandidate(profile);
+                        String maxCand = StvnStringConstraintUtil.computeMaxBoundCandidate(profile);
+                        String quotedMin = minCand != null ? StvnPsiLiteralEvaluator.formatCanonicalQuotedString(minCand) : null;
+                        String quotedMax = maxCand != null ? StvnPsiLiteralEvaluator.formatCanonicalQuotedString(maxCand) : null;
+                        PriorityAction.Priority firstPrio = fixes.isEmpty()
+                            ? PriorityAction.Priority.TOP
+                            : PriorityAction.Priority.HIGH;
+                        PriorityAction.Priority secondPrio = firstPrio == PriorityAction.Priority.TOP
+                            ? PriorityAction.Priority.HIGH
+                            : PriorityAction.Priority.NORMAL;
+
+                        boolean preferMaxFirst = upperViolated || (lengthOverflow && !lowerViolated);
+                        if (preferMaxFirst) {
+                            if (quotedMax != null && offeredQuotedLiterals.add(quotedMax)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Clamp value to maximum bound '" + quotedMax + "'",
+                                        "STVN Scalar Bound Clamping",
+                                        quotedMax,
+                                        null,
+                                        firstPrio
+                                    )
+                                );
+                            }
+                            if (quotedMin != null && offeredQuotedLiterals.add(quotedMin)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Clamp value to minimum bound '" + quotedMin + "'",
+                                        "STVN Scalar Bound Clamping",
+                                        quotedMin,
+                                        null,
+                                        secondPrio
+                                    )
+                                );
+                            }
+                        } else {
+                            if (quotedMin != null && offeredQuotedLiterals.add(quotedMin)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Clamp value to minimum bound '" + quotedMin + "'",
+                                        "STVN Scalar Bound Clamping",
+                                        quotedMin,
+                                        null,
+                                        firstPrio
+                                    )
+                                );
+                            }
+                            if (quotedMax != null && offeredQuotedLiterals.add(quotedMax)) {
+                                fixes.add(
+                                    new PayloadValueQuickFix(
+                                        value,
+                                        "Clamp value to maximum bound '" + quotedMax + "'",
+                                        "STVN Scalar Bound Clamping",
+                                        quotedMax,
+                                        null,
+                                        secondPrio
+                                    )
+                                );
+                            }
                         }
                     }
                 }
 
                 if (isUuidSchemaOrRegex(rawSchema, regexPattern)) {
-                    String randomUuid = "\"" + UUID.randomUUID().toString().toLowerCase(Locale.ROOT) + "\"";
-                    fixes.add(
-                        new PayloadValueQuickFix(
-                            value,
-                            "Replace with random lowercase UUID '" + randomUuid + "'",
-                            "STVN Random UUID Generation",
-                            randomUuid,
-                            null,
-                            PriorityAction.Priority.LOW
-                        )
-                    );
+                    String rawUuid = UUID.randomUUID().toString().toLowerCase(Locale.ROOT);
+                    if (StvnStringConstraintUtil.isValidCandidate(rawUuid, profile)) {
+                        String randomUuid = "\"" + rawUuid + "\"";
+                        offeredQuotedLiterals.add(randomUuid);
+                        fixes.add(
+                            new PayloadValueQuickFix(
+                                value,
+                                "Replace with random lowercase UUID '" + randomUuid + "'",
+                                "STVN Random UUID Generation",
+                                randomUuid,
+                                null,
+                                PriorityAction.Priority.LOW
+                            )
+                        );
+                    }
                 }
 
                 String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
                 if (exemplar != null
                         && !exemplar.equals(rawValueText)
-                        && fixes.stream().noneMatch(f -> f.getText().startsWith("Clamp value to ") && f.getText().endsWith("'" + exemplar + "'"))) {
+                        && !offeredQuotedLiterals.contains(exemplar)) {
                     fixes.add(
                         new PayloadValueQuickFix(
                             value,
@@ -964,23 +1031,6 @@ public final class StvnPayloadValueQuickFixProvider {
         return List.of();
     }
 
-    private static boolean isStringWithinSizeAndLexBounds(
-        String candidate,
-        long minBytes,
-        long maxBytes,
-        @Nullable String rawMin,
-        @Nullable String rawMax
-    ) {
-        int byteLen = candidate.getBytes(StandardCharsets.UTF_8).length;
-        if (byteLen < minBytes || byteLen > maxBytes) {
-            return false;
-        }
-        if (rawMin != null && candidate.compareTo(rawMin) < 0) {
-            return false;
-        }
-        return rawMax == null || candidate.compareTo(rawMax) <= 0;
-    }
-
     private static boolean isUuidSchemaOrRegex(@Nullable SchemaType rawSchema, @Nullable String regexPattern) {
         if (regexPattern != null && regexPattern.contains("{8}-[0-9a-f") && regexPattern.contains("{12}")) {
             return true;
@@ -992,10 +1042,6 @@ public final class StvnPayloadValueQuickFixProvider {
                 || StvnVocabulary.TYPE_UUID_MIXED_CASE.equals(bare);
         }
         return false;
-    }
-
-    private static String escapeStvnString(String unquoted) {
-        return unquoted.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     /**
@@ -1979,6 +2025,8 @@ public final class StvnPayloadValueQuickFixProvider {
                 || code.equals("ERR_CONSTRAINT_VIOLATION")
                 || code.equals(DiagnosticBag.ERR_CAPACITY_OVERFLOW)
                 || code.equals("E012")
+                || code.equals(DiagnosticBag.ERR_REGEX_MISMATCH)
+                || code.equals("E013")
                 || code.equals("ERR_INTEGER_OVERFLOW")
                 || code.equals("E009")
                 || code.equals("ERR_FLOAT_OVERFLOW")
