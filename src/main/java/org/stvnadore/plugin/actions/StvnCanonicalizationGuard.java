@@ -13,6 +13,7 @@ import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
+import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.SchemaType;
@@ -45,16 +46,23 @@ public final class StvnCanonicalizationGuard {
      * by compiler canonicalization.
      *
      * @param file the source STVN PSI file
-     * @return {@code true} if comments, package enclaves, use statements, or unreferenced definitions are present
+     * @return {@code true} if comments, include directives, package enclaves, use statements, payload constants, or unreferenced definitions are present
      */
     public static boolean hasDestructiveAuthoringConstructs(PsiFile file) {
         if (PsiTreeUtil.findChildOfType(file, PsiComment.class) != null) {
+            return true;
+        }
+        if (PsiTreeUtil.findChildOfType(file, IncludeStmt.class) != null) {
             return true;
         }
         if (PsiTreeUtil.findChildOfType(file, PackageEnclosure.class) != null) {
             return true;
         }
         if (PsiTreeUtil.findChildOfType(file, UseStmt.class) != null) {
+            return true;
+        }
+        if (!isDefinitionsOnlyDocument(file)
+                && PsiTreeUtil.findChildOfType(file, ConstantDefinition.class) != null) {
             return true;
         }
         return hasUnreferencedDefinitions(file);
@@ -210,8 +218,8 @@ public final class StvnCanonicalizationGuard {
         };
 
         return MessageDialogBuilder.yesNo(
-                "STVN: Canonicalize Projection",
-                "Canonical projection lowers the document to a compiled AST. This action will desugar package enclaves, inline aliases, prune unreferenced definitions, and strip comments. This action cannot be reversed except via Undo. Do you want to proceed?"
+                "STVN: Canonicalize Active Buffer In-Place",
+                "In-place canonicalization lowers the active buffer to canonical IR. This action resolves includes, desugars packages and use aliases, inlines payload constants, prunes unreachable definitions, and strips comments. Use Undo (Ctrl+Z) to revert. Do you want to proceed?"
         ).doNotAsk(doNotAsk).ask(project);
     }
 }

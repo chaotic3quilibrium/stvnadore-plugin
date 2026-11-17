@@ -72,7 +72,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ### 4. Workspace Flattening & Schema Publishing
 
-* **Flatten STVN Workspace Action**: Ingests modular multi-file schemas (`.stvn_di`), validates DAG dependencies, resolves aliases, strips comments, and exports a standalone `.stvn_d` file.
+* **3-Submenu VOP Projection Matrix (`STVN >` & `BuildMenu`)**: Separates non-destructive hermetic `.stvn_d` schema extraction (`Pretty` & `Compact CAS`), non-destructive hermetic `.stvn` payload extraction (`Pretty` & `Compact`), and undoable in-place buffer canonicalization (`Pretty IR` & `Compact IR`) with `ActionUpdateThread.BGT` self-overwrite guards.
 * **Publish Schema Action**: Publishes the active schema directly to the configured STVN Schema Repository (`POST /api/v1/schemas/{name.stvn_d}`, `Content-Type: application/stvn; charset=utf-8`) with balloon notification feedback.
 
 ### 5. Enum Subset Filtering & Derivation
@@ -162,12 +162,11 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 * **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy and the Zero-Tab Invariant across all files and selections.
 * **Immutable Leaf Preservation**: Preserves user comments (`// ...`) and multiline fenced string bodies (`"""[TAG]...[TAG]"""`) without text distortion.
-* **Dual Projection Actions**:
-  * **Canonicalize & Pretty Print**: Lowers active document into canonical 2-space indented representation with long-form keywords (`#TRUE`, `#FALSE`, `#Some`, `#None`).
-  * **Canonicalize & Compact Print**: Lowers active document into canonical single-line representation with short-form keywords (`#T`, `#F`, `#S`, `#N`).
-  * **Copy Canonical Pretty Print to Clipboard**: Compiles active document and copies canonical pretty-printed format to clipboard without document buffer mutation.
-  * **Copy Canonical Compact Print to Clipboard**: Compiles active document and copies canonical compact format to clipboard without document buffer mutation.
-* **Comprehensive Authoring Loss Guard**: Intercepts in-place canonicalization when documents contain user comments, package enclaves, scoped import aliases, or unreferenced definitions, presenting a confirmation dialog with persistent project suppression.
+* **3-Submenu VOP Projection & Canonicalization Matrix (`STVN >`)**:
+  * **Extract Hermetic Schema (`.stvn_d` — `#DEFS` Only)**: Copies (`Pretty` or `Compact CAS`) to clipboard or exports sibling `<stem>.stvn_d` without modifying source buffers.
+  * **Extract Hermetic Payload (`.stvn` — Includes `:body`)**: Normalizes `#kind #BODY` and copies (`Pretty` or `Compact`) to clipboard or exports sibling `<stem>.stvn` from `.stvn_i` modules.
+  * **Canonicalize Active Buffer In-Place**: Replaces active buffer with `Pretty IR` or `Compact IR` while preserving extension-compatible `#kind` (undoable via `Ctrl+Z`).
+* **Comprehensive Authoring Loss Guard**: Intercepts in-place canonicalization when documents contain user comments, `:include` directives, `:package` enclaves, `:use` aliases, payload `#CONST` declarations, or unreferenced definitions, presenting a confirmation dialog with persistent project suppression.
 
 ### 14. First-Class Rename Refactoring (Shift+F6)
 
@@ -199,12 +198,11 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 | Action ID                                                          | Name                                                   | Menu Location                     | Shortcut / Trigger                               |
 |:-------------------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-------------------------------------------------|
-| `org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction`          | **Flatten STVN Workspace**                             | Project View Popup / Build Menu   | Context menu on `.stvn`, `.stvn_d`, or `.stvn_di`|
+| `org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction` | **Export Hermetic STVN Schema (.stvn_d, Compact CAS)** | Build Menu                        | Active `.stvn_di`, `.stvn_i`, or `.stvn` file    |
 | `org.stvnadore.plugin.actions.PublishSchemaAction`                 | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn_d` or `.stvn_di`          |
-| `org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction`      | **Canonicalize & Pretty Print**                        | Editor Popup Menu (`STVN`)        | Context menu in STVN editor                      |
-| `org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction`     | **Canonicalize & Compact Print**                       | Editor Popup Menu (`STVN`)        | Context menu in STVN editor                      |
-| `org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction`  | **Copy Canonical Pretty Print to Clipboard**           | Editor Popup Menu (`STVN`)        | Context menu in STVN editor                      |
-| `org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction` | **Copy Canonical Compact Print to Clipboard**          | Editor Popup Menu (`STVN`)        | Context menu in STVN editor                      |
+| `org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup`          | **Extract Hermetic Schema (.stvn_d — #DEFS Only)**     | `STVN >` Submenu 1                | Clipboard & Sibling `.stvn_d` (`Pretty` / `CAS`) |
+| `org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup`         | **Extract Hermetic Payload (.stvn — Includes :body)**  | `STVN >` Submenu 2                | Clipboard & Sibling `.stvn` (`Pretty` / `Compact`)|
+| `org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup`    | **Canonicalize Active Buffer In-Place**                | `STVN >` Submenu 3                | `Replace Buffer with Pretty IR` / `Compact IR`   |
 | `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`           | **Browse Namespace Dependencies**                      | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)                |
 | `StvnSchemaSkeletonIntentionAction`                                | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body`         |
 | `StvnReorderEnumFilterVariantsQuickFix`                            | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list          |

@@ -2,7 +2,7 @@ package org.stvnadore.plugin.psi;
 
 import junit.framework.TestCase;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction;
+import org.stvnadore.plugin.actions.StvnProjectionStemUtil;
 import org.stvnadore.plugin.documentation.StvnTimeEpochFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
 
@@ -133,14 +133,16 @@ public final class StvnFencedStringDedentAndUtcUnitTest extends TestCase {
     }
 
     public void testDeriveDefsStemNameSupportsOneStemAndTwoStemFilenames() {
-        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn_i"));
-        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn_di"));
-        assertEquals("foo.stvn_d", StvnCopyFlattenedSchemaAction.deriveDefsStemName("foo.stvn"));
+        assertEquals("foo.stvn_d", StvnProjectionStemUtil.deriveDefsStemName("foo.stvn_i"));
+        assertEquals("foo.stvn_d", StvnProjectionStemUtil.deriveDefsStemName("foo.stvn_di"));
+        assertEquals("foo.stvn_d", StvnProjectionStemUtil.deriveDefsStemName("foo.stvn"));
         assertEquals(
             "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_d",
-            StvnCopyFlattenedSchemaAction.deriveDefsStemName(
+            StvnProjectionStemUtil.deriveDefsStemName(
                 "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_i"
             )
         );
+        assertEquals("foo.stvn", StvnProjectionStemUtil.derivePayloadStemName("foo.stvn_i"));
+        assertEquals("bar.dom.stvn", StvnProjectionStemUtil.derivePayloadStemName("bar.dom.stvn_i"));
     }
 }

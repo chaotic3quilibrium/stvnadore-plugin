@@ -13,7 +13,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.TestActionEvent;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction;
+import org.stvnadore.plugin.actions.StvnExportHermeticSchemaCompactCasAction;
 import org.stvnadore.plugin.documentation.StvnDocumentationProvider;
 import org.stvnadore.plugin.hints.StvnInlayHintsCollector;
 import org.stvnadore.plugin.navigation.StvnGotoDeclarationHandler;
@@ -374,7 +374,7 @@ public final class StvnGauntletV8Batch4CrossFilePsiAndReorderDxTest extends Base
         );
         myFixture.configureFromExistingVirtualFile(file10c.getVirtualFile());
 
-        var flattenAction = new StvnFlattenWorkspaceAction();
+        var flattenAction = new StvnExportHermeticSchemaCompactCasAction();
         var ctx = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, getProject())
             .add(CommonDataKeys.EDITOR, myFixture.getEditor())

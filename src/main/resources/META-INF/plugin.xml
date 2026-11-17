@@ -531,8 +531,9 @@
         </action>
 
         <group id="org.stvnadore.plugin.actions.StvnEditorPopupMenu"
+               class="org.stvnadore.plugin.actions.StvnEditorPopupMenuGroup"
                text="STVN"
-               description="STVN data projection, workspace flattening, and formatting actions"
+               description="STVN VOP hermetic schema extraction, hermetic payload extraction, and in-place canonicalization actions"
                popup="true"
                icon="/icons/stvn_file.svg">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
@@ -547,35 +548,79 @@
                 <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt N"/>
             </action>
             <separator/>
-            <action id="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
-                    class="org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction"
-                    text="Flatten STVN Workspace"
-                    description="Resolves workspace dependencies and exports a canonical hermetic .stvn_d schema"
-                    icon="/icons/stvn_file.svg">
-                <add-to-group group-id="BuildMenu" anchor="last"/>
-            </action>
-            <action id="org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction"
-                    class="org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction"
-                    text="Flatten Active STVN Schema to Clipboard"
-                    description="Resolves workspace dependencies and copies the canonical pretty-printed hermetic schema to the system clipboard"
-                    icon="/icons/stvn_file.svg"/>
+            <group id="org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup"
+                   class="org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup"
+                   text="Extract Hermetic Schema (.stvn__d — #DEFS Only)"
+                   description="Extracts a non-destructive hermetic #DEFS schema (.stvn_d) to the clipboard or a sibling file"
+                   popup="true"
+                   icon="/icons/stvn_defs_file.svg">
+                <action id="org.stvnadore.plugin.actions.StvnCopyHermeticSchemaPrettyAction"
+                        class="org.stvnadore.plugin.actions.StvnCopyHermeticSchemaPrettyAction"
+                        text="Copy to Clipboard (Pretty)"
+                        description="Formats the hermetic #DEFS schema via AstPrettyPrinter to the system clipboard"/>
+                <action id="org.stvnadore.plugin.actions.StvnCopyHermeticSchemaCompactCasAction"
+                        class="org.stvnadore.plugin.actions.StvnCopyHermeticSchemaCompactCasAction"
+                        text="Copy to Clipboard (Compact CAS)"
+                        description="Copies the exact StvnSchemaFlattener zero-padded #DEFS CAS preimage to the system clipboard"/>
+                <separator/>
+                <action id="org.stvnadore.plugin.actions.StvnExportHermeticSchemaPrettyAction"
+                        class="org.stvnadore.plugin.actions.StvnExportHermeticSchemaPrettyAction"
+                        text="Export Sibling .stvn__d File (Pretty)"
+                        description="Writes a pretty-printed hermetic sibling .stvn_d schema file without modifying the source buffer"/>
+                <action id="org.stvnadore.plugin.actions.StvnExportHermeticSchemaCompactCasAction"
+                        class="org.stvnadore.plugin.actions.StvnExportHermeticSchemaCompactCasAction"
+                        text="Export Sibling .stvn__d File (Compact CAS)"
+                        description="Writes a compact CAS hermetic sibling .stvn_d schema file without modifying the source buffer"/>
+            </group>
             <separator/>
-            <action id="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
-                    class="org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction"
-                    text="Canonicalize &amp; Pretty Print"
-                    description="Formats active STVN document with 2-space indentation and long-form symbols"/>
-            <action id="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
-                    class="org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction"
-                    text="Canonicalize &amp; Compact Print"
-                    description="Formats active STVN document into compact single-line layout with short-form symbols"/>
-            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
-                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction"
-                    text="Copy Canonical Pretty Print to Clipboard"
-                    description="Copies canonical pretty-printed format to the system clipboard without modifying document"/>
-            <action id="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
-                    class="org.stvnadore.plugin.actions.StvnCopyCanonicalCompactPrintAction"
-                    text="Copy Canonical Compact Print to Clipboard"
-                    description="Copies canonical compact single-line layout to the system clipboard without modifying document"/>
+            <group id="org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup"
+                   class="org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup"
+                   text="Extract Hermetic Payload (.stvn — Includes :body)"
+                   description="Extracts a non-destructive hermetic #BODY payload (.stvn) to the clipboard or a sibling file"
+                   popup="true"
+                   icon="/icons/stvn_file.svg">
+                <action id="org.stvnadore.plugin.actions.StvnCopyHermeticPayloadPrettyAction"
+                        class="org.stvnadore.plugin.actions.StvnCopyHermeticPayloadPrettyAction"
+                        text="Copy to Clipboard (Pretty)"
+                        description="Formats the hermetic #BODY payload via AstPrettyPrinter to the system clipboard"/>
+                <action id="org.stvnadore.plugin.actions.StvnCopyHermeticPayloadCompactAction"
+                        class="org.stvnadore.plugin.actions.StvnCopyHermeticPayloadCompactAction"
+                        text="Copy to Clipboard (Compact)"
+                        description="Formats the hermetic #BODY payload via AstCompactPrinter to the system clipboard"/>
+                <separator/>
+                <action id="org.stvnadore.plugin.actions.StvnExportHermeticPayloadPrettyAction"
+                        class="org.stvnadore.plugin.actions.StvnExportHermeticPayloadPrettyAction"
+                        text="Export Sibling .stvn File (Pretty)"
+                        description="Writes a pretty-printed hermetic sibling .stvn payload file without modifying the source buffer"/>
+                <action id="org.stvnadore.plugin.actions.StvnExportHermeticPayloadCompactAction"
+                        class="org.stvnadore.plugin.actions.StvnExportHermeticPayloadCompactAction"
+                        text="Export Sibling .stvn File (Compact)"
+                        description="Writes a compact hermetic sibling .stvn payload file without modifying the source buffer"/>
+            </group>
+            <separator/>
+            <group id="org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup"
+                   class="org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup"
+                   text="Canonicalize Active Buffer In-Place"
+                   description="Replaces the active STVN buffer in-place with canonical Pretty or Compact IR (undoable via Ctrl+Z)"
+                   popup="true"
+                   icon="/icons/stvn_ir_file.svg">
+                <action id="org.stvnadore.plugin.actions.StvnReplaceBufferPrettyIrAction"
+                        class="org.stvnadore.plugin.actions.StvnReplaceBufferPrettyIrAction"
+                        text="Replace Buffer with Pretty IR"
+                        description="Replaces the active buffer with AstPrettyPrinter output while preserving extension-compatible #kind"/>
+                <action id="org.stvnadore.plugin.actions.StvnReplaceBufferCompactIrAction"
+                        class="org.stvnadore.plugin.actions.StvnReplaceBufferCompactIrAction"
+                        text="Replace Buffer with Compact IR"
+                        description="Replaces the active buffer with AstCompactPrinter output while preserving extension-compatible #kind"/>
+            </group>
         </group>
+
+        <action id="org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction"
+                class="org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction"
+                text="Export Hermetic STVN Schema (.stvn__d, Compact CAS)"
+                description="Resolves workspace dependencies and exports a compact CAS sibling .stvn_d schema file"
+                icon="/icons/stvn_file.svg">
+            <add-to-group group-id="BuildMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

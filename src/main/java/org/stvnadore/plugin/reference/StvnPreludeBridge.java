@@ -2,6 +2,7 @@ package org.stvnadore.plugin.reference;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
@@ -117,8 +118,20 @@ public final class StvnPreludeBridge {
      * @return {@code true} if the file name matches canonical prelude naming conventions
      */
     public static boolean isPreludeFile(@Nullable PsiFile file) {
-        if (file == null) return false;
-        var name = file.getName();
+        return file != null && isPreludeFileName(file.getName());
+    }
+
+    /**
+     * Checks whether the specified virtual file is a standard library prelude file.
+     *
+     * @param file the virtual file to inspect
+     * @return {@code true} if the file name matches canonical prelude naming conventions
+     */
+    public static boolean isPreludeFile(@Nullable VirtualFile file) {
+        return file != null && isPreludeFileName(file.getName());
+    }
+
+    private static boolean isPreludeFileName(String name) {
         return "prelude.stvn_core.stvn_d".equals(name) || "prelude.stvn_d".equals(name)
             || "org_stvnadore_prelude.stvn_core.stvn_d".equals(name) || "org_stvnadore_prelude.stvn_d".equals(name);
     }

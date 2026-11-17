@@ -12,9 +12,9 @@ import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnDocument;
-import org.stvnadore.plugin.actions.StvnConvertToCompactPrintAction;
-import org.stvnadore.plugin.actions.StvnConvertToPrettyPrintAction;
-import org.stvnadore.plugin.actions.StvnCopyCanonicalPrettyPrintAction;
+import org.stvnadore.plugin.actions.StvnCopyHermeticPayloadPrettyAction;
+import org.stvnadore.plugin.actions.StvnReplaceBufferCompactIrAction;
+import org.stvnadore.plugin.actions.StvnReplaceBufferPrettyIrAction;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 
@@ -35,7 +35,7 @@ import java.util.stream.Stream;
  * Plugin-level Golden Formatter Conformance Suite verifying the 68 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
- *   <li>{@link StvnConvertToPrettyPrintAction} and {@link StvnConvertToCompactPrintAction}</li>
+ *   <li>{@link StvnReplaceBufferPrettyIrAction} and {@link StvnReplaceBufferCompactIrAction}</li>
  *   <li>Default Core Source Formatter {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
  *   <li>Core Canonical Pretty {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
  *   <li>Structure-preserving PSI {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnFormattingModelBuilder} and {@link StvnBlock}</li>
@@ -91,43 +91,64 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String expectedPretty = Files.readString(PRETTY_DIR.resolve(fileName), StandardCharsets.UTF_8);
                 String expectedCompact = Files.readString(COMPACT_DIR.resolve(fileName), StandardCharsets.UTF_8);
 
-                // 1. Verify StvnConvertToPrettyPrintAction on input/
+                // 1. Verify StvnReplaceBufferPrettyIrAction on input/ (preserves active file #kind, including #BODY_INCLUDE on .stvn_i)
                 var prettyActionFile = myFixture.configureByText(fileName, inputSource);
-                var prettyAction = new StvnConvertToPrettyPrintAction();
+                var prettyAction = new StvnReplaceBufferPrettyIrAction();
                 var prettyCtx = SimpleDataContext.builder()
                     .add(CommonDataKeys.PROJECT, getProject())
                     .add(CommonDataKeys.EDITOR, myFixture.getEditor())
                     .add(CommonDataKeys.PSI_FILE, prettyActionFile)
+                    .add(CommonDataKeys.VIRTUAL_FILE, prettyActionFile.getVirtualFile())
                     .build();
                 prettyAction.actionPerformed(TestActionEvent.createTestEvent(prettyAction, prettyCtx));
-                assertEquals("StvnConvertToPrettyPrintAction mismatch for " + fileName,
+                assertEquals("StvnReplaceBufferPrettyIrAction mismatch for " + fileName,
                     expectedPretty, myFixture.getEditor().getDocument().getText() + "\n");
 
                 if ("17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)) {
                     var copyPrettyFile = myFixture.configureByText(fileName, inputSource);
-                    var copyPrettyAction = new StvnCopyCanonicalPrettyPrintAction();
+                    var copyPrettyAction = new StvnCopyHermeticPayloadPrettyAction();
                     var copyPrettyCtx = SimpleDataContext.builder()
                         .add(CommonDataKeys.PROJECT, getProject())
                         .add(CommonDataKeys.EDITOR, myFixture.getEditor())
                         .add(CommonDataKeys.PSI_FILE, copyPrettyFile)
+                        .add(CommonDataKeys.VIRTUAL_FILE, copyPrettyFile.getVirtualFile())
                         .build();
                     copyPrettyAction.actionPerformed(TestActionEvent.createTestEvent(copyPrettyAction, copyPrettyCtx));
                     String copiedText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
                     assertNotNull("Clipboard must contain canonical pretty-printed Quartet #17", copiedText);
-                    assertEquals("StvnCopyCanonicalPrettyPrintAction mismatch for " + fileName,
+                    assertEquals("StvnCopyHermeticPayloadPrettyAction mismatch for " + fileName,
                         expectedPretty, copiedText.endsWith("\n") ? copiedText : copiedText + "\n");
                 }
 
-                // 2. Verify StvnConvertToCompactPrintAction on input/
+                // Safeguard 3: On .stvn_i quartets, Submenu 2 StvnCopyHermeticPayloadPrettyAction normalizes #BODY_INCLUDE -> #BODY
+                if ("14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)) {
+                    var copyModFile = myFixture.configureByText(fileName, inputSource);
+                    var copyModAction = new StvnCopyHermeticPayloadPrettyAction();
+                    var copyModCtx = SimpleDataContext.builder()
+                        .add(CommonDataKeys.PROJECT, getProject())
+                        .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+                        .add(CommonDataKeys.PSI_FILE, copyModFile)
+                        .add(CommonDataKeys.VIRTUAL_FILE, copyModFile.getVirtualFile())
+                        .build();
+                    copyModAction.actionPerformed(TestActionEvent.createTestEvent(copyModAction, copyModCtx));
+                    String copiedHermetic = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+                    assertNotNull("Clipboard must contain hermetic #BODY projection for Quartet #14", copiedHermetic);
+                    assertEquals("StvnCopyHermeticPayloadPrettyAction must normalize #BODY_INCLUDE to #BODY for " + fileName,
+                        expectedPretty.replace("#kind #BODY_INCLUDE", "#kind #BODY"),
+                        copiedHermetic.endsWith("\n") ? copiedHermetic : copiedHermetic + "\n");
+                }
+
+                // 2. Verify StvnReplaceBufferCompactIrAction on input/ (preserves active file #kind)
                 var compactActionFile = myFixture.configureByText(fileName, inputSource);
-                var compactAction = new StvnConvertToCompactPrintAction();
+                var compactAction = new StvnReplaceBufferCompactIrAction();
                 var compactCtx = SimpleDataContext.builder()
                     .add(CommonDataKeys.PROJECT, getProject())
                     .add(CommonDataKeys.EDITOR, myFixture.getEditor())
                     .add(CommonDataKeys.PSI_FILE, compactActionFile)
+                    .add(CommonDataKeys.VIRTUAL_FILE, compactActionFile.getVirtualFile())
                     .build();
                 compactAction.actionPerformed(TestActionEvent.createTestEvent(compactAction, compactCtx));
-                assertEquals("StvnConvertToCompactPrintAction mismatch for " + fileName,
+                assertEquals("StvnReplaceBufferCompactIrAction mismatch for " + fileName,
                     expectedCompact, myFixture.getEditor().getDocument().getText() + "\n");
 
                 // 3. Verify Default Ctrl+Alt+L (CORE_SOURCE_FORMATTER) on input/, source_pretty/ (idempotency), and pretty/ (fixed-point)

@@ -12,7 +12,8 @@ import org.stvnadore.plugin.settings.StvnProjectSettings;
 import java.awt.datatransfer.DataFlavor;
 
 /**
- * Integration test suite verifying canonical projection actions, clipboard actions, and authoring loss guards.
+ * Integration test suite verifying canonical in-place buffer actions, hermetic payload clipboard actions,
+ * and {@link StvnCanonicalizationGuard} authoring loss detection.
  */
 @NullMarked
 public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
@@ -21,12 +22,13 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var compact = "{:type :Tuple(:Boolean :Option(:Boolean)) :body (#T #N)}";
         var psiFile = myFixture.configureByText("payload.stvn", compact);
 
-        var action = new StvnConvertToPrettyPrintAction();
+        var action = new StvnReplaceBufferPrettyIrAction();
         var dataContext = SimpleDataContext.builder()
-                .add(CommonDataKeys.PROJECT, getProject())
-                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
-                .add(CommonDataKeys.PSI_FILE, psiFile)
-                .build();
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, psiFile)
+            .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
+            .build();
 
         var event = TestActionEvent.createTestEvent(action, dataContext);
         action.actionPerformed(event);
@@ -49,31 +51,33 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
             """;
         var psiFile = myFixture.configureByText("payload.stvn", pretty);
 
-        var action = new StvnConvertToCompactPrintAction();
+        var action = new StvnReplaceBufferCompactIrAction();
         var dataContext = SimpleDataContext.builder()
-                .add(CommonDataKeys.PROJECT, getProject())
-                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
-                .add(CommonDataKeys.PSI_FILE, psiFile)
-                .build();
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, psiFile)
+            .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
+            .build();
 
         var event = TestActionEvent.createTestEvent(action, dataContext);
         action.actionPerformed(event);
 
         var result = myFixture.getEditor().getDocument().getText();
         assertEquals("Compact printed output must match canonical single-line syntax",
-                "{:type :Tuple(:Boolean :Option(:Boolean)):body(#T #N)}", result);
+            "{:type :Tuple(:Boolean :Option(:Boolean)):body(#T #N)}", result);
     }
 
     public void testCopyCanonicalPrettyPrintAction() {
         var compact = "{:type :Tuple(:Boolean :Option(:Boolean)) :body (#T #N)}";
         var psiFile = myFixture.configureByText("payload.stvn", compact);
 
-        var action = new StvnCopyCanonicalPrettyPrintAction();
+        var action = new StvnCopyHermeticPayloadPrettyAction();
         var dataContext = SimpleDataContext.builder()
-                .add(CommonDataKeys.PROJECT, getProject())
-                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
-                .add(CommonDataKeys.PSI_FILE, psiFile)
-                .build();
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, psiFile)
+            .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
+            .build();
 
         var event = TestActionEvent.createTestEvent(action, dataContext);
         action.actionPerformed(event);
@@ -99,12 +103,13 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
             """;
         var psiFile = myFixture.configureByText("payload.stvn", pretty);
 
-        var action = new StvnCopyCanonicalCompactPrintAction();
+        var action = new StvnCopyHermeticPayloadCompactAction();
         var dataContext = SimpleDataContext.builder()
-                .add(CommonDataKeys.PROJECT, getProject())
-                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
-                .add(CommonDataKeys.PSI_FILE, psiFile)
-                .build();
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, psiFile)
+            .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
+            .build();
 
         var event = TestActionEvent.createTestEvent(action, dataContext);
         action.actionPerformed(event);
@@ -121,6 +126,11 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var fileComments = myFixture.configureByText("c.stvn", commented);
         assertTrue("Guard must trigger on comments", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileComments));
 
+        var included = "{ :meta { #name \"inc\" #kind #BODY_INCLUDE } :defs { :include [ \"base.stvn_d\" ] } :type :Int :body 10 }";
+        var fileIncluded = myFixture.configureByText("inc.stvn_i", included);
+        assertTrue("Guard must trigger on :include directives",
+            StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileIncluded));
+
         var packaged = "{ :defs { :package :pkg { :T :Int } } :type :pkg/T :body 10 }";
         var filePackaged = myFixture.configureByText("p.stvn", packaged);
         assertTrue("Guard must trigger on package enclaves", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(filePackaged));
@@ -128,6 +138,16 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
         var used = "{ :defs { :use [ :pkg { :T :U } ] } :type :U :body 10 }";
         var fileUsed = myFixture.configureByText("u.stvn", used);
         assertTrue("Guard must trigger on use aliases", StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileUsed));
+
+        var payloadConst = "{ :defs { #LIMIT :Int 10 } :type :Int :body #LIMIT }";
+        var filePayloadConst = myFixture.configureByText("const_payload.stvn", payloadConst);
+        assertTrue("Guard must trigger on payload constants inlined during canonicalization",
+            StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(filePayloadConst));
+
+        var defsSchemaConst = "{ :meta { #name \"defs_const\" #kind #DEFS } :defs { #LIMIT :Int 10 } }";
+        var fileDefsConst = myFixture.configureByText("defs_const.stvn_d", defsSchemaConst);
+        assertFalse("Guard must not trigger on clean #DEFS schema constants retained in catalog",
+            StvnCanonicalizationGuard.hasDestructiveAuthoringConstructs(fileDefsConst));
 
         var unreferenced = "{ :defs { :Unused :Int } :type :String :body \"ok\" }";
         var fileUnreferenced = myFixture.configureByText("unref.stvn", unreferenced);
@@ -140,54 +160,55 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
 
     public void testCanonicalizationWarningSuppressionSetting() {
         var settings = StvnProjectSettings.getInstance(getProject());
+        boolean prev = settings.getState().suppressCanonicalizationWarning;
         settings.getState().suppressCanonicalizationWarning = true;
+        try {
+            var commented = """
+                {
+                  // Comment here
+                  :type :Int
+                  :body 10
+                }
+                """;
+            var psiFile = myFixture.configureByText("commented.stvn", commented);
 
-        var commented = """
-            {
-              // Comment here
-              :type :Int
-              :body 10
-            }
-            """;
-        var psiFile = myFixture.configureByText("commented.stvn", commented);
-
-        var action = new StvnConvertToCompactPrintAction();
-        var dataContext = SimpleDataContext.builder()
+            var action = new StvnReplaceBufferCompactIrAction();
+            var dataContext = SimpleDataContext.builder()
                 .add(CommonDataKeys.PROJECT, getProject())
                 .add(CommonDataKeys.EDITOR, myFixture.getEditor())
                 .add(CommonDataKeys.PSI_FILE, psiFile)
+                .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
                 .build();
 
-        var event = TestActionEvent.createTestEvent(action, dataContext);
-        action.actionPerformed(event);
+            var event = TestActionEvent.createTestEvent(action, dataContext);
+            action.actionPerformed(event);
 
-        var result = myFixture.getEditor().getDocument().getText();
-        assertEquals("{:type :Int:body 10}", result);
+            var result = myFixture.getEditor().getDocument().getText();
+            assertEquals("{:type :Int:body 10}", result);
+        } finally {
+            settings.getState().suppressCanonicalizationWarning = prev;
+        }
     }
 
     public void testActionNamingAndBgtExecution() {
         var browseAction = new org.stvnadore.plugin.browser.StvnBrowseNamespaceAction();
         assertEquals("Browse Namespace Dependencies", browseAction.getTemplatePresentation().getText());
 
-        var prettyAction = new StvnConvertToPrettyPrintAction();
-        assertEquals("Canonicalize & Pretty Print", prettyAction.getTemplatePresentation().getText());
-        assertEquals("Pretty print action must run update on BGT",
-                ActionUpdateThread.BGT, prettyAction.getActionUpdateThread());
+        var prettyAction = new StvnReplaceBufferPrettyIrAction();
+        assertEquals("Replace Buffer with Pretty IR", prettyAction.getTemplatePresentation().getText());
+        assertEquals(ActionUpdateThread.BGT, prettyAction.getActionUpdateThread());
 
-        var compactAction = new StvnConvertToCompactPrintAction();
-        assertEquals("Canonicalize & Compact Print", compactAction.getTemplatePresentation().getText());
-        assertEquals("Compact print action must run update on BGT",
-                ActionUpdateThread.BGT, compactAction.getActionUpdateThread());
+        var compactAction = new StvnReplaceBufferCompactIrAction();
+        assertEquals("Replace Buffer with Compact IR", compactAction.getTemplatePresentation().getText());
+        assertEquals(ActionUpdateThread.BGT, compactAction.getActionUpdateThread());
 
-        var copyPrettyAction = new StvnCopyCanonicalPrettyPrintAction();
-        assertEquals("Copy Canonical Pretty Print to Clipboard", copyPrettyAction.getTemplatePresentation().getText());
-        assertEquals("Copy pretty action must run update on BGT",
-                ActionUpdateThread.BGT, copyPrettyAction.getActionUpdateThread());
+        var copyPrettyAction = new StvnCopyHermeticPayloadPrettyAction();
+        assertEquals("Copy to Clipboard (Pretty)", copyPrettyAction.getTemplatePresentation().getText());
+        assertEquals(ActionUpdateThread.BGT, copyPrettyAction.getActionUpdateThread());
 
-        var copyCompactAction = new StvnCopyCanonicalCompactPrintAction();
-        assertEquals("Copy Canonical Compact Print to Clipboard", copyCompactAction.getTemplatePresentation().getText());
-        assertEquals("Copy compact action must run update on BGT",
-                ActionUpdateThread.BGT, copyCompactAction.getActionUpdateThread());
+        var copyCompactAction = new StvnCopyHermeticPayloadCompactAction();
+        assertEquals("Copy to Clipboard (Compact)", copyCompactAction.getTemplatePresentation().getText());
+        assertEquals(ActionUpdateThread.BGT, copyCompactAction.getActionUpdateThread());
     }
 
     public void testCopyCanonicalProjectionWithTransitiveDefinitionsAndNoDanglingAliases() {
@@ -207,12 +228,13 @@ public final class StvnDualProjectionActionsTest extends BasePlatformTestCase {
             """;
         var psiFile = myFixture.configureByText("canonical_projection.stvn", content);
 
-        var action = new StvnCopyCanonicalCompactPrintAction();
+        var action = new StvnCopyHermeticPayloadCompactAction();
         var dataContext = SimpleDataContext.builder()
-                .add(CommonDataKeys.PROJECT, getProject())
-                .add(CommonDataKeys.EDITOR, myFixture.getEditor())
-                .add(CommonDataKeys.PSI_FILE, psiFile)
-                .build();
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, psiFile)
+            .add(CommonDataKeys.VIRTUAL_FILE, psiFile.getVirtualFile())
+            .build();
 
         var event = TestActionEvent.createTestEvent(action, dataContext);
         action.actionPerformed(event);

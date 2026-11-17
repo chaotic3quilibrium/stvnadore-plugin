@@ -22,8 +22,8 @@ import java.util.List;
 
 /**
  * Platform integration test suite verifying {@code STVN >} popup group surfacing,
- * STVN cube icons, {@link StvnFlattenWorkspaceAction}, and {@link StvnCopyFlattenedSchemaAction}
- * across 1-stem and 2-stem modular workspaces.
+ * 3-submenu VOP hierarchy, {@code BuildMenu} export action, and 2-stem unsaved buffer
+ * schema extraction across modular workspaces.
  */
 @NullMarked
 public final class StvnFlattenActionsTest extends BasePlatformTestCase {
@@ -33,36 +33,37 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
 
         AnAction popupGroupAction = actionManager.getAction("org.stvnadore.plugin.actions.StvnEditorPopupMenu");
         assertNotNull("StvnEditorPopupMenu must be registered", popupGroupAction);
-        assertTrue(popupGroupAction instanceof DefaultActionGroup);
+        assertTrue(popupGroupAction instanceof StvnEditorPopupMenuGroup);
         assertEquals("STVN", popupGroupAction.getTemplatePresentation().getText());
         var popupIcon = popupGroupAction.getTemplatePresentation().getIcon();
         assertNotNull("StvnEditorPopupMenu must bind STVN cube icon", popupIcon);
         assertTrue("StvnEditorPopupMenu icon must resolve to stvn_file.svg: " + popupIcon,
             popupIcon.toString().contains("icons/stvn_file.svg"));
 
-        AnAction flattenDisk = actionManager.getAction("org.stvnadore.plugin.actions.StvnFlattenWorkspaceAction");
-        AnAction flattenClipboard = actionManager.getAction("org.stvnadore.plugin.actions.StvnCopyFlattenedSchemaAction");
-        assertNotNull(flattenDisk);
-        assertNotNull(flattenClipboard);
-        var diskIcon = flattenDisk.getTemplatePresentation().getIcon();
-        var clipIcon = flattenClipboard.getTemplatePresentation().getIcon();
-        assertNotNull(diskIcon);
-        assertNotNull(clipIcon);
-        assertTrue(diskIcon.toString().contains("icons/stvn_file.svg"));
-        assertTrue(clipIcon.toString().contains("icons/stvn_file.svg"));
-        assertEquals(StvnIcons.STVN, new StvnFlattenWorkspaceAction().getTemplatePresentation().getIcon());
-        assertEquals(StvnIcons.STVN, new StvnCopyFlattenedSchemaAction().getTemplatePresentation().getIcon());
+        AnAction schemaGroup = actionManager.getAction("org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup");
+        AnAction payloadGroup = actionManager.getAction("org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup");
+        AnAction inPlaceGroup = actionManager.getAction("org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup");
+        AnAction buildExport = actionManager.getAction("org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction");
+        assertNotNull(schemaGroup);
+        assertNotNull(payloadGroup);
+        assertNotNull(inPlaceGroup);
+        assertNotNull(buildExport);
+        assertEquals(StvnIcons.STVN, new StvnBuildExportSchemaCompactCasAction().getTemplatePresentation().getIcon());
+        assertEquals("Export Hermetic STVN Schema (.stvn_d, Compact CAS)",
+            buildExport.getTemplatePresentation().getText());
 
         var probeEvent = TestActionEvent.createTestEvent();
         DefaultActionGroup stvnGroup = (DefaultActionGroup) popupGroupAction;
         AnAction[] children = stvnGroup.getChildren(probeEvent);
-        assertEquals("Expected Browse + Separator + 2 Flatten + Separator + 4 Projection = 9 children", 9, children.length);
+        assertEquals("Expected Browse + Sep + Submenu1 + Sep + Submenu2 + Sep + Submenu3 = 7 children",
+            7, children.length);
         assertTrue("Child[1] must be Separator", children[1] instanceof Separator);
-        assertEquals(flattenDisk, children[2]);
-        assertEquals(flattenClipboard, children[3]);
-        assertTrue("Child[4] must be Separator", children[4] instanceof Separator);
+        assertEquals(schemaGroup, children[2]);
+        assertTrue("Child[3] must be Separator", children[3] instanceof Separator);
+        assertEquals(payloadGroup, children[4]);
+        assertTrue("Child[5] must be Separator", children[5] instanceof Separator);
+        assertEquals(inPlaceGroup, children[6]);
 
-        // Verify StvnEditorPopupMenu is attached to both EditorPopupMenu and ProjectViewPopupMenu
         ActionGroup editorPopup = (ActionGroup) actionManager.getAction("EditorPopupMenu");
         ActionGroup projectViewPopup = (ActionGroup) actionManager.getAction("ProjectViewPopupMenu");
         ActionGroup buildMenu = (ActionGroup) actionManager.getAction("BuildMenu");
@@ -75,32 +76,34 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
         List<AnAction> buildChildren = Arrays.asList(buildMenu.getChildren(probeEvent));
         assertTrue("EditorPopupMenu must contain STVN popup group", editorChildren.contains(popupGroupAction));
         assertTrue("ProjectViewPopupMenu must contain STVN popup group", projectViewChildren.contains(popupGroupAction));
-        assertTrue("BuildMenu must retain Flatten STVN Workspace", buildChildren.contains(flattenDisk));
+        assertTrue("BuildMenu must contain Export Hermetic STVN Schema (.stvn_d, Compact CAS)",
+            buildChildren.contains(buildExport));
     }
 
     public void testVisibilityAcrossFileExtensions() {
-        var stvnFile = myFixture.addFileToProject("sample.stvn", "{ :type :Int :body 1 }");
-        var stvnIFile = myFixture.addFileToProject("sample_mod.stvn_i", "{ :type :Int :body 1 }");
-        var stvnDFile = myFixture.addFileToProject("sample_defs.stvn_d", "{ :defs { :A :Int } }");
-        var stvnDiFile = myFixture.addFileToProject("sample_defs_mod.stvn_di", "{ :defs { :A :Int } }");
+        var stvnFile = myFixture.addFileToProject("sample.stvn", "{ :defs { :A :Int } :type :A :body 1 }");
+        var stvnIFile = myFixture.addFileToProject("sample_mod.stvn_i",
+            "{ :meta { #name \"sample_mod\" #kind #BODY_INCLUDE } :defs { :A :Int } :type :A :body 1 }");
+        var stvnDFile = myFixture.addFileToProject("sample_defs.stvn_d",
+            "{ :meta { #name \"sample_defs\" #kind #DEFS } :defs { :A :Int } }");
+        var stvnDiFile = myFixture.addFileToProject("sample_defs_mod.stvn_di",
+            "{ :meta { #name \"sample_defs_mod\" #kind #DEFS_INCLUDE } :defs { :A :Int } }");
         var txtFile = myFixture.addFileToProject("notes.txt", "hello");
 
-        var diskAction = new StvnFlattenWorkspaceAction();
-        var clipAction = new StvnCopyFlattenedSchemaAction();
+        var diskAction = new StvnExportHermeticSchemaCompactCasAction();
+        var clipAction = new StvnCopyHermeticSchemaPrettyAction();
 
-        // Disk action: enabled on .stvn, .stvn_i, .stvn_di; hidden on .stvn_d and .txt
-        assertActionVisible(diskAction, stvnFile.getVirtualFile(), true);
-        assertActionVisible(diskAction, stvnIFile.getVirtualFile(), true);
-        assertActionVisible(diskAction, stvnDiFile.getVirtualFile(), true);
-        assertActionVisible(diskAction, stvnDFile.getVirtualFile(), false);
-        assertActionVisible(diskAction, txtFile.getVirtualFile(), false);
+        assertActionEnabledAndVisible(diskAction, stvnFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(diskAction, stvnIFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(diskAction, stvnDiFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(diskAction, stvnDFile.getVirtualFile(), true, false);
+        assertActionEnabledAndVisible(diskAction, txtFile.getVirtualFile(), false, false);
 
-        // Clipboard action: enabled on all 4 textual STVN extensions; hidden on .txt
-        assertActionVisible(clipAction, stvnFile.getVirtualFile(), true);
-        assertActionVisible(clipAction, stvnIFile.getVirtualFile(), true);
-        assertActionVisible(clipAction, stvnDiFile.getVirtualFile(), true);
-        assertActionVisible(clipAction, stvnDFile.getVirtualFile(), true);
-        assertActionVisible(clipAction, txtFile.getVirtualFile(), false);
+        assertActionEnabledAndVisible(clipAction, stvnFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(clipAction, stvnIFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(clipAction, stvnDiFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(clipAction, stvnDFile.getVirtualFile(), true, true);
+        assertActionEnabledAndVisible(clipAction, txtFile.getVirtualFile(), false, false);
     }
 
     public void testFlattenActiveSchemaToClipboardSupportsTwoStemFilesAndUnsavedBuffersWithoutWritingDisk() throws Exception {
@@ -142,13 +145,12 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
             initialEntry
         );
 
-        // Mutate buffer in-memory without saving to disk to verify unsaved buffer precedence
         String updatedUnsavedEntry = initialEntry.replace(":LocalWrapper", ":UnsavedWrapper");
         WriteCommandAction.runWriteCommandAction(getProject(), () ->
             myFixture.getEditor().getDocument().setText(updatedUnsavedEntry)
         );
 
-        var clipAction = new StvnCopyFlattenedSchemaAction();
+        var clipAction = new StvnCopyHermeticSchemaPrettyAction();
         var dataContext = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, getProject())
             .add(CommonDataKeys.EDITOR, myFixture.getEditor())
@@ -158,16 +160,12 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
 
         clipAction.actionPerformed(TestActionEvent.createTestEvent(clipAction, dataContext));
 
-        // 1. Active editor buffer is completely untouched
         assertEquals(updatedUnsavedEntry, myFixture.getEditor().getDocument().getText());
-
-        // 2. Zero .stvn_d file written to disk
-        assertNull("Clipboard flatten must not create .stvn_d on disk",
+        assertNull("Clipboard schema extraction must not create .stvn_d on disk",
             psiEntry.getVirtualFile().getParent().findChild(
                 "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_d"
             ));
 
-        // 3. Clipboard contains pretty-printed hermetic #DEFS schema with [REGEX] fenced bias and unsaved symbol
         String clipboard = (String) CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
         assertNotNull(clipboard);
         assertTrue("Clipboard schema must carry #kind #DEFS:\n" + clipboard, clipboard.contains("#kind #DEFS"));
@@ -185,16 +183,20 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
         assertFalse("Flattened clipboard schema must compile with zero errors:\n" + compileRes.diagnostics(),
             compileRes.hasErrors());
 
-        // 4. Disk flatten action writes 2-stem .stvn_d sibling cleanly when explicitly invoked
-        var diskAction = new StvnFlattenWorkspaceAction();
+        var diskAction = new StvnExportHermeticSchemaCompactCasAction();
         diskAction.actionPerformed(TestActionEvent.createTestEvent(diskAction, dataContext));
-        assertNotNull("Disk flatten action must create 2-stem .stvn_d sibling",
+        assertNotNull("Disk export action must create 2-stem .stvn_d sibling",
             psiEntry.getVirtualFile().getParent().findChild(
                 "gauntlet_v7_stage10_modular_includes_and_flattening.core_test.stvn_d"
             ));
     }
 
-    private void assertActionVisible(AnAction action, com.intellij.openapi.vfs.VirtualFile vf, boolean expectedVisible) {
+    private void assertActionEnabledAndVisible(
+            AnAction action,
+            com.intellij.openapi.vfs.VirtualFile vf,
+            boolean expectedVisible,
+            boolean expectedEnabled
+    ) {
         var ctx = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, getProject())
             .add(CommonDataKeys.VIRTUAL_FILE, vf)
@@ -202,6 +204,8 @@ public final class StvnFlattenActionsTest extends BasePlatformTestCase {
         var event = TestActionEvent.createTestEvent(action, ctx);
         action.update(event);
         assertEquals("Unexpected visibility for " + vf.getName(),
-            expectedVisible, event.getPresentation().isEnabledAndVisible());
+            expectedVisible, event.getPresentation().isVisible());
+        assertEquals("Unexpected enablement for " + vf.getName(),
+            expectedEnabled, event.getPresentation().isEnabled());
     }
 }

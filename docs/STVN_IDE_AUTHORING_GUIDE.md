@@ -60,7 +60,7 @@
     * [Editor Enter-Key Auto-Closing & Layout Shapes](#editor-enter-key-auto-closing--layout-shapes)
     * [Interactive Live Templates and Intentions](#interactive-live-templates-and-intentions)
     * [In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection](#in-editor-tag-renaming-shiftf6--delimiter-collision-protection)
-    * [5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)](#54-workspace-dependency-flattening-stvnflattenworkspaceaction)
+    * [5.4 VOP Projection & Canonicalization Menu Matrix (`STVN >`)](#54-vop-projection--canonicalization-menu-matrix-stvn-)
     * [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
       * [Package Enclaves (`:package`)](#package-enclaves-package)
       * [Lexical Imports (`:use`)](#lexical-imports-use)
@@ -839,13 +839,13 @@ Position the caret on either the opening `[TAG]` or closing `[TAG]` bracket and 
 
 ---
 
-### 5.4 Workspace Dependency Flattening (`StvnFlattenWorkspaceAction`)
+### 5.4 VOP Projection & Canonicalization Menu Matrix (`STVN >`)
 
-When preparing STVN schemas for production deployments or microservice distribution, you can bundle modular multi-file schemas into a single standalone `.stvn_d` archive:
+Right-click any textual STVN file (`.stvn_di`, `.stvn_d`, `.stvn_i`, or `.stvn`) in the editor or **Project View** and open **STVN >** to select an explicit `(Artifact Kind x Format Profile x Output Sink)` projection:
 
-1. Right-click any `.stvn_di`, `.stvn_d`, `.stvn_i`, or `.stvn` file in the **Project View**.
-2. Select **Flatten STVN Workspace** (also available under the **Build** menu).
-3. The plugin resolves all relative `:include` paths, checks for namespace collisions and circular dependencies, strips redundant comments, and exports a canonical `.stvn_d` file.
+1. **Extract Hermetic Schema (`.stvn_d` — `#DEFS` Only):** Strips `:type` and `:body`, sets `#kind #DEFS`, resolves transitive `:include` graphs, and copies or exports a sibling `<stem>.stvn_d` file in **Pretty** or **Compact CAS** format (also available under **Build > Export Hermetic STVN Schema (.stvn_d, Compact CAS)**).
+2. **Extract Hermetic Payload (`.stvn` — Includes `:body`):** Retains `:type` and `:body`, normalizes `#kind #BODY`, inlines `#CONST` values, prunes unreachable `:defs`, and copies or exports a sibling `<stem>.stvn` file in **Pretty** or **Compact** format without modifying your commented `.stvn_i` source buffer.
+3. **Canonicalize Active Buffer In-Place:** Replaces the active buffer with **Pretty IR** or **Compact IR** while preserving the file's own `#kind` (undoable via `Ctrl+Z`).
 
 ---
 
@@ -1138,7 +1138,7 @@ graph TD
 | **Quick Documentation**          | Show Documentation & Lineage           | `Ctrl+Q`                | `F1` / `Ctrl+J`            |
 | **Jump to Definition**           | Go to Type/Constant Declaration        | `Ctrl+B` / `Ctrl+Click` | `⌘B` / `⌘Click`            |
 | **Reorder Enum Filter Variants** | Sort variants to match root enum order | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Flatten Workspace**            | Flatten STVN Workspace Action          | *Project Menu / Build*  | *Project Menu / Build*     |
+| **Export Hermetic Schema**       | Export Hermetic STVN Schema (.stvn_d, Compact CAS) | *STVN > / Build Menu* | *STVN > / Build Menu* |
 
 ---
 
