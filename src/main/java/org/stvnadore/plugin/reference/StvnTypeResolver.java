@@ -777,12 +777,23 @@ public final class StvnTypeResolver {
     private static String getLabelForSchema(StvnSchema schema, PsiFile containingFile) {
         if (schema.aliasName().isPresent()) {
             var alias = schema.aliasName().get();
+            var preludePrefix = StvnVocabulary.SIGIL_TYPIC + "org/stvnadore/prelude/";
+            var shortAlias = alias.startsWith(preludePrefix)
+                ? StvnVocabulary.SIGIL_TYPIC + alias.substring(preludePrefix.length())
+                : alias;
+            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
+                return shortAlias;
+            }
             var keywordElement = StvnTypeReference.resolveTypeInFile(containingFile, alias, new HashSet<>());
             var kw = keywordElement instanceof TypeDefinition td ? td.getTypeKeyword()
                 : keywordElement instanceof TypeKeyword k ? k : null;
             if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
-                return formatTrace(trace);
+                if (trace.size() > 1) {
+                    var head = alias.contains("/") ? alias : trace.get(0);
+                    return head + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
+                }
+                return alias.contains("/") ? alias : formatTrace(trace);
             }
             return alias;
         }
@@ -993,7 +1004,8 @@ public final class StvnTypeResolver {
             if (typeKw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(typeKw);
                 if (trace.size() > 1) {
-                    return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
+                    var head = alias.contains("/") ? alias : trace.get(0);
+                    return prefix + head + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
                 }
             }
             return prefix + alias;
@@ -1617,7 +1629,10 @@ public final class StvnTypeResolver {
             if (kw != null) {
                 var trace = StvnTypeReference.extractResolutionTrace(kw);
                 if (!trace.isEmpty()) {
-                    return String.join(" -> ", trace);
+                    var head = alias.contains("/") ? alias : trace.get(0);
+                    return trace.size() > 1
+                        ? head + " -> " + String.join(" -> ", trace.subList(1, trace.size()))
+                        : head;
                 }
             }
             return alias;
@@ -3694,6 +3709,7 @@ public final class StvnTypeResolver {
         if (context != null) {
             var enclosingPkg = PsiTreeUtil.getParentOfType(context, PackageEnclosure.class);
             if (enclosingPkg != null && (!typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !typeName.substring(1).contains("/"))) {
+                var pkgUseStmts = new ArrayList<UseStmt>();
                 for (var elem : enclosingPkg.getPackageElementList()) {
                     var typeDef = elem.getTypeDefinition();
                     if (typeDef != null) {
@@ -3704,31 +3720,15 @@ public final class StvnTypeResolver {
                     }
                     var useStmt = elem.getUseStmt();
                     if (useStmt != null) {
-                        if (useStmt.getUseAliasBlock() != null) {
-                            for (var alias : useStmt.getUseAliasBlock().getUseMapAliasList()) {
-                                var kws = alias.getTypeKeywordList();
-                                if (kws.size() >= 2 && kws.get(1) != null && kws.get(1).getText().equals(typeName)) {
-                                    var hopped = StvnPsiUtils.resolveTargetTypeDefinition(alias);
-                                    if (hopped != null) {
-                                        return hopped;
-                                    }
-                                }
-                            }
-                        }
-                        var optBlock = useStmt.getUseOptionsBlock();
-                        if (optBlock != null
-                                && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)
-                                && useStmt.getUseTarget() != null
-                                && typeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
-                                && !typeName.substring(1).contains("/")) {
-                            var stripFqni = useStmt.getUseTarget().getText().trim() + "/" + typeName.substring(1);
-                            var strippedResolved = StvnTypeReference.resolveTypeInFile(file, stripFqni, new HashSet<>());
-                            var strippedDef = StvnPsiUtils.resolveTargetTypeDefinition(strippedResolved);
-                            if (strippedDef != null) {
-                                return strippedDef;
-                            }
-                        }
+                        pkgUseStmts.add(useStmt);
                     }
+                }
+                var pkgUseOutcome = StvnTypeReference.resolveFromUseStmts(file, pkgUseStmts, typeName, null);
+                if (pkgUseOutcome.collisionOrEvicted()) {
+                    return null;
+                }
+                if (pkgUseOutcome.resolved() != null) {
+                    return StvnPsiUtils.resolveTargetTypeDefinition(pkgUseOutcome.resolved());
                 }
             }
         }

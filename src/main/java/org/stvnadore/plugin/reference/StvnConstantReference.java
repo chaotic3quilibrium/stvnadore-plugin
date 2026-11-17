@@ -202,6 +202,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         // 2. If element resides inside a PackageEnclosure and is unqualified, check package-local scope first
         var enclosingPkg = PsiTreeUtil.getParentOfType(element, org.stvnadore.psi.PackageEnclosure.class);
         if (enclosingPkg != null && !tokenText.contains("/")) {
+            var pkgUseStmts = new java.util.ArrayList<org.stvnadore.psi.UseStmt>();
             for (var pkgElem : enclosingPkg.getPackageElementList()) {
                 var cDef = pkgElem.getConstantDefinition();
                 if (cDef != null) {
@@ -212,10 +213,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                 }
                 var useStmt = pkgElem.getUseStmt();
                 if (useStmt != null) {
-                    var resolvedFromPkgUse = resolveFromUseStmt(file, useStmt, tokenText, new HashSet<>());
-                    if (resolvedFromPkgUse != null) {
-                        return resolvedFromPkgUse;
-                    }
+                    pkgUseStmts.add(useStmt);
                 }
             }
             if (enclosingPkg.getPackagePath() != null) {
@@ -224,6 +222,13 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                 if (samePkgResolved != null && samePkgResolved != element) {
                     return samePkgResolved;
                 }
+            }
+            var pkgUseResolved = resolveFromUseStmts(file, pkgUseStmts, canonicalizeConstantQuery(tokenText));
+            if (pkgUseResolved.collision()) {
+                return null;
+            }
+            if (pkgUseResolved.resolved() != null) {
+                return pkgUseResolved.resolved();
             }
         }
 
@@ -317,19 +322,31 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         }
 
         // 3. Scan root :use statements
-        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
-        for (var use : useStmts) {
-            if (PsiTreeUtil.getParentOfType(use, org.stvnadore.psi.PackageEnclosure.class) != null) {
-                continue;
-            }
-            var resolvedFromUse = resolveFromUseStmt(file, use, canonicalName, visited);
-            if (resolvedFromUse != null) {
-                return resolvedFromUse;
+        var rootUseStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class).stream()
+            .filter(use -> PsiTreeUtil.getParentOfType(use, org.stvnadore.psi.PackageEnclosure.class) == null)
+            .toList();
+        var rootUseResolved = resolveFromUseStmts(file, rootUseStmts, canonicalName);
+        if (rootUseResolved.collision()) {
+            return null;
+        }
+        if (rootUseResolved.resolved() != null) {
+            return rootUseResolved.resolved();
+        }
+
+        // 3b. Explicit Standard Library Prelude constant FQNI (#org/stvnadore/prelude/*)
+        if (canonicalName.startsWith(StvnVocabulary.SIGIL_VALUE + "org/stvnadore/prelude/")) {
+            var project = file.getProject();
+            if (project != null && !project.isDisposed()) {
+                var explicitPreludeConst = StvnPreludeBridge.resolvePreludeConstant(project, canonicalName);
+                if (explicitPreludeConst != null) {
+                    return explicitPreludeConst;
+                }
             }
         }
 
-        // 4. Scan imported modules (:include)
+        // 4. Scan imported modules (:include) with per-branch cycle sets and diamond deduplication
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
+        var uniqueIncludeMatches = new java.util.ArrayList<PsiElement>();
         for (var incl : includes) {
             var stringLit = incl.getStringLiteral();
             if (stringLit != null) {
@@ -338,12 +355,19 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                 var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                 if (targetFile != null) {
                     var resolved = resolveConstantInFile(
-                        targetFile, canonicalName, visited, allowUnqualifiedPackaged || hasStrip);
-                    if (resolved != null) {
-                        return resolved;
+                        targetFile, canonicalName, new HashSet<>(visited), allowUnqualifiedPackaged || hasStrip);
+                    if (resolved != null
+                            && uniqueIncludeMatches.stream().noneMatch(e -> StvnTypeReference.areSameDeclarationTarget(e, resolved))) {
+                        uniqueIncludeMatches.add(resolved);
                     }
                 }
             }
+        }
+        if (uniqueIncludeMatches.size() > 1) {
+            return null;
+        }
+        if (uniqueIncludeMatches.size() == 1) {
+            return uniqueIncludeMatches.get(0);
         }
 
         // 5. Standard library prelude fallback
@@ -364,35 +388,68 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         return null;
     }
 
-    private static @Nullable PsiElement resolveFromUseStmt(
+    private record UseConstResolution(@Nullable PsiElement resolved, boolean collision) {}
+
+    private static UseConstResolution resolveFromUseStmts(
             PsiFile file,
-            org.stvnadore.psi.UseStmt use,
-            String canonicalName,
-            Set<String> visited) {
-        var aliasBlock = use.getUseAliasBlock();
-        if (aliasBlock != null) {
-            for (var alias : aliasBlock.getUseMapAliasList()) {
-                var list = alias.getValueKeywordList();
-                if (list.size() >= 2) {
-                    var localKw = list.get(1);
-                    if (localKw != null && localKw.getText().trim().equals(canonicalName)) {
-                        return localKw;
+            java.util.List<org.stvnadore.psi.UseStmt> useStmts,
+            String canonicalName
+    ) {
+        if (canonicalName.contains("/")) {
+            return new UseConstResolution(null, false);
+        }
+        var rhsClaims = new java.util.ArrayList<ValueKeyword>();
+        var rawClaims = new java.util.ArrayList<PsiElement>();
+        for (var use : useStmts) {
+            var target = use.getUseTarget();
+            if (target == null || target.getUseTargetIllegal() != null) {
+                continue;
+            }
+            var prefix = target.getText().trim();
+            var fqni = buildPackageConstantFqni(prefix, canonicalName);
+            boolean lhsRenamedInThisUse = false;
+
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getValueKeywordList();
+                    if (list.size() >= 2) {
+                        var remoteKw = list.get(0);
+                        var localKw = list.get(1);
+                        if (remoteKw != null) {
+                            var remoteNorm = canonicalizeConstantQuery(remoteKw.getText().trim());
+                            if (remoteNorm.equals(canonicalName) || remoteNorm.equals(fqni)) {
+                                lhsRenamedInThisUse = true;
+                            }
+                        }
+                        if (localKw != null && localKw.getText().trim().equals(canonicalName)) {
+                            rhsClaims.add(localKw);
+                        }
                     }
                 }
             }
-        }
-        var optBlock = use.getUseOptionsBlock();
-        if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP) && !canonicalName.contains("/")) {
-            var target = use.getUseTarget();
-            if (target != null) {
-                var prefix = target.getText();
-                var fqni = buildPackageConstantFqni(prefix, canonicalName);
-                var resolved = resolveConstantInFile(file, fqni, visited, false);
-                if (resolved != null) {
-                    return resolved;
+
+            var optBlock = use.getUseOptionsBlock();
+            if (!lhsRenamedInThisUse
+                    && optBlock != null
+                    && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
+                var resolved = resolveConstantInFile(file, fqni, new HashSet<>(), false);
+                if (resolved != null
+                        && rawClaims.stream().noneMatch(e -> StvnTypeReference.areSameDeclarationTarget(e, resolved))) {
+                    rawClaims.add(resolved);
                 }
             }
         }
-        return null;
+        int total = rhsClaims.size() + rawClaims.size();
+        if (total > 1) {
+            return new UseConstResolution(null, true);
+        }
+        if (rhsClaims.size() == 1) {
+            return new UseConstResolution(rhsClaims.get(0), false);
+        }
+        if (rawClaims.size() == 1) {
+            return new UseConstResolution(rawClaims.get(0), false);
+        }
+        return new UseConstResolution(null, false);
     }
 }

@@ -461,23 +461,41 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
     }
 
     public void testConstantDefinitionInlineSchemaInspectionAndQuickFix() {
-        var text = """
+        var unadornedText = """
             {
               :defs {
                 #GREETING :String "hello"
+                :package :satcom/uplink {
+                  #FRAME_ID_REGEX :String "^FRM\\\\.[0-9]{2}\\\\.[A-Z]{3}$"
+                }
               }
             }
             """;
-        myFixture.configureByText("const_greeting.stvn_di", text);
-        int strOffset = text.indexOf(":String");
-        myFixture.getEditor().getCaretModel().moveToOffset(strOffset);
-        var warnings = myFixture.doHighlighting().stream()
+        myFixture.configureByText("const_greeting.stvn_di", unadornedText);
+        var unadornedWarnings = myFixture.doHighlighting().stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"))
             .toList();
+        assertTrue("Unadorned ConstantDefinition :String schemas must emit zero PW002 warnings", unadornedWarnings.isEmpty());
 
-        assertEquals("Expected 1 unadorned string warning on #GREETING inline :String", 1, warnings.size());
+        var explicitOverflowText = """
+            {
+              :defs {
+                #GREETING { #maxSize 8192 } :String "hello"
+              }
+            }
+            """;
+        myFixture.configureByText("const_greeting_overflow.stvn_di", explicitOverflowText);
+        int strOffset = explicitOverflowText.indexOf(":String");
+        myFixture.getEditor().getCaretModel().moveToOffset(strOffset);
+        var warnings = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_CAPACITY_OVERFLOW"))
+            .toList();
+
+        assertEquals("Expected 1 PW003 overflow warning on explicit #maxSize 8192 constant schema", 1, warnings.size());
         assertEquals(strOffset, warnings.get(0).getStartOffset());
+        assertTrue(warnings.get(0).getDescription().contains("Constant string schema ':String' specifies capacity 8192"));
 
         var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
         assertFalse(actions.isEmpty());

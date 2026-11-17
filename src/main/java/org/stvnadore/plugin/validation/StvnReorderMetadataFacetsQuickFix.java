@@ -18,13 +18,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.TypeDefTarget;
+import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.TypeEntry;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Sorts metadata facets in a metadata map according to the canonical 5-Tier Decimal Hierarchy (§ 6.1)
@@ -88,7 +93,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
             return IntentionPreviewInfo.DIFF;
         }
         PsiElement atCaret = file.findElementAt(editor.getCaretModel().getOffset());
-        MetadataMap copyAtCaret = PsiTreeUtil.getParentOfType(atCaret, MetadataMap.class, false);
+        MetadataMap copyAtCaret = resolveTargetMetadataMap(atCaret);
         if (copyAtCaret != null && copyAtCaret.isValid()) {
             reorderMetadataMap(project, copyAtCaret);
             return IntentionPreviewInfo.DIFF;
@@ -101,10 +106,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
             @NotNull Project project,
             @NotNull ProblemDescriptor previewDescriptor
     ) {
-        PsiElement previewElement = previewDescriptor.getPsiElement();
-        MetadataMap copyMap = previewElement instanceof MetadataMap mm
-            ? mm
-            : PsiTreeUtil.getParentOfType(previewElement, MetadataMap.class, false);
+        MetadataMap copyMap = resolveTargetMetadataMap(previewDescriptor.getPsiElement());
         if (copyMap == null || !copyMap.isValid()) {
             return IntentionPreviewInfo.EMPTY;
         }
@@ -119,10 +121,7 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
 
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-        PsiElement targetElement = descriptor.getPsiElement();
-        MetadataMap targetMap = targetElement instanceof MetadataMap mm
-            ? mm
-            : PsiTreeUtil.getParentOfType(targetElement, MetadataMap.class, false);
+        MetadataMap targetMap = resolveTargetMetadataMap(descriptor.getPsiElement());
         MetadataMap metadataMap = metadataMapPointer.getElement();
         if (targetMap == null && metadataMap != null && metadataMap.isValid()) {
             targetMap = metadataMap;
@@ -130,6 +129,61 @@ public final class StvnReorderMetadataFacetsQuickFix implements LocalQuickFix, I
         if (targetMap != null && targetMap.isValid()) {
             reorderMetadataMap(project, targetMap);
         }
+    }
+
+    /**
+     * Resolves the target {@link MetadataMap} from any inspection descriptor anchor
+     * ({@link MetadataMap}, {@link MetadataEntry}, {@code LBRACE}, {@code RBRACE},
+     * {@link TypeDefTarget}, {@link ConstantDefinition} keyword, or {@link TypeEntry} {@code :type} keyword).
+     *
+     * @param anchor descriptor or caret PSI element, or {@code null}
+     * @return target {@link MetadataMap}, or {@code null} if not found
+     */
+    static @Nullable MetadataMap resolveTargetMetadataMap(@Nullable PsiElement anchor) {
+        if (anchor == null) {
+            return null;
+        }
+        MetadataMap enclosingMap = PsiTreeUtil.getParentOfType(anchor, MetadataMap.class, false);
+        if (enclosingMap != null) {
+            return enclosingMap;
+        }
+        TypeDefTarget defTarget = PsiTreeUtil.getParentOfType(anchor, TypeDefTarget.class, false);
+        if (defTarget != null && defTarget.getParent() instanceof TypeDefinition typeDef) {
+            return typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : typeDef.getMetadataMap();
+        }
+        if (anchor instanceof TypeDefinition typeDef) {
+            return typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : typeDef.getMetadataMap();
+        }
+        ConstantDefinition constDef = PsiTreeUtil.getParentOfType(anchor, ConstantDefinition.class, false);
+        if (constDef != null && constDef.getSchemaType() != null) {
+            return constDef.getSchemaType().getMetadataMap();
+        }
+        TypeEntry typeEntry = PsiTreeUtil.getParentOfType(anchor, TypeEntry.class, false);
+        if (typeEntry != null) {
+            if (typeEntry.getMetadataMap() != null) {
+                return typeEntry.getMetadataMap();
+            }
+            if (typeEntry.getSchemaType() != null) {
+                return typeEntry.getSchemaType().getMetadataMap();
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof StvnReorderMetadataFacetsQuickFix other)) {
+            return false;
+        }
+        return Objects.equals(metadataMapPointer, other.metadataMapPointer);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(metadataMapPointer);
     }
 
     /**

@@ -7,8 +7,10 @@
   <code>:Seq</code>, <code>:Set</code>, and <code>:Map</code> types.
   This inspection flags root constructor declarations lacking explicit capacity facets or exceeding the configured
   threshold (default: 4,096 characters, elements, or entries). Derived nominal aliases (<code>:Child :ParentAlias</code>)
-  inherit locked Tier-1 capacity bounds from their root definition and are not flagged. Quick-fixes insert
-  <code>#minSize</code> and <code>#maxSize</code> at their canonical 5-tier position inside <code>{ ... }</code>.
+  inherit locked Tier-1 capacity bounds from their root definition and are not flagged. Immutable compile-time
+  constant declarations (<code>#CONST :String "..."</code>, <code>#CONST :Seq(:Int) [...]</code>) omit unadorned warnings
+  because their value cardinality is statically fixed, while explicit <code>#maxSize</code> values exceeding the threshold
+  still report <code>PW003</code>. Quick-fixes insert <code>#minSize</code> and <code>#maxSize</code> at their canonical 5-tier position inside <code>{ ... }</code>.
 </p>
 
 <p><b>QuickFix Resolution Protocol:</b></p>

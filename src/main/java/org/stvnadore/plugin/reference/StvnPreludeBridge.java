@@ -157,7 +157,11 @@ public final class StvnPreludeBridge {
     public static @Nullable TypeDefinition resolvePreludeTypeDefinition(@Nullable PsiFile file, String nameOrFqni) {
         if (file == null) return null;
         var normName = nameOrFqni.startsWith(StvnVocabulary.SIGIL_TYPIC) ? nameOrFqni : StvnVocabulary.SIGIL_TYPIC + nameOrFqni;
-        var bareName = normName.contains("/") ? StvnVocabulary.SIGIL_TYPIC + normName.substring(normName.lastIndexOf('/') + 1) : normName;
+        boolean isQualified = normName.contains("/");
+        String expectedPkg = isQualified ? normName.substring(0, normName.lastIndexOf('/')) : null;
+        var bareName = isQualified
+            ? StvnVocabulary.SIGIL_TYPIC + normName.substring(normName.lastIndexOf('/') + 1)
+            : normName;
 
         var allDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var def : allDefs) {
@@ -165,6 +169,9 @@ public final class StvnPreludeBridge {
             if (kw != null) {
                 var localName = kw.getText();
                 if (localName.equals(bareName) || localName.equals(normName)) {
+                    if (expectedPkg != null && !expectedPkg.equals(getPreludePackagePath(def))) {
+                        continue;
+                    }
                     return def;
                 }
             }
@@ -254,13 +261,22 @@ public final class StvnPreludeBridge {
         var file = getPreludeFile(project);
         if (file == null) return null;
         var normName = constName.startsWith(StvnVocabulary.SIGIL_VALUE) ? constName : StvnVocabulary.SIGIL_VALUE + constName;
-        var bareName = normName.contains("/") ? StvnVocabulary.SIGIL_VALUE + normName.substring(normName.lastIndexOf('/') + 1) : normName;
+        boolean isQualified = normName.contains("/");
+        String expectedPkg = isQualified
+            ? StvnVocabulary.SIGIL_TYPIC + normName.substring(1, normName.lastIndexOf('/'))
+            : null;
+        var bareName = isQualified
+            ? StvnVocabulary.SIGIL_VALUE + normName.substring(normName.lastIndexOf('/') + 1)
+            : normName;
         var allConstDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
         for (var cDef : allConstDefs) {
             var kw = cDef.getValueKeyword();
             if (kw != null) {
                 var text = kw.getText();
                 if (text.equals(bareName) || text.equals(normName)) {
+                    if (expectedPkg != null && !expectedPkg.equals(getPreludePackagePath(cDef))) {
+                        continue;
+                    }
                     return cDef;
                 }
             }

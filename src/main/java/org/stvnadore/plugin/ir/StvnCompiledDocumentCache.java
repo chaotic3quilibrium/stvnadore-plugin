@@ -226,14 +226,17 @@ public final class StvnCompiledDocumentCache {
 
     private static CompiledSnapshot compilePsiFile(PsiFile psiFile) {
         VirtualFile vf = psiFile.getVirtualFile();
-        String fileName = vf != null ? vf.getName() : psiFile.getName();
+        if (vf == null && psiFile.getOriginalFile() != psiFile) {
+            vf = psiFile.getOriginalFile().getVirtualFile();
+        }
+        String fileName = vf != null ? vf.getName() : psiFile.getOriginalFile().getName();
         boolean systemMode = isSystemSubstrateFileName(fileName) || StvnPreludeBridge.isPreludeFile(psiFile);
 
         StvnParserConfig config = systemMode
             ? new StvnParserConfig(false, StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS, true)
             : StvnParserConfig.DEFAULT;
 
-        if (vf != null && isBinaryStvnExtension(fileName)) {
+        if (vf != null && psiFile.isPhysical() && isBinaryStvnExtension(fileName)) {
             String rawPath = vf.getPath();
             String normalizedPath = StvnSchemaFlattener.normalizePath(rawPath);
             try {

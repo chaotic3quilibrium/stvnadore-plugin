@@ -230,7 +230,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (StvnTypeResolver.isDegradedNominalAlias(typeKw.getContainingFile(), alias)) {
                 var ir = StvnTypeResolver.resolveIrSchemaByAlias(typeKw.getContainingFile(), alias);
                 var targetDef = StvnTypeReference.resolveTypeInFile(typeKw.getContainingFile(), alias, new HashSet<>());
-                var td = StvnPsiUtils.getParentTypeDefinition(targetDef);
+                var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
                 return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, td));
             }
         } else if (target instanceof Value value) {
@@ -299,44 +299,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (file == null || file.getName().contains("prelude")) {
             return null;
         }
-
-        var localDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var def : localDefs) {
-            if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)) {
-                continue;
-            }
-            var kw = def.getTypeKeyword();
-            if (kw != null && text.equals(kw.getText()) && def != targetKw.getParent()) {
-                return null;
-            }
-        }
-        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
-        for (var use : useStmts) {
-            if (StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
-                continue;
-            }
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2 && list.get(1) != null && text.equals(list.get(1).getText())) {
-                        return null;
-                    }
-                    if (list.size() == 1 && list.get(0) != null && text.equals(list.get(0).getText())) {
-                        return null;
-                    }
-                }
-            }
-            var opts = use.getUseOptionsBlock();
-            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var useTarget = use.getUseTarget();
-                if (useTarget != null && useTarget.getText().equals(":org/stvnadore/prelude")) {
-                    return null;
-                }
-            }
+        if (StvnPsiUtils.isTypeDefinitionTarget(targetKw)
+                || StvnTypeReference.resolveTypeKeywordWithoutImplicitPrelude(targetKw) != null) {
+            return null;
         }
 
-        var fqni = ":org/stvnadore/prelude/" + text.substring(1);
+        var fqni = StvnVocabulary.SIGIL_TYPIC + "org/stvnadore/prelude/" + text.substring(1);
         return """
             <div style="padding: 6px 10px; border-left: 4px solid #E57373; background-color: rgba(229, 115, 115, 0.12); color: #C62828; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
                 <b style="font-size: 1.05em;">&#9888; Unqualified Reference Warning</b><br/>
@@ -495,7 +463,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             var resolvedTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-            var remTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolvedTarget);
+            var remTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolvedTarget);
             var subset = StvnTypeResolver.resolveEnumSubset(alias);
             if (subset == null && remTypeDef != null) {
                 subset = StvnTypeResolver.resolveEnumSubset(remTypeDef);
@@ -607,6 +575,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
                 sb.append("<b>FQNI:</b> <code>").append(fqni).append("</code><br/>");
             }
+            if (containingFile != null && !isPrelude) {
+                var cFileName = containingFile.getName();
+                if (cFileName.endsWith(".stvn_d") || cFileName.endsWith(".stvn_di")) {
+                    sb.append("<b>Imported From:</b> <code>\"").append(cFileName).append("\"</code><br/>");
+                }
+            }
             if (schemaType != null) {
                 sb.append("<nobr><b>Type:</b> <code>")
                   .append(escapeHtmlBody(StvnSchemaFormatter.formatSchema(schemaType)))
@@ -625,7 +599,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     sb.append("<b>Value:</b> ").append(escapeHtmlBody(value.getText()));
                 }
                 var chainResolution = resolveConstantTerminalValue(constDef);
-                if (chainResolution.hops().size() > 1 && chainResolution.terminalValue() != null) {
+                if (chainResolution.cyclic()) {
+                    sb.append("<br/><b>Constant Cycle:</b> <code>")
+                      .append(String.join(" &rarr; ", chainResolution.hops()))
+                      .append("</code>");
+                } else if (chainResolution.hops().size() > 1 && chainResolution.terminalValue() != null) {
                     sb.append("<br/><b>Resolved Value:</b> <code>")
                       .append(escapeHtmlBody(chainResolution.terminalValue().getText().trim()))
                       .append("</code> (via <code>")
@@ -824,21 +802,32 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return null;
     }
 
-    private record ConstantChainResolution(List<String> hops, @Nullable Value terminalValue, @Nullable SchemaType terminalSchema) {}
+    private record ConstantChainResolution(
+        List<String> hops,
+        @Nullable Value terminalValue,
+        @Nullable SchemaType terminalSchema,
+        boolean cyclic
+    ) {}
 
     private static ConstantChainResolution resolveConstantTerminalValue(ConstantDefinition startDef) {
         var hops = new ArrayList<String>();
-        var visited = new HashSet<String>();
+        var visitedDefs = new HashSet<ConstantDefinition>();
         ConstantDefinition current = startDef;
         Value lastValue = startDef.getValue();
         SchemaType lastSchema = startDef.getSchemaType();
+        boolean cyclic = false;
 
         while (current != null && hops.size() < 16) {
             String name = current.getValueKeyword() != null ? current.getValueKeyword().getText().trim() : "";
-            if (!name.isEmpty()) {
-                if (!visited.add(name)) {
-                    break;
+            if (!visitedDefs.add(current)) {
+                if (!name.isEmpty()) {
+                    hops.add(name);
                 }
+                cyclic = true;
+                lastValue = null;
+                break;
+            }
+            if (!name.isEmpty()) {
                 hops.add(name);
             }
             lastValue = current.getValue();
@@ -863,7 +852,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
         }
-        return new ConstantChainResolution(hops, lastValue, lastSchema);
+        return new ConstantChainResolution(hops, lastValue, lastSchema, cyclic);
     }
 
     private void appendConstantContextAndTemporalPreview(
@@ -1116,6 +1105,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         SchemaType leafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
         if (leafSchema == null) {
             leafSchema = rootSlotSchema;
+        }
+        var constChain = resolveConstantTerminalValue(constDef);
+        if (constChain.cyclic()) {
+            String constLabel = bodyVal.getText().trim();
+            sb.append("<hr/>");
+            sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(getWarningBadgeColorHex()).append(";\">")
+              .append("Suspended (Circular Constant)</b><br/>");
+            sb.append("Payload compliance evaluation is suspended because constant <code>")
+              .append(escapeHtmlBody(constLabel))
+              .append("</code> participates in a circular constant definition in <code>")
+              .append(StvnVocabulary.KEYWORD_DEFS)
+              .append("</code>.");
+            return;
         }
         StvnSchema rawLeafIr = resolveRawLeafIrSchemaForCompliance(bodyVal, leafSchema);
         SchemaType constSchema = constDef.getSchemaType();
@@ -1455,9 +1457,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (resolved == null) {
                 resolved = StvnTypeReference.resolveTypeInFile(file, remoteName, new HashSet<>());
             }
-            var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
+            var targetTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
             if (targetTypeDef != null) {
-                return buildTargetDocumentation(targetTypeDef, originalElement);
+                return buildTargetDocumentation(targetTypeDef, null);
             }
         }
         return null;
@@ -4145,7 +4147,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var file = rootSchema.getContainingFile();
             if (file != null) {
                 var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                typeDef = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
+                typeDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
             }
         }
 
@@ -5327,13 +5329,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                if (td != null) {
-                    return StvnTypeResolver.resolveNominalIrSchema(td);
-                }
+            var target = new StvnTypeReference(kw).resolve();
+            var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
+            if (td != null) {
+                return StvnTypeResolver.resolveNominalIrSchema(td);
             }
         }
 

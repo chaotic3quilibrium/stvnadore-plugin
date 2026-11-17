@@ -420,8 +420,14 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
             .map(com.intellij.codeInsight.intention.IntentionAction::getText)
             .toList();
         assertTrue(
-            "No #name or #domain quick-fixes may bleed onto ':meta {' brace, found: " + braceIntentions,
-            braceIntentions.stream().noneMatch(t -> t.contains("#name") || t.contains("#domain") || t.contains("Rename file to"))
+            "No #name or #domain stem-mismatch quick-fixes may bleed onto ':meta {' brace, found: " + braceIntentions,
+            braceIntentions.stream().noneMatch(t ->
+                t.contains("Align '#name'")
+                    || t.contains("Align '#domain'")
+                    || t.contains("Remove reserved 'stvn_'")
+                    || t.contains("Remove '#domain'")
+                    || t.contains("Rename file to")
+            )
         );
 
         // 2. Caret on "stvn_gate_trap": deduplicated #domain fixes only, zero #name bleed, zero 2-stem Remove #domain

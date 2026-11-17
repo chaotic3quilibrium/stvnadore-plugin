@@ -197,7 +197,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
 
                 inspectTopLevelTypeDefinition(typeDef, target, schemaType);
-                inspectCompositeChildSchemas(schemaType);
+                inspectCompositeChildSchemas(schemaType, false);
             }
 
             private void inspectTopLevelTypeDefinition(
@@ -295,8 +295,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 if (schemaType == null) {
                     return;
                 }
-                inspectInlineCompositeSlot(schemaType);
-                inspectCompositeChildSchemas(schemaType);
+                inspectInlineCompositeSlot(schemaType, true);
+                inspectCompositeChildSchemas(schemaType, true);
             }
 
             private void inspectTypeEntry(@NotNull TypeEntry typeEntry) {
@@ -305,7 +305,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
                 inspectTopLevelTypeEntry(typeEntry, schemaType);
-                inspectCompositeChildSchemas(schemaType);
+                inspectCompositeChildSchemas(schemaType, false);
             }
 
             private void inspectTopLevelTypeEntry(@NotNull TypeEntry typeEntry, @NotNull SchemaType schemaType) {
@@ -370,14 +370,17 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
             }
 
-            private void inspectCompositeChildSchemas(@NotNull SchemaType parentSchema) {
+            private void inspectCompositeChildSchemas(
+                    @NotNull SchemaType parentSchema,
+                    boolean inConstantDefinition
+            ) {
                 SchemaConstructor constructor = parentSchema.getSchemaConstructor();
                 if (constructor == null) {
                     return;
                 }
                 for (SchemaType childSlot : extractDirectChildSchemas(constructor)) {
-                    inspectInlineCompositeSlot(childSlot);
-                    inspectCompositeChildSchemas(childSlot);
+                    inspectInlineCompositeSlot(childSlot, inConstantDefinition);
+                    inspectCompositeChildSchemas(childSlot, inConstantDefinition);
                 }
             }
 
@@ -397,7 +400,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 return List.of();
             }
 
-            private void inspectInlineCompositeSlot(@NotNull SchemaType slotSchema) {
+            private void inspectInlineCompositeSlot(
+                    @NotNull SchemaType slotSchema,
+                    boolean inConstantDefinition
+            ) {
                 SchemaConstructor slotConstructor = slotSchema.getSchemaConstructor();
                 if (slotConstructor == null) {
                     return;
@@ -442,6 +448,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
                 }
                 boolean isUnadorned = !hasCapacityFacet;
+                if (inConstantDefinition && isUnadorned) {
+                    return;
+                }
                 boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
 
                 if (isUnadorned || exceedsThreshold) {
@@ -449,9 +458,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     String typeName = resolveSchemaDisplayName(slotSchema);
                     String category = resolvedInfo.isCollection ? "collection" : "string";
                     String units = resolvedInfo.isCollection ? (isMapCollection(slotSchema) ? "entries" : "elements") : "characters";
+                    String ownerSubject = inConstantDefinition ? "Constant " + category + " schema '" : "Nominal " + category + " type '";
                     String msg = isUnadorned
                         ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + StvnVocabulary.DEFAULT_MAX_SIZE + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
-                        : "Nominal " + category + " type '" + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
+                        : ownerSubject + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
                     String diagCode = isUnadorned
                         ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
                         : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;

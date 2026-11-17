@@ -762,29 +762,41 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     }
 
     public void testConstantDefinitionUnadornedCapacityWarningsAndQuickFixes() {
-        var text = """
+        var unadornedText = """
             {
               :defs {
                 #UNADORNED_CONST :Seq(:String) [ "alpha" ]
               }
             }
             """;
-        myFixture.configureByText("const_def_unadorned.stvn_di", text);
-        var warnings = myFixture.doHighlighting().stream()
+        myFixture.configureByText("const_def_unadorned.stvn_di", unadornedText);
+        var unadornedWarnings = myFixture.doHighlighting().stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
             .toList();
+        assertTrue("Unadorned ConstantDefinition composite schemas must emit zero PW001/PW002 warnings", unadornedWarnings.isEmpty());
 
-        assertEquals("Expected 2 unadorned warnings on #UNADORNED_CONST (:Seq and inner :String)", 2, warnings.size());
-        assertEquals(":Seq", text.substring(warnings.get(0).getStartOffset(), warnings.get(0).getEndOffset()));
-        assertTrue(warnings.get(0).getDescription().contains("WARN_NOMINAL_COLLECTION_UNADORNED"));
-        assertEquals(":String", text.substring(warnings.get(1).getStartOffset(), warnings.get(1).getEndOffset()));
-        assertTrue(warnings.get(1).getDescription().contains("WARN_NOMINAL_STRING_UNADORNED"));
+        var overflowText = """
+            {
+              :defs {
+                #UNADORNED_CONST { #maxSize 8192 } :Seq({ #maxSize 8192 } :String) [ "alpha" ]
+              }
+            }
+            """;
+        myFixture.configureByText("const_def_overflow.stvn_di", overflowText);
+        var warnings = myFixture.doHighlighting().stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_CAPACITY_OVERFLOW"))
+            .toList();
+
+        assertEquals("Expected 2 PW003 overflow warnings on explicit #maxSize 8192 constant schemas", 2, warnings.size());
+        assertEquals(":Seq", overflowText.substring(warnings.get(0).getStartOffset(), warnings.get(0).getEndOffset()));
+        assertEquals(":String", overflowText.substring(warnings.get(1).getStartOffset(), warnings.get(1).getEndOffset()));
 
         for (int step = 0; step < 2; step++) {
             var currentWarnings = myFixture.doHighlighting().stream()
                 .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
-                .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+                .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_NOMINAL_STRING_CAPACITY_OVERFLOW"))
                 .toList();
             myFixture.getEditor().getCaretModel().moveToOffset(currentWarnings.get(0).getStartOffset());
             myFixture.doHighlighting();

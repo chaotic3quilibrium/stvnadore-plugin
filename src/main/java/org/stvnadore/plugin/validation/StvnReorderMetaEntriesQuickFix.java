@@ -23,11 +23,13 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaElement;
+import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.StvnTypes;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.ToIntFunction;
 
 /**
@@ -103,7 +105,7 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
             return IntentionPreviewInfo.DIFF;
         }
         PsiElement atCaret = file.findElementAt(editor.getCaretModel().getOffset());
-        MetaBlock copyAtCaret = PsiTreeUtil.getParentOfType(atCaret, MetaBlock.class, false);
+        MetaBlock copyAtCaret = resolveTargetMetaBlock(atCaret);
         if (copyAtCaret != null && copyAtCaret.isValid()) {
             reorderMetaBlock(project, copyAtCaret);
             return IntentionPreviewInfo.DIFF;
@@ -116,10 +118,7 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
             @NotNull Project project,
             @NotNull ProblemDescriptor previewDescriptor
     ) {
-        PsiElement previewElement = previewDescriptor.getPsiElement();
-        MetaBlock copyBlock = previewElement instanceof MetaBlock mb
-            ? mb
-            : PsiTreeUtil.getParentOfType(previewElement, MetaBlock.class, false);
+        MetaBlock copyBlock = resolveTargetMetaBlock(previewDescriptor.getPsiElement());
         if (copyBlock == null || !copyBlock.isValid()) {
             return IntentionPreviewInfo.EMPTY;
         }
@@ -134,10 +133,7 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
 
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-        PsiElement targetElement = descriptor.getPsiElement();
-        MetaBlock targetBlock = targetElement instanceof MetaBlock mb
-            ? mb
-            : PsiTreeUtil.getParentOfType(targetElement, MetaBlock.class, false);
+        MetaBlock targetBlock = resolveTargetMetaBlock(descriptor.getPsiElement());
         MetaBlock metaBlock = metaBlockPointer != null ? metaBlockPointer.getElement() : null;
         if (targetBlock == null && metaBlock != null && metaBlock.isValid()) {
             targetBlock = metaBlock;
@@ -145,6 +141,41 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         if (targetBlock != null && targetBlock.isValid()) {
             reorderMetaBlock(project, targetBlock);
         }
+    }
+
+    /**
+     * Resolves the target {@link MetaBlock} from any inspection descriptor anchor
+     * ({@link MetaBlock}, {@link MetaElement}, {@code LBRACE}, {@code RBRACE}, or {@link MetaEntry} {@code :meta} keyword).
+     *
+     * @param anchor descriptor or caret PSI element, or {@code null}
+     * @return target {@link MetaBlock}, or {@code null} if not found
+     */
+    static @Nullable MetaBlock resolveTargetMetaBlock(@Nullable PsiElement anchor) {
+        if (anchor == null) {
+            return null;
+        }
+        MetaBlock enclosingBlock = PsiTreeUtil.getParentOfType(anchor, MetaBlock.class, false);
+        if (enclosingBlock != null) {
+            return enclosingBlock;
+        }
+        MetaEntry metaEntry = PsiTreeUtil.getParentOfType(anchor, MetaEntry.class, false);
+        return metaEntry != null ? metaEntry.getMetaBlock() : null;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof StvnReorderMetaEntriesQuickFix other)) {
+            return false;
+        }
+        return Objects.equals(metaBlockPointer, other.metaBlockPointer);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(metaBlockPointer);
     }
 
     record CommentLine(

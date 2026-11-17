@@ -32,16 +32,6 @@ import java.util.Set;
 @NullMarked
 public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> implements PsiPolyVariantReference {
 
-    private static final class Candidate {
-        final PsiElement element;
-        final boolean isLhsRename;
-
-        Candidate(PsiElement element, boolean isLhsRename) {
-            this.element = element;
-            this.isLhsRename = isLhsRename;
-        }
-    }
-
     /**
      * Constructs an StvnTypeReference for the given TypeKeyword element.
      *
@@ -180,7 +170,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                         var containingFile = keyword.getContainingFile();
                         if (containingFile != null) {
                             var resolved = StvnTypeReference.resolveTypeInFile(containingFile, fqni, new HashSet<>());
-                            if (resolved == null) {
+                            if (resolved == null && targetTypeName.substring(1).contains("/")) {
                                 resolved = StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, new HashSet<>());
                             }
                             if (resolved != null) {
@@ -228,56 +218,69 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         }
 
         // 2. Lexical Package Scope Priority: check sibling definitions in enclosing package
+        var resolved = resolveTypeKeywordWithContext(keyword, null, true);
+        return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
+    }
+
+    /**
+     * Resolves a {@link TypeKeyword} reference without consulting the synthetic bare-name Prelude fallback,
+     * returning {@code null} when a bare Prelude type is neither locally shadowed nor imported via {@code :use} or {@code :include}.
+     *
+     * @param keyword candidate usage-site {@link TypeKeyword}
+     * @return resolved declaration element, or {@code null} when unresolved without implicit Prelude fallback
+     */
+    public static @Nullable PsiElement resolveTypeKeywordWithoutImplicitPrelude(TypeKeyword keyword) {
+        return resolveTypeKeywordWithContext(keyword, null, false);
+    }
+
+    private static @Nullable PsiElement resolveTypeKeywordWithContext(
+            TypeKeyword keyword,
+            @Nullable List<String> trace,
+            boolean allowImplicitPreludeFallback
+    ) {
+        var containingFile = keyword.getContainingFile();
+        if (containingFile == null) {
+            return null;
+        }
+        var targetTypeName = keyword.getText().trim();
         var enclosingPkg = PsiTreeUtil.getParentOfType(keyword, PackageEnclosure.class);
-        if (enclosingPkg != null && (!targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !targetTypeName.substring(1).contains("/"))) {
+        if (enclosingPkg != null
+                && (!targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !targetTypeName.substring(1).contains("/"))) {
             for (var elem : enclosingPkg.getPackageElementList()) {
                 var typeDef = elem.getTypeDefinition();
                 if (typeDef != null) {
                     var defKw = typeDef.getTypeKeyword();
-                    if (defKw != null && defKw.getText().equals(targetTypeName)) {
-                        return new ResolveResult[]{new PsiElementResolveResult(defKw)};
-                    }
-                }
-                var useStmt = elem.getUseStmt();
-                if (useStmt != null) {
-                    var aliasBlock = useStmt.getUseAliasBlock();
-                    if (aliasBlock != null) {
-                        for (var alias : aliasBlock.getUseMapAliasList()) {
-                            var list = alias.getTypeKeywordList();
-                            if (list.size() >= 2 && list.get(1) != null && list.get(1).getText().equals(targetTypeName)) {
-                                return new ResolveResult[]{new PsiElementResolveResult(list.get(1))};
-                            }
-                        }
-                    }
-                    var optBlock = useStmt.getUseOptionsBlock();
-                    if (optBlock != null
-                            && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)
-                            && useStmt.getUseTarget() != null
-                            && targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
-                            && !targetTypeName.substring(1).contains("/")) {
-                        var stripFqni = useStmt.getUseTarget().getText().trim() + "/" + targetTypeName.substring(1);
-                        var strippedResolved = StvnTypeReference.resolveTypeInFile(containingFile, stripFqni, new HashSet<>());
-                        if (strippedResolved != null) {
-                            return new ResolveResult[]{new PsiElementResolveResult(strippedResolved)};
-                        }
+                    if (defKw != null && defKw != keyword && defKw.getText().equals(targetTypeName)) {
+                        return defKw;
                     }
                 }
             }
             var pkgPath = enclosingPkg.getPackagePath();
             if (pkgPath != null) {
-                var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? targetTypeName.substring(1) : targetTypeName;
-                var fqni = pkgPath.getText() + "/" + bare;
-                var localVisited = new HashSet<PsiFile>();
-                var resolvedFqni = StvnTypeReference.resolveTypeInFile(containingFile, fqni, localVisited);
-                if (resolvedFqni != null) {
-                    return new ResolveResult[]{new PsiElementResolveResult(resolvedFqni)};
+                var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                    ? targetTypeName.substring(1)
+                    : targetTypeName;
+                var fqni = pkgPath.getText().trim() + "/" + bare;
+                var resolvedSamePkg = resolveTypeInFile(containingFile, fqni, new HashSet<>(), null, false, allowImplicitPreludeFallback);
+                if (resolvedSamePkg != null && resolvedSamePkg != keyword) {
+                    return resolvedSamePkg;
                 }
             }
+            var pkgUseStmts = new ArrayList<org.stvnadore.psi.UseStmt>();
+            for (var elem : enclosingPkg.getPackageElementList()) {
+                if (elem.getUseStmt() != null) {
+                    pkgUseStmts.add(elem.getUseStmt());
+                }
+            }
+            var pkgUseResult = resolveFromUseStmts(containingFile, pkgUseStmts, targetTypeName, trace);
+            if (pkgUseResult.collisionOrEvicted()) {
+                return null;
+            }
+            if (pkgUseResult.resolved() != null) {
+                return pkgUseResult.resolved();
+            }
         }
-
-        // Regular type reference lookup: check local then remote
-        var resolved = StvnTypeReference.resolveTypeInFile(containingFile, targetTypeName, visited);
-        return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
+        return resolveTypeInFile(containingFile, targetTypeName, new HashSet<>(), trace, false, allowImplicitPreludeFallback);
     }
 
     /**
@@ -316,6 +319,17 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
      * @return the resolved target PSI element, or null if not found
      */
     public static @Nullable PsiElement resolveTypeInFile(PsiFile file, String targetName, Set<PsiFile> visited, @Nullable List<String> trace, boolean allowUnqualifiedPackaged) {
+        return resolveTypeInFile(file, targetName, visited, trace, allowUnqualifiedPackaged, true);
+    }
+
+    private static @Nullable PsiElement resolveTypeInFile(
+            PsiFile file,
+            String targetName,
+            Set<PsiFile> visited,
+            @Nullable List<String> trace,
+            boolean allowUnqualifiedPackaged,
+            boolean allowImplicitPreludeFallback
+    ) {
         if (!visited.add(file)) {
             return null;
         }
@@ -371,74 +385,20 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             .filter(use -> PsiTreeUtil.getParentOfType(use, org.stvnadore.psi.PackageEnclosure.class) == null)
             .filter(use -> !StvnMetaTemplateUtil.isInSecondaryRootSection(use))
             .toList();
-        for (var use : useStmts) {
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var localKw = list.get(1);
-                        if (localKw != null && localKw.getText().equals(targetName)) {
-                            if (trace != null) {
-                                var remoteKw = list.get(0);
-                                if (remoteKw != null) {
-                                    trace.add(remoteKw.getText());
-                                }
-                            }
-                            return localKw;
-                        }
-                    }
-                }
-            }
-            var optBlock = use.getUseOptionsBlock();
-            if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var target = use.getUseTarget();
-                if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
-                    var prefix = target.getText();
-                    var fqni = prefix + "/" + targetName.substring(1);
-
-                    // Check local packages directly
-                    for (var pkg : packages) {
-                        var pkgPath = pkg.getPackagePath();
-                        if (pkgPath == null) continue;
-                        var pathText = pkgPath.getText();
-                        for (var elem : pkg.getPackageElementList()) {
-                            var typeDef = elem.getTypeDefinition();
-                            if (typeDef != null) {
-                                var kw = typeDef.getTypeKeyword();
-                                if (kw != null) {
-                                    var kwText = kw.getText();
-                                    var candidateFqni = pathText + "/" + (kwText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? kwText.substring(1) : kwText);
-                                    if (candidateFqni.equals(fqni)) {
-                                        return kw;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Check included files for FQNI
-                    var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).stream()
-                        .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
-                        .toList();
-                    for (var incl : includes) {
-                        var stringLit = incl.getStringLiteral();
-                        if (stringLit == null) continue;
-                        var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                        if (targetFile == null) continue;
-                        var resolved = resolveTypeInFile(targetFile, fqni, visited, trace, false);
-                        if (resolved != null) {
-                            return resolved;
-                        }
-                    }
-                }
-            }
+        var rootUseResult = resolveFromUseStmts(file, useStmts, targetName, trace);
+        if (rootUseResult.collisionOrEvicted()) {
+            return null;
+        }
+        if (rootUseResult.resolved() != null) {
+            return rootUseResult.resolved();
         }
 
-        // 1d. Standard Library Prelude resolution (:org/stvnadore/prelude/* or implicit prelude types)
-        var preludeTarget = StvnPreludeBridge.resolvePreludeType(file.getProject(), targetName);
-        if (preludeTarget != null) {
-            return preludeTarget;
+        // 1d. Explicit Standard Library Prelude FQNI resolution (:org/stvnadore/prelude/*)
+        if (targetName.startsWith(StvnVocabulary.SIGIL_TYPIC + "org/stvnadore/prelude/")) {
+            var explicitPrelude = StvnPreludeBridge.resolvePreludeType(file.getProject(), targetName);
+            if (explicitPrelude != null) {
+                return explicitPrelude;
+            }
         }
 
         // 2. Local include alias map scanning (first leg of multi-hop)
@@ -467,8 +427,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
         }
 
-        // 3. Ingestion looping that handles additive un-aliased fallbacks
-        var candidates = new ArrayList<Candidate>();
+        // 3. Cycle-safe diamond :include resolution with Section 4.2 LHS eviction and origin deduplication
+        record IncludeCandidate(PsiElement element, List<String> branchTrace) {}
+        var uniqueCandidates = new ArrayList<IncludeCandidate>();
         for (var incl : includes) {
             var stringLit = incl.getStringLiteral();
             if (stringLit == null) {
@@ -481,85 +442,157 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
             var optBlock = incl.getIncludeOptionsBlock();
             var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
+            var branchVisited = new HashSet<>(visited);
+            var branchTrace = trace != null ? new ArrayList<String>() : null;
 
             var aliasBlock = incl.getIncludeAliasBlock();
+            boolean evictedByLhsAlias = false;
             if (aliasBlock != null) {
                 var aliases = PsiTreeUtil.findChildrenOfType(aliasBlock, IncludeMapAlias.class);
-                var rhsMatched = false;
-                var matchedAlias = (IncludeMapAlias) null;
-
                 for (var alias : aliases) {
                     var list = alias.getTypeKeywordList();
                     if (list.size() >= 2) {
                         var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (localKw != null && remoteKw != null && localKw.getText().equals(targetName)) {
-                            rhsMatched = true;
-                            matchedAlias = alias;
-                            break;
-                        }
-                    }
-                }
-
-                if (rhsMatched && matchedAlias != null) {
-                    var remoteKw = matchedAlias.getTypeKeywordList().get(0);
-                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, remoteKw.getText(), visited, trace, hasStrip);
-                    if (resolved != null) {
-                        candidates.add(new Candidate(resolved, false));
-                    }
-                } else {
-                    // Fallthrough to search target file for the un-aliased raw name
-                    var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace, hasStrip);
-                    if (resolved != null) {
-                        var isLhsRename = false;
-                        for (var alias : aliases) {
-                            var list = alias.getTypeKeywordList();
-                            if (list.size() >= 2) {
-                                var remoteKw = list.get(0);
-                                if (remoteKw != null && remoteKw.getText().equals(targetName)) {
-                                    isLhsRename = true;
-                                    break;
-                                }
+                        if (remoteKw != null) {
+                            var remoteText = remoteKw.getText().trim();
+                            var remoteStripped = sliceTerminalTypeName(remoteText);
+                            if (remoteText.equals(targetName) || (hasStrip && remoteStripped.equals(targetName))) {
+                                evictedByLhsAlias = true;
+                                break;
                             }
                         }
-                        candidates.add(new Candidate(resolved, isLhsRename));
                     }
                 }
-            } else {
-                // No alias block: search target file for raw name
-                var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetName, visited, trace, hasStrip);
-                if (resolved != null) {
-                    candidates.add(new Candidate(resolved, false));
+            }
+            if (evictedByLhsAlias) {
+                continue;
+            }
+
+            var resolved = resolveTypeInFile(targetFile, targetName, branchVisited, branchTrace, hasStrip, false);
+            if (resolved != null
+                    && uniqueCandidates.stream().noneMatch(c -> areSameDeclarationTarget(c.element(), resolved))) {
+                uniqueCandidates.add(new IncludeCandidate(resolved, branchTrace != null ? branchTrace : List.of()));
+            }
+        }
+
+        if (uniqueCandidates.size() > 1) {
+            return null;
+        }
+        if (uniqueCandidates.size() == 1) {
+            var winner = uniqueCandidates.get(0);
+            if (trace != null) {
+                trace.addAll(winner.branchTrace());
+            }
+            return winner.element();
+        }
+
+        // 4. Implicit bare-name Standard Library Prelude fallback (after :include modules)
+        if (allowImplicitPreludeFallback && !targetName.contains("/")) {
+            return StvnPreludeBridge.resolvePreludeType(file.getProject(), targetName);
+        }
+        return null;
+    }
+
+    /**
+     * Result of evaluating a scope's {@code :use} directives under the § 4.2 Namespace Eviction Cascade.
+     *
+     * @param resolved           unique resolved PSI target, or {@code null}
+     * @param collisionOrEvicted {@code true} when multiple distinct targets collide in {@code :use}
+     */
+    public record UseScopeResolution(@Nullable PsiElement resolved, boolean collisionOrEvicted) {}
+
+    /**
+     * Evaluates a list of lexical-scope {@code :use} statements using the exact § 4.2 Namespace Eviction Cascade
+     * ({@code RENAMED_IMPORT_RHS} priority, per-statement LHS alias eviction under combined {@code { #strip }},
+     * and diamond raw-origin deduplication).
+     *
+     * @param file       containing PSI file
+     * @param useStmts   in-scope {@code :use} statements
+     * @param targetName queried bare type identifier
+     * @param trace      optional resolution trace accumulator
+     * @return {@link UseScopeResolution} outcome
+     */
+    public static UseScopeResolution resolveFromUseStmts(
+            PsiFile file,
+            List<org.stvnadore.psi.UseStmt> useStmts,
+            String targetName,
+            @Nullable List<String> trace
+    ) {
+        if (!targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) || targetName.substring(1).contains("/")) {
+            return new UseScopeResolution(null, false);
+        }
+        record RhsClaim(TypeKeyword localKw, @Nullable String remoteText) {}
+        var rhsClaims = new ArrayList<RhsClaim>();
+        var rawClaims = new ArrayList<PsiElement>();
+
+        for (var use : useStmts) {
+            var useTarget = use.getUseTarget();
+            if (useTarget == null || useTarget.getUseTargetIllegal() != null) {
+                continue;
+            }
+            var prefix = useTarget.getText().trim();
+            var fqni = prefix + "/" + targetName.substring(1);
+
+            boolean lhsRenamedInThisUse = false;
+            var aliasBlock = use.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var list = alias.getTypeKeywordList();
+                    if (list.size() >= 2) {
+                        var remoteKw = list.get(0);
+                        var localKw = list.get(1);
+                        if (remoteKw != null) {
+                            var remoteText = remoteKw.getText().trim();
+                            if (remoteText.equals(targetName) || remoteText.equals(fqni)) {
+                                lhsRenamedInThisUse = true;
+                            }
+                        }
+                        if (localKw != null && localKw.getText().trim().equals(targetName)) {
+                            rhsClaims.add(new RhsClaim(localKw, remoteKw != null ? remoteKw.getText().trim() : null));
+                        }
+                    }
+                }
+            }
+
+            var optBlock = use.getUseOptionsBlock();
+            if (!lhsRenamedInThisUse
+                    && optBlock != null
+                    && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
+                var resolved = resolveTypeInFile(file, fqni, new HashSet<>(), null, false, false);
+                if (resolved != null && rawClaims.stream().noneMatch(existing -> areSameDeclarationTarget(existing, resolved))) {
+                    rawClaims.add(resolved);
                 }
             }
         }
 
-        // 4. Candidate Eviction Cascades
-        var rawOrRhs = new ArrayList<Candidate>();
-        var lhsRenamed = new ArrayList<Candidate>();
-        for (var c : candidates) {
-            if (c.isLhsRename) {
-                lhsRenamed.add(c);
-            } else {
-                rawOrRhs.add(c);
+        int totalActive = rhsClaims.size() + rawClaims.size();
+        if (totalActive > 1) {
+            return new UseScopeResolution(null, true);
+        }
+        if (rhsClaims.size() == 1) {
+            var winner = rhsClaims.get(0);
+            if (trace != null && winner.remoteText() != null) {
+                trace.add(winner.remoteText());
             }
+            return new UseScopeResolution(winner.localKw(), false);
         }
-
-        if (!lhsRenamed.isEmpty() && !rawOrRhs.isEmpty()) {
-            lhsRenamed.clear(); // Asymmetric Ingestion Eviction
-        } else if (lhsRenamed.size() > 1) {
-            lhsRenamed.clear(); // Dual Ingestion Eviction
+        if (rawClaims.size() == 1) {
+            return new UseScopeResolution(rawClaims.get(0), false);
         }
+        return new UseScopeResolution(null, false);
+    }
 
-        var remaining = new ArrayList<Candidate>();
-        remaining.addAll(rawOrRhs);
-        remaining.addAll(lhsRenamed);
-
-        if (remaining.size() == 1) {
-            return remaining.get(0).element;
+    static boolean areSameDeclarationTarget(PsiElement a, PsiElement b) {
+        if (a == b) {
+            return true;
         }
+        var manager = a.getManager();
+        return manager != null && manager.areElementsEquivalent(a, b);
+    }
 
-        return null;
+    private static String sliceTerminalTypeName(String nameOrFqni) {
+        int slash = nameOrFqni.lastIndexOf('/');
+        return slash >= 0 ? StvnVocabulary.SIGIL_TYPIC + nameOrFqni.substring(slash + 1) : nameOrFqni;
     }
 
     /**
@@ -574,9 +607,29 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         if (EXACT_TERMINAL_TYPE_NAMES.contains(startKeyword.getText())) {
             return trace;
         }
-        var visitedFiles = new java.util.HashSet<PsiFile>();
-        var currentElement = resolveTypeInFile(startKeyword.getContainingFile(), startKeyword.getText(), visitedFiles, trace);
-        
+        PsiElement currentElement;
+        if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(startKeyword)) {
+            currentElement = startKeyword;
+        } else if (startKeyword.getParent() instanceof IncludeMapAlias includeAlias
+                && includeAlias.getTypeKeywordList().size() >= 2
+                && includeAlias.getTypeKeywordList().get(1) == startKeyword) {
+            var remoteKw = includeAlias.getTypeKeywordList().get(0);
+            if (remoteKw != null) {
+                trace.add(remoteKw.getText());
+            }
+            currentElement = includeAlias;
+        } else if (startKeyword.getParent() instanceof org.stvnadore.psi.UseMapAlias useAlias
+                && useAlias.getTypeKeywordList().size() >= 2
+                && useAlias.getTypeKeywordList().get(1) == startKeyword) {
+            var remoteKw = useAlias.getTypeKeywordList().get(0);
+            if (remoteKw != null) {
+                trace.add(remoteKw.getText());
+            }
+            currentElement = useAlias;
+        } else {
+            currentElement = resolveTypeKeywordWithContext(startKeyword, trace, true);
+        }
+
         var visitedElements = new java.util.HashSet<PsiElement>();
         if (currentElement != null) {
             visitedElements.add(currentElement);
@@ -617,8 +670,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
                         if (nextKeyword != null) {
                             trace.add(nextTypeName);
-                            visitedFiles.clear();
-                            var resolved = resolveTypeInFile(nextKeyword.getContainingFile(), nextTypeName, visitedFiles, trace);
+                            var resolved = resolveTypeKeywordWithContext(nextKeyword, trace, true);
                             if (resolved != null && visitedElements.add(resolved)) {
                                 currentElement = resolved;
                                 continue;
@@ -637,8 +689,12 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                         if (stringLit != null) {
                             var targetFile = resolveIncludeFile(stringLit);
                             if (targetFile != null && remoteKw != null) {
-                                visitedFiles.clear();
-                                var resolved = resolveTypeInFile(targetFile, remoteKw.getText(), visitedFiles, trace);
+                                var optBlock = includeElement.getIncludeOptionsBlock();
+                                var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
+                                var resolved = resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>(), trace, hasStrip);
+                                if (resolved == null && !hasStrip) {
+                                    resolved = resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>(), trace, true);
+                                }
                                 if (resolved != null && visitedElements.add(resolved)) {
                                     currentElement = resolved;
                                     continue;
@@ -653,8 +709,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                 if (list.size() >= 2) {
                     var remoteKw = list.get(0);
                     if (remoteKw != null) {
-                        visitedFiles.clear();
-                        var resolved = resolveTypeInFile(startKeyword.getContainingFile(), remoteKw.getText(), visitedFiles, trace);
+                        var resolved = new StvnTypeReference(remoteKw).resolve();
                         if (resolved != null && visitedElements.add(resolved)) {
                             currentElement = resolved;
                             continue;

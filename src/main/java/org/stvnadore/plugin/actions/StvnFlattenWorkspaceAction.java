@@ -4,14 +4,19 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
+import com.intellij.util.indexing.FileBasedIndex;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -22,6 +27,9 @@ import org.stvnadore.core.validation.NamespaceCollisionException;
 import org.stvnadore.plugin.icons.StvnIcons;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -133,17 +141,51 @@ public final class StvnFlattenWorkspaceAction extends AnAction {
             outputName = entryFile.getName() + ".stvn_d";
         }
 
+        String normalizedLfContent = content.replace("\r\n", "\n").replace("\r", "\n");
         VirtualFile parent = entryFile.getParent();
         if (parent != null) {
-            try {
-                com.intellij.openapi.application.WriteAction.run(() -> {
-                    VirtualFile outputFile = parent.findOrCreateChildData(this, outputName);
-                    VfsUtil.saveText(outputFile, content);
-                });
-                StvnWorkspaceNotificationHelper.showSuccess(project, entryFile.getName(), outputName);
-            } catch (IOException e) {
-                StvnWorkspaceNotificationHelper.showGenericError(project, e);
+            Runnable vfsWriteTask = () -> {
+                try {
+                    WriteAction.run(() -> {
+                        VirtualFile targetParent = !parent.exists()
+                                && LocalFileSystem.PROTOCOL.equals(parent.getFileSystem().getProtocol())
+                            ? VfsUtil.createDirectories(parent.getPath())
+                            : parent;
+                        VirtualFile outputFile = targetParent.findOrCreateChildData(this, outputName);
+                        Document cachedDoc = FileDocumentManager.getInstance().getCachedDocument(outputFile);
+                        if (cachedDoc != null) {
+                            cachedDoc.setText(normalizedLfContent);
+                            PsiDocumentManager.getInstance(project).commitDocument(cachedDoc);
+                            FileDocumentManager.getInstance().saveDocument(cachedDoc);
+                        } else {
+                            outputFile.setBinaryContent(normalizedLfContent.getBytes(StandardCharsets.UTF_8));
+                        }
+                        VfsUtil.markDirty(true, false, outputFile);
+                        FileBasedIndex.getInstance().requestReindex(outputFile);
+                    });
+                    StvnWorkspaceNotificationHelper.showSuccess(project, entryFile.getName(), outputName);
+                } catch (IOException ex) {
+                    StvnWorkspaceNotificationHelper.showGenericError(project, ex);
+                }
+            };
+            var app = ApplicationManager.getApplication();
+            if (app.isDispatchThread()) {
+                vfsWriteTask.run();
+            } else {
+                app.invokeAndWait(vfsWriteTask);
             }
+            return;
+        }
+
+        try {
+            Path fallbackParent = Path.of(entryFile.getPath()).getParent();
+            if (fallbackParent != null) {
+                Files.createDirectories(fallbackParent);
+                Files.writeString(fallbackParent.resolve(outputName), normalizedLfContent, StandardCharsets.UTF_8);
+                StvnWorkspaceNotificationHelper.showSuccess(project, entryFile.getName(), outputName);
+            }
+        } catch (IOException ex) {
+            StvnWorkspaceNotificationHelper.showGenericError(project, ex);
         }
     }
 

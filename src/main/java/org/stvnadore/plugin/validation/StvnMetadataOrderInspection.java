@@ -7,14 +7,20 @@ import com.intellij.lang.ASTNode;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Visitor;
 
 import java.util.HashMap;
@@ -84,6 +90,8 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                 }
                 int maxRankSeen = -1;
                 Set<Integer> seenTiers = new HashSet<>();
+                Set<MetaElement> flaggedMetaElements = new HashSet<>();
+                var reorderMetaFix = new StvnReorderMetaEntriesQuickFix(metaBlock);
                 for (MetaElement element : elements) {
                     int rank = getMetaElementRank(element);
                     if (rank > 3) {
@@ -93,6 +101,7 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         continue;
                     }
                     if (rank < maxRankSeen) {
+                        flaggedMetaElements.add(element);
                         String keyword = extractMetaElementKeyword(element);
                         holder.registerProblem(
                             element,
@@ -104,10 +113,21 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                                 StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
-                            new StvnReorderMetaEntriesQuickFix(metaBlock)
+                            reorderMetaFix
                         );
                     } else {
                         maxRankSeen = rank;
+                    }
+                }
+                if (!flaggedMetaElements.isEmpty() && isOnTheFly) {
+                    String anchorMsg = reorderMetaFix.getFamilyName();
+                    registerChildTokenAnchor(holder, metaEntry.getNode(), StvnTypes.KW_META, anchorMsg, reorderMetaFix);
+                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.LBRACE, anchorMsg, reorderMetaFix);
+                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.RBRACE, anchorMsg, reorderMetaFix);
+                    for (MetaElement element : elements) {
+                        if (!flaggedMetaElements.contains(element)) {
+                            holder.registerProblem(element, anchorMsg, ProblemHighlightType.INFORMATION, reorderMetaFix);
+                        }
                     }
                 }
             }
@@ -133,6 +153,11 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
 
                 int currentMaxRank = -1;
                 Set<Integer> seenMutexGroups = new HashSet<>();
+                Set<MetadataEntry> flaggedEntries = new HashSet<>();
+                var reorderFacetFix = hasIllegalFacets ? null : new StvnReorderMetadataFacetsQuickFix(metadataMap);
+                var fixes = reorderFacetFix == null
+                    ? com.intellij.codeInspection.LocalQuickFix.EMPTY_ARRAY
+                    : new com.intellij.codeInspection.LocalQuickFix[]{reorderFacetFix};
                 for (MetadataEntry entry : entries) {
                     if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
                         continue;
@@ -144,10 +169,8 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         continue;
                     }
                     if (rank < currentMaxRank) {
+                        flaggedEntries.add(entry);
                         PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
-                        var fixes = hasIllegalFacets
-                            ? com.intellij.codeInspection.LocalQuickFix.EMPTY_ARRAY
-                            : new com.intellij.codeInspection.LocalQuickFix[]{new StvnReorderMetadataFacetsQuickFix(metadataMap)};
                         holder.registerProblem(
                             target,
                             StvnDiagnosticFormatter.formatPlugin("Metadata facet '" + keyword + "' violates canonical 5-tier order", StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION),
@@ -158,8 +181,56 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         currentMaxRank = rank;
                     }
                 }
+                if (!flaggedEntries.isEmpty() && isOnTheFly && reorderFacetFix != null) {
+                    String anchorMsg = reorderFacetFix.getFamilyName();
+                    PsiElement ownerAnchor = resolveMetadataMapOwnerTarget(metadataMap);
+                    if (ownerAnchor != null) {
+                        holder.registerProblem(ownerAnchor, anchorMsg, ProblemHighlightType.INFORMATION, reorderFacetFix);
+                    }
+                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.LBRACE, anchorMsg, reorderFacetFix);
+                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.RBRACE, anchorMsg, reorderFacetFix);
+                    for (MetadataEntry entry : entries) {
+                        if (!flaggedEntries.contains(entry)) {
+                            holder.registerProblem(entry, anchorMsg, ProblemHighlightType.INFORMATION, reorderFacetFix);
+                        }
+                    }
+                }
             }
         };
+    }
+
+    private static void registerChildTokenAnchor(
+            ProblemsHolder holder,
+            ASTNode parentNode,
+            com.intellij.psi.tree.IElementType tokenType,
+            String description,
+            com.intellij.codeInspection.LocalQuickFix fix
+    ) {
+        ASTNode childNode = parentNode.findChildByType(tokenType);
+        if (childNode != null && childNode.getPsi() != null) {
+            holder.registerProblem(childNode.getPsi(), description, ProblemHighlightType.INFORMATION, fix);
+        }
+    }
+
+    private static @Nullable PsiElement resolveMetadataMapOwnerTarget(MetadataMap metadataMap) {
+        PsiElement parent = metadataMap.getParent();
+        if (parent instanceof SchemaType schemaType) {
+            PsiElement grandParent = schemaType.getParent();
+            if (grandParent instanceof TypeDefinition typeDef) {
+                return typeDef.getTypeDefTarget();
+            }
+            if (grandParent instanceof ConstantDefinition constDef) {
+                return constDef.getValueKeyword();
+            }
+            if (grandParent instanceof TypeEntry typeEntry) {
+                ASTNode kwNode = typeEntry.getNode().findChildByType(StvnTypes.KW_TYPE);
+                return kwNode != null ? kwNode.getPsi() : null;
+            }
+        } else if (parent instanceof TypeEntry typeEntry) {
+            ASTNode kwNode = typeEntry.getNode().findChildByType(StvnTypes.KW_TYPE);
+            return kwNode != null ? kwNode.getPsi() : null;
+        }
+        return null;
     }
 
     /**

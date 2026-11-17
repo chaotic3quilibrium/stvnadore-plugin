@@ -10,6 +10,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnBrandNominalTypeQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnImportUseQuickFix;
@@ -95,6 +96,11 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
                     }
                 }
             }
+        }
+
+        // Skip when already resolved via local :defs, enclosing :package, :use, or :include module
+        if (StvnTypeReference.resolveTypeKeywordWithoutImplicitPrelude(typeKw) != null) {
+            return;
         }
 
         // Check whether the type is locally shadowed or defined in :defs
