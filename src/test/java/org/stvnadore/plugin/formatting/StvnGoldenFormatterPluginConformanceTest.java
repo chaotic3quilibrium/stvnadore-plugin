@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 68 mirrored golden formatter quartet files
+ * Plugin-level Golden Formatter Conformance Suite verifying the 72 mirrored golden formatter quartet files
  * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
  * <ul>
  *   <li>{@link StvnReplaceBufferPrettyIrAction} and {@link StvnReplaceBufferCompactIrAction}</li>
@@ -70,7 +70,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 17 mirrored golden formatter quartets", 17, inputNames.size());
+        assertEquals("Expected 18 mirrored golden formatter quartets", 18, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -104,7 +104,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("StvnReplaceBufferPrettyIrAction mismatch for " + fileName,
                     expectedPretty, myFixture.getEditor().getDocument().getText() + "\n");
 
-                if ("17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)) {
+                if ("17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
+                        || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)) {
                     var copyPrettyFile = myFixture.configureByText(fileName, inputSource);
                     var copyPrettyAction = new StvnCopyHermeticPayloadPrettyAction();
                     var copyPrettyCtx = SimpleDataContext.builder()
@@ -115,7 +116,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         .build();
                     copyPrettyAction.actionPerformed(TestActionEvent.createTestEvent(copyPrettyAction, copyPrettyCtx));
                     String copiedText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
-                    assertNotNull("Clipboard must contain canonical pretty-printed Quartet #17", copiedText);
+                    assertNotNull("Clipboard must contain canonical pretty-printed " + fileName, copiedText);
                     assertEquals("StvnCopyHermeticPayloadPrettyAction mismatch for " + fileName,
                         expectedPretty, copiedText.endsWith("\n") ? copiedText : copiedText + "\n");
                 }
@@ -261,7 +262,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
                         || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)
                         || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)
-                        || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)) {
+                        || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
+                        || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }

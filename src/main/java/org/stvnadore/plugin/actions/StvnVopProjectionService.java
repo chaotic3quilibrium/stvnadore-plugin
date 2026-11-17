@@ -42,6 +42,7 @@ import org.stvnadore.core.validation.NamespaceCollisionException;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.validation.StvnSumTagRedundancyEngine;
 
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
@@ -440,6 +441,13 @@ public final class StvnVopProjectionService {
             reportCompilationDiagnostics(project, fileName, postVerification.diagnostics());
             return;
         }
+        if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+            canonicalDoc,
+            postVerification.document().orElse(null)
+        )) {
+            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, fileName);
+            return;
+        }
 
         String activeKindKeyword = resolveEffectiveKindKeyword(canonicalDoc, fileName);
 
@@ -537,7 +545,22 @@ public final class StvnVopProjectionService {
         if (profile == SchemaFormatProfile.COMPACT_CAS) {
             return Optional.of(flattenedCas);
         }
-        return Optional.of(AstPrettyPrinter.print(validation.document().get()));
+        StvnDocument validatedSchemaDoc = validation.document().get();
+        String prettySchema = AstPrettyPrinter.print(validatedSchemaDoc);
+        StvnCompilationResult<StvnDocument> prettyCheck = StvnCompiler.compileToResult(
+            prettySchema,
+            targetDefsName,
+            substrateAwareConfig
+        );
+        if (prettyCheck.hasErrors()
+            || !StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+                validatedSchemaDoc,
+                prettyCheck.document().orElse(null)
+            )) {
+            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, targetDefsName);
+            return Optional.empty();
+        }
+        return Optional.of(prettySchema);
     }
 
     private static Optional<String> buildHermeticPayloadProjection(
@@ -572,6 +595,13 @@ public final class StvnVopProjectionService {
         );
         if (verification.hasErrors()) {
             reportCompilationDiagnostics(project, targetPayloadName, verification.diagnostics());
+            return Optional.empty();
+        }
+        if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+            hermeticBodyDoc,
+            verification.document().orElse(null)
+        )) {
+            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, targetPayloadName);
             return Optional.empty();
         }
         return Optional.of(formatted);

@@ -22,6 +22,7 @@ import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.actions.StvnCanonicalizationGuard;
 import org.stvnadore.plugin.ir.StvnCompiledDocumentCache;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.validation.StvnSumTagRedundancyEngine;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -143,7 +144,23 @@ public final class StvnCoreDelegationPostFormatProcessor implements PostFormatPr
                     sourceFormattedOpt, rangeToReformat);
         }
 
-        String pretty = AstPrettyPrinter.print(result.document().get());
+        StvnDocument origDoc = result.document().get();
+        String pretty = AstPrettyPrinter.print(origDoc);
+        StvnCompilationResult<StvnDocument> roundTrip;
+        try {
+            roundTrip = StvnCompiler.compileToResult(pretty, docPath, config);
+        } catch (RuntimeException ex) {
+            return applyFormattedText(docManager, document, currentText, hadTrailingNewline,
+                    sourceFormattedOpt, rangeToReformat);
+        }
+        if (roundTrip.hasErrors()
+                || !StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+                    origDoc,
+                    roundTrip.document().orElse(null)
+                )) {
+            return applyFormattedText(docManager, document, currentText, hadTrailingNewline,
+                    sourceFormattedOpt, rangeToReformat);
+        }
         return applyFormattedText(docManager, document, currentText, hadTrailingNewline,
                 Optional.of(pretty), rangeToReformat);
     }

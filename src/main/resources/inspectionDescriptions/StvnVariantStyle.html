@@ -4,11 +4,13 @@
 <!-- tooltip end -->
 <p>This inspection enforces two distinct style rules:</p>
 <ol>
-    <li><b>Redundant Variant Tags:</b> When <i>"Prefer Implied Sum Types"</i> is enabled in project settings, explicit tags on unambiguous payload variants are flagged as redundant:
+    <li><b>Redundant Variant Tags:</b> When <i>"Prefer Implied Sum Types"</i> is enabled in project settings, explicit tags across <code>:body</code> slots and <code>:defs</code> constant values are verified via full-spine Pure-IR equivalence and flagged only when removing them preserves exact value semantics:
         <ul>
             <li><code>#Some "text"</code> in <code>:Option(:String)</code> (Rule A inference)</li>
             <li><code>#Right 42</code> in <code>:Either(:String :Int)</code> (Rule B inference)</li>
             <li><code>#1 "payload"</code> in <code>:Union(:String :Int)</code> (Rule C inference)</li>
+            <li>Irreducible nested disambiguators such as <code>#Some #None</code>, <code>#Right #None</code>, and <code>#Right #Left "inner"</code> are preserved without warnings so outer sum wrappers never hijack inner tags.</li>
+            <li>Over-specified nested chains such as <code>#Some #Right #None</code> flag only a composable inner-to-outer subset (<code>#Right</code> &rarr; <code>#Some #None</code>) that remains safe under batch <i>Fix all</i> execution.</li>
         </ul>
     </li>
     <li><b>Form Discrepancies (Long vs. Short):</b> Flags sum-type tags and boolean literals that do not match the configured long-form or short-form style preference:
@@ -22,7 +24,7 @@
 
 <p><b>Quick-Fixes Available:</b></p>
 <ul>
-    <li><b>Remove redundant tag:</b> Strips the superfluous discriminator tag (<code>#Some</code>, <code>#Right</code>, <code>#1</code>, etc.), leaving the clean inferred payload literal.</li>
+    <li><b>Remove redundant tag:</b> Verifies live Pure-IR equivalence, preserves interior line comments, and strips the superfluous discriminator tag (<code>#Some</code>, <code>#Right</code>, <code>#1</code>, etc.).</li>
     <li><b>Change tag to #...:</b> Converts short-form tags to long-form or vice versa to align with project settings.</li>
 </ul>
 

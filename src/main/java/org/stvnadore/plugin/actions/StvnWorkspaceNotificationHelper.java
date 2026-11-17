@@ -126,6 +126,20 @@ public final class StvnWorkspaceNotificationHelper {
     }
 
     /**
+     * Displays an error notification when a formatted projection fails Pure-IR semantic round-trip verification.
+     *
+     * @param project        active IntelliJ project
+     * @param targetFileName target projection or active buffer filename
+     */
+    public static void showSemanticRoundTripMismatchError(Project project, String targetFileName) {
+        String content = String.format(
+            "Aborted projection for <b>%s</b>: formatted output altered lowered Pure-IR payload or constant values.",
+            StringUtil.escapeXmlEntities(targetFileName)
+        );
+        showNotification(project, "STVN Projection Failed", content, NotificationType.ERROR);
+    }
+
+    /**
      * Displays a warning notification when a payload unit declares zero non-prelude nominal definitions
      * or constants to export as a {@code .stvn_d} schema (preventing invalid {@code E002} empty {@code :defs}).
      *

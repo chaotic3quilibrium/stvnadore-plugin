@@ -2,8 +2,10 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInspection.*;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
@@ -12,15 +14,22 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.plugin.ir.StvnSumTrajectory;
 import org.stvnadore.plugin.psi.StvnElementFactory;
-import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /**
- * Inspection that detects and fixes inconsistent sum variant style (short-form vs long-form).
+ * Inspection that detects and fixes inconsistent sum variant style (short-form vs long-form)
+ * and redundant sum-type discriminator tags verified via full-spine Pure-IR equivalence.
  */
 @NullMarked
 public final class StvnVariantStyleInspection extends LocalInspectionTool {
@@ -57,6 +66,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
     @Override
     public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
         var project = holder.getProject();
+        if (StvnPreludeBridge.isPreludeFile(holder.getFile())) {
+            return PsiElementVisitor.EMPTY_VISITOR;
+        }
         var projSettings = StvnProjectSettings.getInstance(project);
         if (projSettings == null) {
             return PsiElementVisitor.EMPTY_VISITOR;
@@ -66,6 +78,9 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
         if (!state.enableRedundantTagInspection && !state.enableFormDiscrepancyInspection) {
             return PsiElementVisitor.EMPTY_VISITOR;
         }
+        Map<Integer, PsiElement> redundantTags = (state.enableRedundantTagInspection && state.preferImpliedSumTypes)
+            ? StvnSumTagRedundancyPsiBridge.getRedundantTagElements(holder.getFile())
+            : Map.of();
 
         return new Visitor() {
             @Override
@@ -74,7 +89,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
                     return;
                 }
-                var coreVal = StvnTypeResolver.resolveCoreValue(o);
+                var coreVal = StvnSumTagRedundancyPsiBridge.resolveCoreOrConstantValue(o);
                 var optVal = findMatchingSumNode(coreVal, StvnValue.StvnOption.class);
                 if (optVal != null) {
                     var isSomeTag = o.getSomeLiteral() != null || o.getSomeShortLiteral() != null;
@@ -82,19 +97,15 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                      (o.getSomeShortLiteral() != null ? o.getSomeShortLiteral() : null);
 
                     // 1. Redundant Tag check (Warning A)
-                    if (state.enableRedundantTagInspection && state.preferImpliedSumTypes && isSomeTag && tagElement != null) {
-                        var innerVal = o.getValue();
-                        var isInnerNone = false;
-                        if (innerVal != null) {
-                            var innerOpt = innerVal.getExplicitOptionValue();
-                            if (innerOpt != null && (innerOpt.getNoneLiteral() != null || innerOpt.getNoneShortLiteral() != null)) {
-                                isInnerNone = true;
-                            }
-                        }
-
-                        if (!isInnerNone) {
-                            holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
-                        }
+                    if (isSomeTag
+                        && tagElement != null
+                        && redundantTags.containsKey(tagElement.getTextRange().getStartOffset())) {
+                        holder.registerProblem(
+                            tagElement,
+                            StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG),
+                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                            new StripVariantTagQuickFix()
+                        );
                     }
 
                     // 2. Form Discrepancy check (Warning B)
@@ -125,7 +136,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
                     return;
                 }
-                var coreVal = StvnTypeResolver.resolveCoreValue(o);
+                var coreVal = StvnSumTagRedundancyPsiBridge.resolveCoreOrConstantValue(o);
                 var either = findMatchingSumNode(coreVal, StvnValue.StvnEither.class);
                 if (either != null) {
                     var isRightTag = o.getRightLiteral() != null || o.getRightShortLiteral() != null;
@@ -135,43 +146,15 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                                      (o.getRightShortLiteral() != null ? o.getRightShortLiteral() : null)));
 
                     // 1. Redundant Tag check (Rule E: #Left is never inferable; Rule B: #Right is inferable if unambiguous)
-                    if (state.enableRedundantTagInspection && state.preferImpliedSumTypes && isRightTag && tagElement != null) {
-                        var child = o.getValue();
-                        var valParent = PsiTreeUtil.getParentOfType(o, Value.class);
-                        if (child != null && valParent != null) {
-                            var info = StvnTypeResolver.resolveBaseTypeInfo(valParent);
-                            if (info != null) {
-                                var resolved = StvnTypeResolver.resolveNominalSchema(info.getSchema());
-                                var schemaToInspect = (resolved != null) ? resolved : info.getSchema();
-                                var ctor = schemaToInspect.getSchemaConstructor();
-                                if (ctor != null && ctor.getSumType() != null) {
-                                    var sumType = ctor.getSumType();
-                                    while (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-                                        var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                        if (optBranches.isEmpty()) {
-                                            break;
-                                        }
-                                        var innerSchema = optBranches.get(0);
-                                        var res = StvnTypeResolver.resolveNominalSchema(innerSchema);
-                                        schemaToInspect = (res != null) ? res : innerSchema;
-                                        var c = schemaToInspect.getSchemaConstructor();
-                                        sumType = (c != null) ? c.getSumType() : null;
-                                    }
-                                    if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_EITHER)) {
-                                        var innerBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                        if (innerBranches.size() >= 2) {
-                                            var leftBranch = innerBranches.get(0);
-                                            var rightBranch = innerBranches.get(1);
-                                            var matchesLeft = StvnTypeResolver.matchesSchemaPattern(child, leftBranch);
-                                            var matchesRight = StvnTypeResolver.matchesSchemaPattern(child, rightBranch);
-                                            if (!matchesLeft && matchesRight) {
-                                                holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if (isRightTag
+                        && tagElement != null
+                        && redundantTags.containsKey(tagElement.getTextRange().getStartOffset())) {
+                        holder.registerProblem(
+                            tagElement,
+                            StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG),
+                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                            new StripVariantTagQuickFix()
+                        );
                     }
 
                     // 2. Form Discrepancy check (Warning B)
@@ -202,59 +185,20 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(o)) {
                     return;
                 }
-                var coreVal = StvnTypeResolver.resolveCoreValue(o);
+                var coreVal = StvnSumTagRedundancyPsiBridge.resolveCoreOrConstantValue(o);
                 var union = findMatchingSumNode(coreVal, StvnValue.StvnUnion.class);
                 if (union != null) {
                     var tagElement = o.getUnionTagPrefix();
 
                     // 1. Redundant Tag check with Strict Disjointness Invariant (Rule C)
-                    if (state.enableRedundantTagInspection && state.preferImpliedSumTypes && tagElement != null) {
-                        var tagText = tagElement.getText();
-                        if (tagText.startsWith(StvnVocabulary.SIGIL_VALUE)) {
-                            var child = o.getValue();
-                            var valParent = PsiTreeUtil.getParentOfType(o, Value.class);
-                            if (child != null && valParent != null) {
-                                var info = StvnTypeResolver.resolveBaseTypeInfo(valParent);
-                                if (info != null) {
-                                    var resolved = StvnTypeResolver.resolveNominalSchema(info.getSchema());
-                                    var schemaToInspect = (resolved != null) ? resolved : info.getSchema();
-                                    var ctor = schemaToInspect.getSchemaConstructor();
-                                    if (ctor != null && ctor.getSumType() != null) {
-                                        var sumType = ctor.getSumType();
-                                        while (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_OPTION)) {
-                                            var optBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                            if (optBranches.isEmpty()) {
-                                                break;
-                                            }
-                                            var innerSchema = optBranches.get(0);
-                                            var res = StvnTypeResolver.resolveNominalSchema(innerSchema);
-                                            schemaToInspect = (res != null) ? res : innerSchema;
-                                            var c = schemaToInspect.getSchemaConstructor();
-                                            sumType = (c != null) ? c.getSumType() : null;
-                                        }
-                                        if (sumType != null && sumType.getText().startsWith(StvnVocabulary.TYPE_UNION)) {
-                                            var innerBranches = PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                                            var tagIdxOpt = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, innerBranches.size());
-                                            if (tagIdxOpt.isPresent()) {
-                                                int tagIndex = tagIdxOpt.getAsInt();
-                                                int matchCount = 0;
-                                                int matchedBranchIndex = -1;
-                                                for (int i = 0; i < innerBranches.size(); i++) {
-                                                    var branch = innerBranches.get(i);
-                                                    if (StvnTypeResolver.matchesSchemaPattern(child, branch)) {
-                                                        matchCount++;
-                                                        matchedBranchIndex = i;
-                                                    }
-                                                }
-                                                if (matchCount == 1 && matchedBranchIndex == tagIndex) {
-                                                    holder.registerProblem(tagElement, StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG), ProblemHighlightType.GENERIC_ERROR_OR_WARNING, new StripVariantTagQuickFix());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if (tagElement != null
+                        && redundantTags.containsKey(tagElement.getTextRange().getStartOffset())) {
+                        holder.registerProblem(
+                            tagElement,
+                            StvnDiagnosticFormatter.formatPlugin("Redundant variant tag", StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG),
+                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                            new StripVariantTagQuickFix()
+                        );
                     }
                 }
             }
@@ -298,7 +242,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
         };
     }
 
-    private static final class StripVariantTagQuickFix implements LocalQuickFix {
+    private static final class StripVariantTagQuickFix implements LocalQuickFix, BatchQuickFix {
         @Override
         public @NotNull String getFamilyName() {
             return "Remove redundant tag";
@@ -307,54 +251,101 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
-            if (element == null) {
+            if (element != null) {
+                stripSingleElement(element);
+            }
+        }
+
+        @Override
+        public void applyFix(
+            @NotNull Project project,
+            @NotNull CommonProblemDescriptor[] descriptors,
+            @NotNull List<PsiElement> psiElementsToIgnore,
+            @Nullable Runnable refreshViews
+        ) {
+            if (descriptors.length == 0) {
+                return;
+            }
+            record StripTarget(PsiElement element, int startOffset) {
+            }
+            List<StripTarget> targets = new ArrayList<>(descriptors.length);
+            Set<PsiElement> seen = new HashSet<>();
+            for (CommonProblemDescriptor desc : descriptors) {
+                if (desc instanceof ProblemDescriptor pd) {
+                    PsiElement psi = pd.getPsiElement();
+                    if (psi != null && psi.isValid() && seen.add(psi)) {
+                        targets.add(new StripTarget(psi, psi.getTextRange().getStartOffset()));
+                    }
+                }
+            }
+            // Apply innermost-to-outermost (descending offset) so outer parent.replace(inner) never detaches inner tags
+            targets.sort((a, b) -> Integer.compare(b.startOffset(), a.startOffset()));
+            for (StripTarget target : targets) {
+                if (target.element().isValid()) {
+                    stripSingleElement(target.element());
+                }
+            }
+            if (refreshViews != null) {
+                refreshViews.run();
+            }
+        }
+
+        private static void stripSingleElement(PsiElement element) {
+            if (!element.isValid()) {
+                return;
+            }
+            PsiElement explicitWrapper = resolveImmediateExplicitWrapper(element);
+            if (explicitWrapper == null || !StvnSumTagRedundancyPsiBridge.canSafelyStripWrapper(explicitWrapper)) {
                 return;
             }
 
-            var optionValue = element instanceof ExplicitOptionValue
-                ? (ExplicitOptionValue) element
-                : PsiTreeUtil.getParentOfType(element, ExplicitOptionValue.class);
-            if (optionValue != null) {
-                var coreVal = StvnTypeResolver.resolveCoreValue(optionValue);
-                if (coreVal != null && findMatchingSumNode(coreVal, StvnValue.StvnOption.class) == null) {
-                    return;
-                }
-                var parent = optionValue.getParent();
-                var inner = optionValue.getValue();
-                if (inner != null && parent != null) {
-                    parent.replace(inner);
-                }
+            Value inner = switch (explicitWrapper) {
+                case ExplicitOptionValue opt -> opt.getValue();
+                case ExplicitEitherValue eith -> eith.getValue();
+                case ExplicitUnionValue un -> un.getValue();
+                default -> null;
+            };
+            PsiElement parent = explicitWrapper.getParent();
+            if (inner == null || parent == null) {
                 return;
             }
+            hoistInteriorCommentsBeforeParent(explicitWrapper, inner, parent);
+            parent.replace(inner);
+        }
 
-            var eitherValue = element instanceof ExplicitEitherValue
-                ? (ExplicitEitherValue) element
-                : PsiTreeUtil.getParentOfType(element, ExplicitEitherValue.class);
-            if (eitherValue != null) {
-                var coreVal = StvnTypeResolver.resolveCoreValue(eitherValue);
-                if (coreVal != null && findMatchingSumNode(coreVal, StvnValue.StvnEither.class) == null) {
-                    return;
-                }
-                var parent = eitherValue.getParent();
-                var inner = eitherValue.getValue();
-                if (inner != null && parent != null) {
-                    parent.replace(inner);
-                }
+        private static @Nullable PsiElement resolveImmediateExplicitWrapper(PsiElement element) {
+            if (element instanceof ExplicitOptionValue
+                || element instanceof ExplicitEitherValue
+                || element instanceof ExplicitUnionValue) {
+                return element;
+            }
+            return PsiTreeUtil.getParentOfType(
+                element,
+                ExplicitOptionValue.class,
+                ExplicitEitherValue.class,
+                ExplicitUnionValue.class
+            );
+        }
+
+        private static void hoistInteriorCommentsBeforeParent(
+            PsiElement explicitWrapper,
+            Value inner,
+            PsiElement wrapperValueParent
+        ) {
+            PsiElement container = wrapperValueParent.getParent();
+            PsiElement tagTok = StvnSumTagRedundancyPsiBridge.extractTagTokenElement(explicitWrapper);
+            if (container == null || tagTok == null) {
                 return;
             }
-
-            var unionValue = element instanceof ExplicitUnionValue
-                ? (ExplicitUnionValue) element
-                : PsiTreeUtil.getParentOfType(element, ExplicitUnionValue.class);
-            if (unionValue != null) {
-                var coreVal = StvnTypeResolver.resolveCoreValue(unionValue);
-                if (coreVal != null && findMatchingSumNode(coreVal, StvnValue.StvnUnion.class) == null) {
-                    return;
-                }
-                var parent = unionValue.getParent();
-                var inner = unionValue.getValue();
-                if (inner != null && parent != null) {
-                    parent.replace(inner);
+            boolean sawComment = false;
+            for (PsiElement cursor = tagTok.getNextSibling();
+                 cursor != null && cursor != inner;
+                 cursor = cursor.getNextSibling()) {
+                if (cursor instanceof PsiComment) {
+                    sawComment = true;
+                    container.addBefore(cursor.copy(), wrapperValueParent);
+                } else if (sawComment && cursor instanceof PsiWhiteSpace) {
+                    container.addBefore(cursor.copy(), wrapperValueParent);
                 }
             }
         }
@@ -389,7 +380,7 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                 return;
             }
 
-            var coreVal = StvnTypeResolver.resolveCoreValue(element);
+            var coreVal = StvnSumTagRedundancyPsiBridge.resolveCoreOrConstantValue(element);
             if (coreVal != null) {
                 if ((targetTag.equals(StvnVocabulary.VAL_SOME) || targetTag.equals(StvnVocabulary.VAL_SOME_SHORT) || targetTag.equals(StvnVocabulary.VAL_NONE) || targetTag.equals(StvnVocabulary.VAL_NONE_SHORT))
                     && findMatchingSumNode(coreVal, StvnValue.StvnOption.class) == null) {
@@ -403,13 +394,13 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
 
             PsiElement newLiteral = null;
             if (targetTag.equals(StvnVocabulary.VAL_SOME)) {
-                var dummy = StvnElementFactory.createValue(project, "#Some 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_SOME + " 1");
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getSomeLiteral();
                 }
             } else if (targetTag.equals(StvnVocabulary.VAL_SOME_SHORT)) {
-                var dummy = StvnElementFactory.createValue(project, "#S 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_SOME_SHORT + " 1");
                 var opt = dummy.getExplicitOptionValue();
                 if (opt != null) {
                     newLiteral = opt.getSomeShortLiteral();
@@ -427,25 +418,25 @@ public final class StvnVariantStyleInspection extends LocalInspectionTool {
                     newLiteral = opt.getNoneShortLiteral();
                 }
             } else if (targetTag.equals(StvnVocabulary.VAL_LEFT)) {
-                var dummy = StvnElementFactory.createValue(project, "#Left 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_LEFT + " 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getLeftLiteral();
                 }
             } else if (targetTag.equals(StvnVocabulary.VAL_LEFT_SHORT)) {
-                var dummy = StvnElementFactory.createValue(project, "#L 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_LEFT_SHORT + " 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getLeftShortLiteral();
                 }
             } else if (targetTag.equals(StvnVocabulary.VAL_RIGHT)) {
-                var dummy = StvnElementFactory.createValue(project, "#Right 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_RIGHT + " 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getRightLiteral();
                 }
             } else if (targetTag.equals(StvnVocabulary.VAL_RIGHT_SHORT)) {
-                var dummy = StvnElementFactory.createValue(project, "#R 1");
+                var dummy = StvnElementFactory.createValue(project, StvnVocabulary.VAL_RIGHT_SHORT + " 1");
                 var either = dummy.getExplicitEitherValue();
                 if (either != null) {
                     newLiteral = either.getRightShortLiteral();
