@@ -7150,6 +7150,113 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             myFixture.disableInspections(allStvnInspections);
         }
     }
+
+    public void testSimpleStringMultiEscapeFixturesZeroAndAll26LocalInspections() throws Exception {
+        record FixtureExpectedCount(String relativePath, int expectedErrors) {}
+        var targets = java.util.List.of(
+            new FixtureExpectedCount("syntax/invalid/strings/simple_string_multi_escape_recovery.stvn", 8),
+            new FixtureExpectedCount("syntax/invalid/strings/simple_string_escape_cascade_suppression.stvn", 10),
+            new FixtureExpectedCount("syntax/invalid/strings/simple_string_escape_meta_and_facets.stvn", 9),
+            new FixtureExpectedCount("syntax/invalid/strings/simple_string_escape_include_path.core_test.stvn_i", 2)
+        );
+
+        // Pass A: 0 local inspections enabled
+        for (var target : targets) {
+            var fixturePath = Paths.get(getTestDataPath(), target.relativePath());
+            assertTrue("Mirrored Track A fixture must exist: " + fixturePath, Files.exists(fixturePath));
+            var contractPath = resolveContractPath(fixturePath);
+            assertNotNull("Contract sidecar must exist for " + target.relativePath(), contractPath);
+            var expectations = parseErrorContract(contractPath, fixturePath.getFileName().toString());
+            assertEquals("Contract row count mismatch for " + target.relativePath(),
+                target.expectedErrors(), expectations.size());
+
+            myFixture.configureByFile(target.relativePath());
+            var highlights = myFixture.doHighlighting();
+            assertZeroRawCompilerJargon(highlights, target.relativePath());
+
+            var errors = highlights.stream()
+                .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+                .toList();
+            assertEquals("Pass A (0 inspections) exact ERROR count mismatch in " + target.relativePath() + ": " + errors,
+                target.expectedErrors(), errors.size());
+
+            for (var exp : expectations) {
+                boolean matched = errors.stream().anyMatch(h ->
+                    h.getStartOffset() == exp.startOffset()
+                        && h.getEndOffset() == exp.endOffset()
+                        && h.getDescription() != null
+                        && h.getDescription().contains(exp.messageSubstring())
+                );
+                assertTrue("Pass A missing exact ERROR [" + exp.canonicalCode() + " / " + exp.symbolicId()
+                    + "] at [" + exp.startOffset() + ", " + exp.endOffset() + ") in " + target.relativePath()
+                    + ". Actual errors: " + errors, matched);
+            }
+        }
+
+        // Pass B: All 26 STVN local inspections enabled — verify zero secondary cascade leaks or duplicates
+        var allStvnInspections = com.intellij.codeInspection.LocalInspectionEP.LOCAL_INSPECTION.getExtensionList().stream()
+            .filter(ep -> "STVN".equals(ep.language))
+            .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
+            .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
+        assertEquals("Expected all 26 STVN local inspections registered in plugin.xml", 26, allStvnInspections.length);
+        myFixture.enableInspections(allStvnInspections);
+        try {
+            var tagPattern = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_-]+)\\]");
+            for (var target : targets) {
+                var fixturePath = Paths.get(getTestDataPath(), target.relativePath());
+                var contractPath = resolveContractPath(fixturePath);
+                assertNotNull(contractPath);
+                var expectations = parseErrorContract(contractPath, fixturePath.getFileName().toString());
+
+                myFixture.configureByFile(target.relativePath());
+                var highlights = myFixture.doHighlighting();
+                assertZeroRawCompilerJargon(highlights, target.relativePath());
+
+                var errors = highlights.stream()
+                    .filter(h -> h.getSeverity().equals(HighlightSeverity.ERROR))
+                    .toList();
+                assertEquals("Pass B (26 inspections) exact ERROR count mismatch in " + target.relativePath() + ": " + errors,
+                    target.expectedErrors(), errors.size());
+
+                var seenKeys = new java.util.HashSet<String>();
+                for (var h : highlights) {
+                    var desc = h.getDescription();
+                    if (desc == null) continue;
+                    var m = tagPattern.matcher(desc);
+                    if (m.find()) {
+                        String key = h.getStartOffset() + ":" + h.getEndOffset() + ":" + m.group(2);
+                        assertTrue("Duplicate diagnostic at " + key + " in " + target.relativePath() + ": " + desc,
+                            seenKeys.add(key));
+                    }
+                }
+
+                var specWarnings = highlights.stream()
+                    .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING)
+                        || h.getSeverity().equals(HighlightSeverity.WEAK_WARNING))
+                    .filter(h -> h.getDescription() != null
+                        && (h.getDescription().contains(":W001-")
+                            || h.getDescription().contains(":W002-")
+                            || h.getDescription().contains(":W003-")))
+                    .toList();
+                assertTrue("Pass B (26 inspections) must suppress all W001/W002/W003 spec warnings in "
+                    + target.relativePath() + ", got: " + specWarnings, specWarnings.isEmpty());
+
+                for (var exp : expectations) {
+                    boolean matched = errors.stream().anyMatch(h ->
+                        h.getStartOffset() == exp.startOffset()
+                            && h.getEndOffset() == exp.endOffset()
+                            && h.getDescription() != null
+                            && h.getDescription().contains(exp.messageSubstring())
+                    );
+                    assertTrue("Pass B missing exact ERROR [" + exp.canonicalCode() + " / " + exp.symbolicId()
+                        + "] at [" + exp.startOffset() + ", " + exp.endOffset() + ") in " + target.relativePath()
+                        + ". Actual errors: " + errors, matched);
+                }
+            }
+        } finally {
+            myFixture.disableInspections(allStvnInspections);
+        }
+    }
 }
 
 

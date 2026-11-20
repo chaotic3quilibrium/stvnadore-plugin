@@ -1210,10 +1210,22 @@ public final class StvnExternalAnnotator
                                         ? StvnSchema.DateTimeMode.AUDITED
                                         : null;
                             if (mode != null) {
-                                var failureOpt = StvnCompiler.validateDateTimeLiteral(strLit.getText().trim(), mode);
+                                String rawDtText = strLit.getText().trim();
+                                if (!rawDtText.startsWith("\"\"\"")
+                                        && StvnPsiLiteralEvaluator.decodeStringLiteral(rawDtText, false).isEmpty()) {
+                                    continue;
+                                }
+                                var valRange = valNode.getTextRange();
+                                boolean rangeContainsActiveError = activeErrorDiagnostics.stream().anyMatch(ed ->
+                                    ed.startOffset() >= valRange.getStartOffset()
+                                        && ed.endOffset() <= valRange.getEndOffset()
+                                );
+                                if (rangeContainsActiveError) {
+                                    continue;
+                                }
+                                var failureOpt = StvnCompiler.validateDateTimeLiteral(rawDtText, mode);
                                 if (failureOpt.isPresent()) {
                                     var failure = failureOpt.get();
-                                    var valRange = valNode.getTextRange();
                                     var formattedMsg = StvnDiagnosticFormatter.formatCore(
                                         failure.message(),
                                         failure.symbolicId()
@@ -1506,8 +1518,10 @@ public final class StvnExternalAnnotator
             if (stringLit == null) {
                 continue;
             }
-            var directPath = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true)
-                .orElseGet(() -> stringLit.getText().replace("\"", ""));
+            var directPath = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true).orElse(null);
+            if (directPath == null || directPath.isEmpty()) {
+                continue;
+            }
             var resolvedDirect = StvnTypeReference.resolveIncludeFile(stringLit);
             if (resolvedDirect == null) {
                 continue;
@@ -1848,8 +1862,10 @@ public final class StvnExternalAnnotator
             if (strLit == null) {
                 continue;
             }
-            var pathText = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), true)
-                .orElseGet(() -> strLit.getText().replace("\"", ""));
+            var pathText = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), true).orElse(null);
+            if (pathText == null || pathText.isEmpty()) {
+                continue;
+            }
             var resolved = StvnTypeReference.resolveIncludeFile(strLit);
             if (resolved == null) {
                 continue;

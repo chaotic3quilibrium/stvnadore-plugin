@@ -106,6 +106,37 @@ public final class StvnFencedStringDedentAndUtcUnitTest extends TestCase {
         assertTrue(StvnPsiLiteralEvaluator.decodeStringLiteral("\"raw\nnewline\"", false).isEmpty());
     }
 
+    public void testMultiEscapeTruncatedUnicodeAndControlCharsFailClosedInDecodeStringLiteral() {
+        String[] malformedLiterals = {
+            "\"CORRUPT_ESCAPE_\\z_AND_HEX_\\u12G4\"",
+            "\"\\u12G4\"",
+            "\"\\uG123\"",
+            "\"END_\\u12\"",
+            "\"\\u12\\z\"",
+            "\"\\u12\\\"00\"",
+            "\"QUOTE_\\u12\\\"_NEXT_\\q\"",
+            "\"\\u+123\"",
+            "\"\\u-001\"",
+            "\"raw\ttab\"",
+            "\"escaped\\\ttab\"",
+            "\"raw\rcr\"",
+            "\"raw\nlf\"",
+            "\"adjacent\" \"quotes\"",
+            "\"trailing_backslash\\"
+        };
+        for (String raw : malformedLiterals) {
+            assertTrue(
+                "Expected decodeStringLiteral to return Optional.empty() on malformed literal: " + raw,
+                StvnPsiLiteralEvaluator.decodeStringLiteral(raw, false).isEmpty()
+            );
+            assertTrue(
+                "Expected decodeStringLiteral(preserveIndent=true) to return Optional.empty() on: " + raw,
+                StvnPsiLiteralEvaluator.decodeStringLiteral(raw, true).isEmpty()
+            );
+        }
+        assertEquals(0, StvnPsiLiteralEvaluator.evaluateStringContentLength(null, false));
+    }
+
     public void testShouldEmitFencedPrettySoundnessGuardsAndSafeFenceTags() {
         assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("^[a-z]+\\.[0-9]+$", false));
         assertTrue(StvnPsiLiteralEvaluator.shouldEmitFencedPretty("line1\nline2", false));

@@ -25,6 +25,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnNamespaceRules;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -267,8 +268,12 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
             return null;
         }
         String raw = literal.getText().trim();
-        if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"") && !raw.startsWith("\"\"\"")) {
-            String unquoted = raw.substring(1, raw.length() - 1).trim();
+        if (!raw.startsWith("\"\"\"")) {
+            var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(raw, true);
+            if (decodedOpt.isEmpty()) {
+                return null;
+            }
+            String unquoted = decodedOpt.get().trim();
             if (!unquoted.isEmpty() && unquoted.indexOf('\n') < 0 && unquoted.indexOf('\r') < 0) {
                 return unquoted;
             }

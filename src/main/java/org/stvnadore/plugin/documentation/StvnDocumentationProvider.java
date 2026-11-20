@@ -81,10 +81,13 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Provides hover documentation and quick navigation info for STVN symbols.
@@ -1134,20 +1137,34 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return;
         }
 
-        String compilerErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
-        if (compilerErr == null) {
+        List<String> compilerErrs = List.of();
+        String exactErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
+        if (exactErr != null) {
+            compilerErrs = List.of(exactErr);
+        } else if (constChain.terminalValue() != null) {
+            compilerErrs = collectContainedCompilerErrorMessages(constChain.terminalValue());
+        }
+        if (compilerErrs.isEmpty()) {
             var coreVal = StvnTypeResolver.resolveCoreValue(bodyVal);
             if (coreVal instanceof StvnValue.StvnErrorValue errVal) {
-                compilerErr = errVal.diagnostic().message();
+                compilerErrs = List.of(errVal.diagnostic().message());
             }
         }
-        boolean satisfied = compilerErr == null;
+        if (compilerErrs.isEmpty()
+                && constChain.terminalValue() != null
+                && constChain.terminalValue().getStringLiteral() != null
+                && StvnPsiLiteralEvaluator.decodeStringLiteral(constChain.terminalValue().getStringLiteral().getText(), false).isEmpty()) {
+            compilerErrs = List.of("Malformed string literal in constant definition");
+        }
+        boolean satisfied = compilerErrs.isEmpty();
         String constLabel = bodyVal.getText().trim();
         String leafLabel = StvnSchemaFormatter.formatSchema(leafSchema);
         String detail = satisfied
             ? "Constant <code>" + escapeHtmlBody(constLabel)
                 + "</code> conforms to slot schema <code>" + escapeHtmlBody(leafLabel) + "</code>"
-            : escapeHtmlBody(compilerErr);
+            : compilerErrs.stream()
+                .map(StvnDocumentationProvider::escapeHtmlBody)
+                .collect(Collectors.joining("<br/>"));
 
         sb.append("<hr/>");
         String colorHex = satisfied ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
@@ -1228,6 +1245,31 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         return null;
+    }
+
+    private static List<String> collectContainedCompilerErrorMessages(PsiElement element) {
+        var file = element.getContainingFile();
+        var range = element.getTextRange();
+        if (file == null || range == null) {
+            return List.of();
+        }
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+        String activeNormalizedPath = snapshot.normalizedDocPath();
+        Set<String> messages = new LinkedHashSet<>();
+        for (var diag : snapshot.diagnostics()) {
+            if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
+                continue;
+            }
+            if (!isDiagnosticForActiveFile(file, diag, activeNormalizedPath)) {
+                continue;
+            }
+            if (diag.startOffset() >= range.getStartOffset()
+                    && diag.endOffset() <= range.getEndOffset()
+                    && diag.endOffset() > diag.startOffset()) {
+                messages.add(diag.message());
+            }
+        }
+        return List.copyOf(messages);
     }
 
     private @Nullable String buildTemporalValueHoverDoc(Value value, @Nullable SchemaType explicitSchema) {
@@ -1321,17 +1363,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (literalValue != null && literalValue.getStringLiteral() != null) {
                 String rawQuoted = literalValue.getStringLiteral().getText().trim();
                 if (StvnCompiler.validateDateTimeLiteral(rawQuoted, mode).isEmpty()) {
-                    String unescapedIso = StvnPsiLiteralEvaluator.decodeStringLiteral(rawQuoted, false)
-                        .orElseGet(() -> stripSimpleQuotes(rawQuoted));
-                    Instant instant = parseValidatedDateTimeInstant(unescapedIso, mode);
-                    if (instant != null) {
-                        var hourFormat = StvnSettings.getInstance(project).getState().timeEpochHourFormat;
-                        sb.append("<b>UTC Preview:</b> <code>")
-                          .append(StvnTimeEpochFormatter.formatInstantIsoUtc(instant))
-                          .append("</code><br/>");
-                        sb.append("<b>UTC Time:</b> ")
-                          .append(StvnTimeEpochFormatter.formatInstantHumanUtc(instant, hourFormat))
-                          .append("<br/>");
+                    String unescapedIso = StvnPsiLiteralEvaluator.decodeStringLiteral(rawQuoted, false).orElse(null);
+                    if (unescapedIso != null) {
+                        Instant instant = parseValidatedDateTimeInstant(unescapedIso, mode);
+                        if (instant != null) {
+                            var hourFormat = StvnSettings.getInstance(project).getState().timeEpochHourFormat;
+                            sb.append("<b>UTC Preview:</b> <code>")
+                              .append(StvnTimeEpochFormatter.formatInstantIsoUtc(instant))
+                              .append("</code><br/>");
+                            sb.append("<b>UTC Time:</b> ")
+                              .append(StvnTimeEpochFormatter.formatInstantHumanUtc(instant, hourFormat))
+                              .append("<br/>");
+                        }
                     }
                 }
             }
@@ -4341,8 +4384,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (temporalDoc != null) {
             sb.append(temporalDoc);
         }
+        boolean targetSchemaSuspended = targetSchemaForCompliance != null
+            && (isGoverningSchemaUngrounded(targetValueForCompliance, targetSchemaForCompliance)
+                || isGoverningSchemaDegraded(targetValueForCompliance, targetSchemaForCompliance));
         if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())
                 && !"Suspended (Degraded Schema)".equals(compliance.statusLabel())
+                && !targetSchemaSuspended
                 && findEnclosingDegradedBodyAncestor(targetValueForCompliance) == null) {
             StvnSchema leafIrSchema = targetSchemaForCompliance != null
                 ? resolveEffectiveIrSchemaForCompliance(targetValueForCompliance, targetSchemaForCompliance)
@@ -4378,7 +4425,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var rawResult = evaluateValueComplianceInternal(value, schemaType);
         if ("Suspended (Ungrounded Schema)".equals(rawResult.statusLabel())
                 || "Suspended (Degraded Schema)".equals(rawResult.statusLabel())) {
-            return rawResult;
+            boolean lexicallyCorruptString = value.getStringLiteral() != null
+                && StvnPsiLiteralEvaluator.decodeStringLiteral(value.getStringLiteral().getText(), false).isEmpty();
+            List<String> containedErrors = !isContainerLiteral(value)
+                ? collectContainedCompilerErrorMessages(value)
+                : List.of();
+            if (!lexicallyCorruptString && containedErrors.isEmpty()) {
+                return rawResult;
+            }
+            String explanation = !containedErrors.isEmpty()
+                ? containedErrors.stream()
+                    .map(StvnDocumentationProvider::escapeHtmlBody)
+                    .collect(Collectors.joining("<br/>"))
+                : "Malformed string literal: " + escapeHtmlBody(value.getText().trim());
+            return new StvnValueComplianceResult(
+                false,
+                "Violated",
+                explanation,
+                rawResult.evaluatedConstraints(),
+                rawResult.validLexicalForms()
+            );
         }
         if (rawResult.isSatisfied()) {
             var file = value.getContainingFile();
@@ -4387,6 +4453,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
                 String activeNormalizedPath = snapshot.normalizedDocPath();
                 boolean isContainer = isContainerLiteral(value);
+                Set<String> matchedMessages = new LinkedHashSet<>();
                 for (var diag : snapshot.diagnostics()) {
                     if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
                         continue;
@@ -4397,21 +4464,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     String diagCode = diag.errorCode().orElse("");
                     boolean exactSpanMatch = diag.startOffset() == range.getStartOffset()
                         && diag.endOffset() == range.getEndOffset();
+                    boolean scalarContainedMatch = !isContainer
+                        && diag.startOffset() >= range.getStartOffset()
+                        && diag.endOffset() <= range.getEndOffset()
+                        && diag.endOffset() > diag.startOffset();
                     boolean containerSliceMatch = isContainer
                         && diag.startOffset() >= range.getStartOffset()
                         && diag.endOffset() <= range.getEndOffset()
                         && (isExcessSliceDiagnostic(diagCode) || isContainerLevelDiagnostic(diagCode))
                         && resolveOwningContainerValue(file, diag.startOffset()) == value;
-                    if (exactSpanMatch || containerSliceMatch) {
-                        rawResult = new StvnValueComplianceResult(
-                            false,
-                            "Violated",
-                            escapeHtmlBody(diag.message()),
-                            rawResult.evaluatedConstraints(),
-                            rawResult.validLexicalForms()
-                        );
-                        break;
+                    if (exactSpanMatch || scalarContainedMatch || containerSliceMatch) {
+                        matchedMessages.add(escapeHtmlBody(diag.message()));
+                        if (isContainer) {
+                            break;
+                        }
                     }
+                }
+                if (!matchedMessages.isEmpty()) {
+                    rawResult = new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        String.join("<br/>", matchedMessages),
+                        rawResult.evaluatedConstraints(),
+                        rawResult.validLexicalForms()
+                    );
                 }
             }
         }
@@ -4829,8 +4905,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             boolean preserveIndent = (irSchema instanceof StvnSchema.StringSchema sIr)
                 ? sIr.preserveIndent()
                 : StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(schemaType);
-            String decodedContent = StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, preserveIndent)
-                .orElseGet(() -> rawText.replaceAll("^\"|\"$", ""));
+            var forms = List.of(
+                "Simple Quoted: <code>\"...\"</code>",
+                "Verbatim Fenced: <code>\"\"\"[TAG]\\n...\\n[TAG]\"\"\"</code>"
+            );
+            Optional<String> decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, preserveIndent);
+            if (decodedOpt.isEmpty()) {
+                List<String> containedErrors = collectContainedCompilerErrorMessages(value);
+                String explanation = !containedErrors.isEmpty()
+                    ? containedErrors.stream()
+                        .map(StvnDocumentationProvider::escapeHtmlBody)
+                        .collect(Collectors.joining("<br/>"))
+                    : "Malformed string literal: " + escapeHtmlBody(rawText.trim());
+                return new StvnValueComplianceResult(false, "Violated", explanation, Collections.emptyMap(), forms);
+            }
+            String decodedContent = decodedOpt.get();
             int len = decodedContent.length();
 
             var minSize = BigInteger.ZERO;
@@ -4895,10 +4984,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 explanation = String.format("String length %d satisfies capacity bounds [%s, %s]", len, minSize, maxSize);
             }
 
-            var forms = List.of(
-                "Simple Quoted: <code>\"...\"</code>",
-                "Verbatim Fenced: <code>\"\"\"[TAG]\\n...\\n[TAG]\"\"\"</code>"
-            );
             return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
         }
 
@@ -5490,6 +5575,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             );
         }
 
+        if (!rawText.startsWith("\"\"\"") && StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, false).isEmpty()) {
+            List<String> containedErrors = collectContainedCompilerErrorMessages(value);
+            if (!containedErrors.isEmpty()) {
+                String joined = containedErrors.stream()
+                    .map(StvnDocumentationProvider::escapeHtmlBody)
+                    .collect(Collectors.joining("<br/>"));
+                return new StvnValueComplianceResult(false, "Violated", joined, Collections.emptyMap(), forms);
+            }
+        }
+
         var failureOpt = StvnCompiler.validateDateTimeLiteral(rawText, mode);
         if (failureOpt.isPresent()) {
             return new StvnValueComplianceResult(
@@ -5501,8 +5596,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             );
         }
 
-        String cleanIso = stripSimpleQuotes(rawText);
-        if (minInclIso != null || maxExclIso != null) {
+        String cleanIso = StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, false).orElse(null);
+        if (cleanIso != null && (minInclIso != null || maxExclIso != null)) {
             Instant actualInst = parseValidatedDateTimeInstant(cleanIso, mode);
             if (actualInst != null) {
                 if (minInclIso != null) {
@@ -5602,8 +5697,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var text = entry.getText().trim();
                 if (text.startsWith(facetKw + " ") || text.startsWith(facetKw + "\"")) {
                     var rest = text.substring(facetKw.length()).trim();
-                    if (rest.length() >= 2 && rest.startsWith("\"") && rest.endsWith("\"")) {
-                        return stripSimpleQuotes(rest);
+                    var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rest, false);
+                    if (resolved.isPresent()) {
+                        return resolved.get();
                     }
                 }
             }
@@ -5643,13 +5739,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         } catch (RuntimeException ex) {
             return null;
         }
-    }
-
-    private static String stripSimpleQuotes(String raw) {
-        if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"") && !raw.startsWith("\"\"\"")) {
-            return raw.substring(1, raw.length() - 1);
-        }
-        return raw;
     }
 
     private static String escapeHtmlBody(String raw) {

@@ -530,9 +530,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
 
                 boolean preserveIndent = StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(schemaType);
-                String content = StvnPsiLiteralEvaluator.decodeStringLiteral(literal.getText(), preserveIndent)
-                    .orElseGet(() -> extractLiteralContent(literal.getText()));
-                int decodedLength = content.length();
+                var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(literal.getText(), preserveIndent);
+                if (decodedOpt.isEmpty()) {
+                    return;
+                }
+                int decodedLength = decodedOpt.get().length();
                 var contentLenBI = BigInteger.valueOf(decodedLength);
                 if (contentLenBI.compareTo(capBI) > 0) {
                     int capInt = capBI.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0 ? Integer.MAX_VALUE : capBI.intValue();
@@ -934,10 +936,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 }
                 return raw.substring(firstNl + 1, lastFence);
             }
-        } else if (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2) {
-            return raw.substring(1, raw.length() - 1);
         }
-        return raw;
+        return "";
     }
 
     /**

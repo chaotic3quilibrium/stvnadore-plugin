@@ -90,17 +90,20 @@ public final class StvnSimpleStringHighlightingLexer extends LexerBase {
             case 'u' -> {
                 int i = tokenStart + 2;
                 int limit = Math.min(tokenStart + 6, endOffset);
-                boolean allHex = (limit - (tokenStart + 2)) == 4;
+                boolean allHex = true;
                 while (i < limit) {
                     char ch = buffer.charAt(i);
+                    if (ch == '\\' || ch == '"' || ch == '\r' || ch == '\n' || ch == '\t') {
+                        break;
+                    }
                     if (!isHexDigit(ch)) {
                         allHex = false;
-                        break;
                     }
                     i++;
                 }
                 tokenEnd = i;
-                tokenType = allHex
+                boolean validFourHex = allHex && (i - (tokenStart + 2)) == 4;
+                tokenType = validFourHex
                     ? StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN
                     : StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN;
             }

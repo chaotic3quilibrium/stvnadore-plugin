@@ -84,10 +84,9 @@ public final class StvnSimpleStringHighlightingLexerTest extends BasePlatformTes
             new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\0"),
             new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\a"),
             new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12"),
-            new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u123"),
-            new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "G"),
-            new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u"),
-            new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "u0041\"")
+            new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u123G"),
+            new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\uu004"),
+            new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "1\"")
         );
         assertEquals("Expected exact invalid character/unicode escape token classification", expected, tokens);
 
@@ -133,5 +132,128 @@ public final class StvnSimpleStringHighlightingLexerTest extends BasePlatformTes
         assertEquals("Malformed fenced string must remain a single unsplit token", 1, malformedTokens.size());
         assertEquals(StvnTypes.MALFORMED_FENCE, malformedTokens.get(0).type());
         assertEquals(malformedFence, malformedTokens.get(0).text());
+    }
+
+    public void testSection531DelimiterBoundedUnicodeAndMultiEscapeSpanParity() {
+        var highlighter = new StvnSyntaxHighlighter();
+        var lexer = highlighter.getHighlightingLexer();
+
+        // 1. Gauntlet v9 Slot 5: "CORRUPT_ESCAPE_\\z_AND_HEX_\\u12G4"
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"CORRUPT_ESCAPE_"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\z"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "_AND_HEX_"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12G4"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"CORRUPT_ESCAPE_\\z_AND_HEX_\\u12G4\"")
+        );
+
+        // 2. "\\u12G4" -> 6-char INVALID_UNICODE_ESCAPE_TOKEN
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\""),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12G4"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"\\u12G4\"")
+        );
+
+        // 3. "\\uG123" -> 6-char INVALID_UNICODE_ESCAPE_TOKEN
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\""),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\uG123"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"\\uG123\"")
+        );
+
+        // 4. "END_\\u12" -> 4-char INVALID_UNICODE_ESCAPE_TOKEN stopping strictly before closing '"'
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"END_"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"END_\\u12\"")
+        );
+
+        // 5. "\\u12\\z" -> 4-char INVALID_UNICODE_ESCAPE_TOKEN + 2-char INVALID_CHARACTER_ESCAPE_TOKEN
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\""),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\z"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"\\u12\\z\"")
+        );
+
+        // 6. "QUOTE_\\u12\"_NEXT_\\q" -> 4-char \\u12, 2-char valid \", _NEXT_, 2-char \\q
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"QUOTE_"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12"),
+                new TokenSlice(StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN, "\\\""),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "_NEXT_"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\q"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"QUOTE_\\u12\\\"_NEXT_\\q\"")
+        );
+
+        // 7. Backslash + raw horizontal tab (0x09) and \\u + raw horizontal tab (0x09)
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\"a"),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN, "\\\t"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "b\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"a\\\tb\"")
+        );
+        assertEquals(
+            List.of(
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\""),
+                new TokenSlice(StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN, "\\u12"),
+                new TokenSlice(StvnTypes.LITERAL_STRING_SIMPLE, "\tb\"")
+            ),
+            tokenizeStrictMonotonic(lexer, "\"\\u12\tb\"")
+        );
+
+        // 8. Edge sub-lexer progress vectors (never throws IOOBE or stalls)
+        var subLexer = new StvnSimpleStringHighlightingLexer();
+        String[] edgeSlices = {
+            "\"\\u\"",
+            "\"\\u\\z\"",
+            "\"\\u\t\"",
+            "\"abc\\\\\"",
+            "\"abc\\",
+            "\"\\u12",
+            "\\"
+        };
+        for (String slice : edgeSlices) {
+            var slices = tokenizeStrictMonotonic(subLexer, slice);
+            assertFalse("Sub-lexer must emit at least one token for non-empty input: " + slice, slices.isEmpty());
+        }
+    }
+
+    private static List<TokenSlice> tokenizeStrictMonotonic(Lexer lexer, String source) {
+        var out = new ArrayList<TokenSlice>();
+        lexer.start(source);
+        int expectedStart = 0;
+        while (lexer.getTokenType() != null) {
+            int start = lexer.getTokenStart();
+            int end = lexer.getTokenEnd();
+            assertEquals("Token start must equal previous token end", expectedStart, start);
+            assertTrue("Lexer advance() must strictly advance tokenEnd > tokenStart on " + source, end > start);
+            assertTrue("Token end must not exceed source length", end <= source.length());
+            out.add(new TokenSlice(lexer.getTokenType(), source.substring(start, end)));
+            expectedStart = end;
+            lexer.advance();
+        }
+        assertEquals("Lexer must consume full source length", source.length(), expectedStart);
+        return out;
     }
 }

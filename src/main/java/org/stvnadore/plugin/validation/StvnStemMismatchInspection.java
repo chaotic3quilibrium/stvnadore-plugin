@@ -30,6 +30,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
 import org.stvnadore.psi.MetaBlock;
@@ -148,8 +149,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
 
                 StringLiteral stringLit = facet.getStringLiteral();
                 if (stringLit == null) return;
-                String rawText = stringLit.getText();
-                String declared = stripQuotes(rawText);
+                var decodedNameOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
+                if (decodedNameOpt.isEmpty()) {
+                    return;
+                }
+                String declared = decodedNameOpt.get();
 
                 if (!stem.equals(declared)) {
                     boolean isValidPosixName = POSIX_META_ID_PATTERN.matcher(declared).matches();
@@ -198,7 +202,11 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
 
                 var stringLit = facet.getStringLiteral();
                 if (stringLit == null) return;
-                var declared = stripQuotes(stringLit.getText());
+                var decodedDomainOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
+                if (decodedDomainOpt.isEmpty()) {
+                    return;
+                }
+                var declared = decodedDomainOpt.get();
 
                 boolean isSystemFile = isSystemPreludeOrSubstrateFile(file);
                 boolean isReservedDomain = declared.startsWith(RESERVED_DOMAIN_PREFIX);

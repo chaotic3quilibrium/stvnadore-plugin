@@ -796,8 +796,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     ? ss.preserveIndent()
                     : StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(rawSchema);
                 String authored = value.getStringLiteral() != null
-                    ? StvnPsiLiteralEvaluator.decodeStringLiteral(rawValueText, preserveIndent)
-                        .orElseGet(() -> stripQuotesOrFences(rawValueText))
+                    ? StvnPsiLiteralEvaluator.decodeStringLiteral(rawValueText, preserveIndent).orElse(null)
                     : null;
 
                 if (authored != null && profile.compiledRegex() != null && !profile.compiledRegex().matcher(authored).matches()) {
@@ -2187,8 +2186,7 @@ public final class StvnPayloadValueQuickFixProvider {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        return StvnPsiLiteralEvaluator.resolveStringOrConst(context, raw, false)
-            .orElseGet(() -> stripQuotesOrFences(raw));
+        return StvnPsiLiteralEvaluator.resolveStringOrConst(context, raw, false).orElse(null);
     }
 
     private static @Nullable Value findTargetValue(PsiFile file, int startOffset, int endOffset) {

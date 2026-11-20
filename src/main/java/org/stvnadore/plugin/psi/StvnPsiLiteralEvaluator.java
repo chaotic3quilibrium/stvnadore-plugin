@@ -410,22 +410,15 @@ public final class StvnPsiLiteralEvaluator {
      *
      * @param literal        PSI string literal node, or {@code null}
      * @param preserveIndent {@code true} when {@code #preserveIndent #TRUE} retains common leading spaces
-     * @return decoded character length, or {@code 0} when {@code literal} is {@code null}
+     * @return decoded character length, or {@code 0} when {@code literal} is {@code null} or lexically malformed
      */
     public static int evaluateStringContentLength(@Nullable StringLiteral literal, boolean preserveIndent) {
         if (literal == null) {
             return 0;
         }
-        String raw = literal.getText();
-        Optional<String> decoded = decodeStringLiteral(raw, preserveIndent);
-        if (decoded.isPresent()) {
-            return decoded.get().length();
-        }
-        if (raw.startsWith("\"") && !raw.startsWith("\"\"\"")) {
-            int end = (raw.length() >= 2 && raw.endsWith("\"")) ? raw.length() - 1 : raw.length();
-            return Math.max(0, end - 1);
-        }
-        return 0;
+        return decodeStringLiteral(literal.getText(), preserveIndent)
+            .map(String::length)
+            .orElse(0);
     }
 
     /**
@@ -492,12 +485,15 @@ public final class StvnPsiLiteralEvaluator {
                         case 't' -> sb.append('\t');
                         case 'u' -> {
                             if (i + 4 < inner.length()) {
-                                String hex = inner.substring(i + 1, i + 5);
-                                try {
-                                    sb.append((char) Integer.parseInt(hex, 16));
-                                } catch (NumberFormatException ex) {
-                                    return Optional.empty();
+                                int codeUnit = 0;
+                                for (int k = 1; k <= 4; k++) {
+                                    int digit = asciiHexValue(inner.charAt(i + k));
+                                    if (digit < 0) {
+                                        return Optional.empty();
+                                    }
+                                    codeUnit = (codeUnit << 4) | digit;
                                 }
+                                sb.append((char) codeUnit);
                                 i += 4;
                             } else {
                                 return Optional.empty();
@@ -508,7 +504,7 @@ public final class StvnPsiLiteralEvaluator {
                         }
                     }
                 } else {
-                    if (c < 0x20) {
+                    if (c < 0x20 || c == '"') {
                         return Optional.empty();
                     }
                     sb.append(c);
@@ -517,6 +513,19 @@ public final class StvnPsiLiteralEvaluator {
             return Optional.of(sb.toString());
         }
         return Optional.empty();
+    }
+
+    private static int asciiHexValue(char c) {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return 10 + (c - 'a');
+        }
+        if (c >= 'A' && c <= 'F') {
+            return 10 + (c - 'A');
+        }
+        return -1;
     }
 
     /**

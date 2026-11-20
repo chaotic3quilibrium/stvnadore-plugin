@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
@@ -840,19 +841,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     }
 
     private static String getUnquotedPath(StringLiteral element) {
-        var text = element.getText();
-        if (text.startsWith("\"\"\"")) {
-            if (text.startsWith("\"\"\"[")) {
-                var closeIndex = text.indexOf(']');
-                if (closeIndex != -1 && text.endsWith("\"\"\"") && text.length() > closeIndex + 4) {
-                    return text.substring(closeIndex + 1, text.length() - 3);
-                }
-            } else if (text.endsWith("\"\"\"") && text.length() >= 6) {
-                return text.substring(3, text.length() - 3);
-            }
-        } else if (text.startsWith("\"") && text.endsWith("\"") && text.length() >= 2) {
-            return text.substring(1, text.length() - 1);
-        }
-        return text;
+        return StvnPsiLiteralEvaluator.decodeStringLiteral(element.getText(), true).orElse("");
     }
 }

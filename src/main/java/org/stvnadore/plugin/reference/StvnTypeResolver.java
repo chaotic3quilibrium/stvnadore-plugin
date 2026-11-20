@@ -443,7 +443,12 @@ public final class StvnTypeResolver {
                         if (num != null) {
                             minVal = num;
                         } else if (entry.getMetadataValue() != null) {
-                            minStrVal = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, entry.getMetadataValue().getText().trim(), false).orElse(null);
+                            var mv = entry.getMetadataValue();
+                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
+                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                                return true;
+                            }
+                            minStrVal = resolved.orElse(null);
                         }
                     } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_EXCL)) {
                         hasMinExcl = true;
@@ -451,7 +456,12 @@ public final class StvnTypeResolver {
                         if (num != null) {
                             minVal = num;
                         } else if (entry.getMetadataValue() != null) {
-                            minStrVal = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, entry.getMetadataValue().getText().trim(), false).orElse(null);
+                            var mv = entry.getMetadataValue();
+                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
+                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                                return true;
+                            }
+                            minStrVal = resolved.orElse(null);
                         }
                     } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_INCL)) {
                         hasMaxIncl = true;
@@ -459,7 +469,12 @@ public final class StvnTypeResolver {
                         if (num != null) {
                             maxVal = num;
                         } else if (entry.getMetadataValue() != null) {
-                            maxStrVal = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, entry.getMetadataValue().getText().trim(), false).orElse(null);
+                            var mv = entry.getMetadataValue();
+                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
+                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                                return true;
+                            }
+                            maxStrVal = resolved.orElse(null);
                         }
                     } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_EXCL)) {
                         hasMaxExcl = true;
@@ -467,7 +482,12 @@ public final class StvnTypeResolver {
                         if (num != null) {
                             maxVal = num;
                         } else if (entry.getMetadataValue() != null) {
-                            maxStrVal = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, entry.getMetadataValue().getText().trim(), false).orElse(null);
+                            var mv = entry.getMetadataValue();
+                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
+                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                                return true;
+                            }
+                            maxStrVal = resolved.orElse(null);
                         }
                     } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_INCL)) {
                         hasFilterIncl = true;

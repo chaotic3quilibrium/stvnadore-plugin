@@ -22,6 +22,7 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
@@ -1042,10 +1043,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
         if (stringLit == null || stringLit.getNode().findChildByType(StvnTypes.MALFORMED_FENCE) != null) {
             return;
         }
-        String raw = stringLit.getText();
-        String unquoted = (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2)
-            ? raw.substring(1, raw.length() - 1)
-            : raw;
+        var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
+        if (decodedOpt.isEmpty()) {
+            return;
+        }
+        String unquoted = decodedOpt.get();
         if (!POSIX_META_ID_PATTERN.matcher(unquoted).matches()) {
             holder.registerProblem(
                 stringLit,

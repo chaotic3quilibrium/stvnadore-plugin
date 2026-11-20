@@ -1372,8 +1372,7 @@ public final class StvnExemplarValueGenerator {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        return StvnPsiLiteralEvaluator.resolveStringOrConst(context, raw, false)
-            .orElseGet(() -> unquoteOrNull(raw));
+        return StvnPsiLiteralEvaluator.resolveStringOrConst(context, raw, false).orElse(null);
     }
 
     private static @Nullable String unquoteOrNull(@Nullable String raw) {
@@ -1381,8 +1380,8 @@ public final class StvnExemplarValueGenerator {
             return null;
         }
         String trimmed = raw.trim();
-        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-            return trimmed.substring(1, trimmed.length() - 1);
+        if (trimmed.startsWith("\"\"\"") || (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\""))) {
+            return StvnPsiLiteralEvaluator.decodeStringLiteral(trimmed, false).orElse(null);
         }
         return trimmed;
     }
