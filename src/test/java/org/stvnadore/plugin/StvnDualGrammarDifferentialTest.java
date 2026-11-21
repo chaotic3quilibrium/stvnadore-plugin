@@ -775,4 +775,101 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         assertEquals("Unclosed outer fence after balanced inner fence must fail closed as BAD_CHARACTER",
             TokenType.BAD_CHARACTER, unclosedTokens.get(0).type());
     }
+
+    /**
+     * V44 (EC-01): Empty & Wrong-Arity Schema Constructors + Unclosed Boundary Recovery Homology
+     * Verifies all 8 schema constructors (:Enum[], :Tuple(), :Union(), :Option(), :Seq(), :Set(), :Either(), :Map())
+     * parse balanced 0-arity and over/under-arity forms with 0 PsiErrorElement nodes, while unclosed ':Tuple('
+     * halts cleanly before ':use', ':body', and '}' without swallowing sibling declarations.
+     */
+    public void testV44_EmptyAndWrongArityConstructorsAndUnclosedBoundaryHomology() throws Exception {
+        var zeroCascadePath = java.nio.file.Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "composites",
+            "empty_and_wrong_arity_constructors_zero_cascade.stvn"
+        );
+        var zeroCascadeSrc = java.nio.file.Files.readString(zeroCascadePath, java.nio.charset.StandardCharsets.UTF_8);
+        var psiFile = myFixture.configureByText("empty_and_wrong_arity_constructors_zero_cascade.stvn", zeroCascadeSrc);
+        assertNoSyntaxErrors(psiFile);
+
+        var typeDefs = PsiTreeUtil.findChildrenOfType(psiFile, TypeDefinition.class);
+        assertTrue("Expected all 19 TypeDefinition siblings in :defs to parse cleanly, found: " + typeDefs.size(),
+            typeDefs.size() >= 19);
+
+        var unclosedSrc = """
+            {
+              :defs {
+                :BrokenTuple :Tuple(
+                :use [ :org/stvnadore/prelude { #strip } ]
+                :HealthyAfterUnclosed :Int
+              }
+              :type :Tuple(
+              :body 42
+            }
+            """;
+        var unclosedFile = myFixture.configureByText("unclosed_ctor_boundary.stvn", unclosedSrc);
+        var useStmts = PsiTreeUtil.findChildrenOfType(unclosedFile, UseStmt.class);
+        assertEquals("Unclosed :Tuple( must not swallow subsequent :use directive", 1, useStmts.size());
+        var unclosedDefs = PsiTreeUtil.findChildrenOfType(unclosedFile, TypeDefinition.class);
+        assertEquals("Unclosed :Tuple( must preserve both :BrokenTuple and :HealthyAfterUnclosed", 2, unclosedDefs.size());
+        assertNotNull("Unclosed :type :Tuple( must not swallow :body section",
+            PsiTreeUtil.findChildOfType(unclosedFile, BodyEntry.class));
+    }
+
+    /**
+     * V45 (EC-02 & Safeguard 1): Multi-Element ':use [ use_element+ ]', Empty '{}', '#strip #TRUE', and ':use []' Recovery
+     * Verifies UseStmt -> UseElement PSI construction across multi-target ':use', empty options block, illegal
+     * standalone '#strip #TRUE' argument capture, and ':use []' boundary recovery.
+     */
+    public void testV45_MultiElementUseAndStripIllegalArgPsiHomology() throws Exception {
+        var validMultiUsePath = java.nio.file.Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "valid", "modules",
+            "multi_element_use_scoping_and_eviction.core_test.stvn"
+        );
+        var validSrc = java.nio.file.Files.readString(validMultiUsePath, java.nio.charset.StandardCharsets.UTF_8);
+        var validPsi = myFixture.configureByText("multi_element_use_scoping_and_eviction.core_test.stvn", validSrc);
+        assertNoSyntaxErrors(validPsi);
+
+        var useStmts = new java.util.ArrayList<>(PsiTreeUtil.findChildrenOfType(validPsi, UseStmt.class));
+        assertEquals("Expected 2 UseStmt nodes (1 in :package, 1 at root :defs)", 2, useStmts.size());
+        assertEquals("Package UseStmt must contain 2 UseElement children", 2, useStmts.get(0).getUseElementList().size());
+        assertEquals("Root UseStmt must contain 4 UseElement children", 4, useStmts.get(1).getUseElementList().size());
+
+        var invalidMultiUsePath = java.nio.file.Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "modules",
+            "multi_element_use_isolated_target_errors.core_test.stvn_i"
+        );
+        var invalidSrc = java.nio.file.Files.readString(invalidMultiUsePath, java.nio.charset.StandardCharsets.UTF_8);
+        var invalidPsi = myFixture.configureByText("multi_element_use_isolated_target_errors.core_test.stvn_i", invalidSrc);
+        assertNoSyntaxErrors(invalidPsi);
+
+        var isolatedUse = PsiTreeUtil.findChildOfType(invalidPsi, UseStmt.class);
+        assertNotNull(isolatedUse);
+        var elems = isolatedUse.getUseElementList();
+        assertEquals("Isolated error UseStmt must contain all 5 UseElement nodes", 5, elems.size());
+        assertNotNull("Element 1 (:local/beta {}) must parse as empty UseOptionsBlock", elems.get(1).getUseOptionsBlock());
+        assertTrue(elems.get(1).getUseOptionsBlock().getUseOptionList().isEmpty());
+        assertNotNull("Element 2 (:local/beta { #strip #TRUE }) must parse as UseOptionsBlock (not empty UseAliasBlock)",
+            elems.get(2).getUseOptionsBlock());
+        assertNull(elems.get(2).getUseAliasBlock());
+        assertEquals(1, elems.get(2).getUseOptionsBlock().getUseOptionList().size());
+        assertNotNull("#TRUE must be captured as StandaloneFacetIllegalArg",
+            elems.get(2).getUseOptionsBlock().getUseOptionList().get(0).getStandaloneFacetIllegalArg());
+        assertEquals("#TRUE",
+            elems.get(2).getUseOptionsBlock().getUseOptionList().get(0).getStandaloneFacetIllegalArg().getText());
+
+        var emptyBracketsSrc = """
+            {
+              :defs {
+                :use []
+                :SurvivedAfterEmptyUse :String
+              }
+              :type :SurvivedAfterEmptyUse
+              :body "ok"
+            }
+            """;
+        var emptyUsePsi = myFixture.configureByText("empty_use_recovery.stvn", emptyBracketsSrc);
+        var survivedDefs = PsiTreeUtil.findChildrenOfType(emptyUsePsi, TypeDefinition.class);
+        assertEquals(":use [] must recover cleanly at ']' without swallowing :SurvivedAfterEmptyUse",
+            1, survivedDefs.size());
+    }
 }

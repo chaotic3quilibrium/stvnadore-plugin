@@ -10,6 +10,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.ValueKeyword;
@@ -187,13 +188,13 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         }
         var tokenText = element.getText().trim();
 
-        // 1. If element is index 0 (#REMOTE) inside UseMapAlias, qualify with enclosing UseStmt target
+        // 1. If element is index 0 (#REMOTE) inside UseMapAlias, qualify with enclosing UseElement target
         if (element.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
             var kws = alias.getValueKeywordList();
             if (!kws.isEmpty() && kws.get(0) == element) {
-                var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
-                if (useStmt != null && useStmt.getUseTarget() != null) {
-                    var fqni = buildPackageConstantFqni(useStmt.getUseTarget().getText(), tokenText);
+                var useElem = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseElement.class);
+                if (useElem != null && useElem.getUseTarget() != null) {
+                    var fqni = buildPackageConstantFqni(useElem.getUseTarget().getText(), tokenText);
                     return resolveConstantInFile(file, fqni, new HashSet<>(), false);
                 }
             }
@@ -401,42 +402,42 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         var rhsClaims = new java.util.ArrayList<ValueKeyword>();
         var rawClaims = new java.util.ArrayList<PsiElement>();
         for (var use : useStmts) {
-            var target = use.getUseTarget();
-            if (target == null || target.getUseTargetIllegal() != null) {
-                continue;
-            }
-            var prefix = target.getText().trim();
-            var fqni = buildPackageConstantFqni(prefix, canonicalName);
-            boolean lhsRenamedInThisUse = false;
+            for (var useElem : use.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                if (target == null || target.getUseTargetIllegal() != null) {
+                    continue;
+                }
+                var prefix = target.getText().trim();
+                var fqni = buildPackageConstantFqni(prefix, canonicalName);
+                boolean lhsRenamedInThisUse = false;
 
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getValueKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (remoteKw != null) {
-                            var remoteNorm = canonicalizeConstantQuery(remoteKw.getText().trim());
-                            if (remoteNorm.equals(canonicalName) || remoteNorm.equals(fqni)) {
-                                lhsRenamedInThisUse = true;
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getValueKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (remoteKw != null) {
+                                var remoteNorm = canonicalizeConstantQuery(remoteKw.getText().trim());
+                                if (remoteNorm.equals(canonicalName) || remoteNorm.equals(fqni)) {
+                                    lhsRenamedInThisUse = true;
+                                }
                             }
-                        }
-                        if (localKw != null && localKw.getText().trim().equals(canonicalName)) {
-                            rhsClaims.add(localKw);
+                            if (localKw != null && localKw.getText().trim().equals(canonicalName)) {
+                                rhsClaims.add(localKw);
+                            }
                         }
                     }
                 }
-            }
 
-            var optBlock = use.getUseOptionsBlock();
-            if (!lhsRenamedInThisUse
-                    && optBlock != null
-                    && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var resolved = resolveConstantInFile(file, fqni, new HashSet<>(), false);
-                if (resolved != null
-                        && rawClaims.stream().noneMatch(e -> StvnTypeReference.areSameDeclarationTarget(e, resolved))) {
-                    rawClaims.add(resolved);
+                var optBlock = useElem.getUseOptionsBlock();
+                if (!lhsRenamedInThisUse && StvnPsiUtils.hasValidStripOption(optBlock)) {
+                    var resolved = resolveConstantInFile(file, fqni, new HashSet<>(), false);
+                    if (resolved != null
+                            && rawClaims.stream().noneMatch(e -> StvnTypeReference.areSameDeclarationTarget(e, resolved))) {
+                        rawClaims.add(resolved);
+                    }
                 }
             }
         }

@@ -70,7 +70,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 18 mirrored golden formatter quartets", 18, inputNames.size());
+        assertEquals("Expected 19 mirrored golden formatter quartets", 19, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -122,7 +122,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 }
 
                 // Safeguard 3: On .stvn_i quartets, Submenu 2 StvnCopyHermeticPayloadPrettyAction normalizes #BODY_INCLUDE -> #BODY
-                if ("14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)) {
+                if ("14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
+                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)) {
                     var copyModFile = myFixture.configureByText(fileName, inputSource);
                     var copyModAction = new StvnCopyHermeticPayloadPrettyAction();
                     var copyModCtx = SimpleDataContext.builder()
@@ -133,7 +134,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         .build();
                     copyModAction.actionPerformed(TestActionEvent.createTestEvent(copyModAction, copyModCtx));
                     String copiedHermetic = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
-                    assertNotNull("Clipboard must contain hermetic #BODY projection for Quartet #14", copiedHermetic);
+                    assertNotNull("Clipboard must contain hermetic #BODY projection for " + fileName, copiedHermetic);
                     assertEquals("StvnCopyHermeticPayloadPrettyAction must normalize #BODY_INCLUDE to #BODY for " + fileName,
                         expectedPretty.replace("#kind #BODY_INCLUDE", "#kind #BODY"),
                         copiedHermetic.endsWith("\n") ? copiedHermetic : copiedHermetic + "\n");
@@ -263,7 +264,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)
                         || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)
                         || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
-                        || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)) {
+                        || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)
+                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }

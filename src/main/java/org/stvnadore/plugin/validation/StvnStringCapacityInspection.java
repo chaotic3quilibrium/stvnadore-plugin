@@ -740,38 +740,39 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         // Trace :use imports
         var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
         for (var use : useStmts) {
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (localKw != null && localKw.getText().equals(targetName) && remoteKw != null) {
-                            var target = use.getUseTarget();
-                            String remoteName = remoteKw.getText();
-                            if (target != null) {
-                                String fqni = target.getText() + "/" + (remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName);
-                                if (PRELUDE_STRING_CAPACITIES.containsKey(fqni) || PRELUDE_STRING_CAPACITIES.containsKey(remoteName)) {
-                                    int cap = PRELUDE_STRING_CAPACITIES.getOrDefault(fqni, PRELUDE_STRING_CAPACITIES.get(remoteName));
-                                    return new EffectiveTypeCapacity(true, false, cap, true);
+            for (var useElem : use.getUseElementList()) {
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (localKw != null && localKw.getText().equals(targetName) && remoteKw != null) {
+                                var target = useElem.getUseTarget();
+                                String remoteName = remoteKw.getText();
+                                if (target != null) {
+                                    String fqni = target.getText() + "/" + (remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName);
+                                    if (PRELUDE_STRING_CAPACITIES.containsKey(fqni) || PRELUDE_STRING_CAPACITIES.containsKey(remoteName)) {
+                                        int cap = PRELUDE_STRING_CAPACITIES.getOrDefault(fqni, PRELUDE_STRING_CAPACITIES.get(remoteName));
+                                        return new EffectiveTypeCapacity(true, false, cap, true);
+                                    }
+                                    var res = traceTypeHierarchy(file, fqni, visited);
+                                    if (res != null) return res;
                                 }
-                                var res = traceTypeHierarchy(file, fqni, visited);
+                                var res = traceTypeHierarchy(file, remoteName, visited);
                                 if (res != null) return res;
                             }
-                            var res = traceTypeHierarchy(file, remoteName, visited);
-                            if (res != null) return res;
                         }
                     }
                 }
-            }
-            var optBlock = use.getUseOptionsBlock();
-            if (optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var target = use.getUseTarget();
-                if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
-                    String fqni = target.getText() + "/" + targetName.substring(1);
-                    if (PRELUDE_STRING_CAPACITIES.containsKey(fqni)) {
-                        return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(fqni), true);
+                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                    var target = useElem.getUseTarget();
+                    if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
+                        String fqni = target.getText() + "/" + targetName.substring(1);
+                        if (PRELUDE_STRING_CAPACITIES.containsKey(fqni)) {
+                            return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(fqni), true);
+                        }
                     }
                 }
             }

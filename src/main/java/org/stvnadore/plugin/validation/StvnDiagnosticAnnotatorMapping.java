@@ -557,17 +557,26 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         if (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(sym)
                 || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(sym)) {
-            if (message.contains("cannot be applied to :Map directly")
-                    || message.contains("does not accept arguments")) {
+            if (message.contains("cannot be applied to :Map directly")) {
                 return false;
             }
             int offset = diag.startOffset();
             if (offset >= 0 && offset < file.getTextLength()) {
                 var elem = file.findElementAt(offset);
-                if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetadataMap.class, false) == null
+                boolean inDirectiveOptionsBlock =
+                    com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.UseOptionsBlock.class, false) != null
+                        || com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.IncludeOptionsBlock.class, false) != null;
+                if (message.contains("does not accept arguments")) {
+                    if (!inDirectiveOptionsBlock) {
+                        return false;
+                    }
+                } else if (!inDirectiveOptionsBlock
+                        && com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetadataMap.class, false) == null
                         && com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.MetaBlock.class, false) == null) {
                     return false;
                 }
+            } else if (message.contains("does not accept arguments")) {
+                return false;
             }
         }
 

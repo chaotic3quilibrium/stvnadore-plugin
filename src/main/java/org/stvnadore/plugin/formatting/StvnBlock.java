@@ -233,7 +233,11 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
-        if (parentType == StvnTypes.USE_STMT || parentType == StvnTypes.INCLUDE_STMT || parentType == StvnTypes.INCLUDE_ELEMENT) {
+        if (parentType == StvnTypes.USE_ELEMENT || parentType == StvnTypes.INCLUDE_ELEMENT) {
+            return Indent.getNoneIndent();
+        }
+
+        if (parentType == StvnTypes.USE_STMT || parentType == StvnTypes.INCLUDE_STMT) {
             if (childType == StvnTypes.KW_USE || childType == StvnTypes.KW_INCLUDE
                     || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
                 return Indent.getNoneIndent();
@@ -598,13 +602,12 @@ public final class StvnBlock implements ASTBlock {
             }
             prev = prev.getTreePrev();
         }
-        if (aliasBlockNode.getElementType() == StvnTypes.USE_ALIAS_BLOCK) {
-            return true;
-        }
         ASTNode parent = aliasBlockNode.getTreeParent();
-        if (parent != null && parent.getElementType() == StvnTypes.INCLUDE_ELEMENT) {
+        if (parent != null
+                && (parent.getElementType() == StvnTypes.INCLUDE_ELEMENT
+                    || parent.getElementType() == StvnTypes.USE_ELEMENT)) {
             ASTNode elemPrev = parent.getTreePrev();
-            while (elemPrev != null && (elemPrev.getElementType() == TokenType.WHITE_SPACE || elemPrev.getElementType() == StvnTypes.COMMENT)) {
+            while (elemPrev != null && elemPrev.getElementType() != StvnTypes.LBRACK) {
                 if (elemPrev.getText().indexOf('\n') >= 0) {
                     return false;
                 }
@@ -636,6 +639,7 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.META_BLOCK
                 || type == StvnTypes.PACKAGE_ENCLOSURE
                 || type == StvnTypes.USE_STMT
+                || type == StvnTypes.USE_ELEMENT
                 || type == StvnTypes.INCLUDE_STMT
                 || type == StvnTypes.INCLUDE_ELEMENT
                 || type == StvnTypes.PRODUCT_TYPE

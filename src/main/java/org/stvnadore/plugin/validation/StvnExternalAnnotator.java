@@ -56,15 +56,12 @@ import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFi
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
 import org.stvnadore.psi.BodyEntry;
-import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.MetaEntry;
-import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
-import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
@@ -429,7 +426,6 @@ public final class StvnExternalAnnotator
 
         var registeredExactAnnotations = new HashSet<String>();
         var registeredSyntaxStartOffsets = new HashSet<Integer>();
-        var expandedEmptyCompositeRanges = new ArrayList<TextRange>();
 
         for (var diag : activeDiagnostics) {
             var rawMessage = diag.message()
@@ -531,31 +527,6 @@ public final class StvnExternalAnnotator
 
             if (s < e) {
                 var range = new TextRange(s, e);
-                if (!isBareSigil) {
-                    var expanded = expandEmptyCompositeRange(file, range);
-                    if (!expanded.equals(range)) {
-                        expandedEmptyCompositeRanges.add(expanded);
-                        range = expanded;
-                    }
-                    if (rawMessage.startsWith("STVN Syntax Error")) {
-                        var canonicalEmptyMsg = canonicalEmptyCompositeSyntaxMessage(
-                            file.getText().substring(range.getStartOffset(), range.getEndOffset())
-                        );
-                        if (canonicalEmptyMsg != null) {
-                            rawMessage = canonicalEmptyMsg;
-                            message = StvnDiagnosticFormatter.formatCore(rawMessage, canonicalCode, diagnosticId);
-                        }
-                    }
-                }
-                if (rawMessage.startsWith("STVN Syntax Error")
-                        && rawMessage.contains("unexpected token '}'")
-                        && !expandedEmptyCompositeRanges.isEmpty()) {
-                    var lastEmpty = expandedEmptyCompositeRanges.get(expandedEmptyCompositeRanges.size() - 1);
-                    if (lastEmpty.getEndOffset() <= range.getStartOffset()
-                            && file.getText().substring(lastEmpty.getEndOffset(), range.getStartOffset()).isBlank()) {
-                        continue;
-                    }
-                }
                 if (DiagnosticBag.ERR_INVALID_REGEX.equals(diagnosticId)
                         || rawMessage.contains("Invalid regex pattern")) {
                     var elemAtStart = file.findElementAt(range.getStartOffset());
@@ -629,12 +600,6 @@ public final class StvnExternalAnnotator
                 }
 
                 boolean isSyntaxError = rawMessage.startsWith("STVN Syntax Error");
-                if (!isSyntaxError
-                        && (expandedEmptyCompositeRanges.contains(range)
-                            || (DiagnosticBag.ERR_MALFORMED_SCHEMA.equals(diagnosticId)
-                                && rawMessage.endsWith(", got 0")))) {
-                    continue;
-                }
                 String exactKey = "%d:%d:%s".formatted(range.getStartOffset(), range.getEndOffset(), message);
                 if (registeredExactAnnotations.contains(exactKey)
                         || (isSyntaxError && registeredSyntaxStartOffsets.contains(range.getStartOffset()))) {
@@ -1964,178 +1929,6 @@ public final class StvnExternalAnnotator
                         return listLit;
                     }
                 }
-            }
-        }
-        return null;
-    }
-
-    private static TextRange expandEmptyCompositeRange(PsiFile file, TextRange range) {
-        var text = file.getText();
-        var textLength = text.length();
-        if (textLength == 0) {
-            return range;
-        }
-
-        var start = Math.max(0, Math.min(range.getStartOffset(), textLength));
-        var element = file.findElementAt(start);
-        if (element != null) {
-            var product = PsiTreeUtil.getParentOfType(element, ProductType.class);
-            if (product != null
-                    && product.getText().startsWith(StvnVocabulary.TYPE_TUPLE)
-                    && product.getSchemaTypeList().isEmpty()) {
-                return product.getTextRange();
-            }
-
-            var sum = PsiTreeUtil.getParentOfType(element, SumType.class);
-            if (sum != null) {
-                var sumText = sum.getText();
-                if (sum.getEnumDef() != null && sum.getEnumDef().getValueKeywordList().isEmpty()) {
-                    return sum.getTextRange();
-                }
-                if ((sumText.startsWith(StvnVocabulary.TYPE_UNION)
-                        || sumText.startsWith(StvnVocabulary.TYPE_OPTION)
-                        || sumText.startsWith(StvnVocabulary.TYPE_EITHER))
-                        && PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class).isEmpty()) {
-                    return sum.getTextRange();
-                }
-            }
-
-            var coll = PsiTreeUtil.getParentOfType(element, CollectionType.class);
-            if (coll != null && coll.getSchemaTypeList().isEmpty()) {
-                return coll.getTextRange();
-            }
-        }
-
-        if (start < textLength && (text.charAt(start) == ')' || text.charAt(start) == ']')) {
-            return expandClosingDelimiterToCompositeKeyword(text, start);
-        }
-        if (start > 0 && (text.charAt(start - 1) == ')' || text.charAt(start - 1) == ']')) {
-            var expanded = expandClosingDelimiterToCompositeKeyword(text, start - 1);
-            if (!expanded.equals(new TextRange(start - 1, start))) {
-                return expanded;
-            }
-        }
-        if (start < textLength && (text.charAt(start) == '(' || text.charAt(start) == '[')) {
-            char openChar = text.charAt(start);
-            char targetClose = openChar == '(' ? ')' : ']';
-            int closeIdx = start + 1;
-            while (closeIdx < textLength && Character.isWhitespace(text.charAt(closeIdx))) {
-                closeIdx++;
-            }
-            if (closeIdx < textLength && text.charAt(closeIdx) == targetClose) {
-                return expandOpenClosePairToCompositeKeyword(text, start, closeIdx, range);
-            }
-        }
-
-        return range;
-    }
-
-    private static TextRange expandClosingDelimiterToCompositeKeyword(String text, int closeIdx) {
-        int openIdx = closeIdx - 1;
-        while (openIdx >= 0 && Character.isWhitespace(text.charAt(openIdx))) {
-            openIdx--;
-        }
-        if (openIdx >= 0) {
-            char openChar = text.charAt(openIdx);
-            char closeChar = text.charAt(closeIdx);
-            if ((openChar == '(' && closeChar == ')') || (openChar == '[' && closeChar == ']')) {
-                return expandOpenClosePairToCompositeKeyword(
-                    text,
-                    openIdx,
-                    closeIdx,
-                    new TextRange(closeIdx, closeIdx + 1)
-                );
-            }
-        }
-        return new TextRange(closeIdx, closeIdx + 1);
-    }
-
-    private static TextRange expandOpenClosePairToCompositeKeyword(
-        String text,
-        int openIdx,
-        int closeIdx,
-        TextRange fallback
-    ) {
-        int kwEnd = openIdx;
-        while (kwEnd > 0 && Character.isWhitespace(text.charAt(kwEnd - 1))) {
-            kwEnd--;
-        }
-        int kwStart = kwEnd;
-        while (kwStart > 0 && isCompositeKeywordChar(text.charAt(kwStart - 1))) {
-            kwStart--;
-        }
-        if (kwStart < kwEnd && text.charAt(kwStart) == ':') {
-            var kw = text.substring(kwStart, kwEnd);
-            if (isKnownCompositeKeyword(kw)) {
-                return new TextRange(kwStart, closeIdx + 1);
-            }
-        }
-        return fallback;
-    }
-
-    private static boolean isCompositeKeywordChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '_' || c == ':';
-    }
-
-    private static boolean isKnownCompositeKeyword(String kw) {
-        return kw.equals(StvnVocabulary.TYPE_TUPLE)
-            || kw.equals(StvnVocabulary.TYPE_UNION)
-            || kw.equals(StvnVocabulary.TYPE_ENUM)
-            || kw.equals(StvnVocabulary.TYPE_OPTION)
-            || kw.equals(StvnVocabulary.TYPE_EITHER)
-            || kw.equals(StvnVocabulary.TYPE_SEQ)
-            || kw.equals(StvnVocabulary.TYPE_SET)
-            || kw.equals(StvnVocabulary.TYPE_MAP);
-    }
-
-    private static @Nullable String canonicalEmptyCompositeSyntaxMessage(String spanText) {
-        var trimmed = spanText.trim();
-        int openParen = trimmed.indexOf('(');
-        int openBracket = trimmed.indexOf('[');
-        int openIdx;
-        char openChar;
-        char expectedClose;
-        if (openParen >= 0 && (openBracket < 0 || openParen < openBracket)) {
-            openIdx = openParen;
-            openChar = '(';
-            expectedClose = ')';
-        } else if (openBracket >= 0) {
-            openIdx = openBracket;
-            openChar = '[';
-            expectedClose = ']';
-        } else {
-            return null;
-        }
-        if (trimmed.charAt(trimmed.length() - 1) != expectedClose) {
-            return null;
-        }
-        if (!trimmed.substring(openIdx + 1, trimmed.length() - 1).isBlank()) {
-            return null;
-        }
-        var kw = trimmed.substring(0, openIdx).trim();
-        if (openChar == '[' && StvnVocabulary.TYPE_ENUM.equals(kw)) {
-            return "STVN Syntax Error: empty enum variant list: "
-                + StvnVocabulary.TYPE_ENUM
-                + "[] requires at least one value keyword variant";
-        }
-        if (openChar == '(') {
-            if (StvnVocabulary.TYPE_TUPLE.equals(kw)) {
-                return "STVN Syntax Error: empty composite argument list: "
-                    + StvnVocabulary.TYPE_TUPLE
-                    + "() requires at least one schema type";
-            }
-            if (StvnVocabulary.TYPE_UNION.equals(kw)) {
-                return "STVN Syntax Error: empty composite argument list: "
-                    + StvnVocabulary.TYPE_UNION
-                    + "() requires at least one schema type";
-            }
-            if (StvnVocabulary.TYPE_SEQ.equals(kw)
-                    || StvnVocabulary.TYPE_SET.equals(kw)
-                    || StvnVocabulary.TYPE_OPTION.equals(kw)) {
-                return "STVN Syntax Error: empty composite argument list: collection requires schema type argument";
-            }
-            if (StvnVocabulary.TYPE_MAP.equals(kw) || StvnVocabulary.TYPE_EITHER.equals(kw)) {
-                return "STVN Syntax Error: insufficient composite arguments: expected 2 schema type arguments";
             }
         }
         return null;

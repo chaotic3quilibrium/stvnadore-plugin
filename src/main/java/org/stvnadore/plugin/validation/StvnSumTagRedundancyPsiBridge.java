@@ -37,8 +37,8 @@ import org.stvnadore.psi.ExplicitEitherValue;
 import org.stvnadore.psi.ExplicitOptionValue;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseMapAlias;
-import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
@@ -663,10 +663,10 @@ public final class StvnSumTagRedundancyPsiBridge {
     ) {
         if (resolved.getParent() instanceof UseMapAlias alias && !alias.getValueKeywordList().isEmpty()) {
             String remoteKw = alias.getValueKeywordList().get(0).getText().trim();
-            UseStmt useStmt = PsiTreeUtil.getParentOfType(alias, UseStmt.class);
-            if (useStmt != null && useStmt.getUseTarget() != null) {
+            UseElement useElem = PsiTreeUtil.getParentOfType(alias, UseElement.class);
+            if (useElem != null && useElem.getUseTarget() != null) {
                 String fqni = StvnConstantReference.buildPackageConstantFqni(
-                    useStmt.getUseTarget().getText(),
+                    useElem.getUseTarget().getText(),
                     remoteKw
                 );
                 StvnDefsCatalog.StvnConstant byFqni = findConstantInCatalogOrPrelude(fqni, catalog);

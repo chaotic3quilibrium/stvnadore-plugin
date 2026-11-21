@@ -176,8 +176,10 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
                 .afterInside(StvnTypes.LBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.USE_ELEMENT, StvnTypes.USE_ELEMENT, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
                 .afterInside(StvnTypes.LBRACK, StvnTypes.INCLUDE_STMT).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.INCLUDE_STMT).spacing(1, 1, 0, true, 1)
+                .betweenInside(StvnTypes.INCLUDE_ELEMENT, StvnTypes.INCLUDE_ELEMENT, StvnTypes.INCLUDE_STMT).spacing(1, 1, 0, true, 1)
 
                 // Line breaks following closing braces
                 .after(StvnTypes.RBRACE).lineBreakInCode()

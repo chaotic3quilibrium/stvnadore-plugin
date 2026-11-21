@@ -199,9 +199,9 @@ public final class StvnPsiUtils {
                         }
                     }
                     var sourceTypeName = remoteKw.getText().trim();
-                    var useStmt = PsiTreeUtil.getParentOfType(useAlias, UseStmt.class);
-                    var targetPkg = (useStmt != null && useStmt.getUseTarget() != null)
-                        ? useStmt.getUseTarget().getText().trim()
+                    var useElem = PsiTreeUtil.getParentOfType(useAlias, UseElement.class);
+                    var targetPkg = (useElem != null && useElem.getUseTarget() != null)
+                        ? useElem.getUseTarget().getText().trim()
                         : null;
                     var containingFile = element.getContainingFile();
                     if (containingFile != null) {
@@ -289,12 +289,12 @@ public final class StvnPsiUtils {
             }
             if (alias != null) {
                 var kws = alias.getValueKeywordList();
-                var useStmt = PsiTreeUtil.getParentOfType(alias, UseStmt.class);
+                var useElem = PsiTreeUtil.getParentOfType(alias, UseElement.class);
                 var file = alias.getContainingFile();
-                if (!kws.isEmpty() && useStmt != null && useStmt.getUseTarget() != null && file != null) {
+                if (!kws.isEmpty() && useElem != null && useElem.getUseTarget() != null && file != null) {
                     var remoteName = kws.get(0).getText();
                     var fqni = org.stvnadore.plugin.reference.StvnConstantReference.buildPackageConstantFqni(
-                        useStmt.getUseTarget().getText(), remoteName);
+                        useElem.getUseTarget().getText(), remoteName);
                     current = org.stvnadore.plugin.reference.StvnConstantReference.resolveConstantInFile(
                         file, fqni, new HashSet<>());
                     continue;
@@ -303,6 +303,44 @@ public final class StvnPsiUtils {
             break;
         }
         return null;
+    }
+
+    /**
+     * Determines whether a {@link UseOptionsBlock} declares at least one valid standalone {@code #strip} option
+     * without an illegal trailing argument.
+     *
+     * @param optBlock candidate options block
+     * @return {@code true} when a valid {@code #strip} flag is present
+     */
+    public static boolean hasValidStripOption(@Nullable UseOptionsBlock optBlock) {
+        if (optBlock == null) {
+            return false;
+        }
+        for (var opt : optBlock.getUseOptionList()) {
+            if (opt.getStandaloneFacetIllegalArg() == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether an {@link IncludeOptionsBlock} declares at least one valid standalone {@code #strip} option
+     * without an illegal trailing argument.
+     *
+     * @param optBlock candidate include options block
+     * @return {@code true} when a valid {@code #strip} flag is present
+     */
+    public static boolean hasValidStripIncludeOption(@Nullable IncludeOptionsBlock optBlock) {
+        if (optBlock == null) {
+            return false;
+        }
+        for (var opt : optBlock.getIncludeOptionList()) {
+            if (opt.getStandaloneFacetIllegalArg() == null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -40,6 +40,7 @@ import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeEntry;
+import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Visitor;
@@ -94,15 +95,15 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
             }
 
             @Override
-            public void visitUseStmt(@NotNull UseStmt stmt) {
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(stmt)) {
+            public void visitUseElement(@NotNull UseElement element) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
                     return;
                 }
-                PsiFile file = stmt.getContainingFile();
+                PsiFile file = element.getContainingFile();
                 if (file == null || StvnPreludeBridge.isPreludeFile(file) || !isHermeticCompilationUnit(file)) {
                     return;
                 }
-                UseTarget useTarget = stmt.getUseTarget();
+                UseTarget useTarget = element.getUseTarget();
                 if (useTarget == null || StvnTrailingSlashInspection.hasTrailingSlash(useTarget)) {
                     return;
                 }
@@ -556,7 +557,61 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
             if (useStmt == null) {
                 return;
             }
+            var useElem = elem instanceof UseElement ue ? ue : PsiTreeUtil.getParentOfType(elem, UseElement.class, false);
+            var elements = useStmt.getUseElementList();
+            if (useElem != null && elements.size() > 1) {
+                removeSingleUseElementFromStmt(project, useStmt, useElem, elements);
+                return;
+            }
             removeDirectiveFromDefs(project, useStmt);
         }
+    }
+
+    private static void removeSingleUseElementFromStmt(
+        Project project,
+        UseStmt useStmt,
+        UseElement targetElem,
+        List<UseElement> elements
+    ) {
+        PsiFile file = useStmt.getContainingFile();
+        if (file == null) {
+            return;
+        }
+        Document doc = file.getViewProvider().getDocument();
+        if (doc == null) {
+            doc = PsiDocumentManager.getInstance(project).getDocument(file);
+        }
+        if (doc == null) {
+            return;
+        }
+        if (file.isPhysical()) {
+            PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(doc);
+        }
+        CharSequence chars = doc.getCharsSequence();
+        int start = targetElem.getTextRange().getStartOffset();
+        int end = targetElem.getTextRange().getEndOffset();
+        int lineStart = start;
+        while (lineStart > 0 && (chars.charAt(lineStart - 1) == ' ' || chars.charAt(lineStart - 1) == '\t')) {
+            lineStart--;
+        }
+        int wsEnd = end;
+        while (wsEnd < chars.length() && (chars.charAt(wsEnd) == ' ' || chars.charAt(wsEnd) == '\t')) {
+            wsEnd++;
+        }
+        boolean ownsLinePrefix = lineStart == 0 || chars.charAt(lineStart - 1) == '\n';
+        if (ownsLinePrefix && wsEnd < chars.length() && (chars.charAt(wsEnd) == '\n' || chars.charAt(wsEnd) == '\r')) {
+            int deleteEnd = advancePastSingleNewline(chars, wsEnd, wsEnd);
+            doc.deleteString(lineStart, deleteEnd);
+        } else {
+            int idx = elements.indexOf(targetElem);
+            if (idx == 0 && elements.size() > 1) {
+                doc.deleteString(start, elements.get(1).getTextRange().getStartOffset());
+            } else if (idx > 0) {
+                doc.deleteString(elements.get(idx - 1).getTextRange().getEndOffset(), end);
+            } else {
+                doc.deleteString(start, Math.max(end, wsEnd));
+            }
+        }
+        PsiDocumentManager.getInstance(project).commitDocument(doc);
     }
 }

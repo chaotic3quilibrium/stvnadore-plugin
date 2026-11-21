@@ -463,28 +463,74 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
             }
 
             @Override
-            public void visitUseStmt(@NotNull UseStmt stmt) {
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(stmt)) {
+            public void visitUseElement(@NotNull UseElement element) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
                     return;
                 }
-                var optBlock = stmt.getUseOptionsBlock();
-                if (optBlock != null && optBlock.getText().replaceAll("\\s+", "").equals("{}")) {
-                    holder.registerProblem(
-                        optBlock,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Empty directive block in :use statement is invalid; specify {#strip} or remove '{}'",
-                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveElementQuickFix("Remove empty directive block")
-                    );
+                var optBlock = element.getUseOptionsBlock();
+                if (optBlock != null) {
+                    var options = optBlock.getUseOptionList();
+                    if (options.isEmpty()) {
+                        holder.registerProblem(
+                            optBlock,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Empty directive block in " + StvnVocabulary.KEYWORD_USE
+                                    + " or " + StvnVocabulary.KEYWORD_INCLUDE
+                                    + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
+                                    + "}, alias mappings, or remove '{}'",
+                                StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove empty directive block")
+                        );
+                    } else {
+                        for (int i = 0; i < options.size(); i++) {
+                            var opt = options.get(i);
+                            if (i >= 1) {
+                                holder.registerProblem(
+                                    opt,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Duplicate metadata facet '" + StvnVocabulary.FACET_KW_STRIP
+                                            + "' in " + StvnVocabulary.KEYWORD_USE + " options block",
+                                        DiagnosticBag.ERR_DUPLICATE_METADATA_FACET
+                                    ),
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    new RemoveElementQuickFix(
+                                        "Remove duplicate '" + StvnVocabulary.FACET_KW_STRIP + "'",
+                                        "Remove duplicate facet"
+                                    )
+                                );
+                            }
+                            var illegalArg = opt.getStandaloneFacetIllegalArg();
+                            if (illegalArg != null) {
+                                String argText = illegalArg.getText().trim();
+                                holder.registerProblem(
+                                    illegalArg,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Metadata facet '" + StvnVocabulary.FACET_KW_STRIP
+                                            + "' is a standalone flag and does not accept arguments; unexpected '"
+                                            + argText + "'",
+                                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                                    ),
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    new RemoveElementQuickFix(
+                                        "Remove unexpected argument '" + argText + "'",
+                                        "Remove unexpected argument"
+                                    )
+                                );
+                            }
+                        }
+                    }
                 }
-                var aliasBlock = stmt.getUseAliasBlock();
+                var aliasBlock = element.getUseAliasBlock();
                 if (aliasBlock != null && aliasBlock.getUseMapAliasList().isEmpty()) {
                     holder.registerProblem(
                         aliasBlock,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Empty directive block in :use statement is invalid; specify alias mappings or remove '{}'",
+                            "Empty directive block in " + StvnVocabulary.KEYWORD_USE
+                                + " or " + StvnVocabulary.KEYWORD_INCLUDE
+                                + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
+                                + "}, alias mappings, or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
@@ -499,23 +545,69 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     return;
                 }
                 var optBlock = element.getIncludeOptionsBlock();
-                if (optBlock != null && optBlock.getIncludeOptionList().isEmpty()) {
-                    holder.registerProblem(
-                        optBlock,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Empty directive block in :include statement is invalid; specify {#strip} or remove '{}'",
-                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveElementQuickFix("Remove empty directive block")
-                    );
+                if (optBlock != null) {
+                    var options = optBlock.getIncludeOptionList();
+                    if (options.isEmpty()) {
+                        holder.registerProblem(
+                            optBlock,
+                            StvnDiagnosticFormatter.formatPlugin(
+                                "Empty directive block in " + StvnVocabulary.KEYWORD_USE
+                                    + " or " + StvnVocabulary.KEYWORD_INCLUDE
+                                    + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
+                                    + "}, alias mappings, or remove '{}'",
+                                StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR,
+                            new RemoveElementQuickFix("Remove empty directive block")
+                        );
+                    } else {
+                        for (int i = 0; i < options.size(); i++) {
+                            var opt = options.get(i);
+                            if (i >= 1) {
+                                holder.registerProblem(
+                                    opt,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Duplicate metadata facet '" + StvnVocabulary.FACET_KW_STRIP
+                                            + "' in " + StvnVocabulary.KEYWORD_INCLUDE + " options block",
+                                        DiagnosticBag.ERR_DUPLICATE_METADATA_FACET
+                                    ),
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    new RemoveElementQuickFix(
+                                        "Remove duplicate '" + StvnVocabulary.FACET_KW_STRIP + "'",
+                                        "Remove duplicate facet"
+                                    )
+                                );
+                            }
+                            var illegalArg = opt.getStandaloneFacetIllegalArg();
+                            if (illegalArg != null) {
+                                String argText = illegalArg.getText().trim();
+                                holder.registerProblem(
+                                    illegalArg,
+                                    StvnDiagnosticFormatter.formatPlugin(
+                                        "Metadata facet '" + StvnVocabulary.FACET_KW_STRIP
+                                            + "' is a standalone flag and does not accept arguments; unexpected '"
+                                            + argText + "'",
+                                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                                    ),
+                                    ProblemHighlightType.GENERIC_ERROR,
+                                    new RemoveElementQuickFix(
+                                        "Remove unexpected argument '" + argText + "'",
+                                        "Remove unexpected argument"
+                                    )
+                                );
+                            }
+                        }
+                    }
                 }
                 var aliasBlock = element.getIncludeAliasBlock();
                 if (aliasBlock != null && aliasBlock.getIncludeMapAliasList().isEmpty()) {
                     holder.registerProblem(
                         aliasBlock,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Empty directive block in :include statement is invalid; specify alias mappings or remove '{}'",
+                            "Empty directive block in " + StvnVocabulary.KEYWORD_USE
+                                + " or " + StvnVocabulary.KEYWORD_INCLUDE
+                                + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
+                                + "}, alias mappings, or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
                         ),
                         ProblemHighlightType.GENERIC_ERROR,

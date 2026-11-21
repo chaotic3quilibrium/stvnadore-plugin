@@ -39,18 +39,18 @@ public final class StvnNamespaceSymbolCollector {
     private static boolean isPackageStripped(PsiFile file, String packagePath) {
         var uses = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : uses) {
-            var target = use.getUseTarget();
-            if (target != null && target.getText().equals(packagePath)) {
-                var opts = use.getUseOptionsBlock();
-                if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                    return true;
+            for (var useElem : use.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                if (target != null && target.getText().equals(packagePath)) {
+                    if (StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                        return true;
+                    }
                 }
             }
         }
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         for (var incl : includes) {
-            var opts = incl.getIncludeOptionsBlock();
-            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
+            if (StvnPsiUtils.hasValidStripIncludeOption(incl.getIncludeOptionsBlock())) {
                 var stringLit = incl.getStringLiteral();
                 var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
                 if (targetFile != null) {
@@ -255,50 +255,64 @@ public final class StvnNamespaceSymbolCollector {
             if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
                 continue;
             }
-            var target = use.getUseTarget();
-            var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var localKw = list.get(1);
-                        var remoteKw = list.get(0);
-                        if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
-                            results.add(new StvnNamespaceSymbolEntry(
-                                localKw.getText(),
-                                targetText,
-                                remoteKw.getText(),
-                                1,
-                                localKw,
-                                false,
-                                localKw.getTextOffset(),
-                                StvnNamespaceScope.DEFS
-                            ));
+            for (var useElem : use.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
+                var evictedRawNames = new HashSet<String>();
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var localKw = list.get(1);
+                            var remoteKw = list.get(0);
+                            if (remoteKw != null) {
+                                evictedRawNames.add(remoteKw.getText().trim());
+                            }
+                            if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
+                                results.add(new StvnNamespaceSymbolEntry(
+                                    localKw.getText(),
+                                    targetText,
+                                    remoteKw.getText(),
+                                    1,
+                                    localKw,
+                                    false,
+                                    localKw.getTextOffset(),
+                                    StvnNamespaceScope.DEFS
+                                ));
+                            }
                         }
-                    }
-                    var valList = alias.getValueKeywordList();
-                    if (valList.size() >= 2) {
-                        var localKw = valList.get(1);
-                        var remoteKw = valList.get(0);
-                        if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
-                            results.add(new StvnNamespaceSymbolEntry(
-                                localKw.getText(),
-                                targetText,
-                                remoteKw.getText(),
-                                1,
-                                localKw,
-                                false,
-                                localKw.getTextOffset(),
-                                StvnNamespaceScope.DEFS
-                            ));
+                        var valList = alias.getValueKeywordList();
+                        if (valList.size() >= 2) {
+                            var localKw = valList.get(1);
+                            var remoteKw = valList.get(0);
+                            if (remoteKw != null) {
+                                evictedRawNames.add(remoteKw.getText().trim());
+                            }
+                            if (localKw != null && remoteKw != null && processedNames.add(localKw.getText())) {
+                                results.add(new StvnNamespaceSymbolEntry(
+                                    localKw.getText(),
+                                    targetText,
+                                    remoteKw.getText(),
+                                    1,
+                                    localKw,
+                                    false,
+                                    localKw.getTextOffset(),
+                                    StvnNamespaceScope.DEFS
+                                ));
+                            }
                         }
                     }
                 }
-            }
-            var optionsBlock = use.getUseOptionsBlock();
-            if (optionsBlock != null && optionsBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                collectStrippedPackageSymbols(file, targetText, processedNames, results, use);
+                if (StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                    var scopedProcessed = new HashSet<>(processedNames);
+                    scopedProcessed.addAll(evictedRawNames);
+                    int before = results.size();
+                    collectStrippedPackageSymbols(file, targetText, scopedProcessed, results, useElem);
+                    for (int i = before; i < results.size(); i++) {
+                        processedNames.add(results.get(i).name());
+                    }
+                }
             }
         }
 
@@ -462,8 +476,8 @@ public final class StvnNamespaceSymbolCollector {
                                 var list = alias.getTypeKeywordList();
                                 if (list.size() >= 2) {
                                     var remoteKw = list.get(0);
-                                    var useStmt = PsiTreeUtil.getParentOfType(parent, UseStmt.class);
-                                    var target = useStmt != null ? useStmt.getUseTarget() : null;
+                                    var useElem = PsiTreeUtil.getParentOfType(parent, UseElement.class);
+                                    var target = useElem != null ? useElem.getUseTarget() : null;
                                     var targetText = target != null ? target.getText() : "";
                                     var fqni = !targetText.isEmpty()
                                         ? targetText + "/" + stripColon(remoteKw.getText())
@@ -833,15 +847,17 @@ public final class StvnNamespaceSymbolCollector {
         // Check if nextName is a use alias in this file
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : useStmts) {
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (localKw != null && remoteKw != null && nextName.equals(localKw.getText())) {
-                            return 2;
+            for (var useElem : use.getUseElementList()) {
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (localKw != null && remoteKw != null && nextName.equals(localKw.getText())) {
+                                return 2;
+                            }
                         }
                     }
                 }
@@ -1006,24 +1022,26 @@ public final class StvnNamespaceSymbolCollector {
 
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : useStmts) {
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (localKw != null && remoteKw != null && name.equals(localKw.getText())) {
-                            var target = use.getUseTarget();
-                            var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
-                            var fqni = target != null ? targetText + "/" + stripColon(remoteKw.getText()) : remoteKw.getText();
-                            var terminalStructure = resolveTerminalStructure(file, fqni, new HashSet<>());
-                            return new NominalResolutionInfo(
-                                    targetText,
-                                    terminalStructure != null ? terminalStructure : remoteKw.getText(),
-                                    localKw,
-                                    false
-                            );
+            for (var useElem : use.getUseElementList()) {
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (localKw != null && remoteKw != null && name.equals(localKw.getText())) {
+                                var target = useElem.getUseTarget();
+                                var targetText = target != null ? target.getText() : StvnVocabulary.KEYWORD_USE;
+                                var fqni = target != null ? targetText + "/" + stripColon(remoteKw.getText()) : remoteKw.getText();
+                                var terminalStructure = resolveTerminalStructure(file, fqni, new HashSet<>());
+                                return new NominalResolutionInfo(
+                                        targetText,
+                                        terminalStructure != null ? terminalStructure : remoteKw.getText(),
+                                        localKw,
+                                        false
+                                );
+                            }
                         }
                     }
                 }

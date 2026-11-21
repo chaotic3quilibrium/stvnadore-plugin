@@ -15,8 +15,8 @@ import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
+import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseMapAlias;
-import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.Value;
 
 import java.math.BigDecimal;
@@ -337,10 +337,11 @@ public final class StvnPsiLiteralEvaluator {
             if (resolvedElem.getParent() instanceof UseMapAlias alias) {
                 var kws = alias.getValueKeywordList();
                 if (!kws.isEmpty() && kws.get(0) != null) {
-                    var useStmt = PsiTreeUtil.getParentOfType(alias, UseStmt.class);
+                    var useElem = PsiTreeUtil.getParentOfType(alias, UseElement.class);
                     String remoteName = kws.get(0).getText().trim();
-                    if (useStmt != null && useStmt.getUseTarget() != null) {
-                        String fqni = useStmt.getUseTarget().getText().trim() + "/" + remoteName;
+                    if (useElem != null && useElem.getUseTarget() != null) {
+                        String fqni = StvnConstantReference.buildPackageConstantFqni(
+                            useElem.getUseTarget().getText().trim(), remoteName);
                         PsiElement hopped = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
                         if (hopped instanceof ConstantDefinition cd) {
                             return cd;

@@ -19,6 +19,7 @@ import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.UseTarget;
@@ -87,7 +88,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
                 return;
             }
             if (!list.isEmpty() && list.get(0) == typeKw) {
-                var enclosingUse = PsiTreeUtil.getParentOfType(useAlias, UseStmt.class);
+                var enclosingUse = PsiTreeUtil.getParentOfType(useAlias, UseElement.class);
                 if (enclosingUse != null && enclosingUse.getUseTarget() != null) {
                     var targetPkg = enclosingUse.getUseTarget().getText().trim();
                     var expectedPkg = StvnPreludeBridge.getPreludePackagePath(preludeDef);
@@ -121,24 +122,25 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
             if (StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
                 continue;
             }
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2 && list.get(1) != null && text.equals(list.get(1).getText())) {
-                        return;
-                    }
-                    if (list.size() == 1 && list.get(0) != null && text.equals(list.get(0).getText())) {
-                        return;
+            for (var useElem : use.getUseElementList()) {
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2 && list.get(1) != null && text.equals(list.get(1).getText())) {
+                            return;
+                        }
+                        if (list.size() == 1 && list.get(0) != null && text.equals(list.get(0).getText())) {
+                            return;
+                        }
                     }
                 }
-            }
-            var opts = use.getUseOptionsBlock();
-            if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var useTarget = use.getUseTarget();
-                var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
-                if (useTarget != null && (useTarget.getText().equals(":org/stvnadore/prelude") || useTarget.getText().equals(pkgPath))) {
-                    return;
+                if (StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                    var useTarget = useElem.getUseTarget();
+                    var pkgPath = StvnPreludeBridge.getPreludePackagePath(preludeDef);
+                    if (useTarget != null && (useTarget.getText().equals(":org/stvnadore/prelude") || useTarget.getText().equals(pkgPath))) {
+                        return;
+                    }
                 }
             }
         }

@@ -144,6 +144,7 @@ meta_unknown_facet        ::= value_keyword (value | schema_type)?
 
 // --- DEFINITIONS SECTION ---
 private root_section_boundary ::= KW_META | KW_DEFS | KW_TYPE | KW_BODY | RBRACE
+private directive_or_section_boundary ::= (KW_META | KW_DEFS | KW_TYPE | KW_BODY | KW_INCLUDE | KW_PACKAGE | KW_USE) !FSLASH
 
 defs_entry                ::= KW_DEFS defs_body {pin=1 recoverWhile=defs_recover}
 private defs_body         ::= LBRACE defs_element* RBRACE {pin=1}
@@ -165,10 +166,13 @@ package_element           ::= nested_package_illegal
                             | constant_definition
 nested_package_illegal    ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
 
-use_stmt                  ::= KW_USE LBRACK use_target use_options_block? use_alias_block? RBRACK {pin=1}
+use_stmt                  ::= KW_USE LBRACK use_element+ RBRACK {pin=1}
+use_element               ::= !directive_or_section_boundary use_target use_options_block? use_alias_block? {pin=2}
 use_target                ::= use_target_illegal | type_keyword
 use_target_illegal        ::= type_keyword FSLASH+
-use_options_block         ::= LBRACE KW_STRIP* RBRACE
+use_options_block         ::= LBRACE use_option* RBRACE
+use_option                ::= KW_STRIP standalone_facet_illegal_arg? {pin=1}
+standalone_facet_illegal_arg ::= !(RBRACE | KW_STRIP) (value | schema_type | reserved_keyword)
 use_alias_block           ::= LBRACE use_map_alias* RBRACE {pin=1}
 use_map_alias             ::= use_type_alias_pair | use_const_alias_pair {
   recoverWhile=use_alias_recover
@@ -225,7 +229,7 @@ private value_keyword_start ::= VALUE_KEYWORD_BASE
 include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}
 include_element         ::= string_literal include_options_block? include_alias_block? {pin=1}
 include_options_block   ::= LBRACE include_option* RBRACE
-include_option          ::= KW_STRIP
+include_option          ::= KW_STRIP standalone_facet_illegal_arg? {pin=1}
 include_alias_block     ::= LBRACE include_map_alias* RBRACE {pin=1}
 include_map_alias       ::= type_keyword type_keyword {
   pin=1
@@ -323,22 +327,23 @@ atomic_type             ::= ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING |
 structural_type         ::= product_type | sum_type
 
 // --- COLLECTIONS & ENVELOPE STRUCTURING ---
+private ctor_schema_arg ::= !directive_or_section_boundary schema_type
 collection_type         ::= sequence_or_set_type | map_collection_type
 
-private sequence_or_set_type ::= ( COLL_SEQ | COLL_SET ) LPAREN schema_type RPAREN {pin=2}
-private map_collection_type  ::= COLL_MAP LPAREN schema_type schema_type RPAREN {pin=2}
+private sequence_or_set_type ::= ( COLL_SEQ | COLL_SET ) LPAREN ctor_schema_arg* RPAREN {pin=2}
+private map_collection_type  ::= COLL_MAP LPAREN ctor_schema_arg* RPAREN {pin=2}
 
 product_type            ::= tuple_product_type
-private tuple_product_type     ::= KW_TUPLE LPAREN schema_type+ RPAREN {pin=2}
+private tuple_product_type   ::= KW_TUPLE LPAREN ctor_schema_arg* RPAREN {pin=2}
 sum_type                 ::= option_sum_type | enum_sum_type | either_sum_type | union_sum_type
 
-private option_sum_type  ::= KW_OPTION LPAREN schema_type RPAREN {pin=2}
+private option_sum_type  ::= KW_OPTION LPAREN ctor_schema_arg* RPAREN {pin=2}
 private enum_sum_type    ::= KW_ENUM enum_def
-private either_sum_type  ::= KW_EITHER LPAREN schema_type schema_type RPAREN {pin=2}
-private union_sum_type   ::= KW_UNION LPAREN schema_type+ RPAREN {pin=2}
+private either_sum_type  ::= KW_EITHER LPAREN ctor_schema_arg* RPAREN {pin=2}
+private union_sum_type   ::= KW_UNION LPAREN ctor_schema_arg* RPAREN {pin=2}
 
 // --- ENUMS ---
-enum_def                ::= LBRACK value_keyword+ RBRACK {pin=1}
+enum_def                ::= LBRACK value_keyword* RBRACK {pin=1}
 
 // --- PAYLOAD VALUES ---
 value                   ::= explicit_option_value 
@@ -419,7 +424,7 @@ private map_body        ::= map_entry* {recoverWhile=map_recover}
 private map_entry       ::= LBRACK value value RBRACK {pin=1}
 private map_recover     ::= !(RBRACE | RBRACK)
 tuple_literal           ::= LPAREN tuple_body RPAREN {pin=1}
-private tuple_body      ::= value+ {recoverWhile=tuple_recover}
+private tuple_body      ::= value* {recoverWhile=tuple_recover}
 private tuple_recover   ::= !(RPAREN | RBRACE | RBRACK)
 
 // --- TERMINALS ---

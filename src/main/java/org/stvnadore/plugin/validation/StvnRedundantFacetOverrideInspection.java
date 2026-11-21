@@ -809,7 +809,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         var fields = product.getSchemaTypeList();
         if (fields.isEmpty()) {
-            return true;
+            return false;
         }
         for (var field : fields) {
             if (!isFieldEquatable(field, visited)) {
@@ -826,7 +826,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         var fields = product.getSchemaTypeList();
         if (fields.isEmpty()) {
-            return true;
+            return false;
         }
         for (var field : fields) {
             if (!isFieldComparable(field, visited)) {
@@ -925,20 +925,29 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         var prod = ctor.getProductType();
         if (prod != null) {
-            return prod.getSchemaTypeList().stream().allMatch(f -> isFieldEquatable(f, visited));
+            var slots = prod.getSchemaTypeList();
+            return !slots.isEmpty() && slots.stream().allMatch(f -> isFieldEquatable(f, visited));
         }
         var coll = ctor.getCollectionType();
         if (coll != null) {
             var inners = PsiTreeUtil.getChildrenOfTypeAsList(coll, SchemaType.class);
-            return inners.stream().allMatch(f -> isFieldEquatable(f, visited));
+            var text = coll.getText().trim();
+            if (text.startsWith(StvnVocabulary.TYPE_MAP)) {
+                if (inners.size() != 2) {
+                    return false;
+                }
+                boolean inv = hasLocalInvertibleFacet(metaMap);
+                return isFieldEquatable(inners.get(0), visited) && (!inv || isFieldEquatable(inners.get(1), visited));
+            }
+            return inners.size() == 1 && isFieldEquatable(inners.get(0), visited);
         }
         var sum = ctor.getSumType();
         if (sum != null) {
             if (sum.getEnumDef() != null) {
-                return true;
+                return !sum.getEnumDef().getValueKeywordList().isEmpty();
             }
             var inners = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-            return inners.stream().allMatch(f -> isFieldEquatable(f, visited));
+            return !inners.isEmpty() && inners.stream().allMatch(f -> isFieldEquatable(f, visited));
         }
         return true;
     }
@@ -1001,7 +1010,8 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         var prod = ctor.getProductType();
         if (prod != null) {
-            return prod.getSchemaTypeList().stream().allMatch(f -> isFieldComparable(f, visited));
+            var slots = prod.getSchemaTypeList();
+            return !slots.isEmpty() && slots.stream().allMatch(f -> isFieldComparable(f, visited));
         }
         var coll = ctor.getCollectionType();
         if (coll != null) {
@@ -1010,15 +1020,15 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 return false;
             }
             var inners = PsiTreeUtil.getChildrenOfTypeAsList(coll, SchemaType.class);
-            return inners.stream().allMatch(f -> isFieldComparable(f, visited));
+            return inners.size() == 1 && isFieldComparable(inners.get(0), visited);
         }
         var sum = ctor.getSumType();
         if (sum != null) {
             if (sum.getEnumDef() != null) {
-                return true;
+                return !sum.getEnumDef().getValueKeywordList().isEmpty();
             }
             var inners = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-            return inners.stream().allMatch(f -> isFieldComparable(f, visited));
+            return !inners.isEmpty() && inners.stream().allMatch(f -> isFieldComparable(f, visited));
         }
         return true;
     }
@@ -1119,6 +1129,19 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         for (var entry : metaMap.getMetadataEntryList()) {
             var flag = entry.getMetadataBareFlag();
             if (flag != null && flag.getText().trim().equals(StvnVocabulary.FACET_KW_UNSIGNED)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLocalInvertibleFacet(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) {
+            return false;
+        }
+        for (var entry : metaMap.getMetadataEntryList()) {
+            var flag = entry.getMetadataBareFlag();
+            if (flag != null && flag.getText().trim().equals(StvnVocabulary.FACET_KW_INVERTIBLE)) {
                 return true;
             }
         }

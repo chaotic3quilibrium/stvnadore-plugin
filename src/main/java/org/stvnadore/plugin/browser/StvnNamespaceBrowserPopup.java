@@ -51,9 +51,11 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.stdlib.StvnPrelude;
 import org.stvnadore.plugin.StvnFileType;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseStmt;
 
 /**
@@ -368,8 +370,8 @@ public final class StvnNamespaceBrowserPopup {
         PsiDocumentManager.getInstance(project).commitDocument(doc);
     }
 
-    private static @Nullable org.stvnadore.psi.UseStmt findExistingUse(PsiElement container, String targetSource) {
-        var useStmts = PsiTreeUtil.findChildrenOfType(container, org.stvnadore.psi.UseStmt.class);
+    private static @Nullable UseElement findExistingUse(PsiElement container, String targetSource) {
+        var useStmts = PsiTreeUtil.findChildrenOfType(container, UseStmt.class);
         for (var use : useStmts) {
             if (container instanceof PackageEnclosure pkg) {
                 if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) continue;
@@ -377,21 +379,23 @@ public final class StvnNamespaceBrowserPopup {
                 if (PsiTreeUtil.getParentOfType(use, DefsEntry.class) != defs
                         || PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) continue;
             }
-            var target = use.getUseTarget();
-            if (target != null && target.getText().equals(targetSource)) {
-                return use;
+            for (var useElem : use.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                if (target != null && target.getText().equals(targetSource)) {
+                    return useElem;
+                }
             }
         }
         return null;
     }
 
-    private static void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse, String bareName) {
-        var opts = existingUse.getUseOptionsBlock();
-        if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
+    private static void appendSymbolToExistingUse(
+            com.intellij.openapi.editor.Document doc,
+            UseElement existingUse,
+            String bareName
+    ) {
+        if (StvnPsiUtils.hasValidStripOption(existingUse.getUseOptionsBlock())) {
             return; // Symbols already in scope via #strip
-        }
-        if (existingUse.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-            return;
         }
         var aliasBlock = existingUse.getUseAliasBlock();
         var chars = doc.getCharsSequence();
@@ -412,13 +416,8 @@ public final class StvnNamespaceBrowserPopup {
                 doc.insertString(rbraceOffset, " " + bareName + " " + bareName + " ");
             }
         } else {
-            var rbrack = existingUse.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACK);
-            int rbrackOffset = rbrack != null ? rbrack.getStartOffset() : existingUse.getTextRange().getEndOffset() - 1;
-            if (rbrackOffset > 0 && chars.charAt(rbrackOffset - 1) == ' ') {
-                doc.insertString(rbrackOffset - 1, " { " + bareName + " " + bareName + " }");
-            } else {
-                doc.insertString(rbrackOffset, " { " + bareName + " " + bareName + " } ");
-            }
+            int elemEndOffset = existingUse.getTextRange().getEndOffset();
+            doc.insertString(elemEndOffset, " { " + bareName + " " + bareName + " }");
         }
     }
 

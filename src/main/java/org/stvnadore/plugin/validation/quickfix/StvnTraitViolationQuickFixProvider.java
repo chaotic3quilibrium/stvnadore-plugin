@@ -23,20 +23,27 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Provides diagnostic navigation intentions and paired healing quick-fixes
@@ -294,10 +301,10 @@ public final class StvnTraitViolationQuickFixProvider {
     public record ConstituentInfo(int index, String label, SchemaType schema) {}
 
     public static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef) {
-        return extractNonConformingConstituents(typeDef, new java.util.HashSet<>());
+        return extractNonConformingConstituents(typeDef, new HashSet<>());
     }
 
-    private static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef, java.util.Set<String> visited) {
+    private static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef, Set<String> visited) {
         var result = new ArrayList<ConstituentInfo>();
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
@@ -311,68 +318,39 @@ public final class StvnTraitViolationQuickFixProvider {
 
         var file = typeDef.getContainingFile();
         if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
-            var aliasTarget = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
-            var aliasDef = StvnPsiUtils.getParentTypeDefinition(aliasTarget);
+            var aliasKw = schemaType.getTypeKeyword();
+            var aliasDef = resolveTargetTypeDefForKeyword(aliasKw, file, aliasKw.getText().trim());
             if (aliasDef != null && aliasDef != typeDef) {
                 return extractNonConformingConstituents(aliasDef, visited);
             }
         }
 
-        if (schemaType.getSchemaConstructor() == null) {
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor == null) {
             return result;
         }
 
-        var ctor = schemaType.getSchemaConstructor();
-        List<SchemaType> constituents = List.of();
-        if (ctor.getProductType() != null) {
-            constituents = ctor.getProductType().getSchemaTypeList();
-        } else if (ctor.getCollectionType() != null) {
-            constituents = ctor.getCollectionType().getSchemaTypeList();
-        } else if (ctor.getSumType() != null) {
-            constituents = PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
+        if (ctor.getCollectionType() != null) {
+            var coll = ctor.getCollectionType();
+            var inner = coll.getSchemaTypeList();
+            if (coll.getText().trim().startsWith(StvnVocabulary.TYPE_MAP)) {
+                if (!inner.isEmpty() && !isSchemaTypeEquatable(inner.get(0), new HashSet<>(visited))) {
+                    result.add(new ConstituentInfo(1, formatConstituentLabel(inner.get(0)), inner.get(0)));
+                }
+                if (inner.size() >= 2
+                        && hasInvertibleInLineage(typeDef, schemaType)
+                        && !isSchemaTypeEquatable(inner.get(1), new HashSet<>(visited))) {
+                    result.add(new ConstituentInfo(2, formatConstituentLabel(inner.get(1)), inner.get(1)));
+                }
+                return result;
+            }
         }
 
+        List<SchemaType> constituents = collectConstructorConstituents(ctor);
         int slotIndex = 1;
         for (var constituent : constituents) {
-            var kw = constituent.getTypeKeyword();
-            String fieldLabel = (constituent.getMetadataMap() != null)
-                    ? constituent.getText().trim()
-                    : (kw != null ? kw.getText().trim() : constituent.getText().trim());
-
-            if (kw != null) {
-                var name = kw.getText().trim();
-                if (StvnVocabulary.TYPE_FLOAT.equals(name)) {
-                    boolean exact = hasExactFacet(constituent.getMetadataMap());
-                    if (!exact) {
-                        result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                    }
-                    slotIndex++;
-                    continue;
-                } else if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name) || StvnVocabulary.TYPE_BOOLEAN.equals(name)
-                        || StvnVocabulary.TYPE_TIME_EPOCH.equals(name) || StvnVocabulary.TYPE_DATE_TIME.equals(name)) {
-                    slotIndex++;
-                    continue;
-                }
-
-                if (file != null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
-                    var targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                    if (targetDef != null) {
-                        var traits = StvnTypeResolver.resolveNominalTraitConstraints(targetDef);
-                        if (traits != null) {
-                            if (!traits.equatable()) {
-                                result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                            }
-                        } else if (!isUnderlyingIntrinsicallyEquatable(targetDef, visited)) {
-                            result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                        }
-                    }
-                }
-            } else if (constituent.getSchemaConstructor() != null) {
-                var txt = constituent.getText();
-                if (txt.contains(StvnVocabulary.TYPE_FLOAT) && !txt.contains(StvnVocabulary.FACET_KW_EXACT)) {
-                    result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                }
+            if (!isSchemaTypeEquatable(constituent, new HashSet<>(visited))) {
+                result.add(new ConstituentInfo(slotIndex, formatConstituentLabel(constituent), constituent));
             }
             slotIndex++;
         }
@@ -390,10 +368,10 @@ public final class StvnTraitViolationQuickFixProvider {
     }
 
     public static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef) {
-        return extractNonComparableConstituents(typeDef, new java.util.HashSet<>());
+        return extractNonComparableConstituents(typeDef, new HashSet<>());
     }
 
-    private static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef, java.util.Set<String> visited) {
+    private static List<ConstituentInfo> extractNonComparableConstituents(TypeDefinition typeDef, Set<String> visited) {
         var result = new ArrayList<ConstituentInfo>();
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
@@ -407,79 +385,35 @@ public final class StvnTraitViolationQuickFixProvider {
 
         var file = typeDef.getContainingFile();
         if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
-            var aliasTarget = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
-            var aliasDef = StvnPsiUtils.getParentTypeDefinition(aliasTarget);
+            var aliasKw = schemaType.getTypeKeyword();
+            var aliasDef = resolveTargetTypeDefForKeyword(aliasKw, file, aliasKw.getText().trim());
             if (aliasDef != null && aliasDef != typeDef) {
                 return extractNonComparableConstituents(aliasDef, visited);
             }
         }
 
-        if (schemaType.getSchemaConstructor() == null) {
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor == null) {
             return result;
         }
 
-        var ctor = schemaType.getSchemaConstructor();
-        List<SchemaType> constituents = List.of();
-        if (ctor.getProductType() != null) {
-            constituents = ctor.getProductType().getSchemaTypeList();
-        } else if (ctor.getCollectionType() != null) {
+        if (ctor.getCollectionType() != null) {
             var coll = ctor.getCollectionType();
             var collText = coll.getText().trim();
             if (collText.startsWith(StvnVocabulary.TYPE_SET) || collText.startsWith(StvnVocabulary.TYPE_MAP)) {
                 result.add(new ConstituentInfo(1, collText, schemaType));
                 return result;
             }
-            constituents = coll.getSchemaTypeList();
-        } else if (ctor.getSumType() != null) {
-            var sum = ctor.getSumType();
-            if (sum.getEnumDef() != null) {
-                return result;
-            }
-            constituents = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+        }
+        if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+            return result;
         }
 
+        List<SchemaType> constituents = collectConstructorConstituents(ctor);
         int slotIndex = 1;
         for (var constituent : constituents) {
-            var kw = constituent.getTypeKeyword();
-            String fieldLabel = (constituent.getMetadataMap() != null)
-                    ? constituent.getText().trim()
-                    : (kw != null ? kw.getText().trim() : constituent.getText().trim());
-
-            if (kw != null) {
-                var name = kw.getText().trim();
-                if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
-                    result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                    slotIndex++;
-                    continue;
-                } else if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
-                        || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_FLOAT.equals(name)
-                        || StvnVocabulary.TYPE_TIME_EPOCH.equals(name) || StvnVocabulary.TYPE_DATE_TIME.equals(name)) {
-                    slotIndex++;
-                    continue;
-                }
-
-                if (file != null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
-                    var targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                    if (targetDef != null) {
-                        var traits = StvnTypeResolver.resolveNominalTraitConstraints(targetDef);
-                        if (traits != null) {
-                            if (!traits.comparable()) {
-                                result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                            }
-                        } else if (!isUnderlyingIntrinsicallyComparable(targetDef, visited)) {
-                            result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                        }
-                    }
-                }
-            } else if (constituent.getSchemaConstructor() != null) {
-                var ctorInner = constituent.getSchemaConstructor();
-                if (ctorInner.getCollectionType() != null) {
-                    var txt = ctorInner.getCollectionType().getText().trim();
-                    if (txt.startsWith(StvnVocabulary.TYPE_SET) || txt.startsWith(StvnVocabulary.TYPE_MAP)) {
-                        result.add(new ConstituentInfo(slotIndex, fieldLabel, constituent));
-                    }
-                }
+            if (!isSchemaTypeComparable(constituent, new HashSet<>(visited))) {
+                result.add(new ConstituentInfo(slotIndex, formatConstituentLabel(constituent), constituent));
             }
             slotIndex++;
         }
@@ -487,74 +421,413 @@ public final class StvnTraitViolationQuickFixProvider {
     }
 
     public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef) {
-        return isUnderlyingIntrinsicallyEquatable(typeDef, new java.util.HashSet<>());
+        return isUnderlyingIntrinsicallyEquatable(typeDef, new HashSet<>());
     }
 
-    public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef, java.util.Set<String> visited) {
+    public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef, Set<String> visited) {
         var schemaType = typeDef.getSchemaType();
-        if (schemaType == null) return false;
-
-        var schemaKw = schemaType.getTypeKeyword();
-        if (schemaKw != null) {
-            var kw = typeDef.getTypeKeyword();
-            if (kw != null && !visited.add(kw.getText().trim())) {
-                return true; // Break recursion on cycle
-            }
-            var name = schemaKw.getText().trim();
-            if (StvnVocabulary.TYPE_FLOAT.equals(name)) {
-                return hasExactFacet(schemaType.getMetadataMap());
-            }
-            if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
-                    || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_TIME_EPOCH.equals(name)
-                    || StvnVocabulary.TYPE_DATE_TIME.equals(name) || StvnVocabulary.TYPE_ENUM.equals(name)) {
-                return true;
-            }
-            var file = typeDef.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
-                var aliasDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (aliasDef != null && aliasDef != typeDef) {
-                    return isUnderlyingIntrinsicallyEquatable(aliasDef, visited);
-                }
-            }
+        if (schemaType == null) {
+            return false;
         }
-        return extractNonConformingConstituents(typeDef, visited).isEmpty();
+        boolean inheritedExact = hasExactFacet(typeDef.getMetadataMap()) || hasExactFacet(schemaType.getMetadataMap());
+        boolean inheritedInv = hasInvertibleFacet(typeDef.getMetadataMap()) || hasInvertibleFacet(schemaType.getMetadataMap());
+        var kw = typeDef.getTypeKeyword();
+        Set<String> nextVisited = new HashSet<>(visited);
+        if (kw != null && !nextVisited.add(kw.getText().trim())) {
+            return true;
+        }
+        return isSchemaTypeEquatableInternal(schemaType, inheritedExact, inheritedInv, nextVisited, true);
     }
 
     public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef) {
-        return isUnderlyingIntrinsicallyComparable(typeDef, new java.util.HashSet<>());
+        return isUnderlyingIntrinsicallyComparable(typeDef, new HashSet<>());
     }
 
-    public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef, java.util.Set<String> visited) {
+    public static boolean isUnderlyingIntrinsicallyComparable(TypeDefinition typeDef, Set<String> visited) {
         var schemaType = typeDef.getSchemaType();
-        if (schemaType == null) return false;
+        if (schemaType == null) {
+            return false;
+        }
+        var kw = typeDef.getTypeKeyword();
+        Set<String> nextVisited = new HashSet<>(visited);
+        if (kw != null && !nextVisited.add(kw.getText().trim())) {
+            return true;
+        }
+        return isSchemaTypeComparableInternal(schemaType, nextVisited, true);
+    }
+
+    /**
+     * Evaluates whether a {@link SchemaType} satisfies {@code #equatable #TRUE}, accounting for
+     * explicit trait overrides, nominal lineages, {@code :Map} {@code #invertible} values, and nested
+     * inline composite constructors even when compiler lowering produces an ungrounded {@code PoisonedSchema}.
+     *
+     * @param schemaType schema PSI node to inspect
+     * @param visited    visited nominal type names for cycle termination
+     * @return {@code true} when equatable
+     */
+    public static boolean isSchemaTypeEquatable(@Nullable SchemaType schemaType, Set<String> visited) {
+        if (schemaType == null) {
+            return false;
+        }
+        return isSchemaTypeEquatableInternal(schemaType, false, false, visited, false);
+    }
+
+    /**
+     * Evaluates whether a {@link SchemaType} satisfies {@code #comparable #TRUE} inductively over PSI and IR.
+     *
+     * @param schemaType schema PSI node to inspect
+     * @param visited    visited nominal type names for cycle termination
+     * @return {@code true} when comparable
+     */
+    public static boolean isSchemaTypeComparable(@Nullable SchemaType schemaType, Set<String> visited) {
+        if (schemaType == null) {
+            return false;
+        }
+        return isSchemaTypeComparableInternal(schemaType, visited, false);
+    }
+
+    private static boolean isSchemaTypeEquatableInternal(
+        SchemaType schemaType,
+        boolean inheritedExact,
+        boolean inheritedInvertible,
+        Set<String> visited,
+        boolean ignoreSelfExplicitOverride
+    ) {
+        if (!ignoreSelfExplicitOverride) {
+            var explicit = resolveExplicitBooleanTrait(schemaType.getMetadataMap(), StvnVocabulary.FACET_KW_EQUATABLE);
+            if (explicit.isPresent()) {
+                return explicit.get();
+            }
+        }
+        boolean exactActive = inheritedExact || hasExactFacet(schemaType.getMetadataMap());
+        boolean invertibleActive = inheritedInvertible || hasInvertibleFacet(schemaType.getMetadataMap());
 
         var schemaKw = schemaType.getTypeKeyword();
         if (schemaKw != null) {
-            var kw = typeDef.getTypeKeyword();
-            if (kw != null && !visited.add(kw.getText().trim())) {
-                return true;
+            String name = schemaKw.getText().trim();
+            if (StvnVocabulary.TYPE_FLOAT.equals(name)) {
+                return exactActive;
             }
-            var name = schemaKw.getText().trim();
-            if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
-                return false;
-            }
-            if (StvnVocabulary.TYPE_INT.equals(name) || StvnVocabulary.TYPE_STRING.equals(name)
-                    || StvnVocabulary.TYPE_BOOLEAN.equals(name) || StvnVocabulary.TYPE_FLOAT.equals(name)
-                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(name) || StvnVocabulary.TYPE_DATE_TIME.equals(name)
+            if (StvnVocabulary.TYPE_INT.equals(name)
+                    || StvnVocabulary.TYPE_STRING.equals(name)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(name)
+                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(name)
+                    || StvnVocabulary.TYPE_DATE_TIME.equals(name)
                     || StvnVocabulary.TYPE_ENUM.equals(name)) {
                 return true;
             }
-            var file = typeDef.getContainingFile();
+            var file = schemaType.getContainingFile();
             if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, name, new java.util.HashSet<>());
-                var aliasDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (aliasDef != null && aliasDef != typeDef) {
-                    return isUnderlyingIntrinsicallyComparable(aliasDef, visited);
+                var targetDef = resolveTargetTypeDefForKeyword(schemaKw, file, name);
+                if (targetDef != null) {
+                    var explicitTarget = resolveExplicitBooleanTraitOnDef(targetDef, StvnVocabulary.FACET_KW_EQUATABLE);
+                    if (explicitTarget.isPresent()) {
+                        return explicitTarget.get();
+                    }
+                    var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
+                    if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
+                        if (exactActive && targetIr instanceof StvnSchema.FloatSchema) {
+                            return true;
+                        }
+                        if (invertibleActive && targetIr instanceof StvnSchema.MapSchema mapIr && !mapIr.invertible()) {
+                            return mapIr.keySchema().traits().equatable() && mapIr.valueSchema().traits().equatable();
+                        }
+                        return targetIr.traits().equatable();
+                    }
+                    var targetDefKw = targetDef.getTypeKeyword();
+                    String cycleKey = targetDefKw != null ? targetDefKw.getText().trim() : name;
+                    if (!visited.add(cycleKey)) {
+                        return true;
+                    }
+                    var nextSchema = targetDef.getSchemaType();
+                    if (nextSchema == null) {
+                        return false;
+                    }
+                    boolean nextExact = exactActive || hasExactFacet(targetDef.getMetadataMap());
+                    boolean nextInv = invertibleActive || hasInvertibleFacet(targetDef.getMetadataMap());
+                    return isSchemaTypeEquatableInternal(nextSchema, nextExact, nextInv, visited, false);
                 }
             }
+            return true;
         }
-        return extractNonComparableConstituents(typeDef, visited).isEmpty();
+
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor == null) {
+            return false;
+        }
+        if (ctor.getAtomicType() != null) {
+            String atom = ctor.getAtomicType().getText().trim();
+            if (StvnVocabulary.TYPE_FLOAT.equals(atom)) {
+                return exactActive;
+            }
+            return true;
+        }
+        if (ctor.getProductType() != null) {
+            var slots = ctor.getProductType().getSchemaTypeList();
+            if (slots.isEmpty()) {
+                return false;
+            }
+            for (var slot : slots) {
+                if (!isSchemaTypeEquatable(slot, new HashSet<>(visited))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (ctor.getCollectionType() != null) {
+            var coll = ctor.getCollectionType();
+            var inners = coll.getSchemaTypeList();
+            String collText = coll.getText().trim();
+            if (collText.startsWith(StvnVocabulary.TYPE_MAP)) {
+                if (inners.size() != 2) {
+                    return false;
+                }
+                boolean keyEq = isSchemaTypeEquatable(inners.get(0), new HashSet<>(visited));
+                if (!keyEq) {
+                    return false;
+                }
+                return !invertibleActive || isSchemaTypeEquatable(inners.get(1), new HashSet<>(visited));
+            }
+            return inners.size() == 1 && isSchemaTypeEquatable(inners.get(0), new HashSet<>(visited));
+        }
+        if (ctor.getSumType() != null) {
+            var sum = ctor.getSumType();
+            if (sum.getEnumDef() != null) {
+                return !sum.getEnumDef().getValueKeywordList().isEmpty();
+            }
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            String sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && branches.size() != 1) {
+                return false;
+            }
+            if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() != 2) {
+                return false;
+            }
+            if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && branches.size() < 2) {
+                return false;
+            }
+            if (branches.isEmpty()) {
+                return false;
+            }
+            for (var b : branches) {
+                if (!isSchemaTypeEquatable(b, new HashSet<>(visited))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private static boolean isSchemaTypeComparableInternal(
+        SchemaType schemaType,
+        Set<String> visited,
+        boolean ignoreSelfExplicitOverride
+    ) {
+        if (!ignoreSelfExplicitOverride) {
+            var explicit = resolveExplicitBooleanTrait(schemaType.getMetadataMap(), StvnVocabulary.FACET_KW_COMPARABLE);
+            if (explicit.isPresent()) {
+                return explicit.get();
+            }
+        }
+        var schemaKw = schemaType.getTypeKeyword();
+        if (schemaKw != null) {
+            String name = schemaKw.getText().trim();
+            if (StvnVocabulary.TYPE_SET.equals(name) || StvnVocabulary.TYPE_MAP.equals(name)) {
+                return false;
+            }
+            if (StvnVocabulary.TYPE_INT.equals(name)
+                    || StvnVocabulary.TYPE_STRING.equals(name)
+                    || StvnVocabulary.TYPE_BOOLEAN.equals(name)
+                    || StvnVocabulary.TYPE_FLOAT.equals(name)
+                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(name)
+                    || StvnVocabulary.TYPE_DATE_TIME.equals(name)
+                    || StvnVocabulary.TYPE_ENUM.equals(name)) {
+                return true;
+            }
+            var file = schemaType.getContainingFile();
+            if (file != null) {
+                var targetDef = resolveTargetTypeDefForKeyword(schemaKw, file, name);
+                if (targetDef != null) {
+                    var explicitTarget = resolveExplicitBooleanTraitOnDef(targetDef, StvnVocabulary.FACET_KW_COMPARABLE);
+                    if (explicitTarget.isPresent()) {
+                        return explicitTarget.get();
+                    }
+                    var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
+                    if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
+                        return targetIr.traits().comparable();
+                    }
+                    var targetDefKw = targetDef.getTypeKeyword();
+                    String cycleKey = targetDefKw != null ? targetDefKw.getText().trim() : name;
+                    if (!visited.add(cycleKey)) {
+                        return true;
+                    }
+                    var nextSchema = targetDef.getSchemaType();
+                    return nextSchema != null && isSchemaTypeComparableInternal(nextSchema, visited, false);
+                }
+            }
+            return true;
+        }
+
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor == null) {
+            return false;
+        }
+        if (ctor.getAtomicType() != null) {
+            return true;
+        }
+        if (ctor.getProductType() != null) {
+            var slots = ctor.getProductType().getSchemaTypeList();
+            if (slots.isEmpty()) {
+                return false;
+            }
+            for (var slot : slots) {
+                if (!isSchemaTypeComparable(slot, new HashSet<>(visited))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (ctor.getCollectionType() != null) {
+            var coll = ctor.getCollectionType();
+            String collText = coll.getText().trim();
+            if (collText.startsWith(StvnVocabulary.TYPE_SET) || collText.startsWith(StvnVocabulary.TYPE_MAP)) {
+                return false;
+            }
+            var inners = coll.getSchemaTypeList();
+            return inners.size() == 1 && isSchemaTypeComparable(inners.get(0), new HashSet<>(visited));
+        }
+        if (ctor.getSumType() != null) {
+            var sum = ctor.getSumType();
+            if (sum.getEnumDef() != null) {
+                return !sum.getEnumDef().getValueKeywordList().isEmpty();
+            }
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            String sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && branches.size() != 1) {
+                return false;
+            }
+            if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() != 2) {
+                return false;
+            }
+            if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && branches.size() < 2) {
+                return false;
+            }
+            if (branches.isEmpty()) {
+                return false;
+            }
+            for (var b : branches) {
+                if (!isSchemaTypeComparable(b, new HashSet<>(visited))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private static List<SchemaType> collectConstructorConstituents(SchemaConstructor ctor) {
+        if (ctor.getProductType() != null) {
+            return ctor.getProductType().getSchemaTypeList();
+        }
+        if (ctor.getCollectionType() != null) {
+            return ctor.getCollectionType().getSchemaTypeList();
+        }
+        if (ctor.getSumType() != null) {
+            return PsiTreeUtil.getChildrenOfTypeAsList(ctor.getSumType(), SchemaType.class);
+        }
+        return List.of();
+    }
+
+    private static String formatConstituentLabel(SchemaType constituent) {
+        var kw = constituent.getTypeKeyword();
+        return (constituent.getMetadataMap() != null)
+            ? constituent.getText().trim()
+            : (kw != null ? kw.getText().trim() : constituent.getText().trim());
+    }
+
+    private static @Nullable TypeDefinition resolveTargetTypeDefForKeyword(
+        @Nullable TypeKeyword schemaKw,
+        PsiFile file,
+        String typeName
+    ) {
+        if (schemaKw != null) {
+            var refResolved = new StvnTypeReference(schemaKw).resolve();
+            var refTargetDef = StvnPsiUtils.resolveTargetTypeDefinition(refResolved);
+            if (refTargetDef != null) {
+                return refTargetDef;
+            }
+        }
+        var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+        var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        if (targetDef != null) {
+            return targetDef;
+        }
+        if (!file.getProject().isDisposed()) {
+            return StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeName);
+        }
+        return null;
+    }
+
+    private static boolean hasInvertibleInLineage(TypeDefinition rootDef, SchemaType schemaType) {
+        if (hasInvertibleFacet(rootDef.getMetadataMap()) || hasInvertibleFacet(schemaType.getMetadataMap())) {
+            return true;
+        }
+        Set<String> seen = new HashSet<>();
+        SchemaType curr = schemaType;
+        while (curr != null && curr.getTypeKeyword() != null) {
+            var currKw = curr.getTypeKeyword();
+            String alias = currKw.getText().trim();
+            if (!seen.add(alias) || curr.getContainingFile() == null) {
+                break;
+            }
+            TypeDefinition nextDef = resolveTargetTypeDefForKeyword(currKw, curr.getContainingFile(), alias);
+            if (nextDef == null) {
+                break;
+            }
+            if (hasInvertibleFacet(nextDef.getMetadataMap())
+                    || (nextDef.getSchemaType() != null && hasInvertibleFacet(nextDef.getSchemaType().getMetadataMap()))) {
+                return true;
+            }
+            curr = nextDef.getSchemaType();
+        }
+        return false;
+    }
+
+    private static Optional<Boolean> resolveExplicitBooleanTraitOnDef(TypeDefinition def, String facetKw) {
+        var onSchema = def.getSchemaType() != null
+            ? resolveExplicitBooleanTrait(def.getSchemaType().getMetadataMap(), facetKw)
+            : Optional.<Boolean>empty();
+        if (onSchema.isPresent()) {
+            return onSchema;
+        }
+        return resolveExplicitBooleanTrait(def.getMetadataMap(), facetKw);
+    }
+
+    private static Optional<Boolean> resolveExplicitBooleanTrait(@Nullable MetadataMap map, String facetKw) {
+        if (map == null) {
+            return Optional.empty();
+        }
+        for (var entry : map.getMetadataEntryList()) {
+            String txt = entry.getText().trim();
+            String[] parts = txt.split("\\s+", 2);
+            if (parts.length >= 2 && facetKw.equals(parts[0])) {
+                return StvnPsiLiteralEvaluator.resolveBooleanOrConst(entry, parts[1].trim());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean hasInvertibleFacet(@Nullable MetadataMap map) {
+        if (map == null) {
+            return false;
+        }
+        for (var entry : map.getMetadataEntryList()) {
+            if (entry.getText().trim().startsWith(StvnVocabulary.FACET_KW_INVERTIBLE)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasExactFacet(@Nullable MetadataMap map) {

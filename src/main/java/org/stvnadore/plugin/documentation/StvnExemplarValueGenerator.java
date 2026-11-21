@@ -14,6 +14,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -32,6 +33,7 @@ import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.quickfix.StvnStringConstraintUtil;
+import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.SumType;
@@ -51,6 +53,8 @@ public final class StvnExemplarValueGenerator {
     /** Deterministic RFC 4122 v4 lowercase UUID exemplar for documentation and fallback synthesis. */
     public static final String CANONICAL_UUID_LOWER_EXEMPLAR = "550e8400-e29b-41d4-a716-446655440000";
 
+    private static final int MAX_MATERIALIZED_COLLECTION_EXEMPLAR_SIZE = 16;
+
     private StvnExemplarValueGenerator() {}
 
     /**
@@ -58,13 +62,13 @@ public final class StvnExemplarValueGenerator {
      *
      * @param schemaType the PSI schema type node, if available
      * @param irSchema   the lowered compiler IR schema, if available
-     * @return a valid STVN literal string, or {@code null} if no schema information is available
+     * @return a valid STVN literal string, or {@code null} if degraded, uninhabited, or unavailable
      */
     public static @Nullable String generateExemplar(
         @Nullable SchemaType schemaType,
         @Nullable StvnSchema irSchema
     ) {
-        return generateExemplar(schemaType, irSchema, Clock.systemDefaultZone(), 0, new HashSet<>(), new HashSet<>());
+        return generateExemplar(schemaType, irSchema, Clock.systemDefaultZone(), 0, new HashSet<>(), new HashSet<>(), false);
     }
 
     /**
@@ -73,14 +77,29 @@ public final class StvnExemplarValueGenerator {
      * @param schemaType the PSI schema type node, if available
      * @param irSchema   the lowered compiler IR schema, if available
      * @param clock      the clock used for {@code :DateTime} and {@code :TimeEpoch} generation
-     * @return a valid STVN literal string, or {@code null} if no schema information is available
+     * @return a valid STVN literal string, or {@code null} if degraded, uninhabited, or unavailable
      */
     public static @Nullable String generateExemplar(
         @Nullable SchemaType schemaType,
         @Nullable StvnSchema irSchema,
         Clock clock
     ) {
-        return generateExemplar(schemaType, irSchema, clock, 0, new HashSet<>(), new HashSet<>());
+        return generateExemplar(schemaType, irSchema, clock, 0, new HashSet<>(), new HashSet<>(), false);
+    }
+
+    /**
+     * Generates an STVN exemplar formatted for hover documentation cards, rendering a clean
+     * bounded preview when a valid inhabited collection declares {@code #minSize > 16}.
+     *
+     * @param schemaType the PSI schema type node, if available
+     * @param irSchema   the lowered compiler IR schema, if available
+     * @return exemplar string or bounded preview, or {@code null} when degraded or uninhabited
+     */
+    public static @Nullable String generateHoverExemplar(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema irSchema
+    ) {
+        return generateExemplar(schemaType, irSchema, Clock.systemDefaultZone(), 0, new HashSet<>(), new HashSet<>(), true);
     }
 
     private static boolean isRecursiveBackEdgeCode(@Nullable String code) {
@@ -89,8 +108,41 @@ public final class StvnExemplarValueGenerator {
             || "RECURSIVE_BACK_EDGE".equals(code);
     }
 
-    private static boolean isUngroundedPoisonedSchema(@Nullable StvnSchema irSchema, @Nullable PsiElement context) {
-        if (!(irSchema instanceof StvnSchema.PoisonedSchema poisoned) || !poisoned.isUngrounded()) {
+    private static boolean isDegradedOrPoisonedForExemplar(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema irSchema
+    ) {
+        if (irSchema instanceof StvnSchema.PoisonedSchema poisoned) {
+            if (isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode()) && poisoned.aliasName().isPresent()) {
+                if (schemaType != null && schemaType.getContainingFile() != null) {
+                    StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaByAlias(
+                        schemaType.getContainingFile(),
+                        poisoned.aliasName().get()
+                    );
+                    if (catalogIr != null && !(catalogIr instanceof StvnSchema.PoisonedSchema)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        if (schemaType != null && schemaType.getContainingFile() != null) {
+            var file = schemaType.getContainingFile();
+            if (StvnTypeResolver.isDegradedOrUngroundedSchema(file, schemaType)) {
+                return true;
+            }
+            if (schemaType.getParent() instanceof TypeDefinition parentTd
+                    && parentTd.getSchemaType() == schemaType
+                    && parentTd.getTypeKeyword() != null
+                    && StvnTypeResolver.isDegradedNominalAlias(file, parentTd.getTypeKeyword().getText().trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPoisonedIrSchema(@Nullable StvnSchema irSchema, @Nullable PsiElement context) {
+        if (!(irSchema instanceof StvnSchema.PoisonedSchema poisoned)) {
             return false;
         }
         if (isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode()) && poisoned.aliasName().isPresent()) {
@@ -113,12 +165,13 @@ public final class StvnExemplarValueGenerator {
         Clock clock,
         int depth,
         Set<String> visitedIrAliases,
-        Set<PsiElement> visitedPsiElements
+        Set<PsiElement> visitedPsiElements,
+        boolean allowBoundedPreview
     ) {
         if (depth > 16 || (schemaType == null && irSchema == null)) {
             return null;
         }
-        if (isUngroundedPoisonedSchema(irSchema, schemaType)) {
+        if (isDegradedOrPoisonedForExemplar(schemaType, irSchema)) {
             return null;
         }
 
@@ -147,7 +200,7 @@ public final class StvnExemplarValueGenerator {
                 }
                 if (schemaType.getContainingFile() != null) {
                     StvnSchema lhsIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), lhsAlias);
-                    if (isUngroundedPoisonedSchema(lhsIr, schemaType)) {
+                    if (isPoisonedIrSchema(lhsIr, schemaType)) {
                         return null;
                     }
                 }
@@ -161,7 +214,7 @@ public final class StvnExemplarValueGenerator {
                 }
                 if (schemaType.getContainingFile() != null) {
                     StvnSchema kwIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), kwAlias);
-                    if (isUngroundedPoisonedSchema(kwIr, schemaType)) {
+                    if (isPoisonedIrSchema(kwIr, schemaType)) {
                         return null;
                     }
                 }
@@ -180,11 +233,8 @@ public final class StvnExemplarValueGenerator {
                 poisoned.aliasName().get()
             );
         }
-        while (effectiveIr instanceof StvnSchema.PoisonedSchema poisoned) {
-            if (poisoned.bestEffortFallback().isEmpty()) {
-                return null;
-            }
-            effectiveIr = poisoned.bestEffortFallback().get();
+        if (effectiveIr instanceof StvnSchema.PoisonedSchema) {
+            return null;
         }
 
         Map<String, String> psiMeta = schemaType != null ? extractLineageMetadata(schemaType) : Map.of();
@@ -416,13 +466,18 @@ public final class StvnExemplarValueGenerator {
                 }
                 if (ctor.getProductType() != null) {
                     List<SchemaType> slots = ctor.getProductType().getSchemaTypeList();
+                    if (slots.isEmpty()) {
+                        return null;
+                    }
                     List<String> slotExemplars = new ArrayList<>(slots.size());
                     for (int i = 0; i < slots.size(); i++) {
                         StvnSchema slotIr = (effectiveIr instanceof StvnSchema.TupleSchema ts
                                 && i < ts.fieldSchemas().size())
                             ? ts.fieldSchemas().get(i)
                             : null;
-                        String sub = generateExemplar(slots.get(i), slotIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                        String sub = generateExemplar(
+                            slots.get(i), slotIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview
+                        );
                         if (sub == null) {
                             return null;
                         }
@@ -433,38 +488,82 @@ public final class StvnExemplarValueGenerator {
                 if (ctor.getCollectionType() != null) {
                     var coll = ctor.getCollectionType();
                     String kind = coll.getFirstChild() != null ? coll.getFirstChild().getText().trim() : "";
-                    long minSize = parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
                     var innerTypes = coll.getSchemaTypeList();
                     if (StvnVocabulary.TYPE_MAP.equals(kind)) {
-                        if (minSize <= 0) {
-                            return "{}";
-                        }
-                        if (innerTypes.size() < 2) {
+                        if (innerTypes.size() != 2) {
                             return null;
                         }
                         StvnSchema keyIr = effectiveIr instanceof StvnSchema.MapSchema ms ? ms.keySchema() : null;
                         StvnSchema valIr = effectiveIr instanceof StvnSchema.MapSchema ms ? ms.valueSchema() : null;
-                        String k = generateExemplar(innerTypes.get(0), keyIr, clock, depth + 1, nextIrAliases, nextPsiElements);
-                        String v = generateExemplar(innerTypes.get(1), valIr, clock, depth + 1, nextIrAliases, nextPsiElements);
-                        if (k == null || v == null) {
+                        if (isDegradedOrPoisonedForExemplar(innerTypes.get(0), keyIr)
+                                || isDegradedOrPoisonedForExemplar(innerTypes.get(1), valIr)) {
                             return null;
                         }
-                        return "{ [" + k + " " + v + "] }";
+                        boolean invertible = (effectiveIr instanceof StvnSchema.MapSchema ms && ms.invertible())
+                            || psiMeta.containsKey(StvnVocabulary.FACET_KW_INVERTIBLE);
+                        if (effectiveIr == null) {
+                            if (!StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(innerTypes.get(0), new HashSet<>())
+                                    || (invertible && !StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(innerTypes.get(1), new HashSet<>()))) {
+                                return null;
+                            }
+                        }
+                        long minSize = effectiveIr instanceof StvnSchema.MapSchema ms && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)
+                            ? ms.minSize().longValue()
+                            : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
+                        long maxSize = effectiveIr instanceof StvnSchema.MapSchema ms && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)
+                            ? ms.maxSize().longValue()
+                            : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE), StvnVocabulary.DEFAULT_MAX_SIZE.longValue());
+                        return synthesizeMapCollectionExemplar(
+                            innerTypes.get(0),
+                            keyIr,
+                            innerTypes.get(1),
+                            valIr,
+                            minSize,
+                            maxSize,
+                            invertible,
+                            clock,
+                            depth,
+                            nextIrAliases,
+                            nextPsiElements,
+                            allowBoundedPreview
+                        );
                     }
-                    if (minSize <= 0) {
-                        return "[]";
-                    }
-                    if (innerTypes.isEmpty()) {
+                    if (innerTypes.size() != 1) {
                         return null;
                     }
+                    boolean isSet = StvnVocabulary.TYPE_SET.equals(kind);
                     StvnSchema elemIr = effectiveIr instanceof StvnSchema.SeqSchema ss
                         ? ss.elementSchema()
                         : effectiveIr instanceof StvnSchema.SetSchema sets ? sets.elementSchema() : null;
-                    String elem = generateExemplar(innerTypes.get(0), elemIr, clock, depth + 1, nextIrAliases, nextPsiElements);
-                    if (elem == null) {
+                    if (isDegradedOrPoisonedForExemplar(innerTypes.get(0), elemIr)) {
                         return null;
                     }
-                    return "[" + elem + "]";
+                    if (isSet && effectiveIr == null
+                            && !StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(innerTypes.get(0), new HashSet<>())) {
+                        return null;
+                    }
+                    long minSize = (effectiveIr instanceof StvnSchema.SeqSchema ss && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE))
+                        ? ss.minSize().longValue()
+                        : (effectiveIr instanceof StvnSchema.SetSchema sets && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE))
+                            ? sets.minSize().longValue()
+                            : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
+                    long maxSize = (effectiveIr instanceof StvnSchema.SeqSchema ss && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE))
+                        ? ss.maxSize().longValue()
+                        : (effectiveIr instanceof StvnSchema.SetSchema sets && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE))
+                            ? sets.maxSize().longValue()
+                            : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE), StvnVocabulary.DEFAULT_MAX_SIZE.longValue());
+                    return synthesizeSeqOrSetCollectionExemplar(
+                        innerTypes.get(0),
+                        elemIr,
+                        isSet,
+                        minSize,
+                        maxSize,
+                        clock,
+                        depth,
+                        nextIrAliases,
+                        nextPsiElements,
+                        allowBoundedPreview
+                    );
                 }
                 if (ctor.getSumType() != null) {
                     SumType sum = ctor.getSumType();
@@ -474,31 +573,52 @@ public final class StvnExemplarValueGenerator {
                     }
                     List<SchemaType> branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
                     if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
-                        if (branches.isEmpty()) {
-                            return StvnVocabulary.VAL_NONE;
+                        if (branches.size() != 1) {
+                            return null;
                         }
                         StvnSchema innerIr = effectiveIr instanceof StvnSchema.OptionSchema os ? os.valueSchema() : null;
-                        String inner = generateExemplar(branches.get(0), innerIr, clock, depth + 1, nextIrAliases, nextPsiElements);
+                        if (isDegradedOrPoisonedForExemplar(branches.get(0), innerIr)) {
+                            return null;
+                        }
+                        String inner = generateExemplar(
+                            branches.get(0), innerIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview
+                        );
                         return inner != null ? StvnVocabulary.VAL_SOME + " " + inner : StvnVocabulary.VAL_NONE;
                     }
                     if (sumText.startsWith(StvnVocabulary.TYPE_EITHER)) {
-                        if (branches.size() >= 2) {
-                            StvnSchema rightIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.rightSchema() : null;
-                            String right = generateExemplar(branches.get(1), rightIr, clock, depth + 1, nextIrAliases, nextPsiElements);
-                            if (right != null) {
-                                return StvnVocabulary.VAL_RIGHT + " " + right;
-                            }
+                        if (branches.size() != 2) {
+                            return null;
                         }
-                        if (!branches.isEmpty()) {
-                            StvnSchema leftIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.leftSchema() : null;
-                            String left = generateExemplar(branches.get(0), leftIr, clock, depth + 1, nextIrAliases, nextPsiElements);
-                            if (left != null) {
-                                return StvnVocabulary.VAL_LEFT + " " + left;
-                            }
+                        StvnSchema leftIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.leftSchema() : null;
+                        StvnSchema rightIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.rightSchema() : null;
+                        if (isDegradedOrPoisonedForExemplar(branches.get(0), leftIr)
+                                || isDegradedOrPoisonedForExemplar(branches.get(1), rightIr)) {
+                            return null;
                         }
-                        return null;
+                        String right = generateExemplar(
+                            branches.get(1), rightIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview
+                        );
+                        if (right != null) {
+                            return StvnVocabulary.VAL_RIGHT + " " + right;
+                        }
+                        String left = generateExemplar(
+                            branches.get(0), leftIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview
+                        );
+                        return left != null ? StvnVocabulary.VAL_LEFT + " " + left : null;
                     }
-                    if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && !branches.isEmpty()) {
+                    if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                        if (branches.size() < 2) {
+                            return null;
+                        }
+                        for (int i = 0; i < branches.size(); i++) {
+                            StvnSchema branchIr = (effectiveIr instanceof StvnSchema.UnionSchema us
+                                    && i < us.branchSchemas().size())
+                                ? us.branchSchemas().get(i)
+                                : null;
+                            if (isDegradedOrPoisonedForExemplar(branches.get(i), branchIr)) {
+                                return null;
+                            }
+                        }
                         for (int i = 0; i < branches.size(); i++) {
                             StvnSchema branchIr = (effectiveIr instanceof StvnSchema.UnionSchema us
                                     && i < us.branchSchemas().size())
@@ -510,7 +630,8 @@ public final class StvnExemplarValueGenerator {
                                 clock,
                                 depth + 1,
                                 nextIrAliases,
-                                nextPsiElements
+                                nextPsiElements,
+                                allowBoundedPreview
                             );
                             if (branchVal != null) {
                                 return StvnVocabulary.SIGIL_VALUE + (i + 1) + " " + branchVal;
@@ -524,9 +645,12 @@ public final class StvnExemplarValueGenerator {
 
         // 3. Pure-IR composite fallback when PSI SchemaType is null
         if (effectiveIr instanceof StvnSchema.TupleSchema ts) {
+            if (ts.fieldSchemas().isEmpty()) {
+                return null;
+            }
             List<String> slotExemplars = new ArrayList<>(ts.fieldSchemas().size());
             for (StvnSchema elem : ts.fieldSchemas()) {
-                String sub = generateExemplar(null, elem, clock, depth + 1, nextIrAliases, nextPsiElements);
+                String sub = generateExemplar(null, elem, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
                 if (sub == null) {
                     return null;
                 }
@@ -535,40 +659,74 @@ public final class StvnExemplarValueGenerator {
             return "(" + String.join(" ", slotExemplars) + ")";
         }
         if (effectiveIr instanceof StvnSchema.SeqSchema ss) {
-            if (ss.minSize().compareTo(BigInteger.ZERO) <= 0) {
-                return "[]";
-            }
-            String elem = generateExemplar(null, ss.elementSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
-            return elem != null ? "[" + elem + "]" : null;
+            return synthesizeSeqOrSetCollectionExemplar(
+                null,
+                ss.elementSchema(),
+                false,
+                ss.minSize().longValue(),
+                ss.maxSize().longValue(),
+                clock,
+                depth,
+                nextIrAliases,
+                nextPsiElements,
+                allowBoundedPreview
+            );
         }
         if (effectiveIr instanceof StvnSchema.SetSchema sets) {
-            if (sets.minSize().compareTo(BigInteger.ZERO) <= 0) {
-                return "[]";
-            }
-            String elem = generateExemplar(null, sets.elementSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
-            return elem != null ? "[" + elem + "]" : null;
+            return synthesizeSeqOrSetCollectionExemplar(
+                null,
+                sets.elementSchema(),
+                true,
+                sets.minSize().longValue(),
+                sets.maxSize().longValue(),
+                clock,
+                depth,
+                nextIrAliases,
+                nextPsiElements,
+                allowBoundedPreview
+            );
         }
         if (effectiveIr instanceof StvnSchema.MapSchema ms) {
-            if (ms.minSize().compareTo(BigInteger.ZERO) <= 0) {
-                return "{}";
-            }
-            String k = generateExemplar(null, ms.keySchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
-            String v = generateExemplar(null, ms.valueSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
-            return (k != null && v != null) ? "{ [" + k + " " + v + "] }" : null;
+            return synthesizeMapCollectionExemplar(
+                null,
+                ms.keySchema(),
+                null,
+                ms.valueSchema(),
+                ms.minSize().longValue(),
+                ms.maxSize().longValue(),
+                ms.invertible(),
+                clock,
+                depth,
+                nextIrAliases,
+                nextPsiElements,
+                allowBoundedPreview
+            );
         }
         if (effectiveIr instanceof StvnSchema.OptionSchema os) {
-            String inner = generateExemplar(null, os.valueSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            if (isDegradedOrPoisonedForExemplar(null, os.valueSchema())) {
+                return null;
+            }
+            String inner = generateExemplar(null, os.valueSchema(), clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
             return inner != null ? StvnVocabulary.VAL_SOME + " " + inner : StvnVocabulary.VAL_NONE;
         }
         if (effectiveIr instanceof StvnSchema.EitherSchema es) {
-            String right = generateExemplar(null, es.rightSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            if (isDegradedOrPoisonedForExemplar(null, es.leftSchema())
+                    || isDegradedOrPoisonedForExemplar(null, es.rightSchema())) {
+                return null;
+            }
+            String right = generateExemplar(null, es.rightSchema(), clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
             if (right != null) {
                 return StvnVocabulary.VAL_RIGHT + " " + right;
             }
-            String left = generateExemplar(null, es.leftSchema(), clock, depth + 1, nextIrAliases, nextPsiElements);
+            String left = generateExemplar(null, es.leftSchema(), clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
             return left != null ? StvnVocabulary.VAL_LEFT + " " + left : null;
         }
-        if (effectiveIr instanceof StvnSchema.UnionSchema us && !us.branchSchemas().isEmpty()) {
+        if (effectiveIr instanceof StvnSchema.UnionSchema us && us.branchSchemas().size() >= 2) {
+            for (StvnSchema b : us.branchSchemas()) {
+                if (isDegradedOrPoisonedForExemplar(null, b)) {
+                    return null;
+                }
+            }
             for (int i = 0; i < us.branchSchemas().size(); i++) {
                 String bVal = generateExemplar(
                     null,
@@ -576,7 +734,8 @@ public final class StvnExemplarValueGenerator {
                     clock,
                     depth + 1,
                     nextIrAliases,
-                    nextPsiElements
+                    nextPsiElements,
+                    allowBoundedPreview
                 );
                 if (bVal != null) {
                     return StvnVocabulary.SIGIL_VALUE + (i + 1) + " " + bVal;
@@ -586,6 +745,648 @@ public final class StvnExemplarValueGenerator {
         }
 
         return null;
+    }
+
+    private static @Nullable String synthesizeSeqOrSetCollectionExemplar(
+        @Nullable SchemaType elemPsi,
+        @Nullable StvnSchema elemIr,
+        boolean isSet,
+        long minSize,
+        long maxSize,
+        Clock clock,
+        int depth,
+        Set<String> nextIrAliases,
+        Set<PsiElement> nextPsiElements,
+        boolean allowBoundedPreview
+    ) {
+        if (minSize < 0 || maxSize < 1 || minSize > maxSize) {
+            return null;
+        }
+        if (minSize == 0) {
+            return "[]";
+        }
+        if (minSize == 1) {
+            String elem = generateExemplar(elemPsi, elemIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
+            return elem != null ? "[" + elem + "]" : null;
+        }
+        if (!isSet) {
+            String elem = generateExemplar(elemPsi, elemIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
+            if (elem == null) {
+                return null;
+            }
+            if (minSize <= MAX_MATERIALIZED_COLLECTION_EXEMPLAR_SIZE) {
+                return "[" + String.join(" ", Collections.nCopies((int) minSize, elem)) + "]";
+            }
+            if (!allowBoundedPreview) {
+                return null;
+            }
+            return "[" + elem + " " + elem + " " + elem
+                + " ... (" + StvnVocabulary.FACET_KW_MIN_SIZE + " " + minSize + ")]";
+        }
+
+        // :Set with minSize > 1 requires minSize distinct inhabitants
+        Long maxDomainCard = estimateMaxDistinctCardinality(elemPsi, elemIr);
+        if (maxDomainCard != null && maxDomainCard < minSize) {
+            return null;
+        }
+        if (minSize <= MAX_MATERIALIZED_COLLECTION_EXEMPLAR_SIZE) {
+            List<String> distinct = generateDistinctExemplars(
+                elemPsi, elemIr, (int) minSize, clock, depth + 1, nextIrAliases, nextPsiElements
+            );
+            if (distinct.size() < minSize) {
+                return null;
+            }
+            return "[" + String.join(" ", distinct) + "]";
+        }
+        if (!allowBoundedPreview) {
+            return null;
+        }
+        List<String> previewItems = generateDistinctExemplars(
+            elemPsi, elemIr, 3, clock, depth + 1, nextIrAliases, nextPsiElements
+        );
+        if (previewItems.size() < 3) {
+            return null;
+        }
+        return "[" + previewItems.get(0) + " " + previewItems.get(1) + " " + previewItems.get(2)
+            + " ... (" + StvnVocabulary.FACET_KW_MIN_SIZE + " " + minSize + ")]";
+    }
+
+    private static @Nullable String synthesizeMapCollectionExemplar(
+        @Nullable SchemaType keyPsi,
+        @Nullable StvnSchema keyIr,
+        @Nullable SchemaType valPsi,
+        @Nullable StvnSchema valIr,
+        long minSize,
+        long maxSize,
+        boolean invertible,
+        Clock clock,
+        int depth,
+        Set<String> nextIrAliases,
+        Set<PsiElement> nextPsiElements,
+        boolean allowBoundedPreview
+    ) {
+        if (minSize < 0 || maxSize < 1 || minSize > maxSize) {
+            return null;
+        }
+        if (minSize == 0) {
+            return "{}";
+        }
+        if (minSize == 1) {
+            String k = generateExemplar(keyPsi, keyIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
+            String v = generateExemplar(valPsi, valIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
+            return (k != null && v != null) ? "{ [" + k + " " + v + "] }" : null;
+        }
+        Long maxKeyCard = estimateMaxDistinctCardinality(keyPsi, keyIr);
+        if (maxKeyCard != null && maxKeyCard < minSize) {
+            return null;
+        }
+        if (invertible) {
+            Long maxValCard = estimateMaxDistinctCardinality(valPsi, valIr);
+            if (maxValCard != null && maxValCard < minSize) {
+                return null;
+            }
+        }
+        if (minSize <= MAX_MATERIALIZED_COLLECTION_EXEMPLAR_SIZE) {
+            int count = (int) minSize;
+            List<String> keys = generateDistinctExemplars(
+                keyPsi, keyIr, count, clock, depth + 1, nextIrAliases, nextPsiElements
+            );
+            if (keys.size() < count) {
+                return null;
+            }
+            List<String> vals;
+            if (invertible) {
+                vals = generateDistinctExemplars(
+                    valPsi, valIr, count, clock, depth + 1, nextIrAliases, nextPsiElements
+                );
+                if (vals.size() < count) {
+                    return null;
+                }
+            } else {
+                String v0 = generateExemplar(valPsi, valIr, clock, depth + 1, nextIrAliases, nextPsiElements, allowBoundedPreview);
+                if (v0 == null) {
+                    return null;
+                }
+                vals = Collections.nCopies(count, v0);
+            }
+            List<String> pairs = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                pairs.add("[" + keys.get(i) + " " + vals.get(i) + "]");
+            }
+            return "{ " + String.join(" ", pairs) + " }";
+        }
+        if (!allowBoundedPreview) {
+            return null;
+        }
+        List<String> keys = generateDistinctExemplars(
+            keyPsi, keyIr, 3, clock, depth + 1, nextIrAliases, nextPsiElements
+        );
+        if (keys.size() < 3) {
+            return null;
+        }
+        List<String> vals;
+        if (invertible) {
+            vals = generateDistinctExemplars(
+                valPsi, valIr, 3, clock, depth + 1, nextIrAliases, nextPsiElements
+            );
+            if (vals.size() < 3) {
+                return null;
+            }
+        } else {
+            String v0 = generateExemplar(valPsi, valIr, clock, depth + 1, nextIrAliases, nextPsiElements, true);
+            if (v0 == null) {
+                return null;
+            }
+            vals = Collections.nCopies(3, v0);
+        }
+        return "{ [" + keys.get(0) + " " + vals.get(0) + "] [" + keys.get(1) + " " + vals.get(1)
+            + "] [" + keys.get(2) + " " + vals.get(2) + "] ... (" + StvnVocabulary.FACET_KW_MIN_SIZE + " " + minSize + ") }";
+    }
+
+    private static @Nullable Long estimateMaxDistinctCardinality(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema irSchema
+    ) {
+        if (irSchema instanceof StvnSchema.BooleanSchema) {
+            return 2L;
+        }
+        if (irSchema instanceof StvnSchema.EnumSchema es) {
+            return (long) es.rootVariants().size();
+        }
+        if (irSchema instanceof StvnSchema.EnumSubsetSchema ess) {
+            return (long) ess.activeVariants().size();
+        }
+        if (irSchema instanceof StvnSchema.IntSchema is) {
+            BigInteger[] bounds = computeEffectiveIntegerBounds(
+                is.unsigned(),
+                is.bitWidth().intValue(),
+                is.explicitMinIncl().orElse(null),
+                is.explicitMaxExcl().orElse(null)
+            );
+            BigInteger span = bounds[1].subtract(bounds[0]).add(BigInteger.ONE);
+            if (span.signum() <= 0) {
+                return 0L;
+            }
+            return span.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) >= 0 ? null : span.longValue();
+        }
+        if (schemaType != null) {
+            SchemaType terminal = resolveTerminalSchemaType(schemaType);
+            Map<String, String> meta = extractLineageMetadata(schemaType);
+            var ctor = terminal.getSchemaConstructor();
+            if (ctor != null) {
+                if (ctor.getAtomicType() != null) {
+                    String atom = ctor.getAtomicType().getText().trim();
+                    if (StvnVocabulary.TYPE_BOOLEAN.equals(atom)) {
+                        return 2L;
+                    }
+                    if (StvnVocabulary.TYPE_INT.equals(atom)) {
+                        boolean unsigned = meta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
+                        int bits = parseIntOrDefault(
+                            schemaType, meta.get(StvnVocabulary.FACET_KW_SIZE), StvnVocabulary.DEFAULT_INT_BIT_WIDTH.intValue()
+                        );
+                        BigInteger[] bounds = computeEffectiveIntegerBounds(
+                            unsigned,
+                            bits,
+                            parseBigIntOrNull(schemaType, meta.get(StvnVocabulary.FACET_KW_MIN_INCL)),
+                            parseBigIntOrNull(schemaType, meta.get(StvnVocabulary.FACET_KW_MAX_EXCL))
+                        );
+                        BigInteger span = bounds[1].subtract(bounds[0]).add(BigInteger.ONE);
+                        if (span.signum() <= 0) {
+                            return 0L;
+                        }
+                        return span.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) >= 0 ? null : span.longValue();
+                    }
+                }
+                if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+                    Set<String> active = new LinkedHashSet<>();
+                    for (ValueKeyword kw : ctor.getSumType().getEnumDef().getValueKeywordList()) {
+                        String t = kw.getText().trim();
+                        if (!t.isEmpty()) {
+                            active.add(ensureHashPrefix(t));
+                        }
+                    }
+                    applyEnumFiltersFromMeta(active, meta);
+                    return (long) active.size();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<String> generateDistinctExemplars(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema irSchema,
+        int count,
+        Clock clock,
+        int depth,
+        Set<String> visitedIrAliases,
+        Set<PsiElement> visitedPsiElements
+    ) {
+        if (count <= 0 || depth > 16 || isDegradedOrPoisonedForExemplar(schemaType, irSchema)) {
+            return List.of();
+        }
+        String first = generateExemplar(schemaType, irSchema, clock, depth, visitedIrAliases, visitedPsiElements, false);
+        if (first == null) {
+            return List.of();
+        }
+        if (count == 1) {
+            return List.of(first);
+        }
+
+        StvnSchema effectiveIr = irSchema;
+        if (effectiveIr instanceof StvnSchema.PoisonedSchema poisoned
+                && isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode())
+                && poisoned.aliasName().isPresent()
+                && schemaType != null
+                && schemaType.getContainingFile() != null) {
+            effectiveIr = StvnTypeResolver.resolveIrSchemaByAlias(
+                schemaType.getContainingFile(),
+                poisoned.aliasName().get()
+            );
+        }
+
+        Map<String, String> psiMeta = schemaType != null ? extractLineageMetadata(schemaType) : Map.of();
+        SchemaType terminalPsi = schemaType != null ? resolveTerminalSchemaType(schemaType) : null;
+        Set<String> results = new LinkedHashSet<>();
+
+        // 1. Boolean
+        if (effectiveIr instanceof StvnSchema.BooleanSchema
+                || (terminalPsi != null
+                    && terminalPsi.getSchemaConstructor() != null
+                    && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                    && StvnVocabulary.TYPE_BOOLEAN.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()))) {
+            results.add(StvnVocabulary.VAL_TRUE);
+            if (count >= 2) {
+                results.add(StvnVocabulary.VAL_FALSE);
+            }
+            return new ArrayList<>(results);
+        }
+
+        // 2. Enum / EnumSubset
+        if (effectiveIr instanceof StvnSchema.EnumSubsetSchema subsetIr) {
+            Set<String> active = new LinkedHashSet<>();
+            for (String v : subsetIr.activeVariants()) {
+                active.add(ensureHashPrefix(v));
+            }
+            applyEnumFiltersFromMeta(active, psiMeta);
+            for (String v : active) {
+                results.add(v);
+                if (results.size() >= count) {
+                    break;
+                }
+            }
+            return new ArrayList<>(results);
+        }
+        if (effectiveIr instanceof StvnSchema.EnumSchema enumIr) {
+            Set<String> active = new LinkedHashSet<>();
+            for (String v : enumIr.rootVariants()) {
+                active.add(ensureHashPrefix(v));
+            }
+            applyEnumFiltersFromMeta(active, psiMeta);
+            for (String v : active) {
+                results.add(v);
+                if (results.size() >= count) {
+                    break;
+                }
+            }
+            return new ArrayList<>(results);
+        }
+        if (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getSumType() != null
+                && terminalPsi.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            Set<String> active = new LinkedHashSet<>();
+            for (ValueKeyword kw : terminalPsi.getSchemaConstructor().getSumType().getEnumDef().getValueKeywordList()) {
+                String t = kw.getText().trim();
+                if (!t.isEmpty()) {
+                    active.add(ensureHashPrefix(t));
+                }
+            }
+            applyEnumFiltersFromMeta(active, psiMeta);
+            for (String v : active) {
+                results.add(v);
+                if (results.size() >= count) {
+                    break;
+                }
+            }
+            return new ArrayList<>(results);
+        }
+
+        // 3. Int / TimeEpoch
+        boolean isInt = effectiveIr instanceof StvnSchema.IntSchema
+            || (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                && StvnVocabulary.TYPE_INT.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()));
+        boolean isEpoch = effectiveIr instanceof StvnSchema.TimeEpochSchema
+            || (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                && StvnVocabulary.TYPE_TIME_EPOCH.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()));
+        if (isInt || isEpoch) {
+            boolean unsigned = (effectiveIr instanceof StvnSchema.IntSchema is && is.unsigned())
+                || psiMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED);
+            int defaultBits = isEpoch
+                ? (effectiveIr instanceof StvnSchema.TimeEpochSchema ep
+                    ? ep.scale().bitWidth().intValue()
+                    : resolveEpochScaleFromMeta(psiMeta).bitWidth().intValue())
+                : (effectiveIr instanceof StvnSchema.IntSchema is
+                    ? is.bitWidth().intValue()
+                    : StvnVocabulary.DEFAULT_INT_BIT_WIDTH.intValue());
+            int bits = parseIntOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_SIZE), defaultBits);
+            BigInteger minIncl = effectiveIr instanceof StvnSchema.IntSchema is
+                ? is.explicitMinIncl().orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)))
+                : effectiveIr instanceof StvnSchema.TimeEpochSchema ep
+                    ? ep.explicitMinIncl().orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)))
+                    : parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+            BigInteger maxExcl = effectiveIr instanceof StvnSchema.IntSchema is
+                ? is.explicitMaxExcl().orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)))
+                : effectiveIr instanceof StvnSchema.TimeEpochSchema ep
+                    ? ep.explicitMaxExcl().orElseGet(() -> parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)))
+                    : parseBigIntOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+            BigInteger[] bounds = computeEffectiveIntegerBounds(unsigned, bits, minIncl, maxExcl);
+            BigInteger effMin = bounds[0];
+            BigInteger effMaxIncl = bounds[1];
+            BigInteger neededSpan = BigInteger.valueOf(count - 1L);
+            if (effMaxIncl.subtract(effMin).compareTo(neededSpan) < 0) {
+                return List.of();
+            }
+            BigInteger base = StvnPsiLiteralEvaluator.parseBigInteger(first).orElse(effMin);
+            if (base.add(neededSpan).compareTo(effMaxIncl) > 0) {
+                base = effMaxIncl.subtract(neededSpan);
+            }
+            if (base.compareTo(effMin) < 0) {
+                base = effMin;
+            }
+            for (int i = 0; i < count; i++) {
+                results.add(base.add(BigInteger.valueOf(i)).toString());
+            }
+            return new ArrayList<>(results);
+        }
+
+        // 4. DateTime
+        boolean isDateTime = effectiveIr instanceof StvnSchema.DateTimeSchema
+            || (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                && StvnVocabulary.TYPE_DATE_TIME.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()));
+        if (isDateTime) {
+            DateTimeMode mode = effectiveIr instanceof StvnSchema.DateTimeSchema dt && !psiMeta.containsKey(StvnVocabulary.FACET_KW_ZONED)
+                && !psiMeta.containsKey(StvnVocabulary.FACET_KW_AUDITED) && !psiMeta.containsKey(StvnVocabulary.FACET_KW_OFFSET)
+                ? dt.mode()
+                : resolveDateTimeModeFromMeta(psiMeta);
+            String minIso = effectiveIr instanceof StvnSchema.DateTimeSchema dt
+                ? dt.explicitMinInclIso().orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)))
+                : resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+            String maxIso = effectiveIr instanceof StvnSchema.DateTimeSchema dt
+                ? dt.explicitMaxExclIso().orElseGet(() -> resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)))
+                : resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+            ZoneId zone = resolveExemplarZoneId(clock.getZone());
+            Instant minInst = tryParseInstantBound(minIso, zone);
+            Instant maxInst = tryParseInstantBound(maxIso, zone);
+            Instant start = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS);
+            if (minInst != null && start.isBefore(minInst)) {
+                start = minInst;
+            }
+            if (maxInst != null && !start.plusSeconds(count - 1L).isBefore(maxInst)) {
+                Instant shifted = maxInst.minusSeconds(count);
+                start = (minInst != null && shifted.isBefore(minInst)) ? minInst : shifted;
+            }
+            for (int i = 0; i < count; i++) {
+                Instant cur = start.plusSeconds(i);
+                if (maxInst != null && !cur.isBefore(maxInst)) {
+                    break;
+                }
+                results.add(generateDateTimeExemplar(mode, null, null, Clock.fixed(cur, zone)));
+            }
+            return new ArrayList<>(results);
+        }
+
+        // 5. Float (including { #exact } :Float)
+        boolean isFloat = effectiveIr instanceof StvnSchema.FloatSchema
+            || (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                && StvnVocabulary.TYPE_FLOAT.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()));
+        if (isFloat) {
+            Double minIncl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL));
+            Double minExcl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL));
+            Double maxIncl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL));
+            Double maxExcl = parseDoubleOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL));
+            if (effectiveIr instanceof StvnSchema.FloatSchema fs) {
+                if (fs.lowerBound().isPresent()) {
+                    var lb = fs.lowerBound().get();
+                    if (lb.kind() == StvnSchema.BoundKind.INCLUSIVE) minIncl = lb.value().doubleValue();
+                    else minExcl = lb.value().doubleValue();
+                }
+                if (fs.upperBound().isPresent()) {
+                    var ub = fs.upperBound().get();
+                    if (ub.kind() == StvnSchema.BoundKind.INCLUSIVE) maxIncl = ub.value().doubleValue();
+                    else maxExcl = ub.value().doubleValue();
+                }
+            }
+            double baseVal = Double.parseDouble(first);
+            double upper = maxExcl != null ? maxExcl : (maxIncl != null ? maxIncl : Double.MAX_VALUE);
+            boolean upperExcl = maxExcl != null;
+            double step = (upper < Double.MAX_VALUE && baseVal + count > upper)
+                ? Math.max(1e-6, (upper - baseVal) / (count + 1.0))
+                : 1.0;
+            for (int i = 0; i < count; i++) {
+                double cand = baseVal + (i * step);
+                if (upper < Double.MAX_VALUE && (upperExcl ? cand >= upper : cand > upper)) {
+                    break;
+                }
+                results.add(formatFloatLiteral(cand));
+            }
+            return new ArrayList<>(results);
+        }
+
+        // 6. String
+        boolean isString = effectiveIr instanceof StvnSchema.StringSchema
+            || (terminalPsi != null
+                && terminalPsi.getSchemaConstructor() != null
+                && terminalPsi.getSchemaConstructor().getAtomicType() != null
+                && StvnVocabulary.TYPE_STRING.equals(terminalPsi.getSchemaConstructor().getAtomicType().getText().trim()));
+        if (isString) {
+            return generateDistinctStringExemplars(schemaType, effectiveIr, psiMeta, first, count);
+        }
+
+        // 7. Composite fallback (:Option, :Either, :Union, :Tuple, :Seq)
+        results.add(first);
+        if (terminalPsi != null && terminalPsi.getSchemaConstructor() != null) {
+            var ctor = terminalPsi.getSchemaConstructor();
+            if (ctor.getSumType() != null) {
+                var sum = ctor.getSumType();
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                String sumText = sum.getText().trim();
+                if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && branches.size() == 1) {
+                    results.add(StvnVocabulary.VAL_NONE);
+                    StvnSchema innerIr = effectiveIr instanceof StvnSchema.OptionSchema os ? os.valueSchema() : null;
+                    for (String sub : generateDistinctExemplars(branches.get(0), innerIr, count, clock, depth + 1, visitedIrAliases, visitedPsiElements)) {
+                        results.add(StvnVocabulary.VAL_SOME + " " + sub);
+                        if (results.size() >= count) break;
+                    }
+                } else if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() == 2) {
+                    StvnSchema leftIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.leftSchema() : null;
+                    StvnSchema rightIr = effectiveIr instanceof StvnSchema.EitherSchema es ? es.rightSchema() : null;
+                    for (String sub : generateDistinctExemplars(branches.get(0), leftIr, count, clock, depth + 1, visitedIrAliases, visitedPsiElements)) {
+                        results.add(StvnVocabulary.VAL_LEFT + " " + sub);
+                        if (results.size() >= count) break;
+                    }
+                    if (results.size() < count) {
+                        for (String sub : generateDistinctExemplars(branches.get(1), rightIr, count, clock, depth + 1, visitedIrAliases, visitedPsiElements)) {
+                            results.add(StvnVocabulary.VAL_RIGHT + " " + sub);
+                            if (results.size() >= count) break;
+                        }
+                    }
+                } else if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && branches.size() >= 2) {
+                    for (int i = 0; i < branches.size() && results.size() < count; i++) {
+                        StvnSchema bIr = effectiveIr instanceof StvnSchema.UnionSchema us && i < us.branchSchemas().size()
+                            ? us.branchSchemas().get(i) : null;
+                        for (String sub : generateDistinctExemplars(branches.get(i), bIr, count, clock, depth + 1, visitedIrAliases, visitedPsiElements)) {
+                            results.add(StvnVocabulary.SIGIL_VALUE + (i + 1) + " " + sub);
+                            if (results.size() >= count) break;
+                        }
+                    }
+                }
+            } else if (ctor.getProductType() != null) {
+                var slots = ctor.getProductType().getSchemaTypeList();
+                List<List<String>> slotChoices = new ArrayList<>(slots.size());
+                for (int i = 0; i < slots.size(); i++) {
+                    StvnSchema sIr = effectiveIr instanceof StvnSchema.TupleSchema ts && i < ts.fieldSchemas().size()
+                        ? ts.fieldSchemas().get(i) : null;
+                    List<String> choices = generateDistinctExemplars(slots.get(i), sIr, count, clock, depth + 1, visitedIrAliases, visitedPsiElements);
+                    if (choices.isEmpty()) return List.of();
+                    slotChoices.add(choices);
+                }
+                collectTupleCartesianChoices(slotChoices, 0, new ArrayList<>(slots.size()), results, count);
+            } else if (ctor.getCollectionType() != null) {
+                var coll = ctor.getCollectionType();
+                var inners = coll.getSchemaTypeList();
+                if (inners.size() == 1 && coll.getText().trim().startsWith(StvnVocabulary.TYPE_SEQ)) {
+                    long seqMin = effectiveIr instanceof StvnSchema.SeqSchema ss
+                        ? ss.minSize().longValue()
+                        : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE), 0L);
+                    long seqMax = effectiveIr instanceof StvnSchema.SeqSchema ss
+                        ? ss.maxSize().longValue()
+                        : parseLongOrDefault(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE), StvnVocabulary.DEFAULT_MAX_SIZE.longValue());
+                    StvnSchema eIr = effectiveIr instanceof StvnSchema.SeqSchema ss ? ss.elementSchema() : null;
+                    String elem = generateExemplar(inners.get(0), eIr, clock, depth + 1, visitedIrAliases, visitedPsiElements, false);
+                    if (elem != null) {
+                        for (long len = seqMin; len <= seqMax && results.size() < count && len <= MAX_MATERIALIZED_COLLECTION_EXEMPLAR_SIZE; len++) {
+                            results.add(len == 0 ? "[]" : "[" + String.join(" ", Collections.nCopies((int) len, elem)) + "]");
+                        }
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(results);
+    }
+
+    private static void collectTupleCartesianChoices(
+        List<List<String>> slotChoices,
+        int idx,
+        List<String> current,
+        Set<String> out,
+        int maxCount
+    ) {
+        if (out.size() >= maxCount) {
+            return;
+        }
+        if (idx == slotChoices.size()) {
+            out.add("(" + String.join(" ", current) + ")");
+            return;
+        }
+        for (String choice : slotChoices.get(idx)) {
+            current.add(choice);
+            collectTupleCartesianChoices(slotChoices, idx + 1, current, out, maxCount);
+            current.remove(current.size() - 1);
+            if (out.size() >= maxCount) {
+                return;
+            }
+        }
+    }
+
+    private static List<String> generateDistinctStringExemplars(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema effectiveIr,
+        Map<String, String> psiMeta,
+        String firstQuoted,
+        int count
+    ) {
+        Long minSize = effectiveIr instanceof StvnSchema.StringSchema ss && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)
+            ? ss.minSize().longValue()
+            : parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE));
+        Long maxSize = effectiveIr instanceof StvnSchema.StringSchema ss && !psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)
+            ? ss.maxSize().longValue()
+            : parseLongOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE));
+        boolean lowerExcl = effectiveIr instanceof StvnSchema.StringSchema ss && ss.lowerBound().isPresent()
+            ? ss.lowerBound().get().kind() == StvnSchema.BoundKind.EXCLUSIVE
+            : (!psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL) && psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_EXCL));
+        String lowerBound = effectiveIr instanceof StvnSchema.StringSchema ss && ss.lowerBound().isPresent()
+            ? ss.lowerBound().get().value()
+            : resolveStringOrConstOrNull(
+                schemaType,
+                psiMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)
+                    ? psiMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+                    : psiMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)
+            );
+        boolean upperExcl = effectiveIr instanceof StvnSchema.StringSchema ss && ss.upperBound().isPresent()
+            ? ss.upperBound().get().kind() == StvnSchema.BoundKind.EXCLUSIVE
+            : psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL);
+        String upperBound = effectiveIr instanceof StvnSchema.StringSchema ss && ss.upperBound().isPresent()
+            ? ss.upperBound().get().value()
+            : resolveStringOrConstOrNull(
+                schemaType,
+                psiMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)
+                    ? psiMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+                    : psiMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)
+            );
+        String rawRegex = effectiveIr instanceof StvnSchema.StringSchema ss && ss.rawRegexPattern().isPresent()
+            ? ss.rawRegexPattern().get()
+            : resolveStringOrConstOrNull(schemaType, psiMeta.get(StvnVocabulary.FACET_KW_REGEX));
+        String cleanRegex = rawRegex != null ? unquoteOrNull(rawRegex) : null;
+
+        var profile = StvnStringConstraintUtil.createProfile(
+            minSize, maxSize, lowerBound, lowerExcl, upperBound, upperExcl, cleanRegex
+        );
+        Set<String> results = new LinkedHashSet<>();
+        results.add(firstQuoted);
+        String baseRaw = StvnPsiLiteralEvaluator.decodeStringLiteral(firstQuoted, false).orElse("example");
+
+        // 1. Try appending numeric suffixes ("example_1", "example_2", ...) when maxSize permits
+        for (int i = 1; i <= count * 4 && results.size() < count; i++) {
+            String suffixed = baseRaw + "_" + i;
+            if (StvnStringConstraintUtil.isValidCandidate(suffixed, profile)) {
+                results.add(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(suffixed));
+            }
+        }
+
+        // 2. Try single-character mutations at each position of baseRaw (preserves fixed-length UUID/ULID/code regexes!)
+        char[] alphabet = "0123456789abcdefABCDEFghijklmnopqrstuvwxyzGHIJKLMNOPQRSTUVWXYZ_-".toCharArray();
+        for (int pos = baseRaw.length() - 1; pos >= 0 && results.size() < count; pos--) {
+            for (char ch : alphabet) {
+                if (ch == baseRaw.charAt(pos)) {
+                    continue;
+                }
+                String mutated = baseRaw.substring(0, pos) + ch + baseRaw.substring(pos + 1);
+                if (StvnStringConstraintUtil.isValidCandidate(mutated, profile)) {
+                    results.add(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(mutated));
+                    if (results.size() >= count) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3. Try short alphabetic/alphanumeric tokens when minSize == 0 or 1 and maxSize == 1..4
+        for (int i = 0; i < alphabet.length && results.size() < count; i++) {
+            String single = String.valueOf(alphabet[i]);
+            if (StvnStringConstraintUtil.isValidCandidate(single, profile)) {
+                results.add(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(single));
+            }
+        }
+        return new ArrayList<>(results);
     }
 
     /**
@@ -973,7 +1774,7 @@ public final class StvnExemplarValueGenerator {
         return StvnStringConstraintUtil.synthesizeExemplarInhabitant(profile);
     }
 
-    private static String generateEnumSubsetExemplarFromIr(
+    private static @Nullable String generateEnumSubsetExemplarFromIr(
         StvnSchema.EnumSubsetSchema subsetSchema,
         Map<String, String> psiMeta
     ) {
@@ -982,13 +1783,10 @@ public final class StvnExemplarValueGenerator {
         if (!active.isEmpty()) {
             return ensureHashPrefix(active.iterator().next());
         }
-        if (!subsetSchema.activeVariants().isEmpty()) {
-            return ensureHashPrefix(subsetSchema.activeVariants().get(0));
-        }
-        return generateEnumExemplarFromIr(subsetSchema.rootEnum(), psiMeta);
+        return null;
     }
 
-    private static String generateEnumExemplarFromIr(
+    private static @Nullable String generateEnumExemplarFromIr(
         StvnSchema.EnumSchema enumSchema,
         Map<String, String> psiMeta
     ) {
@@ -997,13 +1795,10 @@ public final class StvnExemplarValueGenerator {
         if (!active.isEmpty()) {
             return ensureHashPrefix(active.iterator().next());
         }
-        if (!enumSchema.rootVariants().isEmpty()) {
-            return ensureHashPrefix(enumSchema.rootVariants().get(0));
-        }
-        return StvnVocabulary.SIGIL_VALUE + "DEFAULT";
+        return null;
     }
 
-    private static String generateEnumExemplarFromPsi(SumType sumType, Map<String, String> psiMeta) {
+    private static @Nullable String generateEnumExemplarFromPsi(SumType sumType, Map<String, String> psiMeta) {
         List<String> variants = new ArrayList<>();
         if (sumType.getEnumDef() != null) {
             for (ValueKeyword kw : sumType.getEnumDef().getValueKeywordList()) {
@@ -1013,15 +1808,15 @@ public final class StvnExemplarValueGenerator {
                 }
             }
         }
+        if (variants.isEmpty()) {
+            return null;
+        }
         Set<String> active = new LinkedHashSet<>(variants);
         applyEnumFiltersFromMeta(active, psiMeta);
         if (!active.isEmpty()) {
             return ensureHashPrefix(active.iterator().next());
         }
-        if (!variants.isEmpty()) {
-            return ensureHashPrefix(variants.get(0));
-        }
-        return StvnVocabulary.SIGIL_VALUE + "DEFAULT";
+        return null;
     }
 
     private static void applyEnumFiltersFromMeta(Set<String> active, Map<String, String> psiMeta) {
@@ -1240,7 +2035,7 @@ public final class StvnExemplarValueGenerator {
             }
             if (curr.getContainingFile() != null) {
                 StvnSchema stepIr = StvnTypeResolver.resolveIrSchemaByAlias(curr.getContainingFile(), alias);
-                if (isUngroundedPoisonedSchema(stepIr, curr)) {
+                if (isPoisonedIrSchema(stepIr, curr)) {
                     return null;
                 }
             }

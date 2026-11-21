@@ -16,6 +16,8 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseElement;
+import org.stvnadore.psi.UseStmt;
 
 /**
  * Quick-fix injecting a scoped :use import statement into the nearest enclosing :defs or :package block.
@@ -145,8 +147,8 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
         PsiDocumentManager.getInstance(project).commitDocument(doc);
     }
 
-    private @Nullable org.stvnadore.psi.UseStmt findExistingUse(PsiElement container) {
-        var useStmts = PsiTreeUtil.findChildrenOfType(container, org.stvnadore.psi.UseStmt.class);
+    private @Nullable UseElement findExistingUse(PsiElement container) {
+        var useStmts = PsiTreeUtil.findChildrenOfType(container, UseStmt.class);
         for (var use : useStmts) {
             if (container instanceof PackageEnclosure pkg) {
                 if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) {
@@ -157,20 +159,18 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
                     continue;
                 }
             }
-            var target = use.getUseTarget();
-            if (target != null && target.getText().equals(targetNamespace)) {
-                return use;
+            for (var useElem : use.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                if (target != null && target.getText().equals(targetNamespace)) {
+                    return useElem;
+                }
             }
         }
         return null;
     }
 
-    private void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, org.stvnadore.psi.UseStmt existingUse) {
-        var opts = existingUse.getUseOptionsBlock();
-        if (opts != null && opts.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-            return;
-        }
-        if (existingUse.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
+    private void appendSymbolToExistingUse(com.intellij.openapi.editor.Document doc, UseElement existingUse) {
+        if (StvnPsiUtils.hasValidStripOption(existingUse.getUseOptionsBlock())) {
             return;
         }
         var aliasBlock = existingUse.getUseAliasBlock();
@@ -194,13 +194,8 @@ public final class StvnImportUseQuickFix extends LocalQuickFixAndIntentionAction
                 doc.insertString(offset, " " + symbolName + " " + symbolName + " ");
             }
         } else {
-            var rbrack = existingUse.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACK);
-            int offset = rbrack != null ? rbrack.getStartOffset() : existingUse.getTextRange().getEndOffset() - 1;
-            if (offset > 0 && chars.charAt(offset - 1) == ' ') {
-                doc.insertString(offset - 1, " { " + symbolName + " " + symbolName + " }");
-            } else {
-                doc.insertString(offset, " { " + symbolName + " " + symbolName + " } ");
-            }
+            int elemEndOffset = existingUse.getTextRange().getEndOffset();
+            doc.insertString(elemEndOffset, " { " + symbolName + " " + symbolName + " }");
         }
     }
 }

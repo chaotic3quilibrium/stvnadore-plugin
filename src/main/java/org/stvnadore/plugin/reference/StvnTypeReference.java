@@ -14,6 +14,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeMapAlias;
@@ -153,9 +154,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             if (list.size() >= 2) {
                 if (list.get(0) == keyword) {
                     isAliasFirstKeyword = true;
-                    var useStmt = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseStmt.class);
-                    if (useStmt != null && useStmt.getUseTarget() != null) {
-                        var targetPackage = useStmt.getUseTarget().getText();
+                    var useElem = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseElement.class);
+                    if (useElem != null && useElem.getUseTarget() != null) {
+                        var targetPackage = useElem.getUseTarget().getText();
                         var targetTypeName = keyword.getText();
                         var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? targetTypeName.substring(1) : targetTypeName;
                         var fqni = targetPackage + "/" + bare;
@@ -205,7 +206,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                     if (targetFile != null) {
                         var optBlock = includeElement.getIncludeOptionsBlock();
-                        var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
+                        var hasStrip = StvnPsiUtils.hasValidStripIncludeOption(optBlock);
                         var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited, null, hasStrip);
                         if (resolved == null && !hasStrip) {
                             visited.clear();
@@ -442,7 +443,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
 
             var optBlock = incl.getIncludeOptionsBlock();
-            var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
+            var hasStrip = StvnPsiUtils.hasValidStripIncludeOption(optBlock);
             var branchVisited = new HashSet<>(visited);
             var branchTrace = trace != null ? new ArrayList<String>() : null;
 
@@ -527,41 +528,41 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         var rawClaims = new ArrayList<PsiElement>();
 
         for (var use : useStmts) {
-            var useTarget = use.getUseTarget();
-            if (useTarget == null || useTarget.getUseTargetIllegal() != null) {
-                continue;
-            }
-            var prefix = useTarget.getText().trim();
-            var fqni = prefix + "/" + targetName.substring(1);
+            for (var useElem : use.getUseElementList()) {
+                var useTarget = useElem.getUseTarget();
+                if (useTarget == null || useTarget.getUseTargetIllegal() != null) {
+                    continue;
+                }
+                var prefix = useTarget.getText().trim();
+                var fqni = prefix + "/" + targetName.substring(1);
 
-            boolean lhsRenamedInThisUse = false;
-            var aliasBlock = use.getUseAliasBlock();
-            if (aliasBlock != null) {
-                for (var alias : aliasBlock.getUseMapAliasList()) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (remoteKw != null) {
-                            var remoteText = remoteKw.getText().trim();
-                            if (remoteText.equals(targetName) || remoteText.equals(fqni)) {
-                                lhsRenamedInThisUse = true;
+                boolean lhsRenamedInThisUse = false;
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (remoteKw != null) {
+                                var remoteText = remoteKw.getText().trim();
+                                if (remoteText.equals(targetName) || remoteText.equals(fqni)) {
+                                    lhsRenamedInThisUse = true;
+                                }
                             }
-                        }
-                        if (localKw != null && localKw.getText().trim().equals(targetName)) {
-                            rhsClaims.add(new RhsClaim(localKw, remoteKw != null ? remoteKw.getText().trim() : null));
+                            if (localKw != null && localKw.getText().trim().equals(targetName)) {
+                                rhsClaims.add(new RhsClaim(localKw, remoteKw != null ? remoteKw.getText().trim() : null));
+                            }
                         }
                     }
                 }
-            }
 
-            var optBlock = use.getUseOptionsBlock();
-            if (!lhsRenamedInThisUse
-                    && optBlock != null
-                    && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP)) {
-                var resolved = resolveTypeInFile(file, fqni, new HashSet<>(), null, false, false);
-                if (resolved != null && rawClaims.stream().noneMatch(existing -> areSameDeclarationTarget(existing, resolved))) {
-                    rawClaims.add(resolved);
+                var optBlock = useElem.getUseOptionsBlock();
+                if (!lhsRenamedInThisUse && StvnPsiUtils.hasValidStripOption(optBlock)) {
+                    var resolved = resolveTypeInFile(file, fqni, new HashSet<>(), null, false, false);
+                    if (resolved != null && rawClaims.stream().noneMatch(existing -> areSameDeclarationTarget(existing, resolved))) {
+                        rawClaims.add(resolved);
+                    }
                 }
             }
         }
