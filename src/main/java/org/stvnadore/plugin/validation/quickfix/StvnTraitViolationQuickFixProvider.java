@@ -1,6 +1,7 @@
 package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
@@ -31,6 +32,7 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.StvnMetadataFacetInsertionUtil;
 import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
@@ -109,8 +111,7 @@ public final class StvnTraitViolationQuickFixProvider {
 
         if (typeKw != null) {
             var typeName = typeKw.getText().trim();
-            var resolvedDefElem = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
-            var targetTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedDefElem);
+            var targetTypeDef = resolveTargetTypeDefForKeyword(typeKw, file, typeName);
             if (targetTypeDef != null) {
                 return registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
             }
@@ -143,15 +144,15 @@ public final class StvnTraitViolationQuickFixProvider {
             return builder;
         }
 
-        // Subcase 2: Caret is on #invertible (or metadata entry)
-        if (invertibleEntry != null) {
+        // Subcase 2: Caret is directly inside #invertible or its enclosing MetadataMap
+        if (invertibleEntry != null && isCaretInsideInvertibleMetadata(elemAtRange, invertibleEntry)) {
             if (file.isWritable() && invertibleEntry.getContainingFile().isWritable()) {
                 builder = builder.withFix(new RemoveInvertibleFacetQuickFix(invertibleEntry, containerName));
             }
             return builder;
         }
 
-        // Subcase 3: Caret is on nominal offending value in inverted map
+        // Subcase 3: Caret is on nominal offending value in inverted map (or reference to an inverted map alias)
         var schemaType = (elemAtRange instanceof SchemaType st) ? st
                 : PsiTreeUtil.getParentOfType(elemAtRange, SchemaType.class, false);
         if (schemaType != null) {
@@ -161,19 +162,40 @@ public final class StvnTraitViolationQuickFixProvider {
             }
             if (typeKw != null) {
                 var typeName = typeKw.getText().trim();
-                var resolvedDefElem = StvnTypeReference.resolveTypeInFile(file, typeName, new java.util.HashSet<>());
-                var targetTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedDefElem);
+                var targetTypeDef = resolveTargetTypeDefForKeyword(typeKw, file, typeName);
+                var ownerMapDef = invertibleEntry != null
+                    ? PsiTreeUtil.getParentOfType(invertibleEntry, TypeDefinition.class)
+                    : null;
                 if (targetTypeDef != null) {
-                    builder = registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
+                    if (targetTypeDef == ownerMapDef) {
+                        var nonConforming = extractNonConformingConstituents(targetTypeDef);
+                        for (var constituent : nonConforming) {
+                            builder = builder.withFix(new JumpToNonConformingConstituentIntention(
+                                constituent.schema(), typeName, constituent.index(), constituent.label()));
+                        }
+                    } else {
+                        builder = registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
+                    }
                 }
             }
         }
 
-        if (invertibleEntry != null && file.isWritable() && invertibleEntry.getContainingFile().isWritable()) {
+        if (invertibleEntry != null
+                && file.isWritable()
+                && invertibleEntry.getContainingFile().isWritable()
+                && !StvnPreludeBridge.isPreludeFile(invertibleEntry.getContainingFile())) {
             builder = builder.withFix(new RemoveInvertibleFacetQuickFix(invertibleEntry, containerName));
         }
 
         return builder;
+    }
+
+    private static boolean isCaretInsideInvertibleMetadata(PsiElement elemAtRange, MetadataEntry invertibleEntry) {
+        if (PsiTreeUtil.isAncestor(invertibleEntry, elemAtRange, false)) {
+            return true;
+        }
+        var enclosingMap = PsiTreeUtil.getParentOfType(invertibleEntry, MetadataMap.class, false);
+        return enclosingMap != null && PsiTreeUtil.isAncestor(enclosingMap, elemAtRange, false);
     }
 
     public static @Nullable SchemaType findFloatSchemaType(PsiElement element) {
@@ -284,18 +306,118 @@ public final class StvnTraitViolationQuickFixProvider {
             return builder;
         }
 
-        // Case 2: Inductive Constituent Breakdown
+        // Case 2: Inductive Constituent Breakdown or Nominal Continuous :Float Lineage
         var nonConforming = extractNonConformingConstituents(typeDef);
         for (var constituent : nonConforming) {
             builder = builder.withFix(new JumpToNonConformingConstituentIntention(
                     constituent.schema(), typeName, constituent.index(), constituent.label()));
         }
 
-        if (file.isWritable() && typeDef.getContainingFile().isWritable()) {
-            builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, typeName));
+        if (nonConforming.isEmpty()) {
+            var immediateNavElem = typeDef.getTypeKeyword() != null ? typeDef.getTypeKeyword() : typeDef;
+            var immediateLabel = typeDef.getTypeKeyword() != null
+                ? typeDef.getTypeKeyword().getText().trim()
+                : typeName;
+            builder = builder.withFix(new JumpToNominalTraitDeclarationIntention(immediateNavElem, immediateLabel));
+
+            var floatLineage = resolveContinuousFloatNominalLineage(typeDef);
+            if (!floatLineage.isEmpty()) {
+                var rootFloatDef = floatLineage.get(floatLineage.size() - 1);
+                var rootFloatName = rootFloatDef.getTypeKeyword() != null
+                    ? rootFloatDef.getTypeKeyword().getText().trim()
+                    : immediateLabel;
+                if (rootFloatDef != typeDef) {
+                    var rootNavElem = rootFloatDef.getTypeKeyword() != null
+                        ? rootFloatDef.getTypeKeyword()
+                        : rootFloatDef;
+                    builder = builder.withFix(new JumpToNominalTraitDeclarationIntention(rootNavElem, rootFloatName));
+                }
+                if (file.isWritable()
+                        && rootFloatDef.getContainingFile().isWritable()
+                        && !StvnPreludeBridge.isPreludeFile(rootFloatDef.getContainingFile())
+                        && canSafelyAddExactToLineage(floatLineage)) {
+                    builder = builder.withFix(new AddExactConstraintQuickFix(rootFloatDef, rootFloatName));
+                }
+            }
+        }
+
+        if (file.isWritable()
+                && typeDef.getContainingFile().isWritable()
+                && !StvnPreludeBridge.isPreludeFile(typeDef.getContainingFile())) {
+            var overrideLabel = typeDef.getTypeKeyword() != null
+                ? typeDef.getTypeKeyword().getText().trim()
+                : typeName;
+            builder = builder.withFix(new ChangeNominalOverrideQuickFix(typeDef, overrideLabel));
         }
 
         return builder;
+    }
+
+    private static List<TypeDefinition> resolveContinuousFloatNominalLineage(TypeDefinition startDef) {
+        var lineage = new ArrayList<TypeDefinition>();
+        var visited = new HashSet<TypeDefinition>();
+        TypeDefinition curr = startDef;
+        while (curr != null && visited.add(curr)) {
+            lineage.add(curr);
+            if (resolveExplicitBooleanTraitOnDef(curr, StvnVocabulary.FACET_KW_EQUATABLE).isPresent()) {
+                return List.of();
+            }
+            if (hasExactFacet(curr.getMetadataMap())) {
+                return List.of();
+            }
+            var schema = curr.getSchemaType();
+            if (schema == null || hasExactFacet(schema.getMetadataMap())) {
+                return List.of();
+            }
+            var ctor = schema.getSchemaConstructor();
+            if (ctor != null && ctor.getAtomicType() != null) {
+                return StvnVocabulary.TYPE_FLOAT.equals(ctor.getAtomicType().getText().trim())
+                    ? lineage
+                    : List.of();
+            }
+            var aliasKw = schema.getTypeKeyword();
+            if (aliasKw == null) {
+                return List.of();
+            }
+            var aliasName = aliasKw.getText().trim();
+            if (StvnVocabulary.TYPE_FLOAT.equals(aliasName)) {
+                return lineage;
+            }
+            var containingFile = curr.getContainingFile();
+            if (containingFile == null) {
+                return List.of();
+            }
+            curr = resolveTargetTypeDefForKeyword(aliasKw, containingFile, aliasName);
+        }
+        return List.of();
+    }
+
+    private static boolean canSafelyAddExactToLineage(List<TypeDefinition> lineage) {
+        for (var def : lineage) {
+            if (hasExactIncompatibleFacet(def.getMetadataMap())) {
+                return false;
+            }
+            if (def.getSchemaType() != null && hasExactIncompatibleFacet(def.getSchemaType().getMetadataMap())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasExactIncompatibleFacet(@Nullable MetadataMap map) {
+        if (map == null) {
+            return false;
+        }
+        for (var entry : map.getMetadataEntryList()) {
+            var txt = entry.getText().trim();
+            if (txt.startsWith(StvnVocabulary.FACET_KW_EXACT)
+                    || txt.startsWith(StvnVocabulary.FACET_KW_SIZE)
+                    || txt.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                    || txt.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public record ConstituentInfo(int index, String label, SchemaType schema) {}
@@ -866,6 +988,7 @@ public final class StvnTraitViolationQuickFixProvider {
 
     // --- INTENTION: Navigate to Explicit Override ---
     public static final class NavigateToExplicitOverrideIntention extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
+        @SafeFieldForPreview
         private final String typeName;
 
         public NavigateToExplicitOverrideIntention(PsiElement element, String typeName) {
@@ -875,7 +998,8 @@ public final class StvnTraitViolationQuickFixProvider {
 
         @Override
         public @Nls @NotNull String getText() {
-            return "Navigate to explicit '#equatable #FALSE' declaration on " + typeName;
+            return "Navigate to explicit '" + StvnVocabulary.FACET_KW_EQUATABLE + " "
+                + StvnVocabulary.VAL_FALSE + "' declaration on " + typeName;
         }
 
         @Override
@@ -914,10 +1038,64 @@ public final class StvnTraitViolationQuickFixProvider {
         }
     }
 
+    // --- INTENTION: Jump to Nominal Declaration in :defs ---
+    public static final class JumpToNominalTraitDeclarationIntention extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
+        @SafeFieldForPreview
+        private final String typeName;
+
+        public JumpToNominalTraitDeclarationIntention(PsiElement element, String typeName) {
+            super(element);
+            this.typeName = typeName;
+        }
+
+        @Override
+        public @Nls @NotNull String getText() {
+            return "Jump to '" + typeName + "' declaration in " + StvnVocabulary.KEYWORD_DEFS;
+        }
+
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+            return "Jump to nominal type declaration";
+        }
+
+        @Override
+        public @NotNull Priority getPriority() {
+            return Priority.HIGH;
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            var vFile = StvnNavigationUtil.resolveVirtualFile(startElement);
+            if (vFile == null) return;
+            var descriptor = new OpenFileDescriptor(project, vFile, startElement.getTextOffset());
+            var ed = FileEditorManager.getInstance(project).openTextEditor(descriptor, true);
+            if (ed != null) {
+                var range = startElement.getTextRange();
+                ed.getCaretModel().moveToOffset(range.getStartOffset());
+                ed.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+                ed.getSelectionModel().setSelection(range.getStartOffset(), range.getEndOffset());
+            }
+        }
+    }
+
     // --- INTENTION: Jump to Non-Conforming Constituent ---
     public static final class JumpToNonConformingConstituentIntention extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
+        @SafeFieldForPreview
         private final String typeName;
+        @SafeFieldForPreview
         private final int slotIndex;
+        @SafeFieldForPreview
         private final String fieldLabel;
 
         public JumpToNonConformingConstituentIntention(
@@ -975,6 +1153,7 @@ public final class StvnTraitViolationQuickFixProvider {
 
     // --- QUICK-FIX 1: Remove Incompatible Override ---
     public static final class RemoveIncompatibleOverrideQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+        @SafeFieldForPreview
         private final String typeName;
 
         public RemoveIncompatibleOverrideQuickFix(PsiElement element, String typeName) {
@@ -984,7 +1163,8 @@ public final class StvnTraitViolationQuickFixProvider {
 
         @Override
         public @Nls @NotNull String getText() {
-            return "Remove explicit '#equatable #FALSE' override from " + typeName;
+            return "Remove explicit '" + StvnVocabulary.FACET_KW_EQUATABLE + " "
+                + StvnVocabulary.VAL_FALSE + "' override from " + typeName;
         }
 
         @Override
@@ -1039,6 +1219,7 @@ public final class StvnTraitViolationQuickFixProvider {
 
     // --- QUICK-FIX 2: Change Nominal Override in :defs ---
     public static final class ChangeNominalOverrideQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+        @SafeFieldForPreview
         private final String typeName;
 
         public ChangeNominalOverrideQuickFix(TypeDefinition typeDef, String typeName) {
@@ -1048,7 +1229,8 @@ public final class StvnTraitViolationQuickFixProvider {
 
         @Override
         public @Nls @NotNull String getText() {
-            return "Override '#equatable #TRUE' on " + typeName + " in :defs";
+            return "Override '" + StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE
+                + "' on " + typeName + " in " + StvnVocabulary.KEYWORD_DEFS;
         }
 
         @Override
@@ -1066,10 +1248,11 @@ public final class StvnTraitViolationQuickFixProvider {
         ) {
             if (!(startElement instanceof TypeDefinition typeDef) || !typeDef.isValid()) return;
             var targetFile = typeDef.getContainingFile();
+            var equatableTrueEntry = StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE;
 
             var entry = findExplicitTraitEntry(typeDef, StvnVocabulary.FACET_KW_EQUATABLE);
             if (entry != null && entry.isValid()) {
-                var newEntry = StvnElementFactory.createMetadataEntry(project, "#equatable #TRUE");
+                var newEntry = StvnElementFactory.createMetadataEntry(project, equatableTrueEntry);
                 entry.replace(newEntry);
                 postProcessFileMutation(project, file, targetFile);
                 return;
@@ -1080,16 +1263,30 @@ public final class StvnTraitViolationQuickFixProvider {
                 map = typeDef.getSchemaType().getMetadataMap();
             }
 
-            if (map != null && map.isValid()) {
-                var inner = map.getText().trim();
-                if (inner.startsWith("{") && inner.endsWith("}")) {
-                    inner = inner.substring(1, inner.length() - 1).trim();
+            if (map != null && map.isValid() && targetFile != null) {
+                var psiDocManager = PsiDocumentManager.getInstance(project);
+                var doc = targetFile.getViewProvider().getDocument();
+                if (doc == null) {
+                    doc = psiDocManager.getDocument(targetFile);
                 }
-                var newMap = StvnElementFactory.createMetadataMap(project, "#equatable #TRUE " + inner);
-                map.replace(newMap);
-            } else if (typeDef.getSchemaType() != null) {
+                if (doc != null) {
+                    if (targetFile.isPhysical()) {
+                        psiDocManager.doPostponedOperationsAndUnblockDocument(doc);
+                    }
+                    StvnMetadataFacetInsertionUtil.insertOrReplaceSingleFacet(
+                        doc,
+                        map,
+                        StvnVocabulary.FACET_KW_EQUATABLE,
+                        equatableTrueEntry
+                    );
+                    psiDocManager.commitDocument(doc);
+                    postProcessFileMutation(project, file, targetFile);
+                    return;
+                }
+            }
+            if (typeDef.getSchemaType() != null) {
                 var newSchema = StvnElementFactory.createSchemaType(
-                        project, "{ #equatable #TRUE } " + typeDef.getSchemaType().getText());
+                        project, "{ " + equatableTrueEntry + " } " + typeDef.getSchemaType().getText());
                 typeDef.getSchemaType().replace(newSchema);
             }
             postProcessFileMutation(project, file, targetFile);

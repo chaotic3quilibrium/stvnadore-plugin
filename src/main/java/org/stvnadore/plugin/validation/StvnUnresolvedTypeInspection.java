@@ -55,8 +55,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         }
         // Skip LHS declaration targets in :defs (they declare a new type, not reference an existing one)
         if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)
-                || typeKw.getParent() instanceof UseTarget
-                || typeKw.getParent() instanceof PackagePath
+                || PsiTreeUtil.getParentOfType(typeKw, UseTarget.class, PackagePath.class) != null
                 || typeKw.getParent() instanceof IncludeMapAlias) {
             return;
         }

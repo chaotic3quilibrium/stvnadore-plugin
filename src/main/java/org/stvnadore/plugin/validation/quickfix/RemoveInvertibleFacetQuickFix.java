@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation.quickfix;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -22,6 +23,7 @@ import org.stvnadore.psi.MetadataMap;
 @NullMarked
 public final class RemoveInvertibleFacetQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
 
+    @SafeFieldForPreview
     private final String containerName;
 
     /**

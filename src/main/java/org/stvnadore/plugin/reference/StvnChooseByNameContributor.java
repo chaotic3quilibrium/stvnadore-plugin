@@ -77,7 +77,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
             for (var pkg : packages) {
                 var pkgPath = pkg.getPackagePath();
-                if (pkgPath == null) continue;
+                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg) || pkgPath == null) continue;
                 var pathText = pkgPath.getText();
                 for (var elem : pkg.getPackageElementList()) {
                     var typeDef = elem.getTypeDefinition();
@@ -151,7 +151,7 @@ public final class StvnChooseByNameContributor implements ChooseByNameContributo
             var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
             for (var pkg : packages) {
                 var pkgPath = pkg.getPackagePath();
-                if (pkgPath == null) continue;
+                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg) || pkgPath == null) continue;
                 var pathText = pkgPath.getText();
                 for (var elem : pkg.getPackageElementList()) {
                     var typeDef = elem.getTypeDefinition();

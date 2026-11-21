@@ -48,7 +48,7 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                     if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(typeKw)) {
                         return PsiReference.EMPTY_ARRAY;
                     }
-                    if (parent instanceof org.stvnadore.psi.PackagePath) {
+                    if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(typeKw, org.stvnadore.psi.PackagePath.class, org.stvnadore.psi.UseTargetIllegal.class) != null) {
                         return PsiReference.EMPTY_ARRAY;
                     }
 

@@ -90,9 +90,13 @@ public final class StvnGauntletV9Batch3GrammarUseAndHoverParityTest extends Base
         assertEquals(":Enum[]", passAErrors.get(0).getText());
         assertEquals(":Enum [   ]", passAErrors.get(1).getText());
         assertEquals(":Tuple()", passAErrors.get(2).getText());
+        assertTrue(passAErrors.get(2).getDescription().contains(":Tuple() requires at least one schema type"));
         assertEquals(":Tuple (   )", passAErrors.get(3).getText());
+        assertTrue(passAErrors.get(3).getDescription().contains(":Tuple() requires at least one schema type"));
         assertEquals(":Union()", passAErrors.get(4).getText());
+        assertTrue(passAErrors.get(4).getDescription().contains(":Union() requires at least 2 schema types"));
         assertEquals(":Union (   )", passAErrors.get(5).getText());
+        assertTrue(passAErrors.get(5).getDescription().contains(":Union() requires at least 2 schema types"));
         assertEquals(":Option()", passAErrors.get(6).getText());
         assertEquals(":Option(:Int :String)", passAErrors.get(7).getText());
         assertEquals(":Seq()", passAErrors.get(8).getText());

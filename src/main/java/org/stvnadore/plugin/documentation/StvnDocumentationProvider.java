@@ -37,6 +37,7 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.plugin.validation.StvnTrailingSlashInspection;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
 import org.stvnadore.psi.BodyEntry;
@@ -58,6 +59,7 @@ import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.PackageElement;
 import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
@@ -67,6 +69,7 @@ import org.stvnadore.psi.TypeDefTarget;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
+import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
 
@@ -119,7 +122,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (file != null) {
                 var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
                 if (resolved != null) {
-                    var typeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                    var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
                     return (typeDef != null) ? typeDef : resolved;
                 }
             }
@@ -310,6 +313,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
         if (StvnPsiUtils.isTypeDefinitionTarget(targetKw)
+                || PsiTreeUtil.getParentOfType(targetKw, PackagePath.class, UseTarget.class) != null
                 || StvnTypeReference.resolveTypeKeywordWithoutImplicitPrelude(targetKw) != null) {
             return null;
         }
@@ -494,7 +498,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             sb.append("<hr/>");
             if (remTypeDef != null) {
-                var facetsTable = buildEffectiveFacetsTable(remTypeDef);
+                var usageBanner = buildTraitViolationUsageBanner(remTypeDef, originalElement);
+                if (usageBanner != null) {
+                    sb.insert(0, usageBanner);
+                }
+                var facetsTable = buildEffectiveFacetsTable(remTypeDef, originalElement);
                 if (facetsTable != null) {
                     sb.append(facetsTable).append("<br/>");
                 }
@@ -577,7 +585,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<code>").append(keyword.getText()).append("</code><br/>");
             }
             if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
-                var pkgPath = enclosingPkg.getPackagePath().getText().trim();
+                var pkgPath = StvnTrailingSlashInspection.stripTrailingSlashes(enclosingPkg.getPackagePath().getText());
                 var localName = keyword != null ? keyword.getText() : "";
                 var cleanPkg = pkgPath.startsWith(StvnVocabulary.SIGIL_TYPIC) ? pkgPath.substring(1) : pkgPath;
                 var cleanLocal = localName.startsWith(StvnVocabulary.SIGIL_VALUE) ? localName.substring(1) : localName;
@@ -592,9 +600,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
             if (schemaType != null) {
+                String formattedConstType = StvnSchemaFormatter.formatSchema(schemaType);
                 sb.append("<nobr><b>Type:</b> <code>")
-                  .append(escapeHtmlBody(StvnSchemaFormatter.formatSchema(schemaType)))
-                  .append("</code></nobr><br/>");
+                  .append(escapeHtmlBody(formattedConstType))
+                  .append("</code></nobr>");
+                if (originalElement != null && PsiTreeUtil.getParentOfType(originalElement, BodyEntry.class) != null) {
+                    String canonicalConstTypeFqni = resolveCanonicalPackagedSchemaFqni(schemaType);
+                    if (canonicalConstTypeFqni != null && !canonicalConstTypeFqni.equals(formattedConstType)) {
+                        sb.append(" (<code>").append(escapeHtmlBody(canonicalConstTypeFqni)).append("</code>)");
+                    }
+                }
+                sb.append("<br/>");
             }
             appendConstantContextAndTemporalPreview(sb, constDef, originalElement);
             if (value != null) {
@@ -881,7 +897,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     String formattedSlot = formatBodySlotSchemaForHover(slotRootVal, slotSchema);
                     sb.append("<nobr><b>Slot Schema:</b> <code>")
                       .append(escapeHtmlBody(formattedSlot))
-                      .append("</code></nobr><br/>");
+                      .append("</code></nobr>");
+                    SchemaType leafSlot = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
+                    if (leafSlot == null) {
+                        leafSlot = slotSchema;
+                    }
+                    String canonicalSlotFqni = resolveCanonicalPackagedSchemaFqni(leafSlot);
+                    if (canonicalSlotFqni != null
+                            && !canonicalSlotFqni.equals(formattedSlot)
+                            && !formattedSlot.contains(canonicalSlotFqni)) {
+                        sb.append(" (<code>").append(escapeHtmlBody(canonicalSlotFqni)).append("</code>)");
+                    }
+                    sb.append("<br/>");
                 }
             } else {
                 var callerConst = PsiTreeUtil.getParentOfType(originalElement, ConstantDefinition.class);
@@ -1004,6 +1031,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         String leafSchemaLabel = StvnSchemaFormatter.formatSchema(leafSchema);
 
         String compilerErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
+        WrapperSpineValidationResult wrapperCheck = validateExplicitWrapperSpine(slotRootVal, rootSlotSchema);
+        if (compilerErr == null && wrapperCheck.invalid()) {
+            compilerErr = wrapperCheck.message();
+        }
         boolean satisfied = compilerErr == null;
         String detail;
         if (!satisfied) {
@@ -1054,13 +1085,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (satisfied && isBodyPass3Suspended(bodyVal)) {
+            appendSuspendedDocumentErrorsFooter(sb);
+            return;
+        }
+
         sb.append("<hr/>");
         String colorHex = satisfied ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex();
         String badge = satisfied ? "Satisfied" : "In Violation";
         sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(colorHex).append(";\">")
           .append(badge).append("</b><br/>")
           .append(detail);
-        if (!satisfied) {
+        if (!satisfied && !wrapperCheck.invalid()) {
             String exemplar = StvnExemplarValueGenerator.generateHoverExemplar(leafSchema, rawLeafIr);
             if (exemplar != null && !exemplar.isBlank()) {
                 sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
@@ -1084,7 +1120,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var pkg = PsiTreeUtil.getParentOfType(declaredTd, PackageEnclosure.class);
             String declaredIdentity = localName;
             if (pkg != null && pkg.getPackagePath() != null) {
-                String pkgText = pkg.getPackagePath().getText().trim();
+                String pkgText = StvnTrailingSlashInspection.stripTrailingSlashes(pkg.getPackagePath().getText());
                 String cleanPkg = pkgText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? pkgText.substring(1) : pkgText;
                 String cleanLocal = localName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? localName.substring(1) : localName;
                 declaredIdentity = StvnVocabulary.SIGIL_TYPIC + cleanPkg + "/" + cleanLocal;
@@ -1112,7 +1148,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (rootSlotSchema == null) {
             return;
         }
-        SchemaType leafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
+        WrapperSpineValidationResult wrapperCheck = validateExplicitWrapperSpine(slotRootVal, rootSlotSchema);
+        SchemaType leafSchema = wrapperCheck.invalid()
+            ? (wrapperCheck.failingTargetSchema() != null ? wrapperCheck.failingTargetSchema() : rootSlotSchema)
+            : StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
         if (leafSchema == null) {
             leafSchema = rootSlotSchema;
         }
@@ -1144,10 +1183,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return;
         }
 
+        String constLabel = bodyVal.getText().trim();
         List<String> compilerErrs = List.of();
         String exactErr = findExactSpanCompilerErrorMessage(bodyVal, slotRootVal);
         if (exactErr != null) {
             compilerErrs = List.of(exactErr);
+        } else if (wrapperCheck.invalid() && wrapperCheck.message() != null) {
+            compilerErrs = List.of(wrapperCheck.message());
         } else if (constChain.terminalValue() != null) {
             compilerErrs = collectContainedCompilerErrorMessages(constChain.terminalValue());
         }
@@ -1157,14 +1199,45 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 compilerErrs = List.of(errVal.diagnostic().message());
             }
         }
+        if (compilerErrs.isEmpty()) {
+            SchemaType effectiveConstSchema = constSchema != null ? constSchema : constChain.terminalSchema();
+            String brandErr = verifyPurePsiConstantNominalBrandCompatibility(
+                effectiveConstSchema,
+                leafSchema,
+                constLabel
+            );
+            if (brandErr != null) {
+                compilerErrs = List.of(brandErr);
+            } else if (constChain.terminalValue() != null
+                    && effectiveConstSchema != null
+                    && resolveNominalBrandFqni(effectiveConstSchema) == null
+                    && isBodyPass3Suspended(bodyVal)) {
+                var termCheck = evaluateValueComplianceInternal(constChain.terminalValue(), leafSchema);
+                if (!termCheck.isSatisfied()) {
+                    sb.append("<hr/>");
+                    sb.append("<b>Compliance Status:</b> <b style=\"color: #")
+                      .append(getViolationBadgeColorHex())
+                      .append(";\">In Violation</b><br/>")
+                      .append(termCheck.detailExplanation());
+                    String exemplar = StvnExemplarValueGenerator.generateHoverExemplar(leafSchema, rawLeafIr);
+                    if (exemplar != null && !exemplar.isBlank()) {
+                        sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
+                    }
+                    return;
+                }
+            }
+        }
         if (compilerErrs.isEmpty()
                 && constChain.terminalValue() != null
                 && constChain.terminalValue().getStringLiteral() != null
                 && StvnPsiLiteralEvaluator.decodeStringLiteral(constChain.terminalValue().getStringLiteral().getText(), false).isEmpty()) {
             compilerErrs = List.of("Malformed string literal in constant definition");
         }
+        if (compilerErrs.isEmpty() && isBodyPass3Suspended(bodyVal)) {
+            appendSuspendedDocumentErrorsFooter(sb);
+            return;
+        }
         boolean satisfied = compilerErrs.isEmpty();
-        String constLabel = bodyVal.getText().trim();
         String leafLabel = StvnSchemaFormatter.formatSchema(leafSchema);
         String detail = satisfied
             ? "Constant <code>" + escapeHtmlBody(constLabel)
@@ -1179,12 +1252,209 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(colorHex).append(";\">")
           .append(badge).append("</b><br/>")
           .append(detail);
-        if (!satisfied) {
+        if (!satisfied && !wrapperCheck.invalid()) {
             String exemplar = StvnExemplarValueGenerator.generateHoverExemplar(leafSchema, rawLeafIr);
             if (exemplar != null && !exemplar.isBlank()) {
                 sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
             }
         }
+    }
+
+    private void appendSuspendedDocumentErrorsFooter(StringBuilder sb) {
+        sb.append("<hr/>");
+        sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(getWarningBadgeColorHex()).append(";\">")
+          .append("Suspended (Document Errors)</b><br/>");
+        sb.append("Payload compliance evaluation is suspended because document header or <code>")
+          .append(StvnVocabulary.KEYWORD_DEFS)
+          .append("</code> contains errors.");
+    }
+
+    private static boolean isBodyPass3Suspended(@Nullable PsiElement contextElement) {
+        if (contextElement == null || PsiTreeUtil.getParentOfType(contextElement, BodyEntry.class, false) == null) {
+            return false;
+        }
+        var file = contextElement.getContainingFile();
+        if (file == null) {
+            return false;
+        }
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+        return snapshot.document().flatMap(org.stvnadore.core.ir.StvnDocument::payload).isEmpty();
+    }
+
+    private static @Nullable String resolveCanonicalPackagedSchemaFqni(@Nullable SchemaType schema) {
+        String id = resolveNominalBrandFqni(schema);
+        return (id != null && id.length() > 1 && id.substring(1).contains("/")) ? id : null;
+    }
+
+    private static @Nullable String resolveNominalBrandFqni(@Nullable SchemaType schema) {
+        if (schema == null || schema.getSchemaConstructor() != null || schema.getTypeKeyword() == null) {
+            return null;
+        }
+        var kw = schema.getTypeKeyword();
+        String rawName = kw.getText().trim();
+        if (StvnVocabulary.isBaseScalarType(rawName)
+                || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(rawName)) {
+            return null;
+        }
+        var file = kw.getContainingFile();
+        var ref = kw.getReference();
+        var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
+        if (resolved == null && file != null) {
+            resolved = StvnTypeReference.resolveTypeInFile(file, rawName, new HashSet<>());
+        }
+        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        if (td == null && !kw.getProject().isDisposed()) {
+            td = StvnPreludeBridge.resolvePreludeTypeDefinition(kw.getProject(), rawName);
+        }
+        if (td != null && td.getTypeKeyword() != null) {
+            String localName = td.getTypeKeyword().getText().trim();
+            if (localName.length() > 1 && localName.substring(1).contains("/")) {
+                return localName;
+            }
+            var pkg = PsiTreeUtil.getParentOfType(td, PackageEnclosure.class);
+            if (pkg != null && pkg.getPackagePath() != null) {
+                String pkgText = StvnTrailingSlashInspection.stripTrailingSlashes(pkg.getPackagePath().getText());
+                String bareLocal = localName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? localName.substring(1) : localName;
+                return pkgText + "/" + bareLocal;
+            }
+            if (td.getContainingFile() != null && StvnPreludeBridge.isPreludeFile(td.getContainingFile())) {
+                String pPkg = StvnPreludeBridge.getPreludePackagePath(td);
+                String bareLocal = localName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? localName.substring(1) : localName;
+                return pPkg + "/" + bareLocal;
+            }
+            return localName;
+        }
+        return rawName;
+    }
+
+    private static @Nullable String verifyPurePsiConstantNominalBrandCompatibility(
+        @Nullable SchemaType effectiveConstSchema,
+        SchemaType leafSchema,
+        String rawTokenText
+    ) {
+        if (effectiveConstSchema == null) {
+            return null;
+        }
+        String constBrandId = resolveNominalBrandFqni(effectiveConstSchema);
+        if (constBrandId != null) {
+            if (doesSlotSchemaAcceptNominalBrand(leafSchema, constBrandId, new HashSet<>())) {
+                return null;
+            }
+            String slotBrandId = resolveNominalBrandFqni(leafSchema);
+            String tgtName = slotBrandId != null
+                ? slotBrandId
+                : StvnSchemaFormatter.formatCleanSchema(leafSchema);
+            return "Incompatible nominal type: constant '" + rawTokenText
+                + "' of nominal type '" + constBrandId
+                + "' cannot be assigned to target nominal type '" + tgtName + "'";
+        }
+        return verifyCompositeConstantChildBrands(effectiveConstSchema, leafSchema, rawTokenText, new HashSet<>());
+    }
+
+    private static boolean doesSlotSchemaAcceptNominalBrand(
+        SchemaType candidateSlotSchema,
+        String constBrandId,
+        Set<String> visitedBrands
+    ) {
+        String slotBrandId = resolveNominalBrandFqni(candidateSlotSchema);
+        if (constBrandId.equals(slotBrandId)) {
+            return true;
+        }
+        if (slotBrandId != null && !visitedBrands.add(slotBrandId)) {
+            return false;
+        }
+        if (isCoproductSumSchemaType(candidateSlotSchema)) {
+            SchemaType resolved = StvnTypeResolver.resolveNominalSchema(candidateSlotSchema);
+            SchemaType target = resolved != null ? resolved : candidateSlotSchema;
+            var ctor = target.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+            if (sum != null && sum.getEnumDef() == null) {
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                if (isOptionSumType(sum)) {
+                    return !branches.isEmpty()
+                        && doesSlotSchemaAcceptNominalBrand(branches.get(0), constBrandId, new HashSet<>(visitedBrands));
+                }
+                if (isEitherSumType(sum)) {
+                    return branches.size() >= 2
+                        && doesSlotSchemaAcceptNominalBrand(branches.get(1), constBrandId, new HashSet<>(visitedBrands));
+                }
+                if (isUnionSumType(sum)) {
+                    for (var b : branches) {
+                        if (doesSlotSchemaAcceptNominalBrand(b, constBrandId, new HashSet<>(visitedBrands))) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static @Nullable String verifyCompositeConstantChildBrands(
+        SchemaType srcSchema,
+        SchemaType tgtSchema,
+        String rawTokenText,
+        Set<String> visited
+    ) {
+        SchemaType resolvedSrc = StvnTypeResolver.resolveNominalSchema(srcSchema);
+        SchemaType effSrc = resolvedSrc != null ? resolvedSrc : srcSchema;
+        SchemaType resolvedTgt = StvnTypeResolver.resolveNominalSchema(tgtSchema);
+        SchemaType effTgt = resolvedTgt != null ? resolvedTgt : tgtSchema;
+
+        var srcCtor = effSrc.getSchemaConstructor();
+        var tgtCtor = effTgt.getSchemaConstructor();
+        if (srcCtor == null || tgtCtor == null) {
+            return null;
+        }
+        if (tgtCtor.getSumType() != null && tgtCtor.getSumType().getEnumDef() == null && srcCtor.getSumType() == null) {
+            var sum = tgtCtor.getSumType();
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            if (isOptionSumType(sum) && !branches.isEmpty()) {
+                return verifyCompositeConstantChildBrands(srcSchema, branches.get(0), rawTokenText, visited);
+            }
+            if (isEitherSumType(sum) && branches.size() >= 2) {
+                return verifyCompositeConstantChildBrands(srcSchema, branches.get(1), rawTokenText, visited);
+            }
+            if (isUnionSumType(sum)) {
+                String firstErr = null;
+                for (var b : branches) {
+                    String err = verifyCompositeConstantChildBrands(srcSchema, b, rawTokenText, new HashSet<>(visited));
+                    if (err == null) {
+                        return null;
+                    }
+                    if (firstErr == null) {
+                        firstErr = err;
+                    }
+                }
+                return firstErr;
+            }
+        }
+        if (srcCtor.getProductType() != null && tgtCtor.getProductType() != null) {
+            var sSlots = srcCtor.getProductType().getSchemaTypeList();
+            var tSlots = tgtCtor.getProductType().getSchemaTypeList();
+            int n = Math.min(sSlots.size(), tSlots.size());
+            for (int i = 0; i < n; i++) {
+                String err = verifyPurePsiConstantNominalBrandCompatibility(sSlots.get(i), tSlots.get(i), rawTokenText);
+                if (err != null) return err;
+            }
+        } else if (srcCtor.getCollectionType() != null && tgtCtor.getCollectionType() != null) {
+            var sArgs = srcCtor.getCollectionType().getSchemaTypeList();
+            var tArgs = tgtCtor.getCollectionType().getSchemaTypeList();
+            int n = Math.min(sArgs.size(), tArgs.size());
+            for (int i = 0; i < n; i++) {
+                String err = verifyPurePsiConstantNominalBrandCompatibility(sArgs.get(i), tArgs.get(i), rawTokenText);
+                if (err != null) return err;
+            }
+        } else if (srcCtor.getSumType() != null && tgtCtor.getSumType() != null) {
+            var sBranches = PsiTreeUtil.getChildrenOfTypeAsList(srcCtor.getSumType(), SchemaType.class);
+            var tBranches = PsiTreeUtil.getChildrenOfTypeAsList(tgtCtor.getSumType(), SchemaType.class);
+            int n = Math.min(sBranches.size(), tBranches.size());
+            for (int i = 0; i < n; i++) {
+                String err = verifyPurePsiConstantNominalBrandCompatibility(sBranches.get(i), tBranches.get(i), rawTokenText);
+                if (err != null) return err;
+            }
+        }
+        return null;
     }
 
     private void appendSuspendedComplianceFooter(StringBuilder sb, SchemaType leafSchema, boolean ungrounded) {
@@ -1249,8 +1519,55 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     && diag.endOffset() == rootRange.getEndOffset()) {
                 return diag.message();
             }
+            if (matchesWrapperTagSpanAlongSpine(slotRootVal, targetVal, diag.startOffset(), diag.endOffset())) {
+                return diag.message();
+            }
         }
         return null;
+    }
+
+    private static boolean matchesWrapperTagSpanAlongSpine(
+        Value slotRootVal,
+        Value targetVal,
+        int diagStart,
+        int diagEnd
+    ) {
+        if (diagEnd <= diagStart) {
+            return false;
+        }
+        Value curr = slotRootVal;
+        for (int depth = 0; depth < 16 && curr != null; depth++) {
+            PsiElement wrapper = curr.getExplicitUnionValue() != null
+                ? curr.getExplicitUnionValue()
+                : (curr.getExplicitEitherValue() != null
+                    ? curr.getExplicitEitherValue()
+                    : curr.getExplicitOptionValue());
+            if (wrapper == null) {
+                break;
+            }
+            var tagChild = wrapper.getFirstChild();
+            if (tagChild != null) {
+                var tagRange = tagChild.getTextRange();
+                if (tagRange != null
+                        && diagStart == tagRange.getStartOffset()
+                        && diagEnd == tagRange.getEndOffset()) {
+                    return true;
+                }
+            }
+            if (curr == targetVal) {
+                break;
+            }
+            if (curr.getExplicitUnionValue() != null) {
+                curr = curr.getExplicitUnionValue().getValue();
+            } else if (curr.getExplicitEitherValue() != null) {
+                curr = curr.getExplicitEitherValue().getValue();
+            } else if (curr.getExplicitOptionValue() != null) {
+                curr = curr.getExplicitOptionValue().getValue();
+            } else {
+                break;
+            }
+        }
+        return false;
     }
 
     private static List<String> collectContainedCompilerErrorMessages(PsiElement element) {
@@ -1508,7 +1825,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var targetTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
             if (targetTypeDef != null) {
-                return buildTargetDocumentation(targetTypeDef, null);
+                return buildTargetDocumentation(targetTypeDef, originalElement);
             }
         }
         return null;
@@ -1574,6 +1891,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable String buildEffectiveFacetsTable(TypeDefinition typeDef) {
+        return buildEffectiveFacetsTable(typeDef, null);
+    }
+
+    private static @Nullable String buildEffectiveFacetsTable(
+        TypeDefinition typeDef,
+        @Nullable PsiElement originalElement
+    ) {
         var rawIr = StvnTypeResolver.resolveNominalIrSchema(typeDef);
         StvnSchema irSchema = (rawIr instanceof StvnSchema.PoisonedSchema p)
             ? p.bestEffortFallback().orElse(null)
@@ -1830,22 +2154,37 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         boolean isComposite = isCompositeOrCollectionType(baseType);
         final boolean exactFlag = isExactFloat;
+        String malformedArityOrigin = describeMalformedConstructorArityOrigin(typeDef);
+        TraitViolationUsageContext usageViolationCtx = resolveTraitViolationContainerContext(originalElement);
 
         // 5. #equatable
         boolean effEquatable = irSchema != null
             ? irSchema.traits().equatable()
             : resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE)
                 .orElseGet(() -> resolveDefaultEquatable(typeDef, baseType, exactFlag));
-        OriginInfo equatableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, effEquatable, isComposite);
-        rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, effEquatable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, equatableOrigin.origin(), equatableOrigin.status()));
+        if (malformedArityOrigin != null && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)) {
+            rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, "\u2014", malformedArityOrigin, "Invalid"));
+        } else {
+            OriginInfo equatableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_EQUATABLE, effEquatable, isComposite);
+            if (usageViolationCtx != null && !effEquatable) {
+                String usageOrigin = resolveUsageSiteNonEquatableOrigin(typeDef, baseType, equatableOrigin);
+                rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, StvnVocabulary.VAL_FALSE, usageOrigin, "Invalid"));
+            } else {
+                rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, effEquatable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, equatableOrigin.origin(), equatableOrigin.status()));
+            }
+        }
 
         // 6. #comparable
         boolean effComparable = irSchema != null
             ? irSchema.traits().comparable()
             : resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_COMPARABLE)
                 .orElseGet(() -> resolveDefaultComparable(typeDef, baseType));
-        OriginInfo comparableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
-        rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, effComparable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, comparableOrigin.origin(), comparableOrigin.status()));
+        if (malformedArityOrigin != null && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_COMPARABLE)) {
+            rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, "\u2014", malformedArityOrigin, "Invalid"));
+        } else {
+            OriginInfo comparableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
+            rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, effComparable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, comparableOrigin.origin(), comparableOrigin.status()));
+        }
 
         if (rows.isEmpty()) return null;
 
@@ -1906,7 +2245,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
         String qualifiedAlias = currentAlias;
         if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
-            String pkgText = enclosingPkg.getPackagePath().getText().trim();
+            String pkgText = StvnTrailingSlashInspection.stripTrailingSlashes(enclosingPkg.getPackagePath().getText());
             qualifiedAlias = pkgText + "/" + bareAlias;
         }
         String bareQualifiedAlias = qualifiedAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
@@ -3146,7 +3485,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var typeKw = PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class);
             if (typeKw != null) {
-                return getDocumentationElement(typeKw, null);
+                return getDocumentationElement(typeKw, originalElement != typeKw ? originalElement : null);
             }
             var valKw = PsiTreeUtil.getParentOfType(originalElement, ValueKeyword.class);
             if (valKw != null) {
@@ -3154,7 +3493,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 if (degradedBodyVal != null) {
                     return degradedBodyVal;
                 }
-                return getDocumentationElement(valKw, null);
+                return getDocumentationElement(valKw, originalElement != valKw ? originalElement : null);
             }
             var valueAncestor = PsiTreeUtil.getParentOfType(originalElement, Value.class);
             if (valueAncestor != null && PsiTreeUtil.getParentOfType(valueAncestor, BodyEntry.class, ConstantDefinition.class) != null) {
@@ -3916,6 +4255,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             : (schemaType != null ? StvnTypeResolver.formatSchemaType(schemaType) : "Unknown");
 
         var sb = new StringBuilder();
+        var usageBanner = buildTraitViolationUsageBanner(typeDef, originalElement);
+        if (usageBanner != null) {
+            sb.append(usageBanner);
+        }
         // Zone 1: Identity & Structural Trace
         sb.append("<div class='definition'>");
         if (keyword != null) {
@@ -3923,7 +4266,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
             if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
-                var pkgPath = enclosingPkg.getPackagePath().getText().trim();
+                var pkgPath = StvnTrailingSlashInspection.stripTrailingSlashes(enclosingPkg.getPackagePath().getText());
                 var localName = keyword.getText().startsWith(StvnVocabulary.SIGIL_TYPIC) ? keyword.getText().substring(1) : keyword.getText();
                 var fqni = pkgPath + "/" + localName;
                 sb.append("<b>Package:</b> <code>").append(pkgPath).append("</code><br/>");
@@ -3967,7 +4310,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // Zone 2: Effective Semantic Contract
         sb.append("<div class='content'>");
-        var facetsTable = buildEffectiveFacetsTable(typeDef);
+        var facetsTable = buildEffectiveFacetsTable(typeDef, originalElement);
         if (facetsTable != null) {
             sb.append(facetsTable).append("<br/>");
         }
@@ -3976,7 +4319,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         boolean lhsDegraded = (lhsIrSchema instanceof StvnSchema.PoisonedSchema)
             || (keyword != null && StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), keyword.getText().trim()))
             || (schemaType != null && StvnTypeResolver.isDegradedOrUngroundedSchema(typeDef.getContainingFile(), schemaType));
-        var lhsExemplar = lhsDegraded
+        var lhsExemplar = (lhsDegraded || usageBanner != null)
             ? null
             : StvnExemplarValueGenerator.generateHoverExemplar(schemaType, lhsIrSchema);
         if (lhsExemplar != null && !lhsExemplar.isBlank()) {
@@ -4052,11 +4395,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // Zone 2: Effective Semantic Contract
         var enclosingDef = PsiTreeUtil.getParentOfType(productType, TypeDefinition.class);
-        if (enclosingDef != null) {
-            var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-            if (facetsTable != null) {
-                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-            }
+        var facetsTable = enclosingDef != null
+            ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+            : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(productType, SchemaConstructor.class));
+        if (facetsTable != null) {
+            sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
         }
 
         // Zone 3: Authoring Capabilities & Context
@@ -4120,11 +4463,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // Zone 2: Effective Semantic Contract
         var enclosingDef = PsiTreeUtil.getParentOfType(collType, TypeDefinition.class);
-        if (enclosingDef != null) {
-            var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-            if (facetsTable != null) {
-                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-            }
+        var facetsTable = enclosingDef != null
+            ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+            : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(collType, SchemaConstructor.class));
+        if (facetsTable != null) {
+            sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
         }
 
         sb.append("<div class='content'>");
@@ -4176,11 +4519,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             // Zone 2: Effective Semantic Contract
             var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
-            if (enclosingDef != null) {
-                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-                if (facetsTable != null) {
-                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-                }
+            var facetsTable = enclosingDef != null
+                ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+                : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
             }
 
             sb.append("<div class='content'>");
@@ -4221,11 +4564,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             // Zone 2: Effective Semantic Contract
             var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
-            if (enclosingDef != null) {
-                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-                if (facetsTable != null) {
-                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-                }
+            var facetsTable = enclosingDef != null
+                ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+                : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
             }
 
             // Zone 3: Authoring Capabilities & Context
@@ -4252,11 +4595,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             // Zone 2: Effective Semantic Contract
             var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
-            if (enclosingDef != null) {
-                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-                if (facetsTable != null) {
-                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-                }
+            var facetsTable = enclosingDef != null
+                ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+                : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
             }
 
             // Zone 3: Authoring Capabilities & Context
@@ -4286,11 +4629,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
             // Zone 2: Effective Semantic Contract
             var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
-            if (enclosingDef != null) {
-                var facetsTable = buildEffectiveFacetsTable(enclosingDef);
-                if (facetsTable != null) {
-                    sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
-                }
+            var facetsTable = enclosingDef != null
+                ? buildEffectiveFacetsTable(enclosingDef, originalElement)
+                : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
+            if (facetsTable != null) {
+                sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
             }
 
             // Zone 3: Authoring Capabilities & Context
@@ -4320,6 +4663,210 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             sb.append(String.join(", ", list)).append("<br/>");
         }
+    }
+
+    private record TraitViolationUsageContext(String requirementHtml, TypeKeyword usageKeyword) {}
+
+    private static @Nullable TraitViolationUsageContext resolveTraitViolationContainerContext(
+        @Nullable PsiElement originalElement
+    ) {
+        if (originalElement == null) {
+            return null;
+        }
+        TypeKeyword usageKw = (originalElement instanceof TypeKeyword tk)
+            ? tk
+            : PsiTreeUtil.getParentOfType(originalElement, TypeKeyword.class, false);
+        if (usageKw == null
+                || StvnPsiUtils.isTypeDefinitionTarget(usageKw)
+                || PsiTreeUtil.getParentOfType(usageKw, PackagePath.class, UseTarget.class) != null) {
+            return null;
+        }
+        SchemaType argSchema = PsiTreeUtil.getParentOfType(usageKw, SchemaType.class, false);
+        if (argSchema == null || argSchema.getTypeKeyword() != usageKw) {
+            return null;
+        }
+        if (!(argSchema.getParent() instanceof CollectionType collType)) {
+            return null;
+        }
+        var args = collType.getSchemaTypeList();
+        var first = collType.getFirstChild();
+        String collKind = first != null ? first.getText().trim() : "";
+        String eqReq = "<code>" + StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE + "</code>";
+        if (StvnVocabulary.TYPE_SET.equals(collKind) && !args.isEmpty() && args.get(0) == argSchema) {
+            return new TraitViolationUsageContext("Set elements require types to satisfy " + eqReq, usageKw);
+        }
+        if (StvnVocabulary.TYPE_MAP.equals(collKind) && !args.isEmpty() && args.get(0) == argSchema) {
+            return new TraitViolationUsageContext("Map keys require types to satisfy " + eqReq, usageKw);
+        }
+        if (StvnVocabulary.TYPE_MAP.equals(collKind)
+                && args.size() >= 2
+                && args.get(1) == argSchema
+                && isCollectionTypeInvertible(collType)) {
+            return new TraitViolationUsageContext(
+                "Inverted map values (<code>" + StvnVocabulary.FACET_KW_INVERTIBLE + "</code>) require types to satisfy " + eqReq,
+                usageKw
+            );
+        }
+        return null;
+    }
+
+    private static boolean isCollectionTypeInvertible(CollectionType collType) {
+        var outerSchema = PsiTreeUtil.getParentOfType(collType, SchemaType.class, false);
+        if (outerSchema != null && hasFacetInMap(outerSchema.getMetadataMap(), "invertible")) {
+            return true;
+        }
+        var outerDef = PsiTreeUtil.getParentOfType(collType, TypeDefinition.class, false);
+        return outerDef != null && hasExplicitFacetInPsi(outerDef, "invertible");
+    }
+
+    private static @Nullable String buildTraitViolationUsageBanner(
+        TypeDefinition typeDef,
+        @Nullable PsiElement originalElement
+    ) {
+        var usageCtx = resolveTraitViolationContainerContext(originalElement);
+        if (usageCtx == null) {
+            return null;
+        }
+        var rawIr = StvnTypeResolver.resolveNominalIrSchema(typeDef);
+        StvnSchema irSchema = (rawIr instanceof StvnSchema.PoisonedSchema p) ? p.bestEffortFallback().orElse(null) : rawIr;
+        if (irSchema == null) {
+            irSchema = resolveNearestNonPoisonedAncestorIr(typeDef);
+        }
+        boolean effEquatable;
+        if (irSchema != null) {
+            effEquatable = irSchema.traits().equatable();
+        } else {
+            var schema = typeDef.getSchemaType();
+            effEquatable = schema != null && StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(schema, new HashSet<>());
+        }
+        if (effEquatable) {
+            return null;
+        }
+        String usageAlias = usageCtx.usageKeyword().getText().trim();
+        String targetAlias = typeDef.getTypeKeyword() != null
+            ? typeDef.getTypeKeyword().getText().trim()
+            : usageAlias;
+        return """
+            <div style="padding: 6px 10px; border-left: 4px solid #E57373; background-color: rgba(229, 115, 115, 0.12); color: #C62828; margin-bottom: 10px; border-radius: 2px; font-family: sans-serif;">
+                <b style="font-size: 1.05em;">&#9888; Trait Violation at Usage Site</b><br/>
+                %s, but <a href="psi_element://TypeDefinition/%s"><code>%s</code></a> resolves to <code>%s %s</code> in <code>%s</code>.
+            </div>
+            """.formatted(
+                usageCtx.requirementHtml(),
+                escapeHtmlBody(usageAlias),
+                escapeHtmlBody(targetAlias),
+                StvnVocabulary.FACET_KW_EQUATABLE,
+                StvnVocabulary.VAL_FALSE,
+                StvnVocabulary.KEYWORD_DEFS
+            );
+    }
+
+    private static String resolveUsageSiteNonEquatableOrigin(
+        TypeDefinition typeDef,
+        String baseType,
+        OriginInfo defaultOrigin
+    ) {
+        if (hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)
+                || defaultOrigin.origin().startsWith("Inherited from")
+                || defaultOrigin.origin().startsWith("Derived (")) {
+            return defaultOrigin.origin();
+        }
+        var rhsSchema = typeDef.getSchemaType();
+        if (rhsSchema != null && rhsSchema.getTypeKeyword() != null) {
+            String parentAlias = rhsSchema.getTypeKeyword().getText().trim();
+            if (!StvnVocabulary.TYPE_FLOAT.equals(parentAlias)
+                    && !StvnVocabulary.isBaseScalarType(parentAlias)) {
+                return "Inherited from<br/><a href=\"psi_element://TypeDefinition/"
+                    + escapeHtmlBody(parentAlias)
+                    + "\"><code>"
+                    + escapeHtmlBody(parentAlias)
+                    + "</code></a>";
+            }
+        }
+        if (StvnVocabulary.TYPE_FLOAT.equals(baseType)) {
+            return "Derived from <code>" + StvnVocabulary.TYPE_FLOAT
+                + "</code> (continuous float lacks <code>" + StvnVocabulary.FACET_KW_EQUATABLE + "</code>)";
+        }
+        return defaultOrigin.origin();
+    }
+
+    private static @Nullable String describeMalformedConstructorArityOrigin(TypeDefinition typeDef) {
+        var terminal = resolveTerminalSchemaType(typeDef, new HashSet<>());
+        if (terminal != null && terminal.getSchemaConstructor() != null) {
+            return describeMalformedConstructorArityOrigin(terminal.getSchemaConstructor());
+        }
+        if (typeDef.getSchemaType() != null && typeDef.getSchemaType().getSchemaConstructor() != null) {
+            return describeMalformedConstructorArityOrigin(typeDef.getSchemaType().getSchemaConstructor());
+        }
+        return null;
+    }
+
+    private static @Nullable String describeMalformedConstructorArityOrigin(@Nullable SchemaConstructor ctor) {
+        if (ctor == null) {
+            return null;
+        }
+        if (ctor.getProductType() != null) {
+            if (ctor.getProductType().getSchemaTypeList().isEmpty()) {
+                return "Malformed constructor (requires at least 1 field)";
+            }
+            return null;
+        }
+        if (ctor.getCollectionType() != null) {
+            var coll = ctor.getCollectionType();
+            var args = coll.getSchemaTypeList();
+            var first = coll.getFirstChild();
+            String collName = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_MAP.equals(collName)) {
+                return args.size() != 2 ? "Malformed constructor (requires key and value types)" : null;
+            }
+            return args.size() != 1 ? "Malformed constructor (requires 1 element type)" : null;
+        }
+        if (ctor.getSumType() != null) {
+            var sum = ctor.getSumType();
+            if (sum.getEnumDef() != null) {
+                return sum.getEnumDef().getValueKeywordList().isEmpty()
+                    ? "Malformed constructor (requires at least 1 variant)"
+                    : null;
+            }
+            var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            if (isUnionSumType(sum)) {
+                return branches.size() < 2 ? "Malformed constructor (requires at least 2 branches)" : null;
+            }
+            if (isOptionSumType(sum)) {
+                return branches.size() != 1 ? "Malformed constructor (requires 1 inner type)" : null;
+            }
+            if (isEitherSumType(sum)) {
+                return branches.size() != 2 ? "Malformed constructor (requires 2 branch types)" : null;
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String buildMalformedInlineConstructorFacetsTable(@Nullable SchemaConstructor ctor) {
+        String malformedOrigin = describeMalformedConstructorArityOrigin(ctor);
+        if (malformedOrigin == null) {
+            return null;
+        }
+        String violationColor = '#' + getViolationBadgeColorHex();
+        var html = new StringBuilder();
+        html.append("<b>Effective Facets &amp; Traits:</b><br/>");
+        html.append("<table style=\"width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 6px; font-size: 0.9em;\">");
+        html.append("<thead><tr style=\"border-bottom: 1px solid #").append(getBorderColorHex()).append("; text-align: left;\">");
+        html.append("<th width=\"28%\" style=\"padding: 2px 4px;\">Facet Tag</th>");
+        html.append("<th width=\"28%\" style=\"padding: 2px 4px;\">Effective Value</th>");
+        html.append("<th width=\"24%\" style=\"padding: 2px 4px;\">Origin</th>");
+        html.append("<th width=\"20%\" style=\"padding: 2px 4px;\">Status</th>");
+        html.append("</tr></thead><tbody>");
+        for (String tag : List.of(StvnVocabulary.FACET_KW_EQUATABLE, StvnVocabulary.FACET_KW_COMPARABLE)) {
+            html.append("<tr>");
+            html.append("<td style=\"padding: 2px 4px;\"><code>").append(tag).append("</code></td>");
+            html.append("<td style=\"padding: 2px 4px;\"><code>\u2014</code></td>");
+            html.append("<td style=\"padding: 2px 4px;\">").append(malformedOrigin).append("</td>");
+            html.append("<td style=\"padding: 2px 4px;\"><b style=\"color: ").append(violationColor).append(";\">Invalid</b></td>");
+            html.append("</tr>");
+        }
+        html.append("</tbody></table>");
+        return html.toString();
     }
 
     // ============================================================================
@@ -4441,16 +4988,24 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var schemaType = info != null ? info.getSchema() : null;
         var displayType = resolvedType != null ? resolvedType : (info != null ? info.getLabel() : "Unknown");
         Value slotRootVal = findEnclosingSlotRootValue(value);
+        var rootSlotInfo = StvnTypeResolver.resolveBaseTypeInfo(slotRootVal);
+        SchemaType rootSlotSchema = (rootSlotInfo != null && rootSlotInfo.getSchema() != null)
+            ? rootSlotInfo.getSchema()
+            : schemaType;
+        WrapperSpineValidationResult wrapperValidation = validateExplicitWrapperSpine(slotRootVal, rootSlotSchema);
         if (slotRootVal != value && schemaType != null && isCoproductSumSchemaType(schemaType)) {
             String rootTrajectory = StvnTypeResolver.resolveValueType(slotRootVal);
             if (rootTrajectory != null && !rootTrajectory.isBlank()) {
                 displayType = rootTrajectory;
             }
         }
+        if (wrapperValidation.invalid() && wrapperValidation.failingTargetSchema() != null) {
+            displayType = StvnSchemaFormatter.formatSchema(wrapperValidation.failingTargetSchema());
+        }
 
         // Resolve union variant context if value resides in or is an ExplicitUnionValue
-        var unionContext = resolveUnionVariantHoverContext(value, originalElement);
-        String hoverSlotTrajectory = StvnTypeResolver.formatHoverSlotTrajectory(slotRootVal);
+        var unionContext = wrapperValidation.invalid() ? null : resolveUnionVariantHoverContext(value, originalElement);
+        String hoverSlotTrajectory = wrapperValidation.invalid() ? null : StvnTypeResolver.formatHoverSlotTrajectory(slotRootVal);
         var governingSchema = (unionContext != null)
             ? unionContext.governingSchema()
             : (hoverSlotTrajectory != null ? hoverSlotTrajectory : displayType);
@@ -4460,7 +5015,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var targetValueForCompliance = (unionContext != null && unionContext.payloadValue() != null)
             ? unionContext.payloadValue()
             : value;
-        if (unionContext == null
+        if (wrapperValidation.invalid() && wrapperValidation.failingWrapperValue() != null) {
+            targetValueForCompliance = wrapperValidation.failingWrapperValue();
+            if (wrapperValidation.failingTargetSchema() != null) {
+                targetSchemaForCompliance = wrapperValidation.failingTargetSchema();
+                governingSchema = StvnSchemaFormatter.formatSchema(wrapperValidation.failingTargetSchema());
+            }
+        } else if (unionContext == null
                 && targetSchemaForCompliance != null
                 && isCoproductSumSchemaType(targetSchemaForCompliance)
                 && !isGoverningSchemaUngrounded(targetValueForCompliance, targetSchemaForCompliance)
@@ -4521,14 +5082,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var compliance = evaluateValueCompliance(targetValueForCompliance, targetSchemaForCompliance);
         String badgeColor = ("Satisfied (Precision Loss)".equals(compliance.statusLabel())
                 || "Suspended (Degraded Schema)".equals(compliance.statusLabel())
-                || "Suspended (Ungrounded Schema)".equals(compliance.statusLabel()))
+                || "Suspended (Ungrounded Schema)".equals(compliance.statusLabel())
+                || "Suspended (Document Errors)".equals(compliance.statusLabel()))
             ? getWarningBadgeColorHex()
             : (compliance.isSatisfied() ? getSatisfiedBadgeColorHex() : getViolationBadgeColorHex());
         String badgeText = compliance.statusLabel();
         sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(badgeColor).append(";\">").append(badgeText).append("</b><br/>");
         sb.append(compliance.detailExplanation()).append("<br/>");
 
-        var temporalDoc = buildTemporalValueHoverDoc(targetValueForCompliance, targetSchemaForCompliance);
+        var temporalDoc = wrapperValidation.invalid()
+            ? null
+            : buildTemporalValueHoverDoc(targetValueForCompliance, targetSchemaForCompliance);
         if (temporalDoc != null) {
             sb.append(temporalDoc);
         }
@@ -4537,6 +5101,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || isGoverningSchemaDegraded(targetValueForCompliance, targetSchemaForCompliance));
         if (!"Suspended (Ungrounded Schema)".equals(compliance.statusLabel())
                 && !"Suspended (Degraded Schema)".equals(compliance.statusLabel())
+                && !"Suspended (Document Errors)".equals(compliance.statusLabel())
+                && !wrapperValidation.invalid()
                 && !targetSchemaSuspended
                 && findEnclosingDegradedBodyAncestor(targetValueForCompliance) == null) {
             StvnSchema rawLeafIrSchema = targetSchemaForCompliance != null
@@ -4601,6 +5167,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
                 String activeNormalizedPath = snapshot.normalizedDocPath();
                 boolean isContainer = isContainerLiteral(value);
+                Value slotRootVal = findEnclosingSlotRootValue(value);
                 Set<String> matchedMessages = new LinkedHashSet<>();
                 for (var diag : snapshot.diagnostics()) {
                     if (diag.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR) {
@@ -4616,12 +5183,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         && diag.startOffset() >= range.getStartOffset()
                         && diag.endOffset() <= range.getEndOffset()
                         && diag.endOffset() > diag.startOffset();
+                    boolean wrapperSpineTagMatch = matchesWrapperTagSpanAlongSpine(
+                        slotRootVal,
+                        value,
+                        diag.startOffset(),
+                        diag.endOffset()
+                    );
                     boolean containerSliceMatch = isContainer
                         && diag.startOffset() >= range.getStartOffset()
                         && diag.endOffset() <= range.getEndOffset()
                         && (isExcessSliceDiagnostic(diagCode) || isContainerLevelDiagnostic(diagCode))
                         && resolveOwningContainerValue(file, diag.startOffset()) == value;
-                    if (exactSpanMatch || scalarContainedMatch || containerSliceMatch) {
+                    if (exactSpanMatch || scalarContainedMatch || wrapperSpineTagMatch || containerSliceMatch) {
                         matchedMessages.add(escapeHtmlBody(diag.message()));
                         if (isContainer) {
                             break;
@@ -4639,7 +5212,156 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             }
         }
+        if (rawResult.isSatisfied() && isBodyPass3Suspended(value)) {
+            return new StvnValueComplianceResult(
+                true,
+                "Suspended (Document Errors)",
+                "Payload compliance evaluation is suspended because document header or <code>"
+                    + StvnVocabulary.KEYWORD_DEFS + "</code> contains errors.",
+                rawResult.evaluatedConstraints(),
+                rawResult.validLexicalForms()
+            );
+        }
         return rawResult;
+    }
+
+    private record WrapperSpineValidationResult(
+        boolean invalid,
+        @Nullable Value failingWrapperValue,
+        @Nullable SchemaType failingTargetSchema,
+        @Nullable String message
+    ) {
+        static WrapperSpineValidationResult valid() {
+            return new WrapperSpineValidationResult(false, null, null, null);
+        }
+    }
+
+    private static WrapperSpineValidationResult validateExplicitWrapperSpine(
+        Value slotRootVal,
+        @Nullable SchemaType rootSlotSchema
+    ) {
+        if (rootSlotSchema == null) {
+            return WrapperSpineValidationResult.valid();
+        }
+        Value currVal = slotRootVal;
+        SchemaType currSchema = rootSlotSchema;
+        for (int depth = 0; depth < 16 && currVal != null && currSchema != null; depth++) {
+            if (isGoverningSchemaUngrounded(currVal, currSchema)
+                    || isGoverningSchemaDegraded(currVal, currSchema)) {
+                return WrapperSpineValidationResult.valid();
+            }
+            boolean hasExplicitWrapper = currVal.getExplicitUnionValue() != null
+                || currVal.getExplicitEitherValue() != null
+                || currVal.getExplicitOptionValue() != null;
+            if (!hasExplicitWrapper) {
+                return WrapperSpineValidationResult.valid();
+            }
+            SchemaType resolved = StvnTypeResolver.resolveNominalSchema(currSchema);
+            SchemaType target = resolved != null ? resolved : currSchema;
+            var ctor = target.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+
+            if (currVal.getExplicitUnionValue() != null) {
+                var unionVal = currVal.getExplicitUnionValue();
+                var tagChild = unionVal.getFirstChild();
+                String tagText = tagChild != null ? tagChild.getText().trim() : "";
+                if (sum == null || !isUnionSumType(sum)) {
+                    if (sum != null && isOptionSumType(sum)) {
+                        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                        if (!branches.isEmpty()) {
+                            currSchema = branches.get(0);
+                            continue;
+                        }
+                    }
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        "Explicit union tag '" + tagText + "' cannot be applied to schema '"
+                            + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                    );
+                }
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                var idxOpt = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, branches.size());
+                if (idxOpt.isEmpty()) {
+                    String numPart = tagText.startsWith(StvnVocabulary.SIGIL_VALUE) ? tagText.substring(1) : tagText;
+                    BigInteger parsedIdx = StvnPsiLiteralEvaluator.parseBigInteger(numPart).orElse(null);
+                    String errMsg = (parsedIdx != null && parsedIdx.signum() <= 0)
+                        ? "Union variant tag '" + tagText + "' must be >= 1"
+                        : "Union variant tag '" + tagText + "' exceeds branch count (" + branches.size() + ")";
+                    return new WrapperSpineValidationResult(true, currVal, currSchema, errMsg);
+                }
+                currVal = unionVal.getValue();
+                currSchema = branches.get(idxOpt.getAsInt());
+                continue;
+            }
+
+            if (currVal.getExplicitEitherValue() != null) {
+                var eitherVal = currVal.getExplicitEitherValue();
+                var tagChild = eitherVal.getFirstChild();
+                String tagText = tagChild != null ? tagChild.getText().trim() : "";
+                if (sum == null || !isEitherSumType(sum)) {
+                    if (sum != null && isOptionSumType(sum)) {
+                        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                        if (!branches.isEmpty()) {
+                            currSchema = branches.get(0);
+                            continue;
+                        }
+                    }
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        "Explicit " + StvnVocabulary.TYPE_EITHER + " tag '" + tagText
+                            + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                    );
+                }
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                if (branches.size() < 2) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        "Malformed " + StvnVocabulary.TYPE_EITHER + " schema lacks 2 branch types"
+                    );
+                }
+                boolean isLeft = eitherVal.getLeftLiteral() != null || eitherVal.getLeftShortLiteral() != null;
+                currVal = eitherVal.getValue();
+                currSchema = isLeft ? branches.get(0) : branches.get(1);
+                continue;
+            }
+
+            if (currVal.getExplicitOptionValue() != null) {
+                var optVal = currVal.getExplicitOptionValue();
+                var tagChild = optVal.getFirstChild();
+                String tagText = tagChild != null ? tagChild.getText().trim() : "";
+                if (sum == null || !isOptionSumType(sum)) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        "Explicit " + StvnVocabulary.TYPE_OPTION + " tag '" + tagText
+                            + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                    );
+                }
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                if (optVal.getValue() == null || branches.isEmpty()) {
+                    return WrapperSpineValidationResult.valid();
+                }
+                currVal = optVal.getValue();
+                currSchema = branches.get(0);
+            }
+        }
+        return WrapperSpineValidationResult.valid();
+    }
+
+    private static boolean isCoproductSumIrOrPsiSchema(@Nullable StvnSchema irSchema, SchemaType schemaType) {
+        if (irSchema instanceof StvnSchema.UnionSchema
+                || irSchema instanceof StvnSchema.EitherSchema
+                || irSchema instanceof StvnSchema.OptionSchema) {
+            return true;
+        }
+        return isCoproductSumSchemaType(schemaType);
     }
 
     private static boolean isExcessSliceDiagnostic(String code) {
@@ -4842,6 +5564,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (value.getExplicitUnionValue() != null
+                || value.getExplicitEitherValue() != null
+                || value.getExplicitOptionValue() != null) {
+            WrapperSpineValidationResult directWrapperCheck = validateExplicitWrapperSpine(value, schemaType);
+            if (directWrapperCheck.invalid() && directWrapperCheck.message() != null) {
+                String compilerMsg = findExactSpanCompilerErrorMessage(value, findEnclosingSlotRootValue(value));
+                String displayMsg = compilerMsg != null ? compilerMsg : directWrapperCheck.message();
+                return new StvnValueComplianceResult(
+                    false,
+                    "Violated",
+                    escapeHtmlBody(displayMsg),
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+        }
+
         if (value.getCollectionValue() != null
                 && value.getCollectionValue().getTupleLiteral() != null
                 && !baseType.startsWith(StvnVocabulary.TYPE_TUPLE)
@@ -4862,7 +5601,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || irSchema instanceof StvnSchema.TimeEpochSchema
                 || StvnVocabulary.TYPE_INT.equals(baseType)
                 || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
-                || baseType.isEmpty();
+                || (baseType.isEmpty() && !isCoproductSumIrOrPsiSchema(irSchema, schemaType));
             if (!isIntOrEpoch) {
                 return new StvnValueComplianceResult(
                     false,
@@ -5030,7 +5769,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawText = value.getText();
             boolean isStringSchema = irSchema instanceof StvnSchema.StringSchema
                 || StvnVocabulary.TYPE_STRING.equals(baseType)
-                || baseType.isEmpty();
+                || (baseType.isEmpty() && !isCoproductSumIrOrPsiSchema(irSchema, schemaType));
             if (!isStringSchema) {
                 return new StvnValueComplianceResult(
                     false,
@@ -5132,7 +5871,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawFloatText = value.getFloatLiteral().getText().trim();
             boolean isFloatSchema = irSchema instanceof StvnSchema.FloatSchema
                 || StvnVocabulary.TYPE_FLOAT.equals(baseType)
-                || baseType.isEmpty();
+                || (baseType.isEmpty() && !isCoproductSumIrOrPsiSchema(irSchema, schemaType));
             if (!isFloatSchema) {
                 return new StvnValueComplianceResult(
                     false,
@@ -5336,7 +6075,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var rawBoolText = value.getBooleanValue().getText().trim();
             boolean isBoolSchema = irSchema instanceof StvnSchema.BooleanSchema
                 || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)
-                || baseType.isEmpty();
+                || (baseType.isEmpty() && !isCoproductSumIrOrPsiSchema(irSchema, schemaType));
             if (!isBoolSchema) {
                 return new StvnValueComplianceResult(
                     false,

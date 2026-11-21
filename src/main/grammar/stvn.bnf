@@ -159,7 +159,8 @@ defs_element              ::= include_stmt
 private defs_element_recover ::= !(root_section_boundary | KW_INCLUDE | KW_PACKAGE | KW_USE | type_keyword | value_keyword | ATOM_BOOLEAN | ATOM_INT | ATOM_FLOAT | ATOM_STRING | ATOM_TIME_EPOCH | ATOM_DATE_TIME | COLL_SEQ | COLL_SET | COLL_MAP)
 
 package_enclosure         ::= KW_PACKAGE package_path LBRACE package_element* RBRACE {pin=1}
-package_path              ::= type_keyword
+package_path              ::= package_path_illegal | type_keyword
+package_path_illegal      ::= type_keyword FSLASH+
 package_element           ::= nested_package_illegal
                             | use_stmt
                             | type_definition

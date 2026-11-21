@@ -2041,6 +2041,7 @@ public final class StvnExternalAnnotator
     private static final class StvnRemoveTrailingSlashIntentionAction
             extends com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement {
 
+        @SafeFieldForPreview
         private final String cleanedTarget;
 
         StvnRemoveTrailingSlashIntentionAction(@Nullable PsiElement element, String cleanedTarget) {

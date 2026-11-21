@@ -162,7 +162,9 @@ public final class StvnTypeResolver {
         var enclosingPkg = PsiTreeUtil.getParentOfType(typeDef, PackageEnclosure.class);
         String fqniKey = typeName;
         if (enclosingPkg != null && enclosingPkg.getPackagePath() != null) {
-            var pkgText = enclosingPkg.getPackagePath().getText().trim();
+            var pkgText = org.stvnadore.plugin.validation.StvnTrailingSlashInspection.stripTrailingSlashes(
+                enclosingPkg.getPackagePath().getText()
+            );
             var localPart = typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName.substring(1) : typeName;
             fqniKey = pkgText + "/" + localPart;
         }

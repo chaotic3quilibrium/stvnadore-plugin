@@ -1,5 +1,7 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -11,10 +13,13 @@ import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.psi.NestedPackageIllegal;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.UseTarget;
@@ -41,11 +46,12 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                     return;
                 }
                 if (hasTrailingSlash(element)) {
-                    var cleaned = stripTrailingSlashes(extractNonCommentText(element));
+                    var raw = extractNonCommentText(element);
+                    var cleaned = stripTrailingSlashes(raw);
                     holder.registerProblem(
                         element,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Trailing slash prohibited in :use target",
+                            "Trailing slash prohibited in " + StvnVocabulary.KEYWORD_USE + " target: " + raw,
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
@@ -56,15 +62,18 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
 
             @Override
             public void visitPackagePath(@NotNull PackagePath element) {
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)
+                        || element.getParent() instanceof NestedPackageIllegal) {
                     return;
                 }
                 if (hasTrailingSlash(element)) {
-                    var cleaned = stripTrailingSlashes(extractNonCommentText(element));
+                    var raw = extractNonCommentText(element);
+                    var cleaned = stripTrailingSlashes(raw);
                     holder.registerProblem(
                         element,
                         StvnDiagnosticFormatter.formatPlugin(
-                            "Trailing slash prohibited in :package path",
+                            "Trailing slash prohibited in " + StvnVocabulary.KEYWORD_PACKAGE
+                                + " path '" + raw + "'; use '" + cleaned + "'",
                             StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
@@ -77,6 +86,9 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
 
     static boolean hasTrailingSlash(@NotNull PsiElement targetElement) {
         if (targetElement instanceof UseTarget useTarget && useTarget.getUseTargetIllegal() != null) {
+            return true;
+        }
+        if (targetElement instanceof PackagePath pkgPath && pkgPath.getPackagePathIllegal() != null) {
             return true;
         }
         String nonCommentText = extractNonCommentText(targetElement);
@@ -116,7 +128,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
     public static @NotNull String stripTrailingSlashes(@NotNull String text) {
         String cleaned = text.trim();
         while (cleaned.endsWith("/")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 1);
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
         }
         return cleaned;
     }
@@ -126,6 +138,7 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
      */
     public static final class RemoveTrailingSlashQuickFix implements LocalQuickFix {
 
+        @SafeFieldForPreview
         private final String cleanedTarget;
 
         /**
@@ -158,12 +171,28 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         }
 
         @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull ProblemDescriptor previewDescriptor
+        ) {
+            applyFix(project, previewDescriptor);
+            return IntentionPreviewInfo.DIFF;
+        }
+
+        @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             PsiElement element = descriptor.getPsiElement();
             if (element == null) {
                 return;
             }
-            Document document = PsiDocumentManager.getInstance(project).getDocument(element.getContainingFile());
+            PsiFile file = element.getContainingFile();
+            if (file == null) {
+                return;
+            }
+            Document document = file.getViewProvider().getDocument();
+            if (document == null) {
+                document = PsiDocumentManager.getInstance(project).getDocument(file);
+            }
             if (document != null) {
                 int startOffset = element.getTextRange().getStartOffset();
                 int endOffset = element.getTextRange().getEndOffset();
@@ -173,8 +202,10 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
                     sibling = sibling.getNextSibling();
                 }
                 String rawSpan = document.getText().substring(startOffset, endOffset);
-                String cleaned = rawSpan.replaceAll("/+$", "");
-                PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(document);
+                String cleaned = stripTrailingSlashes(rawSpan);
+                if (file.isPhysical()) {
+                    PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(document);
+                }
                 document.replaceString(startOffset, endOffset, cleaned);
                 PsiDocumentManager.getInstance(project).commitDocument(document);
             }

@@ -206,6 +206,9 @@ public final class StvnPsiUtils {
                     var containingFile = element.getContainingFile();
                     if (containingFile != null) {
                         for (var pkg : PsiTreeUtil.findChildrenOfType(containingFile, PackageEnclosure.class)) {
+                            if (hasIllegalTrailingSlash(pkg)) {
+                                continue;
+                            }
                             var pkgPath = pkg.getPackagePath();
                             if (targetPkg == null || (pkgPath != null && targetPkg.equals(pkgPath.getText().trim()))) {
                                 for (var pkgElem : pkg.getPackageElementList()) {
@@ -353,6 +356,20 @@ public final class StvnPsiUtils {
         return element != null && PsiTreeUtil.getParentOfType(element, BodyEntry.class, false) != null;
     }
 
+    /**
+     * Determines whether a {@link PackageEnclosure} has a missing or trailing-slash-illegal {@link PackagePath}.
+     *
+     * @param pkg candidate package enclosure
+     * @return {@code true} when {@code pkg} is {@code null}, lacks a {@link PackagePath}, or contains a {@link PackagePathIllegal}
+     */
+    public static boolean hasIllegalTrailingSlash(@Nullable PackageEnclosure pkg) {
+        if (pkg == null) {
+            return true;
+        }
+        var pkgPath = pkg.getPackagePath();
+        return pkgPath == null || pkgPath.getPackagePathIllegal() != null;
+    }
+
     public static boolean isTypeDefinitionTarget(@Nullable PsiElement element) {
         if (element == null) return false;
         var parent = element.getParent();
@@ -407,7 +424,7 @@ public final class StvnPsiUtils {
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
             var path = pkg.getPackagePath();
-            if (path != null && path.getText().equals(packagePath)) {
+            if (!hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(packagePath)) {
                 return true;
             }
         }
@@ -426,6 +443,9 @@ public final class StvnPsiUtils {
         var cleanName = typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName : StvnVocabulary.SIGIL_TYPIC + typeName;
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
+            if (hasIllegalTrailingSlash(pkg)) {
+                continue;
+            }
             for (var elem : pkg.getPackageElementList()) {
                 var def = elem.getTypeDefinition();
                 if (def != null && def.getTypeKeyword() != null) {

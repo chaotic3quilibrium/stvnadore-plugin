@@ -111,7 +111,7 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
         if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(this)) {
             return PsiReference.EMPTY_ARRAY;
         }
-        if (parent instanceof org.stvnadore.psi.PackagePath) {
+        if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(this, org.stvnadore.psi.PackagePath.class, org.stvnadore.psi.UseTargetIllegal.class) != null) {
             return PsiReference.EMPTY_ARRAY;
         }
         if (parent instanceof IncludeMapAlias alias) {

@@ -185,6 +185,128 @@ public final class StvnMetadataFacetInsertionUtil {
         }
     }
 
+    /**
+     * Inserts or replaces a single metadata facet entry (for example {@code #exact} or
+     * {@code #equatable #TRUE}) in {@code metaMap} at its canonical § 6.1 5-tier rank while
+     * preserving existing single-line or multi-line layout and interior comments.
+     *
+     * @param doc           mutable document backing {@code metaMap}
+     * @param metaMap       target metadata map PSI node
+     * @param facetKeyword  canonical facet keyword (for example {@code #exact} or {@code #equatable})
+     * @param fullEntryText full facet entry text to insert (for example {@code #exact} or {@code #equatable #TRUE})
+     */
+    public static void insertOrReplaceSingleFacet(
+            Document doc,
+            MetadataMap metaMap,
+            String facetKeyword,
+            String fullEntryText
+    ) {
+        List<MetadataEntry> entries = metaMap.getMetadataEntryList();
+        int targetRank = StvnMetadataOrderInspection.getFacetRank(facetKeyword);
+
+        List<MetadataEntry> surviving = new ArrayList<>();
+        List<MetadataEntry> toRemove = new ArrayList<>();
+        for (MetadataEntry entry : entries) {
+            String kw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
+            if (facetKeyword.equals(kw)) {
+                toRemove.add(entry);
+            } else {
+                surviving.add(entry);
+            }
+        }
+
+        boolean hasInteriorComment = PsiTreeUtil.findChildOfType(metaMap, PsiComment.class) != null;
+        int mapStart = metaMap.getTextRange().getStartOffset();
+        int mapEnd = metaMap.getTextRange().getEndOffset();
+        boolean multiLine = doc.getLineNumber(mapStart) < doc.getLineNumber(Math.max(mapStart, mapEnd - 1));
+
+        if (surviving.isEmpty() && !hasInteriorComment && !multiLine) {
+            doc.replaceString(mapStart, mapEnd, "{ " + fullEntryText + " }");
+            return;
+        }
+
+        ASTNode rbraceNode = metaMap.getNode().findChildByType(StvnTypes.RBRACE);
+        int closeOffset = rbraceNode != null ? rbraceNode.getStartOffset() : -1;
+
+        MetadataEntry insertBeforeEntry = null;
+        for (MetadataEntry candidate : surviving) {
+            String kw = StvnMetadataOrderInspection.extractFacetKeyword(candidate);
+            if (StvnMetadataOrderInspection.getFacetRank(kw) > targetRank) {
+                insertBeforeEntry = candidate;
+                break;
+            }
+        }
+
+        int anchorOffset = insertBeforeEntry != null ? insertBeforeEntry.getTextRange().getStartOffset() : -1;
+        String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
+
+        toRemove.sort(Comparator.comparingInt((MetadataEntry e) -> e.getTextRange().getStartOffset()).reversed());
+        for (MetadataEntry oldEntry : toRemove) {
+            int delStart = oldEntry.getTextRange().getStartOffset();
+            int delEnd = oldEntry.getTextRange().getEndOffset();
+            CharSequence seq = doc.getCharsSequence();
+            if (multiLine) {
+                int lineNum = doc.getLineNumber(delStart);
+                int lineStart = doc.getLineStartOffset(lineNum);
+                int lineEnd = doc.getLineEndOffset(lineNum);
+                String prefix = seq.subSequence(lineStart, delStart).toString();
+                String suffix = seq.subSequence(delEnd, lineEnd).toString();
+                if (prefix.isBlank() && suffix.isBlank()) {
+                    if (lineEnd + 1 < seq.length() && seq.charAt(lineEnd) == '\r' && seq.charAt(lineEnd + 1) == '\n') {
+                        delStart = lineStart;
+                        delEnd = lineEnd + 2;
+                    } else if (lineEnd < seq.length() && seq.charAt(lineEnd) == '\n') {
+                        delStart = lineStart;
+                        delEnd = lineEnd + 1;
+                    } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                        delStart--;
+                    }
+                } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                    delStart--;
+                }
+            } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                delStart--;
+            } else if (delEnd < seq.length() && seq.charAt(delEnd) == ' ') {
+                delEnd++;
+            }
+            int deletedChars = delEnd - delStart;
+            doc.deleteString(delStart, delEnd);
+            if (anchorOffset >= delEnd) {
+                anchorOffset -= deletedChars;
+            }
+            if (closeOffset >= delEnd) {
+                closeOffset -= deletedChars;
+            }
+        }
+
+        CharSequence chars = doc.getCharsSequence();
+        List<String> singleToken = List.of(fullEntryText);
+        if (multiLine) {
+            if (anchorOffset >= 0) {
+                int anchorLine = doc.getLineNumber(anchorOffset);
+                int lineStart = doc.getLineStartOffset(anchorLine);
+                String indent = extractLeadingSpaces(chars, lineStart, anchorOffset);
+                doc.insertString(lineStart, formatMultiLineFacets(singleToken, indent, lineSep));
+            } else if (closeOffset >= 0) {
+                int closeLine = doc.getLineNumber(closeOffset);
+                int closeLineStart = doc.getLineStartOffset(closeLine);
+                String closeIndent = extractLeadingSpaces(chars, closeLineStart, closeOffset);
+                doc.insertString(closeLineStart, formatMultiLineFacets(singleToken, closeIndent + "  ", lineSep));
+            }
+            return;
+        }
+
+        if (anchorOffset >= 0) {
+            doc.insertString(anchorOffset, fullEntryText + " ");
+        } else if (closeOffset >= 0) {
+            if (closeOffset > 0 && chars.charAt(closeOffset - 1) == ' ') {
+                doc.insertString(closeOffset - 1, " " + fullEntryText);
+            } else {
+                doc.insertString(closeOffset, " " + fullEntryText + " ");
+            }
+        }
+    }
+
     private static boolean isCapacityEntry(MetadataEntry entry) {
         String kw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
         return StvnVocabulary.FACET_KW_SIZE.equals(kw)

@@ -131,7 +131,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(keyword)) {
             return ResolveResult.EMPTY_ARRAY;
         }
-        if (parent instanceof org.stvnadore.psi.PackagePath) {
+        if (PsiTreeUtil.getParentOfType(keyword, org.stvnadore.psi.PackagePath.class, org.stvnadore.psi.UseTargetIllegal.class) != null) {
             return ResolveResult.EMPTY_ARRAY;
         }
 
@@ -258,7 +258,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                 }
             }
             var pkgPath = enclosingPkg.getPackagePath();
-            if (pkgPath != null) {
+            if (!StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg) && pkgPath != null) {
                 var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
                     ? targetTypeName.substring(1)
                     : targetTypeName;
@@ -364,6 +364,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             .filter(pkg -> !StvnMetaTemplateUtil.isInSecondaryRootSection(pkg))
             .toList();
         for (var pkg : packages) {
+            if (StvnPsiUtils.hasIllegalTrailingSlash(pkg)) continue;
             var pkgPath = pkg.getPackagePath();
             if (pkgPath == null) continue;
             var pathText = pkgPath.getText();

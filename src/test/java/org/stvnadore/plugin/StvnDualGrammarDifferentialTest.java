@@ -872,4 +872,70 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         assertEquals(":use [] must recover cleanly at ']' without swallowing :SurvivedAfterEmptyUse",
             1, survivedDefs.size());
     }
+
+    /**
+     * V46 (PB3R-02): Trailing-Slash ':package :pkg/ { ... }' PEG Ordered-Choice Recovery & Nested Isolation
+     * Verifies that 'package_path_illegal ::= type_keyword FSLASH+' precedes 'type_keyword' in 'package_path'
+     * so trailing-slash ':package' enclosures close their '{ ... }' blocks cleanly with zero PsiErrorElement
+     * nodes and zero downstream ':defs', ':type', or ':body' brace collapse.
+     */
+    public void testV46_TrailingSlashPackageEnclosureAndNestedIsolationHomology() throws Exception {
+        var recoveryMatrixPath = java.nio.file.Paths.get(
+            "src", "test", "resources", "shared-fixtures", "syntax", "invalid", "packages",
+            "stage9_trailing_slash_package_recovery_and_nominal_brand_matrix.stvn"
+        );
+        var matrixSrc = java.nio.file.Files.readString(recoveryMatrixPath, java.nio.charset.StandardCharsets.UTF_8);
+        var matrixPsi = myFixture.configureByText(
+            "stage9_trailing_slash_package_recovery_and_nominal_brand_matrix.stvn",
+            matrixSrc
+        );
+        assertNoSyntaxErrors(matrixPsi);
+
+        var packages = new java.util.ArrayList<>(PsiTreeUtil.findChildrenOfType(matrixPsi, org.stvnadore.psi.PackageEnclosure.class));
+        assertTrue("Expected at least 3 PackageEnclosure nodes in matrix fixture", packages.size() >= 3);
+        var trailingPkg = packages.stream()
+            .filter(p -> p.getPackagePath() != null && p.getPackagePath().getText().endsWith("/"))
+            .findFirst()
+            .orElse(null);
+        assertNotNull("Trailing-slash :package must parse as PackageEnclosure", trailingPkg);
+        assertNotNull("PackagePath must populate PackagePathIllegal via PEG ordered choice",
+            trailingPkg.getPackagePath().getPackagePathIllegal());
+        assertNull("PackagePath.getTypeKeyword() must be null when PackagePathIllegal matches",
+            trailingPkg.getPackagePath().getTypeKeyword());
+        assertFalse("Inner declarations inside trailing-slash :package must remain intact",
+            trailingPkg.getPackageElementList().isEmpty());
+        assertNotNull("Downstream :type entry must survive without brace collapse",
+            PsiTreeUtil.findChildOfType(matrixPsi, org.stvnadore.psi.TypeEntry.class));
+        assertNotNull("Downstream :body entry must survive without brace collapse",
+            PsiTreeUtil.findChildOfType(matrixPsi, BodyEntry.class));
+
+        var multiSlashAndNestedSrc = """
+            {
+              :defs {
+                :package :propulsion/multi/ / {
+                  :InnerMulti :Int
+                }
+                :package :outer {
+                  :package :outer/nested_slash/ {
+                    :Blocked :Int
+                  }
+                }
+                :RootSurvivor :String
+              }
+              :type :RootSurvivor
+              :body "intact"
+            }
+            """;
+        var multiPsi = myFixture.configureByText("multi_slash_and_nested_pkg.stvn", multiSlashAndNestedSrc);
+        assertNoSyntaxErrors(multiPsi);
+        var multiPkg = PsiTreeUtil.findChildOfType(multiPsi, org.stvnadore.psi.PackageEnclosure.class);
+        assertNotNull(multiPkg);
+        assertNotNull(multiPkg.getPackagePath());
+        assertNotNull(multiPkg.getPackagePath().getPackagePathIllegal());
+        assertEquals(":propulsion/multi", multiPkg.getPackagePath().getPackagePathIllegal().getTypeKeyword().getText());
+        var nestedIllegal = PsiTreeUtil.findChildOfType(multiPsi, org.stvnadore.psi.NestedPackageIllegal.class);
+        assertNotNull("Nested trailing-slash package must parse cleanly as NestedPackageIllegal", nestedIllegal);
+        assertNotNull(nestedIllegal.getPackagePath());
+        assertNotNull(nestedIllegal.getPackagePath().getPackagePathIllegal());
+    }
 }

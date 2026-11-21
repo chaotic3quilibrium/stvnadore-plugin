@@ -5744,7 +5744,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Expected :Union() to be highlighted from offset " + union0Offset + " to " + union0End + 
                    ". Found highlights: " + errorHighlights, union0Highlight.isPresent());
         assertTrue("Message must mention empty composite argument list for :Union()",
-                   union0Highlight.get().getDescription().contains("empty composite argument list: :Union() requires at least one schema type"));
+                   union0Highlight.get().getDescription().contains("empty composite argument list: :Union() requires at least 2 schema types"));
 
         // 6. Line 6: :Seq0 :Seq() -> exact range of ':Seq()'
         var seq0Offset = text.indexOf(":Seq()");

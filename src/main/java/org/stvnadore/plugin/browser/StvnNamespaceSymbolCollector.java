@@ -57,7 +57,7 @@ public final class StvnNamespaceSymbolCollector {
                     var pkgs = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
                     for (var pkg : pkgs) {
                         var p = pkg.getPackagePath();
-                        if (p != null && p.getText().equals(packagePath)) {
+                        if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && p != null && p.getText().equals(packagePath)) {
                             return true;
                         }
                     }
@@ -199,6 +199,9 @@ public final class StvnNamespaceSymbolCollector {
         // 3. Package Enclosures
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
+            if (StvnPsiUtils.hasIllegalTrailingSlash(pkg)) {
+                continue;
+            }
             var path = pkg.getPackagePath();
             var pathText = path != null ? path.getText() : StvnVocabulary.KEYWORD_PACKAGE;
             for (var elem : pkg.getPackageElementList()) {
@@ -356,6 +359,9 @@ public final class StvnNamespaceSymbolCollector {
             if (hasStrip && targetFile != null) {
                 var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
                 for (var pkg : remotePackages) {
+                    if (StvnPsiUtils.hasIllegalTrailingSlash(pkg)) {
+                        continue;
+                    }
                     var path = pkg.getPackagePath();
                     var pathText = path != null ? path.getText() : includeSource;
                     collectStrippedElements(pkg, pathText, processedNames, results, incl);
@@ -1078,6 +1084,9 @@ public final class StvnNamespaceSymbolCollector {
 
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
+            if (StvnPsiUtils.hasIllegalTrailingSlash(pkg)) {
+                continue;
+            }
             var pkgPath = pkg.getPackagePath();
             var pathText = pkgPath != null ? pkgPath.getText() : StvnVocabulary.KEYWORD_PACKAGE;
             for (var elem : pkg.getPackageElementList()) {
@@ -1198,7 +1207,7 @@ public final class StvnNamespaceSymbolCollector {
         var localPackages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : localPackages) {
             var path = pkg.getPackagePath();
-            if (path != null && path.getText().equals(targetPackagePath)) {
+            if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(targetPackagePath)) {
                 collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement);
             }
         }
@@ -1212,7 +1221,7 @@ public final class StvnNamespaceSymbolCollector {
                 var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
                 for (var pkg : remotePackages) {
                     var path = pkg.getPackagePath();
-                    if (path != null && path.getText().equals(targetPackagePath)) {
+                    if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(targetPackagePath)) {
                         collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement != null ? originElement : incl);
                     }
                 }
@@ -1223,7 +1232,7 @@ public final class StvnNamespaceSymbolCollector {
         var preludePackages = PsiTreeUtil.findChildrenOfType(preludeFile, PackageEnclosure.class);
         for (var pkg : preludePackages) {
             var path = pkg.getPackagePath();
-            if (path != null && path.getText().equals(targetPackagePath)) {
+            if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(targetPackagePath)) {
                 collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement);
             }
         }

@@ -44,7 +44,7 @@ public final class StvnNamespaceIndexHelper {
             var packages = PsiTreeUtil.findChildrenOfType(preludeFile, PackageEnclosure.class);
             for (var pkg : packages) {
                 var path = pkg.getPackagePath();
-                if (path == null) continue;
+                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg) || path == null) continue;
                 for (var elem : pkg.getPackageElementList()) {
                     var def = elem.getTypeDefinition();
                     if (def != null && def.getTypeKeyword() != null) {
@@ -67,7 +67,7 @@ public final class StvnNamespaceIndexHelper {
             var packages = PsiTreeUtil.findChildrenOfType(psiFile, PackageEnclosure.class);
             for (var pkg : packages) {
                 var path = pkg.getPackagePath();
-                if (path == null) continue;
+                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg) || path == null) continue;
                 for (var elem : pkg.getPackageElementList()) {
                     var def = elem.getTypeDefinition();
                     if (def != null && def.getTypeKeyword() != null) {

@@ -314,10 +314,13 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
         String originLabel
     ) {
         for (PackageEnclosure pkg : PsiTreeUtil.findChildrenOfType(sourceFile, PackageEnclosure.class)) {
-            if (StvnMetaTemplateUtil.isInSecondaryRootSection(pkg) || pkg.getPackagePath() == null) {
+            var pkgPath = pkg.getPackagePath();
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(pkg)
+                    || pkgPath == null
+                    || org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg)) {
                 continue;
             }
-            String pathText = pkg.getPackagePath().getText().trim();
+            String pathText = pkgPath.getText().trim();
             if (!targetPkg.equals(pathText)) {
                 continue;
             }
@@ -363,9 +366,9 @@ public final class StvnPackageCompletionContributor extends CompletionContributo
         String rawText = position.getText();
         int dummyIdx = rawText.indexOf("IntellijIdeaRulezzz");
         String head = dummyIdx >= 0 ? rawText.substring(0, dummyIdx) : defaultPrefix;
-        PsiElement parent = position.getParent();
-        if (parent instanceof UseTarget || parent instanceof PackagePath) {
-            String parentText = parent.getText();
+        PsiElement directiveTarget = PsiTreeUtil.getParentOfType(position, UseTarget.class, PackagePath.class);
+        if (directiveTarget != null) {
+            String parentText = directiveTarget.getText();
             int pDummyIdx = parentText.indexOf("IntellijIdeaRulezzz");
             if (pDummyIdx >= 0) {
                 return parentText.substring(0, pDummyIdx).trim();

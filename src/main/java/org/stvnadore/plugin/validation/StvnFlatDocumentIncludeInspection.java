@@ -219,8 +219,9 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
             }
             for (DefsElement elem : defsEntry.getDefsElementList()) {
                 if (elem.getPackageEnclosure() != null && elem.getPackageEnclosure().getPackagePath() != null) {
-                    String pkgPath = StvnTrailingSlashInspection.extractNonCommentText(
-                        elem.getPackageEnclosure().getPackagePath()).trim();
+                    String pkgPath = StvnTrailingSlashInspection.stripTrailingSlashes(
+                        StvnTrailingSlashInspection.extractNonCommentText(elem.getPackageEnclosure().getPackagePath())
+                    );
                     if (pkgPath.startsWith(StvnVocabulary.SIGIL_TYPIC) && !StvnNamespaceRules.isReservedPackage(pkgPath)) {
                         declared.add(pkgPath);
                     }

@@ -217,7 +217,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                     pkgUseStmts.add(useStmt);
                 }
             }
-            if (enclosingPkg.getPackagePath() != null) {
+            if (!org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg) && enclosingPkg.getPackagePath() != null) {
                 var pkgFqni = buildPackageConstantFqni(enclosingPkg.getPackagePath().getText(), tokenText);
                 var samePkgResolved = resolveConstantInFile(file, pkgFqni, new HashSet<>(), false);
                 if (samePkgResolved != null && samePkgResolved != element) {
@@ -277,7 +277,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                 if (kw != null) {
                     var kwText = kw.getText().trim();
                     var pkg = PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class);
-                    if (pkg != null && pkg.getPackagePath() != null) {
+                    if (pkg != null && !org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null) {
                         var fqni = buildPackageConstantFqni(pkg.getPackagePath().getText(), kwText);
                         if (fqni.equals(canonicalName) || kwText.equals(canonicalName)) {
                             return kw;
@@ -304,6 +304,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         // 2. Scan package enclosures (FQNI expansion and stripped short names)
         var packages = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class);
         for (var pkg : packages) {
+            if (org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg)) continue;
             var pkgPath = pkg.getPackagePath();
             if (pkgPath == null) continue;
             var pathText = pkgPath.getText();

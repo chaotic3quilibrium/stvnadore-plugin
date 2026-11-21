@@ -44,12 +44,17 @@ public final class StvnRenameReservedPackageQuickFix extends LocalQuickFixAndInt
             @NotNull PsiElement endElement
     ) {
         var pkgPath = PsiTreeUtil.getParentOfType(startElement, PackagePath.class, false);
-        if (pkgPath != null && pkgPath.getTypeKeyword() != null) {
-            var current = pkgPath.getTypeKeyword().getText();
-            var replaced = replaceReservedPrefix(current, ":com/example");
-            var newKw = StvnElementFactory.createTypeKeyword(project, replaced);
-            pkgPath.getTypeKeyword().replace(newKw);
-            return;
+        if (pkgPath != null) {
+            var targetKw = pkgPath.getTypeKeyword() != null
+                ? pkgPath.getTypeKeyword()
+                : (pkgPath.getPackagePathIllegal() != null ? pkgPath.getPackagePathIllegal().getTypeKeyword() : null);
+            if (targetKw != null) {
+                var current = targetKw.getText();
+                var replaced = replaceReservedPrefix(current, ":com/example");
+                var newKw = StvnElementFactory.createTypeKeyword(project, replaced);
+                targetKw.replace(newKw);
+                return;
+            }
         }
 
         var typeTarget = PsiTreeUtil.getParentOfType(startElement, TypeDefTarget.class, false);
