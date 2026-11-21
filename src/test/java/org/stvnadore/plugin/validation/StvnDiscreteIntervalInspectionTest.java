@@ -344,4 +344,45 @@ public final class StvnDiscreteIntervalInspectionTest extends BasePlatformTestCa
         assertTrue("SwapInvertedBoundsQuickFix must not be offered when only one bound is in the local MetadataMap",
             swapFixes.isEmpty());
     }
+
+    public void testAdjacentAndNonAdjacentBoundPinningExcludesBracesAndSiblingFacetsWithPreviewDiff() {
+        var text = """
+            {
+              :meta {
+                #name "bound_pinning_dx"
+                #kind #DEFS
+              }
+              :defs {
+                :TrapInvertedStringBounds { #maxSize 8 #minIncl "Z" #maxIncl "A" } :String
+                :TrapNonAdjacentBounds { #minIncl 10 #size 16 #maxExcl 5 } :Int
+                :ZonedBadBounds { #zoned #minIncl "2026-01-01T00:00:00-06:00[America/Chicago]" #maxExcl "2027-01-01T00:00:00-06:00[America/Chicago]" } :DateTime
+                :ZonedInvertedValid { #zoned #minIncl "2027-01-01T00:00:00[America/Chicago]" #maxExcl "2026-01-01T00:00:00[America/Chicago]" } :DateTime
+              }
+            }
+            """;
+        myFixture.configureByText("bound_pinning_dx.stvn_d", text);
+        var highlights = myFixture.doHighlighting();
+        var intervalErrors = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
+            .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVERTED_RANGE"))
+            .toList();
+
+        assertEquals("Expected exactly 3 ERR_INVERTED_RANGE errors (zero on mode-poisoned :ZonedBadBounds): " + intervalErrors,
+            3, intervalErrors.size());
+        assertEquals("#minIncl \"Z\" #maxIncl \"A\"", intervalErrors.get(0).getText());
+        assertEquals("#maxExcl 5", intervalErrors.get(1).getText());
+        assertEquals(
+            "#minIncl \"2027-01-01T00:00:00[America/Chicago]\" #maxExcl \"2026-01-01T00:00:00[America/Chicago]\"",
+            intervalErrors.get(2).getText()
+        );
+
+        // Verify Alt+Enter + IntentionPreviewInfo.DIFF on earlier non-adjacent #minIncl 10
+        int earlierMinOffset = text.indexOf("#minIncl 10") + 2;
+        myFixture.getEditor().getCaretModel().moveToOffset(earlierMinOffset);
+        var swapOnEarlier = myFixture.findSingleIntention("Swap inverted bounds ('#minIncl 5' and '#maxExcl 10')");
+        assertNotNull("Expected SwapInvertedBoundsQuickFix on non-adjacent earlier #minIncl 10", swapOnEarlier);
+        String preview = myFixture.getIntentionPreviewText(swapOnEarlier);
+        assertTrue("Expected IntentionPreviewInfo.DIFF to swap bounds cleanly: " + preview,
+            preview.contains("#minIncl 5 #size 16 #maxExcl 10"));
+    }
 }

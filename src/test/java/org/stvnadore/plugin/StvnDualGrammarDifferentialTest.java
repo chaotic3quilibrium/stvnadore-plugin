@@ -731,4 +731,48 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
         assertEquals("TupleLiteral must preserve all 6 positional Value slots despite 3 malformed fenced strings",
             6, tuple.getValueList().size());
     }
+
+    /**
+     * V43: Depth-Aware Mismatched Fenced String Recovery & Bracket-Safe Candidate Delimiter
+     * Assert valid '"""[SQL]\n...\n[JSON]"""' (including nested well-formed inner fences and preceding '[' brackets)
+     * emits a single MALFORMED_FENCE token without swallowing trailing TupleLiteral slots, whereas an unclosed
+     * outer fence with only a balanced inner fence fails closed with BAD_CHARACTER at EOF.
+     */
+    public void testV43_DepthAwareMismatchedFenceRecoveryAndNestedBalance() {
+        var recoveredInput = """
+            {
+              :defs {
+                :Matrix :Tuple( :String :String :String )
+              }
+              :type :Matrix
+              :body (
+                \"\"\"[SQL]
+                  \"\"\"[INNER]
+                  SELECT 1;
+                  [INNER]\"\"\"
+                  SELECT arr[0] [JSON]\"\"\"
+                \"\"\"[XML]
+                  SELECT arr[0 [YAML]\"\"\"
+                "trailing-slot"
+              )
+            }
+            """;
+        var tokens = tokenize(recoveredInput);
+        var malformedFences = tokens.stream().filter(t -> t.type() == StvnTypes.MALFORMED_FENCE).toList();
+        var badChars = tokens.stream().filter(t -> t.type() == TokenType.BAD_CHARACTER).toList();
+        assertEquals("Expected 2 depth-0 MALFORMED_FENCE tokens", 2, malformedFences.size());
+        assertTrue("Expected zero BAD_CHARACTER tokens when mismatched depth-0 closing fences exist", badChars.isEmpty());
+
+        var psiFile = myFixture.configureByText("v43_mismatched_fence.stvn", recoveredInput);
+        assertNoSyntaxErrors(psiFile);
+        var tuple = PsiTreeUtil.findChildOfType(psiFile, TupleLiteral.class);
+        assertNotNull(tuple);
+        assertEquals("Expected all 3 TupleLiteral slots preserved", 3, tuple.getValueList().size());
+
+        var unclosedOuterWithBalancedInner = "\"\"\"[SQL]\n  \"\"\"[INNER]\n  ok\n  [INNER]\"\"\"\n  still_unclosed";
+        var unclosedTokens = tokenize(unclosedOuterWithBalancedInner);
+        assertEquals(1, unclosedTokens.size());
+        assertEquals("Unclosed outer fence after balanced inner fence must fail closed as BAD_CHARACTER",
+            TokenType.BAD_CHARACTER, unclosedTokens.get(0).type());
+    }
 }

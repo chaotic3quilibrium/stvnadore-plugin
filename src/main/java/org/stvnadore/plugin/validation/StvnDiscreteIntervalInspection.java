@@ -1,21 +1,27 @@
 package org.stvnadore.plugin.validation;
 
-import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
@@ -33,11 +39,14 @@ import org.stvnadore.psi.Visitor;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeParseException;
+import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -145,6 +154,8 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         String ownerLabel = resolveIntervalOwnerLabel(metaMap, baseType);
         String discreteDesc = formatDiscreteTypeDescription(baseType);
 
+        StvnSchema.DateTimeMode dateTimeMode = isDateTime ? extractEffectiveDateTimeMode(schemaType, metaMap) : null;
+
         MetadataEntry firstValidLower = null;
         MetadataEntry firstValidUpper = null;
         boolean sameSideConflict = false;
@@ -152,6 +163,8 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         MetadataEntry maxExclEntry = null;
         MetadataEntry lowerEntry = null;
         MetadataEntry upperEntry = null;
+        int localLowerIdx = -1;
+        int localUpperIdx = -1;
         String lowerKw = StvnVocabulary.FACET_KW_MIN_INCL;
         String upperKw = StvnVocabulary.FACET_KW_MAX_EXCL;
         String minRaw = null;
@@ -165,21 +178,22 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         String minStr = null;
         String maxStr = null;
 
-        for (var entry : metaMap.getMetadataEntryList()) {
+        List<MetadataEntry> entries = metaMap.getMetadataEntryList();
+        for (int idx = 0; idx < entries.size(); idx++) {
+            var entry = entries.get(idx);
             var entryText = entry.getText();
             var rawVal = entry.getMetadataValue() != null ? entry.getMetadataValue().getText().trim() : null;
             if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
                 if (discrete) {
                     var replaceKwFix = new ReplaceBoundKeywordQuickFix(
-                        entry,
                         StvnVocabulary.FACET_KW_MAX_INCL,
                         StvnVocabulary.FACET_KW_MAX_EXCL,
                         "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
                             + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
                     );
                     var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(entry), replaceKwFix}
+                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(), replaceKwFix}
                         : new LocalQuickFix[]{replaceKwFix};
                     holder.registerProblem(
                         entry,
@@ -213,7 +227,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : StvnVocabulary.FACET_KW_MAX_INCL;
                         holder.registerProblem(
                             firstValidUpper,
-                            "",
+                            "Remove conflicting facet",
                             ProblemHighlightType.INFORMATION,
                             new RemoveRedundantFacetQuickFix(firstValidUpper, firstKw, "Remove conflicting facet")
                         );
@@ -221,8 +235,9 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     continue;
                 }
                 firstValidUpper = entry;
+                localUpperIdx = idx;
                 maxVal = extractBoundBigDecimal(entry);
-                maxInstant = isDateTime ? extractBoundInstant(entry) : null;
+                maxInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
                 maxStr = extractBoundString(entry);
                 upperEntry = entry;
                 upperKw = StvnVocabulary.FACET_KW_MAX_INCL;
@@ -232,14 +247,13 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
                 if (discrete) {
                     var replaceKwFix = new ReplaceBoundKeywordQuickFix(
-                        entry,
                         StvnVocabulary.FACET_KW_MIN_EXCL,
                         StvnVocabulary.FACET_KW_MIN_INCL,
                         "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
                             + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
                     );
                     var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(entry), replaceKwFix}
+                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(), replaceKwFix}
                         : new LocalQuickFix[]{replaceKwFix};
                     holder.registerProblem(
                         entry,
@@ -273,7 +287,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : StvnVocabulary.FACET_KW_MIN_INCL;
                         holder.registerProblem(
                             firstValidLower,
-                            "",
+                            "Remove conflicting facet",
                             ProblemHighlightType.INFORMATION,
                             new RemoveRedundantFacetQuickFix(firstValidLower, firstKw, "Remove conflicting facet")
                         );
@@ -281,8 +295,9 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     continue;
                 }
                 firstValidLower = entry;
+                localLowerIdx = idx;
                 minVal = extractBoundBigDecimal(entry);
-                minInstant = isDateTime ? extractBoundInstant(entry) : null;
+                minInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
                 minStr = extractBoundString(entry);
                 lowerEntry = entry;
                 lowerKw = StvnVocabulary.FACET_KW_MIN_EXCL;
@@ -309,7 +324,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : StvnVocabulary.FACET_KW_MIN_INCL;
                         holder.registerProblem(
                             firstValidLower,
-                            "",
+                            "Remove conflicting facet",
                             ProblemHighlightType.INFORMATION,
                             new RemoveRedundantFacetQuickFix(firstValidLower, firstKw, "Remove conflicting facet")
                         );
@@ -317,8 +332,9 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     continue;
                 }
                 firstValidLower = entry;
+                localLowerIdx = idx;
                 minVal = extractBoundBigDecimal(entry);
-                minInstant = isDateTime ? extractBoundInstant(entry) : null;
+                minInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
                 minStr = extractBoundString(entry);
                 lowerEntry = entry;
                 lowerKw = StvnVocabulary.FACET_KW_MIN_INCL;
@@ -345,7 +361,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             : StvnVocabulary.FACET_KW_MAX_INCL;
                         holder.registerProblem(
                             firstValidUpper,
-                            "",
+                            "Remove conflicting facet",
                             ProblemHighlightType.INFORMATION,
                             new RemoveRedundantFacetQuickFix(firstValidUpper, firstKw, "Remove conflicting facet")
                         );
@@ -353,9 +369,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     continue;
                 }
                 firstValidUpper = entry;
+                localUpperIdx = idx;
                 maxExclEntry = entry;
                 maxVal = extractBoundBigDecimal(entry);
-                maxInstant = isDateTime ? extractBoundInstant(entry) : null;
+                maxInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
                 maxStr = extractBoundString(entry);
                 upperEntry = entry;
                 upperKw = StvnVocabulary.FACET_KW_MAX_EXCL;
@@ -398,7 +415,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                                 boolean isMinExcl = pText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
                                     || pEntry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null;
                                 minVal = extractBoundBigDecimal(pEntry);
-                                minInstant = isDateTime ? extractBoundInstant(pEntry) : null;
+                                minInstant = isDateTime ? extractBoundInstant(pEntry, dateTimeMode) : null;
                                 minStr = extractBoundString(pEntry);
                                 lowerEntry = pEntry;
                                 lowerKw = isMinExcl ? StvnVocabulary.FACET_KW_MIN_EXCL : StvnVocabulary.FACET_KW_MIN_INCL;
@@ -414,7 +431,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                                     maxExclEntry = pEntry;
                                 }
                                 maxVal = extractBoundBigDecimal(pEntry);
-                                maxInstant = isDateTime ? extractBoundInstant(pEntry) : null;
+                                maxInstant = isDateTime ? extractBoundInstant(pEntry, dateTimeMode) : null;
                                 maxStr = extractBoundString(pEntry);
                                 upperEntry = pEntry;
                                 upperKw = isMaxExcl ? StvnVocabulary.FACET_KW_MAX_EXCL : StvnVocabulary.FACET_KW_MAX_INCL;
@@ -436,126 +453,372 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         boolean bothBoundsLocal = (localLowerEntry != null && localUpperEntry != null);
         MetadataEntry localBoundTarget = localUpperEntry != null ? localUpperEntry : localLowerEntry;
         LocalQuickFix[] swapFixes = (bothBoundsLocal && minRaw != null && maxRaw != null)
-            ? new LocalQuickFix[]{new SwapInvertedBoundsQuickFix(localLowerEntry, lowerKw, minRaw, localUpperEntry, upperKw, maxRaw)}
+            ? new LocalQuickFix[]{new SwapInvertedBoundsQuickFix(metaMap, lowerKw, minRaw, upperKw, maxRaw, false)}
             : LocalQuickFix.EMPTY_ARRAY;
 
         if (minVal != null && maxVal != null && upperEntry != null) {
             int cmp = minVal.compareTo(maxVal);
             if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
-                holder.registerProblem(
-                    bothBoundsLocal
-                        ? (maxExclEntry != null ? maxExclEntry : upperEntry)
-                        : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "Discrete interval defines an empty domain [" + minVal.toPlainString() + ", " + maxVal.toPlainString() + ")",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
                     ),
-                    ProblemHighlightType.GENERIC_ERROR
+                    LocalQuickFix.EMPTY_ARRAY
                 );
             } else if (cmp > 0) {
-                holder.registerProblem(
-                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "Discrete interval lower bound " + minVal.toPlainString() + " is greater than upper bound " + maxVal.toPlainString(),
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE
                     ),
-                    ProblemHighlightType.GENERIC_ERROR,
                     swapFixes
                 );
             }
         } else if (isDateTime && minInstant != null && maxInstant != null && upperEntry != null) {
             int cmp = minInstant.compareTo(maxInstant);
             if (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl)) {
-                holder.registerProblem(
-                    bothBoundsLocal
-                        ? (maxExclEntry != null ? maxExclEntry : upperEntry)
-                        : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "Temporal interval defines an empty domain [" + minStr + ", " + maxStr + ")",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
                     ),
-                    ProblemHighlightType.GENERIC_ERROR
+                    LocalQuickFix.EMPTY_ARRAY
                 );
             } else if (cmp > 0) {
-                holder.registerProblem(
-                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "Temporal interval lower bound " + minStr + " is greater than upper bound " + maxStr,
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE
                     ),
-                    ProblemHighlightType.GENERIC_ERROR,
                     swapFixes
                 );
             }
         } else if (isString && minStr != null && maxStr != null && upperEntry != null) {
-            int cmp = minStr.compareTo(maxStr);
+            int cmp = Arrays.compareUnsigned(
+                minStr.getBytes(StandardCharsets.UTF_8),
+                maxStr.getBytes(StandardCharsets.UTF_8)
+            );
             if (cmp == 0 && (lowerExcl || upperExcl)) {
-                holder.registerProblem(
-                    bothBoundsLocal ? upperEntry : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "String interval defines an empty domain",
                         StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN
                     ),
-                    ProblemHighlightType.GENERIC_ERROR
+                    LocalQuickFix.EMPTY_ARRAY
                 );
             } else if (cmp > 0) {
-                holder.registerProblem(
-                    bothBoundsLocal ? metaMap : (localBoundTarget != null ? localBoundTarget : metaMap),
+                registerBoundPairProblem(
+                    holder,
+                    isOnTheFly,
+                    metaMap,
+                    localLowerEntry,
+                    localLowerIdx,
+                    localUpperEntry,
+                    localUpperIdx,
+                    localBoundTarget,
                     StvnDiagnosticFormatter.formatPlugin(
                         "String interval lower bound '" + minStr + "' is lexicographically greater than upper bound '" + maxStr + "'",
                         StvnDiagnosticCodes.ERR_INVERTED_RANGE
                     ),
-                    ProblemHighlightType.GENERIC_ERROR,
                     swapFixes
                 );
             }
         }
     }
 
+    private static void registerBoundPairProblem(
+            ProblemsHolder holder,
+            boolean isOnTheFly,
+            MetadataMap metaMap,
+            @Nullable MetadataEntry localLowerEntry,
+            int localLowerIdx,
+            @Nullable MetadataEntry localUpperEntry,
+            int localUpperIdx,
+            @Nullable MetadataEntry singleLocalFallback,
+            String formattedMessage,
+            LocalQuickFix[] quickFixes
+    ) {
+        if (localLowerEntry != null && localUpperEntry != null && localLowerIdx >= 0 && localUpperIdx >= 0) {
+            boolean lowerFirst = localLowerIdx <= localUpperIdx;
+            MetadataEntry earlier = lowerFirst ? localLowerEntry : localUpperEntry;
+            MetadataEntry later = lowerFirst ? localUpperEntry : localLowerEntry;
+            if (Math.abs(localLowerIdx - localUpperIdx) == 1) {
+                int mapStart = metaMap.getTextRange().getStartOffset();
+                var relRange = new TextRange(
+                    earlier.getTextRange().getStartOffset() - mapStart,
+                    later.getTextRange().getEndOffset() - mapStart
+                );
+                holder.registerProblem(metaMap, formattedMessage, ProblemHighlightType.GENERIC_ERROR, relRange, quickFixes);
+                return;
+            }
+            holder.registerProblem(later, formattedMessage, ProblemHighlightType.GENERIC_ERROR, quickFixes);
+            if (isOnTheFly && quickFixes.length > 0) {
+                holder.registerProblem(earlier, quickFixes[0].getFamilyName(), ProblemHighlightType.INFORMATION, quickFixes);
+            }
+            return;
+        }
+        PsiElement target = singleLocalFallback != null ? singleLocalFallback : metaMap;
+        holder.registerProblem(target, formattedMessage, ProblemHighlightType.GENERIC_ERROR, quickFixes);
+    }
+
+    static @Nullable TextRange findLocalIntervalErrorRange(SchemaType schemaType, MetadataMap metaMap) {
+        boolean discrete = isDiscreteType(schemaType);
+        var baseType = resolveBaseTypeString(schemaType);
+        boolean isDateTime = StvnVocabulary.TYPE_DATE_TIME.equals(baseType);
+        boolean isString = StvnVocabulary.TYPE_STRING.equals(baseType);
+        boolean isFloat = StvnVocabulary.TYPE_FLOAT.equals(baseType);
+        if (!discrete && !isDateTime && !isString && !isFloat) {
+            return null;
+        }
+        StvnSchema.DateTimeMode dateTimeMode = isDateTime ? extractEffectiveDateTimeMode(schemaType, metaMap) : null;
+        MetadataEntry lowerEntry = null;
+        MetadataEntry upperEntry = null;
+        MetadataEntry maxExclEntry = null;
+        int localLowerIdx = -1;
+        int localUpperIdx = -1;
+        boolean lowerExcl = false;
+        boolean upperExcl = false;
+        BigDecimal minVal = null;
+        BigDecimal maxVal = null;
+        Instant minInstant = null;
+        Instant maxInstant = null;
+        String minStr = null;
+        String maxStr = null;
+
+        List<MetadataEntry> entries = metaMap.getMetadataEntryList();
+        for (int idx = 0; idx < entries.size(); idx++) {
+            var entry = entries.get(idx);
+            var text = entry.getText();
+            if (text.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                if (upperEntry != null) return null;
+                upperEntry = entry;
+                localUpperIdx = idx;
+                maxVal = extractBoundBigDecimal(entry);
+                maxInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
+                maxStr = extractBoundString(entry);
+                upperExcl = false;
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
+                if (upperEntry != null) return null;
+                upperEntry = entry;
+                localUpperIdx = idx;
+                maxExclEntry = entry;
+                maxVal = extractBoundBigDecimal(entry);
+                maxInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
+                maxStr = extractBoundString(entry);
+                upperExcl = true;
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                if (lowerEntry != null) return null;
+                lowerEntry = entry;
+                localLowerIdx = idx;
+                minVal = extractBoundBigDecimal(entry);
+                minInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
+                minStr = extractBoundString(entry);
+                lowerExcl = true;
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
+                if (lowerEntry != null) return null;
+                lowerEntry = entry;
+                localLowerIdx = idx;
+                minVal = extractBoundBigDecimal(entry);
+                minInstant = isDateTime ? extractBoundInstant(entry, dateTimeMode) : null;
+                minStr = extractBoundString(entry);
+                lowerExcl = false;
+            }
+        }
+        if (lowerEntry == null || upperEntry == null) {
+            return null;
+        }
+        boolean invalid = false;
+        if (minVal != null && maxVal != null) {
+            int cmp = minVal.compareTo(maxVal);
+            invalid = cmp > 0 || (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl));
+        } else if (isDateTime && minInstant != null && maxInstant != null) {
+            int cmp = minInstant.compareTo(maxInstant);
+            invalid = cmp > 0 || (cmp == 0 && (maxExclEntry != null || lowerExcl || upperExcl));
+        } else if (isString && minStr != null && maxStr != null) {
+            int cmp = Arrays.compareUnsigned(
+                minStr.getBytes(StandardCharsets.UTF_8),
+                maxStr.getBytes(StandardCharsets.UTF_8)
+            );
+            invalid = cmp > 0 || (cmp == 0 && (lowerExcl || upperExcl));
+        }
+        if (!invalid) {
+            return null;
+        }
+        boolean lowerFirst = localLowerIdx <= localUpperIdx;
+        MetadataEntry earlier = lowerFirst ? lowerEntry : upperEntry;
+        MetadataEntry later = lowerFirst ? upperEntry : lowerEntry;
+        if (Math.abs(localLowerIdx - localUpperIdx) == 1) {
+            return new TextRange(earlier.getTextRange().getStartOffset(), later.getTextRange().getEndOffset());
+        }
+        return later.getTextRange();
+    }
+
     /**
      * Creates a {@link SwapInvertedBoundsQuickFix} for the given {@link MetadataMap} when both a lower
-     * bound facet and an upper bound facet are present.
+     * value bound facet and an upper value bound facet are present.
      *
-     * @param metaMap metadata map containing inverted bounds
+     * @param metaMap metadata map containing inverted value bounds
      * @return quick-fix instance, or {@code null} when bounds are incomplete
      */
     public static @Nullable SwapInvertedBoundsQuickFix createSwapFixForMetadataMap(@Nullable MetadataMap metaMap) {
+        return createSwapFixForMetadataMap(metaMap, false);
+    }
+
+    /**
+     * Creates a {@link SwapInvertedBoundsQuickFix} for the given {@link MetadataMap} when both a lower
+     * bound facet and an upper bound facet (value or cardinality) are present.
+     *
+     * @param metaMap           metadata map containing inverted bounds
+     * @param cardinalityBounds {@code true} to inspect {@code #minSize}/{@code #maxSize}, {@code false} for value bounds
+     * @return quick-fix instance, or {@code null} when bounds are incomplete
+     */
+    public static @Nullable SwapInvertedBoundsQuickFix createSwapFixForMetadataMap(
+            @Nullable MetadataMap metaMap,
+            boolean cardinalityBounds
+    ) {
         if (metaMap == null) {
             return null;
         }
         MetadataEntry lowerEntry = null;
         MetadataEntry upperEntry = null;
-        String lowerKw = StvnVocabulary.FACET_KW_MIN_INCL;
-        String upperKw = StvnVocabulary.FACET_KW_MAX_EXCL;
+        String lowerKw = cardinalityBounds ? StvnVocabulary.FACET_KW_MIN_SIZE : StvnVocabulary.FACET_KW_MIN_INCL;
+        String upperKw = cardinalityBounds ? StvnVocabulary.FACET_KW_MAX_SIZE : StvnVocabulary.FACET_KW_MAX_EXCL;
         String minRaw = null;
         String maxRaw = null;
         for (var entry : metaMap.getMetadataEntryList()) {
             var entryText = entry.getText();
             var rawVal = entry.getMetadataValue() != null ? entry.getMetadataValue().getText().trim() : null;
-            if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
-                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
-                lowerEntry = entry;
-                lowerKw = StvnVocabulary.FACET_KW_MIN_INCL;
-                minRaw = rawVal;
-            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
-                    || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
-                lowerEntry = entry;
-                lowerKw = StvnVocabulary.FACET_KW_MIN_EXCL;
-                minRaw = rawVal;
-            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
-                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
-                upperEntry = entry;
-                upperKw = StvnVocabulary.FACET_KW_MAX_EXCL;
-                maxRaw = rawVal;
-            } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
-                    || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
-                upperEntry = entry;
-                upperKw = StvnVocabulary.FACET_KW_MAX_INCL;
-                maxRaw = rawVal;
+            if (cardinalityBounds) {
+                if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_SIZE) != null) {
+                    lowerEntry = entry;
+                    lowerKw = StvnVocabulary.FACET_KW_MIN_SIZE;
+                    minRaw = rawVal;
+                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_SIZE) != null) {
+                    upperEntry = entry;
+                    upperKw = StvnVocabulary.FACET_KW_MAX_SIZE;
+                    maxRaw = rawVal;
+                }
+            } else {
+                if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null) {
+                    lowerEntry = entry;
+                    lowerKw = StvnVocabulary.FACET_KW_MIN_INCL;
+                    minRaw = rawVal;
+                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                    lowerEntry = entry;
+                    lowerKw = StvnVocabulary.FACET_KW_MIN_EXCL;
+                    minRaw = rawVal;
+                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null) {
+                    upperEntry = entry;
+                    upperKw = StvnVocabulary.FACET_KW_MAX_EXCL;
+                    maxRaw = rawVal;
+                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                    upperEntry = entry;
+                    upperKw = StvnVocabulary.FACET_KW_MAX_INCL;
+                    maxRaw = rawVal;
+                }
             }
         }
         if (lowerEntry != null && upperEntry != null && minRaw != null && maxRaw != null) {
-            return new SwapInvertedBoundsQuickFix(lowerEntry, lowerKw, minRaw, upperEntry, upperKw, maxRaw);
+            return new SwapInvertedBoundsQuickFix(metaMap, lowerKw, minRaw, upperKw, maxRaw, cardinalityBounds);
+        }
+        return null;
+    }
+
+    static @Nullable MetadataEntry findNonAdjacentEarlierBoundEntry(
+            @Nullable MetadataMap metaMap,
+            boolean cardinalityBounds
+    ) {
+        if (metaMap == null) {
+            return null;
+        }
+        MetadataEntry lowerEntry = null;
+        MetadataEntry upperEntry = null;
+        int lowerIdx = -1;
+        int upperIdx = -1;
+        List<MetadataEntry> entries = metaMap.getMetadataEntryList();
+        for (int idx = 0; idx < entries.size(); idx++) {
+            var entry = entries.get(idx);
+            var text = entry.getText();
+            if (cardinalityBounds) {
+                if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_SIZE) != null) {
+                    lowerEntry = entry;
+                    lowerIdx = idx;
+                } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_SIZE) != null) {
+                    upperEntry = entry;
+                    upperIdx = idx;
+                }
+            } else {
+                if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null
+                        || text.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                    lowerEntry = entry;
+                    lowerIdx = idx;
+                } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
+                        || text.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                        || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                    upperEntry = entry;
+                    upperIdx = idx;
+                }
+            }
+        }
+        if (lowerEntry != null && upperEntry != null && lowerIdx >= 0 && upperIdx >= 0
+                && Math.abs(lowerIdx - upperIdx) > 1) {
+            return lowerIdx < upperIdx ? lowerEntry : upperEntry;
         }
         return null;
     }
@@ -625,17 +888,94 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         return StvnPsiLiteralEvaluator.resolveStringOrConst(entry, val.getText().trim(), false).orElse(null);
     }
 
-    private static @Nullable Instant extractBoundInstant(MetadataEntry entry) {
+    private static StvnSchema.@Nullable DateTimeMode extractEffectiveDateTimeMode(
+            SchemaType schemaType,
+            MetadataMap localMap
+    ) {
+        int localCount = 0;
+        StvnSchema.DateTimeMode localMode = null;
+        for (var entry : localMap.getMetadataEntryList()) {
+            var text = entry.getText();
+            if (text.startsWith(StvnVocabulary.FACET_KW_OFFSET)
+                    || entry.getNode().findChildByType(StvnTypes.KW_OFFSET) != null) {
+                localMode = StvnSchema.DateTimeMode.OFFSET;
+                localCount++;
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_ZONED)
+                    || entry.getNode().findChildByType(StvnTypes.KW_ZONED) != null) {
+                localMode = StvnSchema.DateTimeMode.ZONED;
+                localCount++;
+            } else if (text.startsWith(StvnVocabulary.FACET_KW_AUDITED)
+                    || entry.getNode().findChildByType(StvnTypes.KW_AUDITED) != null) {
+                localMode = StvnSchema.DateTimeMode.AUDITED;
+                localCount++;
+            }
+        }
+        if (localCount > 1) {
+            return null;
+        }
+        if (localCount == 1) {
+            return localMode;
+        }
+        String inheritedFlag = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
+        if (inheritedFlag == null) {
+            var terminalSchema = StvnTypeResolver.resolveNominalSchema(schemaType);
+            if (terminalSchema != null) {
+                inheritedFlag = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(terminalSchema);
+            }
+        }
+        if (StvnVocabulary.FACET_KW_OFFSET.equals(inheritedFlag)) {
+            return StvnSchema.DateTimeMode.OFFSET;
+        }
+        if (StvnVocabulary.FACET_KW_ZONED.equals(inheritedFlag)) {
+            return StvnSchema.DateTimeMode.ZONED;
+        }
+        if (StvnVocabulary.FACET_KW_AUDITED.equals(inheritedFlag)) {
+            return StvnSchema.DateTimeMode.AUDITED;
+        }
+        return null;
+    }
+
+    private static @Nullable Instant extractBoundInstant(
+            MetadataEntry entry,
+            StvnSchema.@Nullable DateTimeMode mode
+    ) {
+        if (mode == null) {
+            return null;
+        }
+        var mv = entry.getMetadataValue();
+        if (mv == null) {
+            return null;
+        }
+        String rawText = mv.getText().trim();
+        if (rawText.startsWith("\"\"\"")) {
+            return null;
+        }
         String decoded = extractBoundString(entry);
         if (decoded == null || decoded.isEmpty()) {
             return null;
         }
+        String validationToken = mv.getStringLiteral() != null
+            ? rawText
+            : StvnPsiLiteralEvaluator.formatCanonicalQuotedString(decoded);
+        if (StvnCompiler.validateDateTimeLiteral(validationToken, mode).isPresent()) {
+            return null;
+        }
         try {
-            if (decoded.contains("[")) {
-                return ZonedDateTime.parse(decoded).toInstant();
-            }
-            return OffsetDateTime.parse(decoded).toInstant();
-        } catch (DateTimeParseException ex) {
+            return switch (mode) {
+                case OFFSET -> OffsetDateTime.parse(decoded).toInstant();
+                case AUDITED -> {
+                    int bracketIdx = decoded.indexOf('[');
+                    yield OffsetDateTime.parse(decoded.substring(0, bracketIdx)).toInstant();
+                }
+                case ZONED -> {
+                    int openBracket = decoded.indexOf('[');
+                    int closeBracket = decoded.lastIndexOf(']');
+                    var ldt = LocalDateTime.parse(decoded.substring(0, openBracket));
+                    var zone = ZoneId.of(decoded.substring(openBracket + 1, closeBracket));
+                    yield ldt.atZone(zone).toInstant();
+                }
+            };
+        } catch (RuntimeException ex) {
             return null;
         }
     }
@@ -694,12 +1034,6 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     }
 
     private static final class ConvertMaxInclToMaxExclQuickFix implements LocalQuickFix {
-        private final MetadataEntry entry;
-
-        ConvertMaxInclToMaxExclQuickFix(MetadataEntry entry) {
-            this.entry = entry;
-        }
-
         @Override
         public @NotNull String getFamilyName() {
             return "Convert '" + StvnVocabulary.FACET_KW_MAX_INCL + " <N>' to '"
@@ -708,7 +1042,11 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!entry.isValid()) return;
+            var elem = descriptor.getPsiElement();
+            var entry = elem instanceof MetadataEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+            if (entry == null || !entry.isValid()) return;
             var val = entry.getMetadataValue();
             var valText = val != null ? val.getText().trim() : "0";
             var nextVal = incrementBound(valText);
@@ -721,12 +1059,6 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     }
 
     private static final class ConvertMinExclToMinInclQuickFix implements LocalQuickFix {
-        private final MetadataEntry entry;
-
-        ConvertMinExclToMinInclQuickFix(MetadataEntry entry) {
-            this.entry = entry;
-        }
-
         @Override
         public @NotNull String getFamilyName() {
             return "Convert '" + StvnVocabulary.FACET_KW_MIN_EXCL + " <N>' to '"
@@ -735,7 +1067,11 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!entry.isValid()) return;
+            var elem = descriptor.getPsiElement();
+            var entry = elem instanceof MetadataEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+            if (entry == null || !entry.isValid()) return;
             var val = entry.getMetadataValue();
             var valText = val != null ? val.getText().trim() : "0";
             var nextVal = incrementBound(valText);
@@ -748,13 +1084,14 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     }
 
     private static final class ReplaceBoundKeywordQuickFix implements LocalQuickFix {
-        private final MetadataEntry entry;
+        @SafeFieldForPreview
         private final String oldKw;
+        @SafeFieldForPreview
         private final String newKw;
+        @SafeFieldForPreview
         private final String label;
 
-        ReplaceBoundKeywordQuickFix(MetadataEntry entry, String oldKw, String newKw, String label) {
-            this.entry = entry;
+        ReplaceBoundKeywordQuickFix(String oldKw, String newKw, String label) {
             this.oldKw = oldKw;
             this.newKw = newKw;
             this.label = label;
@@ -772,7 +1109,11 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!entry.isValid()) return;
+            var elem = descriptor.getPsiElement();
+            var entry = elem instanceof MetadataEntry me
+                ? me
+                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+            if (entry == null || !entry.isValid()) return;
             var val = entry.getMetadataValue();
             if (val != null) {
                 var replacement = StvnElementFactory.createMetadataEntry(
@@ -791,46 +1132,48 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     /**
      * Quick-fix that swaps inverted lower and upper bound values while preserving each facet's bound keyword.
      */
-    public static final class SwapInvertedBoundsQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
-        private final MetadataEntry lowerEntry;
+    public static final class SwapInvertedBoundsQuickFix
+            extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+        @SafeFieldForPreview
         private final String lowerKw;
+        @SafeFieldForPreview
         private final String lowerValText;
-        private final MetadataEntry upperEntry;
+        @SafeFieldForPreview
         private final String upperKw;
+        @SafeFieldForPreview
         private final String upperValText;
+        @SafeFieldForPreview
+        private final boolean cardinalityBounds;
+        @SafeFieldForPreview
         private final String label;
 
         /**
          * Constructs a new {@link SwapInvertedBoundsQuickFix}.
          *
-         * @param lowerEntry   PSI entry for the lower bound facet
-         * @param lowerKw      lower bound facet keyword
-         * @param lowerValText authored lower bound value text
-         * @param upperEntry   PSI entry for the upper bound facet
-         * @param upperKw      upper bound facet keyword
-         * @param upperValText authored upper bound value text
+         * @param metaMap           enclosing metadata map PSI element
+         * @param lowerKw           lower bound facet keyword
+         * @param lowerValText      authored lower bound value text
+         * @param upperKw           upper bound facet keyword
+         * @param upperValText      authored upper bound value text
+         * @param cardinalityBounds {@code true} for {@code #minSize}/{@code #maxSize}, {@code false} for value bounds
          */
         public SwapInvertedBoundsQuickFix(
-                MetadataEntry lowerEntry,
+                MetadataMap metaMap,
                 String lowerKw,
                 String lowerValText,
-                MetadataEntry upperEntry,
                 String upperKw,
-                String upperValText
+                String upperValText,
+                boolean cardinalityBounds
         ) {
-            this.lowerEntry = lowerEntry;
+            super(metaMap);
             this.lowerKw = lowerKw;
             this.lowerValText = lowerValText;
-            this.upperEntry = upperEntry;
             this.upperKw = upperKw;
             this.upperValText = upperValText;
+            this.cardinalityBounds = cardinalityBounds;
             this.label = "Swap inverted bounds ('" + lowerKw + " " + upperValText
                 + "' and '" + upperKw + " " + lowerValText + "')";
-        }
-
-        @Override
-        public @NotNull String getName() {
-            return label;
         }
 
         @Override
@@ -849,33 +1192,68 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         }
 
         @Override
-        public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-            return lowerEntry.isValid() && upperEntry.isValid();
-        }
-
-        @Override
-        public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-            swapBounds(project);
-        }
-
-        @Override
-        public boolean startInWriteAction() {
-            return true;
-        }
-
-        @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            swapBounds(project);
-        }
-
-        private void swapBounds(Project project) {
-            if (!lowerEntry.isValid() || !upperEntry.isValid()) {
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            MetadataMap targetMap = startElement instanceof MetadataMap mm
+                ? mm
+                : PsiTreeUtil.getParentOfType(startElement, MetadataMap.class, false);
+            if (targetMap == null) {
                 return;
             }
-            var newLower = StvnElementFactory.createMetadataEntry(project, lowerKw + " " + upperValText);
-            var newUpper = StvnElementFactory.createMetadataEntry(project, upperKw + " " + lowerValText);
-            lowerEntry.replace(newLower);
-            upperEntry.replace(newUpper);
+            MetadataEntry lower = null;
+            MetadataEntry upper = null;
+            for (var entry : targetMap.getMetadataEntryList()) {
+                var text = entry.getText();
+                if (cardinalityBounds) {
+                    if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MIN_SIZE) != null) {
+                        lower = entry;
+                    } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MAX_SIZE) != null) {
+                        upper = entry;
+                    }
+                } else {
+                    if (text.startsWith(StvnVocabulary.FACET_KW_MIN_INCL)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MIN_INCL) != null
+                            || text.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
+                        lower = entry;
+                    } else if (text.startsWith(StvnVocabulary.FACET_KW_MAX_EXCL)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
+                            || text.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                            || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
+                        upper = entry;
+                    }
+                }
+            }
+            if (lower == null || upper == null) {
+                return;
+            }
+            String lowerReplacementText = lowerKw + " " + upperValText;
+            String upperReplacementText = upperKw + " " + lowerValText;
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null) {
+                var lowerRange = lower.getTextRange();
+                var upperRange = upper.getTextRange();
+                if (lowerRange.getStartOffset() < upperRange.getStartOffset()) {
+                    doc.replaceString(upperRange.getStartOffset(), upperRange.getEndOffset(), upperReplacementText);
+                    doc.replaceString(lowerRange.getStartOffset(), lowerRange.getEndOffset(), lowerReplacementText);
+                } else {
+                    doc.replaceString(lowerRange.getStartOffset(), lowerRange.getEndOffset(), lowerReplacementText);
+                    doc.replaceString(upperRange.getStartOffset(), upperRange.getEndOffset(), upperReplacementText);
+                }
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+                return;
+            }
+            var newLower = StvnElementFactory.createMetadataEntry(project, lowerReplacementText);
+            var newUpper = StvnElementFactory.createMetadataEntry(project, upperReplacementText);
+            lower.replace(newLower);
+            upper.replace(newUpper);
         }
     }
 

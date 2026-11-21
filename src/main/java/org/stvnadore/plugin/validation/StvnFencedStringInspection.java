@@ -1,11 +1,14 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
@@ -14,6 +17,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.TokenType;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -23,6 +27,8 @@ import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -297,6 +303,25 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             }
 
             // Tag mismatch at depth 0
+            boolean validClosingCandidate = VALID_TAG_PATTERN.matcher(candidateClosingTag).matches();
+            LocalQuickFix[] closeFixes = validClosingCandidate
+                ? new LocalQuickFix[]{
+                    new BalanceClosingTagQuickFix(element, openTag, candidateClosingTag, closingRelativeOffset),
+                    new BalanceOpeningTagQuickFix(element, openTag, candidateClosingTag)
+                }
+                : new LocalQuickFix[]{
+                    new BalanceClosingTagQuickFix(element, openTag, candidateClosingTag, closingRelativeOffset)
+                };
+            LocalQuickFix[] openFixes = validClosingCandidate
+                ? new LocalQuickFix[]{
+                    new AppendClosingFenceQuickFix(openTag),
+                    new BalanceClosingTagQuickFix(element, openTag, candidateClosingTag, closingRelativeOffset),
+                    new BalanceOpeningTagQuickFix(element, openTag, candidateClosingTag)
+                }
+                : new LocalQuickFix[]{
+                    new AppendClosingFenceQuickFix(openTag),
+                    new BalanceClosingTagQuickFix(element, openTag, candidateClosingTag, closingRelativeOffset)
+                };
             holder.registerProblem(
                 element,
                 candidateClosingRange,
@@ -304,8 +329,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     "Rule STR-04 violation: Mismatched closing fence tag '[" + candidateClosingTag + "]', expected '[" + openTag + "]'",
                     StvnDiagnosticCodes.ERR_FENCE_CLOSING_TAG_MISMATCH
                 ),
-                new BalanceClosingTagQuickFix(openTag, candidateClosingTag, closingRelativeOffset),
-                new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
+                closeFixes
             );
             holder.registerProblem(
                 element,
@@ -314,9 +338,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     "Rule STR-04 violation: Mismatched opening fence tag '[" + openTag + "]', closing fence has '[" + candidateClosingTag + "]'",
                     StvnDiagnosticCodes.ERR_FENCE_OPENING_TAG_MISMATCH
                 ),
-                new AppendClosingFenceQuickFix(openTag),
-                new BalanceClosingTagQuickFix(openTag, candidateClosingTag, closingRelativeOffset),
-                new BalanceOpeningTagQuickFix(openTag, candidateClosingTag)
+                openFixes
             );
             return;
         }
@@ -542,7 +564,67 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
     }
 
-    private static final class BalanceClosingTagQuickFix implements LocalQuickFix {
+    static List<IntentionAction> createMismatchedFenceQuickFixes(PsiFile file, TextRange openRange) {
+        if (openRange.getStartOffset() < 0 || openRange.getStartOffset() >= file.getTextLength()) {
+            return List.of();
+        }
+        var leaf = file.findElementAt(openRange.getStartOffset());
+        if (leaf == null) {
+            return List.of();
+        }
+        PsiElement target = PsiTreeUtil.getParentOfType(leaf, StringLiteral.class, false);
+        if (target == null) {
+            target = leaf;
+        }
+        String text = target.getText();
+        if (!text.startsWith("\"\"\"[")) {
+            return List.of();
+        }
+        int openEnd = text.indexOf('\n');
+        int openCloseBracket = text.indexOf(']', 4);
+        if (openEnd < 0 || openCloseBracket < 4 || openCloseBracket > openEnd) {
+            return List.of();
+        }
+        String openTag = text.substring(4, openCloseBracket);
+        if (!VALID_TAG_PATTERN.matcher(openTag).matches()) {
+            return List.of();
+        }
+        String trimmed = text.stripTrailing();
+        if (!trimmed.endsWith("\"\"\"")) {
+            return List.of();
+        }
+        int tripleIdx = trimmed.length() - 3;
+        if (tripleIdx <= openEnd || text.charAt(tripleIdx - 1) != ']') {
+            return List.of();
+        }
+        int closingCloseBracket = tripleIdx - 1;
+        int closingOpenBracket = -1;
+        for (int i = closingCloseBracket - 1; i > openEnd; i--) {
+            char c = text.charAt(i);
+            if (c == '[') {
+                closingOpenBracket = i;
+                break;
+            }
+            if (c == '\n' || c == '\r' || c == ']') {
+                break;
+            }
+        }
+        if (closingOpenBracket < 0) {
+            return List.of();
+        }
+        String closingTag = text.substring(closingOpenBracket + 1, closingCloseBracket);
+        if (closingTag.equals(openTag)) {
+            return List.of();
+        }
+        var fixes = new ArrayList<IntentionAction>(2);
+        fixes.add(new BalanceClosingTagQuickFix(target, openTag, closingTag, closingOpenBracket));
+        if (VALID_TAG_PATTERN.matcher(closingTag).matches()) {
+            fixes.add(new BalanceOpeningTagQuickFix(target, openTag, closingTag));
+        }
+        return fixes;
+    }
+
+    private static final class BalanceClosingTagQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
         @SafeFieldForPreview
         private final String expectedTag;
         @SafeFieldForPreview
@@ -550,14 +632,20 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         @SafeFieldForPreview
         private final int closingRelativeOffset;
 
-        public BalanceClosingTagQuickFix(String expectedTag, String currentClosingTag, int closingRelativeOffset) {
+        public BalanceClosingTagQuickFix(
+                PsiElement element,
+                String expectedTag,
+                String currentClosingTag,
+                int closingRelativeOffset
+        ) {
+            super(element);
             this.expectedTag = expectedTag;
             this.currentClosingTag = currentClosingTag;
             this.closingRelativeOffset = closingRelativeOffset;
         }
 
         @Override
-        public @NotNull String getName() {
+        public @NotNull String getText() {
             return "Replace '[" + currentClosingTag + "]\"\"\"' with '[" + expectedTag + "]\"\"\"'";
         }
 
@@ -567,15 +655,17 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element == null) return;
-            var file = element.getContainingFile();
-            if (file == null) return;
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            String text = element.getText();
-            int elementStart = element.getTextRange().getStartOffset();
+            String text = startElement.getText();
+            int elementStart = startElement.getTextRange().getStartOffset();
             String targetClosing = "[" + currentClosingTag + "]\"\"\"";
             String balancedClosing = "[" + expectedTag + "]\"\"\"";
             if (closingRelativeOffset >= 0 && closingRelativeOffset + targetClosing.length() <= text.length()) {
@@ -590,25 +680,30 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     String updated = text.substring(0, closingRelativeOffset) + balancedClosing + text.substring(closingRelativeOffset + targetClosing.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
                     var newLiteral = dummy.getStringLiteral();
-                    element.replace(newLiteral != null ? newLiteral : dummy);
+                    startElement.replace(newLiteral != null ? newLiteral : dummy);
                 }
             }
         }
     }
 
-    private static final class BalanceOpeningTagQuickFix implements LocalQuickFix {
+    private static final class BalanceOpeningTagQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
         @SafeFieldForPreview
         private final String currentOpeningTag;
         @SafeFieldForPreview
         private final String expectedOpeningTag;
 
-        public BalanceOpeningTagQuickFix(String currentOpeningTag, String expectedOpeningTag) {
+        public BalanceOpeningTagQuickFix(
+                PsiElement element,
+                String currentOpeningTag,
+                String expectedOpeningTag
+        ) {
+            super(element);
             this.currentOpeningTag = currentOpeningTag;
             this.expectedOpeningTag = expectedOpeningTag;
         }
 
         @Override
-        public @NotNull String getName() {
+        public @NotNull String getText() {
             return "Replace '[" + currentOpeningTag + "]' with '[" + expectedOpeningTag + "]'";
         }
 
@@ -618,15 +713,17 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var element = descriptor.getPsiElement();
-            if (element == null) return;
-            var file = element.getContainingFile();
-            if (file == null) return;
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            String text = element.getText();
-            int elementStart = element.getTextRange().getStartOffset();
+            String text = startElement.getText();
+            int elementStart = startElement.getTextRange().getStartOffset();
             String targetOpening = "[" + currentOpeningTag + "]";
             String balancedOpening = "[" + expectedOpeningTag + "]";
             int firstIdx = text.indexOf(targetOpening);
@@ -642,7 +739,7 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
                     String updated = text.substring(0, firstIdx) + balancedOpening + text.substring(firstIdx + targetOpening.length());
                     var dummy = StvnElementFactory.createValue(project, updated);
                     var newLiteral = dummy.getStringLiteral();
-                    element.replace(newLiteral != null ? newLiteral : dummy);
+                    startElement.replace(newLiteral != null ? newLiteral : dummy);
                 }
             }
         }

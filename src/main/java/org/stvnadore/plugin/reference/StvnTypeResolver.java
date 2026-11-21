@@ -13,6 +13,7 @@ import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnDiagnostic;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnDefsCatalog;
@@ -32,8 +33,14 @@ import org.stvnadore.psi.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -101,7 +108,22 @@ public final class StvnTypeResolver {
         "E007",
         "E015",
         DiagnosticBag.ERR_MALFORMED_SCHEMA,
-        "ERR_MALFORMED_SCHEMA"
+        "ERR_MALFORMED_SCHEMA",
+        DiagnosticBag.ERR_TEMPORAL_OFFSET_IN_ZONED,
+        "E019",
+        DiagnosticBag.ERR_TEMPORAL_ZONE_IN_EPOCH,
+        "E020",
+        DiagnosticBag.ERR_TEMPORAL_AUDITED_MISMATCH,
+        "E021",
+        DiagnosticBag.ERR_TEMPORAL_DST_GAP_LITERAL,
+        "E022",
+        DiagnosticBag.ERR_TEMPORAL_ZONE_IN_OFFSET,
+        DiagnosticBag.ERR_DATETIME_FENCED_STRING_PROHIBITED,
+        DiagnosticBag.ERR_DATETIME_MISSING_OFFSET,
+        DiagnosticBag.ERR_DATETIME_MISSING_ZONE,
+        DiagnosticBag.ERR_DATETIME_INVALID_FORMAT,
+        DiagnosticBag.ERR_DATETIME_INVALID_CALENDAR,
+        DiagnosticBag.ERR_DATETIME_INVALID_ZONE
     );
 
     /**
@@ -390,210 +412,11 @@ public final class StvnTypeResolver {
                         || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisonedDef.primaryDiagnosticCode()))) {
                 return true;
             }
-            var metaMap = typeDef.getMetadataMap();
-            if (metaMap != null) {
-                var entries = metaMap.getMetadataEntryList();
-                var hasMinIncl = false;
-                var hasMinExcl = false;
-                var hasMaxIncl = false;
-                var hasMaxExcl = false;
-                var hasFilterIncl = false;
-                var hasFilterExcl = false;
-                var hasSize = false;
-                var hasExact = false;
-                BigDecimal minVal = null;
-                BigDecimal maxVal = null;
-                String minStrVal = null;
-                String maxStrVal = null;
-
-                for (var entry : entries) {
-                    var trait = entry.getMetadataTrait();
-                    if (trait != null) {
-                        var mv = trait.getMetadataValue();
-                        if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
-                            return true;
-                        }
-                    }
-                    var boolFacet = entry.getMetadataBool();
-                    if (boolFacet != null) {
-                        var mv = boolFacet.getMetadataValue();
-                        if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
-                            return true;
-                        }
-                    }
-                    var entryText = entry.getText();
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_REGEX)) {
-                        var mv = entry.getMetadataValue();
-                        if (mv != null) {
-                            var resolvedRegex = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
-                            if (mv.getStringLiteral() != null && resolvedRegex.isEmpty()) {
-                                return true;
-                            }
-                            if (resolvedRegex.isPresent()) {
-                                try {
-                                    Pattern.compile(resolvedRegex.get());
-                                } catch (PatternSyntaxException e) {
-                                    return true;
-                                }
-                            }
-                        }
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_INCL)) {
-                        hasMinIncl = true;
-                        var num = extractNumericValue(entry);
-                        if (num != null) {
-                            minVal = num;
-                        } else if (entry.getMetadataValue() != null) {
-                            var mv = entry.getMetadataValue();
-                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
-                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
-                                return true;
-                            }
-                            minStrVal = resolved.orElse(null);
-                        }
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_EXCL)) {
-                        hasMinExcl = true;
-                        var num = extractNumericValue(entry);
-                        if (num != null) {
-                            minVal = num;
-                        } else if (entry.getMetadataValue() != null) {
-                            var mv = entry.getMetadataValue();
-                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
-                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
-                                return true;
-                            }
-                            minStrVal = resolved.orElse(null);
-                        }
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_INCL)) {
-                        hasMaxIncl = true;
-                        var num = extractNumericValue(entry);
-                        if (num != null) {
-                            maxVal = num;
-                        } else if (entry.getMetadataValue() != null) {
-                            var mv = entry.getMetadataValue();
-                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
-                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
-                                return true;
-                            }
-                            maxStrVal = resolved.orElse(null);
-                        }
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_EXCL)) {
-                        hasMaxExcl = true;
-                        var num = extractNumericValue(entry);
-                        if (num != null) {
-                            maxVal = num;
-                        } else if (entry.getMetadataValue() != null) {
-                            var mv = entry.getMetadataValue();
-                            var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
-                            if (mv.getStringLiteral() != null && resolved.isEmpty()) {
-                                return true;
-                            }
-                            maxStrVal = resolved.orElse(null);
-                        }
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_INCL)) {
-                        hasFilterIncl = true;
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_EXCL)) {
-                        hasFilterExcl = true;
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_EXACT)) {
-                        hasExact = true;
-                    } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SIZE)) {
-                        hasSize = true;
-                        var schemaType = typeDef.getSchemaType();
-                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
-                        if (schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
-                            return true;
-                        }
-                    }
-                }
-
-                if ((hasFilterIncl && hasFilterExcl) || (hasSize && hasExact)) {
-                    return true;
-                }
-
-                var schemaType = typeDef.getSchemaType();
-                var schemaText = schemaType != null ? StvnSchemaFormatter.formatSchema(schemaType).trim() : "";
-                if ((hasMaxIncl || hasMinExcl) && schemaText.endsWith(StvnVocabulary.TYPE_INT)) {
-                    return true;
-                }
-
-                var hasOffset = false;
-                var hasZoned = false;
-                var hasAudited = false;
-                var hasScaleNs = false;
-                var hasScaleUs = false;
-                var hasScaleMs = false;
-                var hasScaleS = false;
-                for (var entry : entries) {
-                    var entryText = entry.getText();
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_NS)) hasScaleNs = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_US)) hasScaleUs = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_MS)) hasScaleMs = true;
-                    if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_S)) hasScaleS = true;
-                }
-                int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
-                int scaleCount = (hasScaleNs ? 1 : 0) + (hasScaleUs ? 1 : 0) + (hasScaleMs ? 1 : 0) + (hasScaleS ? 1 : 0);
-                if (modeCount > 1 || scaleCount > 1) {
-                    return true;
-                }
-
-                if ((hasMinIncl && hasMinExcl) || (hasMaxIncl && hasMaxExcl)) {
-                    return true;
-                }
-                if ((minVal != null && maxVal == null) || (minVal == null && maxVal != null)) {
-                    var visitedAncestors = new HashSet<String>();
-                    var parentSt = typeDef.getSchemaType();
-                    String parentAlias = (parentSt != null && parentSt.getTypeKeyword() != null)
-                        ? parentSt.getTypeKeyword().getText().trim()
-                        : null;
-                    while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
-                            && visitedAncestors.add(parentAlias)) {
-                        var parentTarget = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
-                        var parentDef = resolveUnderlyingTypeDefinition(parentTarget);
-                        if (parentDef == null) {
-                            break;
-                        }
-                        var parentMeta = parentDef.getMetadataMap();
-                        if (parentMeta != null) {
-                            for (var pEntry : parentMeta.getMetadataEntryList()) {
-                                var pText = pEntry.getText();
-                                if (minVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_INCL)
-                                        || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL))) {
-                                    minVal = extractNumericValue(pEntry);
-                                    if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL)) hasMinExcl = true;
-                                    else hasMinIncl = true;
-                                } else if (maxVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_INCL)
-                                        || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL))) {
-                                    maxVal = extractNumericValue(pEntry);
-                                    if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL)) hasMaxExcl = true;
-                                    else hasMaxIncl = true;
-                                }
-                            }
-                        }
-                        if (minVal != null && maxVal != null) {
-                            break;
-                        }
-                        var nextSt = parentDef.getSchemaType();
-                        parentAlias = (nextSt != null && nextSt.getTypeKeyword() != null)
-                            ? nextSt.getTypeKeyword().getText().trim()
-                            : null;
-                    }
-                }
-                if (minVal != null && maxVal != null) {
-                    int cmp = minVal.compareTo(maxVal);
-                    if (cmp > 0 || (cmp == 0 && (hasMinExcl || hasMaxExcl))) {
-                        return true;
-                    }
-                }
-                if (minStrVal != null && maxStrVal != null && schemaText.endsWith(StvnVocabulary.TYPE_STRING)) {
-                    int strCmp = java.util.Arrays.compareUnsigned(
-                        minStrVal.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                        maxStrVal.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                    if (strCmp > 0 || (strCmp == 0 && (hasMinExcl || hasMaxExcl))) {
-                        return true;
-                    }
-                }
+            var metaMap = typeDef.getMetadataMap() != null
+                ? typeDef.getMetadataMap()
+                : (typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : null);
+            if (metaMap != null && hasDegradedMetadataConstraints(file, typeDef.getSchemaType(), metaMap)) {
+                return true;
             }
         }
 
@@ -618,7 +441,8 @@ public final class StvnTypeResolver {
             String symbolic = diag.symbolicId().orElse("");
             if (DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(symbolic)
                     || DiagnosticBag.ERR_META_POSITION_INVALID.equals(symbolic)
-                    || DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(symbolic)) {
+                    || DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(symbolic)
+                    || DiagnosticBag.ERR_FACET_ORDER_VIOLATION.equals(symbolic)) {
                 continue;
             }
             String canonical = diag.canonicalCode().orElse("");
@@ -652,6 +476,437 @@ public final class StvnTypeResolver {
         }
 
         return false;
+    }
+
+    /**
+     * Determines whether the given {@link SchemaType} (nominal alias, adorned nominal alias, or inline schema)
+     * is degraded or ungrounded due to schema or metadata constraint errors.
+     *
+     * @param file       the containing PSI file
+     * @param schemaType the governing schema PSI node to inspect
+     * @return {@code true} if degraded or ungrounded, {@code false} otherwise
+     */
+    public static boolean isDegradedOrUngroundedSchema(@Nullable PsiFile file, @Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return false;
+        }
+        PsiFile ctxFile = schemaType.getContainingFile() != null ? schemaType.getContainingFile() : file;
+        if (ctxFile == null) {
+            return false;
+        }
+        var kw = schemaType.getTypeKeyword();
+        var inlineMap = schemaType.getMetadataMap();
+        if (kw != null) {
+            if (isDegradedNominalAlias(ctxFile, kw.getText().trim())) {
+                return true;
+            }
+            if (inlineMap == null) {
+                return false;
+            }
+        }
+        var ir = resolveIrSchema(schemaType);
+        if (ir instanceof StvnSchema.PoisonedSchema poisoned
+                && !DiagnosticBag.ERR_UNDEFINED_TYPE.equals(poisoned.primaryDiagnosticCode())
+                && ((!"RECURSIVE_BACK_EDGE".equals(poisoned.primaryDiagnosticCode())
+                        && !"INTERNAL_RECURSIVE_NOMINAL_REF".equals(poisoned.primaryDiagnosticCode()))
+                    || FATAL_SCHEMA_DIAGNOSTIC_CODES.contains(poisoned.primaryDiagnosticCode()))) {
+            return true;
+        }
+        if (inlineMap != null && hasDegradedMetadataConstraints(ctxFile, schemaType, inlineMap)) {
+            return true;
+        }
+        var ctor = schemaType.getSchemaConstructor();
+        if (ctor != null && ctor.getAtomicType() != null && inlineMap == null) {
+            String atomText = ctor.getAtomicType().getText().trim();
+            if (StvnVocabulary.TYPE_DATE_TIME.equals(atomText)
+                    || StvnVocabulary.TYPE_TIME_EPOCH.equals(atomText)) {
+                var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
+                if (parentDef == null || parentDef.getSchemaType() != schemaType || parentDef.getMetadataMap() == null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether any enclosing composite {@link Value} ancestor inside {@code :body} is governed
+     * by a degraded or ungrounded schema.
+     *
+     * @param value the payload {@link Value} PSI node
+     * @return {@code true} if an enclosing ancestor inside {@code :body} is degraded or ungrounded
+     */
+    public static boolean hasDegradedEnclosingValueAncestor(@Nullable Value value) {
+        if (value == null || PsiTreeUtil.getParentOfType(value, BodyEntry.class) == null) {
+            return false;
+        }
+        Value curr = PsiTreeUtil.getParentOfType(value, Value.class, true);
+        while (curr != null && PsiTreeUtil.getParentOfType(curr, BodyEntry.class) != null) {
+            var info = resolveBaseTypeInfo(curr);
+            if (info != null && info.getSchema() != null
+                    && isDegradedOrUngroundedSchema(curr.getContainingFile(), info.getSchema())) {
+                return true;
+            }
+            curr = PsiTreeUtil.getParentOfType(curr, Value.class, true);
+        }
+        return false;
+    }
+
+    private static boolean hasDegradedMetadataConstraints(
+            PsiFile file,
+            @Nullable SchemaType schemaType,
+            MetadataMap metaMap
+    ) {
+        var entries = metaMap.getMetadataEntryList();
+        var hasMinIncl = false;
+        var hasMinExcl = false;
+        var hasMaxIncl = false;
+        var hasMaxExcl = false;
+        var hasFilterIncl = false;
+        var hasFilterExcl = false;
+        var hasSize = false;
+        var hasExact = false;
+        BigDecimal minVal = null;
+        BigDecimal maxVal = null;
+        BigDecimal minSizeVal = null;
+        BigDecimal maxSizeVal = null;
+        String minStrVal = null;
+        String maxStrVal = null;
+        MetadataEntry localMinEntry = null;
+        MetadataEntry localMaxEntry = null;
+
+        var resolvedSchema = resolveNominalSchema(schemaType);
+        var inspectSchema = resolvedSchema != null ? resolvedSchema : schemaType;
+        var schemaText = inspectSchema != null ? StvnSchemaFormatter.formatCleanSchema(inspectSchema).trim() : "";
+        boolean isDateTimeBase = StvnVocabulary.TYPE_DATE_TIME.equals(schemaText)
+            || schemaText.endsWith(StvnVocabulary.TYPE_DATE_TIME);
+        boolean isTimeEpochBase = StvnVocabulary.TYPE_TIME_EPOCH.equals(schemaText)
+            || schemaText.endsWith(StvnVocabulary.TYPE_TIME_EPOCH);
+        boolean isIntBase = StvnVocabulary.TYPE_INT.equals(schemaText)
+            || schemaText.endsWith(StvnVocabulary.TYPE_INT);
+        boolean isStringBase = StvnVocabulary.TYPE_STRING.equals(schemaText)
+            || schemaText.endsWith(StvnVocabulary.TYPE_STRING);
+
+        for (var entry : entries) {
+            var trait = entry.getMetadataTrait();
+            if (trait != null) {
+                var mv = trait.getMetadataValue();
+                if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
+                    return true;
+                }
+            }
+            var boolFacet = entry.getMetadataBool();
+            if (boolFacet != null) {
+                var mv = boolFacet.getMetadataValue();
+                if (mv == null || (mv.getBooleanValue() == null && mv.getValueKeyword() == null)) {
+                    return true;
+                }
+            }
+            var entryText = entry.getText();
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_REGEX)) {
+                var mv = entry.getMetadataValue();
+                if (mv != null) {
+                    var resolvedRegex = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, mv.getText().trim(), false);
+                    if (mv.getStringLiteral() != null && resolvedRegex.isEmpty()) {
+                        return true;
+                    }
+                    if (resolvedRegex.isPresent()) {
+                        try {
+                            Pattern.compile(resolvedRegex.get());
+                        } catch (PatternSyntaxException e) {
+                            return true;
+                        }
+                    }
+                }
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                minSizeVal = extractNumericValue(entry);
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                maxSizeVal = extractNumericValue(entry);
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_INCL)) {
+                hasMinIncl = true;
+                localMinEntry = entry;
+                var num = extractNumericValue(entry);
+                if (num != null) {
+                    minVal = num;
+                } else if (entry.getMetadataValue() != null) {
+                    var mv = entry.getMetadataValue();
+                    String rawMv = mv.getText().trim();
+                    if (isDateTimeBase && rawMv.startsWith("\"\"\"")) {
+                        return true;
+                    }
+                    var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rawMv, false);
+                    if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                        return true;
+                    }
+                    minStrVal = resolved.orElse(null);
+                }
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                hasMinExcl = true;
+                localMinEntry = entry;
+                var num = extractNumericValue(entry);
+                if (num != null) {
+                    minVal = num;
+                } else if (entry.getMetadataValue() != null) {
+                    var mv = entry.getMetadataValue();
+                    String rawMv = mv.getText().trim();
+                    if (isDateTimeBase && rawMv.startsWith("\"\"\"")) {
+                        return true;
+                    }
+                    var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rawMv, false);
+                    if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                        return true;
+                    }
+                    minStrVal = resolved.orElse(null);
+                }
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_INCL)) {
+                hasMaxIncl = true;
+                localMaxEntry = entry;
+                var num = extractNumericValue(entry);
+                if (num != null) {
+                    maxVal = num;
+                } else if (entry.getMetadataValue() != null) {
+                    var mv = entry.getMetadataValue();
+                    String rawMv = mv.getText().trim();
+                    if (isDateTimeBase && rawMv.startsWith("\"\"\"")) {
+                        return true;
+                    }
+                    var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rawMv, false);
+                    if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                        return true;
+                    }
+                    maxStrVal = resolved.orElse(null);
+                }
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                hasMaxExcl = true;
+                localMaxEntry = entry;
+                var num = extractNumericValue(entry);
+                if (num != null) {
+                    maxVal = num;
+                } else if (entry.getMetadataValue() != null) {
+                    var mv = entry.getMetadataValue();
+                    String rawMv = mv.getText().trim();
+                    if (isDateTimeBase && rawMv.startsWith("\"\"\"")) {
+                        return true;
+                    }
+                    var resolved = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rawMv, false);
+                    if (mv.getStringLiteral() != null && resolved.isEmpty()) {
+                        return true;
+                    }
+                    maxStrVal = resolved.orElse(null);
+                }
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_INCL)) {
+                hasFilterIncl = true;
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_FILTER_EXCL)) {
+                hasFilterExcl = true;
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_EXACT)) {
+                hasExact = true;
+            } else if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SIZE)) {
+                hasSize = true;
+                if (isStringBase) {
+                    return true;
+                }
+            }
+        }
+
+        if ((hasFilterIncl && hasFilterExcl) || (hasSize && hasExact)) {
+            return true;
+        }
+        if (minSizeVal != null && maxSizeVal != null && minSizeVal.compareTo(maxSizeVal) > 0) {
+            return true;
+        }
+        if ((hasMaxIncl || hasMinExcl) && (isIntBase || isTimeEpochBase || isDateTimeBase)) {
+            return true;
+        }
+
+        var hasOffset = false;
+        var hasZoned = false;
+        var hasAudited = false;
+        var hasScaleNs = false;
+        var hasScaleUs = false;
+        var hasScaleMs = false;
+        var hasScaleS = false;
+        for (var entry : entries) {
+            var entryText = entry.getText();
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_OFFSET)) hasOffset = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_ZONED)) hasZoned = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_AUDITED)) hasAudited = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_NS)) hasScaleNs = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_US)) hasScaleUs = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_MS)) hasScaleMs = true;
+            if (hasExactFacetTag(entryText, StvnVocabulary.FACET_KW_SCALE_S)) hasScaleS = true;
+        }
+        int modeCount = (hasOffset ? 1 : 0) + (hasZoned ? 1 : 0) + (hasAudited ? 1 : 0);
+        int scaleCount = (hasScaleNs ? 1 : 0) + (hasScaleUs ? 1 : 0) + (hasScaleMs ? 1 : 0) + (hasScaleS ? 1 : 0);
+        if (modeCount > 1 || scaleCount > 1) {
+            return true;
+        }
+
+        if ((hasMinIncl && hasMinExcl) || (hasMaxIncl && hasMaxExcl)) {
+            return true;
+        }
+
+        if (isDateTimeBase) {
+            StvnSchema.DateTimeMode dtMode = hasOffset
+                ? StvnSchema.DateTimeMode.OFFSET
+                : hasZoned
+                    ? StvnSchema.DateTimeMode.ZONED
+                    : hasAudited
+                        ? StvnSchema.DateTimeMode.AUDITED
+                        : resolveInheritedDateTimeMode(file, schemaType);
+            if (dtMode == null) {
+                return true;
+            }
+            Instant minInst = null;
+            Instant maxInst = null;
+            if (localMinEntry != null) {
+                minInst = parseValidatedDateTimeBoundInstant(localMinEntry, minStrVal, dtMode);
+                if (minInst == null) {
+                    return true;
+                }
+            }
+            if (localMaxEntry != null) {
+                maxInst = parseValidatedDateTimeBoundInstant(localMaxEntry, maxStrVal, dtMode);
+                if (maxInst == null) {
+                    return true;
+                }
+            }
+            if (minInst != null && maxInst != null) {
+                int dtCmp = minInst.compareTo(maxInst);
+                if (dtCmp > 0 || (dtCmp == 0 && (hasMinExcl || hasMaxExcl))) {
+                    return true;
+                }
+            }
+        }
+
+        if ((minVal != null && maxVal == null) || (minVal == null && maxVal != null)) {
+            var visitedAncestors = new HashSet<String>();
+            String parentAlias = (schemaType != null && schemaType.getTypeKeyword() != null)
+                ? schemaType.getTypeKeyword().getText().trim()
+                : null;
+            while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                    && visitedAncestors.add(parentAlias)) {
+                var parentTarget = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
+                var parentDef = resolveUnderlyingTypeDefinition(parentTarget);
+                if (parentDef == null) {
+                    break;
+                }
+                var parentMeta = parentDef.getMetadataMap();
+                if (parentMeta != null) {
+                    for (var pEntry : parentMeta.getMetadataEntryList()) {
+                        var pText = pEntry.getText();
+                        if (minVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_INCL)
+                                || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL))) {
+                            minVal = extractNumericValue(pEntry);
+                            if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MIN_EXCL)) hasMinExcl = true;
+                            else hasMinIncl = true;
+                        } else if (maxVal == null && (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_INCL)
+                                || hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL))) {
+                            maxVal = extractNumericValue(pEntry);
+                            if (hasExactFacetTag(pText, StvnVocabulary.FACET_KW_MAX_EXCL)) hasMaxExcl = true;
+                            else hasMaxIncl = true;
+                        }
+                    }
+                }
+                if (minVal != null && maxVal != null) {
+                    break;
+                }
+                var nextSt = parentDef.getSchemaType();
+                parentAlias = (nextSt != null && nextSt.getTypeKeyword() != null)
+                    ? nextSt.getTypeKeyword().getText().trim()
+                    : null;
+            }
+        }
+        if (minVal != null && maxVal != null) {
+            int cmp = minVal.compareTo(maxVal);
+            if (cmp > 0 || (cmp == 0 && (hasMinExcl || hasMaxExcl))) {
+                return true;
+            }
+        }
+        if (minStrVal != null && maxStrVal != null && isStringBase) {
+            int strCmp = Arrays.compareUnsigned(
+                minStrVal.getBytes(StandardCharsets.UTF_8),
+                maxStrVal.getBytes(StandardCharsets.UTF_8));
+            if (strCmp > 0 || (strCmp == 0 && (hasMinExcl || hasMaxExcl))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static StvnSchema.@Nullable DateTimeMode resolveInheritedDateTimeMode(
+            PsiFile file,
+            @Nullable SchemaType schemaType
+    ) {
+        if (schemaType == null) {
+            return null;
+        }
+        var visited = new HashSet<String>();
+        String alias = schemaType.getTypeKeyword() != null ? schemaType.getTypeKeyword().getText().trim() : null;
+        while (alias != null && alias.startsWith(StvnVocabulary.SIGIL_TYPIC) && visited.add(alias)) {
+            var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+            var parentDef = resolveUnderlyingTypeDefinition(target);
+            if (parentDef == null) {
+                break;
+            }
+            var parentMeta = parentDef.getMetadataMap() != null
+                ? parentDef.getMetadataMap()
+                : (parentDef.getSchemaType() != null ? parentDef.getSchemaType().getMetadataMap() : null);
+            if (parentMeta != null) {
+                for (var entry : parentMeta.getMetadataEntryList()) {
+                    var text = entry.getText().trim();
+                    if (StvnVocabulary.FACET_KW_OFFSET.equals(text)) return StvnSchema.DateTimeMode.OFFSET;
+                    if (StvnVocabulary.FACET_KW_ZONED.equals(text)) return StvnSchema.DateTimeMode.ZONED;
+                    if (StvnVocabulary.FACET_KW_AUDITED.equals(text)) return StvnSchema.DateTimeMode.AUDITED;
+                }
+            }
+            var nextSt = parentDef.getSchemaType();
+            alias = (nextSt != null && nextSt.getTypeKeyword() != null)
+                ? nextSt.getTypeKeyword().getText().trim()
+                : null;
+        }
+        return null;
+    }
+
+    private static @Nullable Instant parseValidatedDateTimeBoundInstant(
+            MetadataEntry entry,
+            @Nullable String decoded,
+            StvnSchema.DateTimeMode mode
+    ) {
+        if (decoded == null || decoded.isEmpty()) {
+            return null;
+        }
+        var mv = entry.getMetadataValue();
+        if (mv == null) {
+            return null;
+        }
+        String rawText = mv.getText().trim();
+        if (rawText.startsWith("\"\"\"")) {
+            return null;
+        }
+        String validationToken = mv.getStringLiteral() != null
+            ? rawText
+            : StvnPsiLiteralEvaluator.formatCanonicalQuotedString(decoded);
+        if (StvnCompiler.validateDateTimeLiteral(validationToken, mode).isPresent()) {
+            return null;
+        }
+        try {
+            return switch (mode) {
+                case OFFSET -> OffsetDateTime.parse(decoded).toInstant();
+                case AUDITED -> {
+                    int bracketIdx = decoded.indexOf('[');
+                    yield OffsetDateTime.parse(decoded.substring(0, bracketIdx)).toInstant();
+                }
+                case ZONED -> {
+                    int openBracket = decoded.indexOf('[');
+                    int closeBracket = decoded.lastIndexOf(']');
+                    var ldt = LocalDateTime.parse(decoded.substring(0, openBracket));
+                    var zone = ZoneId.of(decoded.substring(openBracket + 1, closeBracket));
+                    yield ldt.atZone(zone).toInstant();
+                }
+            };
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     private static boolean isInsideCompositeChildSchema(TypeDefinition typeDef, int startOffset, int endOffset) {

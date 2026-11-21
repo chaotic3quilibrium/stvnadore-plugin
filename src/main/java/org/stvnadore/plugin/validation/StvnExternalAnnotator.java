@@ -1063,11 +1063,16 @@ public final class StvnExternalAnnotator
                     );
                 }
 
+                TextRange deferredEarlierSwapRange = null;
+                StvnDiscreteIntervalInspection.SwapInvertedBoundsQuickFix deferredEarlierSwapFix = null;
+
                 // Inverted interval bounds quick-fix (ERR_INVERTED_RANGE / INVALID_NUMERIC_RANGE)
                 if (DiagnosticBag.ERR_INVERTED_RANGE.equals(diagnosticId)
                         || StvnDiagnosticCodes.ERR_INVERTED_RANGE.equals(diagnosticId)
                         || "INVALID_NUMERIC_RANGE".equals(diagnosticId)
-                        || rawMessage.contains("effective range is invalid")) {
+                        || rawMessage.contains("effective range is invalid")
+                        || rawMessage.contains("cannot exceed " + StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                    boolean cardinalityBounds = rawMessage.contains(StvnVocabulary.FACET_KW_MIN_SIZE);
                     var targetElem = file.findElementAt(range.getStartOffset());
                     var metaMap = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.MetadataMap.class, false);
                     if (metaMap == null && range.getStartOffset() + 1 < textLength) {
@@ -1077,9 +1082,26 @@ public final class StvnExternalAnnotator
                             false
                         );
                     }
-                    var swapFix = StvnDiscreteIntervalInspection.createSwapFixForMetadataMap(metaMap);
+                    var swapFix = StvnDiscreteIntervalInspection.createSwapFixForMetadataMap(metaMap, cardinalityBounds);
                     if (swapFix != null) {
                         annotationBuilder = annotationBuilder.withFix(swapFix);
+                        var earlierNonAdj = StvnDiscreteIntervalInspection.findNonAdjacentEarlierBoundEntry(
+                            metaMap,
+                            cardinalityBounds
+                        );
+                        if (earlierNonAdj != null && !earlierNonAdj.getTextRange().intersectsStrict(range)) {
+                            deferredEarlierSwapRange = earlierNonAdj.getTextRange();
+                            deferredEarlierSwapFix = swapFix;
+                        }
+                    }
+                }
+
+                // Pass A (0-inspection) mismatched fenced delimiter balance quick-fixes (Rule STR-04 / E025)
+                if (("FENCE_DELIMITER_MISMATCH".equals(diagnosticId)
+                        || DiagnosticBag.ERR_FENCE_DELIMITER_MISMATCH.equals(diagnosticId))
+                        && rawMessage.contains("found mismatched closing tag")) {
+                    for (var fenceFix : StvnFencedStringInspection.createMismatchedFenceQuickFixes(file, range)) {
+                        annotationBuilder = annotationBuilder.withFix(fenceFix);
                     }
                 }
 
@@ -1179,6 +1201,12 @@ public final class StvnExternalAnnotator
                 );
 
                 annotationBuilder.create();
+                if (deferredEarlierSwapRange != null && deferredEarlierSwapFix != null) {
+                    holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredEarlierSwapRange)
+                        .withFix(deferredEarlierSwapFix)
+                        .create();
+                }
             }
         }
 
@@ -1189,8 +1217,8 @@ public final class StvnExternalAnnotator
                 if (strLit.getParent() instanceof Value valNode) {
                     var govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(valNode);
                     if (govSchema != null) {
-                        var govKw = govSchema.getTypeKeyword();
-                        if (govKw != null && StvnTypeResolver.isDegradedNominalAlias(file, govKw.getText().trim())) {
+                        if (StvnTypeResolver.isDegradedOrUngroundedSchema(file, govSchema)
+                                || StvnTypeResolver.hasDegradedEnclosingValueAncestor(valNode)) {
                             continue;
                         }
                         var termSchema = StvnTypeResolver.resolveNominalSchema(govSchema);

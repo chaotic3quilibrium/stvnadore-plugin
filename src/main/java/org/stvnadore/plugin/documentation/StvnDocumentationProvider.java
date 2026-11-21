@@ -247,9 +247,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var schema = info.getSchema();
                 var kw = schema.getTypeKeyword();
                 var alias = kw != null ? kw.getText() : null;
-                if (alias != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), alias)) {
-                    var ir = StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), alias);
-                    return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, schema));
+                if (StvnTypeResolver.isDegradedOrUngroundedSchema(value.getContainingFile(), schema)) {
+                    var ir = (alias != null && schema.getMetadataMap() == null)
+                        ? StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), alias)
+                        : StvnTypeResolver.resolveIrSchema(schema);
+                    var schemaLabel = (alias != null && schema.getMetadataMap() == null)
+                        ? alias
+                        : StvnSchemaFormatter.formatSchema(schema);
+                    return new DegradedSchemaInfo(schemaLabel, resolveGroundedFallbackBase(ir, schema));
                 }
             }
             var degradedAncestor = findEnclosingDegradedBodyAncestor(value);
@@ -4523,15 +4528,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static boolean isGoverningSchemaDegraded(Value value, SchemaType schemaType) {
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var aliasText = kw.getText().trim();
-                return StvnTypeResolver.isDegradedNominalAlias(file, aliasText);
-            }
-        }
-        return false;
+        return StvnTypeResolver.isDegradedOrUngroundedSchema(value.getContainingFile(), schemaType);
     }
 
     private static boolean isGoverningSchemaUngrounded(Value value, @Nullable SchemaType schemaType) {

@@ -14,22 +14,104 @@ import static org.stvnadore.psi.StvnTypes.*;
     this((java.io.Reader)null);
   }
 
+  private static boolean isValidFenceTagChar(char ch) {
+    return (ch >= 'a' && ch <= 'z')
+        || (ch >= 'A' && ch <= 'Z')
+        || (ch >= '0' && ch <= '9')
+        || ch == '_'
+        || ch == '-';
+  }
+
   private static boolean isValidFenceTag(String tag) {
     if (tag.isEmpty() || tag.length() > 256) {
       return false;
     }
     for (int i = 0; i < tag.length(); i++) {
-      char ch = tag.charAt(i);
-      boolean ok = (ch >= 'a' && ch <= 'z')
-          || (ch >= 'A' && ch <= 'Z')
-          || (ch >= '0' && ch <= '9')
-          || ch == '_'
-          || ch == '-';
-      if (!ok) {
+      if (!isValidFenceTagChar(tag.charAt(i))) {
         return false;
       }
     }
     return true;
+  }
+
+  private boolean startsWithInBuffer(String needle, int pos) {
+    int nLen = needle.length();
+    if (pos < 0 || pos + nLen > zzEndRead) {
+      return false;
+    }
+    for (int k = 0; k < nLen; k++) {
+      if (zzBuffer.charAt(pos + k) != needle.charAt(k)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private int indexOfInBuffer(String needle, int fromPos) {
+    int nLen = needle.length();
+    if (nLen == 0 || fromPos < 0 || fromPos + nLen > zzEndRead) {
+      return -1;
+    }
+    char first = needle.charAt(0);
+    int limit = zzEndRead - nLen;
+    for (int i = fromPos; i <= limit; i++) {
+      if (zzBuffer.charAt(i) == first && startsWithInBuffer(needle, i)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private int findDepthZeroCandidateCloseEnd(int bodyStart) {
+    java.util.Deque<String> nestedStack = new java.util.ArrayDeque<>();
+    int i = bodyStart;
+    while (i < zzEndRead) {
+      if (startsWithInBuffer("\"\"\"[", i)) {
+        int p = i + 4;
+        while (p < zzEndRead && isValidFenceTagChar(zzBuffer.charAt(p))) {
+          p++;
+        }
+        int tagLen = p - (i + 4);
+        if (tagLen >= 1 && tagLen <= 256 && p < zzEndRead && zzBuffer.charAt(p) == ']') {
+          int q = p + 1;
+          while (q < zzEndRead && (zzBuffer.charAt(q) == ' ' || zzBuffer.charAt(q) == '\t' || zzBuffer.charAt(q) == '\r')) {
+            q++;
+          }
+          if (q < zzEndRead && zzBuffer.charAt(q) == '\n') {
+            String innerTag = zzBuffer.subSequence(i + 4, p).toString();
+            String innerClose = "[" + innerTag + "]\"\"\"";
+            if (indexOfInBuffer(innerClose, q + 1) >= 0) {
+              nestedStack.push(innerTag);
+              i = q + 1;
+              continue;
+            }
+          }
+        }
+      }
+      if (zzBuffer.charAt(i) == '[') {
+        int p = i + 1;
+        while (p < zzEndRead
+            && zzBuffer.charAt(p) != ']'
+            && zzBuffer.charAt(p) != '['
+            && zzBuffer.charAt(p) != '\r'
+            && zzBuffer.charAt(p) != '\n') {
+          p++;
+        }
+        if (p + 3 < zzEndRead && startsWithInBuffer("]\"\"\"", p)) {
+          String closeTag = zzBuffer.subSequence(i + 1, p).toString();
+          if (!nestedStack.isEmpty()) {
+            if (closeTag.equals(nestedStack.peek())) {
+              nestedStack.pop();
+            }
+            i = p + 4;
+            continue;
+          }
+          return p + 4;
+        }
+      }
+      i++;
+    }
+    return -1;
   }
 
   private IElementType scanMalformedFenceBody() {
@@ -38,7 +120,11 @@ import static org.stvnadore.psi.StvnTypes.*;
       char c = zzBuffer.charAt(zzCurrentPos++);
       if (c == '[') {
         int p = zzCurrentPos;
-        while (p < zzEndRead && zzBuffer.charAt(p) != ']' && zzBuffer.charAt(p) != '\r' && zzBuffer.charAt(p) != '\n') {
+        while (p < zzEndRead
+            && zzBuffer.charAt(p) != ']'
+            && zzBuffer.charAt(p) != '['
+            && zzBuffer.charAt(p) != '\r'
+            && zzBuffer.charAt(p) != '\n') {
           p++;
         }
         if (p + 3 < zzEndRead
@@ -201,25 +287,21 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
       return scanMalformedFenceBody();
     }
     String closingFence = "[" + tag + "]\"\"\"";
-    
-    int matchIdx = 0;
-    while (zzCurrentPos < zzEndRead) {
-      char c = zzBuffer.charAt(zzCurrentPos++);
-      if (c == closingFence.charAt(matchIdx)) {
-        matchIdx++;
-        if (matchIdx == closingFence.length()) {
-          zzMarkedPos = zzCurrentPos;
-          return LITERAL_STRING_FENCED;
-        }
-      } else {
-        if (c == closingFence.charAt(0)) {
-          matchIdx = 1;
-        } else {
-          matchIdx = 0;
-        }
-      }
+    int bodyStart = zzMarkedPos;
+    int matchPos = indexOfInBuffer(closingFence, bodyStart);
+    if (matchPos >= 0) {
+      zzCurrentPos = matchPos + closingFence.length();
+      zzMarkedPos = zzCurrentPos;
+      return LITERAL_STRING_FENCED;
     }
-    zzMarkedPos = zzCurrentPos;
+    int candidateEnd = findDepthZeroCandidateCloseEnd(bodyStart);
+    if (candidateEnd > bodyStart) {
+      zzCurrentPos = candidateEnd;
+      zzMarkedPos = zzCurrentPos;
+      return MALFORMED_FENCE;
+    }
+    zzCurrentPos = zzEndRead;
+    zzMarkedPos = zzEndRead;
     // Fail closed on unclosed fence reaching EOF
     return BAD_CHARACTER;
   }

@@ -672,4 +672,50 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
         assertEquals(":Boolean",
             org.stvnadore.plugin.reference.StvnTypeResolver.resolveValueType(tuple.getValueList().get(5)));
     }
+
+    public void testMismatchedClosingFencePreservesTrailingTupleSlotsAndGuardsInvalidClosingTag() {
+        String code = """
+            {
+              :defs {
+                :ShortCode { #minSize 3 #maxSize 5 #regex "^[A-Z]+$" } :String
+                :BrokenRegex { #regex "[unclosed" } :String
+                :Matrix :Tuple( :String :String :ShortCode :BrokenRegex )
+              }
+              :type :Matrix
+              :body (
+                \"\"\"[SQL]
+                  SELECT arr[0] FROM mismatched_close;
+                [JSON]\"\"\"
+                \"\"\"[XML]
+                  <tag/>
+                [C++]\"\"\"
+                "AB"
+                "suspended-slot"
+              )
+            }
+            """;
+        var file = myFixture.configureByText("mismatched_fence_recovery.stvn", code);
+        var tuple = com.intellij.psi.util.PsiTreeUtil.findChildOfType(file, org.stvnadore.psi.TupleLiteral.class);
+        assertNotNull("TupleLiteral must parse cleanly after mismatched closing fences", tuple);
+        assertEquals("All 4 TupleLiteral slots must remain intact", 4, tuple.getValueList().size());
+
+        myFixture.doHighlighting();
+
+        int sqlOpenOffset = code.indexOf("\"\"\"[SQL]") + 4;
+        myFixture.getEditor().getCaretModel().moveToOffset(sqlOpenOffset);
+        var closeFix = myFixture.findSingleIntention("Replace '[JSON]\"\"\"' with '[SQL]\"\"\"'");
+        var openFix = myFixture.findSingleIntention("Replace '[SQL]' with '[JSON]'");
+        assertNotNull(closeFix);
+        assertNotNull(openFix);
+        String diffPreview = myFixture.getIntentionPreviewText(closeFix);
+        assertTrue("Expected IntentionPreviewInfo.DIFF to rewrite [JSON] closing fence: " + diffPreview,
+            diffPreview.contains("[SQL]\"\"\""));
+
+        int xmlCloseOffset = code.indexOf("[C++]\"\"\"") + 2;
+        myFixture.getEditor().getCaretModel().moveToOffset(xmlCloseOffset);
+        assertNotNull("Expected BalanceClosingTagQuickFix on invalid closing tag [C++]",
+            myFixture.findSingleIntention("Replace '[C++]\"\"\"' with '[XML]\"\"\"'"));
+        assertTrue("BalanceOpeningTagQuickFix must be suppressed when candidate closing tag is invalid",
+            myFixture.filterAvailableIntentions("Replace '[XML]' with '[C++]'").isEmpty());
+    }
 }

@@ -212,6 +212,19 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 return true;
             }
         }
+        if (entry.getParent() instanceof MetadataMap metaMap) {
+            SchemaType ownerSchema = metaMap.getParent() instanceof SchemaType st
+                ? st
+                : (metaMap.getParent() instanceof TypeDefinition td ? td.getSchemaType() : null);
+            if (ownerSchema != null) {
+                var localIntervalErr = StvnDiscreteIntervalInspection.findLocalIntervalErrorRange(ownerSchema, metaMap);
+                if (localIntervalErr != null
+                        && localIntervalErr.getStartOffset() < range.getEndOffset()
+                        && localIntervalErr.getEndOffset() > range.getStartOffset()) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 

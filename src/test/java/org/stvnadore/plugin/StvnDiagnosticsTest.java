@@ -5164,7 +5164,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             e.getDescription().contains("effective range is invalid") &&
             (docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#maxExcl") ||
              docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#maxExcl 10") ||
-             docText.substring(e.getStartOffset(), e.getEndOffset()).equals("{ #minIncl 100 #maxExcl 10 }"))
+             docText.substring(e.getStartOffset(), e.getEndOffset()).equals("#minIncl 100 #maxExcl 10"))
         );
         assertTrue("Must highlight inverted range metadata map", hasInvertedRangeError);
 

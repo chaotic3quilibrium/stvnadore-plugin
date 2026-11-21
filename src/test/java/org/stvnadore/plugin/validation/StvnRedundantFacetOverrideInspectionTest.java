@@ -559,4 +559,38 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
         assertTrue("Enum #filterIncl fallback must emit zero-bracket-padded '[#READ #WRITE #ADMIN]'",
             pluginWarnings.stream().anyMatch(h -> h.getDescription().contains("facet '#filterIncl [#READ #WRITE #ADMIN]' is redundant")));
     }
+
+    public void testTcBiject07AdjacentVsNonAdjacentBoundSpanW003Suppression() {
+        myFixture.enableInspections(new InspectionProfileEntry[]{
+            new StvnDiscreteIntervalInspection(),
+            new StvnMetadataOrderInspection()
+        });
+        var text = """
+            {
+              :meta {
+                #name "tc_biject_07_parity"
+                #kind #DEFS
+              }
+              :defs {
+                :Parent { #minIncl 20 #maxExcl 30 } :Int
+                :BadInverted { #minIncl 20 #maxExcl 10 } :Parent
+                :BadInvertedNonAdj { #minIncl 20 #comparable #FALSE #maxExcl 10 } :Parent
+              }
+            }
+            """;
+        myFixture.configureByText("tc_biject_07_parity.stvn_d", text);
+        var highlights = myFixture.doHighlighting();
+        var w003Warnings = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+            .filter(h -> h.getDescription() != null
+                && (h.getDescription().contains(PLUGIN_W003_TAG) || h.getDescription().contains(CORE_W003_TAG)))
+            .toList();
+
+        assertEquals(
+            "Adjacent :BadInverted must suppress co-located W003 on #minIncl 20 while non-adjacent :BadInvertedNonAdj preserves W003 on #minIncl 20: " + w003Warnings,
+            1,
+            w003Warnings.size()
+        );
+        assertEquals("#minIncl 20", w003Warnings.get(0).getText());
+    }
 }
