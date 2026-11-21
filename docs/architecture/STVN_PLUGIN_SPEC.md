@@ -11,7 +11,7 @@
 - `STVN-VOP-MANIFESTO.md` (Value-Oriented Programming Canonical Foundations)  
 - [`docs/architecture/STVN_REPOSITORY_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_repository/docs/architecture/STVN_REPOSITORY_SPEC.md) (STVN 2.0.0 baseline)  
 - [`docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_example_chess/docs/architecture/STVN_CHESS_SHOWCASE_SPEC.md) (STVN 2.0.0 baseline)  
-**Toolchain:** Java 21 LTS | Gradle 8.x | IntelliJ Platform SDK 2025.3  
+**Toolchain:** Java 21 LTS | Gradle 8.x / 9.x (Configuration Cache Enabled) | IntelliJ Platform SDK 2025.3  
 
 ---
 
@@ -375,3 +375,9 @@ flowchart TD
 - **Typing Latency:** Highlight passes on keystrokes must complete in $< 50\text{ ms}$ for documents up to 5,000 lines.
 - **Completion Response:** In-flight completion results must return within $< 30\text{ ms}$.
 - **Memory Footprint:** Cached AST and diagnostic values must use soft references (`CachedValuesManager`) to avoid memory leaks during long-running IDE sessions.
+
+### 5.3 Sandbox Classpath Synchronization & Configuration Cache Invariants (`BS-01` .. `BS-05`)
+- **Zero-`ZipFileSystem` Streaming Replacement (`BS-01`):** `SyncSiblingCoreTask` never invokes `FileSystems.newFileSystem(URI.create("jar:..."))`, preventing JVM-wide static `ZipFileSystemProvider` map leaks (`FileSystemAlreadyExistsException`) and `zipfstmp*.tmp` pollution inside long-lived Gradle daemons on Windows. Updates stream existing `META-INF/` entries and sibling `../ij_stvnadore_core/target/classes` files through `java.util.zip.ZipFile` and `ZipOutputStream` to a sibling `<jar>.sync-<uuid>.tmp` file, close all streams, replace the target JAR via `Files.move(..., REPLACE_EXISTING, ATOMIC_MOVE)` (with `REPLACE_EXISTING` fallback), and delete `<jar>.sync-<uuid>.tmp` inside `finally`.
+- **Byte-Exact Content-Diff Pre-Check (`BS-02`):** Before opening any output stream, `SyncSiblingCoreTask` compares every file in `../ij_stvnadore_core/target/classes` byte-for-byte (`InputStream.readNBytes` + `Arrays.equals`) against `ZipFile(coreJar)` read-only. When `0` entries are missing or differ, the task performs zero disk writes, allowing `buildPlugin`, `check`, and `test` to succeed while `runIde` holds a shared read handle on `plugins/`.
+- **Main vs. Test Sandbox Decoupling & Sequential Ordering (`BS-03`):** `:syncSiblingCoreToSandbox` scopes exclusively to `plugins/` (`prepareSandbox` -> `syncSiblingCoreToSandbox` -> `buildPlugin` / `runIde`), while `:syncSiblingCoreToTestSandbox` scopes exclusively to `plugins-test/` (`prepareTestSandbox` -> `syncSiblingCoreToTestSandbox` -> `prepareTest` / `test`), pruning `system/`, `system-test/`, `config*`, and `log*` subtrees.
+- **Actionable Windows Lock Diagnostics (`BS-04`):** When `>= 1` entries differ and `Files.move` throws `AccessDeniedException` or `FileSystemException` on Windows, `SyncSiblingCoreTask` deletes the sibling `.tmp` file cleanly and throws an STE `GradleException` naming the locked JAR path and instructing the developer to close `runIde` and re-run the task.

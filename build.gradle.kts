@@ -1,7 +1,21 @@
-import java.net.URI
-import java.nio.file.FileSystems
+import java.io.BufferedOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.FileTime
+import java.util.Arrays
+import java.util.TreeMap
+import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipException
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -140,52 +154,311 @@ intellijPlatform {
     instrumentCode.set(false)
 }
 
+@DisableCachingByDefault(because = "Synchronizes local sibling core classes into prepared IntelliJ sandbox library JARs in place")
 abstract class SyncSiblingCoreTask : DefaultTask() {
-    @get:InputDirectory
-    @get:Optional
+    @get:Internal
     abstract val siblingClassesDir: DirectoryProperty
 
     @get:Internal
-    abstract val sandboxDir: DirectoryProperty
+    abstract val sandboxRootDir: DirectoryProperty
+
+    @get:Input
+    abstract val targetPluginsDirName: Property<String>
 
     @TaskAction
     fun sync() {
-        if (siblingClassesDir.isPresent) {
-            val siblingClasses = siblingClassesDir.get().asFile
-            if (siblingClasses.exists() && siblingClasses.isDirectory && sandboxDir.isPresent) {
-                val sandbox = sandboxDir.get().asFile
-                if (sandbox.exists()) {
-                    val coreJars = sandbox.walk().filter { it.isFile && it.name.startsWith("stvnadore-core-") && it.name.endsWith(".jar") }
-                    coreJars.forEach { coreJar ->
-                        logger.lifecycle("Syncing updated sibling core classes into: ${coreJar.absolutePath}")
-                        val env = mapOf("create" to "false")
-                        val uri = URI.create("jar:" + coreJar.toURI().toString())
-                        FileSystems.newFileSystem(uri, env).use { zipFs ->
-                            siblingClasses.walk().filter { it.isFile }.forEach { sourceFile ->
-                                val relPath = sourceFile.relativeTo(siblingClasses).path.replace('\\', '/')
-                                val targetPath = zipFs.getPath("/" + relPath)
-                                val parent = targetPath.parent
-                                if (parent != null && !Files.exists(parent)) {
-                                    Files.createDirectories(parent)
-                                }
-                                Files.copy(sourceFile.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+        if (!siblingClassesDir.isPresent || !sandboxRootDir.isPresent) {
+            return
+        }
+        val siblingClasses = siblingClassesDir.get().asFile
+        if (!siblingClasses.exists() || !siblingClasses.isDirectory) {
+            return
+        }
+        val sandboxRoot = sandboxRootDir.get().asFile
+        if (!sandboxRoot.exists() || !sandboxRoot.isDirectory) {
+            return
+        }
+
+        val siblingFiles = collectSiblingFiles(siblingClasses)
+        if (siblingFiles.isEmpty()) {
+            return
+        }
+
+        val targetDirName = targetPluginsDirName.get()
+        val excludedDirNames = setOf(
+            "system",
+            "system-test",
+            "config",
+            "config-test",
+            "log",
+            "log-test",
+            if (targetDirName == "plugins") "plugins-test" else "plugins"
+        )
+
+        val coreJars = sandboxRoot.walkTopDown()
+            .onEnter { dir -> dir == sandboxRoot || dir.name !in excludedDirNames }
+            .filter { file ->
+                file.isFile &&
+                    isTargetCoreBinaryJar(file.name) &&
+                    hasAncestorNamed(file, sandboxRoot, targetDirName)
+            }
+            .sortedBy { it.absolutePath }
+            .toList()
+
+        coreJars.forEach { coreJar ->
+            cleanupStaleTempFiles(coreJar.parentFile)
+            val differingCount = countDifferingOrMissingEntries(coreJar, siblingFiles)
+            if (differingCount == 0) {
+                logger.info("Sibling core classes already match sandbox library: ${coreJar.absolutePath}")
+            } else {
+                logger.lifecycle(
+                    "Syncing $differingCount updated sibling core file(s) into: ${coreJar.absolutePath}"
+                )
+                rewriteJarAtomically(coreJar, siblingClasses, siblingFiles, differingCount)
+            }
+        }
+    }
+
+    private fun isTargetCoreBinaryJar(fileName: String): Boolean =
+        fileName.startsWith("stvnadore-core-") &&
+            fileName.endsWith(".jar") &&
+            !fileName.endsWith("-sources.jar") &&
+            !fileName.endsWith("-javadoc.jar") &&
+            !fileName.endsWith("-tests.jar")
+
+    private fun hasAncestorNamed(file: File, stopExclusive: File, expectedName: String): Boolean {
+        var current: File? = file.parentFile
+        while (current != null && current != stopExclusive) {
+            if (current.name == expectedName) {
+                return true
+            }
+            current = current.parentFile
+        }
+        return false
+    }
+
+    private fun collectSiblingFiles(siblingClasses: File): Map<String, File> {
+        val sorted = TreeMap<String, File>()
+        siblingClasses.walkTopDown()
+            .filter { it.isFile }
+            .forEach { sourceFile ->
+                val relPath = sourceFile.relativeTo(siblingClasses).invariantSeparatorsPath.trimStart('/')
+                if (relPath.isNotEmpty()) {
+                    sorted[relPath] = sourceFile
+                }
+            }
+        return sorted
+    }
+
+    private fun cleanupStaleTempFiles(libDir: File?) {
+        val candidates = libDir?.listFiles() ?: return
+        for (candidate in candidates) {
+            if (!candidate.isFile || !candidate.name.endsWith(".tmp")) {
+                continue
+            }
+            if (candidate.name.startsWith("zipfstmp") ||
+                (candidate.name.startsWith("stvnadore-core-") && candidate.name.contains(".sync-"))
+            ) {
+                deleteQuietly(candidate.toPath())
+            }
+        }
+    }
+
+    private fun countDifferingOrMissingEntries(coreJar: File, siblingFiles: Map<String, File>): Int {
+        val jarBuf = ByteArray(8192)
+        val fileBuf = ByteArray(8192)
+        var differingCount = 0
+        try {
+            ZipFile(coreJar).use { zipFile ->
+                for ((relPath, sourceFile) in siblingFiles) {
+                    val entry = zipFile.getEntry(relPath)
+                    if (entry == null || entry.isDirectory) {
+                        differingCount++
+                    } else if (entry.size != -1L && entry.size != sourceFile.length()) {
+                        differingCount++
+                    } else {
+                        val identical = zipFile.getInputStream(entry).use { jarStream ->
+                            Files.newInputStream(sourceFile.toPath()).use { fileStream ->
+                                streamsMatchByteForByte(jarStream, fileStream, jarBuf, fileBuf)
                             }
+                        }
+                        if (!identical) {
+                            differingCount++
                         }
                     }
                 }
             }
+        } catch (zipEx: ZipException) {
+            throw GradleException(
+                "Cannot read corrupted sandbox library '${coreJar.absolutePath}'. " +
+                    "Run './gradlew cleanSandbox' and re-run the Gradle task.",
+                zipEx
+            )
+        }
+        return differingCount
+    }
+
+    private fun streamsMatchByteForByte(
+        first: InputStream,
+        second: InputStream,
+        firstBuf: ByteArray,
+        secondBuf: ByteArray
+    ): Boolean {
+        while (true) {
+            val firstRead = first.readNBytes(firstBuf, 0, firstBuf.size)
+            val secondRead = second.readNBytes(secondBuf, 0, secondBuf.size)
+            if (firstRead != secondRead) {
+                return false
+            }
+            if (firstRead == 0) {
+                return true
+            }
+            if (!Arrays.equals(firstBuf, 0, firstRead, secondBuf, 0, secondRead)) {
+                return false
+            }
+        }
+    }
+
+    private fun rewriteJarAtomically(
+        coreJar: File,
+        siblingClasses: File,
+        siblingFiles: Map<String, File>,
+        differingCount: Int
+    ) {
+        val targetPath = coreJar.toPath()
+        val tempJar = targetPath.resolveSibling("${coreJar.name}.sync-${UUID.randomUUID()}.tmp")
+        val copyBuf = ByteArray(8192)
+        try {
+            val writtenEntries = HashSet<String>()
+            ZipFile(coreJar).use { existingZip ->
+                ZipOutputStream(BufferedOutputStream(Files.newOutputStream(tempJar))).use { zos ->
+                    val entries = existingZip.entries()
+                    while (entries.hasMoreElements()) {
+                        val existingEntry = entries.nextElement()
+                        val entryName = existingEntry.name
+                        if (!writtenEntries.add(entryName)) {
+                            continue
+                        }
+                        val replacementFile = if (!existingEntry.isDirectory) siblingFiles[entryName] else null
+                        if (replacementFile != null) {
+                            writeFileEntry(zos, entryName, replacementFile, copyBuf)
+                        } else {
+                            val preservedEntry = ZipEntry(entryName)
+                            existingEntry.lastModifiedTime?.let { preservedEntry.lastModifiedTime = it }
+                            zos.putNextEntry(preservedEntry)
+                            if (!existingEntry.isDirectory) {
+                                existingZip.getInputStream(existingEntry).use { input ->
+                                    copyStream(input, zos, copyBuf)
+                                }
+                            }
+                            zos.closeEntry()
+                        }
+                    }
+
+                    for ((relPath, sourceFile) in siblingFiles) {
+                        if (relPath !in writtenEntries) {
+                            ensureParentDirectories(zos, relPath, writtenEntries)
+                            writtenEntries.add(relPath)
+                            writeFileEntry(zos, relPath, sourceFile, copyBuf)
+                        }
+                    }
+                }
+            }
+
+            try {
+                Files.move(
+                    tempJar,
+                    targetPath,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    tempJar,
+                    targetPath,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } catch (lockEx: FileSystemException) {
+            deleteQuietly(tempJar)
+            throw GradleException(
+                "Cannot update locked sandbox library '${targetPath.toAbsolutePath()}': " +
+                    "$differingCount class or resource file(s) in '${siblingClasses.absolutePath}' differ from the sandbox JAR, " +
+                    "but another process holds a Windows file lock on '${targetPath.fileName}'. " +
+                    "Close the running 'runIde' IntelliJ IDEA sandbox instance and re-run the Gradle task.",
+                lockEx
+            )
+        } finally {
+            deleteQuietly(tempJar)
+        }
+    }
+
+    private fun ensureParentDirectories(
+        zos: ZipOutputStream,
+        relPath: String,
+        writtenEntries: MutableSet<String>
+    ) {
+        var slashIdx = relPath.indexOf('/')
+        while (slashIdx > 0) {
+            val dirEntryName = relPath.substring(0, slashIdx + 1)
+            if (writtenEntries.add(dirEntryName)) {
+                zos.putNextEntry(ZipEntry(dirEntryName))
+                zos.closeEntry()
+            }
+            slashIdx = relPath.indexOf('/', slashIdx + 1)
+        }
+    }
+
+    private fun writeFileEntry(
+        zos: ZipOutputStream,
+        entryName: String,
+        sourceFile: File,
+        copyBuf: ByteArray
+    ) {
+        val entry = ZipEntry(entryName)
+        entry.lastModifiedTime = FileTime.fromMillis(sourceFile.lastModified())
+        zos.putNextEntry(entry)
+        Files.newInputStream(sourceFile.toPath()).use { input ->
+            copyStream(input, zos, copyBuf)
+        }
+        zos.closeEntry()
+    }
+
+    private fun copyStream(input: InputStream, output: OutputStream, buffer: ByteArray) {
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) {
+                break
+            }
+            output.write(buffer, 0, read)
+        }
+    }
+
+    private fun deleteQuietly(path: Path) {
+        try {
+            Files.deleteIfExists(path)
+        } catch (_: IOException) {
+            // Best-effort cleanup of temporary sibling archive.
         }
     }
 }
 
 val syncSiblingCoreToSandbox by tasks.registering(SyncSiblingCoreTask::class) {
-    description = "Syncs sibling core classes to sandbox plugin libraries"
+    description = "Syncs sibling core classes to main IDE sandbox plugin libraries (plugins/)"
     group = "verification"
-    val siblingClasses = file("../ij_stvnadore_core/target/classes")
-    if (siblingClasses.exists() && siblingClasses.isDirectory) {
-        siblingClassesDir.set(siblingClasses)
-    }
-    sandboxDir.set(layout.projectDirectory.dir(".intellijPlatform/sandbox"))
+    siblingClassesDir.set(layout.projectDirectory.dir("../ij_stvnadore_core/target/classes"))
+    sandboxRootDir.set(layout.projectDirectory.dir(".intellijPlatform/sandbox"))
+    targetPluginsDirName.set("plugins")
+    mustRunAfter(tasks.prepareSandbox)
+}
+
+val syncSiblingCoreToTestSandbox by tasks.registering(SyncSiblingCoreTask::class) {
+    description = "Syncs sibling core classes to test IDE sandbox plugin libraries (plugins-test/)"
+    group = "verification"
+    siblingClassesDir.set(layout.projectDirectory.dir("../ij_stvnadore_core/target/classes"))
+    sandboxRootDir.set(layout.projectDirectory.dir(".intellijPlatform/sandbox"))
+    targetPluginsDirName.set("plugins-test")
+    mustRunAfter(tasks.prepareTestSandbox)
 }
 
 tasks.prepareSandbox {
@@ -206,12 +479,30 @@ tasks.prepareSandbox {
     finalizedBy(syncSiblingCoreToSandbox)
 }
 
+tasks.buildPlugin {
+    dependsOn(syncSiblingCoreToSandbox)
+    exclude("**/zipfstmp*.tmp", "**/*.sync-*.tmp")
+}
+
 tasks.runIde {
+    dependsOn(syncSiblingCoreToSandbox)
     jvmArgs("-Didea.log.debug.categories=#org.stvnadore")
 }
 
+tasks.verifyPluginStructure {
+    mustRunAfter(syncSiblingCoreToSandbox)
+}
+
+tasks.prepareJarSearchableOptions {
+    mustRunAfter(syncSiblingCoreToSandbox)
+}
+
 tasks.prepareTestSandbox {
-    finalizedBy(syncSiblingCoreToSandbox)
+    finalizedBy(syncSiblingCoreToTestSandbox)
+}
+
+tasks.prepareTest {
+    dependsOn(syncSiblingCoreToTestSandbox)
 }
 
 val mirrorSharedFixtures by tasks.registering {
@@ -366,6 +657,7 @@ val unitTest = tasks.register<Test>("unitTest") {
 
 tasks.test {
     dependsOn(unitTest)
+    dependsOn(syncSiblingCoreToTestSandbox)
     enabled = true
     jvmArgs("-Xss16m")
     maxHeapSize = "4g"
