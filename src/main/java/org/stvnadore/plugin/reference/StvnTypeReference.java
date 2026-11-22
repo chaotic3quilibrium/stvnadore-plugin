@@ -502,6 +502,186 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     }
 
     /**
+     * Represents a single display segment and its optional declaration PSI target along a nominal type chain.
+     *
+     * @param displayLabel  rendered type or constructor label
+     * @param targetElement navigable PSI declaration target, or {@code null} for primitive or constructor terminals
+     */
+    public record TraceHop(String displayLabel, @Nullable PsiElement targetElement) {
+    }
+
+    /**
+     * Extracts ordered, clickable resolution hops starting from {@code startKeyword}, qualifying
+     * {@code :use} targets to canonical package FQNIs and optionally appending composite or collection
+     * constructor terminals.
+     *
+     * @param startKeyword            starting {@link TypeKeyword} PSI node
+     * @param appendCompositeTerminal {@code true} to append composite or collection constructor terminals
+     * @return ordered list of {@link TraceHop} entries
+     */
+    public static List<TraceHop> extractClickableResolutionHops(
+        TypeKeyword startKeyword,
+        boolean appendCompositeTerminal
+    ) {
+        var hops = new ArrayList<TraceHop>();
+        String startText = startKeyword.getText().trim();
+        if (EXACT_TERMINAL_TYPE_NAMES.contains(startText)) {
+            var preludeTarget = startText.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                ? StvnPreludeBridge.resolvePreludeTypeDefinition(startKeyword.getProject(), startText)
+                : null;
+            PsiElement navTarget = preludeTarget != null && preludeTarget.getTypeKeyword() != null
+                ? preludeTarget.getTypeKeyword()
+                : null;
+            hops.add(new TraceHop(startText, navTarget));
+            return List.copyOf(hops);
+        }
+
+        PsiElement currentElement;
+        if (StvnPsiUtils.isTypeDefinitionTarget(startKeyword)) {
+            hops.add(new TraceHop(qualifyTypeDefinitionKeyword(startKeyword), startKeyword));
+            currentElement = startKeyword;
+        } else if (startKeyword.getParent() instanceof org.stvnadore.psi.UseMapAlias directAlias
+                && directAlias.getTypeKeywordList().size() >= 2
+                && directAlias.getTypeKeywordList().get(1) == startKeyword) {
+            hops.add(new TraceHop(startText, startKeyword));
+            var remoteKw = directAlias.getTypeKeywordList().get(0);
+            var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
+            if (remoteTarget instanceof TypeKeyword targetDefKw) {
+                hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
+                currentElement = targetDefKw;
+            } else if (remoteKw != null) {
+                hops.add(new TraceHop(qualifyUseRemoteKeyword(directAlias, remoteKw), remoteTarget));
+                currentElement = remoteTarget;
+            } else {
+                currentElement = null;
+            }
+        } else {
+            currentElement = resolveTypeKeywordWithContext(startKeyword, null, true);
+            if (currentElement instanceof TypeKeyword resolvedKw
+                && resolvedKw.getParent() instanceof org.stvnadore.psi.UseMapAlias useAlias
+                && useAlias.getTypeKeywordList().size() >= 2
+                && useAlias.getTypeKeywordList().get(1) == resolvedKw) {
+                hops.add(new TraceHop(startText, resolvedKw));
+                var remoteKw = useAlias.getTypeKeywordList().get(0);
+                var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
+                if (remoteTarget instanceof TypeKeyword targetDefKw) {
+                    hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
+                    currentElement = targetDefKw;
+                } else if (remoteKw != null) {
+                    hops.add(new TraceHop(qualifyUseRemoteKeyword(useAlias, remoteKw), remoteTarget));
+                    currentElement = remoteTarget;
+                }
+            } else if (currentElement instanceof TypeKeyword targetDefKw) {
+                hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
+            } else {
+                hops.add(new TraceHop(startText, currentElement));
+            }
+        }
+
+        var visited = new HashSet<PsiElement>();
+        if (currentElement != null) {
+            visited.add(currentElement);
+        }
+
+        while (currentElement != null) {
+            var typeDef = StvnPsiUtils.getParentTypeDefinition(currentElement);
+            if (typeDef == null) {
+                break;
+            }
+            var schemaType = typeDef.getSchemaType();
+            if (schemaType == null) {
+                break;
+            }
+            var nextKw = schemaType.getTypeKeyword();
+            if (nextKw != null) {
+                String rawNext = nextKw.getText().trim();
+                if (isPrimitiveTypeName(rawNext)) {
+                    hops.add(new TraceHop(formatAtomicTerminal(rawNext, schemaType), null));
+                    break;
+                }
+                var resolvedNext = resolveTypeKeywordWithContext(nextKw, null, true);
+                if (resolvedNext instanceof TypeKeyword resolvedNextKw
+                    && resolvedNextKw.getParent() instanceof org.stvnadore.psi.UseMapAlias nextUseAlias
+                    && nextUseAlias.getTypeKeywordList().size() >= 2
+                    && nextUseAlias.getTypeKeywordList().get(1) == resolvedNextKw) {
+                    hops.add(new TraceHop(rawNext, resolvedNextKw));
+                    var remoteKw = nextUseAlias.getTypeKeywordList().get(0);
+                    var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
+                    if (remoteTarget instanceof TypeKeyword remoteDefKw && visited.add(remoteDefKw)) {
+                        hops.add(new TraceHop(qualifyTypeDefinitionKeyword(remoteDefKw), remoteDefKw));
+                        currentElement = remoteDefKw;
+                        continue;
+                    }
+                    break;
+                }
+                if (resolvedNext instanceof TypeKeyword resolvedDefKw && visited.add(resolvedDefKw)) {
+                    hops.add(new TraceHop(qualifyTypeDefinitionKeyword(resolvedDefKw), resolvedDefKw));
+                    currentElement = resolvedDefKw;
+                    continue;
+                }
+                hops.add(new TraceHop(rawNext, resolvedNext));
+                break;
+            }
+
+            var ctor = schemaType.getSchemaConstructor();
+            if (ctor != null) {
+                if (ctor.getAtomicType() != null) {
+                    String atomicName = ctor.getAtomicType().getText().trim();
+                    hops.add(new TraceHop(formatAtomicTerminal(atomicName, schemaType), null));
+                } else if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+                    hops.add(new TraceHop(StvnVocabulary.TYPE_ENUM, null));
+                } else if (appendCompositeTerminal) {
+                    if (ctor.getProductType() != null) {
+                        hops.add(new TraceHop(StvnVocabulary.TYPE_TUPLE, null));
+                    } else if (ctor.getCollectionType() != null && ctor.getCollectionType().getFirstChild() != null) {
+                        hops.add(new TraceHop(ctor.getCollectionType().getFirstChild().getText().trim(), null));
+                    }
+                }
+            }
+            break;
+        }
+        return List.copyOf(hops);
+    }
+
+    private static String qualifyTypeDefinitionKeyword(TypeKeyword defKw) {
+        String text = defKw.getText().trim();
+        if (text.length() > 1 && text.substring(1).contains("/")) {
+            return text;
+        }
+        var pkg = PsiTreeUtil.getParentOfType(defKw, PackageEnclosure.class);
+        if (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null) {
+            String bare = text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
+            return pkg.getPackagePath().getText().trim() + "/" + bare;
+        }
+        return text;
+    }
+
+    private static String qualifyUseRemoteKeyword(org.stvnadore.psi.UseMapAlias useAlias, TypeKeyword remoteKw) {
+        String remoteText = remoteKw.getText().trim();
+        if (remoteText.length() > 1 && remoteText.substring(1).contains("/")) {
+            return remoteText;
+        }
+        var useElem = PsiTreeUtil.getParentOfType(useAlias, org.stvnadore.psi.UseElement.class);
+        if (useElem != null && useElem.getUseTarget() != null && useElem.getUseTarget().getUseTargetIllegal() == null) {
+            String bare = remoteText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteText.substring(1) : remoteText;
+            return useElem.getUseTarget().getText().trim() + "/" + bare;
+        }
+        return remoteText;
+    }
+
+    private static String formatAtomicTerminal(String atomicName, org.stvnadore.psi.SchemaType schemaType) {
+        if (StvnVocabulary.TYPE_TIME_EPOCH.equals(atomicName)) {
+            var scale = StvnTypeResolver.extractScaleFlagFromSchemaType(schemaType);
+            return scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH;
+        }
+        if (StvnVocabulary.TYPE_DATE_TIME.equals(atomicName)) {
+            var mode = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
+            return mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME;
+        }
+        return atomicName;
+    }
+
+    /**
      * Extracts the sequential type resolution trace starting from the given keyword.
      *
      * @param startKeyword the starting TypeKeyword element

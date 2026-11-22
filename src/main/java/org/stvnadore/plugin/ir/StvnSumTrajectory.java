@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.ir;
 
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
@@ -7,6 +8,8 @@ import org.stvnadore.core.ir.StvnDefsCatalog;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.core.stdlib.StvnPrelude;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.Value;
 
@@ -196,13 +199,19 @@ public record StvnSumTrajectory(
             || StvnVocabulary.VAL_FALSE.equals(text) || StvnVocabulary.VAL_FALSE_SHORT.equals(text)) {
             return false;
         }
+        StvnDefsCatalog.StvnConstant matched = resolveExactPsiCatalogConstant(vk, catalog);
+        if (matched != null && (matched.schema().equals(irValue.schema()) || matched.value().equals(irValue))) {
+            return true;
+        }
         StvnValue leaf = unwrapTerminalIrValue(irValue);
         if (leaf instanceof StvnValue.StvnEnum enumVal && enumVal.variantTag().equals(text)) {
             return false;
         }
-        StvnDefsCatalog.StvnConstant matched = findCatalogConstant(text, catalog);
         if (matched == null) {
-            matched = findCatalogConstant(text, StvnPrelude.preludeCatalog());
+            matched = findCatalogConstant(text, catalog);
+            if (matched == null) {
+                matched = findCatalogConstant(text, StvnPrelude.preludeCatalog());
+            }
         }
         if (matched == null) {
             var ref = vk.getReference();
@@ -223,6 +232,29 @@ public record StvnSumTrajectory(
             return false;
         }
         return matched.value().equals(irValue) || matched.schema().equals(irValue.schema());
+    }
+
+    private static StvnDefsCatalog.@Nullable StvnConstant resolveExactPsiCatalogConstant(
+        org.stvnadore.psi.ValueKeyword vk,
+        StvnDefsCatalog catalog
+    ) {
+        var ref = vk.getReference();
+        var resolved = ref != null ? ref.resolve() : null;
+        var targetDef = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+        if (targetDef == null || targetDef.getValueKeyword() == null) {
+            return null;
+        }
+        String defName = targetDef.getValueKeyword().getText().trim();
+        String canonicalKey = defName;
+        var pkg = PsiTreeUtil.getParentOfType(targetDef, PackageEnclosure.class);
+        if (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null) {
+            String pkgText = pkg.getPackagePath().getText().trim();
+            String barePkg = pkgText.startsWith(StvnVocabulary.SIGIL_TYPIC) ? pkgText.substring(1) : pkgText;
+            String bareConst = defName.startsWith(StvnVocabulary.SIGIL_VALUE) ? defName.substring(1) : defName;
+            canonicalKey = StvnVocabulary.SIGIL_VALUE + barePkg + "/" + bareConst;
+        }
+        StvnDefsCatalog.StvnConstant direct = catalog.constants().get(canonicalKey);
+        return direct != null ? direct : StvnPrelude.preludeCatalog().constants().get(canonicalKey);
     }
 
     private static StvnDefsCatalog.@Nullable StvnConstant findCatalogConstant(

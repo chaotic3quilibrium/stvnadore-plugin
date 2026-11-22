@@ -43,18 +43,48 @@ public final class StvnTypeInferenceHelper {
      * @return true if structurally compatible, false otherwise
      */
     public static boolean isStructurallyCompatible(@Nullable Value valueElement, @Nullable SchemaType expectedSchema) {
-        return isStructurallyCompatible(valueElement, expectedSchema, new HashSet<>());
+        return isStructurallyCompatible(valueElement, expectedSchema, new HashSet<>(), new HashSet<>());
     }
 
-    private static boolean isStructurallyCompatible(@Nullable Value valueElement, @Nullable SchemaType expectedSchema, Set<SchemaType> visited) {
+    private static boolean isStructurallyCompatible(
+        @Nullable Value valueElement,
+        @Nullable SchemaType expectedSchema,
+        Set<SchemaType> visited,
+        Set<PsiElement> visitedConstants
+    ) {
         if (valueElement == null || expectedSchema == null || !visited.add(expectedSchema)) {
             return false;
         }
-        var resolved = StvnTypeResolver.resolveNominalSchema(expectedSchema);
+        var resolved = StvnTypeResolver.unwrapNominalSchemaChain(expectedSchema);
         var toInspect = (resolved != null) ? resolved : expectedSchema;
         if (toInspect != expectedSchema && !visited.add(toInspect)) {
             return false;
         }
+
+        var valKw = valueElement.getValueKeyword();
+        if (valKw != null) {
+            var enumCtor = toInspect.getSchemaConstructor();
+            boolean isMatchingEnumVariant = enumCtor != null
+                && enumCtor.getSumType() != null
+                && enumCtor.getSumType().getEnumDef() != null
+                && enumCtor.getSumType().getEnumDef().getValueKeywordList().stream()
+                    .anyMatch(v -> v.getText().trim().equals(valKw.getText().trim()));
+            if (!isMatchingEnumVariant) {
+                var constDef = StvnTypeResolver.resolveContextAwareConstantDefinition(valKw);
+                if (constDef != null) {
+                    if (!visitedConstants.add(constDef)) {
+                        return false;
+                    }
+                    if (StvnTypeResolver.hasConstantNominalBrandMismatch(constDef, expectedSchema)) {
+                        return false;
+                    }
+                    var constVal = constDef.getValue();
+                    return constVal != null
+                        && isStructurallyCompatible(constVal, expectedSchema, new HashSet<>(), visitedConstants);
+                }
+            }
+        }
+
         var constructor = toInspect.getSchemaConstructor();
         if (constructor == null) {
             return true;
@@ -92,7 +122,7 @@ public final class StvnTypeInferenceHelper {
             }
             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
             for (var branch : innerSchemas) {
-                if (isStructurallyCompatible(valueElement, branch, visited)) {
+                if (isStructurallyCompatible(valueElement, branch, new HashSet<>(visited), new HashSet<>(visitedConstants))) {
                     return true;
                 }
             }

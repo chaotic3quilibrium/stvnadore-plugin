@@ -21,6 +21,7 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.AliasExpansionMode;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.util.StvnTypePresentationUtil;
+import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.Value;
 
@@ -29,6 +30,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Collects and renders contextual type hints inside STVN body blocks
@@ -36,6 +39,19 @@ import java.util.Map;
  */
 @NullMarked
 public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
+
+    private static final Pattern TYPE_TOKEN_PATTERN = Pattern.compile(
+        StvnVocabulary.SIGIL_TYPIC + "[a-zA-Z_][a-zA-Z0-9_]*(?:/[a-zA-Z_][a-zA-Z0-9_]*)*"
+    );
+
+    /**
+     * Associates a displayed {@code :Type} token inside an inlay badge with its navigable PSI declaration target.
+     *
+     * @param tokenText     the displayed {@code :Type} identifier
+     * @param targetElement the navigable PSI declaration target
+     */
+    public record ClickableTypeSegment(String tokenText, PsiElement targetElement) {
+    }
 
     /**
      * Constructs a hints collector for the specified editor.
@@ -49,6 +65,10 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
     @Override
     public boolean collect(@NotNull PsiElement element, @NotNull Editor editor, @NotNull InlayHintsSink sink) {
         if (element instanceof PsiFile) {
+            var rootSettings = StvnProjectSettings.getInstance(element.getProject());
+            if (rootSettings != null && !rootSettings.getState().showTypeHints) {
+                return true;
+            }
             element.accept(new PsiRecursiveElementWalkingVisitor() {
                 @Override
                 public void visitElement(@NotNull PsiElement child) {
@@ -102,6 +122,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
      */
     public @NotNull InlayPresentation buildInlayPresentation(@NotNull Value valueElement, @NotNull String badgeText) {
         var targetElement = StvnTypeResolver.resolveGoverningDeclarationTarget(valueElement);
+        Map<String, PsiElement> hopTargets = StvnTypeResolver.resolveClickableTypeTargetsForValue(valueElement);
         List<StvnTypeResolver.SumTrajectoryStep> sumSteps = StvnTypeResolver.resolveSumTrajectorySteps(valueElement);
         List<Integer> inferredStepIndices = new ArrayList<>();
         for (int i = 0; i < sumSteps.size(); i++) {
@@ -111,7 +132,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
         }
         String inferredPrefixMarker = StvnVocabulary.DELIM_OPEN_BRACKET + StvnVocabulary.SIGIL_VALUE;
         if (inferredStepIndices.isEmpty() || !badgeText.contains(inferredPrefixMarker)) {
-            return createTypeSegmentPresentation(badgeText, targetElement);
+            return buildMultiHopOrSinglePresentation(badgeText, targetElement, hopTargets, false, true);
         }
 
         SmartPsiElementPointer<Value> valuePointer = SmartPointerManager
@@ -126,7 +147,13 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                 continue;
             }
             if (matchPos > searchFrom) {
-                segments.add(createTypeSegmentPresentation(badgeText.substring(searchFrom, matchPos), targetElement));
+                segments.add(buildMultiHopOrSinglePresentation(
+                    badgeText.substring(searchFrom, matchPos),
+                    targetElement,
+                    hopTargets,
+                    true,
+                    false
+                ));
             }
             final int targetStepIndex = stepIdx;
             String prefixPreview = buildPrefixInsertionPreview(sumSteps, targetStepIndex);
@@ -148,13 +175,99 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
             searchFrom = matchPos + expectedBadge.length();
         }
         if (segments.isEmpty()) {
-            return createTypeSegmentPresentation(badgeText, targetElement);
+            return buildMultiHopOrSinglePresentation(badgeText, targetElement, hopTargets, false, true);
         }
         if (searchFrom < badgeText.length()) {
-            segments.add(createTypeSegmentPresentation(badgeText.substring(searchFrom), targetElement));
+            segments.add(buildMultiHopOrSinglePresentation(
+                badgeText.substring(searchFrom),
+                targetElement,
+                hopTargets,
+                true,
+                false
+            ));
         }
         InlayPresentation seq = getFactory().seq(segments.toArray(InlayPresentation[]::new));
         return new TextPreservingSequencePresentation(seq, badgeText);
+    }
+
+    /**
+     * Resolves the ordered list of clickable {@code :Type} segments bound inside {@code badgeText}
+     * for {@code valueElement}.
+     *
+     * @param valueElement the payload {@link Value} element
+     * @param badgeText    the rendered inlay badge string
+     * @return immutable list of bound {@link ClickableTypeSegment} entries in left-to-right badge order
+     */
+    public static List<ClickableTypeSegment> extractBoundClickableTypeSegments(
+        @NotNull Value valueElement,
+        @NotNull String badgeText
+    ) {
+        var fallbackTarget = StvnTypeResolver.resolveGoverningDeclarationTarget(valueElement);
+        Map<String, PsiElement> hopTargets = StvnTypeResolver.resolveClickableTypeTargetsForValue(valueElement);
+        List<ClickableTypeSegment> bound = new ArrayList<>();
+        Matcher matcher = TYPE_TOKEN_PATTERN.matcher(badgeText);
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (StvnTypeResolver.isReservedFundamentalType(token)) {
+                continue;
+            }
+            PsiElement target = hopTargets.get(token);
+            if (target == null && hopTargets.isEmpty() && matcher.start() == 0) {
+                target = fallbackTarget;
+            }
+            if (target instanceof TypeDefinition targetTypeDef && targetTypeDef.getTypeKeyword() != null) {
+                target = targetTypeDef.getTypeKeyword();
+            }
+            if (target != null) {
+                bound.add(new ClickableTypeSegment(token, target));
+            }
+        }
+        return List.copyOf(bound);
+    }
+
+    private @NotNull InlayPresentation buildMultiHopOrSinglePresentation(
+        @NotNull String segmentText,
+        @Nullable PsiElement fallbackTarget,
+        @NotNull Map<String, PsiElement> hopTargets,
+        boolean isSubSegment,
+        boolean wrapPreservingToString
+    ) {
+        if (!isSubSegment && !segmentText.contains("->") && fallbackTarget instanceof SchemaType) {
+            return createTypeSegmentPresentation(segmentText, fallbackTarget);
+        }
+        Matcher matcher = TYPE_TOKEN_PATTERN.matcher(segmentText);
+        List<InlayPresentation> parts = new ArrayList<>();
+        int cursor = 0;
+        boolean linkedAny = false;
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (StvnTypeResolver.isReservedFundamentalType(token)) {
+                continue;
+            }
+            PsiElement specificTarget = hopTargets.get(token);
+            if (specificTarget == null && hopTargets.isEmpty() && matcher.start() == 0) {
+                specificTarget = fallbackTarget;
+            }
+            if (specificTarget != null) {
+                if (matcher.start() > cursor) {
+                    parts.add(getFactory().text(segmentText.substring(cursor, matcher.start())));
+                }
+                parts.add(createTypeSegmentPresentation(token, specificTarget));
+                cursor = matcher.end();
+                linkedAny = true;
+            }
+        }
+        if (!linkedAny) {
+            return isSubSegment ? getFactory().text(segmentText) : createTypeSegmentPresentation(segmentText, fallbackTarget);
+        }
+        if (cursor < segmentText.length()) {
+            parts.add(getFactory().text(segmentText.substring(cursor)));
+        }
+        if (parts.size() == 1) {
+            return parts.getFirst();
+        }
+        InlayPresentation seq = getFactory().seq(parts.toArray(InlayPresentation[]::new));
+        return wrapPreservingToString ? new TextPreservingSequencePresentation(seq, segmentText) : seq;
     }
 
     /**

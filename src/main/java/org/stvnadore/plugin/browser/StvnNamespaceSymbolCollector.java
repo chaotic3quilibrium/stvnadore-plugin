@@ -16,6 +16,8 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.psi.StvnSchemaFormatter;
+import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -36,19 +38,83 @@ public final class StvnNamespaceSymbolCollector {
         return PRIMITIVE_TYPE_PATTERN.matcher(name).matches();
     }
 
-    private static boolean isPackageStripped(PsiFile file, String packagePath) {
+    /**
+     * Maps a canonical packaged type FQNI (for example {@code ":rov/nav/NavFix"}) to its active root-scope
+     * {@code :use} local name, honoring {@link UseMapAlias} eviction ahead of {@code #strip}.
+     *
+     * @param file the active PSI file
+     * @param fqni the candidate type identifier
+     * @return the local {@code :use} alias, stripped bare name, or original {@code fqni}
+     */
+    static String resolveLocalImportedTypeName(PsiFile file, String fqni) {
+        if (!fqni.contains("/")) {
+            return fqni;
+        }
+        int lastSlash = fqni.lastIndexOf('/');
+        String pkgPath = fqni.substring(0, lastSlash);
+        String rawShort = StvnVocabulary.SIGIL_TYPIC + fqni.substring(lastSlash + 1);
+
         var uses = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
+        String strippedCandidate = null;
         for (var use : uses) {
+            if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
+                continue;
+            }
             for (var useElem : use.getUseElementList()) {
                 var target = useElem.getUseTarget();
-                if (target != null && target.getText().equals(packagePath)) {
-                    if (StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
-                        return true;
+                if (target == null || !target.getText().trim().equals(pkgPath)) {
+                    continue;
+                }
+                boolean evictedInThisElem = false;
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var list = alias.getTypeKeywordList();
+                        if (list.size() >= 2) {
+                            var remoteKw = list.get(0);
+                            var localKw = list.get(1);
+                            if (remoteKw != null) {
+                                String remoteText = remoteKw.getText().trim();
+                                if (remoteText.equals(rawShort) || remoteText.equals(fqni)) {
+                                    evictedInThisElem = true;
+                                    if (localKw != null) {
+                                        return localKw.getText().trim();
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
+                if (!evictedInThisElem && StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                    strippedCandidate = rawShort;
                 }
             }
         }
-        return false;
+        return strippedCandidate != null ? strippedCandidate : fqni;
+    }
+
+    private static List<PsiFile> collectTransitiveIncludedFiles(PsiFile rootFile) {
+        var result = new ArrayList<PsiFile>();
+        var visited = new HashSet<PsiFile>();
+        visited.add(rootFile);
+        Queue<PsiFile> queue = new ArrayDeque<>();
+        queue.add(rootFile);
+        while (!queue.isEmpty()) {
+            var current = queue.poll();
+            var includes = PsiTreeUtil.findChildrenOfType(current, IncludeElement.class);
+            for (var incl : includes) {
+                var stringLit = incl.getStringLiteral();
+                if (stringLit == null) {
+                    continue;
+                }
+                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                if (targetFile != null && visited.add(targetFile)) {
+                    result.add(targetFile);
+                    queue.add(targetFile);
+                }
+            }
+        }
+        return result;
     }
 
     private StvnNamespaceSymbolCollector() {
@@ -142,7 +208,7 @@ public final class StvnNamespaceSymbolCollector {
             var kw = def.getTypeKeyword();
             if (kw != null && processedNames.add(kw.getText())) {
                 var schemaType = def.getSchemaType();
-                var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
                 var depth = computeAliasHopCount(def, new HashSet<>());
                 results.add(new StvnNamespaceSymbolEntry(
                     kw.getText(),
@@ -166,7 +232,7 @@ public final class StvnNamespaceSymbolCollector {
             var kw = def.getValueKeyword();
             if (kw != null && processedNames.add(kw.getText())) {
                 var schemaType = def.getSchemaType();
-                var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
                 results.add(new StvnNamespaceSymbolEntry(
                     kw.getText(),
                     fileName,
@@ -196,7 +262,7 @@ public final class StvnNamespaceSymbolCollector {
                         var kwText = kw.getText();
                         var fqni = pathText + "/" + stripColon(kwText);
                         var schemaType = pkgTypeDef.getSchemaType();
-                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
                         if (processedNames.add(fqni)) {
                             results.add(new StvnNamespaceSymbolEntry(
                                 fqni,
@@ -218,7 +284,7 @@ public final class StvnNamespaceSymbolCollector {
                         var kwText = kw.getText();
                         var fqni = buildConstantFqni(pathText, kwText);
                         var schemaType = pkgConstDef.getSchemaType();
-                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
+                        var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
                         if (processedNames.add(fqni)) {
                             results.add(new StvnNamespaceSymbolEntry(
                                 fqni,
@@ -303,56 +369,49 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        // 5. Included modules (:include)
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        for (var incl : includes) {
-            var stringLit = incl.getStringLiteral();
-            if (stringLit == null) continue;
-            var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-            var includeSource = targetFile != null ? targetFile.getName() : stringLit.getText();
-
-            if (targetFile != null) {
-                var remoteDefs = PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class);
-                for (var rDef : remoteDefs) {
-                    if (PsiTreeUtil.getParentOfType(rDef, PackageEnclosure.class) != null) {
-                        continue;
-                    }
-                    var kw = rDef.getTypeKeyword();
-                    if (kw != null && processedNames.add(kw.getText())) {
-                        var schemaType = rDef.getSchemaType();
-                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                        results.add(new StvnNamespaceSymbolEntry(
-                            kw.getText(),
-                            includeSource,
-                            schemaText,
-                            1,
-                            kw,
-                            false,
-                            kw.getTextOffset(),
-                            StvnNamespaceScope.DEFS
-                        ));
-                    }
+        // 5. Included modules (:include, transitive)
+        for (var targetFile : collectTransitiveIncludedFiles(file)) {
+            var includeSource = targetFile.getName();
+            var remoteDefs = PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class);
+            for (var rDef : remoteDefs) {
+                if (PsiTreeUtil.getParentOfType(rDef, PackageEnclosure.class) != null) {
+                    continue;
                 }
-                var remoteConsts = PsiTreeUtil.findChildrenOfType(targetFile, ConstantDefinition.class);
-                for (var rConst : remoteConsts) {
-                    if (PsiTreeUtil.getParentOfType(rConst, PackageEnclosure.class) != null) {
-                        continue;
-                    }
-                    var kw = rConst.getValueKeyword();
-                    if (kw != null && processedNames.add(kw.getText())) {
-                        var schemaType = rConst.getSchemaType();
-                        var schemaText = schemaType != null ? schemaType.getText() : "Unknown";
-                        results.add(new StvnNamespaceSymbolEntry(
-                            kw.getText(),
-                            includeSource,
-                            schemaText,
-                            1,
-                            kw,
-                            false,
-                            kw.getTextOffset(),
-                            StvnNamespaceScope.DEFS
-                        ));
-                    }
+                var kw = rDef.getTypeKeyword();
+                if (kw != null && processedNames.add(kw.getText())) {
+                    var schemaType = rDef.getSchemaType();
+                    var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
+                    results.add(new StvnNamespaceSymbolEntry(
+                        kw.getText(),
+                        includeSource,
+                        schemaText,
+                        1,
+                        kw,
+                        false,
+                        kw.getTextOffset(),
+                        StvnNamespaceScope.DEFS
+                    ));
+                }
+            }
+            var remoteConsts = PsiTreeUtil.findChildrenOfType(targetFile, ConstantDefinition.class);
+            for (var rConst : remoteConsts) {
+                if (PsiTreeUtil.getParentOfType(rConst, PackageEnclosure.class) != null) {
+                    continue;
+                }
+                var kw = rConst.getValueKeyword();
+                if (kw != null && processedNames.add(kw.getText())) {
+                    var schemaType = rConst.getSchemaType();
+                    var schemaText = schemaType != null ? StvnSchemaFormatter.formatCleanSchema(schemaType) : "Unknown";
+                    results.add(new StvnNamespaceSymbolEntry(
+                        kw.getText(),
+                        includeSource,
+                        schemaText,
+                        1,
+                        kw,
+                        false,
+                        kw.getTextOffset(),
+                        StvnNamespaceScope.DEFS
+                    ));
                 }
             }
         }
@@ -517,23 +576,43 @@ public final class StvnNamespaceSymbolCollector {
         var depth = calculateValueNestingDepth(currentVal, rootVal);
         ProgressManager.checkCanceled();
 
-        // 1. Check for value keywords (#NULL, #BUY)
+        // 1. Check for value keywords (#DEEP_TEST_FIX, #ACTIVE)
         var valueKw = currentVal.getValueKeyword();
         if (valueKw != null) {
             var name = valueKw.getText();
             if (processed.add(name)) {
-                var resolved = org.stvnadore.plugin.reference.StvnConstantReference.resolveConstantInFile(file, name, new HashSet<>());
-                var source = resolved != null && resolved.getContainingFile() != null
-                    ? resolved.getContainingFile().getName()
-                    : file.getName();
+                var resolved = StvnConstantReference.resolveConstantWithContext(valueKw);
+                var constDef = resolved != null
+                    ? StvnPsiUtils.resolveTargetConstantDefinition(resolved)
+                    : StvnTypeResolver.resolveContextAwareConstantDefinition(valueKw);
+                String source;
+                String structure = "Constant / Variant";
+                PsiElement navTarget = resolved != null ? resolved : valueKw;
+                if (constDef != null && StvnTypeResolver.resolveGoverningEnumVariant(valueKw) == null) {
+                    var pkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+                    if (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null) {
+                        source = pkg.getPackagePath().getText().trim();
+                    } else if (constDef.getContainingFile() != null) {
+                        source = constDef.getContainingFile().getName();
+                    } else {
+                        source = file.getName();
+                    }
+                    if (constDef.getSchemaType() != null) {
+                        structure = StvnSchemaFormatter.formatCleanSchema(constDef.getSchemaType());
+                    }
+                } else {
+                    source = resolved != null && resolved.getContainingFile() != null
+                        ? resolved.getContainingFile().getName()
+                        : file.getName();
+                }
                 results.add(new StvnNamespaceSymbolEntry(
                     name,
                     source,
-                    "Constant / Variant",
+                    structure,
                     depth,
-                    resolved != null ? resolved : valueKw,
+                    navTarget,
                     false,
-                    resolved != null ? resolved.getTextOffset() : valueKw.getTextOffset(),
+                    navTarget.getTextOffset(),
                     StvnNamespaceScope.BODY
                 ));
             }
@@ -607,10 +686,7 @@ public final class StvnNamespaceSymbolCollector {
 
         if (nominalName != null && !nominalName.isEmpty() && !alreadyTyped) {
             if (nominalName.contains("/")) {
-                var pkgPath = nominalName.substring(0, nominalName.lastIndexOf('/'));
-                if (isPackageStripped(file, pkgPath)) {
-                    nominalName = StvnVocabulary.SIGIL_TYPIC + nominalName.substring(nominalName.lastIndexOf('/') + 1);
-                }
+                nominalName = resolveLocalImportedTypeName(file, nominalName);
             }
             if (processed.add(nominalName)) {
                 var info = resolveNominalShapeInfo(file, nominalName);
@@ -637,10 +713,7 @@ public final class StvnNamespaceSymbolCollector {
                             && !StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(candidate)
                             && !isPrimitiveTypeName(candidate)) {
                         if (candidate.contains("/")) {
-                            var pkgPath = candidate.substring(0, candidate.lastIndexOf('/'));
-                            if (isPackageStripped(file, pkgPath)) {
-                                candidate = StvnVocabulary.SIGIL_TYPIC + candidate.substring(candidate.lastIndexOf('/') + 1);
-                            }
+                            candidate = resolveLocalImportedTypeName(file, candidate);
                         }
                         if (processed.add(candidate)) {
                             var info = resolveNominalShapeInfo(file, candidate);
@@ -824,6 +897,18 @@ public final class StvnNamespaceSymbolCollector {
             return;
         }
 
+        if (currentValue.getCollectionValue() == null && currentValue.getValueKeyword() != null) {
+            var constDef = StvnTypeResolver.resolveContextAwareConstantDefinition(currentValue.getValueKeyword());
+            if (constDef != null
+                && constDef.getValue() != null
+                && constDef.getContainingFile() == file
+                && PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class) == null
+                && visitedNominals.add(constDef.getName() != null ? constDef.getName() : currentValue.getValueKeyword().getText())) {
+                correlateShapeAndValue(currentSchema, constDef.getValue(), file, depth, results, processed, visitedNominals);
+                return;
+            }
+        }
+
         var product = constructor.getProductType();
         if (product != null) {
             var childSchemas = PsiTreeUtil.getChildrenOfTypeAsList(product, SchemaType.class);
@@ -917,6 +1002,9 @@ public final class StvnNamespaceSymbolCollector {
 
         var useStmts = PsiTreeUtil.findChildrenOfType(file, UseStmt.class);
         for (var use : useStmts) {
+            if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
+                continue;
+            }
             for (var useElem : use.getUseElementList()) {
                 var aliasBlock = useElem.getUseAliasBlock();
                 if (aliasBlock != null) {
@@ -943,8 +1031,6 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-
         var packages = PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class);
         for (var pkg : packages) {
             if (StvnPsiUtils.hasIllegalTrailingSlash(pkg)) {
@@ -970,6 +1056,9 @@ public final class StvnNamespaceSymbolCollector {
 
         var typeDefs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
         for (var td : typeDefs) {
+            if (PsiTreeUtil.getParentOfType(td, PackageEnclosure.class) != null) {
+                continue;
+            }
             var kw = td.getTypeKeyword();
             if (kw != null && name.equals(kw.getText())) {
                 var terminal = resolveTerminalStructureFromDef(td, new HashSet<>());
@@ -977,16 +1066,16 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        for (var incl : includes) {
-            var stringLit = incl.getStringLiteral();
-            var targetFile = stringLit != null ? StvnTypeReference.resolveIncludeFile(stringLit) : null;
-            if (targetFile != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(targetFile, name, new HashSet<>());
-                if (resolved instanceof TypeKeyword targetKw) {
-                    var parent = StvnPsiUtils.getParentTypeDefinition(targetKw);
-                    var struct = parent != null ? resolveTerminalStructureFromDef(parent, new HashSet<>()) : name;
-                    return new NominalResolutionInfo(targetFile.getName(), struct, targetKw, false);
-                }
+        for (var targetFile : collectTransitiveIncludedFiles(file)) {
+            var resolved = StvnTypeReference.resolveTypeInFile(targetFile, name, new HashSet<>());
+            if (resolved instanceof TypeKeyword targetKw) {
+                var parent = StvnPsiUtils.getParentTypeDefinition(targetKw);
+                var struct = parent != null ? resolveTerminalStructureFromDef(parent, new HashSet<>()) : name;
+                var enclosingPkg = PsiTreeUtil.getParentOfType(targetKw, PackageEnclosure.class);
+                String src = (enclosingPkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg) && enclosingPkg.getPackagePath() != null)
+                    ? enclosingPkg.getPackagePath().getText().trim()
+                    : (targetKw.getContainingFile() != null ? targetKw.getContainingFile().getName() : targetFile.getName());
+                return new NominalResolutionInfo(src, struct, targetKw, false);
             }
         }
 
@@ -994,7 +1083,16 @@ public final class StvnNamespaceSymbolCollector {
         if (resolved == null) {
             return null;
         }
-        var source = resolved.getContainingFile() != null ? resolved.getContainingFile().getName() : file.getName();
+        var enclosingPkg = PsiTreeUtil.getParentOfType(resolved, PackageEnclosure.class);
+        String source = (enclosingPkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg) && enclosingPkg.getPackagePath() != null)
+            ? enclosingPkg.getPackagePath().getText().trim()
+            : (resolved.getContainingFile() != null ? resolved.getContainingFile().getName() : file.getName());
+        if (resolved instanceof TypeKeyword resolvedKw) {
+            var parentDef = StvnPsiUtils.getParentTypeDefinition(resolvedKw);
+            if (parentDef != null) {
+                return new NominalResolutionInfo(source, resolveTerminalStructureFromDef(parentDef, new HashSet<>()), resolvedKw, false);
+            }
+        }
         return new NominalResolutionInfo(source, name, resolved, false);
     }
 
@@ -1026,7 +1124,7 @@ public final class StvnNamespaceSymbolCollector {
             var nextResolved = resolveNominalShapeInfo(def.getContainingFile(), nextKw.getText());
             return nextResolved != null ? nextResolved.typeStructure() : nextKw.getText();
         }
-        return schemaType.getText();
+        return StvnSchemaFormatter.formatCleanSchema(schemaType);
     }
 
     private static String stripColon(String text) {
@@ -1061,18 +1159,12 @@ public final class StvnNamespaceSymbolCollector {
             }
         }
 
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        for (var incl : includes) {
-            var stringLit = incl.getStringLiteral();
-            if (stringLit == null) continue;
-            var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-            if (targetFile != null) {
-                var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
-                for (var pkg : remotePackages) {
-                    var path = pkg.getPackagePath();
-                    if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(targetPackagePath)) {
-                        collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement != null ? originElement : incl);
-                    }
+        for (var targetFile : collectTransitiveIncludedFiles(file)) {
+            var remotePackages = PsiTreeUtil.findChildrenOfType(targetFile, PackageEnclosure.class);
+            for (var pkg : remotePackages) {
+                var path = pkg.getPackagePath();
+                if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg) && path != null && path.getText().equals(targetPackagePath)) {
+                    collectStrippedElements(pkg, targetPackagePath, processedNames, results, originElement);
                 }
             }
         }
