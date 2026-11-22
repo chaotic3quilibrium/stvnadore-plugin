@@ -10,7 +10,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
@@ -41,7 +40,9 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
 
     @Override
     public boolean canFindUsagesFor(@NotNull PsiElement psiElement) {
-        if (psiElement instanceof TypeDefinition || psiElement instanceof ConstantDefinition || psiElement instanceof IncludeMapAlias || psiElement instanceof org.stvnadore.psi.UseMapAlias) {
+        if (psiElement instanceof TypeDefinition
+                || psiElement instanceof ConstantDefinition
+                || psiElement instanceof org.stvnadore.psi.UseMapAlias) {
             return true;
         }
         if (psiElement instanceof TypeKeyword || psiElement instanceof ValueKeyword) {
@@ -62,9 +63,6 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         }
         if (element instanceof TypeDefinition) {
             return "Type Definition";
-        }
-        if (element instanceof IncludeMapAlias) {
-            return "Include Alias";
         }
         if (element instanceof org.stvnadore.psi.UseMapAlias) {
             return "Use Alias";
@@ -87,10 +85,6 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         if (element instanceof ConstantDefinition) {
             var name = ((ConstantDefinition) element).getName();
             return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_VALUE + name : "";
-        }
-        if (element instanceof IncludeMapAlias) {
-            var name = ((IncludeMapAlias) element).getName();
-            return name != null && !name.isEmpty() ? StvnVocabulary.SIGIL_TYPIC + name : "";
         }
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             var name = alias.getName();
@@ -120,11 +114,6 @@ public final class StvnFindUsagesProvider implements FindUsagesProvider {
         var parent = keyword.getParent();
         if (parent instanceof ConstantDefinition) {
             return ((ConstantDefinition) parent).getValueKeyword() == keyword;
-        }
-        if (parent instanceof IncludeMapAlias) {
-            var alias = (IncludeMapAlias) parent;
-            var list = alias.getTypeKeywordList();
-            return list.size() >= 2 && list.get(1) == keyword;
         }
         if (parent instanceof org.stvnadore.psi.UseMapAlias) {
             var alias = (org.stvnadore.psi.UseMapAlias) parent;

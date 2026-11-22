@@ -352,12 +352,10 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         for (var incl : includes) {
             var stringLit = incl.getStringLiteral();
             if (stringLit != null) {
-                var optBlock = incl.getIncludeOptionsBlock();
-                var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
                 var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
                 if (targetFile != null) {
                     var resolved = resolveConstantInFile(
-                        targetFile, canonicalName, new HashSet<>(visited), allowUnqualifiedPackaged || hasStrip);
+                        targetFile, canonicalName, new HashSet<>(visited), allowUnqualifiedPackaged);
                     if (resolved != null
                             && uniqueIncludeMatches.stream().noneMatch(e -> StvnTypeReference.areSameDeclarationTarget(e, resolved))) {
                         uniqueIncludeMatches.add(resolved);

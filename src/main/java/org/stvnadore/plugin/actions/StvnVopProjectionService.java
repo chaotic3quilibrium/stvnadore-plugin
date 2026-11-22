@@ -3,16 +3,18 @@ package org.stvnadore.plugin.actions;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
@@ -21,6 +23,7 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.util.indexing.FileBasedIndex;
+import org.jetbrains.annotations.TestOnly;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnCompilationResult;
@@ -54,15 +57,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
  * Cohesive Pure-IR execution service for the 3-Submenu STVN VOP Projection and Canonicalization Matrix.
  * <p>
- * Centralizes workspace buffer collection, multi-root {@code :include} staging, {@link StvnSchemaFlattener}
- * invocation, empty-{@code :defs} validation, Pure-IR {@link StvnDocumentKind#BODY} reconstruction,
- * {@link CopyPasteManager} clipboard transfer, synchronous EDT VFS sibling file persistence ({@code B4-03}),
- * and post-verified undoable {@link WriteCommandAction} in-place buffer canonicalization.
+ * Centralizes cancellable modal-progress workspace buffer collection ({@code ACT-01}), multi-root
+ * {@code :include} staging, {@link StvnSchemaFlattener} invocation, empty-{@code :defs} validation,
+ * Pure-IR {@link StvnDocumentKind#BODY} reconstruction, {@link CopyPasteManager} clipboard transfer,
+ * overwrite-guarded undoable {@link WriteCommandAction} VFS sibling file persistence ({@code ACT-02}),
+ * and post-verified undoable in-place buffer canonicalization.
  * </p>
  *
  * @since 2.0.0
@@ -71,6 +77,7 @@ import java.util.stream.Stream;
 public final class StvnVopProjectionService {
 
     private static final String SYMBOLIC_ERR_EMPTY_DEFS_BLOCK = "ERR_EMPTY_DEFS_BLOCK";
+    private static volatile @Nullable Boolean overwriteConfirmationOverride;
 
     /**
      * Format profile for Submenu 1 hermetic {@code .stvn_d} schema projections.
@@ -164,7 +171,51 @@ public final class StvnVopProjectionService {
         }
     }
 
+    private record InPlacePreparedReplacement(String formattedText, String activeKindKeyword) {
+    }
+
     private StvnVopProjectionService() {
+    }
+
+    /**
+     * Overrides interactive sibling-file overwrite confirmation during automated tests.
+     * Pass {@code null} to restore default headless/interactive dialog behavior.
+     *
+     * @param allowOverwrite {@code Boolean.TRUE} to approve, {@code Boolean.FALSE} to cancel, or {@code null} to reset
+     */
+    @TestOnly
+    public static void setOverwriteConfirmationOverride(@Nullable Boolean allowOverwrite) {
+        overwriteConfirmationOverride = allowOverwrite;
+    }
+
+    /**
+     * Executes {@code computation} off the EDT inside a cancellable modal progress indicator
+     * when invoked on the interactive UI dispatch thread, preventing UI freezes during workspace
+     * traversal, temporary directory staging, and compiler lowering.
+     *
+     * @param project       active IntelliJ project
+     * @param progressTitle modal progress dialog title
+     * @param computation   background supplier
+     * @param <T>           result type
+     * @return computed value, or {@code null} if cancelled by the user
+     */
+    public static <T> @Nullable T computeUnderProgress(
+            Project project,
+            String progressTitle,
+            Supplier<@Nullable T> computation
+    ) {
+        var app = ApplicationManager.getApplication();
+        if (app != null && app.isDispatchThread() && !app.isUnitTestMode()) {
+            var ref = new AtomicReference<@Nullable T>();
+            boolean completed = ProgressManager.getInstance().runProcessWithProgressSynchronously(
+                () -> ref.set(computation.get()),
+                progressTitle,
+                true,
+                project
+            );
+            return completed ? ref.get() : null;
+        }
+        return computation.get();
     }
 
     /**
@@ -246,32 +297,51 @@ public final class StvnVopProjectionService {
     }
 
     /**
-     * Collects all textual STVN files across project content roots and the entry file's parent directory,
-     * overlaying unsaved open editor buffers atop disk contents.
+     * Collects all textual STVN files across project content roots and the entry file's parent directory
+     * inside a thread-safe {@link ReadAction}, overlaying unsaved open editor buffers atop disk contents.
      *
      * @param project   active IntelliJ project
      * @param entryFile entry-point STVN virtual file
      * @return ordered map of POSIX-normalized paths to UTF-8 STVN text
      */
     public static Map<String, String> collectWorkspaceSources(Project project, VirtualFile entryFile) {
-        Map<String, String> workspaceMap = new LinkedHashMap<>();
-        ProjectFileIndex.getInstance(project).iterateContent(fileOrDir -> {
-            if (!fileOrDir.isDirectory() && StvnProjectionStemUtil.isTextualStvnFileName(fileOrDir.getName())) {
-                String normPath = StvnSchemaFlattener.normalizePath(fileOrDir.getPath());
-                workspaceMap.put(normPath, loadLatestBufferOrDiskText(fileOrDir));
+        return ReadAction.compute(() -> {
+            Map<String, String> workspaceMap = new LinkedHashMap<>();
+            ProjectFileIndex.getInstance(project).iterateContent(fileOrDir -> {
+                if (!fileOrDir.isDirectory() && StvnProjectionStemUtil.isTextualStvnFileName(fileOrDir.getName())) {
+                    String normPath = StvnSchemaFlattener.normalizePath(fileOrDir.getPath());
+                    workspaceMap.put(normPath, loadLatestBufferOrDiskText(fileOrDir));
+                }
+                return true;
+            });
+            for (VirtualFile contentRoot : ProjectRootManager.getInstance(project).getContentRoots()) {
+                collectDirectoryRecursively(contentRoot, workspaceMap);
             }
-            return true;
+            VirtualFile parent = entryFile.getParent();
+            if (parent != null) {
+                collectDirectoryRecursively(parent, workspaceMap);
+            }
+            String entryPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
+            workspaceMap.put(entryPath, loadLatestBufferOrDiskText(entryFile));
+            return workspaceMap;
         });
-        for (VirtualFile contentRoot : ProjectRootManager.getInstance(project).getContentRoots()) {
-            collectDirectoryRecursively(contentRoot, workspaceMap);
-        }
-        VirtualFile parent = entryFile.getParent();
-        if (parent != null) {
-            collectDirectoryRecursively(parent, workspaceMap);
-        }
-        String entryPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
-        workspaceMap.put(entryPath, loadLatestBufferOrDiskText(entryFile));
-        return workspaceMap;
+    }
+
+    /**
+     * Loads the latest in-memory editor buffer text if cached, falling back to UTF-8 disk contents,
+     * safely wrapped in a {@link ReadAction}.
+     *
+     * @param file target virtual file
+     * @return latest UTF-8 text content
+     */
+    public static String loadLatestBufferOrDiskText(VirtualFile file) {
+        return ReadAction.compute(() -> {
+            Document cachedDoc = FileDocumentManager.getInstance().getCachedDocument(file);
+            if (cachedDoc != null) {
+                return cachedDoc.getText();
+            }
+            return LoadTextUtil.loadText(file).toString();
+        });
     }
 
     /**
@@ -315,7 +385,8 @@ public final class StvnVopProjectionService {
         if (rendered.isEmpty()) {
             return;
         }
-        if (writeSiblingAssetAtomically(project, entryFile, targetDefsName, rendered.get())) {
+        String commandTitle = "STVN: Export Sibling Schema '" + targetDefsName + "'";
+        if (writeSiblingAssetAtomically(project, entryFile, targetDefsName, commandTitle, rendered.get())) {
             StvnWorkspaceNotificationHelper.showSchemaExportSuccess(project, targetDefsName, profile.label());
         }
     }
@@ -364,7 +435,8 @@ public final class StvnVopProjectionService {
         if (rendered.isEmpty()) {
             return;
         }
-        if (writeSiblingAssetAtomically(project, entryFile, targetPayloadName, rendered.get())) {
+        String commandTitle = "STVN: Export Sibling Payload '" + targetPayloadName + "'";
+        if (writeSiblingAssetAtomically(project, entryFile, targetPayloadName, commandTitle, rendered.get())) {
             StvnWorkspaceNotificationHelper.showPayloadExportSuccess(project, targetPayloadName, profile.label());
         }
     }
@@ -404,62 +476,73 @@ public final class StvnVopProjectionService {
         }
 
         String rawText = document.getText();
-        String normalizedText = StvnSourceFormatter.tryFormat(rawText).orElse(rawText);
         String fileName = vf != null ? vf.getName() : psiFile.getName();
 
-        Optional<StvnDocument> compiledOpt = compileWorkspaceDocument(project, vf, fileName, normalizedText);
-        if (compiledOpt.isEmpty()) {
-            return;
-        }
+        InPlacePreparedReplacement prepared = computeUnderProgress(
+            project,
+            "Canonicalizing STVN Buffer...",
+            () -> {
+                String normalizedText = StvnSourceFormatter.tryFormat(rawText).orElse(rawText);
+                Optional<StvnDocument> compiledOpt = compileWorkspaceDocument(project, vf, fileName, normalizedText);
+                if (compiledOpt.isEmpty()) {
+                    return null;
+                }
 
-        StvnDocument canonicalDoc = compiledOpt.get();
-        String formatted = profile == InPlaceFormatProfile.PRETTY_IR
-            ? AstPrettyPrinter.print(canonicalDoc)
-            : AstCompactPrinter.print(canonicalDoc);
+                StvnDocument canonicalDoc = compiledOpt.get();
+                String formatted = profile == InPlaceFormatProfile.PRETTY_IR
+                    ? AstPrettyPrinter.print(canonicalDoc)
+                    : AstCompactPrinter.print(canonicalDoc);
 
-        // Safeguard 2: Verify formatted IR compiles cleanly under fileName before mutating buffer
-        StvnParserConfig postConfig = resolveParserConfig(fileName);
-        StvnCompilationResult<StvnDocument> postVerification = StvnCompiler.compileToResult(
-            formatted,
-            fileName,
-            postConfig
+                // Safeguard 2: Verify formatted IR compiles cleanly under fileName before mutating buffer
+                StvnParserConfig postConfig = resolveParserConfig(fileName);
+                StvnCompilationResult<StvnDocument> postVerification = StvnCompiler.compileToResult(
+                    formatted,
+                    fileName,
+                    postConfig
+                );
+                boolean isDefinitionsUnit = StvnProjectionStemUtil.classifyTextualExtension(fileName)
+                    .map(ext -> ext == StvnProjectionStemUtil.StvnTextExtension.STVN_D
+                        || ext == StvnProjectionStemUtil.StvnTextExtension.STVN_DI)
+                    .orElse(false);
+                boolean emptyInPlaceDefs = (isDefinitionsUnit
+                        && canonicalDoc.defs().nominalTypes().isEmpty()
+                        && canonicalDoc.defs().constants().isEmpty())
+                    || postVerification.diagnostics().stream()
+                        .anyMatch(d -> SYMBOLIC_ERR_EMPTY_DEFS_BLOCK.equals(d.symbolicId().orElse("")));
+                if (emptyInPlaceDefs) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showEmptyInPlaceDefsWarning(project, fileName));
+                    return null;
+                }
+                if (postVerification.hasErrors()) {
+                    reportCompilationDiagnostics(project, fileName, postVerification.diagnostics());
+                    return null;
+                }
+                if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+                    canonicalDoc,
+                    postVerification.document().orElse(null)
+                )) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, fileName));
+                    return null;
+                }
+
+                String activeKindKeyword = resolveEffectiveKindKeyword(canonicalDoc, fileName);
+                return new InPlacePreparedReplacement(formatted, activeKindKeyword);
+            }
         );
-        boolean isDefinitionsUnit = StvnProjectionStemUtil.classifyTextualExtension(fileName)
-            .map(ext -> ext == StvnProjectionStemUtil.StvnTextExtension.STVN_D
-                || ext == StvnProjectionStemUtil.StvnTextExtension.STVN_DI)
-            .orElse(false);
-        boolean emptyInPlaceDefs = (isDefinitionsUnit
-                && canonicalDoc.defs().nominalTypes().isEmpty()
-                && canonicalDoc.defs().constants().isEmpty())
-            || postVerification.diagnostics().stream()
-                .anyMatch(d -> SYMBOLIC_ERR_EMPTY_DEFS_BLOCK.equals(d.symbolicId().orElse("")));
-        if (emptyInPlaceDefs) {
-            StvnWorkspaceNotificationHelper.showEmptyInPlaceDefsWarning(project, fileName);
-            return;
-        }
-        if (postVerification.hasErrors()) {
-            reportCompilationDiagnostics(project, fileName, postVerification.diagnostics());
-            return;
-        }
-        if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
-            canonicalDoc,
-            postVerification.document().orElse(null)
-        )) {
-            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, fileName);
-            return;
-        }
 
-        String activeKindKeyword = resolveEffectiveKindKeyword(canonicalDoc, fileName);
+        if (prepared == null) {
+            return;
+        }
 
         WriteCommandAction.runWriteCommandAction(project, profile.commandName(), null, () -> {
-            document.replaceString(0, document.getTextLength(), formatted);
+            document.replaceString(0, document.getTextLength(), prepared.formattedText());
             docManager.commitDocument(document);
         });
 
         StvnWorkspaceNotificationHelper.showInPlaceReplaceSuccess(
             project,
             fileName,
-            activeKindKeyword,
+            prepared.activeKindKeyword(),
             profile.label()
         );
     }
@@ -492,75 +575,85 @@ public final class StvnVopProjectionService {
             String targetDefsName,
             SchemaFormatProfile profile
     ) {
-        Map<String, String> workspaceMap = collectWorkspaceSources(project, entryFile);
-        String entryPointPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
+        String computed = computeUnderProgress(
+            project,
+            "Projecting Hermetic STVN Schema...",
+            () -> {
+                Map<String, String> workspaceMap = collectWorkspaceSources(project, entryFile);
+                String entryPointPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
 
-        String flattenedCas;
-        try {
-            flattenedCas = StvnSchemaFlattener.flatten(workspaceMap, entryPointPath);
-        } catch (CyclicDependencyException ex) {
-            StvnWorkspaceNotificationHelper.showCycleError(project, ex);
-            return Optional.empty();
-        } catch (NamespaceCollisionException ex) {
-            StvnWorkspaceNotificationHelper.showCollisionError(project, ex);
-            return Optional.empty();
-        } catch (DuplicateModuleImportException ex) {
-            StvnWorkspaceNotificationHelper.showDuplicateImportError(project, ex);
-            return Optional.empty();
-        } catch (Exception ex) {
-            StvnWorkspaceNotificationHelper.showGenericError(project, ex);
-            return Optional.empty();
-        }
+                String flattenedCas;
+                try {
+                    flattenedCas = StvnSchemaFlattener.flatten(workspaceMap, entryPointPath);
+                } catch (CyclicDependencyException ex) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showCycleError(project, ex));
+                    return null;
+                } catch (NamespaceCollisionException ex) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showCollisionError(project, ex));
+                    return null;
+                } catch (DuplicateModuleImportException ex) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showDuplicateImportError(project, ex));
+                    return null;
+                } catch (Exception ex) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showGenericError(project, ex));
+                    return null;
+                }
 
-        StvnParserConfig substrateAwareConfig = new StvnParserConfig(
-            false,
-            StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS,
-            true
+                StvnParserConfig substrateAwareConfig = new StvnParserConfig(
+                    false,
+                    StvnParserConfig.DEFAULT_MAX_DIAGNOSTICS,
+                    true
+                );
+                StvnCompilationResult<StvnDocument> validation = StvnCompiler.compileToResult(
+                    flattenedCas,
+                    targetDefsName,
+                    substrateAwareConfig
+                );
+
+                boolean emptyDefs = validation.diagnostics().stream()
+                    .anyMatch(d -> SYMBOLIC_ERR_EMPTY_DEFS_BLOCK.equals(d.symbolicId().orElse("")))
+                    || validation.document()
+                        .map(doc -> doc.defs().nominalTypes().isEmpty() && doc.defs().constants().isEmpty())
+                        .orElse(false);
+                if (emptyDefs) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showEmptySchemaDefsWarning(
+                        project,
+                        entryFile.getName(),
+                        targetDefsName
+                    ));
+                    return null;
+                }
+
+                if (validation.hasErrors() || validation.document().isEmpty()) {
+                    reportCompilationDiagnostics(project, entryFile.getName(), validation.diagnostics());
+                    return null;
+                }
+
+                if (profile == SchemaFormatProfile.COMPACT_CAS) {
+                    return flattenedCas;
+                }
+                StvnDocument validatedSchemaDoc = validation.document().get();
+                String prettySchema = AstPrettyPrinter.print(validatedSchemaDoc);
+                StvnCompilationResult<StvnDocument> prettyCheck = StvnCompiler.compileToResult(
+                    prettySchema,
+                    targetDefsName,
+                    substrateAwareConfig
+                );
+                if (prettyCheck.hasErrors()
+                        || !StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+                            validatedSchemaDoc,
+                            prettyCheck.document().orElse(null)
+                        )) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(
+                        project,
+                        targetDefsName
+                    ));
+                    return null;
+                }
+                return prettySchema;
+            }
         );
-        StvnCompilationResult<StvnDocument> validation = StvnCompiler.compileToResult(
-            flattenedCas,
-            targetDefsName,
-            substrateAwareConfig
-        );
-
-        boolean emptyDefs = validation.diagnostics().stream()
-            .anyMatch(d -> SYMBOLIC_ERR_EMPTY_DEFS_BLOCK.equals(d.symbolicId().orElse("")))
-            || validation.document()
-                .map(doc -> doc.defs().nominalTypes().isEmpty() && doc.defs().constants().isEmpty())
-                .orElse(false);
-        if (emptyDefs) {
-            StvnWorkspaceNotificationHelper.showEmptySchemaDefsWarning(
-                project,
-                entryFile.getName(),
-                targetDefsName
-            );
-            return Optional.empty();
-        }
-
-        if (validation.hasErrors() || validation.document().isEmpty()) {
-            reportCompilationDiagnostics(project, entryFile.getName(), validation.diagnostics());
-            return Optional.empty();
-        }
-
-        if (profile == SchemaFormatProfile.COMPACT_CAS) {
-            return Optional.of(flattenedCas);
-        }
-        StvnDocument validatedSchemaDoc = validation.document().get();
-        String prettySchema = AstPrettyPrinter.print(validatedSchemaDoc);
-        StvnCompilationResult<StvnDocument> prettyCheck = StvnCompiler.compileToResult(
-            prettySchema,
-            targetDefsName,
-            substrateAwareConfig
-        );
-        if (prettyCheck.hasErrors()
-            || !StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
-                validatedSchemaDoc,
-                prettyCheck.document().orElse(null)
-            )) {
-            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, targetDefsName);
-            return Optional.empty();
-        }
-        return Optional.of(prettySchema);
+        return Optional.ofNullable(computed);
     }
 
     private static Optional<String> buildHermeticPayloadProjection(
@@ -569,42 +662,52 @@ public final class StvnVopProjectionService {
             String targetPayloadName,
             PayloadFormatProfile profile
     ) {
-        String rawText = loadLatestBufferOrDiskText(entryFile);
-        String normalizedText = StvnSourceFormatter.tryFormat(rawText).orElse(rawText);
-
-        Optional<StvnDocument> compiledOpt = compileWorkspaceDocument(
+        String computed = computeUnderProgress(
             project,
-            entryFile,
-            entryFile.getName(),
-            normalizedText
-        );
-        if (compiledOpt.isEmpty()) {
-            return Optional.empty();
-        }
+            "Projecting Hermetic STVN Payload...",
+            () -> {
+                String rawText = loadLatestBufferOrDiskText(entryFile);
+                String normalizedText = StvnSourceFormatter.tryFormat(rawText).orElse(rawText);
 
-        StvnDocument hermeticBodyDoc = projectToHermeticBodyDocument(compiledOpt.get());
-        String formatted = profile == PayloadFormatProfile.PRETTY
-            ? AstPrettyPrinter.print(hermeticBodyDoc)
-            : AstCompactPrinter.print(hermeticBodyDoc);
+                Optional<StvnDocument> compiledOpt = compileWorkspaceDocument(
+                    project,
+                    entryFile,
+                    entryFile.getName(),
+                    normalizedText
+                );
+                if (compiledOpt.isEmpty()) {
+                    return null;
+                }
 
-        StvnParserConfig config = resolveParserConfig(targetPayloadName);
-        StvnCompilationResult<StvnDocument> verification = StvnCompiler.compileToResult(
-            formatted,
-            targetPayloadName,
-            config
+                StvnDocument hermeticBodyDoc = projectToHermeticBodyDocument(compiledOpt.get());
+                String formatted = profile == PayloadFormatProfile.PRETTY
+                    ? AstPrettyPrinter.print(hermeticBodyDoc)
+                    : AstCompactPrinter.print(hermeticBodyDoc);
+
+                StvnParserConfig config = resolveParserConfig(targetPayloadName);
+                StvnCompilationResult<StvnDocument> verification = StvnCompiler.compileToResult(
+                    formatted,
+                    targetPayloadName,
+                    config
+                );
+                if (verification.hasErrors()) {
+                    reportCompilationDiagnostics(project, targetPayloadName, verification.diagnostics());
+                    return null;
+                }
+                if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
+                    hermeticBodyDoc,
+                    verification.document().orElse(null)
+                )) {
+                    runOnEdt(() -> StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(
+                        project,
+                        targetPayloadName
+                    ));
+                    return null;
+                }
+                return formatted;
+            }
         );
-        if (verification.hasErrors()) {
-            reportCompilationDiagnostics(project, targetPayloadName, verification.diagnostics());
-            return Optional.empty();
-        }
-        if (!StvnSumTagRedundancyEngine.isDocumentsPayloadAndConstantsEquivalent(
-            hermeticBodyDoc,
-            verification.document().orElse(null)
-        )) {
-            StvnWorkspaceNotificationHelper.showSemanticRoundTripMismatchError(project, targetPayloadName);
-            return Optional.empty();
-        }
-        return Optional.of(formatted);
+        return Optional.ofNullable(computed);
     }
 
     private static Optional<StvnDocument> compileWorkspaceDocument(
@@ -642,7 +745,7 @@ public final class StvnVopProjectionService {
             }
             return result.document();
         } catch (Exception ex) {
-            StvnWorkspaceNotificationHelper.showGenericError(project, ex);
+            runOnEdt(() -> StvnWorkspaceNotificationHelper.showGenericError(project, ex));
             return Optional.empty();
         } finally {
             if (stagedTempRoot != null) {
@@ -727,6 +830,7 @@ public final class StvnVopProjectionService {
             Project project,
             VirtualFile entryFile,
             String outputName,
+            String commandTitle,
             String content
     ) {
         String normalizedLfContent = content.replace("\r\n", "\n").replace("\r", "\n");
@@ -737,31 +841,39 @@ public final class StvnVopProjectionService {
 
         final boolean[] succeeded = {false};
         Runnable vfsWriteTask = () -> {
-            try {
-                WriteAction.run(() -> {
+            VirtualFile existingTarget = parent.findChild(outputName);
+            if (existingTarget != null && !confirmSiblingOverwrite(project, outputName, parent.getName())) {
+                return;
+            }
+            WriteCommandAction.runWriteCommandAction(project, commandTitle, null, () -> {
+                try {
                     VirtualFile targetParent = !parent.exists()
                             && LocalFileSystem.PROTOCOL.equals(parent.getFileSystem().getProtocol())
                         ? VfsUtil.createDirectories(parent.getPath())
                         : parent;
-                    VirtualFile outputFile = targetParent.findOrCreateChildData(
-                        StvnVopProjectionService.class,
-                        outputName
-                    );
-                    Document cachedDoc = FileDocumentManager.getInstance().getCachedDocument(outputFile);
-                    if (cachedDoc != null) {
-                        cachedDoc.setText(normalizedLfContent);
-                        PsiDocumentManager.getInstance(project).commitDocument(cachedDoc);
-                        FileDocumentManager.getInstance().saveDocument(cachedDoc);
+                    VirtualFile outputFile = targetParent.findChild(outputName);
+                    if (outputFile != null) {
+                        outputFile.setDetectedLineSeparator("\n");
+                        Document targetDoc = FileDocumentManager.getInstance().getDocument(outputFile);
+                        if (targetDoc != null) {
+                            targetDoc.setText(normalizedLfContent);
+                            PsiDocumentManager.getInstance(project).commitDocument(targetDoc);
+                            FileDocumentManager.getInstance().saveDocument(targetDoc);
+                        } else {
+                            outputFile.setBinaryContent(normalizedLfContent.getBytes(StandardCharsets.UTF_8));
+                        }
                     } else {
+                        outputFile = targetParent.createChildData(StvnVopProjectionService.class, outputName);
+                        outputFile.setDetectedLineSeparator("\n");
                         outputFile.setBinaryContent(normalizedLfContent.getBytes(StandardCharsets.UTF_8));
                     }
                     VfsUtil.markDirty(true, false, outputFile);
                     FileBasedIndex.getInstance().requestReindex(outputFile);
-                });
-                succeeded[0] = true;
-            } catch (IOException ex) {
-                StvnWorkspaceNotificationHelper.showGenericError(project, ex);
-            }
+                    succeeded[0] = true;
+                } catch (IOException ex) {
+                    StvnWorkspaceNotificationHelper.showGenericError(project, ex);
+                }
+            });
         };
 
         var app = ApplicationManager.getApplication();
@@ -771,6 +883,21 @@ public final class StvnVopProjectionService {
             app.invokeAndWait(vfsWriteTask);
         }
         return succeeded[0];
+    }
+
+    private static boolean confirmSiblingOverwrite(Project project, String outputName, String parentName) {
+        Boolean override = overwriteConfirmationOverride;
+        if (override != null) {
+            return override;
+        }
+        var app = ApplicationManager.getApplication();
+        if (app == null || app.isUnitTestMode() || app.isHeadlessEnvironment()) {
+            return true;
+        }
+        return MessageDialogBuilder.yesNo(
+            "STVN: Overwrite Existing Sibling File",
+            "File '" + outputName + "' already exists in '" + parentName + "'. Do you want to overwrite it?"
+        ).ask(project);
     }
 
     private static void reportCompilationDiagnostics(
@@ -784,22 +911,33 @@ public final class StvnVopProjectionService {
             }
             Throwable cause = diag.cause();
             if (cause instanceof CyclicDependencyException cde) {
-                StvnWorkspaceNotificationHelper.showCycleError(project, cde);
+                runOnEdt(() -> StvnWorkspaceNotificationHelper.showCycleError(project, cde));
                 return;
             }
             if (cause instanceof NamespaceCollisionException nce) {
-                StvnWorkspaceNotificationHelper.showCollisionError(project, nce);
+                runOnEdt(() -> StvnWorkspaceNotificationHelper.showCollisionError(project, nce));
                 return;
             }
             if (cause instanceof DuplicateModuleImportException dmie) {
-                StvnWorkspaceNotificationHelper.showDuplicateImportError(project, dmie);
+                runOnEdt(() -> StvnWorkspaceNotificationHelper.showDuplicateImportError(project, dmie));
                 return;
             }
         }
         diagnostics.stream()
             .filter(d -> d.severity() == DiagnosticSeverity.ERROR)
             .findFirst()
-            .ifPresent(err -> StvnWorkspaceNotificationHelper.showCompilationError(project, entryFileName, err));
+            .ifPresent(err -> runOnEdt(() ->
+                StvnWorkspaceNotificationHelper.showCompilationError(project, entryFileName, err)
+            ));
+    }
+
+    private static void runOnEdt(Runnable runnable) {
+        var app = ApplicationManager.getApplication();
+        if (app == null || app.isDispatchThread()) {
+            runnable.run();
+        } else {
+            app.invokeLater(runnable);
+        }
     }
 
     private static StvnParserConfig resolveParserConfig(String fileName) {
@@ -872,13 +1010,5 @@ public final class StvnVopProjectionService {
             }
             return true;
         });
-    }
-
-    private static String loadLatestBufferOrDiskText(VirtualFile file) {
-        Document cachedDoc = FileDocumentManager.getInstance().getCachedDocument(file);
-        if (cachedDoc != null) {
-            return cachedDoc.getText();
-        }
-        return LoadTextUtil.loadText(file).toString();
     }
 }

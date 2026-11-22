@@ -51,7 +51,6 @@ import org.stvnadore.psi.ExplicitEitherValue;
 import org.stvnadore.psi.ExplicitOptionValue;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.IncludeElement;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MapLiteral;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaKindFacet;
@@ -469,73 +468,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         if (target instanceof TypeDefinition typeDef) {
             return renderLhsTypeAliasCard(typeDef, originalElement);
-        }
-
-        if (target instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
-            var localKw = list.size() >= 2 ? list.get(1) : (list.size() >= 1 ? list.get(0) : null);
-            var remoteKw = list.size() >= 1 ? list.get(0) : null;
-            var includeElement = PsiTreeUtil.getParentOfType(alias, IncludeElement.class);
-            var fileString = includeElement != null && includeElement.getStringLiteral() != null
-                ? includeElement.getStringLiteral().getText()
-                : "Unknown";
-
-            var sb = new StringBuilder();
-            if (localKw != null) {
-                sb.append("<b>Type Alias:</b> ").append(localKw.getText()).append("<br/>");
-            }
-            sb.append("<b>Imported From:</b> <code>").append(fileString).append("</code><br/>");
-
-            if (localKw != null) {
-                var trace = StvnTypeReference.extractResolutionTrace(localKw);
-                if (trace.size() > 1) {
-                    sb.append("<b>Resolution Path:</b> ");
-                    for (var i = 0; i < trace.size(); i++) {
-                        if (i > 0) sb.append(" &rarr; ");
-                        sb.append(trace.get(i));
-                    }
-                    sb.append("<br/>");
-                }
-            }
-
-            var metricHtml = extractStructuralMetricHtml(alias);
-            if (metricHtml != null) {
-                sb.append(metricHtml).append("<br/>");
-            }
-
-            var resolvedTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-            var remTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolvedTarget);
-            var subset = StvnTypeResolver.resolveEnumSubset(alias);
-            if (subset == null && remTypeDef != null) {
-                subset = StvnTypeResolver.resolveEnumSubset(remTypeDef);
-            }
-
-            if (subset != null) {
-                var lineage = formatDerivationLineage(remTypeDef, subset);
-                if (lineage != null) {
-                    sb.append("<b>Derivation:</b> ").append(lineage).append("<br/>");
-                }
-            }
-
-            var underlying = "Unknown";
-            if (subset != null) {
-                underlying = StvnSchemaFormatter.formatEnumVariants(subset.allowedVariants());
-            } else if (remTypeDef != null && remTypeDef.getSchemaType() != null) {
-                underlying = StvnTypeResolver.formatSchemaType(remTypeDef.getSchemaType());
-            }
-            sb.append("<hr/>");
-            if (remTypeDef != null) {
-                var usageBanner = buildTraitViolationUsageBanner(remTypeDef, originalElement);
-                if (usageBanner != null) {
-                    sb.insert(0, usageBanner);
-                }
-                var facetsTable = buildEffectiveFacetsTable(remTypeDef, originalElement);
-                if (facetsTable != null) {
-                    sb.append(facetsTable).append("<br/>");
-                }
-            }
-            sb.append("<b>Underlying Structure:</b> ").append(underlying);
-            return sb.toString();
         }
 
         if (target instanceof org.stvnadore.psi.UseMapAlias alias) {
@@ -3171,16 +3103,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
-        if (target instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
-            var localKw = list.size() >= 2 ? list.get(1) : null;
-            if (localKw != null) {
-                var trace = StvnTypeReference.extractResolutionTrace(localKw);
-                var resolutionStr = String.join(" -> ", trace);
-                return "Type Alias: " + resolutionStr;
-            }
-        }
-
         if (target instanceof org.stvnadore.psi.UseMapAlias alias) {
             var list = alias.getTypeKeywordList();
             var useElem = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseElement.class);
@@ -3754,23 +3676,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
 
             var parent = typeKw.getParent();
-            if (parent instanceof IncludeMapAlias alias) {
-                var list = alias.getTypeKeywordList();
-                if (list.size() >= 2 && list.get(1) == typeKw) {
-                    return alias;
-                }
-                var resolved = new StvnTypeReference(typeKw).resolve();
-                var targetTypeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (targetTypeDef != null) {
-                    return targetTypeDef;
-                }
-                if (resolved instanceof IncludeMapAlias targetAlias) {
-                    return targetAlias;
-                }
-                if (resolved != null && resolved.getParent() instanceof IncludeMapAlias targetAlias) {
-                    return targetAlias;
-                }
-            }
             if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
                 var list = alias.getTypeKeywordList();
                 if (list.size() >= 2 && (list.get(1) == typeKw || list.get(0) == typeKw)) {
@@ -3795,9 +3700,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (resolved instanceof TypeDefinition targetDef) {
                 return targetDef;
             }
-            if (resolved instanceof IncludeMapAlias targetAlias) {
-                return targetAlias;
-            }
             if (resolved instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                 return targetAlias;
             }
@@ -3807,9 +3709,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     return targetDef;
                 }
                 var resParent = resolvedKw.getParent();
-                if (resParent instanceof IncludeMapAlias targetAlias) {
-                    return targetAlias;
-                }
                 if (resParent instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                     return targetAlias;
                 }
@@ -4075,14 +3974,6 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return schemaType;
         }
 
-        if (element instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
-            var remoteKw = list.size() >= 1 ? list.get(0) : null;
-            if (remoteKw != null) {
-                return resolveTerminalFromKeyword(remoteKw, visited);
-            }
-        }
-
         if (element instanceof SchemaType schemaType) {
             if (schemaType.getSchemaConstructor() != null) {
                 return schemaType;
@@ -4109,18 +4000,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return resolveTerminalSchemaType(targetDef, visited);
             }
             var targetParent = targetKw.getParent();
-            if (targetParent instanceof IncludeMapAlias targetAlias) {
-                return resolveTerminalSchemaType(targetAlias, visited);
-            }
             if (targetParent instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
                 return resolveTerminalSchemaType(targetAlias, visited);
             }
         }
         if (resolved instanceof TypeDefinition targetDef) {
             return resolveTerminalSchemaType(targetDef, visited);
-        }
-        if (resolved instanceof IncludeMapAlias targetAlias) {
-            return resolveTerminalSchemaType(targetAlias, visited);
         }
         if (resolved instanceof org.stvnadore.psi.UseMapAlias targetAlias) {
             return resolveTerminalSchemaType(targetAlias, visited);
@@ -6004,11 +5889,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (schemaType == null || schemaType.getTypeKeyword() == null) {
             return false;
         }
-        var file = value.getContainingFile();
+        var typeKw = schemaType.getTypeKeyword();
+        var resolvedTarget = org.stvnadore.plugin.psi.StvnPsiUtils.resolveTargetTypeDefinition(
+            new StvnTypeReference(typeKw).resolve()
+        );
+        if (resolvedTarget != null) {
+            var nominalIr = StvnTypeResolver.resolveNominalIrSchema(resolvedTarget);
+            return nominalIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded();
+        }
+        var file = schemaType.getContainingFile() != null ? schemaType.getContainingFile() : value.getContainingFile();
         if (file == null) {
             return false;
         }
-        var aliasText = schemaType.getTypeKeyword().getText().trim();
+        var aliasText = typeKw.getText().trim();
         var ir = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasText);
         return ir instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded();
     }

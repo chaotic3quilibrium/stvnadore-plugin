@@ -49,7 +49,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var text = """
             {
               :defs {
-                :include [ "module.stvn_di" {} ]
+                :use [ :org/stvnadore/prelude {} ]
               }
               :type :String
               :body "test"
@@ -65,7 +65,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         myFixture.checkResult("""
             {
               :defs {
-                :include [ "module.stvn_di" ]
+                :use [ :org/stvnadore/prelude ]
               }
               :type :String
               :body "test"

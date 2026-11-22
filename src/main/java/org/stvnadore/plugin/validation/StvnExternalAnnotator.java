@@ -46,9 +46,12 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
+import org.stvnadore.plugin.validation.quickfix.RenameFileExtensionToKindQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnFileRenameExecutor;
 import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnMatchMetaFileRenameQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
@@ -59,9 +62,13 @@ import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
+import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaEntry;
+import org.stvnadore.psi.MetaKindFacet;
+import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
@@ -997,6 +1004,15 @@ public final class StvnExternalAnnotator
                         }
                     }
                 }
+
+                annotationBuilder = attachMetaIdentityQuickFixes(
+                    annotationBuilder,
+                    file,
+                    diagnosticId,
+                    rawMessage,
+                    s,
+                    range
+                );
 
                 // Untagged triple-quoted block or inline string quick-fixes (Rule STR-04, E025)
                 var fenceLeaf = file.findElementAt(range.getStartOffset());
@@ -1957,6 +1973,230 @@ public final class StvnExternalAnnotator
             case INFO -> HighlightSeverity.WEAK_WARNING;
             case HINT -> HighlightSeverity.INFORMATION;
         };
+    }
+
+    private static final Pattern POSIX_META_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
+
+    private static AnnotationBuilder attachMetaIdentityQuickFixes(
+        AnnotationBuilder annotationBuilder,
+        PsiFile file,
+        String diagnosticId,
+        String rawMessage,
+        int rawStartOffset,
+        TextRange range
+    ) {
+        String fileName = file.getName();
+        int lastDot = fileName.lastIndexOf('.');
+        String ext = lastDot > 0 ? fileName.substring(lastDot) : "";
+        String[] dotParts = lastDot > 0 ? fileName.substring(0, lastDot).split("\\.", -1) : new String[0];
+
+        // Pass A (0-inspection) E031 (:meta / #kind identity) quick-fixes
+        if (DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH)
+                || "E031".equals(diagnosticId)) {
+            String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+            if (rawMessage.contains("requires root " + StvnVocabulary.KEYWORD_META + " block")
+                    || rawMessage.contains("Mandatory " + StvnVocabulary.KEYWORD_META + " block missing")) {
+                annotationBuilder = annotationBuilder.withFix(
+                    new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind)
+                );
+            } else if (rawMessage.contains("requires " + StvnVocabulary.FACET_KW_META_KIND + " facet")) {
+                PsiElement elem = file.findElementAt(rawStartOffset);
+                MetaEntry metaEntry = elem instanceof MetaEntry me
+                    ? me
+                    : PsiTreeUtil.getParentOfType(elem, MetaEntry.class, false);
+                if (metaEntry == null) {
+                    metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+                }
+                if (metaEntry != null) {
+                    var kwNode = metaEntry.getNode().findChildByType(StvnTypes.KW_META);
+                    PsiElement anchor = kwNode != null ? kwNode.getPsi() : metaEntry;
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(anchor, expectedKind)
+                    );
+                }
+            } else if (rawMessage.contains("does not match file extension")) {
+                PsiElement elem = file.findElementAt(rawStartOffset);
+                MetaKindFacet kindFacet = elem instanceof MetaKindFacet mkf
+                    ? mkf
+                    : PsiTreeUtil.getParentOfType(elem, MetaKindFacet.class, false);
+                if (kindFacet == null) {
+                    kindFacet = PsiTreeUtil.findChildOfType(file, MetaKindFacet.class);
+                }
+                if (kindFacet != null) {
+                    var metaSummary = StvnFileRenameExecutor.resolveMetaIdentitySummary(file);
+                    if (metaSummary != null && metaSummary.mismatchedComponentCount() >= 2) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new StvnMatchMetaFileRenameQuickFix(kindFacet, metaSummary.targetFileName())
+                        );
+                    }
+                    var extFix = RenameFileExtensionToKindQuickFix.createIfApplicable(file, kindFacet);
+                    if (extFix != null) {
+                        annotationBuilder = annotationBuilder.withFix(extFix);
+                    }
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnMissingMetaInspection.UpdateMetaKindQuickFix(kindFacet, expectedKind)
+                    );
+                }
+            }
+            return annotationBuilder;
+        }
+
+        // Pass A (0-inspection) W002 (filename declares domain omitted in :meta) quick-fixes
+        if (DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META)
+                || rawMessage.contains("omits " + StvnVocabulary.FACET_KW_META_DOMAIN)) {
+            if (dotParts.length == 2 && !dotParts[0].isEmpty() && !dotParts[1].isEmpty() && !dotParts[1].startsWith("stvn_")) {
+                PsiElement elem = file.findElementAt(rawStartOffset);
+                MetaEntry metaEntry = elem instanceof MetaEntry me
+                    ? me
+                    : PsiTreeUtil.getParentOfType(elem, MetaEntry.class, false);
+                if (metaEntry == null) {
+                    metaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+                }
+                if (metaEntry != null) {
+                    var kwNode = metaEntry.getNode().findChildByType(StvnTypes.KW_META);
+                    PsiElement anchor = kwNode != null ? kwNode.getPsi() : metaEntry;
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnStemMismatchInspection.InsertMetaDomainQuickFix(anchor, dotParts[1])
+                    );
+                }
+                var omitFix = StvnOmitDomainQuickFix.create(file);
+                if (omitFix != null) {
+                    annotationBuilder = annotationBuilder.withFix(omitFix);
+                }
+            }
+            return annotationBuilder;
+        }
+
+        // Pass A (0-inspection) W001 / W002 (#name or #domain mismatch) quick-fixes
+        if (DiagnosticBag.WARN_DOCUMENT_NAME_MISMATCH.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH)
+                || DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME)) {
+            if (dotParts.length == 0 || dotParts[0].isEmpty()) {
+                return annotationBuilder;
+            }
+            PsiElement elem = file.findElementAt(rawStartOffset);
+            if (elem == null) {
+                elem = file.findElementAt(range.getStartOffset());
+            }
+            MetaNameFacet nameFacet = elem instanceof MetaNameFacet mnf
+                ? mnf
+                : PsiTreeUtil.getParentOfType(elem, MetaNameFacet.class, false);
+            MetaDomainFacet domainFacet = elem instanceof MetaDomainFacet mdf
+                ? mdf
+                : PsiTreeUtil.getParentOfType(elem, MetaDomainFacet.class, false);
+
+            var metaSummary = StvnFileRenameExecutor.resolveMetaIdentitySummary(file);
+            if (nameFacet != null && nameFacet.getStringLiteral() != null) {
+                StringLiteral stringLit = nameFacet.getStringLiteral();
+                var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
+                if (decodedOpt.isPresent()) {
+                    String declared = decodedOpt.get();
+                    boolean isValidPosixName = POSIX_META_ID_PATTERN.matcher(declared).matches();
+                    boolean hasReservedSlot1 = dotParts.length >= 2 && dotParts[1].startsWith("stvn_");
+                    boolean hasAtomicMetaFix = metaSummary != null && metaSummary.mismatchedComponentCount() >= 2;
+                    if (hasAtomicMetaFix) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new StvnMatchMetaFileRenameQuickFix(nameFacet, metaSummary.targetFileName())
+                        );
+                    }
+                    annotationBuilder = annotationBuilder.withFix(
+                        new StvnStemMismatchInspection.AlignStemNameQuickFix(
+                            stringLit,
+                            dotParts[0],
+                            hasAtomicMetaFix ? PriorityAction.Priority.HIGH : PriorityAction.Priority.TOP
+                        )
+                    );
+                    if (isValidPosixName && !hasReservedSlot1) {
+                        StringBuilder targetSb = new StringBuilder(declared);
+                        for (int i = 1; i < dotParts.length; i++) {
+                            targetSb.append('.').append(dotParts[i]);
+                        }
+                        targetSb.append(ext);
+                        annotationBuilder = annotationBuilder.withFix(
+                            new StvnStemMismatchInspection.RenameFileToDeclaredNameQuickFix(
+                                stringLit,
+                                targetSb.toString(),
+                                hasAtomicMetaFix ? PriorityAction.Priority.NORMAL : PriorityAction.Priority.HIGH
+                            )
+                        );
+                    }
+                }
+            } else if (domainFacet != null && domainFacet.getStringLiteral() != null) {
+                StringLiteral stringLit = domainFacet.getStringLiteral();
+                var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
+                if (decodedOpt.isPresent()) {
+                    String declared = decodedOpt.get();
+                    boolean isSystemFile = StvnStemMismatchInspection.isSystemPreludeOrSubstrateFile(file);
+                    boolean isReservedDomain = declared.startsWith("stvn_");
+                    boolean isValidPosixDomain = POSIX_META_ID_PATTERN.matcher(declared).matches();
+                    boolean emitReservedDomainError = isReservedDomain && !isSystemFile;
+                    boolean hasAtomicMetaFix = !emitReservedDomainError
+                        && metaSummary != null
+                        && metaSummary.mismatchedComponentCount() >= 2;
+
+                    if (dotParts.length == 1) {
+                        if (!emitReservedDomainError) {
+                            if (hasAtomicMetaFix) {
+                                annotationBuilder = annotationBuilder.withFix(
+                                    new StvnMatchMetaFileRenameQuickFix(domainFacet, metaSummary.targetFileName())
+                                );
+                            }
+                            if (!isReservedDomain && isValidPosixDomain) {
+                                annotationBuilder = annotationBuilder.withFix(
+                                    new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(
+                                        stringLit,
+                                        dotParts[0] + "." + declared + ext,
+                                        hasAtomicMetaFix ? PriorityAction.Priority.HIGH : PriorityAction.Priority.TOP
+                                    )
+                                );
+                            }
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
+                            );
+                        } else {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet, true, stringLit)
+                            );
+                        }
+                    } else {
+                        String stemDomain = dotParts[1];
+                        if (hasAtomicMetaFix) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnMatchMetaFileRenameQuickFix(domainFacet, metaSummary.targetFileName())
+                            );
+                        }
+                        if (!stemDomain.isEmpty() && !stemDomain.startsWith("stvn_")) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnStemMismatchInspection.AlignDomainWithStemQuickFix(
+                                    stringLit,
+                                    stemDomain,
+                                    emitReservedDomainError,
+                                    hasAtomicMetaFix ? PriorityAction.Priority.HIGH : PriorityAction.Priority.TOP
+                                )
+                            );
+                        }
+                        if (!isReservedDomain && isValidPosixDomain) {
+                            StringBuilder targetSb = new StringBuilder(dotParts[0]).append('.').append(declared);
+                            for (int i = 2; i < dotParts.length; i++) {
+                                targetSb.append('.').append(dotParts[i]);
+                            }
+                            targetSb.append(ext);
+                            annotationBuilder = annotationBuilder.withFix(
+                                new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(
+                                    stringLit,
+                                    targetSb.toString(),
+                                    hasAtomicMetaFix ? PriorityAction.Priority.NORMAL : PriorityAction.Priority.HIGH
+                                )
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        return annotationBuilder;
     }
 
     private static @Nullable ListLiteral findMapTargetListLiteral(PsiFile file, TextRange range) {

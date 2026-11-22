@@ -362,15 +362,6 @@ public final class StvnTypeResolver {
         if (typeDef != null) {
             return typeDef;
         }
-        var inclAlias = targetElem instanceof IncludeMapAlias ima ? ima
-            : targetElem.getParent() instanceof IncludeMapAlias ima ? ima : null;
-        if (inclAlias != null) {
-            var list = inclAlias.getTypeKeywordList();
-            var remoteKw = !list.isEmpty() ? list.get(0) : null;
-            if (remoteKw != null) {
-                return StvnPsiUtils.getParentTypeDefinition(new StvnTypeReference(remoteKw).resolve());
-            }
-        }
         var useAlias = targetElem instanceof UseMapAlias uma ? uma
             : targetElem.getParent() instanceof UseMapAlias uma ? uma : null;
         if (useAlias != null) {
@@ -3212,26 +3203,11 @@ public final class StvnTypeResolver {
         if (typeDef != null) {
             return typeDef.getSchemaType();
         }
-        var resolved = StvnTypeReference.resolveTypeInFile(keyword.getContainingFile(), typeName, new HashSet<>());
+        var resolved = new StvnTypeReference(keyword).resolve();
         if (resolved != null) {
-            var alias = resolved instanceof IncludeMapAlias ima ? ima
-                : resolved.getParent() instanceof IncludeMapAlias ima ? ima : null;
-            if (alias != null) {
-                var list = alias.getTypeKeywordList();
-                if (list.size() >= 2) {
-                    var remoteKw = list.get(0);
-                    var includeElement = PsiTreeUtil.getParentOfType(alias, IncludeElement.class);
-                    if (includeElement != null) {
-                        var stringLit = includeElement.getStringLiteral();
-                        var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                        if (targetFile != null && remoteKw != null) {
-                            var remTypeDef = findTypeDefinition(targetFile, remoteKw.getText(), null);
-                            if (remTypeDef != null) {
-                                return remTypeDef.getSchemaType();
-                            }
-                        }
-                    }
-                }
+            var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            if (targetDef != null && targetDef.getSchemaType() != null) {
+                return targetDef.getSchemaType();
             }
         }
         return schemaType;
@@ -3253,6 +3229,11 @@ public final class StvnTypeResolver {
         var kw = schemaType.getTypeKeyword();
         if (kw == null) return null;
 
+        var resolvedTarget = new StvnTypeReference(kw).resolve();
+        var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
+        if (targetDef != null) {
+            return resolveEnumSubsetFromTypeDef(targetDef, kw.getText(), visited);
+        }
         return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
     }
 
@@ -3267,8 +3248,7 @@ public final class StvnTypeResolver {
         var kw = typeDef.getTypeKeyword();
         if (kw == null) return null;
 
-        var visited = new HashSet<String>();
-        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+        return resolveEnumSubsetFromTypeDef(typeDef, kw.getText(), new HashSet<>());
     }
 
     /**
@@ -3279,31 +3259,43 @@ public final class StvnTypeResolver {
      */
     public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable TypeKeyword typeKeyword) {
         if (typeKeyword == null) return null;
-
-        var visited = new HashSet<String>();
-        return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), visited);
+        if (StvnPsiUtils.isTypeDefinitionTarget(typeKeyword)) {
+            return resolveEnumSubset(StvnPsiUtils.getParentTypeDefinition(typeKeyword));
+        }
+        if (typeKeyword.getParent() instanceof UseMapAlias uma) {
+            return resolveEnumSubset(uma);
+        }
+        var resolvedTarget = new StvnTypeReference(typeKeyword).resolve();
+        var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
+        if (targetDef != null) {
+            return resolveEnumSubsetFromTypeDef(targetDef, typeKeyword.getText(), new HashSet<>());
+        }
+        return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), new HashSet<>());
     }
 
     /**
-     * Resolves the enum subset declaration referenced by an include map alias.
+     * Resolves the enum subset declaration referenced by a {@code :use} map alias.
      *
-     * @param alias the include map alias element
+     * @param alias the {@code :use} map alias element
      * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
-    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable IncludeMapAlias alias) {
+    public static @Nullable StvnEnumSubsetInfo resolveEnumSubset(@Nullable UseMapAlias alias) {
         if (alias == null) return null;
         var list = alias.getTypeKeywordList();
         var localKw = list.size() >= 2 ? list.get(1) : (!list.isEmpty() ? list.get(0) : null);
         if (localKw == null) return null;
 
-        var visited = new HashSet<String>();
-        return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), visited);
+        var targetDef = resolveUnderlyingTypeDefinition(alias);
+        if (targetDef != null) {
+            return resolveEnumSubsetFromTypeDef(targetDef, localKw.getText(), new HashSet<>());
+        }
+        return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), new HashSet<>());
     }
 
     /**
      * Resolves an enum subset model from an arbitrary supported PSI element.
      *
-     * @param element the PSI element ({@link SchemaType}, {@link TypeDefinition}, {@link TypeKeyword}, or {@link IncludeMapAlias})
+     * @param element the PSI element ({@link SchemaType}, {@link TypeDefinition}, {@link TypeKeyword}, or {@link UseMapAlias})
      * @return the resolved {@link StvnEnumSubsetInfo}, or {@code null} if unresolvable
      */
     public static @Nullable StvnEnumSubsetInfo resolveEnumSubsetFromElement(@Nullable PsiElement element) {
@@ -3311,7 +3303,7 @@ public final class StvnTypeResolver {
         if (element instanceof SchemaType st) return resolveEnumSubset(st);
         if (element instanceof TypeDefinition td) return resolveEnumSubset(td);
         if (element instanceof TypeKeyword tk) return resolveEnumSubset(tk);
-        if (element instanceof IncludeMapAlias ima) return resolveEnumSubset(ima);
+        if (element instanceof UseMapAlias uma) return resolveEnumSubset(uma);
         return null;
     }
 
@@ -3320,8 +3312,6 @@ public final class StvnTypeResolver {
         String typeName,
         Set<String> visited
     ) {
-        if (!visited.add(typeName)) return null;
-
         var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
         if (targetDef == null) return null;
 
@@ -3329,6 +3319,17 @@ public final class StvnTypeResolver {
         if (typeDef == null) {
             return null;
         }
+        return resolveEnumSubsetFromTypeDef(typeDef, typeName, visited);
+    }
+
+    private static @Nullable StvnEnumSubsetInfo resolveEnumSubsetFromTypeDef(
+        TypeDefinition typeDef,
+        String typeName,
+        Set<String> visited
+    ) {
+        String visitKey = (typeDef.getContainingFile() != null ? typeDef.getContainingFile().getName() + "@" : "")
+            + typeDef.getTextOffset() + "|" + typeName;
+        if (!visited.add(visitKey)) return null;
 
         var metaMap = typeDef.getMetadataMap();
         MetadataFilter filter = null;

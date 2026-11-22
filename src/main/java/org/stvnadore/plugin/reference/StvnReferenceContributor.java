@@ -8,13 +8,11 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeElement;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.StringLiteral;
-import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.ValueKeyword;
 
@@ -52,13 +50,6 @@ public final class StvnReferenceContributor extends PsiReferenceContributor {
                         return PsiReference.EMPTY_ARRAY;
                     }
 
-                    // Declaration Isolation: RHS (second keyword) of IncludeMapAlias is a local declaration point
-                    if (parent instanceof IncludeMapAlias alias) {
-                        var list = alias.getTypeKeywordList();
-                        if (list.size() >= 2 && list.get(1) == typeKw) {
-                            return PsiReference.EMPTY_ARRAY;
-                        }
-                    }
                     if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
                         var list = alias.getTypeKeywordList();
                         if (list.size() >= 2 && list.get(1) == typeKw) {

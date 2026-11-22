@@ -635,10 +635,11 @@ public final class StvnTypeResolverTest extends BasePlatformTestCase {
             }
             """);
 
-        var psiFile = myFixture.configureByText("consumer_strip.stvn", """
+        var psiFile = myFixture.configureByText("consumer_strip.stvn_i", """
             {
               :defs {
-                :include [ "packaged_module_strip.stvn_di" { #strip } ]
+                :include [ "packaged_module_strip.stvn_di" ]
+                :use [ :Remote { #strip } ]
               }
               :type :LocalPort
               :body 8080

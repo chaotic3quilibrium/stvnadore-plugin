@@ -114,7 +114,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     List<LocalQuickFix> fixes = new ArrayList<>();
                     fixes.add(new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind));
                     if (StvnMetaTemplateUtil.isMetaExtensionMandatory(fileName)) {
-                        fixes.add(new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(expectedKind));
+                        fixes.add(new StvnMissingMetaInspection.InsertMissingMetaKindFacetQuickFix(block, expectedKind));
                     }
                     if (!metaMandatory) {
                         fixes.add(new RemoveParentMetaEntryQuickFix());
@@ -297,8 +297,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Constraint violation (<" + StvnVocabulary.KEYWORD_TYPE + ">): directive facet '"
                                     + StvnVocabulary.FACET_KW_STRIP + "' is not permitted on type declarations; "
-                                    + "directive facets are valid strictly in " + StvnVocabulary.KEYWORD_USE
-                                    + " and " + StvnVocabulary.KEYWORD_INCLUDE + " blocks",
+                                    + "directive facets are valid strictly in " + StvnVocabulary.KEYWORD_USE + " blocks",
                                 StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
@@ -433,7 +432,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                 holder.registerProblem(
                                     entry,
                                     StvnDiagnosticFormatter.formatPlugin(
-                                        "Directive facet '#strip' is not permitted on constant definitions; directive facets are valid strictly in :use and :include blocks",
+                                        "Directive facet '" + StvnVocabulary.FACET_KW_STRIP
+                                            + "' is not permitted on constant definitions; directive facets are valid strictly in "
+                                            + StvnVocabulary.KEYWORD_USE + " blocks",
                                         StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
@@ -474,7 +475,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                             optBlock,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Empty directive block in " + StvnVocabulary.KEYWORD_USE
-                                    + " or " + StvnVocabulary.KEYWORD_INCLUDE
                                     + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
                                     + "}, alias mappings, or remove '{}'",
                                 StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
@@ -527,84 +527,6 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         aliasBlock,
                         StvnDiagnosticFormatter.formatPlugin(
                             "Empty directive block in " + StvnVocabulary.KEYWORD_USE
-                                + " or " + StvnVocabulary.KEYWORD_INCLUDE
-                                + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
-                                + "}, alias mappings, or remove '{}'",
-                            StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveElementQuickFix("Remove empty directive block")
-                    );
-                }
-            }
-
-            @Override
-            public void visitIncludeElement(@NotNull IncludeElement element) {
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
-                    return;
-                }
-                var optBlock = element.getIncludeOptionsBlock();
-                if (optBlock != null) {
-                    var options = optBlock.getIncludeOptionList();
-                    if (options.isEmpty()) {
-                        holder.registerProblem(
-                            optBlock,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Empty directive block in " + StvnVocabulary.KEYWORD_USE
-                                    + " or " + StvnVocabulary.KEYWORD_INCLUDE
-                                    + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
-                                    + "}, alias mappings, or remove '{}'",
-                                StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            new RemoveElementQuickFix("Remove empty directive block")
-                        );
-                    } else {
-                        for (int i = 0; i < options.size(); i++) {
-                            var opt = options.get(i);
-                            if (i >= 1) {
-                                holder.registerProblem(
-                                    opt,
-                                    StvnDiagnosticFormatter.formatPlugin(
-                                        "Duplicate metadata facet '" + StvnVocabulary.FACET_KW_STRIP
-                                            + "' in " + StvnVocabulary.KEYWORD_INCLUDE + " options block",
-                                        StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
-                                    ),
-                                    ProblemHighlightType.GENERIC_ERROR,
-                                    new RemoveElementQuickFix(
-                                        "Remove duplicate '" + StvnVocabulary.FACET_KW_STRIP + "'",
-                                        "Remove duplicate facet"
-                                    )
-                                );
-                            }
-                            var illegalArg = opt.getStandaloneFacetIllegalArg();
-                            if (illegalArg != null) {
-                                String argText = illegalArg.getText().trim();
-                                holder.registerProblem(
-                                    illegalArg,
-                                    StvnDiagnosticFormatter.formatPlugin(
-                                        "Metadata facet '" + StvnVocabulary.FACET_KW_STRIP
-                                            + "' is a standalone flag and does not accept arguments; unexpected '"
-                                            + argText + "'",
-                                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
-                                    ),
-                                    ProblemHighlightType.GENERIC_ERROR,
-                                    new RemoveElementQuickFix(
-                                        "Remove unexpected argument '" + argText + "'",
-                                        "Remove unexpected argument"
-                                    )
-                                );
-                            }
-                        }
-                    }
-                }
-                var aliasBlock = element.getIncludeAliasBlock();
-                if (aliasBlock != null && aliasBlock.getIncludeMapAliasList().isEmpty()) {
-                    holder.registerProblem(
-                        aliasBlock,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "Empty directive block in " + StvnVocabulary.KEYWORD_USE
-                                + " or " + StvnVocabulary.KEYWORD_INCLUDE
                                 + " statement is invalid; specify {" + StvnVocabulary.FACET_KW_STRIP
                                 + "}, alias mappings, or remove '{}'",
                             StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK
@@ -627,7 +549,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
-                        "Directive facet '#strip' is not permitted on type declarations; directive facets are valid strictly in :use and :include blocks",
+                        "Directive facet '" + StvnVocabulary.FACET_KW_STRIP
+                            + "' is not permitted on type declarations; directive facets are valid strictly in "
+                            + StvnVocabulary.KEYWORD_USE + " blocks",
                         StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
@@ -1283,6 +1207,24 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 var targetMetaElement = element instanceof MetaElement me
                     ? me
                     : PsiTreeUtil.getParentOfType(element, MetaElement.class, false);
+                if (targetMetaElement != null) {
+                    var enclosingMetaBlock = PsiTreeUtil.getParentOfType(targetMetaElement, MetaBlock.class, false);
+                    if (enclosingMetaBlock != null) {
+                        if (targetMetaElement.getMetaNameFacet() != null) {
+                            long nameCount = enclosingMetaBlock.getMetaElementList().stream()
+                                .filter(e -> e.getMetaNameFacet() != null).count();
+                            if (nameCount <= 1) {
+                                return;
+                            }
+                        } else if (targetMetaElement.getMetaKindFacet() != null) {
+                            long kindCount = enclosingMetaBlock.getMetaElementList().stream()
+                                .filter(e -> e.getMetaKindFacet() != null).count();
+                            if (kindCount <= 1) {
+                                return;
+                            }
+                        }
+                    }
+                }
                 var toDelete = targetEntry != null
                     ? targetEntry
                     : (targetMetaElement != null ? targetMetaElement : element);

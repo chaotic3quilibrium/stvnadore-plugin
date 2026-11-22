@@ -227,18 +227,13 @@ private value_keyword_start ::= VALUE_KEYWORD_BASE
                               | KW_KIND_BODY | KW_KIND_DEFS | KW_KIND_BODY_INCLUDE | KW_KIND_DEFS_INCLUDE
 
 // --- INCLUDES & DEFINITIONS ---
-include_stmt            ::= KW_INCLUDE LBRACK include_element+ RBRACK {pin=1}
-include_element         ::= string_literal include_options_block? include_alias_block? {pin=1}
-include_options_block   ::= LBRACE include_option* RBRACE
-include_option          ::= KW_STRIP standalone_facet_illegal_arg? {pin=1}
-include_alias_block     ::= LBRACE include_map_alias* RBRACE {pin=1}
-include_map_alias       ::= type_keyword type_keyword {
-  pin=1
-  recoverWhile=include_alias_recover
-  mixin="org.stvnadore.plugin.psi.impl.StvnIncludeMapAliasMixin"
-  implements="com.intellij.psi.PsiNameIdentifierOwner"
-}
-private include_alias_recover ::= !(RBRACE | type_keyword | value_keyword)
+private include_section_guard ::= (KW_META | KW_DEFS | KW_TYPE | KW_BODY) !FSLASH
+include_stmt              ::= KW_INCLUDE LBRACK include_list_items RBRACK {pin=1}
+private include_list_items ::= (!(RBRACK | include_section_guard) include_list_entry)+ {recoverWhile=include_list_recover}
+private include_list_entry ::= include_element {recoverWhile=include_item_recover}
+include_element           ::= string_literal {pin=1}
+private include_item_recover ::= !(RBRACK | LITERAL_STRING_SIMPLE | LITERAL_STRING_FENCED | MALFORMED_FENCE | include_section_guard)
+private include_list_recover ::= !(RBRACK | include_section_guard)
 
 type_definition          ::= type_def_target schema_type {
   pin=1

@@ -15,7 +15,6 @@ import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnBrandNominalTypeQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnImportUseQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnQualifyTypeQuickFix;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
@@ -55,8 +54,7 @@ public final class StvnUnresolvedTypeInspection extends LocalInspectionTool {
         }
         // Skip LHS declaration targets in :defs (they declare a new type, not reference an existing one)
         if (StvnPsiUtils.isTypeDefinitionTarget(typeKw)
-                || PsiTreeUtil.getParentOfType(typeKw, UseTarget.class, PackagePath.class) != null
-                || typeKw.getParent() instanceof IncludeMapAlias) {
+                || PsiTreeUtil.getParentOfType(typeKw, UseTarget.class, PackagePath.class) != null) {
             return;
         }
 

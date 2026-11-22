@@ -383,7 +383,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Must validate positive .stvn_b / .stvn_bd binary fixtures", binaryCount > 0);
     }
 
-    private static final int METADATA_FIXTURES_VALID_COUNT = 119;
+    private static final int METADATA_FIXTURES_VALID_COUNT = 117;
 
     public void testValidMetadataFixtures() throws Exception {
         var validDir = Paths.get(getTestDataPath(), "metadata", "valid");
@@ -670,21 +670,20 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertTrue("Resolved type is not a TypeKeyword", resolvedTypeA instanceof TypeKeyword);
         assertEquals("module_a.stvn_di", resolvedTypeA.getContainingFile().getName());
 
-        // 3. Verify aliased type reference resolution (:ConflictTypeB resolves locally first)
+        // 3. Verify aliased type reference resolution (:LocalConflictB resolves locally first)
         var text = myFixture.getEditor().getDocument().getText();
-        var typeTupleOffset = text.indexOf(":type :Tuple");
-        var conflictBOffset = text.indexOf(":ConflictTypeB", typeTupleOffset);
-        myFixture.getEditor().getCaretModel().moveToOffset(conflictBOffset);
+        var conflictDefOffset = text.indexOf(":ConflictTypeB :LocalConflictB");
+        var localConflictBOffset = text.indexOf(":LocalConflictB", conflictDefOffset);
+        myFixture.getEditor().getCaretModel().moveToOffset(localConflictBOffset);
         var conflictBRef = myFixture.getReferenceAtCaretPosition();
-        assertNotNull("Type reference for :ConflictTypeB not found", conflictBRef);
+        assertNotNull("Type reference for :LocalConflictB not found", conflictBRef);
         var resolvedConflictB = conflictBRef.resolve();
-        assertNotNull("Could not resolve type reference for :ConflictTypeB", resolvedConflictB);
+        assertNotNull("Could not resolve type reference for :LocalConflictB", resolvedConflictB);
         assertTrue("Resolved type is not a TypeKeyword", resolvedConflictB instanceof TypeKeyword);
-        // :ConflictTypeB (usage) must resolve to the local RHS keyword definition point in include_legal.stvn_i
         assertEquals("include_legal.stvn_i", resolvedConflictB.getContainingFile().getName());
-        assertTrue("Resolved type's parent is not IncludeMapAlias", resolvedConflictB.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
+        assertTrue("Resolved type's parent is not UseMapAlias", resolvedConflictB.getParent() instanceof org.stvnadore.psi.UseMapAlias);
 
-        // 4. Verify alias first keyword reference resolution (:ConflictType inside mapping resolves remotely)
+        // 4. Verify alias first keyword reference resolution (:ConflictType inside :use mapping resolves remotely)
         var conflictMappingOffset = text.indexOf(":ConflictType ");
         myFixture.getEditor().getCaretModel().moveToOffset(conflictMappingOffset);
         var mappingRef = myFixture.getReferenceAtCaretPosition();
@@ -695,8 +694,8 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("module_b.stvn_di", resolvedMapping.getContainingFile().getName());
         assertEquals(":ConflictType", resolvedMapping.getText());
 
-        // 5. Verify declaration isolation: RHS keyword of an include_map_alias should not return any references
-        var aliasRhsOffset = text.indexOf(":ConflictTypeB");
+        // 5. Verify declaration isolation: RHS keyword of a use_map_alias should not return any references
+        var aliasRhsOffset = text.indexOf(":LocalConflictB");
         myFixture.getEditor().getCaretModel().moveToOffset(aliasRhsOffset);
         var aliasRhsRef = myFixture.getReferenceAtCaretPosition();
         assertNull("RHS keyword should not have a reference (declaration isolation)", aliasRhsRef);
@@ -715,7 +714,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var resolvedAliasedType = aliasedTypeRef.resolve();
         assertNotNull("Could not resolve :AliasedType", resolvedAliasedType);
         assertEquals("include_asymmetric_eviction.stvn_i", resolvedAliasedType.getContainingFile().getName());
-        assertTrue("Parent should be IncludeMapAlias", resolvedAliasedType.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
+        assertTrue("Parent should be UseMapAlias", resolvedAliasedType.getParent() instanceof org.stvnadore.psi.UseMapAlias);
 
         // 6b. LHS keyword `:ConflictType` in mapping resolves to remote definition in module_asym_a.stvn_di
         var asymLhsOffset = textAsym.indexOf(":ConflictType ");
@@ -780,14 +779,14 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         var typeBUsages = myFixture.findUsages(resolvedTypeB);
         assertEquals("Expected exactly 1 usage for :TypeB", 1, typeBUsages.size());
 
-        // 3. Verify usage search for ':ConflictTypeB' (introduced via local RHS alias)
-        var conflictBOffset = text.indexOf(":ConflictTypeB"); // Point to the RHS mapping introduction
+        // 3. Verify usage search for ':LocalConflictB' (introduced via local RHS :use alias)
+        var conflictBOffset = text.indexOf(":LocalConflictB");
         myFixture.getEditor().getCaretModel().moveToOffset(conflictBOffset);
         var declarationElement = myFixture.getElementAtCaret();
         assertNotNull("Declaration element not found at offset", declarationElement);
 
         var conflictBUsages = myFixture.findUsages(declarationElement);
-        assertEquals("Expected exactly 1 usage for :ConflictTypeB", 1, conflictBUsages.size());
+        assertEquals("Expected exactly 1 usage for :LocalConflictB", 1, conflictBUsages.size());
     }
 
     public void testTypeInlayHints() {
@@ -839,16 +838,23 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "include_legal_hints.stvn_i",
             """
                 {
+                  :meta {
+                    #name "include_legal_hints"
+                    #kind #BODY_INCLUDE
+                  }
                   :defs {
                     :include [
                       "syntax/valid/modules/module_a.stvn_di"
-                      "syntax/valid/modules/module_b.stvn_di" {
+                      "syntax/valid/modules/module_b.stvn_di"
+                    ]
+                    :use [
+                      :org/example/mod_b {
                         :ConflictType :ConflictTypeB
                       }
                     ]
                   }
                   :type :Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )
-                  :body ( 42<hint text=":TypeA (-> :Int)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int)"/> "world"<hint text=":ConflictTypeB (-> :ConflictType -> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )"/>
+                  :body ( 42<hint text=":TypeA (-> :Int)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int)"/> "world"<hint text=":org/example/mod_b/ConflictType (-> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :org/example/mod_b/ConflictType )"/>
                 }
                 """);
         myFixture.testInlays(
@@ -2595,21 +2601,32 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "network_primitives.stvn_di",
             """
             {
+              :meta {
+                #name "network_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :BitFlag        :Int
-                :UnixPermission :Int
-                :Port           { #minIncl 1 #maxIncl 65535 } :Int
-                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
-                :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
+                :package :net/prim {
+                  :BitFlag        :Int
+                  :UnixPermission :Int
+                  :Port           { #minIncl 1 #maxExcl 65536 } :Int
+                  :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
+                  :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
+                }
               }
             }
             """);
         myFixture.configureByText(
-            "uhoh_trajectory.stvn",
+            "uhoh_trajectory.stvn_i",
             """
             {
+              :meta {
+                #name "uhoh_trajectory"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di"]
+                :use [ :net/prim { :HostName :RemoteHost } ]
                 :HostIPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable { #invertible } :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :HostIPv4 :String )
@@ -2622,11 +2639,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               :body (
                 {
                   [
-                    "auth.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
+                    "auth.internal"<hint text=":net/prim/HostName (-> :String)"/>
                     #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :HostIPv4 -> :String)"/>
                   ]
                   [
-                    "db.internal"<hint text=":RemoteHost (-> :HostName -> :String)"/>
+                    "db.internal"<hint text=":net/prim/HostName (-> :String)"/>
                     #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :String)"/>
                   ]
                 }<hint text=":RouteTable"/>
@@ -3505,21 +3522,32 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "network_primitives.stvn_di",
             """
             {
+              :meta {
+                #name "network_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :BitFlag        :Int
-                :UnixPermission :Int
-                :Port           { #minIncl 1 #maxIncl 65535 } :Int
-                :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
-                :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
+                :package :net/prim {
+                  :BitFlag        :Int
+                  :UnixPermission :Int
+                  :Port           { #minIncl 1 #maxExcl 65536 } :Int
+                  :HostName       { #regex "^[a-zA-Z0-9.-]+$" } :String
+                  :Protocol       :Enum [ #HTTP #HTTPS #TCP #UDP ]
+                }
               }
             }
             """);
         myFixture.configureByText(
-            "uhoh.stvn",
+            "uhoh.stvn_i",
             """
             {
+              :meta {
+                #name "uhoh"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di"]
+                :use [ :net/prim { :HostName :RemoteHost } ]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3544,7 +3572,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var provider = new org.stvnadore.plugin.documentation.StvnDocumentationProvider();
 
-        // 1. Hover over :RemoteHost on line 5 (inside :RouteTable :Map( :RemoteHost :IpAddress ))
+        // 1. Hover over :RemoteHost (inside :RouteTable :Map( :RemoteHost :IpAddress ))
         var remoteHostOffset = text.indexOf(":RemoteHost", routeTableDefIdx);
         var remoteHostElem = myFixture.getFile().findElementAt(remoteHostOffset);
         assertNotNull(remoteHostElem);
@@ -3552,9 +3580,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("Custom doc element for :RemoteHost in :Map is null", customDocElem);
         var remoteHostDoc = provider.generateDoc(customDocElem, remoteHostElem);
         assertNotNull("Hover documentation for :RemoteHost in :Map is null", remoteHostDoc);
-        assertTrue("Doc must contain Type Alias", remoteHostDoc.contains("Type Alias:</b> :RemoteHost"));
-        assertTrue("Doc must contain imported source", remoteHostDoc.contains("network_primitives.stvn_di"));
-        assertTrue("Doc must contain resolution trajectory", remoteHostDoc.contains(":RemoteHost &rarr; :HostName &rarr; :String"));
+        assertTrue("Doc must contain Renamed Reference", remoteHostDoc.contains("Renamed Reference:</b> :RemoteHost &rarr; :net/prim/HostName"));
+        assertTrue("Doc must contain Source Namespace", remoteHostDoc.contains("Source Namespace:</b> :net/prim"));
+        assertTrue("Doc must contain chained Type Alias", remoteHostDoc.contains("Type Alias:</b> :HostName"));
         assertTrue("Doc must contain underlying structure", remoteHostDoc.contains("Underlying Structure:</b> :String"));
 
         // 2. Hover over :IpAddress on line 5 (inside :RouteTable :Map( :RemoteHost :IpAddress ))
@@ -3574,17 +3602,28 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "network_primitives.stvn_di",
             """
             {
+              :meta {
+                #name "network_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                :package :net/prim {
+                  :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                }
               }
             }
             """);
         myFixture.configureByText(
-            "uhoh.stvn",
+            "uhoh.stvn_i",
             """
             {
+              :meta {
+                #name "uhoh"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di"]
+                :use [ :net/prim { :HostName :RemoteHost } ]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3625,17 +3664,28 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "network_primitives.stvn_di",
             """
             {
+              :meta {
+                #name "network_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                :package :net/prim {
+                  :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                }
               }
             }
             """);
         myFixture.configureByText(
-            "uhoh.stvn",
+            "uhoh.stvn_i",
             """
             {
+              :meta {
+                #name "uhoh"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di"]
+                :use [ :net/prim { :HostName :RemoteHost } ]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3676,17 +3726,28 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             "network_primitives.stvn_di",
             """
             {
+              :meta {
+                #name "network_primitives"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                :package :net/prim {
+                  :HostName { #regex "^[a-zA-Z0-9.-]+$" } :String
+                }
               }
             }
             """);
         myFixture.configureByText(
-            "uhoh.stvn",
+            "uhoh.stvn_i",
             """
             {
+              :meta {
+                #name "uhoh"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include ["network_primitives.stvn_di" { :HostName :RemoteHost }]
+                :include ["network_primitives.stvn_di"]
+                :use [ :net/prim { :HostName :RemoteHost } ]
                 :IPv4 { #regex "^(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}$" } :String
                 :RouteTable :Map( :RemoteHost :IpAddress )
                 :IpAddress :Union( :IPv4 :String )
@@ -3706,7 +3767,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
 
         var text = myFixture.getEditor().getDocument().getText();
 
-        // 1. Navigation on :RemoteHost inside :Map(...) -> navigates to :include binding
+        // 1. Navigation on :RemoteHost inside :Map(...) -> navigates to :use binding
         var routeTableDefIdx = text.indexOf(":RouteTable :Map(");
         var remoteHostOffset = text.indexOf(":RemoteHost", routeTableDefIdx);
         myFixture.getEditor().getCaretModel().moveToOffset(remoteHostOffset);
@@ -3716,7 +3777,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertNotNull("Could not resolve :RemoteHost in :Map", resolvedRemote);
         assertTrue("Resolved must be TypeKeyword", resolvedRemote instanceof org.stvnadore.psi.TypeKeyword);
         assertEquals(":RemoteHost", resolvedRemote.getText());
-        assertTrue("Resolved parent must be IncludeMapAlias", resolvedRemote.getParent() instanceof org.stvnadore.psi.IncludeMapAlias);
+        assertTrue("Resolved parent must be UseMapAlias", resolvedRemote.getParent() instanceof org.stvnadore.psi.UseMapAlias);
 
         // 2. Navigation on :IPv4 inside :Union(...) -> navigates to :defs declaration
         var unionDefIdx = text.indexOf(":IpAddress :Union(");

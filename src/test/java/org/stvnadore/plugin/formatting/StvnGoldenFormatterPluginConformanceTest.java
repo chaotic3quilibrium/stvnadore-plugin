@@ -59,6 +59,48 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
      */
     private static final Set<String> PSI_VS_SOURCE_PRETTY_EXEMPTIONS = Set.of();
 
+    @Override
+    protected String getTestDataPath() {
+        return "src/test/resources/shared-fixtures";
+    }
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        myFixture.copyFileToProject(
+            "formatting/input/08_schema_defs_module.core_fmt.stvn_d",
+            "formatting/input/08_schema_defs_module.core_fmt.stvn_d"
+        );
+        myFixture.copyFileToProject(
+            "syntax/valid/modules/network_primitives.stvn_d",
+            "syntax/valid/modules/network_primitives.stvn_d"
+        );
+    }
+
+    private com.intellij.psi.PsiFile configureFormattingBuffer(String fileName, String content) {
+        if (!"20_multiline_pure_include_and_comments.core_fmt.stvn_i".equals(fileName)) {
+            return myFixture.configureByText(fileName, content);
+        }
+        com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
+        String relPath = "formatting/input/" + fileName;
+        var existingVf = myFixture.findFileInTempDir(relPath);
+        if (existingVf != null) {
+            var doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(existingVf);
+            if (doc != null) {
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    doc.setText(content);
+                    com.intellij.psi.PsiDocumentManager.getInstance(getProject()).commitDocument(doc);
+                });
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveDocument(doc);
+            }
+            myFixture.configureFromExistingVirtualFile(existingVf);
+            return myFixture.getFile();
+        }
+        var psi = myFixture.addFileToProject(relPath, content);
+        myFixture.configureFromExistingVirtualFile(psi.getVirtualFile());
+        return psi;
+    }
+
     public void testMirroredGoldenFormattingInventoryParity() throws IOException {
         assertTrue("Missing mirrored input directory: " + INPUT_DIR, Files.isDirectory(INPUT_DIR));
         assertTrue("Missing mirrored source_pretty directory: " + SOURCE_PRETTY_DIR, Files.isDirectory(SOURCE_PRETTY_DIR));
@@ -70,7 +112,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 19 mirrored golden formatter quartets", 19, inputNames.size());
+        assertEquals("Expected 20 mirrored golden formatter quartets", 20, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -92,7 +134,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String expectedCompact = Files.readString(COMPACT_DIR.resolve(fileName), StandardCharsets.UTF_8);
 
                 // 1. Verify StvnReplaceBufferPrettyIrAction on input/ (preserves active file #kind, including #BODY_INCLUDE on .stvn_i)
-                var prettyActionFile = myFixture.configureByText(fileName, inputSource);
+                var prettyActionFile = configureFormattingBuffer(fileName, inputSource);
                 var prettyAction = new StvnReplaceBufferPrettyIrAction();
                 var prettyCtx = SimpleDataContext.builder()
                     .add(CommonDataKeys.PROJECT, getProject())
@@ -106,7 +148,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
 
                 if ("17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
                         || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)) {
-                    var copyPrettyFile = myFixture.configureByText(fileName, inputSource);
+                    var copyPrettyFile = configureFormattingBuffer(fileName, inputSource);
                     var copyPrettyAction = new StvnCopyHermeticPayloadPrettyAction();
                     var copyPrettyCtx = SimpleDataContext.builder()
                         .add(CommonDataKeys.PROJECT, getProject())
@@ -123,8 +165,9 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
 
                 // Safeguard 3: On .stvn_i quartets, Submenu 2 StvnCopyHermeticPayloadPrettyAction normalizes #BODY_INCLUDE -> #BODY
                 if ("14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
-                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)) {
-                    var copyModFile = myFixture.configureByText(fileName, inputSource);
+                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)
+                        || "20_multiline_pure_include_and_comments.core_fmt.stvn_i".equals(fileName)) {
+                    var copyModFile = configureFormattingBuffer(fileName, inputSource);
                     var copyModAction = new StvnCopyHermeticPayloadPrettyAction();
                     var copyModCtx = SimpleDataContext.builder()
                         .add(CommonDataKeys.PROJECT, getProject())
@@ -141,7 +184,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 }
 
                 // 2. Verify StvnReplaceBufferCompactIrAction on input/ (preserves active file #kind)
-                var compactActionFile = myFixture.configureByText(fileName, inputSource);
+                var compactActionFile = configureFormattingBuffer(fileName, inputSource);
                 var compactAction = new StvnReplaceBufferCompactIrAction();
                 var compactCtx = SimpleDataContext.builder()
                     .add(CommonDataKeys.PROJECT, getProject())
@@ -156,7 +199,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 // 3. Verify Default Ctrl+Alt+L (CORE_SOURCE_FORMATTER) on input/, source_pretty/ (idempotency), and pretty/ (fixed-point)
                 settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
 
-                var sourceFormatFile = myFixture.configureByText(fileName, inputSource);
+                var sourceFormatFile = configureFormattingBuffer(fileName, inputSource);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(sourceFormatFile);
                 });
@@ -169,7 +212,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("Default CORE_SOURCE_FORMATTER Ctrl+Alt+L must be idempotent on source_pretty/" + fileName,
                     expectedSourcePretty, sourceFormatFile.getText());
 
-                var prettyFixedPointFile = myFixture.configureByText(fileName, expectedPretty);
+                var prettyFixedPointFile = configureFormattingBuffer(fileName, expectedPretty);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(prettyFixedPointFile);
                 });
@@ -179,14 +222,14 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 // 4. Verify Ctrl+Alt+L Core Canonical Delegation on input/, compact/, and pretty/ (idempotency)
                 settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_PRETTY_CANONICAL;
 
-                var fromInputFile = myFixture.configureByText(fileName, inputSource);
+                var fromInputFile = configureFormattingBuffer(fileName, inputSource);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(fromInputFile);
                 });
                 assertEquals("Core-delegated Ctrl+Alt+L mismatch from input/" + fileName,
                     expectedPretty, fromInputFile.getText());
 
-                var fromCompactFile = myFixture.configureByText(fileName, expectedCompact);
+                var fromCompactFile = configureFormattingBuffer(fileName, expectedCompact);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(fromCompactFile);
                 });
@@ -221,7 +264,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
 
                 // 1. PSI Ctrl+Alt+L on golden source_pretty/* and pretty/* must be byte-for-byte idempotent
-                var sourcePrettyPsiFile = myFixture.configureByText(fileName, expectedSourcePretty);
+                var sourcePrettyPsiFile = configureFormattingBuffer(fileName, expectedSourcePretty);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(sourcePrettyPsiFile);
                 });
@@ -230,7 +273,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                     expectedSourcePretty, reformattedSourcePretty);
                 assertZeroStructuralTabsOutsideFencedBodies(reformattedSourcePretty, "PSI source_pretty/" + fileName);
 
-                var prettyPsiFile = myFixture.configureByText(fileName, expectedPretty);
+                var prettyPsiFile = configureFormattingBuffer(fileName, expectedPretty);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(prettyPsiFile);
                 });
@@ -240,7 +283,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertZeroStructuralTabsOutsideFencedBodies(reformattedPretty, "PSI pretty/" + fileName);
 
                 // 2. PSI Ctrl+Alt+L on golden input/* must be idempotent, zero-tab compliant, and CAS-equivalent
-                var inputPsiFile = myFixture.configureByText(fileName, inputSource);
+                var inputPsiFile = configureFormattingBuffer(fileName, inputSource);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(inputPsiFile);
                 });
@@ -265,7 +308,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)
                         || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
                         || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)
-                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)) {
+                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)
+                        || "20_multiline_pure_include_and_comments.core_fmt.stvn_i".equals(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }

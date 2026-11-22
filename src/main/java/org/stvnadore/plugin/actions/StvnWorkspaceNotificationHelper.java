@@ -270,6 +270,21 @@ public final class StvnWorkspaceNotificationHelper {
         showNotification(project, "STVN Buffer Canonicalized", content, NotificationType.INFORMATION);
     }
 
+    /**
+     * Displays a warning balloon when a file-renaming quick-fix is blocked by a sibling collision or VFS error.
+     *
+     * @param project      active IntelliJ project
+     * @param plainMessage Simplified Technical English error explanation
+     */
+    public static void showFileRenameWarning(Project project, String plainMessage) {
+        showNotification(
+            project,
+            "STVN File Rename Failed",
+            StringUtil.escapeXmlEntities(plainMessage),
+            NotificationType.WARNING
+        );
+    }
+
     @SuppressWarnings("deprecation")
     private static void showNotification(Project project, String title, String htmlContent, NotificationType type) {
         NotificationGroup group = NotificationGroupManager.getInstance().getNotificationGroup(GROUP_ID);

@@ -534,8 +534,9 @@ public final class StvnPayloadValueQuickFixTest extends BasePlatformTestCase {
                 #kind #BODY_INCLUDE
               }
               :defs {
-                :include [
-                  "./gauntlet_v2_shared_defs.stvn_di"
+                :include [ "./gauntlet_v2_shared_defs.stvn_di" ]
+                :use [
+                  :com/acme/shared/ledger
                   { #strip }
                   {
                     :LedgerChannel :ImportedLedgerChannel

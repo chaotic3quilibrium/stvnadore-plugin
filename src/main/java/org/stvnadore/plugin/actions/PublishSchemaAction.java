@@ -5,16 +5,17 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnCompilationResult;
+import org.stvnadore.core.StvnCompiler;
+import org.stvnadore.core.StvnDiagnostic.DiagnosticSeverity;
+import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.StvnSchemaFlattener;
-import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnDocument;
 import org.stvnadore.core.validation.CyclicDependencyException;
 import org.stvnadore.core.validation.DuplicateModuleImportException;
 import org.stvnadore.core.validation.NamespaceCollisionException;
@@ -23,18 +24,20 @@ import org.stvnadore.plugin.repository.StvnRepositoryClient;
 import org.stvnadore.plugin.repository.StvnRepositoryNotificationHelper;
 import org.stvnadore.plugin.settings.StvnRepositorySettings;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Action to publish an STVN definitions schema (.stvn_d, .stvn_di) to the configured remote repository.
- * Modular schemas (.stvn_di) are flattened into canonical .stvn_d in memory before publication.
+ * Publishes an STVN definitions schema ({@code .stvn_d}, {@code .stvn_di}) to the configured remote repository.
+ * <p>
+ * Collects workspace buffers via {@link StvnVopProjectionService#collectWorkspaceSources}, flattens modular
+ * {@code .stvn_di} schemas under modal progress, and validates the schema locally with {@link StvnCompiler}
+ * before network dispatch without synthesizing {@code #domain "default"} text splices.
  */
 @NullMarked
 public final class PublishSchemaAction extends AnAction {
 
     /**
-     * Constructs a new PublishSchemaAction instance.
+     * Constructs a new {@link PublishSchemaAction} instance.
      */
     public PublishSchemaAction() {
     }
@@ -42,98 +45,118 @@ public final class PublishSchemaAction extends AnAction {
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();
-        VirtualFile entryFile = e.getData(CommonDataKeys.VIRTUAL_FILE);
+        VirtualFile entryFile = StvnVopProjectionService.resolveTargetVirtualFile(e);
         if (project == null || entryFile == null) {
             return;
         }
 
-        String fileName = entryFile.getName();
-        String schemaName = deriveSchemaName(fileName);
-        String schemaContent;
-
-        if (fileName.endsWith(".stvn_di")) {
-            // 1. Perform in-memory modular schema flattening on-the-fly to canonical .stvn_d
-            Map<String, String> workspaceMap = new HashMap<>();
-            ProjectFileIndex.getInstance(project).iterateContent(fileOrDir -> {
-                if (!fileOrDir.isDirectory() && (fileOrDir.getName().endsWith(".stvn_d")
-                        || fileOrDir.getName().endsWith(".stvn_di")
-                        || fileOrDir.getName().endsWith(".stvn")
-                        || fileOrDir.getName().endsWith(".stvn_i"))) {
-                    String path = StvnSchemaFlattener.normalizePath(fileOrDir.getPath());
-                    String content = getLatestContent(project, fileOrDir);
-                    workspaceMap.put(path, content);
-                }
-                return true;
-            });
-
-            String entryPointPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
-            try {
-                schemaContent = StvnSchemaFlattener.flatten(workspaceMap, entryPointPath);
-            } catch (CyclicDependencyException ex) {
-                StvnWorkspaceNotificationHelper.showCycleError(project, ex);
-                return;
-            } catch (NamespaceCollisionException ex) {
-                StvnWorkspaceNotificationHelper.showCollisionError(project, ex);
-                return;
-            } catch (DuplicateModuleImportException ex) {
-                StvnWorkspaceNotificationHelper.showDuplicateImportError(project, ex);
-                return;
-            } catch (Exception ex) {
-                StvnWorkspaceNotificationHelper.showGenericError(project, ex);
-                return;
-            }
-        } else if (fileName.endsWith(".stvn_d")) {
-            // 2. Standalone definitions schema: transmit buffer directly
-            schemaContent = getLatestContent(project, entryFile);
-        } else {
+        String schemaContent = prepareValidatedSchemaForPublish(project, entryFile);
+        if (schemaContent == null) {
             return;
         }
 
-        // 2b. Ensure root :meta block presence for repository Gate 2 compliance
-        if (!schemaContent.contains(StvnVocabulary.KEYWORD_META)) {
-            String stem = schemaName.endsWith(".stvn_d")
-                ? schemaName.substring(0, schemaName.length() - ".stvn_d".length())
-                : schemaName;
-            String[] parts = stem.split("\\.");
-            String name = parts.length > 0 ? parts[parts.length - 1] : stem;
-            String meta = "  :meta {\n    #name \"" + name + "\"\n    #domain \"default\"\n    #kind #DEFS\n  }\n";
-            int idx = schemaContent.indexOf('{');
-            if (idx >= 0) {
-                schemaContent = schemaContent.substring(0, idx + 1) + "\n" + meta + schemaContent.substring(idx + 1);
-            }
-        }
-
-        // 3. Obtain project repository settings
+        String schemaName = deriveSchemaName(entryFile.getName());
         var settings = StvnRepositorySettings.getInstance(project);
         String repoUrl = settings.getRepoUrl();
         int timeoutMs = settings.getTimeoutMs();
 
-        // 4. Dispatch async publish request on Java 21 Virtual Thread
         StvnRepositoryClient.publishSchemaAsync(repoUrl, schemaName, schemaContent, timeoutMs)
-                .thenAccept(response -> ApplicationManager.getApplication().invokeLater(() -> {
-                    switch (response) {
-                        case PublishResponse.Success(var metadata) ->
-                                StvnRepositoryNotificationHelper.showSuccess(project, metadata);
-                        case PublishResponse.Idempotent(var metadata) ->
-                                StvnRepositoryNotificationHelper.showIdempotent(project, metadata);
-                        case PublishResponse.Conflict(var msg) ->
-                                StvnRepositoryNotificationHelper.showConflict(project, schemaName, msg);
-                        case PublishResponse.ValidationError(var diags) ->
-                                StvnRepositoryNotificationHelper.showValidationError(project, schemaName, diags);
-                        case PublishResponse.UnsupportedMediaType(var msg) ->
-                                StvnRepositoryNotificationHelper.showUnsupportedMediaType(project, msg);
-                        case PublishResponse.TransportError(var msg, var cause) ->
-                                StvnRepositoryNotificationHelper.showTransportError(project, repoUrl, msg);
+            .thenAccept(response -> ApplicationManager.getApplication().invokeLater(() -> {
+                switch (response) {
+                    case PublishResponse.Success(var metadata) ->
+                        StvnRepositoryNotificationHelper.showSuccess(project, metadata);
+                    case PublishResponse.Idempotent(var metadata) ->
+                        StvnRepositoryNotificationHelper.showIdempotent(project, metadata);
+                    case PublishResponse.Conflict(var msg) ->
+                        StvnRepositoryNotificationHelper.showConflict(project, schemaName, msg);
+                    case PublishResponse.ValidationError(var diags) ->
+                        StvnRepositoryNotificationHelper.showValidationError(project, schemaName, diags);
+                    case PublishResponse.UnsupportedMediaType(var msg) ->
+                        StvnRepositoryNotificationHelper.showUnsupportedMediaType(project, msg);
+                    case PublishResponse.TransportError(var msg, var cause) ->
+                        StvnRepositoryNotificationHelper.showTransportError(project, repoUrl, msg);
+                }
+            }));
+    }
+
+    /**
+     * Prepares and validates the canonical {@code .stvn_d} schema text for publication under modal progress.
+     * Returns {@code null} and emits an STE error notification when flattening or compiler validation fails.
+     *
+     * @param project   active IntelliJ project
+     * @param entryFile target {@code .stvn_d} or {@code .stvn_di} virtual file
+     * @return validated schema text ready for transport, or {@code null} when invalid or cancelled
+     */
+    public static @Nullable String prepareValidatedSchemaForPublish(Project project, VirtualFile entryFile) {
+        String fileName = entryFile.getName();
+        if (!fileName.endsWith(".stvn_d") && !fileName.endsWith(".stvn_di")) {
+            return null;
+        }
+        String schemaName = deriveSchemaName(fileName);
+
+        return StvnVopProjectionService.computeUnderProgress(
+            project,
+            "Validating STVN Schema for Publication...",
+            () -> {
+                String candidateSchema;
+                if (fileName.endsWith(".stvn_di")) {
+                    Map<String, String> workspaceMap = StvnVopProjectionService.collectWorkspaceSources(project, entryFile);
+                    String entryPointPath = StvnSchemaFlattener.normalizePath(entryFile.getPath());
+                    try {
+                        candidateSchema = StvnSchemaFlattener.flatten(workspaceMap, entryPointPath);
+                    } catch (CyclicDependencyException ex) {
+                        notifyOnEdt(() -> StvnWorkspaceNotificationHelper.showCycleError(project, ex));
+                        return null;
+                    } catch (NamespaceCollisionException ex) {
+                        notifyOnEdt(() -> StvnWorkspaceNotificationHelper.showCollisionError(project, ex));
+                        return null;
+                    } catch (DuplicateModuleImportException ex) {
+                        notifyOnEdt(() -> StvnWorkspaceNotificationHelper.showDuplicateImportError(project, ex));
+                        return null;
+                    } catch (Exception ex) {
+                        notifyOnEdt(() -> StvnWorkspaceNotificationHelper.showGenericError(project, ex));
+                        return null;
                     }
-                }));
+                } else {
+                    candidateSchema = StvnVopProjectionService.loadLatestBufferOrDiskText(entryFile);
+                }
+
+                StvnCompilationResult<StvnDocument> validation = StvnCompiler.compileToResult(
+                    candidateSchema,
+                    schemaName,
+                    StvnParserConfig.DEFAULT
+                );
+                if (validation.hasErrors() || validation.document().isEmpty()) {
+                    validation.diagnostics().stream()
+                        .filter(d -> d.severity() == DiagnosticSeverity.ERROR)
+                        .findFirst()
+                        .ifPresent(err -> notifyOnEdt(() ->
+                            StvnWorkspaceNotificationHelper.showCompilationError(project, fileName, err)
+                        ));
+                    return null;
+                }
+                return candidateSchema;
+            }
+        );
+    }
+
+    private static void notifyOnEdt(Runnable runnable) {
+        var app = ApplicationManager.getApplication();
+        if (app == null || app.isDispatchThread()) {
+            runnable.run();
+        } else {
+            app.invokeLater(runnable);
+        }
     }
 
     @Override
     public void update(AnActionEvent e) {
         Project project = e.getProject();
-        VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-        boolean visible = project != null && file != null && !file.isDirectory() &&
-                (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_di"));
+        VirtualFile file = StvnVopProjectionService.resolveTargetVirtualFile(e);
+        boolean visible = project != null
+            && file != null
+            && !file.isDirectory()
+            && (file.getName().endsWith(".stvn_d") || file.getName().endsWith(".stvn_di"));
         e.getPresentation().setEnabledAndVisible(visible);
     }
 
@@ -151,13 +174,5 @@ public final class PublishSchemaAction extends AnAction {
      */
     public static String deriveSchemaName(String fileName) {
         return StvnRepositoryClient.deriveSchemaName(fileName);
-    }
-
-    private static String getLatestContent(Project project, VirtualFile file) {
-        Document doc = FileDocumentManager.getInstance().getCachedDocument(file);
-        if (doc != null && FileDocumentManager.getInstance().isDocumentUnsaved(doc)) {
-            return doc.getText();
-        }
-        return LoadTextUtil.loadText(file).toString();
     }
 }

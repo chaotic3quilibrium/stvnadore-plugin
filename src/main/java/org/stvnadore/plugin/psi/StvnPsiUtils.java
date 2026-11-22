@@ -121,10 +121,9 @@ public final class StvnPsiUtils {
      */
     /**
      * Resolves the governing {@link TypeDefinition} for a PSI element, hopping across
-     * {@link IncludeMapAlias} (into the included {@code .stvn_di} or {@code .stvn_d} file) and
      * {@link UseMapAlias} (into the target {@code :package} enclosure) when the element is an alias keyword.
      *
-     * @param element the candidate PSI element (TypeDefinition, TypeKeyword, IncludeMapAlias, or UseMapAlias)
+     * @param element the candidate PSI element ({@link TypeDefinition}, {@link TypeKeyword}, or {@link UseMapAlias})
      * @return the resolved {@link TypeDefinition}, or {@code null} if unresolvable
      */
     public static @Nullable TypeDefinition resolveTargetTypeDefinition(@Nullable PsiElement element) {
@@ -141,48 +140,6 @@ public final class StvnPsiUtils {
         var direct = getParentTypeDefinition(element);
         if (direct != null) {
             return direct;
-        }
-        var includeAlias = element instanceof IncludeMapAlias ima ? ima
-            : PsiTreeUtil.getParentOfType(element, IncludeMapAlias.class, false);
-        if (includeAlias != null) {
-            var keywords = includeAlias.getTypeKeywordList();
-            if (!keywords.isEmpty()) {
-                var remoteKw = keywords.get(0);
-                if (remoteKw != null) {
-                    var resolvedRef = new StvnTypeReference(remoteKw).resolve();
-                    if (resolvedRef != null) {
-                        var hopped = resolveTargetTypeDefinitionInternal(resolvedRef, visited);
-                        if (hopped != null) {
-                            return hopped;
-                        }
-                    }
-                    var sourceTypeName = remoteKw.getText().trim();
-                    var includeElement = PsiTreeUtil.getParentOfType(includeAlias, IncludeElement.class);
-                    if (includeElement != null && includeElement.getStringLiteral() != null) {
-                        var targetFile = StvnTypeReference.resolveIncludeFile(includeElement.getStringLiteral());
-                        if (targetFile != null) {
-                            var resolvedInTarget = StvnTypeReference.resolveTypeInFile(
-                                targetFile, sourceTypeName, new HashSet<>(), null, true);
-                            if (resolvedInTarget != null) {
-                                var hopped = resolveTargetTypeDefinitionInternal(resolvedInTarget, visited);
-                                if (hopped != null) {
-                                    return hopped;
-                                }
-                            }
-                            var bareSource = sourceTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? sourceTypeName.substring(1) : sourceTypeName;
-                            for (var td : PsiTreeUtil.findChildrenOfType(targetFile, TypeDefinition.class)) {
-                                var tdKw = td.getTypeKeyword();
-                                if (tdKw != null) {
-                                    var tdName = tdKw.getText().trim();
-                                    if (tdName.equals(sourceTypeName) || tdName.endsWith("/" + bareSource)) {
-                                        return td;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
         var useAlias = element instanceof UseMapAlias uma ? uma
             : PsiTreeUtil.getParentOfType(element, UseMapAlias.class, false);
@@ -320,25 +277,6 @@ public final class StvnPsiUtils {
             return false;
         }
         for (var opt : optBlock.getUseOptionList()) {
-            if (opt.getStandaloneFacetIllegalArg() == null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Determines whether an {@link IncludeOptionsBlock} declares at least one valid standalone {@code #strip} option
-     * without an illegal trailing argument.
-     *
-     * @param optBlock candidate include options block
-     * @return {@code true} when a valid {@code #strip} flag is present
-     */
-    public static boolean hasValidStripIncludeOption(@Nullable IncludeOptionsBlock optBlock) {
-        if (optBlock == null) {
-            return false;
-        }
-        for (var opt : optBlock.getIncludeOptionList()) {
             if (opt.getStandaloneFacetIllegalArg() == null) {
                 return true;
             }

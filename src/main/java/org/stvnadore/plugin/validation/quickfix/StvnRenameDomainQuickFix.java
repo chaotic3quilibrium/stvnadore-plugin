@@ -6,13 +6,9 @@ import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
-import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleManager;
@@ -24,44 +20,68 @@ import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
 
-import java.io.IOException;
-import java.util.List;
-
 /**
- * Quick-fix remediating Layer 1 ERR_RESERVED_DOMAIN_PROHIBITED (E038) by replacing
- * the reserved domain segment with a compliant user domain placeholder ('domain').
+ * Quick-fix remediating Layer 1 {@code ERR_RESERVED_DOMAIN_PROHIBITED} ({@code E038}) by replacing
+ * the reserved domain segment with a compliant user domain placeholder ({@code "domain"}).
  */
 @NullMarked
 public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
 
-    private static final Logger LOG = Logger.getInstance(StvnRenameDomainQuickFix.class);
     private static final String DEFAULT_USER_DOMAIN = "domain";
 
     @SafeFieldForPreview
     private final String targetFileName;
 
+    /**
+     * Constructs a domain-replacement quick-fix targeting {@code targetFileName}.
+     *
+     * @param targetFileName preview target filename
+     */
     public StvnRenameDomainQuickFix(String targetFileName) {
         this.targetFileName = targetFileName;
     }
 
+    /**
+     * Constructs a domain-replacement quick-fix derived from {@code file}.
+     *
+     * @param file active STVN PSI file
+     */
     public StvnRenameDomainQuickFix(@NotNull PsiFile file) {
         String computed = computeTargetFileName(file.getName());
         this.targetFileName = computed != null ? computed : file.getName();
     }
 
+    /**
+     * Creates a {@link StvnRenameDomainQuickFix} when {@code file} declares a multi-segment filename stem.
+     *
+     * @param file active STVN PSI file
+     * @return configured quick-fix, or {@code null} when inapplicable
+     */
     public static @Nullable StvnRenameDomainQuickFix create(@NotNull PsiFile file) {
         String newName = computeTargetFileName(file.getName());
-        if (newName == null) return null;
+        if (newName == null) {
+            return null;
+        }
         return new StvnRenameDomainQuickFix(newName);
     }
 
+    /**
+     * Computes the target filename replacing stem slot 1 with {@code "domain"}.
+     *
+     * @param fileName current filename
+     * @return target filename, or {@code null} when single-stem
+     */
     public static @Nullable String computeTargetFileName(String fileName) {
         int lastDot = fileName.lastIndexOf('.');
-        if (lastDot <= 0) return null;
+        if (lastDot <= 0) {
+            return null;
+        }
         String ext = fileName.substring(lastDot);
         String stem = fileName.substring(0, lastDot);
         String[] dotParts = stem.split("\\.");
-        if (dotParts.length < 2 || dotParts[0].isEmpty()) return null;
+        if (dotParts.length < 2 || dotParts[0].isEmpty()) {
+            return null;
+        }
         return dotParts[0] + "." + DEFAULT_USER_DOMAIN + ext;
     }
 
@@ -87,10 +107,16 @@ public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionA
 
     @Override
     public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        if (file == null || !file.isValid()) return false;
+        if (file == null || !file.isValid()) {
+            return false;
+        }
         VirtualFile vFile = file.getVirtualFile();
-        if (vFile == null || !vFile.isValid()) return false;
-        if (file.getName().equals(targetFileName)) return false;
+        if (vFile == null || !vFile.isValid()) {
+            return false;
+        }
+        if (file.getName().equals(targetFileName)) {
+            return false;
+        }
         VirtualFile parent = vFile.getParent();
         return parent == null || parent.findChild(targetFileName) == null;
     }
@@ -101,7 +127,7 @@ public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionA
             @NotNull Editor editor,
             @NotNull PsiFile file
     ) {
-        return renamePreview(file, targetFileName);
+        return StvnFileRenameExecutor.buildRenamePreview(file, targetFileName);
     }
 
     @Override
@@ -110,18 +136,10 @@ public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionA
             @NotNull ProblemDescriptor previewDescriptor
     ) {
         PsiElement element = previewDescriptor.getPsiElement();
-        return renamePreview(element != null ? element.getContainingFile() : null, targetFileName);
-    }
-
-    private static @NotNull IntentionPreviewInfo renamePreview(@Nullable PsiFile file, String targetFileName) {
-        if (file == null) {
-            return IntentionPreviewInfo.EMPTY;
-        }
-        VirtualFile vFile = file.getOriginalFile().getVirtualFile();
-        if (vFile == null) {
-            vFile = file.getVirtualFile();
-        }
-        return vFile != null ? IntentionPreviewInfo.rename(vFile, targetFileName) : IntentionPreviewInfo.EMPTY;
+        return StvnFileRenameExecutor.buildRenamePreview(
+            element != null ? element.getContainingFile() : null,
+            targetFileName
+        );
     }
 
     @Override
@@ -138,16 +156,20 @@ public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionA
 
     @Override
     public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        if (file == null || !file.isValid()) return;
-        VirtualFile vFile = file.getVirtualFile();
-        if (vFile == null || !vFile.isValid()) return;
-
-        var readonlyStatus = ReadonlyStatusHandler.getInstance(project).ensureFilesWritable(List.of(vFile));
-        if (readonlyStatus.hasReadonlyFiles()) return;
-
-        WriteCommandAction.runWriteCommandAction(project, getText(), null, () -> {
-            try {
-                // 1. Buffer synchronization: Update #domain facet value to "domain"
+        if (file == null || !file.isValid()) {
+            return;
+        }
+        String liveTarget = computeTargetFileName(file.getName());
+        if (liveTarget == null) {
+            liveTarget = targetFileName;
+        }
+        StvnFileRenameExecutor.executeRenameWithCollisionFeedback(
+            project,
+            editor,
+            file,
+            liveTarget,
+            getText(),
+            () -> {
                 if (file.getTextLength() > 0) {
                     MetaDomainFacet facet = PsiTreeUtil.findChildOfType(file, MetaDomainFacet.class);
                     if (facet != null) {
@@ -159,20 +181,11 @@ public final class StvnRenameDomainQuickFix implements LocalQuickFix, IntentionA
                             if (metaBlock != null && metaBlock.isValid()) {
                                 CodeStyleManager.getInstance(project).reformat(metaBlock);
                             }
-                            var doc = PsiDocumentManager.getInstance(project).getDocument(file);
-                            if (doc != null) {
-                                PsiDocumentManager.getInstance(project).commitDocument(doc);
-                            }
                         }
                     }
                 }
-
-                // 2. VFS Operation: Rename virtual file
-                vFile.rename(this, targetFileName);
-            } catch (IOException e) {
-                LOG.error("Failed to rename file '" + vFile.getName() + "' to '" + targetFileName + "'", e);
             }
-        });
+        );
     }
 
     @Override

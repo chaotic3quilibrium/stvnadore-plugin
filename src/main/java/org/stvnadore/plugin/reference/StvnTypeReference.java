@@ -17,7 +17,6 @@ import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.IncludeElement;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.TypeDefinition;
@@ -97,9 +96,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             return manager.areElementsEquivalent(resolved, typeDef.getTypeKeyword())
                 || manager.areElementsEquivalent(resolved, typeDef.getNameIdentifier());
         }
-        if (element instanceof IncludeMapAlias alias) {
-            return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
-        }
         if (element instanceof org.stvnadore.psi.UseMapAlias alias) {
             return manager.areElementsEquivalent(resolved, alias.getNameIdentifier());
         }
@@ -135,25 +131,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             return ResolveResult.EMPTY_ARRAY;
         }
 
-        var isAliasFirstKeyword = false;
-        if (parent instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
-            // Defensive typing accessors: verify child token count
-            if (list.size() >= 2) {
-                if (list.get(0) == keyword) {
-                    isAliasFirstKeyword = true;
-                } else {
-                    // Second keyword (alias definition name) does not resolve
-                    return ResolveResult.EMPTY_ARRAY;
-                }
-            } else {
-                return ResolveResult.EMPTY_ARRAY;
-            }
-        } else if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
+        if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
             var list = alias.getTypeKeywordList();
             if (list.size() >= 2) {
                 if (list.get(0) == keyword) {
-                    isAliasFirstKeyword = true;
                     var useElem = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseElement.class);
                     if (useElem != null && useElem.getUseTarget() != null) {
                         var targetPackage = useElem.getUseTarget().getText();
@@ -191,31 +172,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
 
         var containingFile = keyword.getContainingFile();
         if (containingFile == null) {
-            return ResolveResult.EMPTY_ARRAY;
-        }
-
-        var targetTypeName = keyword.getText();
-        var visited = new HashSet<PsiFile>();
-
-        if (isAliasFirstKeyword) {
-            // First keyword in mapping. Resolve to the remote type in the included file.
-            var includeElement = PsiTreeUtil.getParentOfType(parent, IncludeElement.class);
-            if (includeElement != null) {
-                var stringLit = includeElement.getStringLiteral();
-                if (stringLit != null) {
-                    var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                    if (targetFile != null) {
-                        var optBlock = includeElement.getIncludeOptionsBlock();
-                        var hasStrip = StvnPsiUtils.hasValidStripIncludeOption(optBlock);
-                        var resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited, null, hasStrip);
-                        if (resolved == null && !hasStrip) {
-                            visited.clear();
-                            resolved = StvnTypeReference.resolveTypeInFile(targetFile, targetTypeName, visited, null, true);
-                        }
-                        return resolved != null ? new ResolveResult[]{new PsiElementResolveResult(resolved)} : ResolveResult.EMPTY_ARRAY;
-                    }
-                }
-            }
             return ResolveResult.EMPTY_ARRAY;
         }
 
@@ -404,33 +360,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
         }
 
-        // 2. Local include alias map scanning (first leg of multi-hop)
+        // 2. Cycle-safe diamond :include resolution with origin deduplication
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class).stream()
             .filter(incl -> !StvnMetaTemplateUtil.isInSecondaryRootSection(incl))
             .toList();
-        for (var incl : includes) {
-            var aliasBlock = incl.getIncludeAliasBlock();
-            if (aliasBlock != null) {
-                var aliases = PsiTreeUtil.findChildrenOfType(aliasBlock, IncludeMapAlias.class);
-                for (var alias : aliases) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var localKw = list.get(1);
-                        if (localKw != null && localKw.getText().equals(targetName)) {
-                            if (trace != null) {
-                                var remoteKw = list.get(0);
-                                if (remoteKw != null) {
-                                    trace.add(remoteKw.getText());
-                                }
-                            }
-                            return localKw;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Cycle-safe diamond :include resolution with Section 4.2 LHS eviction and origin deduplication
         record IncludeCandidate(PsiElement element, List<String> branchTrace) {}
         var uniqueCandidates = new ArrayList<IncludeCandidate>();
         for (var incl : includes) {
@@ -443,35 +376,10 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                 continue;
             }
 
-            var optBlock = incl.getIncludeOptionsBlock();
-            var hasStrip = StvnPsiUtils.hasValidStripIncludeOption(optBlock);
             var branchVisited = new HashSet<>(visited);
             var branchTrace = trace != null ? new ArrayList<String>() : null;
 
-            var aliasBlock = incl.getIncludeAliasBlock();
-            boolean evictedByLhsAlias = false;
-            if (aliasBlock != null) {
-                var aliases = PsiTreeUtil.findChildrenOfType(aliasBlock, IncludeMapAlias.class);
-                for (var alias : aliases) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        if (remoteKw != null) {
-                            var remoteText = remoteKw.getText().trim();
-                            var remoteStripped = sliceTerminalTypeName(remoteText);
-                            if (remoteText.equals(targetName) || (hasStrip && remoteStripped.equals(targetName))) {
-                                evictedByLhsAlias = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if (evictedByLhsAlias) {
-                continue;
-            }
-
-            var resolved = resolveTypeInFile(targetFile, targetName, branchVisited, branchTrace, hasStrip, false);
+            var resolved = resolveTypeInFile(targetFile, targetName, branchVisited, branchTrace, false, false);
             if (resolved != null
                     && uniqueCandidates.stream().noneMatch(c -> areSameDeclarationTarget(c.element(), resolved))) {
                 uniqueCandidates.add(new IncludeCandidate(resolved, branchTrace != null ? branchTrace : List.of()));
@@ -593,11 +501,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         return manager != null && manager.areElementsEquivalent(a, b);
     }
 
-    private static String sliceTerminalTypeName(String nameOrFqni) {
-        int slash = nameOrFqni.lastIndexOf('/');
-        return slash >= 0 ? StvnVocabulary.SIGIL_TYPIC + nameOrFqni.substring(slash + 1) : nameOrFqni;
-    }
-
     /**
      * Extracts the sequential type resolution trace starting from the given keyword.
      *
@@ -613,14 +516,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         PsiElement currentElement;
         if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(startKeyword)) {
             currentElement = startKeyword;
-        } else if (startKeyword.getParent() instanceof IncludeMapAlias includeAlias
-                && includeAlias.getTypeKeywordList().size() >= 2
-                && includeAlias.getTypeKeywordList().get(1) == startKeyword) {
-            var remoteKw = includeAlias.getTypeKeywordList().get(0);
-            if (remoteKw != null) {
-                trace.add(remoteKw.getText());
-            }
-            currentElement = includeAlias;
         } else if (startKeyword.getParent() instanceof org.stvnadore.psi.UseMapAlias useAlias
                 && useAlias.getTypeKeywordList().size() >= 2
                 && useAlias.getTypeKeywordList().get(1) == startKeyword) {
@@ -677,31 +572,6 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                             if (resolved != null && visitedElements.add(resolved)) {
                                 currentElement = resolved;
                                 continue;
-                            }
-                        }
-                    }
-                }
-            } else if (currentElement instanceof IncludeMapAlias || parent instanceof IncludeMapAlias) {
-                var alias = currentElement instanceof IncludeMapAlias a ? a : (IncludeMapAlias) parent;
-                var list = alias.getTypeKeywordList();
-                if (list.size() >= 2) {
-                    var remoteKw = list.get(0);
-                    var includeElement = PsiTreeUtil.getParentOfType(alias, IncludeElement.class);
-                    if (includeElement != null) {
-                        var stringLit = includeElement.getStringLiteral();
-                        if (stringLit != null) {
-                            var targetFile = resolveIncludeFile(stringLit);
-                            if (targetFile != null && remoteKw != null) {
-                                var optBlock = includeElement.getIncludeOptionsBlock();
-                                var hasStrip = optBlock != null && optBlock.getText().contains(StvnVocabulary.FACET_KW_STRIP);
-                                var resolved = resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>(), trace, hasStrip);
-                                if (resolved == null && !hasStrip) {
-                                    resolved = resolveTypeInFile(targetFile, remoteKw.getText(), new HashSet<>(), trace, true);
-                                }
-                                if (resolved != null && visitedElements.add(resolved)) {
-                                    currentElement = resolved;
-                                    continue;
-                                }
                             }
                         }
                     }

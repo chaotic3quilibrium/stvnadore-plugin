@@ -576,8 +576,7 @@ public final class StvnDiagnosticAnnotatorMapping {
             if (offset >= 0 && offset < file.getTextLength()) {
                 var elem = file.findElementAt(offset);
                 boolean inDirectiveOptionsBlock =
-                    com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.UseOptionsBlock.class, false) != null
-                        || com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.IncludeOptionsBlock.class, false) != null;
+                    com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.UseOptionsBlock.class, false) != null;
                 if (message.contains("does not accept arguments")) {
                     if (!inDirectiveOptionsBlock) {
                         return false;

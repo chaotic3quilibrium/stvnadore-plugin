@@ -49,14 +49,20 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that renaming an IncludeMapAlias on its RHS alias keyword
+     * Verifies that renaming a cross-file UseMapAlias on its RHS alias keyword
      * propagates to all local references in the consuming file.
      */
     public void testIncludeMapAliasRenamePropagatesToReferences() {
         var moduleContent = """
             {
+              :meta {
+                #name "rename_module"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :RemoteRecord :Tuple( :Int32 :String )
+                :package :com/example/records {
+                  :RemoteRecord :Tuple( :Int32 :String )
+                }
               }
             }
             """;
@@ -64,9 +70,14 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
 
         var beforeCode = """
             {
+              :meta {
+                #name "include_alias_rename"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include [
-                  "rename_module.stvn_di" {
+                :include [ "rename_module.stvn_di" ]
+                :use [
+                  :com/example/records {
                     :RemoteRecord :LocalRecord<caret>
                   }
                 ]
@@ -75,14 +86,19 @@ public final class StvnRenameRefactoringTest extends BasePlatformTestCase {
               :body ( 100 "active" )
             }
             """;
-        myFixture.configureByText("include_alias_rename.stvn", beforeCode);
+        myFixture.configureByText("include_alias_rename.stvn_i", beforeCode);
         myFixture.renameElementAtCaret("RenamedLocalRecord");
 
         var expected = """
             {
+              :meta {
+                #name "include_alias_rename"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include [
-                  "rename_module.stvn_di" {
+                :include [ "rename_module.stvn_di" ]
+                :use [
+                  :com/example/records {
                     :RemoteRecord :RenamedLocalRecord
                   }
                 ]

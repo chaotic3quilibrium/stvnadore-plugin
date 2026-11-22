@@ -169,11 +169,9 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .afterInside(StvnTypes.LBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.PACKAGE_ENCLOSURE).lineBreakInCode()
 
-                // Use and Include options block spacing: { #strip }
+                // Use options block and directive list spacing
                 .afterInside(StvnTypes.LBRACE, StvnTypes.USE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.USE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
-                .afterInside(StvnTypes.LBRACE, StvnTypes.INCLUDE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_OPTIONS_BLOCK).spacing(1, 1, 0, true, 1)
                 .afterInside(StvnTypes.LBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACK, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
                 .betweenInside(StvnTypes.USE_ELEMENT, StvnTypes.USE_ELEMENT, StvnTypes.USE_STMT).spacing(1, 1, 0, true, 1)
@@ -212,15 +210,12 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .between(StvnTypes.DEFS_ELEMENT, StvnTypes.DEFS_ELEMENT).lineBreakInCode()
                 .between(StvnTypes.PACKAGE_ELEMENT, StvnTypes.PACKAGE_ELEMENT).lineBreakInCode()
 
-                // Use and Include alias block spacing: multiline line breaks, single-line 1 space
+                // Use alias block spacing: multiline line breaks, single-line 1 space
                 .afterInside(StvnTypes.LBRACE, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
                 .beforeInside(StvnTypes.RBRACE, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
                 .betweenInside(StvnTypes.USE_MAP_ALIAS, StvnTypes.USE_MAP_ALIAS, StvnTypes.USE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
-                .afterInside(StvnTypes.LBRACE, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
-                .beforeInside(StvnTypes.RBRACE, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
-                .betweenInside(StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_MAP_ALIAS, StvnTypes.INCLUDE_ALIAS_BLOCK).spacing(1, 1, 0, true, 1)
 
-                // :use and :include directive and alias pair horizontal spacing
+                // :use and :include directive horizontal spacing
                 .between(StvnTypes.KW_USE, StvnTypes.LBRACK).spaces(1)
                 .between(StvnTypes.USE_TARGET, StvnTypes.USE_OPTIONS_BLOCK).spaces(1)
                 .between(StvnTypes.USE_TARGET, StvnTypes.USE_ALIAS_BLOCK).spaces(1)
@@ -228,10 +223,6 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 .betweenInside(StvnTypes.TYPE_KEYWORD, StvnTypes.TYPE_KEYWORD, StvnTypes.USE_MAP_ALIAS).spaces(1)
                 .betweenInside(StvnTypes.VALUE_KEYWORD, StvnTypes.VALUE_KEYWORD, StvnTypes.USE_MAP_ALIAS).spaces(1)
                 .between(StvnTypes.KW_INCLUDE, StvnTypes.LBRACK).spaces(1)
-                .between(StvnTypes.STRING_LITERAL, StvnTypes.INCLUDE_OPTIONS_BLOCK).spaces(1)
-                .between(StvnTypes.STRING_LITERAL, StvnTypes.INCLUDE_ALIAS_BLOCK).spaces(1)
-                .between(StvnTypes.INCLUDE_OPTIONS_BLOCK, StvnTypes.INCLUDE_ALIAS_BLOCK).spaces(1)
-                .betweenInside(StvnTypes.TYPE_KEYWORD, StvnTypes.TYPE_KEYWORD, StvnTypes.INCLUDE_MAP_ALIAS).spaces(1)
 
                 // Comments inside MAP_LITERAL
                 .betweenInside(StvnTypes.RBRACK, StvnTypes.COMMENT, StvnTypes.MAP_LITERAL).spacing(1, Integer.MAX_VALUE, 0, true, 1)

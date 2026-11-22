@@ -595,13 +595,18 @@ public final class StvnDualGrammarDifferentialTest extends BasePlatformTestCase 
     }
 
     /**
-     * V36: Include Alias Mapping
-     * Assert ':include [\"m.stvn_di\" { :A :B }]' parses cleanly with 0 syntax errors.
+     * V36: Pure Include & Scoped Use Alias Mapping
+     * Assert pure ':include [\"m.stvn_di\"]' paired with ':use [:pkg { :A :B }]' parses cleanly with 0 syntax errors,
+     * whereas legacy ':include [\"m.stvn_di\" { :A :B }]' emits a PsiErrorElement on '{'.
      */
     public void testV36_IncludeAliasMapping() {
-        var input = "{:defs { :include [\"m.stvn_di\" { :A :B }] } :type :B :body 1}";
-        var file = myFixture.configureByText("v36.stvn", input);
-        assertNoSyntaxErrors(file);
+        var validInput = "{:defs { :include [\"m.stvn_di\"] :use [:pkg { :A :B }] } :type :B :body 1}";
+        var validFile = myFixture.configureByText("v36.stvn_i", validInput);
+        assertNoSyntaxErrors(validFile);
+
+        var prohibitedInput = "{:defs { :include [\"m.stvn_di\" { :A :B }] } :type :B :body 1}";
+        var prohibitedFile = myFixture.configureByText("v36_prohibited.stvn_i", prohibitedInput);
+        assertTrue(PsiTreeUtil.hasErrorElements(prohibitedFile));
     }
 
     /**

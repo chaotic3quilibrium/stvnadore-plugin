@@ -113,9 +113,11 @@ public final class StvnCtrlClickNavigationTest extends BasePlatformTestCase {
         var content = """
             {
               :defs {
-                :include [ "shared_consts.stvn_di" { #strip } ]
+                :include [ "shared_consts.stvn_di" ]
+                :use [ :org/shared/limits { #strip } ]
                 :use [ :org/stvnadore/prelude { #strip } ]
                 :package :com/acme/network {
+                  :use [ :org/shared/limits { #strip } ]
                   #MIN_PORT :Int 1024
                   #DEFAULT_PORT { #minIncl #MIN_PORT #maxExcl #SHARED_MAX } :Int 8080
                 }

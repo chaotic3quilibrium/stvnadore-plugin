@@ -30,7 +30,6 @@ import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.IncludeElement;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
@@ -780,28 +779,6 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
 
         // Trace :include imports
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-        for (var incl : includes) {
-            var aliasBlock = incl.getIncludeAliasBlock();
-            if (aliasBlock != null) {
-                var aliases = PsiTreeUtil.findChildrenOfType(aliasBlock, IncludeMapAlias.class);
-                for (var alias : aliases) {
-                    var list = alias.getTypeKeywordList();
-                    if (list.size() >= 2) {
-                        var remoteKw = list.get(0);
-                        var localKw = list.get(1);
-                        if (localKw != null && localKw.getText().equals(targetName) && remoteKw != null) {
-                            var stringLit = incl.getStringLiteral();
-                            if (stringLit != null) {
-                                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
-                                if (targetFile != null) {
-                                    return traceTypeHierarchy(targetFile, remoteKw.getText(), visited);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // Trace local definitions
         var defs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);

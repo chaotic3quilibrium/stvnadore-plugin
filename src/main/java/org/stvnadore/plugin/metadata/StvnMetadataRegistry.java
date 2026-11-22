@@ -155,7 +155,7 @@ public final class StvnMetadataRegistry {
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_STRIP, 5, false,
             "Terminal segment slicing; strips package prefixes from imported identifiers upon ingestion",
-            Set.of(StvnVocabulary.KEYWORD_USE, StvnVocabulary.KEYWORD_INCLUDE), StvnVocabulary.FACET_KW_STRIP
+            Set.of(StvnVocabulary.KEYWORD_USE), StvnVocabulary.FACET_KW_STRIP
         ));
     }
 

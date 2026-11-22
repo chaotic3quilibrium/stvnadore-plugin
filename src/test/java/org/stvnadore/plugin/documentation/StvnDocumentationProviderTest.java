@@ -206,9 +206,15 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
             "chess_turn.stvn_di",
             """
             {
+              :meta {
+                #name "chess_turn"
+                #kind #DEFS_INCLUDE
+              }
               :defs {
-                :PieceRole :Enum [ #PAWN #KNIGHT #BISHOP #ROOK #QUEEN #KING ]
-                :PromotionRole { #filterExcl [ #PAWN #KING ] } :PieceRole
+                :package :com/example/chess {
+                  :PieceRole :Enum [ #PAWN #KNIGHT #BISHOP #ROOK #QUEEN #KING ]
+                  :PromotionRole { #filterExcl [ #PAWN #KING ] } :PieceRole
+                }
               }
             }
             """
@@ -216,22 +222,27 @@ public final class StvnDocumentationProviderTest extends BasePlatformTestCase {
 
         var text = """
             {
+              :meta {
+                #name "play_turn"
+                #kind #BODY_INCLUDE
+              }
               :defs {
-                :include [ "chess_turn.stvn_di" { :PromotionRole :LocalPromo } ]
+                :include [ "chess_turn.stvn_di" ]
+                :use [ :com/example/chess { :PromotionRole :LocalPromo } ]
               }
               :type :LocalPromo
               :body #KNIGHT
             }
             """;
-        myFixture.configureByText("play_turn.stvn", text);
+        myFixture.configureByText("play_turn.stvn_i", text);
 
         var offset = text.indexOf(":LocalPromo");
         var doc = getDocAtOffset(text, offset);
 
-        assertTrue("Include alias hover must resolve variant count", doc.contains("<b>Variant Count:</b> 4"));
-        assertTrue("Include alias hover must resolve unrolled structure",
+        assertTrue("Use alias hover must resolve variant count", doc.contains("<b>Variant Count:</b> 4"));
+        assertTrue("Use alias hover must resolve unrolled structure",
             doc.contains("<b>Underlying Structure:</b> :Enum [ #KNIGHT #BISHOP #ROOK #QUEEN ]"));
-        assertTrue("Include alias hover must resolve derivation lineage",
+        assertTrue("Use alias hover must resolve derivation lineage",
             doc.contains("<b>Derivation:</b> Parent: :PieceRole via #filterExcl [ #PAWN #KING ]"));
     }
 

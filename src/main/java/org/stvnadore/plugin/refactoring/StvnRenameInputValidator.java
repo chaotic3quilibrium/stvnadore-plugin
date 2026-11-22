@@ -13,7 +13,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ConstantDefinition;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.UseMapAlias;
@@ -61,7 +60,6 @@ public final class StvnRenameInputValidator implements RenameInputValidatorEx {
                         || element instanceof TypeKeyword
                         || element instanceof ConstantDefinition
                         || element instanceof ValueKeyword
-                        || element instanceof IncludeMapAlias
                         || element instanceof UseMapAlias;
                 }
             });

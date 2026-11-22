@@ -23,7 +23,6 @@ import org.stvnadore.plugin.util.StvnTypePresentationUtil;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.EnumDef;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.UseMapAlias;
 import org.stvnadore.psi.Value;
@@ -319,12 +318,12 @@ public final class StvnGauntletV8Batch4CrossFilePsiAndReorderDxTest extends Base
                 #kind #DEFS_INCLUDE
               }
               :defs {
-                :include [ "gauntlet_v8_stage10a_diamond_root_schema.core_test.stvn_d" { :DishAzimuth :LocalAzimuth } ]
+                :include [ "gauntlet_v8_stage10a_diamond_root_schema.core_test.stvn_d" ]
                 :include [ "gauntlet_v8_stage10b_diamond_mid_module.core_test.stvn_di" ]
-                :use [ :satcom/uplink { #strip } { :LinkStatus :UplinkStatus #ACTIVE_FIRMWARE #ACTIVE_RELEASE } ]
+                :use [ :satcom/uplink { #strip } { :LinkStatus :UplinkStatus :StationCode :LocalStation #ACTIVE_FIRMWARE #ACTIVE_RELEASE } ]
                 :use [ :satcom/relay { #strip } { :LinkStatus :RelayStatus } ]
                 :TrapEvictedDualAliasRaw :LinkStatus
-                :ValidIncludeAliased :LocalAzimuth
+                :ValidIncludeAliased :LocalStation
                 #TRAP_EVICTED_CONST :String #ACTIVE_FIRMWARE
               }
             }
@@ -347,13 +346,13 @@ public final class StvnGauntletV8Batch4CrossFilePsiAndReorderDxTest extends Base
         assertNotNull(evictedConstRef);
         assertNull("Renamed raw #ACTIVE_FIRMWARE must resolve to null", evictedConstRef.resolve());
 
-        // 2-hop IncludeMapAlias navigation: Hop 1 -> IncludeMapAlias RHS; Hop 2 -> 10A :DishAzimuth
+        // 2-hop UseMapAlias navigation: Hop 1 -> UseMapAlias RHS; Hop 2 -> 10A :StationCode
         var handler = new StvnGotoDeclarationHandler();
-        int usageOffset = text.indexOf(":LocalAzimuth", text.indexOf(":ValidIncludeAliased"));
+        int usageOffset = text.indexOf(":LocalStation", text.indexOf(":ValidIncludeAliased"));
         var hop1 = handler.getGotoDeclarationTargets(trapFile.findElementAt(usageOffset), usageOffset, myFixture.getEditor());
         assertNotNull(hop1);
         assertEquals(1, hop1.length);
-        assertTrue(hop1[0].getParent() instanceof IncludeMapAlias);
+        assertTrue(hop1[0].getParent() instanceof UseMapAlias);
 
         int rhsOffset = hop1[0].getTextRange().getStartOffset();
         var hop2 = handler.getGotoDeclarationTargets(trapFile.findElementAt(rhsOffset), rhsOffset, myFixture.getEditor());
@@ -361,7 +360,7 @@ public final class StvnGauntletV8Batch4CrossFilePsiAndReorderDxTest extends Base
         assertEquals(1, hop2.length);
         assertTrue(hop2[0] instanceof TypeDefinition td
             && td.getTypeKeyword() != null
-            && ":DishAzimuth".equals(td.getTypeKeyword().getText())
+            && ":StationCode".equals(td.getTypeKeyword().getText())
             && "gauntlet_v8_stage10a_diamond_root_schema.core_test.stvn_d".equals(td.getContainingFile().getName()));
     }
 

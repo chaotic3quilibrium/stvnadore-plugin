@@ -81,7 +81,7 @@ java {
 }
 
 // 4. Custom Copy Task Architecture for Classpath-Embedded Fixtures
-val extractFixtures by tasks.registering(Copy::class) {
+val extractFixtures by tasks.registering(Sync::class) {
     description = "Extracts test fixtures from the stvnadore-core SDK zip classifier"
     group = "verification"
     dependsOn(stvnFixtures)
@@ -547,6 +547,12 @@ val mirrorSharedFixtures by tasks.registering {
 
 tasks.processTestResources {
     dependsOn(mirrorSharedFixtures)
+    val testResourcesDir = destinationDir
+    doFirst {
+        if (testResourcesDir.exists()) {
+            testResourcesDir.deleteRecursively()
+        }
+    }
 }
 
 val unitTest = tasks.register<Test>("unitTest") {
@@ -644,6 +650,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnGauntletV9Batch3PluginRemediationTest*.class")
     exclude("**/StvnPluginDiagnosticSuffixTotalityAndConstSpineHoverTest*.class")
     exclude("**/StvnHoverTraitViolationGatingTest*.class")
+    exclude("**/StvnPluginPureIncludeAndStage12RemediationTest*.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()
@@ -678,6 +685,12 @@ tasks.generateParser {
     targetRootOutputDir.set(layout.projectDirectory.dir("src/main/gen"))
     pathToParser.set("org/stvnadore/parser/StvnParser.java")
     pathToPsiRoot.set("org/stvnadore/psi")
+    val psiOutputDir = layout.projectDirectory.dir("src/main/gen/org/stvnadore/psi").asFile
+    doFirst {
+        if (psiOutputDir.exists()) {
+            psiOutputDir.deleteRecursively()
+        }
+    }
     purgeOldFiles.set(false)
 }
 

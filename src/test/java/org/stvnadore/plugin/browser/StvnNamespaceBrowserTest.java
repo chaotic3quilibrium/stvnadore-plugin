@@ -27,8 +27,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             #kind #DEFS_INCLUDE
           }
           :defs {
-            :AccountStatus :Enum [ #ACTIVE #SUSPENDED #CLOSED ]
-            :BaseEntity    :Tuple( :Int :String )
+            :package :com/example/core {
+              :AccountStatus :Enum [ #ACTIVE #SUSPENDED #CLOSED ]
+              :BaseEntity    :Tuple( :Int :String )
+            }
             :package :com/example/finance {
               :Transaction :Tuple( :Int :Float :String )
             }
@@ -43,8 +45,9 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             #kind #BODY_INCLUDE
           }
           :defs {
-            :include [
-              "browser_modular_schema.stvn_di" {
+            :include [ "browser_modular_schema.stvn_di" ]
+            :use [
+              :com/example/core {
                 :BaseEntity    :LocalEntity
                 :AccountStatus :StatusAlias
               }
@@ -140,11 +143,13 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             {
               :meta {
                 #name "remote_node_schema"
-                #kind #DEFS_INCLUDE
+                #kind #DEFS
               }
               :defs {
-                :RemoteNode :Tuple( :Int :String )
-                :OtherNode  :String
+                :package :com/example/nodes {
+                  :RemoteNode :Tuple( :Int :String )
+                  :OtherNode  :String
+                }
               }
             }
             """;
@@ -155,8 +160,9 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 #kind #DEFS_INCLUDE
               }
               :defs {
-                :include [
-                  "remote_node_schema.stvn_d" {
+                :include [ "remote_node_schema.stvn_d" ]
+                :use [
+                  :com/example/nodes { #strip } {
                     :RemoteNode :AliasedNode
                   }
                 ]
@@ -164,7 +170,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             }
             """;
         myFixture.addFileToProject("remote_node_schema.stvn_d", remoteSchema);
-        var file = myFixture.configureByText("importing_doc.stvn_d", importingDoc);
+        var file = myFixture.configureByText("importing_doc.stvn_di", importingDoc);
 
         var entries = StvnNamespaceSymbolCollector.collectSymbols(file, StvnNamespaceScope.DEFS);
         assertFalse(entries.isEmpty());
@@ -172,7 +178,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var aliasedNode = findEntryByName(entries, ":AliasedNode");
         assertNotNull("Aliased identifier :AliasedNode must be present in defs scope", aliasedNode);
         assertEquals(1, aliasedNode.useDepth());
-        assertEquals("remote_node_schema.stvn_d", aliasedNode.source());
+        assertEquals(":com/example/nodes", aliasedNode.source());
 
         var rawRemoteNode = findEntryByName(entries, ":RemoteNode");
         assertNull("Raw evicted identifier :RemoteNode must NOT appear in defs scope (SPEC § 4.2 Invariant 2)", rawRemoteNode);
@@ -983,7 +989,8 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
                 #kind #BODY_INCLUDE
               }
               :defs {
-                :include [ "stvn_ir_substrate.stvn_ir.stvn_d" { #strip } ]
+                :include [ "stvn_ir_substrate.stvn_ir.stvn_d" ]
+                :use [ :org/stvnadore/ir { #strip } ]
               }
               :type :IrSnapshotDocument
               :body ( {} #1 #TRUE )

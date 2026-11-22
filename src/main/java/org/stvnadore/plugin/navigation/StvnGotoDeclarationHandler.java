@@ -19,7 +19,6 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.EnumDef;
-import org.stvnadore.psi.IncludeMapAlias;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.MapLiteral;
 import org.stvnadore.psi.MetaDomainFacet;
@@ -171,27 +170,10 @@ public final class StvnGotoDeclarationHandler implements GotoDeclarationHandler 
                 }
                 return null;
             }
-            if (typeKw.getParent() instanceof IncludeMapAlias includeAlias) {
-                var list = includeAlias.getTypeKeywordList();
-                if (!list.isEmpty() && (list.get(0) == typeKw || (list.size() >= 2 && list.get(1) == typeKw))) {
-                    var upstreamTypeDef = StvnPsiUtils.resolveTargetTypeDefinition(includeAlias);
-                    if (upstreamTypeDef != null) {
-                        return new PsiElement[]{ upstreamTypeDef };
-                    }
-                    var remoteKw = list.get(0);
-                    var ref = remoteKw.getReference();
-                    var resolved = ref != null ? ref.resolve() : new StvnTypeReference(remoteKw).resolve();
-                    if (resolved != null) {
-                        var target = resolved.getParent() instanceof TypeDefinition tDef ? tDef : resolved;
-                        return new PsiElement[]{ target };
-                    }
-                }
-                return null;
-            }
             var ref = typeKw.getReference();
             var resolved = ref != null ? ref.resolve() : new StvnTypeReference(typeKw).resolve();
             if (resolved != null && resolved != typeKw) {
-                if (resolved.getParent() instanceof UseMapAlias || resolved.getParent() instanceof IncludeMapAlias) {
+                if (resolved.getParent() instanceof UseMapAlias) {
                     return new PsiElement[]{ resolved };
                 }
                 var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);

@@ -4,6 +4,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DoNotAskOption;
 import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -15,6 +16,7 @@ import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.MetaKindValue;
+import org.stvnadore.psi.MetadataValue;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
@@ -46,7 +48,8 @@ public final class StvnCanonicalizationGuard {
      * by compiler canonicalization.
      *
      * @param file the source STVN PSI file
-     * @return {@code true} if comments, include directives, package enclaves, use statements, payload constants, or unreferenced definitions are present
+     * @return {@code true} if comments, include directives, package enclaves, use statements, payload constants,
+     *         or unreferenced definitions are present
      */
     public static boolean hasDestructiveAuthoringConstructs(PsiFile file) {
         if (PsiTreeUtil.findChildOfType(file, PsiComment.class) != null) {
@@ -69,7 +72,10 @@ public final class StvnCanonicalizationGuard {
     }
 
     /**
-     * Checks if the active STVN file contains unreferenced type or constant definitions in {@code :defs}.
+     * Checks if the active STVN file contains unreferenced type or constant definitions in {@code :defs},
+     * accounting for transitive references across {@code :type}, reachable {@code :defs} schemas,
+     * {@link MetadataValue} constraint facets ({@code #minIncl #CONST}, {@code #size #CONST}),
+     * constant RHS values, and {@code :body} payloads.
      *
      * @param file the source STVN PSI file
      * @return {@code true} if any definition in {@code :defs} is unreferenced in the root contract or payload
@@ -100,11 +106,6 @@ public final class StvnCanonicalizationGuard {
             return true;
         }
 
-        var reachableTypes = new HashSet<String>();
-        var queue = new ArrayDeque<String>();
-
-        collectTypeKeywordNames(typeEntry.getSchemaType(), queue, reachableTypes);
-
         var defMap = new HashMap<String, TypeDefinition>();
         for (var td : localTypeDefs) {
             var kw = td.getTypeKeyword();
@@ -113,11 +114,50 @@ public final class StvnCanonicalizationGuard {
             }
         }
 
-        while (!queue.isEmpty()) {
-            var currentName = queue.poll();
-            var targetDef = defMap.get(currentName);
-            if (targetDef != null && targetDef.getSchemaType() != null) {
-                collectTypeKeywordNames(targetDef.getSchemaType(), queue, reachableTypes);
+        var constMap = new HashMap<String, ConstantDefinition>();
+        for (var cd : localConstDefs) {
+            var kw = cd.getValueKeyword();
+            if (kw != null) {
+                constMap.put(kw.getText(), cd);
+            }
+        }
+
+        var reachableTypes = new HashSet<String>();
+        var reachableConsts = new HashSet<String>();
+        var typeQueue = new ArrayDeque<String>();
+        var constQueue = new ArrayDeque<String>();
+
+        collectTypeKeywordNames(typeEntry.getSchemaType(), typeQueue, reachableTypes);
+        collectMetadataValueConstants(typeEntry, constQueue, reachableConsts);
+
+        var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
+        if (bodyEntry != null && bodyEntry.getValue() != null) {
+            collectAllValueKeywords(bodyEntry.getValue(), constQueue, reachableConsts);
+        }
+
+        while (!typeQueue.isEmpty() || !constQueue.isEmpty()) {
+            while (!typeQueue.isEmpty()) {
+                var currentType = typeQueue.poll();
+                var targetDef = defMap.get(currentType);
+                if (targetDef != null) {
+                    if (targetDef.getSchemaType() != null) {
+                        collectTypeKeywordNames(targetDef.getSchemaType(), typeQueue, reachableTypes);
+                    }
+                    collectMetadataValueConstants(targetDef, constQueue, reachableConsts);
+                }
+            }
+            while (!constQueue.isEmpty()) {
+                var currentConst = constQueue.poll();
+                var targetConst = constMap.get(currentConst);
+                if (targetConst != null) {
+                    if (targetConst.getSchemaType() != null) {
+                        collectTypeKeywordNames(targetConst.getSchemaType(), typeQueue, reachableTypes);
+                    }
+                    collectMetadataValueConstants(targetConst, constQueue, reachableConsts);
+                    if (targetConst.getValue() != null) {
+                        collectAllValueKeywords(targetConst.getValue(), constQueue, reachableConsts);
+                    }
+                }
             }
         }
 
@@ -128,21 +168,10 @@ public final class StvnCanonicalizationGuard {
             }
         }
 
-        if (!localConstDefs.isEmpty()) {
-            var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
-            if (bodyEntry == null || bodyEntry.getValue() == null) {
+        for (var cd : localConstDefs) {
+            var kw = cd.getValueKeyword();
+            if (kw != null && !reachableConsts.contains(kw.getText())) {
                 return true;
-            }
-            var bodyKeywords = new HashSet<String>();
-            var values = PsiTreeUtil.findChildrenOfType(bodyEntry, ValueKeyword.class);
-            for (var vk : values) {
-                bodyKeywords.add(vk.getText());
-            }
-            for (var cd : localConstDefs) {
-                var kw = cd.getValueKeyword();
-                if (kw != null && !bodyKeywords.contains(kw.getText())) {
-                    return true;
-                }
             }
         }
 
@@ -180,12 +209,40 @@ public final class StvnCanonicalizationGuard {
         }
     }
 
+    private static void collectMetadataValueConstants(
+            PsiElement scopeRoot,
+            Queue<String> constQueue,
+            Set<String> reachableConsts
+    ) {
+        for (var metaValue : PsiTreeUtil.findChildrenOfType(scopeRoot, MetadataValue.class)) {
+            var vkw = metaValue.getValueKeyword();
+            if (vkw != null && reachableConsts.add(vkw.getText())) {
+                constQueue.add(vkw.getText());
+            }
+        }
+    }
+
+    private static void collectAllValueKeywords(
+            PsiElement valueRoot,
+            Queue<String> constQueue,
+            Set<String> reachableConsts
+    ) {
+        if (valueRoot instanceof ValueKeyword vkw && reachableConsts.add(vkw.getText())) {
+            constQueue.add(vkw.getText());
+        }
+        for (var vkw : PsiTreeUtil.findChildrenOfType(valueRoot, ValueKeyword.class)) {
+            if (reachableConsts.add(vkw.getText())) {
+                constQueue.add(vkw.getText());
+            }
+        }
+    }
+
     /**
      * Evaluates the active document against destructive canonicalization loss.
      * Displays a confirmation dialog if destructive constructs are detected and warning is not suppressed.
      *
      * @param project the active IntelliJ project
-     * @param file the source STVN PSI file
+     * @param file    the source STVN PSI file
      * @return {@code true} if execution can proceed, {@code false} if aborted by user
      */
     public static boolean confirmCanonicalization(Project project, PsiFile file) {

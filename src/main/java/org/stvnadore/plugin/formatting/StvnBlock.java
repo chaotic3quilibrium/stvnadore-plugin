@@ -205,16 +205,16 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
-        // Use and Include options block boundaries ({ #strip })
-        if (parentType == StvnTypes.USE_OPTIONS_BLOCK || parentType == StvnTypes.INCLUDE_OPTIONS_BLOCK) {
+        // Use options block boundaries ({ #strip })
+        if (parentType == StvnTypes.USE_OPTIONS_BLOCK) {
             if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
                 return Indent.getNoneIndent();
             }
             return Indent.getNormalIndent();
         }
 
-        // Use and Include alias block boundaries: context-aware indentation for same-line vs new-line '{'
-        if (parentType == StvnTypes.USE_ALIAS_BLOCK || parentType == StvnTypes.INCLUDE_ALIAS_BLOCK) {
+        // Use alias block boundaries: context-aware indentation for same-line vs new-line '{'
+        if (parentType == StvnTypes.USE_ALIAS_BLOCK) {
             boolean anchoredToDirective = isAliasBlockAnchoredToDirectiveHeader(node);
             if (childType == StvnTypes.LBRACE) {
                 return Indent.getNoneIndent();
@@ -225,11 +225,11 @@ public final class StvnBlock implements ASTBlock {
             return anchoredToDirective ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
-        if (parentType == StvnTypes.USE_MAP_ALIAS || parentType == StvnTypes.INCLUDE_MAP_ALIAS) {
+        if (parentType == StvnTypes.USE_MAP_ALIAS) {
             return Indent.getNoneIndent();
         }
 
-        if (childType == StvnTypes.USE_MAP_ALIAS || childType == StvnTypes.INCLUDE_MAP_ALIAS) {
+        if (childType == StvnTypes.USE_MAP_ALIAS) {
             return Indent.getNormalIndent();
         }
 
@@ -603,9 +603,7 @@ public final class StvnBlock implements ASTBlock {
             prev = prev.getTreePrev();
         }
         ASTNode parent = aliasBlockNode.getTreeParent();
-        if (parent != null
-                && (parent.getElementType() == StvnTypes.INCLUDE_ELEMENT
-                    || parent.getElementType() == StvnTypes.USE_ELEMENT)) {
+        if (parent != null && parent.getElementType() == StvnTypes.USE_ELEMENT) {
             ASTNode elemPrev = parent.getTreePrev();
             while (elemPrev != null && elemPrev.getElementType() != StvnTypes.LBRACK) {
                 if (elemPrev.getText().indexOf('\n') >= 0) {
@@ -620,7 +618,7 @@ public final class StvnBlock implements ASTBlock {
     @Override
     public @NotNull ChildAttributes getChildAttributes(int newChildIndex) {
         IElementType type = node.getElementType();
-        if (type == StvnTypes.USE_ALIAS_BLOCK || type == StvnTypes.INCLUDE_ALIAS_BLOCK) {
+        if (type == StvnTypes.USE_ALIAS_BLOCK) {
             Indent childIndent = isAliasBlockAnchoredToDirectiveHeader(node)
                 ? Indent.getSpaceIndent(4)
                 : Indent.getNormalIndent();
@@ -664,7 +662,6 @@ public final class StvnBlock implements ASTBlock {
                 || (node.getElementType() == StvnTypes.MAP_LITERAL && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.METADATA_MAP && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.USE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
-                || (node.getElementType() == StvnTypes.INCLUDE_ALIAS_BLOCK && lastChild.getElementType() != StvnTypes.RBRACE)
                 || (node.getElementType() == StvnTypes.USE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.INCLUDE_STMT && lastChild.getElementType() != StvnTypes.RBRACK)
                 || (node.getElementType() == StvnTypes.ENUM_DEF && lastChild.getElementType() != StvnTypes.RBRACK)

@@ -212,7 +212,7 @@ public final class StvnMetadataFacetAllowlist {
         }
         if (StvnVocabulary.FACET_KW_STRIP.equals(facetKeyword)) {
             var parent = metadataMap.getParent();
-            return parent instanceof UseOptionsBlock || parent instanceof IncludeOptionsBlock;
+            return parent instanceof UseOptionsBlock;
         }
 
         var schemaType = PsiTreeUtil.getParentOfType(metadataMap, SchemaType.class, false);

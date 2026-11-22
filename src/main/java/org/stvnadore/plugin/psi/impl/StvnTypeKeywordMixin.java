@@ -16,10 +16,8 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.icons.StvnIcons;
 import org.stvnadore.plugin.navigation.StvnNavigationUtil;
-import org.stvnadore.psi.TypeDefinition;
-import org.stvnadore.psi.IncludeMapAlias;
-import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.plugin.reference.StvnTypeReference;
+import org.stvnadore.psi.TypeKeyword;
 
 @NullMarked
 public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implements TypeKeyword, PsiNameIdentifierOwner, Navigatable {
@@ -113,12 +111,6 @@ public abstract class StvnTypeKeywordMixin extends ASTWrapperPsiElement implemen
         }
         if (com.intellij.psi.util.PsiTreeUtil.getParentOfType(this, org.stvnadore.psi.PackagePath.class, org.stvnadore.psi.UseTargetIllegal.class) != null) {
             return PsiReference.EMPTY_ARRAY;
-        }
-        if (parent instanceof IncludeMapAlias alias) {
-            var list = alias.getTypeKeywordList();
-            if (list.size() >= 2 && list.get(1) == this) {
-                return PsiReference.EMPTY_ARRAY;
-            }
         }
         if (parent instanceof org.stvnadore.psi.UseMapAlias alias) {
             var list = alias.getTypeKeywordList();

@@ -7,7 +7,7 @@
     <li>Empty root <code>:meta {}</code> sections are prohibited (<code>E039</code>). Declare document identity facets (<code>#name</code>, <code>#domain</code>, <code>#kind</code>), or omit <code>:meta</code> when optional for the filename.</li>
     <li>Empty root <code>:defs {}</code> sections are prohibited (<code>E002</code>). Declare at least one type or constant definition, or omit <code>:defs</code> in payload documents.</li>
     <li>Empty metadata blocks <code>{}</code> on root <code>:type</code> sections, type definitions, or constant definitions are invalid (<code>E003</code>). Specify valid constraint facets or remove <code>{}</code>.</li>
-    <li>Empty directive blocks <code>{}</code> in <code>:use</code> or <code>:include</code> statements are invalid. Specify <code>{#strip}</code>, alias mappings, or delete <code>{}</code>.</li>
+    <li>Empty directive blocks <code>{}</code> in <code>:use</code> statements are invalid. Specify <code>{#strip}</code>, alias mappings, or delete <code>{}</code>.</li>
 </ul>
 
 <p><b>Incomplete &amp; Invalid Boolean Trait Facets (<code>E008</code> / <code>ERR_INCOMPLETE_TRAIT_FACET</code> &amp; <code>ERR_INVALID_METADATA_FACET</code>):</b></p>
@@ -45,7 +45,7 @@
     <li><b>Enum Types (<code>:Enum</code>):</b> <code>#equatable</code>, <code>#comparable</code>, <code>#filterIncl</code>, <code>#filterExcl</code>.</li>
     <li><b>Associative Map (<code>:Map</code>):</b> <code>#invertible</code>.</li>
     <li><b>Constants:</b> Metadata facets are strictly prohibited on constant definitions.</li>
-    <li><b>Directives:</b> <code>#strip</code> is valid strictly in <code>:use</code> and <code>:include</code> statements and prohibited on type declarations.</li>
+    <li><b>Directives:</b> <code>#strip</code> is valid strictly in <code>:use</code> statements and prohibited on type declarations.</li>
 </ul>
 
 <p>Provides automated quick-fixes to complete bare trait facets, delete empty blocks, remove invalid facets, remove duplicate facets, or remove conflicting facets.</p>
