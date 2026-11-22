@@ -4,6 +4,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.xmlb.annotations.Transient;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -44,7 +45,10 @@ public final class StvnProjectSettings implements PersistentStateComponent<StvnP
         public boolean enableFormDiscrepancyInspection = true;
         /** If true, favors implied sum types during completion. */
         public boolean preferImpliedSumTypes = true;
-        /** If true, suppresses the confirmation dialog when canonicalizing projections destroy authoring constructs. */
+        /** If true, displays a confirmation dialog before in-place canonicalization removes authoring constructs. */
+        public boolean confirmDestructiveCanonicalization = true;
+        /** Transient in-memory test compatibility flag; superseded in XML persistence by {@link #confirmDestructiveCanonicalization}. */
+        @Transient
         public boolean suppressCanonicalizationWarning = false;
     }
 

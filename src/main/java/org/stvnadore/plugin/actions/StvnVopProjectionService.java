@@ -56,6 +56,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -470,8 +471,9 @@ public final class StvnVopProjectionService {
 
         PsiDocumentManager docManager = PsiDocumentManager.getInstance(project);
         docManager.commitDocument(document);
+        PsiFile committedPsiFile = Objects.requireNonNullElse(docManager.getPsiFile(document), psiFile);
 
-        if (!StvnCanonicalizationGuard.confirmCanonicalization(project, psiFile)) {
+        if (!StvnCanonicalizationGuard.confirmCanonicalization(project, committedPsiFile, profile.label())) {
             return;
         }
 

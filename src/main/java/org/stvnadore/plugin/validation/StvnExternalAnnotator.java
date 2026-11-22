@@ -58,6 +58,7 @@ import org.stvnadore.plugin.validation.quickfix.StvnRenameDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRenameReservedPackageQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedTypeQuickFixProvider;
+import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedUsePackageQuickFixProvider;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
@@ -662,6 +663,27 @@ public final class StvnExternalAnnotator
                             );
                         }
                     }
+                }
+
+                // Unresolved :use package quick-fixes (modular E030 + Pass-A hermetic E035 parity)
+                boolean isModularUnresolvedUsePkg = rawMessage.startsWith(
+                    "Unresolved package in " + StvnVocabulary.KEYWORD_USE + " directive:"
+                );
+                boolean isHermeticUnresolvedUsePkg =
+                    DiagnosticBag.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(
+                            diagnosticId,
+                            StvnDiagnosticCodes.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT
+                        )
+                        || "E035".equals(canonicalCode)
+                        || rawMessage.startsWith("Scoped " + StvnVocabulary.KEYWORD_USE + " in hermetic document");
+                if (isModularUnresolvedUsePkg || isHermeticUnresolvedUsePkg) {
+                    annotationBuilder = StvnUnresolvedUsePackageQuickFixProvider.registerAnnotatorFixes(
+                        annotationBuilder,
+                        file,
+                        range,
+                        isHermeticUnresolvedUsePkg
+                    );
                 }
 
                 // Undefined type or constant quick-fixes

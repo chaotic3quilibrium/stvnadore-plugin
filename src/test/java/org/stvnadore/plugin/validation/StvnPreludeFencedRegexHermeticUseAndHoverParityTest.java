@@ -351,7 +351,7 @@ public final class StvnPreludeFencedRegexHermeticUseAndHoverParityTest extends B
         myFixture.configureByText("quickfix_remove_use.stvn", fixSource);
         myFixture.getEditor().getCaretModel().moveToOffset(fixSource.indexOf(":external/unloaded/billing") + 2);
         myFixture.doHighlighting();
-        IntentionAction removeFix = myFixture.findSingleIntention("Remove :use directive for ':external/unloaded/billing'");
+        IntentionAction removeFix = myFixture.findSingleIntention("Remove unresolved package ':external/unloaded/billing' from :use");
         WriteCommandAction.runWriteCommandAction(getProject(), () ->
             removeFix.invoke(getProject(), myFixture.getEditor(), myFixture.getFile())
         );

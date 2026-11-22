@@ -37,6 +37,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JCheckBox enableRedundantTagInspectionCheckBox;
     private @Nullable JCheckBox enableFormDiscrepancyInspectionCheckBox;
     private @Nullable JCheckBox preferImpliedSumTypesCheckBox;
+    private @Nullable JCheckBox confirmDestructiveCanonicalizationCheckBox;
     private @Nullable JComboBox<StvnSettings.BlockStringEnterStyle> blockStringEnterStyleComboBox;
     private @Nullable JComboBox<AliasExpansionMode> aliasExpansionModeComboBox;
     private @Nullable JComboBox<StvnSettings.TimeEpochHourFormat> timeEpochHourFormatComboBox;
@@ -78,6 +79,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = new JCheckBox("Enable redundant tag warnings (e.g., explicit #Some when implied)");
         var cb5 = new JCheckBox("Enable tag form discrepancy warnings (e.g., #S vs #Some)");
         var cb6 = new JCheckBox("Enforce implied/implicit algebraic sum types");
+        var cb7 = new JCheckBox("Prompt before in-place canonicalization removes authoring constructs");
 
         cb1.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         cb2.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -85,6 +87,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb4.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         cb5.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         cb6.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        cb7.setAlignmentX(JComponent.LEFT_ALIGNMENT);
 
         panel.add(cb1);
         panel.add(cb2);
@@ -92,6 +95,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(cb4);
         panel.add(cb5);
         panel.add(cb6);
+        panel.add(cb7);
 
         panel.add(javax.swing.Box.createVerticalStrut(10));
         var aliasModeLabel = new JLabel("Nominal type alias expansion display mode:");
@@ -212,6 +216,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableRedundantTagInspectionCheckBox = cb4;
         enableFormDiscrepancyInspectionCheckBox = cb5;
         preferImpliedSumTypesCheckBox = cb6;
+        confirmDestructiveCanonicalizationCheckBox = cb7;
         blockStringEnterStyleComboBox = styleCombo;
         aliasExpansionModeComboBox = aliasModeCombo;
         timeEpochHourFormatComboBox = epochCombo;
@@ -234,13 +239,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var cb7 = confirmDestructiveCanonicalizationCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return false;
         }
 
@@ -265,6 +271,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
                cb4.isSelected() != projSettings.getState().enableRedundantTagInspection ||
                cb5.isSelected() != projSettings.getState().enableFormDiscrepancyInspection ||
                cb6.isSelected() != projSettings.getState().preferImpliedSumTypes ||
+               cb7.isSelected() != projSettings.getState().confirmDestructiveCanonicalization ||
                combo.getSelectedItem() != settings.getState().blockStringEnterStyle ||
                epCombo.getSelectedItem() != settings.getState().timeEpochHourFormat ||
                epWarn.isSelected() != settings.getState().showEpochMagnitudeWarnings ||
@@ -280,13 +287,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var cb7 = confirmDestructiveCanonicalizationCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return;
         }
 
@@ -299,6 +307,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         projSettings.getState().enableRedundantTagInspection = cb4.isSelected();
         projSettings.getState().enableFormDiscrepancyInspection = cb5.isSelected();
         projSettings.getState().preferImpliedSumTypes = cb6.isSelected();
+        projSettings.getState().confirmDestructiveCanonicalization = cb7.isSelected();
         settings.getState().blockStringEnterStyle = (StvnSettings.BlockStringEnterStyle) combo.getSelectedItem();
         var selectedMode = (AliasExpansionMode) aliasCombo.getSelectedItem();
         if (selectedMode != null) {
@@ -336,13 +345,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb4 = enableRedundantTagInspectionCheckBox;
         var cb5 = enableFormDiscrepancyInspectionCheckBox;
         var cb6 = preferImpliedSumTypesCheckBox;
+        var cb7 = confirmDestructiveCanonicalizationCheckBox;
         var combo = blockStringEnterStyleComboBox;
         var aliasCombo = aliasExpansionModeComboBox;
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
             return;
         }
 
@@ -355,6 +365,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         cb4.setSelected(projSettings.getState().enableRedundantTagInspection);
         cb5.setSelected(projSettings.getState().enableFormDiscrepancyInspection);
         cb6.setSelected(projSettings.getState().preferImpliedSumTypes);
+        cb7.setSelected(projSettings.getState().confirmDestructiveCanonicalization);
         combo.setSelectedItem(settings.getState().blockStringEnterStyle);
         aliasCombo.setSelectedItem(projSettings.getState().aliasExpansionMode);
         epCombo.setSelectedItem(settings.getState().timeEpochHourFormat);
@@ -382,6 +393,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         enableRedundantTagInspectionCheckBox = null;
         enableFormDiscrepancyInspectionCheckBox = null;
         preferImpliedSumTypesCheckBox = null;
+        confirmDestructiveCanonicalizationCheckBox = null;
         blockStringEnterStyleComboBox = null;
         aliasExpansionModeComboBox = null;
         timeEpochHourFormatComboBox = null;

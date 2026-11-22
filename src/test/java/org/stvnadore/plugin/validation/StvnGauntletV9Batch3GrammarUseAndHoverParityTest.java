@@ -297,7 +297,7 @@ public final class StvnGauntletV9Batch3GrammarUseAndHoverParityTest extends Base
         myFixture.configureByText("hermetic_multi_use_fix.stvn", hermeticMultiUse);
         myFixture.doHighlighting();
         myFixture.getEditor().getCaretModel().moveToOffset(hermeticMultiUse.indexOf(":external/bad") + 2);
-        var removeElemFix = myFixture.findSingleIntention("Remove :use directive for ':external/bad'");
+        var removeElemFix = myFixture.findSingleIntention("Remove unresolved package ':external/bad' from :use");
         assertNotNull("Expected element-scoped RemoveUseStatementQuickFix", removeElemFix);
         myFixture.launchAction(removeElemFix);
         String afterRemove = myFixture.getFile().getText();

@@ -29,6 +29,8 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnConvertToModularQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRemoveUnresolvedUsePackageQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedUsePackageQuickFixProvider;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.DefsElement;
 import org.stvnadore.psi.DefsEntry;
@@ -40,7 +42,6 @@ import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.UseElement;
-import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Visitor;
 
@@ -118,11 +119,11 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                     return;
                 }
 
-                List<LocalQuickFix> fixes = new ArrayList<>(2);
-                fixes.add(new RemoveUseStatementQuickFix(target));
-                if (StvnConvertToModularQuickFix.canConvertToModular(file)) {
-                    fixes.add(new StvnConvertToModularQuickFix(useTarget, file.getName().endsWith(".stvn_d")));
-                }
+                List<LocalQuickFix> fixes = StvnUnresolvedUsePackageQuickFixProvider.createLocalQuickFixes(
+                    file,
+                    useTarget,
+                    target
+                );
                 holder.registerProblem(
                     useTarget,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -332,7 +333,15 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
         return false;
     }
 
-    private static void removeDirectiveFromDefs(Project project, PsiElement directiveStmt) {
+    /**
+     * Removes a top-level or package-nested directive statement ({@code :include} or {@code :use})
+     * while preserving adjacent {@code //} comments and omitting comment-free empty {@code :defs}
+     * sections in payload documents.
+     *
+     * @param project       active project
+     * @param directiveStmt target directive PSI element
+     */
+    public static void removeDirectiveFromDefs(Project project, PsiElement directiveStmt) {
         PsiFile file = directiveStmt.getContainingFile();
         if (file == null) {
             return;
@@ -511,14 +520,14 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
     }
 
     /**
-     * Quick-fix that removes an invalid {@code :use} directive from a hermetic document.
+     * Quick-fix that removes an unresolved package entry from a {@code :use} directive in a hermetic document.
      */
     public static final class RemoveUseStatementQuickFix implements LocalQuickFix, PriorityAction {
         @SafeFieldForPreview
         private final String targetPackage;
 
         /**
-         * Constructs a new {@code :use} removal quick-fix.
+         * Constructs a new {@code :use} package removal quick-fix.
          *
          * @param targetPackage unresolved external package target path
          */
@@ -528,17 +537,17 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
 
         @Override
         public @NotNull Priority getPriority() {
-            return Priority.HIGH;
+            return Priority.NORMAL;
         }
 
         @Override
         public @NotNull String getName() {
-            return "Remove " + StvnVocabulary.KEYWORD_USE + " directive for '" + targetPackage + "'";
+            return "Remove unresolved package '" + targetPackage + "' from " + StvnVocabulary.KEYWORD_USE;
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Remove invalid " + StvnVocabulary.KEYWORD_USE + " directive";
+            return "Remove unresolved package from " + StvnVocabulary.KEYWORD_USE;
         }
 
         @Override
@@ -553,65 +562,9 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var elem = descriptor.getPsiElement();
-            var useStmt = elem instanceof UseStmt u ? u : PsiTreeUtil.getParentOfType(elem, UseStmt.class, false);
-            if (useStmt == null) {
-                return;
-            }
-            var useElem = elem instanceof UseElement ue ? ue : PsiTreeUtil.getParentOfType(elem, UseElement.class, false);
-            var elements = useStmt.getUseElementList();
-            if (useElem != null && elements.size() > 1) {
-                removeSingleUseElementFromStmt(project, useStmt, useElem, elements);
-                return;
-            }
-            removeDirectiveFromDefs(project, useStmt);
-        }
-    }
-
-    private static void removeSingleUseElementFromStmt(
-        Project project,
-        UseStmt useStmt,
-        UseElement targetElem,
-        List<UseElement> elements
-    ) {
-        PsiFile file = useStmt.getContainingFile();
-        if (file == null) {
-            return;
-        }
-        Document doc = file.getViewProvider().getDocument();
-        if (doc == null) {
-            doc = PsiDocumentManager.getInstance(project).getDocument(file);
-        }
-        if (doc == null) {
-            return;
-        }
-        if (file.isPhysical()) {
-            PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(doc);
-        }
-        CharSequence chars = doc.getCharsSequence();
-        int start = targetElem.getTextRange().getStartOffset();
-        int end = targetElem.getTextRange().getEndOffset();
-        int lineStart = start;
-        while (lineStart > 0 && (chars.charAt(lineStart - 1) == ' ' || chars.charAt(lineStart - 1) == '\t')) {
-            lineStart--;
-        }
-        int wsEnd = end;
-        while (wsEnd < chars.length() && (chars.charAt(wsEnd) == ' ' || chars.charAt(wsEnd) == '\t')) {
-            wsEnd++;
-        }
-        boolean ownsLinePrefix = lineStart == 0 || chars.charAt(lineStart - 1) == '\n';
-        if (ownsLinePrefix && wsEnd < chars.length() && (chars.charAt(wsEnd) == '\n' || chars.charAt(wsEnd) == '\r')) {
-            int deleteEnd = advancePastSingleNewline(chars, wsEnd, wsEnd);
-            doc.deleteString(lineStart, deleteEnd);
-        } else {
-            int idx = elements.indexOf(targetElem);
-            if (idx == 0 && elements.size() > 1) {
-                doc.deleteString(start, elements.get(1).getTextRange().getStartOffset());
-            } else if (idx > 0) {
-                doc.deleteString(elements.get(idx - 1).getTextRange().getEndOffset(), end);
-            } else {
-                doc.deleteString(start, Math.max(end, wsEnd));
+            if (elem != null) {
+                StvnRemoveUnresolvedUsePackageQuickFix.removeTargetFromUse(project, elem);
             }
         }
-        PsiDocumentManager.getInstance(project).commitDocument(doc);
     }
 }

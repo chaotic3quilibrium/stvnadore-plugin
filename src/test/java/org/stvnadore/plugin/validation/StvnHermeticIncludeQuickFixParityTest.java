@@ -264,7 +264,7 @@ public final class StvnHermeticIncludeQuickFixParityTest extends BasePlatformTes
         myFixture.configureByText("sole_use_payload.stvn", solePayloadUse);
         myFixture.getEditor().getCaretModel().moveToOffset(solePayloadUse.indexOf(":external/pkg") + 2);
         myFixture.doHighlighting();
-        myFixture.launchAction(myFixture.findSingleIntention("Remove :use directive for ':external/pkg'"));
+        myFixture.launchAction(myFixture.findSingleIntention("Remove unresolved package ':external/pkg' from :use"));
         assertTrue("Sole :use removal in #BODY document must compile cleanly",
             StvnCompiler.compileToResult(myFixture.getFile().getText(), "sole_use_payload.stvn").isSuccess());
 
