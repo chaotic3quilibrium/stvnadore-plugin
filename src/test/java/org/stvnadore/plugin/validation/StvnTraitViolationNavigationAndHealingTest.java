@@ -146,6 +146,7 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
               :defs {
                 :Values { #equatable #FALSE } :Tuple ( :Int :String )
                 :InductiveTuple :Tuple ( :Int :Float )
+                :BadInductiveSet :Set( :InductiveTuple )
               }
               :type :Values
               :body ( 1 "hello" )
@@ -166,20 +167,44 @@ public final class StvnTraitViolationNavigationAndHealingTest extends BasePlatfo
         var targetElem = provider.getDocumentationElementForLink(myFixture.getPsiManager(), "TypeDefinition/:Values", elemValues);
         assertNotNull("Must resolve link TypeDefinition/:Values to target PSI element", targetElem);
 
-        // 2. Verify Non-Conforming Constituents Section on :InductiveTuple
-        int inductiveOffset = text.indexOf(":InductiveTuple");
-        var elemInductive = psiFile.findElementAt(inductiveOffset);
-        assertNotNull(elemInductive);
-        var docInductive = provider.generateDoc(elemInductive, elemInductive);
-        assertNotNull(docInductive);
-        assertTrue("Doc must render Non-Conforming Constituents block:\n" + docInductive,
-                docInductive.contains("<b>Non-Conforming Constituents:</b>"));
-        assertTrue("Doc must render Field #2 link:\n" + docInductive,
-                docInductive.contains("Field #2:"));
+        // 2. Healthy declaration-site :InductiveTuple must omit red Non-Conforming Constituents (HTVG-01)
+        int inductiveDeclOffset = text.indexOf(":InductiveTuple");
+        var elemInductiveDecl = psiFile.findElementAt(inductiveDeclOffset);
+        assertNotNull(elemInductiveDecl);
+        var docInductiveDecl = provider.generateDoc(elemInductiveDecl, elemInductiveDecl);
+        assertNotNull(docInductiveDecl);
+        assertTrue("Declaration-site :InductiveTuple must display Derived (non-equatable: :Float):\n" + docInductiveDecl,
+                docInductiveDecl.contains("Derived (non-equatable: :Float)"));
+        assertFalse("Healthy declaration-site :InductiveTuple must omit Non-Conforming Constituents:\n" + docInductiveDecl,
+                docInductiveDecl.contains("Non-Conforming Constituents:"));
+
+        // 3. Violating usage-site :InductiveTuple inside :Set( :InductiveTuple ) must render Field #2 link (Case 3)
+        int usageOffset = text.indexOf(":InductiveTuple", text.indexOf(":BadInductiveSet")) + 2;
+        var usageLeaf = psiFile.findElementAt(usageOffset);
+        assertNotNull(usageLeaf);
+        var usageRef = psiFile.findReferenceAt(usageOffset);
+        assertNotNull(usageRef);
+        var usageTarget = usageRef.resolve();
+        assertNotNull(usageTarget);
+        var docInductiveUsage = provider.generateDoc(usageTarget, usageLeaf);
+        assertNotNull(docInductiveUsage);
+        assertTrue("Violating usage-site doc must render Non-Conforming Constituents block:\n" + docInductiveUsage,
+                docInductiveUsage.contains("<b>Non-Conforming Constituents:</b>"));
+        assertTrue("Violating usage-site doc must render Field #2 link:\n" + docInductiveUsage,
+                docInductiveUsage.contains("Field #2:"));
 
         int floatOffset = text.indexOf(":Float");
-        var targetConstituent = provider.getDocumentationElementForLink(myFixture.getPsiManager(), "offset/" + floatOffset, elemInductive);
+        var targetConstituent = provider.getDocumentationElementForLink(myFixture.getPsiManager(), "offset/" + floatOffset, usageTarget);
         assertNotNull("Must resolve link offset/" + floatOffset + " to :Float constituent element", targetConstituent);
+
+        // 4. Violating :BadInductiveSet container hover must render Element: :InductiveTuple (Case 1)
+        int badSetOffset = text.indexOf(":BadInductiveSet");
+        var elemBadSet = psiFile.findElementAt(badSetOffset);
+        assertNotNull(elemBadSet);
+        var docBadSet = provider.generateDoc(elemBadSet, elemBadSet);
+        assertNotNull(docBadSet);
+        assertTrue("Violating :Set container must render Non-Conforming Constituents with Element:\n" + docBadSet,
+                docBadSet.contains("<b>Non-Conforming Constituents:</b>") && docBadSet.contains("Element:"));
     }
 
     public void testIntentionPreviewReturnsEmptyWithoutEdtAssertion() {

@@ -145,6 +145,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             } catch (NumberFormatException ignored) {
             }
+        } else if (link.startsWith("file_offset/")) {
+            String rest = link.substring("file_offset/".length()).trim();
+            int sep = rest.lastIndexOf('/');
+            if (sep > 0) {
+                String targetFileName = rest.substring(0, sep);
+                try {
+                    int offset = Integer.parseInt(rest.substring(sep + 1).trim());
+                    var startFile = context.getContainingFile();
+                    var targetFile = startFile != null
+                        ? resolveIncludeFileByNameAcrossHierarchy(startFile, targetFileName, new HashSet<>())
+                        : null;
+                    if (targetFile != null && offset >= 0 && offset < targetFile.getTextLength()) {
+                        return targetFile.findElementAt(offset);
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
         }
         return null;
     }
@@ -1185,6 +1202,32 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var targetFile = StvnTypeReference.resolveIncludeFile(includeElem.getStringLiteral());
             if (targetFile != null) {
                 var found = resolveTypeDefinitionLinkAcrossHierarchy(targetFile, targetFqni, visitedFiles);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiFile resolveIncludeFileByNameAcrossHierarchy(
+        PsiFile file,
+        String targetFileName,
+        Set<PsiFile> visitedFiles
+    ) {
+        if (!visitedFiles.add(file)) {
+            return null;
+        }
+        if (targetFileName.equals(file.getName())) {
+            return file;
+        }
+        for (var includeElem : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            if (includeElem.getStringLiteral() == null) {
+                continue;
+            }
+            var targetFile = StvnTypeReference.resolveIncludeFile(includeElem.getStringLiteral());
+            if (targetFile != null) {
+                var found = resolveIncludeFileByNameAcrossHierarchy(targetFile, targetFileName, visitedFiles);
                 if (found != null) {
                     return found;
                 }
@@ -2362,7 +2405,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         // 5. #equatable
         boolean effEquatable = irSchema != null
-            ? irSchema.traits().equatable()
+            ? resolveEffectiveEquatableFromIr(typeDef, irSchema)
             : resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE)
                 .orElseGet(() -> resolveDefaultEquatable(typeDef, baseType, exactFlag));
         if (malformedArityOrigin != null && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)) {
@@ -2373,7 +2416,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 String usageOrigin = resolveUsageSiteNonEquatableOrigin(typeDef, baseType, equatableOrigin);
                 rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, StvnVocabulary.VAL_FALSE, usageOrigin, "Invalid"));
             } else {
-                rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, effEquatable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, equatableOrigin.origin(), equatableOrigin.status()));
+                String eqStatus = invalidFacetTags.contains(StvnVocabulary.FACET_KW_EQUATABLE) ? "Invalid" : equatableOrigin.status();
+                rows.add(new FacetRow(StvnVocabulary.FACET_KW_EQUATABLE, effEquatable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, equatableOrigin.origin(), eqStatus));
             }
         }
 
@@ -2386,7 +2430,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, "\u2014", malformedArityOrigin, "Invalid"));
         } else {
             OriginInfo comparableOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_COMPARABLE, effComparable, isComposite);
-            rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, effComparable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, comparableOrigin.origin(), comparableOrigin.status()));
+            boolean purePsiInvalidCompOverride = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_COMPARABLE).orElse(false)
+                && !effEquatable
+                && !StvnVocabulary.TYPE_FLOAT.equals(baseType);
+            String compStatus = (invalidFacetTags.contains(StvnVocabulary.FACET_KW_COMPARABLE) || purePsiInvalidCompOverride)
+                ? "Invalid"
+                : comparableOrigin.status();
+            rows.add(new FacetRow(StvnVocabulary.FACET_KW_COMPARABLE, effComparable ? StvnVocabulary.VAL_TRUE : StvnVocabulary.VAL_FALSE, comparableOrigin.origin(), compStatus));
         }
 
         if (rows.isEmpty()) return null;
@@ -2417,23 +2467,200 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         html.append("</tbody></table>");
 
-        // Render Non-Conforming Constituents section if equatability failed due to constituent bubbling breakdown
-        if (!effEquatable && isComposite && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)) {
-            var nonConforming = StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
-            if (!nonConforming.isEmpty()) {
-                html.append("<br/><b>Non-Conforming Constituents:</b><br/>");
-                html.append("<span style=\"font-size: 0.9em; color: #").append(getViolationBadgeColorHex()).append(";\">");
-                html.append("Constituent fields breaking inductive trait bubbling:</span><ul style=\"margin-top: 2px; margin-bottom: 4px; padding-left: 18px;\">");
-                for (var info : nonConforming) {
-                    html.append("<li>Field #").append(info.index()).append(": ");
-                    html.append("<a href=\"psi_element://offset/").append(info.schema().getTextOffset()).append("\">");
-                    html.append("<code>").append(info.label()).append("</code></a></li>");
-                }
-                html.append("</ul>");
-            }
+        var violationBreakdown = resolveTraitViolationConstituentsSection(
+            typeDef, file, declaredMeta, isComposite, effEquatable, invalidFacetTags, malformedArityOrigin, usageViolationCtx
+        );
+        if (violationBreakdown != null) {
+            appendNonConformingConstituentsHtml(html, file, violationBreakdown);
         }
 
         return html.toString();
+    }
+
+    private record TraitViolationConstituentsSection(
+        String subtitleHtml,
+        List<StvnTraitViolationQuickFixProvider.ConstituentInfo> constituents
+    ) {}
+
+    private static boolean resolveEffectiveEquatableFromIr(TypeDefinition typeDef, StvnSchema irSchema) {
+        if (irSchema instanceof StvnSchema.MapSchema mp
+                && (mp.invertible() || hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_INVERTIBLE))
+                && !mp.valueSchema().traits().equatable()
+                && !hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_EQUATABLE)) {
+            return false;
+        }
+        return irSchema.traits().equatable();
+    }
+
+    private static @Nullable TraitViolationConstituentsSection resolveTraitViolationConstituentsSection(
+        TypeDefinition typeDef,
+        @Nullable PsiFile file,
+        @Nullable MetadataMap declaredMeta,
+        boolean isComposite,
+        boolean effEquatable,
+        Set<String> invalidFacetTags,
+        @Nullable String malformedArityOrigin,
+        @Nullable TraitViolationUsageContext usageViolationCtx
+    ) {
+        if (!isComposite || malformedArityOrigin != null) {
+            return null;
+        }
+
+        // Case 1: Intrinsic Container Trait Violation (:Set element, :Map key, or #invertible :Map value)
+        if (hasIntrinsicContainerTraitViolation(typeDef, new HashSet<>(), false)) {
+            var constituents = StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
+            if (!constituents.isEmpty()) {
+                String subtitle = "Constituents violating required <code>"
+                    + StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE + "</code> constraint:";
+                return new TraitViolationConstituentsSection(subtitle, constituents);
+            }
+        }
+
+        // Case 2: Illegal Explicit Trait Override (#equatable #TRUE or #comparable #TRUE causing a trait error)
+        boolean explicitEqTrue = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE).orElse(false);
+        boolean explicitCompTrue = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_COMPARABLE).orElse(false);
+        boolean explicitEqFalse = resolveExplicitTraitFromPsi(declaredMeta, StvnVocabulary.FACET_KW_EQUATABLE)
+            .map(v -> !v)
+            .orElse(false);
+        if (explicitEqTrue && (invalidFacetTags.contains(StvnVocabulary.FACET_KW_EQUATABLE)
+                || hasTraitViolationDiagnosticOnTypeDef(typeDef, file))) {
+            var constituents = StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
+            if (!constituents.isEmpty()) {
+                String subtitle = "Constituents violating declared <code>"
+                    + StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE + "</code> override:";
+                return new TraitViolationConstituentsSection(subtitle, constituents);
+            }
+        }
+        if (explicitCompTrue && !explicitEqFalse
+                && (!effEquatable
+                    || invalidFacetTags.contains(StvnVocabulary.FACET_KW_COMPARABLE)
+                    || hasTraitViolationDiagnosticOnTypeDef(typeDef, file))) {
+            var constituents = !effEquatable
+                ? StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef)
+                : StvnTraitViolationQuickFixProvider.extractNonComparableConstituents(typeDef);
+            if (!constituents.isEmpty()) {
+                String subtitle = "Constituents violating declared <code>"
+                    + StvnVocabulary.FACET_KW_COMPARABLE + " " + StvnVocabulary.VAL_TRUE + "</code> override:";
+                return new TraitViolationConstituentsSection(subtitle, constituents);
+            }
+        }
+
+        // Case 3: Trait-Violating Usage Site (PB3R-04) where a composite/sum alias lacks #equatable #TRUE
+        if (usageViolationCtx != null && !effEquatable && !explicitEqFalse) {
+            var constituents = StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
+            if (!constituents.isEmpty()) {
+                String subtitle = "Constituents lacking required <code>"
+                    + StvnVocabulary.FACET_KW_EQUATABLE + " " + StvnVocabulary.VAL_TRUE + "</code> at usage site:";
+                return new TraitViolationConstituentsSection(subtitle, constituents);
+            }
+        }
+
+        return null;
+    }
+
+    private static boolean hasIntrinsicContainerTraitViolation(
+        TypeDefinition typeDef,
+        Set<String> visited,
+        boolean inheritedInvertible
+    ) {
+        var schemaType = typeDef.getSchemaType();
+        if (schemaType == null) {
+            return false;
+        }
+        var defKw = typeDef.getTypeKeyword();
+        if (defKw != null && !visited.add(defKw.getText().trim())) {
+            return false;
+        }
+        boolean invertibleActive = inheritedInvertible
+            || hasExplicitFacetInPsi(typeDef, StvnVocabulary.FACET_NAME_INVERTIBLE);
+        var file = typeDef.getContainingFile();
+        if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
+            var aliasKw = schemaType.getTypeKeyword();
+            var resolved = new StvnTypeReference(aliasKw).resolve();
+            var aliasDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            if (aliasDef == null) {
+                var fallback = StvnTypeReference.resolveTypeInFile(file, aliasKw.getText().trim(), new HashSet<>());
+                aliasDef = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
+            }
+            if (aliasDef != null && aliasDef != typeDef) {
+                return hasIntrinsicContainerTraitViolation(aliasDef, visited, invertibleActive);
+            }
+            return false;
+        }
+        var ctor = schemaType.getSchemaConstructor();
+        return ctor != null && ctor.getCollectionType() != null
+            && hasIntrinsicCollectionTraitViolation(ctor.getCollectionType(), invertibleActive, visited);
+    }
+
+    private static boolean hasIntrinsicCollectionTraitViolation(
+        CollectionType coll,
+        boolean invertibleActive,
+        Set<String> visited
+    ) {
+        var first = coll.getFirstChild();
+        String collKind = first != null ? first.getText().trim() : "";
+        var args = coll.getSchemaTypeList();
+        if (StvnVocabulary.TYPE_SET.equals(collKind)) {
+            return args.size() == 1
+                && !StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(args.get(0), new HashSet<>(visited));
+        }
+        if (StvnVocabulary.TYPE_MAP.equals(collKind) && args.size() == 2) {
+            if (!StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(args.get(0), new HashSet<>(visited))) {
+                return true;
+            }
+            return invertibleActive
+                && !StvnTraitViolationQuickFixProvider.isSchemaTypeEquatable(args.get(1), new HashSet<>(visited));
+        }
+        return false;
+    }
+
+    private static boolean hasTraitViolationDiagnosticOnTypeDef(TypeDefinition typeDef, @Nullable PsiFile file) {
+        var range = typeDef.getTextRange();
+        if (file == null || range == null) {
+            return false;
+        }
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(file);
+        for (var d : snapshot.diagnostics()) {
+            if (d.severity() != StvnDiagnostic.DiagnosticSeverity.ERROR
+                    || !isDiagnosticForActiveFile(file, d, snapshot.normalizedDocPath())) {
+                continue;
+            }
+            String sym = d.symbolicId().orElse("");
+            String canon = d.canonicalCode().orElse("");
+            if ((DiagnosticBag.ERR_TRAIT_VIOLATION.equals(sym) || "ERR_TRAIT_VIOLATION".equals(sym) || "E029".equals(canon))
+                    && d.startOffset() < range.getEndOffset()
+                    && d.endOffset() > range.getStartOffset()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void appendNonConformingConstituentsHtml(
+        StringBuilder html,
+        @Nullable PsiFile contextFile,
+        TraitViolationConstituentsSection section
+    ) {
+        html.append("<br/><b>Non-Conforming Constituents:</b><br/>");
+        html.append("<span style=\"font-size: 0.9em; color: #").append(getViolationBadgeColorHex()).append(";\">");
+        html.append(section.subtitleHtml())
+            .append("</span><ul style=\"margin-top: 2px; margin-bottom: 4px; padding-left: 18px;\">");
+        for (var info : section.constituents()) {
+            html.append("<li>").append(escapeHtmlBody(info.slotRoleLabel())).append(": ");
+            String href = buildConstituentLinkHref(contextFile, info.schema());
+            html.append("<a href=\"psi_element://").append(href).append("\">");
+            html.append("<code>").append(escapeHtmlBody(info.label())).append("</code></a></li>");
+        }
+        html.append("</ul>");
+    }
+
+    private static String buildConstituentLinkHref(@Nullable PsiFile contextFile, SchemaType targetSchema) {
+        var targetFile = targetSchema.getContainingFile();
+        int offset = targetSchema.getTextOffset();
+        if (targetFile != null && contextFile != null && !targetFile.equals(contextFile)) {
+            return "file_offset/" + escapeHtmlBody(targetFile.getName()) + "/" + offset;
+        }
+        return "offset/" + offset;
     }
 
     private static Set<String> collectInvalidFacetTagsForTypeDef(
@@ -2459,6 +2686,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             StvnVocabulary.FACET_KW_UNSIGNED, StvnVocabulary.FACET_KW_EXACT, StvnVocabulary.FACET_KW_INVERTIBLE,
             StvnVocabulary.FACET_KW_SCALE_NS, StvnVocabulary.FACET_KW_SCALE_US, StvnVocabulary.FACET_KW_SCALE_MS, StvnVocabulary.FACET_KW_SCALE_S,
             StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
+            StvnVocabulary.FACET_KW_EQUATABLE, StvnVocabulary.FACET_KW_COMPARABLE,
             StvnVocabulary.FACET_KW_PRESERVE_INDENT,
             StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
             StvnVocabulary.FACET_KW_FILTER_INCL, StvnVocabulary.FACET_KW_FILTER_EXCL,
@@ -2829,11 +3057,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var infos = checkComparable
             ? StvnTraitViolationQuickFixProvider.extractNonComparableConstituents(typeDef)
             : StvnTraitViolationQuickFixProvider.extractNonConformingConstituents(typeDef);
-        var labels = new ArrayList<String>(infos.size());
+        var labels = new LinkedHashSet<String>();
         for (var info : infos) {
-            labels.add(info.label());
+            labels.add(escapeHtmlBody(info.label()));
         }
-        return labels;
+        return List.copyOf(labels);
     }
 
     private static boolean hasExplicitFacetInPsi(TypeDefinition typeDef, String facetKey) {
@@ -4597,7 +4825,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("</tbody></table></div><hr/>");
 
         // Zone 2: Effective Semantic Contract
-        var enclosingDef = PsiTreeUtil.getParentOfType(productType, TypeDefinition.class);
+        var enclosingDef = resolveDirectEnclosingTypeDef(productType);
         var facetsTable = enclosingDef != null
             ? buildEffectiveFacetsTable(enclosingDef, originalElement)
             : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(productType, SchemaConstructor.class));
@@ -4665,10 +4893,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("</div><hr/>");
 
         // Zone 2: Effective Semantic Contract
-        var enclosingDef = PsiTreeUtil.getParentOfType(collType, TypeDefinition.class);
+        var enclosingDef = resolveDirectEnclosingTypeDef(collType);
+        var collCtor = PsiTreeUtil.getParentOfType(collType, SchemaConstructor.class);
         var facetsTable = enclosingDef != null
             ? buildEffectiveFacetsTable(enclosingDef, originalElement)
-            : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(collType, SchemaConstructor.class));
+            : buildInlineCollectionContractHtml(collType, collCtor);
         if (facetsTable != null) {
             sb.append("<div class='content'>").append(facetsTable).append("</div><hr/>");
         }
@@ -4721,7 +4950,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("</tbody></table></div><hr/>");
 
             // Zone 2: Effective Semantic Contract
-            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            var enclosingDef = resolveDirectEnclosingTypeDef(sumType);
             var facetsTable = enclosingDef != null
                 ? buildEffectiveFacetsTable(enclosingDef, originalElement)
                 : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
@@ -4766,7 +4995,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("</tbody></table></div><hr/>");
 
             // Zone 2: Effective Semantic Contract
-            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            var enclosingDef = resolveDirectEnclosingTypeDef(sumType);
             var facetsTable = enclosingDef != null
                 ? buildEffectiveFacetsTable(enclosingDef, originalElement)
                 : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
@@ -4797,7 +5026,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("</div><hr/>");
 
             // Zone 2: Effective Semantic Contract
-            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            var enclosingDef = resolveDirectEnclosingTypeDef(sumType);
             var facetsTable = enclosingDef != null
                 ? buildEffectiveFacetsTable(enclosingDef, originalElement)
                 : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
@@ -4831,7 +5060,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             sb.append("</div><hr/>");
 
             // Zone 2: Effective Semantic Contract
-            var enclosingDef = PsiTreeUtil.getParentOfType(sumType, TypeDefinition.class);
+            var enclosingDef = resolveDirectEnclosingTypeDef(sumType);
             var facetsTable = enclosingDef != null
                 ? buildEffectiveFacetsTable(enclosingDef, originalElement)
                 : buildMalformedInlineConstructorFacetsTable(PsiTreeUtil.getParentOfType(sumType, SchemaConstructor.class));
@@ -4852,6 +5081,50 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var text = sumType.getText().trim();
         var doc = getBuiltInSpecificationDoc(text);
         return doc != null ? doc : "<b>Sum Type Constructor:</b> " + text;
+    }
+
+    private static @Nullable TypeDefinition resolveDirectEnclosingTypeDef(PsiElement ctorNode) {
+        var ownSchemaType = PsiTreeUtil.getParentOfType(ctorNode, SchemaType.class, false);
+        var enclosingDef = PsiTreeUtil.getParentOfType(ctorNode, TypeDefinition.class);
+        if (enclosingDef != null && ownSchemaType != null && ownSchemaType == enclosingDef.getSchemaType()) {
+            return enclosingDef;
+        }
+        return null;
+    }
+
+    private static @Nullable String buildInlineCollectionContractHtml(
+        CollectionType collType,
+        @Nullable SchemaConstructor ctor
+    ) {
+        var malformedTable = buildMalformedInlineConstructorFacetsTable(ctor);
+        if (malformedTable != null || ctor == null) {
+            return malformedTable;
+        }
+        boolean invertibleActive = isCollectionTypeInvertible(collType);
+        if (!hasIntrinsicCollectionTraitViolation(collType, invertibleActive, new HashSet<>())) {
+            return null;
+        }
+        var constituents = StvnTraitViolationQuickFixProvider.extractNonConformingConstituentsFromConstructor(
+            ctor, invertibleActive, new HashSet<>()
+        );
+        if (constituents.isEmpty()) {
+            return null;
+        }
+        var html = new StringBuilder();
+        html.append("<b>Non-Conforming Constituents:</b><br/>");
+        html.append("<span style=\"font-size: 0.9em; color: #").append(getViolationBadgeColorHex()).append(";\">");
+        html.append("Constituents violating required <code>")
+            .append(StvnVocabulary.FACET_KW_EQUATABLE).append(" ").append(StvnVocabulary.VAL_TRUE)
+            .append("</code> constraint:</span><ul style=\"margin-top: 2px; margin-bottom: 4px; padding-left: 18px;\">");
+        var contextFile = collType.getContainingFile();
+        for (var info : constituents) {
+            html.append("<li>").append(escapeHtmlBody(info.slotRoleLabel())).append(": ");
+            String href = buildConstituentLinkHref(contextFile, info.schema());
+            html.append("<a href=\"psi_element://").append(href).append("\">");
+            html.append("<code>").append(escapeHtmlBody(info.label())).append("</code></a></li>");
+        }
+        html.append("</ul>");
+        return html.toString();
     }
 
     private static void appendUnsetFacetsForConstructor(StringBuilder sb, @Nullable TypeDefinition enclosingDef, String baseType) {
@@ -4915,11 +5188,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
     private static boolean isCollectionTypeInvertible(CollectionType collType) {
         var outerSchema = PsiTreeUtil.getParentOfType(collType, SchemaType.class, false);
-        if (outerSchema != null && hasFacetInMap(outerSchema.getMetadataMap(), "invertible")) {
+        if (outerSchema != null && hasFacetInMap(outerSchema.getMetadataMap(), StvnVocabulary.FACET_NAME_INVERTIBLE)) {
             return true;
         }
         var outerDef = PsiTreeUtil.getParentOfType(collType, TypeDefinition.class, false);
-        return outerDef != null && hasExplicitFacetInPsi(outerDef, "invertible");
+        return outerDef != null && hasExplicitFacetInPsi(outerDef, StvnVocabulary.FACET_NAME_INVERTIBLE);
     }
 
     private static @Nullable String buildTraitViolationUsageBanner(
@@ -5153,6 +5426,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             sb.append("<b>Payload Sizing:</b> Capacity bounds <code>[#minSize ").append(minSize)
               .append(", #maxSize ").append(maxSize).append("]</code><br/>");
+            var rootCtor = rootSchema.getSchemaConstructor();
+            if (rootCtor != null && rootCtor.getCollectionType() != null) {
+                var inlineViolationHtml = buildInlineCollectionContractHtml(rootCtor.getCollectionType(), rootCtor);
+                if (inlineViolationHtml != null) {
+                    sb.append("<br/>").append(inlineViolationHtml);
+                }
+            }
         }
         sb.append("</div><hr/>");
 

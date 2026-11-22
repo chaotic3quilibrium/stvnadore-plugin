@@ -29,6 +29,7 @@ import org.stvnadore.plugin.navigation.StvnNavigationUtil;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
@@ -171,7 +172,7 @@ public final class StvnTraitViolationQuickFixProvider {
                         var nonConforming = extractNonConformingConstituents(targetTypeDef);
                         for (var constituent : nonConforming) {
                             builder = builder.withFix(new JumpToNonConformingConstituentIntention(
-                                constituent.schema(), typeName, constituent.index(), constituent.label()));
+                                constituent.schema(), typeName, constituent.slotRoleLabel(), constituent.label()));
                         }
                     } else {
                         builder = registerActionsForNominalType(builder, file, targetTypeDef, typeName, message);
@@ -310,7 +311,7 @@ public final class StvnTraitViolationQuickFixProvider {
         var nonConforming = extractNonConformingConstituents(typeDef);
         for (var constituent : nonConforming) {
             builder = builder.withFix(new JumpToNonConformingConstituentIntention(
-                    constituent.schema(), typeName, constituent.index(), constituent.label()));
+                    constituent.schema(), typeName, constituent.slotRoleLabel(), constituent.label()));
         }
 
         if (nonConforming.isEmpty()) {
@@ -420,13 +421,75 @@ public final class StvnTraitViolationQuickFixProvider {
         return false;
     }
 
-    public record ConstituentInfo(int index, String label, SchemaType schema) {}
+    private static final int MAX_CONSTITUENT_DESCENT_DEPTH = 16;
 
-    public static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef) {
-        return extractNonConformingConstituents(typeDef, new HashSet<>());
+    /**
+     * Describes a constituent schema slot that lacks a required or derived capability trait.
+     *
+     * @param index         1-based constituent slot index within the enclosing constructor
+     * @param slotRoleLabel constructor-accurate STE slot label ({@code "Element"}, {@code "Key"},
+     *                      {@code "Value"}, {@code "Left branch"}, {@code "Right branch"},
+     *                      {@code "Branch #k"}, or {@code "Field #k"})
+     * @param label         concise nominal alias, atomic type, or attributed leaf label
+     * @param schema        navigable PSI {@link SchemaType} of the constituent or attributed leaf
+     */
+    public record ConstituentInfo(int index, String slotRoleLabel, String label, SchemaType schema) {
+        /**
+         * Constructs a positional field constituent descriptor defaulting to {@code "Field #" + index}.
+         *
+         * @param index  1-based positional index
+         * @param label  constituent schema label
+         * @param schema navigable PSI {@link SchemaType}
+         */
+        public ConstituentInfo(int index, String label, SchemaType schema) {
+            this(index, "Field " + StvnVocabulary.SIGIL_VALUE + index, label, schema);
+        }
     }
 
-    private static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef, Set<String> visited) {
+    /**
+     * Resolves the constructor-accurate STE slot role label for a 1-based constituent index.
+     *
+     * @param ctor      enclosing {@link SchemaConstructor}
+     * @param slotIndex 1-based constituent index
+     * @return STE slot role label
+     */
+    public static String resolveConstituentSlotRoleLabel(SchemaConstructor ctor, int slotIndex) {
+        if (ctor.getProductType() != null) {
+            return "Field " + StvnVocabulary.SIGIL_VALUE + slotIndex;
+        }
+        if (ctor.getCollectionType() != null) {
+            var first = ctor.getCollectionType().getFirstChild();
+            String collKind = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_MAP.equals(collKind)) {
+                return slotIndex == 1 ? "Key" : "Value";
+            }
+            return "Element";
+        }
+        if (ctor.getSumType() != null) {
+            var first = ctor.getSumType().getFirstChild();
+            String sumKind = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_OPTION.equals(sumKind)) {
+                return "Element";
+            }
+            if (StvnVocabulary.TYPE_EITHER.equals(sumKind)) {
+                return slotIndex == 1 ? "Left branch" : "Right branch";
+            }
+            if (StvnVocabulary.TYPE_UNION.equals(sumKind)) {
+                return "Branch " + StvnVocabulary.SIGIL_VALUE + slotIndex;
+            }
+        }
+        return "Field " + StvnVocabulary.SIGIL_VALUE + slotIndex;
+    }
+
+    public static List<ConstituentInfo> extractNonConformingConstituents(TypeDefinition typeDef) {
+        return extractNonConformingConstituents(typeDef, false, new HashSet<>());
+    }
+
+    private static List<ConstituentInfo> extractNonConformingConstituents(
+        TypeDefinition typeDef,
+        boolean inheritedInvertible,
+        Set<String> visited
+    ) {
         var result = new ArrayList<ConstituentInfo>();
         var schemaType = typeDef.getSchemaType();
         if (schemaType == null) {
@@ -438,12 +501,13 @@ public final class StvnTraitViolationQuickFixProvider {
             return result;
         }
 
+        boolean invertibleActive = inheritedInvertible || hasInvertibleInLineage(typeDef, schemaType);
         var file = typeDef.getContainingFile();
         if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
             var aliasKw = schemaType.getTypeKeyword();
             var aliasDef = resolveTargetTypeDefForKeyword(aliasKw, file, aliasKw.getText().trim());
             if (aliasDef != null && aliasDef != typeDef) {
-                return extractNonConformingConstituents(aliasDef, visited);
+                return extractNonConformingConstituents(aliasDef, invertibleActive, visited);
             }
         }
 
@@ -452,17 +516,37 @@ public final class StvnTraitViolationQuickFixProvider {
             return result;
         }
 
+        return extractNonConformingConstituentsFromConstructor(ctor, invertibleActive, visited);
+    }
+
+    /**
+     * Extracts non-equatable constituents directly from a {@link SchemaConstructor} with STE slot role labels
+     * and named or atomic leaf attribution across anonymous inline wrappers.
+     *
+     * @param ctor             constructor PSI node
+     * @param invertibleActive {@code true} when {@code #invertible} is active on a {@code :Map} constructor
+     * @param visited          visited nominal aliases for cycle termination
+     * @return non-equatable constituent descriptors in declaration order
+     */
+    public static List<ConstituentInfo> extractNonConformingConstituentsFromConstructor(
+        SchemaConstructor ctor,
+        boolean invertibleActive,
+        Set<String> visited
+    ) {
+        var result = new ArrayList<ConstituentInfo>();
         if (ctor.getCollectionType() != null) {
             var coll = ctor.getCollectionType();
             var inner = coll.getSchemaTypeList();
-            if (coll.getText().trim().startsWith(StvnVocabulary.TYPE_MAP)) {
+            var first = coll.getFirstChild();
+            String collKind = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_MAP.equals(collKind)) {
                 if (!inner.isEmpty() && !isSchemaTypeEquatable(inner.get(0), new HashSet<>(visited))) {
-                    result.add(new ConstituentInfo(1, formatConstituentLabel(inner.get(0)), inner.get(0)));
+                    collectAttributedNonEquatableLeaves(inner.get(0), 1, "Key", visited, 0, result);
                 }
                 if (inner.size() >= 2
-                        && hasInvertibleInLineage(typeDef, schemaType)
+                        && invertibleActive
                         && !isSchemaTypeEquatable(inner.get(1), new HashSet<>(visited))) {
-                    result.add(new ConstituentInfo(2, formatConstituentLabel(inner.get(1)), inner.get(1)));
+                    collectAttributedNonEquatableLeaves(inner.get(1), 2, "Value", visited, 0, result);
                 }
                 return result;
             }
@@ -472,7 +556,8 @@ public final class StvnTraitViolationQuickFixProvider {
         int slotIndex = 1;
         for (var constituent : constituents) {
             if (!isSchemaTypeEquatable(constituent, new HashSet<>(visited))) {
-                result.add(new ConstituentInfo(slotIndex, formatConstituentLabel(constituent), constituent));
+                String roleLabel = resolveConstituentSlotRoleLabel(ctor, slotIndex);
+                collectAttributedNonEquatableLeaves(constituent, slotIndex, roleLabel, visited, 0, result);
             }
             slotIndex++;
         }
@@ -521,9 +606,10 @@ public final class StvnTraitViolationQuickFixProvider {
 
         if (ctor.getCollectionType() != null) {
             var coll = ctor.getCollectionType();
-            var collText = coll.getText().trim();
-            if (collText.startsWith(StvnVocabulary.TYPE_SET) || collText.startsWith(StvnVocabulary.TYPE_MAP)) {
-                result.add(new ConstituentInfo(1, collText, schemaType));
+            var first = coll.getFirstChild();
+            var collKind = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_SET.equals(collKind) || StvnVocabulary.TYPE_MAP.equals(collKind)) {
+                result.add(new ConstituentInfo(1, "Element", collKind, schemaType));
                 return result;
             }
         }
@@ -535,11 +621,136 @@ public final class StvnTraitViolationQuickFixProvider {
         int slotIndex = 1;
         for (var constituent : constituents) {
             if (!isSchemaTypeComparable(constituent, new HashSet<>(visited))) {
-                result.add(new ConstituentInfo(slotIndex, formatConstituentLabel(constituent), constituent));
+                String roleLabel = resolveConstituentSlotRoleLabel(ctor, slotIndex);
+                collectAttributedNonComparableLeaves(constituent, slotIndex, roleLabel, visited, 0, result);
             }
             slotIndex++;
         }
         return result;
+    }
+
+    private static void collectAttributedNonEquatableLeaves(
+        SchemaType slotSchema,
+        int outerIndex,
+        String outerRoleLabel,
+        Set<String> visited,
+        int depth,
+        List<ConstituentInfo> sink
+    ) {
+        if (slotSchema.getTypeKeyword() != null) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatLeafConstituentLabel(slotSchema), slotSchema));
+            return;
+        }
+        var childCtor = slotSchema.getSchemaConstructor();
+        if (childCtor == null || childCtor.getAtomicType() != null || depth >= MAX_CONSTITUENT_DESCENT_DEPTH) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatLeafConstituentLabel(slotSchema), slotSchema));
+            return;
+        }
+        var explicitEq = resolveExplicitBooleanTrait(slotSchema.getMetadataMap(), StvnVocabulary.FACET_KW_EQUATABLE);
+        if (explicitEq.isPresent() && !explicitEq.get()) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatInlineConstructorHeadLabel(slotSchema, childCtor), slotSchema));
+            return;
+        }
+        int beforeSize = sink.size();
+        if (childCtor.getCollectionType() != null) {
+            var coll = childCtor.getCollectionType();
+            var first = coll.getFirstChild();
+            String collKind = first != null ? first.getText().trim() : "";
+            var inner = coll.getSchemaTypeList();
+            if (StvnVocabulary.TYPE_MAP.equals(collKind)) {
+                if (!inner.isEmpty() && !isSchemaTypeEquatable(inner.get(0), new HashSet<>(visited))) {
+                    collectAttributedNonEquatableLeaves(inner.get(0), outerIndex, outerRoleLabel, visited, depth + 1, sink);
+                }
+                if (inner.size() >= 2
+                        && hasInvertibleFacet(slotSchema.getMetadataMap())
+                        && !isSchemaTypeEquatable(inner.get(1), new HashSet<>(visited))) {
+                    collectAttributedNonEquatableLeaves(inner.get(1), outerIndex, outerRoleLabel, visited, depth + 1, sink);
+                }
+            } else if (inner.size() == 1 && !isSchemaTypeEquatable(inner.get(0), new HashSet<>(visited))) {
+                collectAttributedNonEquatableLeaves(inner.get(0), outerIndex, outerRoleLabel, visited, depth + 1, sink);
+            }
+        } else {
+            for (var child : collectConstructorConstituents(childCtor)) {
+                if (!isSchemaTypeEquatable(child, new HashSet<>(visited))) {
+                    collectAttributedNonEquatableLeaves(child, outerIndex, outerRoleLabel, visited, depth + 1, sink);
+                }
+            }
+        }
+        if (sink.size() == beforeSize) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatInlineConstructorHeadLabel(slotSchema, childCtor), slotSchema));
+        }
+    }
+
+    private static void collectAttributedNonComparableLeaves(
+        SchemaType slotSchema,
+        int outerIndex,
+        String outerRoleLabel,
+        Set<String> visited,
+        int depth,
+        List<ConstituentInfo> sink
+    ) {
+        if (slotSchema.getTypeKeyword() != null) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatLeafConstituentLabel(slotSchema), slotSchema));
+            return;
+        }
+        var childCtor = slotSchema.getSchemaConstructor();
+        if (childCtor == null || childCtor.getAtomicType() != null || depth >= MAX_CONSTITUENT_DESCENT_DEPTH) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatLeafConstituentLabel(slotSchema), slotSchema));
+            return;
+        }
+        if (childCtor.getCollectionType() != null) {
+            var first = childCtor.getCollectionType().getFirstChild();
+            String collKind = first != null ? first.getText().trim() : "";
+            if (StvnVocabulary.TYPE_SET.equals(collKind) || StvnVocabulary.TYPE_MAP.equals(collKind)) {
+                sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, collKind, slotSchema));
+                return;
+            }
+        }
+        var explicitComp = resolveExplicitBooleanTrait(slotSchema.getMetadataMap(), StvnVocabulary.FACET_KW_COMPARABLE);
+        if (explicitComp.isPresent() && !explicitComp.get()) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatInlineConstructorHeadLabel(slotSchema, childCtor), slotSchema));
+            return;
+        }
+        int beforeSize = sink.size();
+        for (var child : collectConstructorConstituents(childCtor)) {
+            if (!isSchemaTypeComparable(child, new HashSet<>(visited))) {
+                collectAttributedNonComparableLeaves(child, outerIndex, outerRoleLabel, visited, depth + 1, sink);
+            }
+        }
+        if (sink.size() == beforeSize) {
+            sink.add(new ConstituentInfo(outerIndex, outerRoleLabel, formatInlineConstructorHeadLabel(slotSchema, childCtor), slotSchema));
+        }
+    }
+
+    private static String formatLeafConstituentLabel(SchemaType constituent) {
+        if (constituent.getMetadataMap() != null) {
+            return StvnSchemaFormatter.formatSchema(constituent);
+        }
+        if (constituent.getTypeKeyword() != null) {
+            return constituent.getTypeKeyword().getText().trim();
+        }
+        var ctor = constituent.getSchemaConstructor();
+        if (ctor != null && ctor.getAtomicType() != null) {
+            return ctor.getAtomicType().getText().trim();
+        }
+        return StvnSchemaFormatter.formatCleanSchema(constituent);
+    }
+
+    private static String formatInlineConstructorHeadLabel(SchemaType slotSchema, SchemaConstructor ctor) {
+        String head;
+        if (ctor.getProductType() != null) {
+            head = StvnVocabulary.TYPE_TUPLE;
+        } else if (ctor.getCollectionType() != null && ctor.getCollectionType().getFirstChild() != null) {
+            head = ctor.getCollectionType().getFirstChild().getText().trim();
+        } else if (ctor.getSumType() != null && ctor.getSumType().getFirstChild() != null) {
+            head = ctor.getSumType().getFirstChild().getText().trim();
+        } else {
+            head = StvnSchemaFormatter.formatCleanSchema(slotSchema);
+        }
+        if (slotSchema.getMetadataMap() != null) {
+            return slotSchema.getMetadataMap().getText().trim().replaceAll("\\s+", " ") + " " + head;
+        }
+        return head;
     }
 
     public static boolean isUnderlyingIntrinsicallyEquatable(TypeDefinition typeDef) {
@@ -861,13 +1072,6 @@ public final class StvnTraitViolationQuickFixProvider {
         return List.of();
     }
 
-    private static String formatConstituentLabel(SchemaType constituent) {
-        var kw = constituent.getTypeKeyword();
-        return (constituent.getMetadataMap() != null)
-            ? constituent.getText().trim()
-            : (kw != null ? kw.getText().trim() : constituent.getText().trim());
-    }
-
     private static @Nullable TypeDefinition resolveTargetTypeDefForKeyword(
         @Nullable TypeKeyword schemaKw,
         PsiFile file,
@@ -1094,9 +1298,21 @@ public final class StvnTraitViolationQuickFixProvider {
         @SafeFieldForPreview
         private final String typeName;
         @SafeFieldForPreview
-        private final int slotIndex;
+        private final String slotRoleLabel;
         @SafeFieldForPreview
         private final String fieldLabel;
+
+        public JumpToNonConformingConstituentIntention(
+                PsiElement element,
+                String typeName,
+                String slotRoleLabel,
+                String fieldLabel
+        ) {
+            super(element);
+            this.typeName = typeName;
+            this.slotRoleLabel = slotRoleLabel;
+            this.fieldLabel = fieldLabel;
+        }
 
         public JumpToNonConformingConstituentIntention(
                 PsiElement element,
@@ -1104,15 +1320,12 @@ public final class StvnTraitViolationQuickFixProvider {
                 int slotIndex,
                 String fieldLabel
         ) {
-            super(element);
-            this.typeName = typeName;
-            this.slotIndex = slotIndex;
-            this.fieldLabel = fieldLabel;
+            this(element, typeName, "Field " + StvnVocabulary.SIGIL_VALUE + slotIndex, fieldLabel);
         }
 
         @Override
         public @Nls @NotNull String getText() {
-            return "Jump to non-equatable constituent in " + typeName + " (Field #" + slotIndex + ": " + fieldLabel + ")";
+            return "Jump to non-equatable constituent in " + typeName + " (" + slotRoleLabel + ": " + fieldLabel + ")";
         }
 
         @Override

@@ -452,8 +452,10 @@ public final class StvnGauntletV9Batch3GrammarUseAndHoverParityTest extends Base
             floatSetHover.contains("Exemplar Value:"));
         assertTrue("Expected #equatable #FALSE with Derived (non-equatable: :SampleReading):\n" + floatSetHover,
             floatSetHover.contains("Derived (non-equatable: :SampleReading)"));
-        assertTrue("Expected Non-Conforming Constituents block on :TrapFloatInSet:\n" + floatSetHover,
-            floatSetHover.contains("Non-Conforming Constituents:") && floatSetHover.contains("Field #1:"));
+        assertTrue("Expected Non-Conforming Constituents block with Element: :SampleReading on :TrapFloatInSet:\n" + floatSetHover,
+            floatSetHover.contains("Non-Conforming Constituents:")
+                && floatSetHover.contains("Element:")
+                && floatSetHover.contains("<code>:SampleReading</code>"));
 
         // 3. Packaged FQNI + pure-PSI unlowered TypeDefinition fallback + :Map invertible vs non-invertible + nested inline
         String brokenAndTraitsDoc = """
@@ -509,14 +511,19 @@ public final class StvnGauntletV9Batch3GrammarUseAndHoverParityTest extends Base
         String invMapHover = generateHoverAt(
             docProvider, brokenFile, brokenAndTraitsDoc.indexOf(":InvMap") + 2
         );
-        assertTrue("Invertible :Map(:String :SampleFloat) must derive #equatable #FALSE from value Field #2:\n" + invMapHover,
-            invMapHover.contains("Derived (non-equatable: :SampleFloat)") && invMapHover.contains("Field #2:"));
+        assertTrue("Invertible :Map(:String :SampleFloat) must derive #equatable #FALSE from Value: :SampleFloat:\n" + invMapHover,
+            invMapHover.contains("Derived (non-equatable: :SampleFloat)")
+                && invMapHover.contains("Non-Conforming Constituents:")
+                && invMapHover.contains("Value:"));
 
         String nestedInlineSetHover = generateHoverAt(
             docProvider, brokenFile, brokenAndTraitsDoc.indexOf(":NestedInlineSet") + 2
         );
-        assertTrue("Nested inline :Set(:Tuple({ #exact } :Float :Float)) must derive #equatable #FALSE:\n" + nestedInlineSetHover,
-            nestedInlineSetHover.contains("Derived (non-equatable:") || nestedInlineSetHover.contains("<code>#FALSE</code>"));
+        assertTrue("Nested inline :Set(:Tuple({ #exact } :Float :Float)) must derive #equatable #FALSE with Element: :Float:\n"
+            + nestedInlineSetHover,
+            nestedInlineSetHover.contains("Derived (non-equatable: :Float)")
+                && nestedInlineSetHover.contains("Element:")
+                && nestedInlineSetHover.contains("<code>:Float</code>"));
 
         // 4. Safeguard 3 (:TreeNode recursion) + minSize collection synthesis + bounded > 16 preview + uninhabited :Set(:Boolean)
         String exemplarsDoc = """
