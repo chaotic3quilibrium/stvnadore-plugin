@@ -14,7 +14,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -153,7 +152,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                     + StvnVocabulary.FACET_KW_SCALE_US + "', '"
                                     + StvnVocabulary.FACET_KW_SCALE_MS + "', '"
                                     + StvnVocabulary.FACET_KW_SCALE_S + "') are mutually exclusive",
-                                DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                                StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
                             fixes
@@ -171,7 +170,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                             + "', '" + StvnVocabulary.FACET_KW_SCALE_US + "', '"
                             + StvnVocabulary.FACET_KW_SCALE_MS + "', or '"
                             + StvnVocabulary.FACET_KW_SCALE_S + "')",
-                        DiagnosticBag.ERR_MISSING_TEMPORAL_FACET
+                        StvnDiagnosticCodes.ERR_MISSING_TEMPORAL_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     createTimeEpochScaleQuickFixes(schemaType)
@@ -209,7 +208,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                 "Temporal mode facets ('" + StvnVocabulary.FACET_KW_OFFSET + "', '"
                                     + StvnVocabulary.FACET_KW_ZONED + "', '"
                                     + StvnVocabulary.FACET_KW_AUDITED + "') are mutually exclusive",
-                                DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                                StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
                             fixes
@@ -226,7 +225,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                             + "' requires exactly one mode facet ('" + StvnVocabulary.FACET_KW_OFFSET
                             + "', '" + StvnVocabulary.FACET_KW_ZONED + "', or '"
                             + StvnVocabulary.FACET_KW_AUDITED + "')",
-                        DiagnosticBag.ERR_MISSING_TEMPORAL_FACET
+                        StvnDiagnosticCodes.ERR_MISSING_TEMPORAL_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     createDateTimeModeQuickFixes(schemaType)

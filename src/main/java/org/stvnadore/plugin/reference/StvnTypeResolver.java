@@ -29,6 +29,7 @@ import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.*;
 
 import java.math.BigDecimal;
@@ -979,6 +980,25 @@ public final class StvnTypeResolver {
                 var bodyEntry = PsiTreeUtil.findChildOfType(file, BodyEntry.class);
                 if (bodyEntry != null && bodyEntry.getValue() != null) {
                     mapValues(bodyEntry.getValue(), snapshot.payload().get(), map);
+                }
+            }
+            for (var constDef : PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class)) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)
+                        || constDef.getValue() == null
+                        || constDef.getValueKeyword() == null) {
+                    continue;
+                }
+                var enclosingPkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+                if (enclosingPkg != null && StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg)) {
+                    continue;
+                }
+                String pkgPath = (enclosingPkg != null && enclosingPkg.getPackagePath() != null)
+                    ? enclosingPkg.getPackagePath().getText().trim()
+                    : null;
+                String constName = constDef.getValueKeyword().getText().trim();
+                var constOpt = snapshot.catalog().findConstant(pkgPath, constName);
+                if (constOpt.isPresent()) {
+                    mapValues(constDef.getValue(), constOpt.get().value(), map);
                 }
             }
             return CachedValueProvider.Result.create(

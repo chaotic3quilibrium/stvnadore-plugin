@@ -45,47 +45,47 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME, "StvnStemMismatch");
         map.put(DiagnosticBag.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META, "StvnStemMismatch");
         map.put(DiagnosticBag.WARN_DOCUMENT_NAME_MISMATCH, "StvnStemMismatch");
-        map.put(StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME, "StvnStemMismatch");
-        map.put(StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META, "StvnStemMismatch");
-        map.put(StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH, "StvnStemMismatch");
+        putDual(map, StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME, "StvnStemMismatch");
+        putDual(map, StvnDiagnosticCodes.WARN_DOCUMENT_DOMAIN_OMITTED_IN_META, "StvnStemMismatch");
+        putDual(map, StvnDiagnosticCodes.WARN_DOCUMENT_NAME_MISMATCH, "StvnStemMismatch");
         map.put("DOCUMENT_DOMAIN_OMITTED_IN_FILENAME", "StvnStemMismatch");
         map.put("DOCUMENT_DOMAIN_OMITTED_IN_META", "StvnStemMismatch");
         map.put("DOCUMENT_NAME_MISMATCH", "StvnStemMismatch");
         map.put("W001", "StvnStemMismatch");
         map.put("W002", "StvnStemMismatch");
         map.put(DiagnosticBag.ERR_INVALID_FILENAME_STEM, "StvnStemMismatch");
-        map.put(StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM, "StvnStemMismatch");
+        putDual(map, StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM, "StvnStemMismatch");
         map.put("INVALID_FILENAME_STEM", "StvnStemMismatch");
         map.put("E032", "StvnStemMismatch");
         map.put(DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED, "StvnStemMismatch");
-        map.put(StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED, "StvnStemMismatch");
+        putDual(map, StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED, "StvnStemMismatch");
         map.put("ERR_RESERVED_DOMAIN_PROHIBITED", "StvnStemMismatch");
         map.put("E038", "StvnStemMismatch");
 
         // 2. Suspicious Epoch Magnitude Inspection
-        map.put(StvnDiagnosticCodes.WARN_SUSPICIOUS_EPOCH_MAGNITUDE, "StvnSuspiciousEpochMagnitude");
-        map.put("WARN_SUSPICIOUS_EPOCH_MAGNITUDE", "StvnSuspiciousEpochMagnitude");
+        putDual(map, StvnDiagnosticCodes.WARN_SUSPICIOUS_EPOCH_MAGNITUDE, "StvnSuspiciousEpochMagnitude");
 
         // 3. Tab Character Forbidden Inspection
         map.put(DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN, "StvnTabCharacter");
-        map.put(StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN, "StvnTabCharacter");
+        putDual(map, StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN, "StvnTabCharacter");
         map.put("TAB_DISCIPLINE_VIOLATION", "StvnTabCharacter");
         map.put("E001", "StvnTabCharacter");
 
         // 4. Missing Root Metadata Block Inspection
         map.put(DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH, "StvnMissingMeta");
-        map.put(StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH, "StvnMissingMeta");
+        putDual(map, StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH, "StvnMissingMeta");
         map.put("DOCUMENT_KIND_MISMATCH", "StvnMissingMeta");
         map.put("E031", "StvnMissingMeta");
 
         // 5. Metadata Facet Canonical Order Inspection
         map.put(DiagnosticBag.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
-        map.put(StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
+        putDual(map, StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION, "StvnMetadataOrder");
         map.put("FACET_ORDER_VIOLATION", "StvnMetadataOrder");
 
         // 6. Redundant Metadata Facet Override Inspection
         map.put(DiagnosticBag.WARN_REDUNDANT_METADATA_FACET, "StvnRedundantFacetOverride");
-        map.put(StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE, "StvnRedundantFacetOverride");
+        putDual(map, StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET, "StvnRedundantFacetOverride");
+        putDual(map, StvnDiagnosticCodes.WARN_REDUNDANT_FACET_OVERRIDE, "StvnRedundantFacetOverride");
         map.put("WARN_REDUNDANT_METADATA_FACET", "StvnRedundantFacetOverride");
         map.put("W003", "StvnRedundantFacetOverride");
 
@@ -97,19 +97,19 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_EMPTY_DIRECTIVE_BLOCK, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET, "StvnMetadataFacet");
         map.put("E036", "StvnMetadataFacet");
         map.put("ERR_UNRECOGNIZED_METADATA_FACET", "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
-        map.put(StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_EMPTY_METADATA_BLOCK, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_EMPTY_DIRECTIVE_BLOCK, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_METADATA_FACET_ON_CONSTANT, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
         map.put("INVALID_FACET_TARGET", "StvnMetadataFacet");
         map.put("EMPTY_METADATA_BLOCK", "StvnMetadataFacet");
@@ -123,18 +123,18 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // 8. String Cardinality Inspection
         map.put(DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED, "StvnStringCardinality");
-        map.put(StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED, "StvnStringCardinality");
+        putDual(map, StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED, "StvnStringCardinality");
         map.put("STRING_BOUND_VIOLATION", "StvnStringCardinality");
         map.put("E012", "StvnStringCardinality");
 
         // 9. Discrete Interval Bound Inspection
         map.put(DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED, "StvnDiscreteInterval");
-        map.put(StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED, "StvnDiscreteInterval");
+        putDual(map, StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED, "StvnDiscreteInterval");
         map.put(DiagnosticBag.ERR_EMPTY_INTERVAL_DOMAIN, "StvnDiscreteInterval");
         map.put(DiagnosticBag.ERR_INVERTED_RANGE, "StvnDiscreteInterval");
         map.put(DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE, "StvnDiscreteInterval");
-        map.put(StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN, "StvnDiscreteInterval");
-        map.put(StvnDiagnosticCodes.ERR_INVERTED_RANGE, "StvnDiscreteInterval");
+        putDual(map, StvnDiagnosticCodes.ERR_EMPTY_INTERVAL_DOMAIN, "StvnDiscreteInterval");
+        putDual(map, StvnDiagnosticCodes.ERR_INVERTED_RANGE, "StvnDiscreteInterval");
         map.put("FLOAT_EXACT_RANGE_CONFLICT", "StvnDiscreteInterval");
         map.put("E011", "StvnDiscreteInterval");
 
@@ -142,60 +142,61 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
         map.put(DiagnosticBag.ERR_DATETIME_MODE_INVALID, "StvnTemporalMode");
         map.put(DiagnosticBag.ERR_MISSING_TEMPORAL_FACET, "StvnTemporalMode");
-        map.put(StvnDiagnosticCodes.ERR_MISSING_TEMPORAL_FACET, "StvnTemporalMode");
+        putDual(map, StvnDiagnosticCodes.ERR_MISSING_TEMPORAL_FACET, "StvnTemporalMode");
         map.put("ERR_LEGACY_UNIT_FACET_PURGED", "StvnTemporalMode");
-        map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
-        map.put(StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
-        map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
-        map.put(StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING, "StvnTemporalMode");
+        putDual(map, StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
+        putDual(map, StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING, "StvnTemporalMode");
+        putDual(map, StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE, "StvnTemporalMode");
+        putDual(map, StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING, "StvnTemporalMode");
 
         // 11. Excessive Exact Float Precision Inspection
-        map.put(StvnDiagnosticCodes.WARN_EXCESSIVE_EXACT_PRECISION, "StvnExcessiveExactFloatPrecision");
+        putDual(map, StvnDiagnosticCodes.WARN_EXCESSIVE_EXACT_PRECISION, "StvnExcessiveExactFloatPrecision");
 
         // 12. String Capacity Governance Inspection
         map.put(DiagnosticBag.ERR_CAPACITY_OVERFLOW, "StvnStringCapacity");
         map.put("CAPACITY_OVERFLOW", "StvnStringCapacity");
-        map.put(StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED, "StvnStringCapacity");
-        map.put(StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED, "StvnStringCapacity");
-        map.put(StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW, "StvnStringCapacity");
-        map.put(StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW, "StvnStringCapacity");
 
         // 13. Flat Document Include Inspection
         map.put(DiagnosticBag.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");
-        map.put(StvnDiagnosticCodes.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");
+        putDual(map, StvnDiagnosticCodes.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");
         map.put(DiagnosticBag.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT, "StvnFlatDocumentInclude");
+        putDual(map, StvnDiagnosticCodes.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT, "StvnFlatDocumentInclude");
         map.put("UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT", "StvnFlatDocumentInclude");
         map.put("E035", "StvnFlatDocumentInclude");
 
         // 14. Nested Package Enclosures Inspection
         map.put(DiagnosticBag.ERR_NESTED_PACKAGE_PROHIBITED, "StvnNestedPackage");
-        map.put(StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED, "StvnNestedPackage");
+        putDual(map, StvnDiagnosticCodes.ERR_NESTED_PACKAGE_PROHIBITED, "StvnNestedPackage");
 
         // 15. Trailing Slash Inspection
         map.put(DiagnosticBag.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
-        map.put(StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
+        putDual(map, StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED, "StvnTrailingSlash");
 
         // 16. Constant Range Inspection
         map.put(DiagnosticBag.ERR_INTEGER_OVERFLOW, "StvnConstantRange");
-        map.put(StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW, "StvnConstantRange");
-        map.put(StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW, "StvnConstantRange");
+        putDual(map, StvnDiagnosticCodes.ERR_CONSTANT_INTEGER_OVERFLOW, "StvnConstantRange");
+        putDual(map, StvnDiagnosticCodes.ERR_CONSTANT_FLOAT_OVERFLOW, "StvnConstantRange");
         map.put("INT_OVERFLOW", "StvnConstantRange");
         map.put("E009", "StvnConstantRange");
 
         // 17. LHS Reserved Type Inspection
         map.put(DiagnosticBag.ERR_RESERVED_KEYWORD_ON_LHS, "StvnLhsReservedType");
-        map.put(StvnDiagnosticCodes.ERR_RESERVED_KEYWORD_ON_LHS, "StvnLhsReservedType");
+        putDual(map, StvnDiagnosticCodes.ERR_RESERVED_KEYWORD_ON_LHS, "StvnLhsReservedType");
 
         // 18. Fenced String Delimiter Inspection
         map.put(DiagnosticBag.ERR_PROHIBITED_FENCE_ARROW, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_PROHIBITED_FENCE_ARROW, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_TAG_EMPTY, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_TAG_WHITESPACE, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_TAG_LENGTH_OVERFLOW, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_CLOSING_TAG_MISMATCH, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_OPENING_TAG_MISMATCH, "StvnFencedString");
-        map.put(StvnDiagnosticCodes.ERR_FENCE_BLOCK_UNCLOSED, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_PROHIBITED_FENCE_ARROW, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_TAG_EMPTY, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_TAG_WHITESPACE, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_TAG_LENGTH_OVERFLOW, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_TAG_SYNTAX_INVALID, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_CLOSING_TAG_MISMATCH, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_OPENING_TAG_MISMATCH, "StvnFencedString");
+        putDual(map, StvnDiagnosticCodes.ERR_FENCE_BLOCK_UNCLOSED, "StvnFencedString");
         map.put("FENCE_DELIMITER_MISMATCH", "StvnFencedString");
         map.put("FENCE_PROHIBITED_ARROW", "StvnFencedString");
         map.put("E025", "StvnFencedString");
@@ -206,17 +207,19 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put(DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET, "StvnEnumSubset");
         map.put(DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION, "StvnEnumSubset");
         map.put(DiagnosticBag.ERR_ENUM_SUBSET_EMPTY, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_MONOTONIC_NARROWING_VIOLATION, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_ROOT_ORDER_VIOLATION, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_COMPLETE_EXCLUSION_VIOLATION, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT, "StvnEnumSubset");
-        map.put(StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_MUTUALLY_EXCLUSIVE, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_MONOTONIC_NARROWING_VIOLATION, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_ENUM_SUBSET_NOT_SUBSET, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_ROOT_ORDER_VIOLATION, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ENUM_SUBSET_ORDER_VIOLATION, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_ENUM_SUBSET_EMPTY, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_COMPLETE_EXCLUSION_VIOLATION, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT, "StvnEnumSubset");
+        putDual(map, StvnDiagnosticCodes.ERR_ENUM_SUBSET_PAYLOAD_MEMBERSHIP_VIOLATION, "StvnEnumSubset");
         map.put("ENUM_SUBSET_NOT_SUBSET", "StvnEnumSubset");
         map.put("ENUM_SUBSET_ORDER_VIOLATION", "StvnEnumSubset");
         map.put("ENUM_SUBSET_EMPTY", "StvnEnumSubset");
@@ -225,29 +228,34 @@ public final class StvnDiagnosticAnnotatorMapping {
         map.put("E016", "StvnEnumSubset");
 
         // 20. Degenerate Composite Schema Inspection
-        map.put(StvnDiagnosticCodes.WARN_DEGENERATE_TUPLE, "StvnDegenerateComposite");
-        map.put(StvnDiagnosticCodes.WARN_DEGENERATE_ENUM, "StvnDegenerateComposite");
-        map.put(StvnDiagnosticCodes.WARN_DEGENERATE_UNION, "StvnDegenerateComposite");
+        putDual(map, StvnDiagnosticCodes.WARN_DEGENERATE_TUPLE, "StvnDegenerateComposite");
+        putDual(map, StvnDiagnosticCodes.WARN_DEGENERATE_ENUM, "StvnDegenerateComposite");
+        putDual(map, StvnDiagnosticCodes.WARN_DEGENERATE_UNION, "StvnDegenerateComposite");
 
         // 21. Degraded Schema Payload Evaluation Inspection
-        map.put(StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE, "StvnDegradedSchema");
+        putDual(map, StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE, "StvnDegradedSchema");
 
         // 22. Map Structural Inspection (Duplicate map keys E017 and duplicate inverted values E018 are governed by Core)
-        map.put(StvnDiagnosticCodes.ERR_FLAT_LIST_IN_MAP_SLOT, "StvnMapStructural");
+        putDual(map, StvnDiagnosticCodes.ERR_FLAT_LIST_IN_MAP_SLOT, "StvnMapStructural");
 
         // 23. Boolean Validity Inspection
-        map.put(StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING, "StvnBooleanValidity");
-        map.put(StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_LITERAL, "StvnBooleanValidity");
+        putDual(map, StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_CASING, "StvnBooleanValidity");
+        putDual(map, StvnDiagnosticCodes.ERR_INVALID_BOOLEAN_LITERAL, "StvnBooleanValidity");
 
         // 24. Variant Tag Style Inspection
-        map.put(StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG, "StvnVariantStyle");
-        map.put(StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY, "StvnVariantStyle");
+        putDual(map, StvnDiagnosticCodes.WARN_REDUNDANT_VARIANT_TAG, "StvnVariantStyle");
+        putDual(map, StvnDiagnosticCodes.WARN_VARIANT_FORM_DISCREPANCY, "StvnVariantStyle");
 
         // 25. Unresolved Type Reference Inspection
-        map.put(StvnDiagnosticCodes.ERR_UNRESOLVED_TYPE, "StvnUnresolvedType");
+        putDual(map, StvnDiagnosticCodes.ERR_UNRESOLVED_TYPE, "StvnUnresolvedType");
 
         CODE_TO_INSPECTION_MAP = Collections.unmodifiableMap(map);
         INSPECTION_GOVERNED_CODES = Collections.unmodifiableSet(map.keySet());
+    }
+
+    private static void putDual(Map<String, String> map, String code, String shortName) {
+        map.put(code, shortName);
+        map.put(StvnDiagnosticCodes.stripCanonicalPrefix(code), shortName);
     }
 
     /**
@@ -257,7 +265,11 @@ public final class StvnDiagnosticAnnotatorMapping {
      * @return the shortName of the governing inspection, or {@code null} if ungoverned
      */
     public static @Nullable String getGoverningInspectionShortName(String diagnosticCode) {
-        return CODE_TO_INSPECTION_MAP.get(diagnosticCode);
+        var direct = CODE_TO_INSPECTION_MAP.get(diagnosticCode);
+        if (direct != null) {
+            return direct;
+        }
+        return CODE_TO_INSPECTION_MAP.get(StvnDiagnosticCodes.stripCanonicalPrefix(diagnosticCode));
     }
 
     /**
@@ -276,9 +288,9 @@ public final class StvnDiagnosticAnnotatorMapping {
             var canonId = diag.canonicalCode().orElse("");
             var errId = diag.errorCode().orElse("");
             if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(symId)
-                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(symId)
+                    || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(symId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                     || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(errId)
-                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(errId)
+                    || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(errId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                     || "E008".equals(canonId)) {
                 return null;
             }
@@ -288,7 +300,7 @@ public final class StvnDiagnosticAnnotatorMapping {
             if (isExplicitlyUngovernedSymbolicId(sym)) {
                 return null;
             }
-            String mapped = CODE_TO_INSPECTION_MAP.get(sym);
+            String mapped = getGoverningInspectionShortName(sym);
             if (mapped != null) {
                 return mapped;
             }
@@ -298,7 +310,7 @@ public final class StvnDiagnosticAnnotatorMapping {
             if (isExplicitlyUngovernedSymbolicId(canon)) {
                 return null;
             }
-            String mapped = CODE_TO_INSPECTION_MAP.get(canon);
+            String mapped = getGoverningInspectionShortName(canon);
             if (mapped != null) {
                 return mapped;
             }
@@ -308,7 +320,7 @@ public final class StvnDiagnosticAnnotatorMapping {
             if (isExplicitlyUngovernedSymbolicId(err)) {
                 return null;
             }
-            return CODE_TO_INSPECTION_MAP.get(err);
+            return getGoverningInspectionShortName(err);
         }
         return null;
     }
@@ -324,11 +336,11 @@ public final class StvnDiagnosticAnnotatorMapping {
             || "META_POSITION_INVALID".equals(code)
             || "E033".equals(code)
             || DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(code)
-            || StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION.equals(code)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(code, StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION)
             || DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(code)
-            || StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION.equals(code)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(code, StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION)
             || DiagnosticBag.ERR_MALFORMED_SECTION_STRUCTURE.equals(code)
-            || StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE.equals(code)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(code, StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE)
             || DiagnosticBag.ERR_TRAIT_VIOLATION.equals(code)
             || "ERR_TRAIT_VIOLATION".equals(code)
             || DiagnosticBag.ERR_DUPLICATE_MAP_KEY.equals(code)
@@ -525,9 +537,9 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         // Route shared mutual-exclusivity diagnostics to the specific domain inspection
         if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
-                || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                 || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
-                || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(err, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                 || "E008".equals(canon)
                 || "E011".equals(canon)
                 || "E011".equals(err)) {
@@ -535,9 +547,9 @@ public final class StvnDiagnosticAnnotatorMapping {
                 return false;
             }
             if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
-                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(sym)
+                    || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                     || DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(err)
-                    || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(err)) {
+                    || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(err, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)) {
                 String mutexOwner = "StvnDiscreteInterval";
                 if (message.contains("Temporal scale facets")
                         || message.contains("Temporal mode facets")
@@ -556,7 +568,7 @@ public final class StvnDiagnosticAnnotatorMapping {
         }
 
         if (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(sym)
-                || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(sym)) {
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET)) {
             if (message.contains("cannot be applied to :Map directly")) {
                 return false;
             }

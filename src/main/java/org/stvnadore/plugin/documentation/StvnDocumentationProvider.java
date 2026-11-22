@@ -37,6 +37,8 @@ import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.plugin.validation.StvnDiagnosticCodes;
+import org.stvnadore.plugin.validation.StvnDiagnosticFormatter;
 import org.stvnadore.plugin.validation.StvnTrailingSlashInspection;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
@@ -125,6 +127,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
                     return (typeDef != null) ? typeDef : resolved;
                 }
+                var fromHierarchy = resolveTypeDefinitionLinkAcrossHierarchy(file, typeName, new HashSet<>());
+                if (fromHierarchy != null) {
+                    return fromHierarchy;
+                }
+            }
+            var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(context.getProject(), typeName);
+            if (preludeDef != null) {
+                return preludeDef;
             }
         } else if (link.startsWith("offset/")) {
             try {
@@ -636,6 +646,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                       .append(String.join(" &rarr; ", chainResolution.hops()))
                       .append("</code>)");
                 }
+                boolean useLongForm = StvnTypeResolver.useLongFormSumTypes(constDef.getProject());
+                var sumSpineHtml = StvnConstantSumSpineRenderer.renderConstantSumSpineRows(constDef, useLongForm);
+                if (sumSpineHtml != null) {
+                    sb.append(sumSpineHtml);
+                }
             }
             appendBodyConstantComplianceSection(sb, constDef, originalElement);
             return sb.toString();
@@ -1046,12 +1061,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
             } else if (isSameRootEnum(declaredEnumDef, leafSchema, subsetIr.rootEnum())) {
                 satisfied = false;
-                detail = "Variant <code>" + escapeHtmlBody(variantText)
-                    + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+                detail = appendCoreCodeSuffixHtml(
+                    "Variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>",
+                    "E012",
+                    DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                );
             } else {
                 satisfied = false;
-                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
-                    + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+                detail = appendCoreCodeSuffixHtml(
+                    "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>",
+                    "E028",
+                    DiagnosticBag.ERR_TYPE_MISMATCH
+                );
             }
         } else if (leafIr instanceof StvnSchema.EnumSchema enumIr) {
             if (enumIr.rootVariants().contains(variantText)
@@ -1060,8 +1083,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
             } else {
                 satisfied = false;
-                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
-                    + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+                detail = appendCoreCodeSuffixHtml(
+                    "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> does not belong to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>",
+                    "E028",
+                    DiagnosticBag.ERR_TYPE_MISMATCH
+                );
             }
         } else {
             EnumDef slotRootEnumDef = StvnTypeResolver.resolveRootEnumDef(leafSchema);
@@ -1070,15 +1097,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var subsetPsi = StvnTypeResolver.resolveEnumSubset(leafSchema);
             if (!sameRootPsi) {
                 satisfied = false;
-                detail = "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
-                    + "</code> cannot be assigned to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+                detail = appendCoreCodeSuffixHtml(
+                    "Type mismatch: variant <code>" + escapeHtmlBody(variantText)
+                        + "</code> cannot be assigned to <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>",
+                    "E028",
+                    DiagnosticBag.ERR_TYPE_MISMATCH
+                );
             } else if (subsetPsi != null) {
                 satisfied = subsetPsi.allowedVariants().contains(variantText);
                 detail = satisfied
                     ? "Variant <code>" + escapeHtmlBody(variantText)
                         + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>"
-                    : "Variant <code>" + escapeHtmlBody(variantText)
-                        + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
+                    : appendCoreCodeSuffixHtml(
+                        "Variant <code>" + escapeHtmlBody(variantText)
+                            + "</code> is excluded from subset <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>",
+                        "E012",
+                        DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                    );
             } else {
                 detail = "Variant <code>" + escapeHtmlBody(variantText)
                     + "</code> is permitted in <code>" + escapeHtmlBody(leafSchemaLabel) + "</code>";
@@ -1102,6 +1137,160 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 sb.append("<br/><b>Exemplar Value:</b> <code>").append(escapeHtmlBody(exemplar)).append("</code>");
             }
         }
+    }
+
+    private static @Nullable TypeDefinition resolveTypeDefinitionLinkAcrossHierarchy(
+        PsiFile file,
+        String targetFqni,
+        Set<PsiFile> visitedFiles
+    ) {
+        if (!visitedFiles.add(file)) {
+            return null;
+        }
+        String normalizedTarget = targetFqni.startsWith(StvnVocabulary.SIGIL_TYPIC)
+            ? targetFqni
+            : StvnVocabulary.SIGIL_TYPIC + targetFqni;
+        int slashIdx = normalizedTarget.lastIndexOf('/');
+        if (slashIdx > 1) {
+            String expectedPkg = normalizedTarget.substring(0, slashIdx);
+            String expectedLocal = StvnVocabulary.SIGIL_TYPIC + normalizedTarget.substring(slashIdx + 1);
+            for (var pkg : PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class)) {
+                if (StvnPsiUtils.hasIllegalTrailingSlash(pkg) || pkg.getPackagePath() == null) {
+                    continue;
+                }
+                if (expectedPkg.equals(pkg.getPackagePath().getText().trim())) {
+                    for (var elem : pkg.getPackageElementList()) {
+                        var td = elem.getTypeDefinition();
+                        if (td != null && td.getTypeKeyword() != null
+                                && expectedLocal.equals(td.getTypeKeyword().getText().trim())) {
+                            return td;
+                        }
+                    }
+                }
+            }
+        } else {
+            for (var td : PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class)) {
+                if (PsiTreeUtil.getParentOfType(td, PackageEnclosure.class) != null) {
+                    continue;
+                }
+                if (td.getTypeKeyword() != null && normalizedTarget.equals(td.getTypeKeyword().getText().trim())) {
+                    return td;
+                }
+            }
+        }
+        for (var includeElem : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            if (includeElem.getStringLiteral() == null) {
+                continue;
+            }
+            var targetFile = StvnTypeReference.resolveIncludeFile(includeElem.getStringLiteral());
+            if (targetFile != null) {
+                var found = resolveTypeDefinitionLinkAcrossHierarchy(targetFile, targetFqni, visitedFiles);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    static boolean hasPurePsiConstantValueViolation(ConstantDefinition constDef) {
+        Value rhsVal = constDef.getValue();
+        SchemaType rhsSchema = constDef.getSchemaType();
+        if (rhsVal == null || rhsSchema == null) {
+            return true;
+        }
+        if (isGoverningSchemaUngrounded(rhsVal, rhsSchema) || isGoverningSchemaDegraded(rhsVal, rhsSchema)) {
+            return true;
+        }
+        WrapperSpineValidationResult spine = validateExplicitWrapperSpine(rhsVal, rhsSchema);
+        if (spine.invalid()) {
+            return true;
+        }
+        Value leafVal = unwrapExplicitWrapperValue(rhsVal);
+        String head = leafVal.getText().trim().split("\\s+")[0];
+        if (StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head)) {
+            SchemaType optSchema = unwrapImplicitRightEitherSchemasToOption(
+                StvnTypeResolver.resolveBaseTypeInfo(leafVal) != null
+                    ? StvnTypeResolver.resolveBaseTypeInfo(leafVal).getSchema()
+                    : rhsSchema
+            );
+            SchemaType unwrappedOpt = unwrapMultiHopNominalSchema(optSchema);
+            return unwrappedOpt == null
+                || unwrappedOpt.getSchemaConstructor() == null
+                || unwrappedOpt.getSchemaConstructor().getSumType() == null
+                || !isOptionSumType(unwrappedOpt.getSchemaConstructor().getSumType());
+        }
+        SchemaType leafSchema = StvnTypeResolver.resolveTerminalPayloadSchema(rhsVal, leafVal);
+        if (leafSchema == null) {
+            leafSchema = rhsSchema;
+        }
+        return !evaluateValueComplianceInternal(leafVal, leafSchema).isSatisfied();
+    }
+
+    private static @Nullable SchemaType unwrapMultiHopNominalSchema(@Nullable SchemaType schema) {
+        SchemaType curr = schema;
+        Set<PsiElement> visited = new HashSet<>();
+        while (curr != null && curr.getSchemaConstructor() == null && visited.add(curr)) {
+            SchemaType next = StvnTypeResolver.resolveNominalSchema(curr);
+            if (next == null || next == curr) {
+                break;
+            }
+            curr = next;
+        }
+        return curr;
+    }
+
+    private static @Nullable SchemaType unwrapImplicitRightEitherSchemasToOption(@Nullable SchemaType startSchema) {
+        SchemaType curr = startSchema;
+        Set<PsiElement> visited = new HashSet<>();
+        for (int depth = 0; depth < 16 && curr != null && visited.add(curr); depth++) {
+            SchemaType constructed = unwrapMultiHopNominalSchema(curr);
+            if (constructed == null) {
+                return curr;
+            }
+            var ctor = constructed.getSchemaConstructor();
+            var sum = ctor != null ? ctor.getSumType() : null;
+            if (sum == null || isOptionSumType(sum)) {
+                return curr;
+            }
+            if (isEitherSumType(sum)) {
+                var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                if (branches.size() >= 2) {
+                    curr = branches.get(1);
+                    continue;
+                }
+            }
+            break;
+        }
+        return curr;
+    }
+
+    private static String appendCoreCodeSuffixHtml(String htmlExplanation, String canonicalCode, String symbolicId) {
+        String trimmed = htmlExplanation.stripTrailing();
+        if (StvnDiagnosticFormatter.COMPLETE_ATTRIBUTION_SUFFIX_PATTERN.matcher(trimmed).find()) {
+            return trimmed;
+        }
+        if (trimmed.endsWith(".")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).stripTrailing();
+        }
+        String prefixed = StvnDiagnosticCodes.PREFIXED_CODE_PATTERN.matcher(symbolicId).matches()
+            ? symbolicId
+            : canonicalCode + '-' + symbolicId;
+        return trimmed + " [" + StvnDiagnosticFormatter.ENCLAVE_CORE + ':' + prefixed + "]";
+    }
+
+    private static String appendPluginCodeSuffixHtml(String htmlExplanation, String pluginDiagnosticCode) {
+        String trimmed = htmlExplanation.stripTrailing();
+        if (StvnDiagnosticFormatter.COMPLETE_ATTRIBUTION_SUFFIX_PATTERN.matcher(trimmed).find()) {
+            return trimmed;
+        }
+        if (trimmed.endsWith(".")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).stripTrailing();
+        }
+        String prefixed = StvnDiagnosticCodes.PREFIXED_CODE_PATTERN.matcher(pluginDiagnosticCode).matches()
+            ? pluginDiagnosticCode
+            : StvnDiagnosticCodes.resolveCanonicalPrefix(pluginDiagnosticCode) + '-' + pluginDiagnosticCode;
+        return trimmed + " [" + StvnDiagnosticFormatter.ENCLAVE_PLUGIN + ':' + prefixed + "]";
     }
 
     private static boolean isSameRootEnum(
@@ -1148,10 +1337,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (rootSlotSchema == null) {
             return;
         }
+        var bodyValInfo = StvnTypeResolver.resolveBaseTypeInfo(bodyVal);
+        SchemaType directBodyValSchema = (bodyValInfo != null && bodyValInfo.getSchema() != null)
+            ? bodyValInfo.getSchema()
+            : rootSlotSchema;
         WrapperSpineValidationResult wrapperCheck = validateExplicitWrapperSpine(slotRootVal, rootSlotSchema);
         SchemaType leafSchema = wrapperCheck.invalid()
             ? (wrapperCheck.failingTargetSchema() != null ? wrapperCheck.failingTargetSchema() : rootSlotSchema)
-            : StvnTypeResolver.resolveTerminalPayloadSchema(slotRootVal, bodyVal);
+            : directBodyValSchema;
         if (leafSchema == null) {
             leafSchema = rootSlotSchema;
         }
@@ -1196,7 +1389,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (compilerErrs.isEmpty()) {
             var coreVal = StvnTypeResolver.resolveCoreValue(bodyVal);
             if (coreVal instanceof StvnValue.StvnErrorValue errVal) {
-                compilerErrs = List.of(errVal.diagnostic().message());
+                compilerErrs = List.of(StvnDiagnosticFormatter.formatCore(errVal.diagnostic()));
             }
         }
         if (compilerErrs.isEmpty()) {
@@ -1231,7 +1424,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 && constChain.terminalValue() != null
                 && constChain.terminalValue().getStringLiteral() != null
                 && StvnPsiLiteralEvaluator.decodeStringLiteral(constChain.terminalValue().getStringLiteral().getText(), false).isEmpty()) {
-            compilerErrs = List.of("Malformed string literal in constant definition");
+            compilerErrs = List.of(
+                StvnDiagnosticFormatter.formatCore(
+                    "Malformed string literal in constant definition",
+                    "E002",
+                    "STVN_SYNTAX_ERROR"
+                )
+            );
         }
         if (compilerErrs.isEmpty() && isBodyPass3Suspended(bodyVal)) {
             appendSuspendedDocumentErrorsFooter(sb);
@@ -1344,9 +1543,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             String tgtName = slotBrandId != null
                 ? slotBrandId
                 : StvnSchemaFormatter.formatCleanSchema(leafSchema);
-            return "Incompatible nominal type: constant '" + rawTokenText
-                + "' of nominal type '" + constBrandId
-                + "' cannot be assigned to target nominal type '" + tgtName + "'";
+            return StvnDiagnosticFormatter.formatCore(
+                "Incompatible nominal type: constant '" + rawTokenText
+                    + "' of nominal type '" + constBrandId
+                    + "' cannot be assigned to target nominal type '" + tgtName + "'",
+                "E027",
+                DiagnosticBag.ERR_INCOMPATIBLE_NOMINAL_TYPE
+            );
         }
         return verifyCompositeConstantChildBrands(effectiveConstSchema, leafSchema, rawTokenText, new HashSet<>());
     }
@@ -1511,16 +1714,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (targetRange != null
                     && diag.startOffset() == targetRange.getStartOffset()
                     && diag.endOffset() == targetRange.getEndOffset()) {
-                return diag.message();
+                return StvnDiagnosticFormatter.formatCore(diag);
             }
             if (rootRange != null
                     && slotRootVal != targetVal
                     && diag.startOffset() == rootRange.getStartOffset()
                     && diag.endOffset() == rootRange.getEndOffset()) {
-                return diag.message();
+                return StvnDiagnosticFormatter.formatCore(diag);
             }
             if (matchesWrapperTagSpanAlongSpine(slotRootVal, targetVal, diag.startOffset(), diag.endOffset())) {
-                return diag.message();
+                return StvnDiagnosticFormatter.formatCore(diag);
             }
         }
         return null;
@@ -1589,7 +1792,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (diag.startOffset() >= range.getStartOffset()
                     && diag.endOffset() <= range.getEndOffset()
                     && diag.endOffset() > diag.startOffset()) {
-                messages.add(diag.message());
+                messages.add(StvnDiagnosticFormatter.formatCore(diag));
             }
         }
         return List.copyOf(messages);
@@ -5034,6 +5237,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     targetSchemaForCompliance = unwrappedLeafSchema;
                     targetValueForCompliance = unwrappedLeafVal;
                 }
+            } else {
+                SchemaType optionTargetSchema = unwrapImplicitRightEitherSchemasToOption(targetSchemaForCompliance);
+                if (optionTargetSchema != null) {
+                    targetSchemaForCompliance = optionTargetSchema;
+                }
+                targetValueForCompliance = unwrappedLeafVal;
             }
         }
 
@@ -5074,8 +5283,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         } else {
             sb.append("<b>Locus:</b> Document Payload Body (<code>").append(StvnVocabulary.KEYWORD_BODY).append("</code> clause)<br/>");
         }
-        sb.append("<nobr><b>Governing Schema:</b> <code>").append(governingSchema).append("</code></nobr><br/>");
-        sb.append("</div><hr/>");
+        sb.append("<nobr><b>Governing Schema:</b> <code>").append(governingSchema).append("</code></nobr>");
+        if (enclosingConstDef != null) {
+            boolean useLongForm = StvnTypeResolver.useLongFormSumTypes(enclosingConstDef.getProject());
+            String sumSpineRows = StvnConstantSumSpineRenderer.renderConstantSumSpineRows(enclosingConstDef, useLongForm);
+            if (sumSpineRows != null) {
+                sb.append(sumSpineRows);
+            }
+        }
+        sb.append("<br/></div><hr/>");
 
         // Zone 2: Effective Semantic Contract (Dynamic Constraint Evaluation)
         sb.append("<div class='content'>");
@@ -5151,7 +5367,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 ? containedErrors.stream()
                     .map(StvnDocumentationProvider::escapeHtmlBody)
                     .collect(Collectors.joining("<br/>"))
-                : "Malformed string literal: " + escapeHtmlBody(value.getText().trim());
+                : appendCoreCodeSuffixHtml(
+                    "Malformed string literal: " + escapeHtmlBody(value.getText().trim()),
+                    "E002",
+                    "STVN_SYNTAX_ERROR"
+                );
             return new StvnValueComplianceResult(
                 false,
                 "Violated",
@@ -5195,7 +5415,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         && (isExcessSliceDiagnostic(diagCode) || isContainerLevelDiagnostic(diagCode))
                         && resolveOwningContainerValue(file, diag.startOffset()) == value;
                     if (exactSpanMatch || scalarContainedMatch || wrapperSpineTagMatch || containerSliceMatch) {
-                        matchedMessages.add(escapeHtmlBody(diag.message()));
+                        matchedMessages.add(escapeHtmlBody(StvnDiagnosticFormatter.formatCore(diag)));
                         if (isContainer) {
                             break;
                         }
@@ -5256,8 +5476,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (!hasExplicitWrapper) {
                 return WrapperSpineValidationResult.valid();
             }
-            SchemaType resolved = StvnTypeResolver.resolveNominalSchema(currSchema);
-            SchemaType target = resolved != null ? resolved : currSchema;
+            SchemaType target = unwrapMultiHopNominalSchema(currSchema);
+            if (target == null) {
+                target = currSchema;
+            }
             var ctor = target.getSchemaConstructor();
             var sum = ctor != null ? ctor.getSumType() : null;
 
@@ -5273,23 +5495,66 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                             continue;
                         }
                     }
+                    if (sum != null && isEitherSumType(sum)) {
+                        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                        if (branches.size() >= 2) {
+                            currSchema = branches.get(1);
+                            continue;
+                        }
+                    }
                     return new WrapperSpineValidationResult(
                         true,
                         currVal,
                         currSchema,
-                        "Explicit union tag '" + tagText + "' cannot be applied to schema '"
-                            + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit union tag '" + tagText + "' cannot be applied to schema '"
+                                + StvnSchemaFormatter.formatSchema(currSchema) + "'",
+                            "E028",
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        )
                     );
                 }
                 var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                if (branches.isEmpty()) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        StvnDiagnosticFormatter.formatCore(
+                            "Malformed " + StvnVocabulary.TYPE_UNION + " schema requires at least 2 branch types",
+                            "E010",
+                            DiagnosticBag.ERR_MALFORMED_SCHEMA
+                        )
+                    );
+                }
                 var idxOpt = StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(tagText, branches.size());
                 if (idxOpt.isEmpty()) {
                     String numPart = tagText.startsWith(StvnVocabulary.SIGIL_VALUE) ? tagText.substring(1) : tagText;
                     BigInteger parsedIdx = StvnPsiLiteralEvaluator.parseBigInteger(numPart).orElse(null);
                     String errMsg = (parsedIdx != null && parsedIdx.signum() <= 0)
-                        ? "Union variant tag '" + tagText + "' must be >= 1"
-                        : "Union variant tag '" + tagText + "' exceeds branch count (" + branches.size() + ")";
+                        ? StvnDiagnosticFormatter.formatCore(
+                            "Union variant tag '" + tagText + "' must be >= 1",
+                            "E002",
+                            "STVN_SYNTAX_ERROR"
+                        )
+                        : StvnDiagnosticFormatter.formatCore(
+                            "Union variant tag '" + tagText + "' exceeds branch count (" + branches.size() + ")",
+                            "E028",
+                            DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW
+                        );
                     return new WrapperSpineValidationResult(true, currVal, currSchema, errMsg);
+                }
+                if (unionVal.getValue() == null) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit union tag '" + tagText + "' requires a branch value",
+                            "E002",
+                            "STVN_SYNTAX_ERROR"
+                        )
+                    );
                 }
                 currVal = unionVal.getValue();
                 currSchema = branches.get(idxOpt.getAsInt());
@@ -5312,8 +5577,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         true,
                         currVal,
                         currSchema,
-                        "Explicit " + StvnVocabulary.TYPE_EITHER + " tag '" + tagText
-                            + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit " + StvnVocabulary.TYPE_EITHER + " tag '" + tagText
+                                + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'",
+                            "E028",
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        )
                     );
                 }
                 var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
@@ -5322,7 +5591,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         true,
                         currVal,
                         currSchema,
-                        "Malformed " + StvnVocabulary.TYPE_EITHER + " schema lacks 2 branch types"
+                        StvnDiagnosticFormatter.formatCore(
+                            "Malformed " + StvnVocabulary.TYPE_EITHER + " schema lacks 2 branch types",
+                            "E010",
+                            DiagnosticBag.ERR_MALFORMED_SCHEMA
+                        )
+                    );
+                }
+                if (eitherVal.getValue() == null) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit " + StvnVocabulary.TYPE_EITHER + " tag '" + tagText + "' requires a branch value",
+                            "E002",
+                            "STVN_SYNTAX_ERROR"
+                        )
                     );
                 }
                 boolean isLeft = eitherVal.getLeftLiteral() != null || eitherVal.getLeftShortLiteral() != null;
@@ -5336,17 +5621,56 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var tagChild = optVal.getFirstChild();
                 String tagText = tagChild != null ? tagChild.getText().trim() : "";
                 if (sum == null || !isOptionSumType(sum)) {
+                    if (sum != null && isEitherSumType(sum)) {
+                        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                        if (branches.size() >= 2) {
+                            currSchema = branches.get(1);
+                            continue;
+                        }
+                    }
+                    if (sum != null && isUnionSumType(sum)) {
+                        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+                        SchemaType uniqueMatch = null;
+                        int matchCount = 0;
+                        for (var b : branches) {
+                            if (StvnTypeResolver.matchesSchemaPattern(currVal, b)) {
+                                uniqueMatch = b;
+                                matchCount++;
+                            }
+                        }
+                        if (matchCount == 1 && uniqueMatch != null) {
+                            currSchema = uniqueMatch;
+                            continue;
+                        }
+                    }
                     return new WrapperSpineValidationResult(
                         true,
                         currVal,
                         currSchema,
-                        "Explicit " + StvnVocabulary.TYPE_OPTION + " tag '" + tagText
-                            + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'"
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit " + StvnVocabulary.TYPE_OPTION + " tag '" + tagText
+                                + "' cannot be applied to schema '" + StvnSchemaFormatter.formatSchema(currSchema) + "'",
+                            "E028",
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        )
                     );
                 }
                 var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
-                if (optVal.getValue() == null || branches.isEmpty()) {
+                boolean isNoneTag = optVal.getNoneLiteral() != null || optVal.getNoneShortLiteral() != null;
+                if (isNoneTag || branches.isEmpty()) {
                     return WrapperSpineValidationResult.valid();
+                }
+                if (optVal.getValue() == null) {
+                    return new WrapperSpineValidationResult(
+                        true,
+                        currVal,
+                        currSchema,
+                        StvnDiagnosticFormatter.formatCore(
+                            "Explicit " + StvnVocabulary.TYPE_OPTION + " tag '" + tagText + "' requires an inner value",
+                            "E002",
+                            "STVN_SYNTAX_ERROR"
+                        )
+                    );
                 }
                 currVal = optVal.getValue();
                 currSchema = branches.get(0);
@@ -5502,7 +5826,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         + StvnVocabulary.KEYWORD_DEFS
                         + "</code> (circular or unresolved lineage).",
                     Collections.emptyMap(),
-                    List.of("Standard STVN literal")
+                    List.of("Resolve governing schema in <code>" + StvnVocabulary.KEYWORD_DEFS + "</code> to determine valid literal forms")
                 );
             }
             baseType = "";
@@ -5570,7 +5894,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             WrapperSpineValidationResult directWrapperCheck = validateExplicitWrapperSpine(value, schemaType);
             if (directWrapperCheck.invalid() && directWrapperCheck.message() != null) {
                 String compilerMsg = findExactSpanCompilerErrorMessage(value, findEnclosingSlotRootValue(value));
-                String displayMsg = compilerMsg != null ? compilerMsg : directWrapperCheck.message();
+                boolean preferDirectUnionOverflow = directWrapperCheck.message().contains(DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW)
+                    && compilerMsg != null
+                    && compilerMsg.contains("matches neither Left nor Right branch");
+                String displayMsg = (compilerMsg != null && !preferDirectUnionOverflow)
+                    ? compilerMsg
+                    : directWrapperCheck.message();
                 return new StvnValueComplianceResult(
                     false,
                     "Violated",
@@ -5588,7 +5917,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return new StvnValueComplianceResult(
                 false,
                 "In Violation",
-                "Type mismatch: expected scalar " + escapeHtmlBody(baseType) + ", found product constructor :Tuple",
+                appendCoreCodeSuffixHtml(
+                    "Type mismatch: expected scalar " + escapeHtmlBody(baseType)
+                        + ", found product constructor " + StvnVocabulary.TYPE_TUPLE,
+                    "E028",
+                    DiagnosticBag.ERR_TYPE_MISMATCH
+                ),
                 Collections.emptyMap(),
                 buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
             );
@@ -5606,8 +5940,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(
                     false,
                     "Violated",
-                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
-                        + ", found :Int literal (" + escapeHtmlBody(rawIntText) + ")",
+                    appendCoreCodeSuffixHtml(
+                        "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                            + ", found " + StvnVocabulary.TYPE_INT + " literal (" + escapeHtmlBody(rawIntText) + ")",
+                        "E028",
+                        DiagnosticBag.ERR_TYPE_MISMATCH
+                    ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -5616,7 +5954,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var text = rawIntText;
                 var valBI = StvnPsiLiteralEvaluator.parseBigInteger(text).orElse(null);
                 if (valBI == null) {
-                    return new StvnValueComplianceResult(false, "In Violation", "Invalid integer literal representation: " + text, Collections.emptyMap(), Collections.emptyList());
+                    return new StvnValueComplianceResult(
+                        false,
+                        "In Violation",
+                        appendCoreCodeSuffixHtml(
+                            "Invalid integer literal representation: " + escapeHtmlBody(text),
+                            "E009",
+                            DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                        ),
+                        Collections.emptyMap(),
+                        Collections.emptyList()
+                    );
                 }
 
                 boolean isUnsigned = false;
@@ -5640,6 +5988,32 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     }
                     if (teSchema.explicitMaxExcl().isPresent()) {
                         maxVal = teSchema.explicitMaxExcl().get().subtract(BigInteger.ONE);
+                    }
+                } else {
+                    var lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+                    if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_UNSIGNED)) {
+                        isUnsigned = true;
+                    }
+                    if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_SIZE)) {
+                        var parsed = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                            value,
+                            lineageMeta.get(StvnVocabulary.FACET_KW_SIZE)
+                        ).orElse(null);
+                        if (parsed != null) bitWidth = parsed;
+                    }
+                    if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                        var parsed = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                            value,
+                            lineageMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+                        ).orElse(null);
+                        if (parsed != null) minVal = parsed;
+                    }
+                    if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                        var parsed = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                            value,
+                            lineageMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+                        ).orElse(null);
+                        if (parsed != null) maxVal = parsed.subtract(BigInteger.ONE);
                     }
                 }
 
@@ -5704,13 +6078,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var effMax = maxVal != null ? maxVal.min(bitMax) : bitMax;
 
                     satisfied = valBI.compareTo(effMin) >= 0 && valBI.compareTo(effMax) <= 0;
+                    boolean bitOverflow = valBI.compareTo(bitMin) < 0 || valBI.compareTo(bitMax) > 0;
                     if (satisfied) {
                         explanation = String.format("Value %s conforms to interval [%s, %s) and %s-bit representation",
                             valBI, effMin, effMax.add(BigInteger.ONE), bitWidth);
                     } else if (valBI.compareTo(effMin) < 0) {
-                        explanation = String.format("Value %s is below minimum allowable bound %s", valBI, effMin);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s is below minimum allowable bound %s", valBI, effMin),
+                            bitOverflow ? "E009" : "E012",
+                            bitOverflow ? DiagnosticBag.ERR_INTEGER_OVERFLOW : DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else {
-                        explanation = String.format("Value %s exceeds upper bound %s", valBI, effMax);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s exceeds upper bound %s", valBI, effMax),
+                            bitOverflow ? "E009" : "E012",
+                            bitOverflow ? DiagnosticBag.ERR_INTEGER_OVERFLOW : DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     }
                 } else {
                     BigInteger bitLen = BigInteger.valueOf(valBI.bitLength());
@@ -5723,11 +6106,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     if (satisfied) {
                         explanation = String.format("Value %s conforms to %s-bit representation", valBI, bitWidth);
                     } else if (!fitsMin && minVal != null) {
-                        explanation = String.format("Value %s is below minimum allowable bound %s", valBI, minVal);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s is below minimum allowable bound %s", valBI, minVal),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else if (!fitsMax && maxVal != null) {
-                        explanation = String.format("Value %s exceeds upper bound %s", valBI, maxVal);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s exceeds upper bound %s", valBI, maxVal),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else {
-                        explanation = String.format("Value %s exceeds %s-bit representation capacity", valBI, bitWidth);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s exceeds %s-bit representation capacity", valBI, bitWidth),
+                            "E009",
+                            DiagnosticBag.ERR_INTEGER_OVERFLOW
+                        );
                     }
                 }
 
@@ -5750,12 +6145,26 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
                 if (satisfied && rawIntText.contains("_")) {
                     satisfied = false;
-                    explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
-                        + escapeHtmlBody(rawIntText) + "'";
+                    explanation = appendCoreCodeSuffixHtml(
+                        "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                            + escapeHtmlBody(rawIntText) + "'",
+                        "E002",
+                        DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                    );
                 }
                 return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
             } catch (Exception e) {
-                return new StvnValueComplianceResult(false, "In Violation", "Error evaluating integer constraints", Collections.emptyMap(), Collections.emptyList());
+                return new StvnValueComplianceResult(
+                    false,
+                    "In Violation",
+                    appendCoreCodeSuffixHtml(
+                        "Error evaluating integer constraints",
+                        "E009",
+                        DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                    ),
+                    Collections.emptyMap(),
+                    Collections.emptyList()
+                );
             }
         }
 
@@ -5774,8 +6183,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(
                     false,
                     "Violated",
-                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
-                        + ", found :String literal (" + escapeHtmlBody(rawText.trim()) + ")",
+                    appendCoreCodeSuffixHtml(
+                        "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                            + ", found " + StvnVocabulary.TYPE_STRING + " literal (" + escapeHtmlBody(rawText.trim()) + ")",
+                        "E028",
+                        DiagnosticBag.ERR_TYPE_MISMATCH
+                    ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -5795,7 +6208,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     ? containedErrors.stream()
                         .map(StvnDocumentationProvider::escapeHtmlBody)
                         .collect(Collectors.joining("<br/>"))
-                    : "Malformed string literal: " + escapeHtmlBody(rawText.trim());
+                    : appendCoreCodeSuffixHtml(
+                        "Malformed string literal: " + escapeHtmlBody(rawText.trim()),
+                        "E002",
+                        "STVN_SYNTAX_ERROR"
+                    );
                 return new StvnValueComplianceResult(false, "Violated", explanation, Collections.emptyMap(), forms);
             }
             String decodedContent = decodedOpt.get();
@@ -5809,6 +6226,29 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 minSize = strSchema.minSize();
                 maxSize = strSchema.maxSize();
                 regex = strSchema.rawRegexPattern().orElse(null);
+            } else {
+                var lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+                if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                    var parsed = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                        value,
+                        lineageMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE)
+                    ).orElse(null);
+                    if (parsed != null) minSize = parsed;
+                }
+                if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                    var parsed = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                        value,
+                        lineageMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE)
+                    ).orElse(null);
+                    if (parsed != null) maxSize = parsed;
+                }
+                if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_REGEX)) {
+                    regex = StvnPsiLiteralEvaluator.resolveStringOrConst(
+                        value,
+                        lineageMeta.get(StvnVocabulary.FACET_KW_REGEX),
+                        false
+                    ).orElse(null);
+                }
             }
 
             var metaMap = schemaType.getMetadataMap();
@@ -5842,9 +6282,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             boolean satisfied = lenBI.compareTo(minSize) >= 0 && lenBI.compareTo(maxSize) <= 0;
             String explanation;
             if (!satisfied) {
-                explanation = lenBI.compareTo(minSize) < 0
-                    ? String.format("String length %d is below minimum required size %s", len, minSize)
-                    : String.format("String length %d exceeds maximum capacity %s", len, maxSize);
+                explanation = appendCoreCodeSuffixHtml(
+                    lenBI.compareTo(minSize) < 0
+                        ? String.format("String length %d is below minimum required size %s", len, minSize)
+                        : String.format("String length %d exceeds maximum capacity %s", len, maxSize),
+                    "E012",
+                    DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                );
             } else if (regex != null) {
                 boolean regexMatches;
                 try {
@@ -5854,8 +6298,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
                 if (!regexMatches) {
                     satisfied = false;
-                    explanation = "String does not match required regex pattern: <code>"
-                        + escapeHtmlBody(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(regex)) + "</code>";
+                    explanation = appendCoreCodeSuffixHtml(
+                        "String does not match required regex pattern: <code>"
+                            + escapeHtmlBody(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(regex)) + "</code>",
+                        "E013",
+                        DiagnosticBag.ERR_REGEX_MISMATCH
+                    );
                 } else {
                     explanation = String.format("String length %d satisfies bounds [%s, %s] and regex pattern", len, minSize, maxSize);
                 }
@@ -5876,8 +6324,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(
                     false,
                     "Violated",
-                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
-                        + ", found :Float literal (" + escapeHtmlBody(rawFloatText) + ")",
+                    appendCoreCodeSuffixHtml(
+                        "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                            + ", found " + StvnVocabulary.TYPE_FLOAT + " literal (" + escapeHtmlBody(rawFloatText) + ")",
+                        "E028",
+                        DiagnosticBag.ERR_TYPE_MISMATCH
+                    ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -5891,7 +6343,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                             || StvnVocabulary.LITERAL_NEG_INFINITY.equals(text)) {
                         return new StvnValueComplianceResult(true, "Satisfied", "IEEE-754 special floating-point literal " + text, Collections.emptyMap(), List.of("Special Float: <code>" + text + "</code>"));
                     }
-                    return new StvnValueComplianceResult(false, "In Violation", "Invalid float literal representation: " + text, Collections.emptyMap(), Collections.emptyList());
+                    return new StvnValueComplianceResult(
+                        false,
+                        "In Violation",
+                        appendCoreCodeSuffixHtml(
+                            "Invalid float literal representation: " + escapeHtmlBody(text),
+                            "E009",
+                            DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                        ),
+                        Collections.emptyMap(),
+                        Collections.emptyList()
+                    );
                 }
 
                 boolean isExact = irSchema instanceof StvnSchema.FloatSchema fs
@@ -5970,11 +6432,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
                     String explanation;
                     if (!precOk) {
-                        explanation = String.format("Mantissa precision %d exceeds maximum allowable significant digits %s", precision, maxSize);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Mantissa precision %d exceeds maximum allowable significant digits %s", precision, maxSize),
+                            "E012",
+                            DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                        );
                     } else if (!minOk) {
-                        explanation = String.format("Value %s is below minimum allowable bound %s", valBD.toPlainString(), lowerBound.value().toPlainString());
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s is below minimum allowable bound %s", valBD.toPlainString(), lowerBound.value().toPlainString()),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else if (!maxOk) {
-                        explanation = String.format("Value %s meets or exceeds upper bound %s", valBD.toPlainString(), upperBound.value().toPlainString());
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s meets or exceeds upper bound %s", valBD.toPlainString(), upperBound.value().toPlainString()),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else {
                         explanation = String.format("Value %s conforms to discrete decimal interval and mantissa precision (%d digits <= %s)",
                             valBD.toPlainString(), precision, maxSize);
@@ -5987,8 +6461,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     forms.add("Scale: <code>" + valBD.scale() + "</code>");
                     if (satisfied && rawFloatText.contains("_")) {
                         satisfied = false;
-                        explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
-                            + escapeHtmlBody(rawFloatText) + "'";
+                        explanation = appendCoreCodeSuffixHtml(
+                            "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                                + escapeHtmlBody(rawFloatText) + "'",
+                            "E002",
+                            DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                        );
                     }
                     return new StvnValueComplianceResult(satisfied, satisfied ? "Satisfied" : "In Violation", explanation, Collections.emptyMap(), forms);
                 } else {
@@ -5996,6 +6474,52 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                             && fs.representation() == StvnSchema.FloatRepresentation.IEEE_32)
                         ? 32
                         : 64;
+                    StvnSchema.ContinuousBound<BigDecimal> lowerBound = (irSchema instanceof StvnSchema.FloatSchema fs)
+                        ? fs.lowerBound().orElse(null)
+                        : null;
+                    StvnSchema.ContinuousBound<BigDecimal> upperBound = (irSchema instanceof StvnSchema.FloatSchema fs)
+                        ? fs.upperBound().orElse(null)
+                        : null;
+                    if (irSchema == null) {
+                        var lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+                        if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_SIZE)) {
+                            var parsedSz = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                                value,
+                                lineageMeta.get(StvnVocabulary.FACET_KW_SIZE)
+                            ).orElse(null);
+                            if (parsedSz != null && parsedSz.equals(BigInteger.valueOf(32))) {
+                                bitWidth = 32;
+                            } else if (parsedSz != null && parsedSz.equals(BigInteger.valueOf(64))) {
+                                bitWidth = 64;
+                            }
+                        }
+                        if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_INCL)) {
+                            var parsed = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(
+                                value,
+                                lineageMeta.get(StvnVocabulary.FACET_KW_MIN_INCL)
+                            ).orElse(null);
+                            if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
+                        } else if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                            var parsed = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(
+                                value,
+                                lineageMeta.get(StvnVocabulary.FACET_KW_MIN_EXCL)
+                            ).orElse(null);
+                            if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
+                        }
+                        if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_INCL)) {
+                            var parsed = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(
+                                value,
+                                lineageMeta.get(StvnVocabulary.FACET_KW_MAX_INCL)
+                            ).orElse(null);
+                            if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
+                        } else if (lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                            var parsed = StvnPsiLiteralEvaluator.resolveBigDecimalOrConst(
+                                value,
+                                lineageMeta.get(StvnVocabulary.FACET_KW_MAX_EXCL)
+                            ).orElse(null);
+                            if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
+                        }
+                    }
                     if (schemaType.getMetadataMap() != null) {
                         for (var entry : schemaType.getMetadataMap().getMetadataEntryList()) {
                             var t = entry.getText().trim();
@@ -6009,6 +6533,30 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                                         bitWidth = 64;
                                     }
                                 }
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_INCL)) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
+                                    if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
+                                }
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MIN_EXCL)) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
+                                    if (parsed != null) lowerBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
+                                }
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_INCL)) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
+                                    if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.INCLUSIVE);
+                                }
+                            } else if (hasExactFacetTag(t, StvnVocabulary.FACET_KW_MAX_EXCL)) {
+                                var p = t.split("\\s+");
+                                if (p.length >= 2) {
+                                    var parsed = StvnPsiLiteralEvaluator.parseBigDecimal(p[1]).orElse(null);
+                                    if (parsed != null) upperBound = new StvnSchema.ContinuousBound<>(parsed, StvnSchema.BoundKind.EXCLUSIVE);
+                                }
                             }
                         }
                     }
@@ -6017,8 +6565,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     BigDecimal capMax = (bitWidth == 32) ? StvnVocabulary.FLOAT32_MAX : StvnVocabulary.FLOAT64_MAX;
 
                     boolean capOk = valBD.compareTo(capMin) >= 0 && valBD.compareTo(capMax) <= 0;
+                    boolean minOk = lowerBound == null
+                        || (lowerBound.kind() == StvnSchema.BoundKind.INCLUSIVE
+                            ? valBD.compareTo(lowerBound.value()) >= 0
+                            : valBD.compareTo(lowerBound.value()) > 0);
+                    boolean maxOk = upperBound == null
+                        || (upperBound.kind() == StvnSchema.BoundKind.INCLUSIVE
+                            ? valBD.compareTo(upperBound.value()) <= 0
+                            : valBD.compareTo(upperBound.value()) < 0);
+                    boolean floatSatisfied = capOk && minOk && maxOk;
                     String explanation;
-                    String statusLabel = capOk ? "Satisfied" : "In Violation";
+                    String statusLabel = floatSatisfied ? "Satisfied" : "In Violation";
                     int precision = valBD.precision();
                     int safeDigits = (bitWidth == 32) ? 8 : 17;
 
@@ -6031,24 +6588,47 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         selfEquivalent = new BigDecimal(roundedStr).compareTo(valBD) == 0;
                     } catch (Exception ignored) {}
 
-                    boolean precisionLoss = capOk && (precision > safeDigits) && !selfEquivalent;
+                    boolean precisionLoss = floatSatisfied && (precision > safeDigits) && !selfEquivalent;
 
                     if (!capOk) {
-                        explanation = String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
-                            valBD.toString(), capMin, capMax, bitWidth);
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s is out of physical capacity bounds [%s, %s] for %d-bit float",
+                                valBD.toString(), capMin, capMax, bitWidth),
+                            "E012",
+                            DiagnosticBag.ERR_FLOAT_OVERFLOW
+                        );
+                    } else if (!minOk) {
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s is below minimum allowable bound %s", valBD.toPlainString(), lowerBound.value().toPlainString()),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
+                    } else if (!maxOk) {
+                        explanation = appendCoreCodeSuffixHtml(
+                            String.format("Value %s exceeds allowable upper bound %s", valBD.toPlainString(), upperBound.value().toPlainString()),
+                            "E012",
+                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                        );
                     } else if (rawFloatText.contains("_")) {
-                        capOk = false;
+                        floatSatisfied = false;
                         statusLabel = "In Violation";
-                        explanation = "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
-                            + escapeHtmlBody(rawFloatText) + "'";
+                        explanation = appendCoreCodeSuffixHtml(
+                            "STVN Syntax Error: Underscore separators are prohibited in numeric literals: '"
+                                + escapeHtmlBody(rawFloatText) + "'",
+                            "E002",
+                            DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                        );
                     } else if (precisionLoss) {
                         statusLabel = "Satisfied (Precision Loss)";
-                        explanation = String.format(
-                            "Floating-point literal precision (%d digits) exceeds IEEE-754 %s capacity (~%d digits); binary encoding truncates and rounds value to %s",
-                            precision,
-                            (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)"),
-                            (bitWidth == 32 ? 8 : 16),
-                            roundedStr
+                        explanation = appendPluginCodeSuffixHtml(
+                            String.format(
+                                "Floating-point literal precision (%d digits) exceeds IEEE-754 %s capacity (~%d digits); binary encoding truncates and rounds value to %s",
+                                precision,
+                                (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)"),
+                                (bitWidth == 32 ? 8 : 16),
+                                roundedStr
+                            ),
+                            StvnDiagnosticCodes.WARN_FLOAT_PRECISION_LOSS
                         );
                     } else {
                         explanation = String.format("Value %s conforms to %d-bit continuous float representation",
@@ -6063,10 +6643,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     forms.add("Decimal: <code>" + valBD.toPlainString() + "</code>");
                     forms.add("Scientific: <code>" + valBD.toString() + "</code>");
                     forms.add("Format: <code>IEEE-754 " + (bitWidth == 32 ? "Single (32-bit)" : "Double (64-bit)") + "</code>");
-                    return new StvnValueComplianceResult(capOk, statusLabel, explanation, Collections.emptyMap(), forms);
+                    return new StvnValueComplianceResult(floatSatisfied, statusLabel, explanation, Collections.emptyMap(), forms);
                 }
             } catch (Exception e) {
-                return new StvnValueComplianceResult(false, "In Violation", "Error evaluating float constraints", Collections.emptyMap(), Collections.emptyList());
+                return new StvnValueComplianceResult(
+                    false,
+                    "In Violation",
+                    appendCoreCodeSuffixHtml(
+                        "Error evaluating float constraints",
+                        "E009",
+                        DiagnosticBag.ERR_INVALID_NUMERIC_LITERAL
+                    ),
+                    Collections.emptyMap(),
+                    Collections.emptyList()
+                );
             }
         }
 
@@ -6080,8 +6670,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(
                     false,
                     "Violated",
-                    "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
-                        + ", found :Boolean literal (" + escapeHtmlBody(rawBoolText) + ")",
+                    appendCoreCodeSuffixHtml(
+                        "Type mismatch: expected " + formatExpectedSlotDescription(schemaType, irSchema, baseType)
+                            + ", found " + StvnVocabulary.TYPE_BOOLEAN + " literal (" + escapeHtmlBody(rawBoolText) + ")",
+                        "E028",
+                        DiagnosticBag.ERR_TYPE_MISMATCH
+                    ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -6089,7 +6683,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return new StvnValueComplianceResult(
                 true,
                 "Satisfied",
-                "Boolean literal <code>" + escapeHtmlBody(rawBoolText) + "</code> conforms to <code>:Boolean</code>",
+                "Boolean literal <code>" + escapeHtmlBody(rawBoolText) + "</code> conforms to <code>"
+                    + StvnVocabulary.TYPE_BOOLEAN + "</code>",
                 Collections.emptyMap(),
                 buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
             );
@@ -6110,12 +6705,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             if (irSchema instanceof StvnSchema.EnumSubsetSchema subsetSchema) {
                 boolean allowed = subsetSchema.activeVariants().contains(rawKwText);
+                boolean inRoot = subsetSchema.rootEnum().rootVariants().contains(rawKwText);
                 return new StvnValueComplianceResult(
                     allowed,
                     allowed ? "Satisfied" : "In Violation",
                     allowed
                         ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is permitted in active enum subset"
-                        : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is excluded from active enum subset",
+                        : appendCoreCodeSuffixHtml(
+                            inRoot
+                                ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is excluded from active enum subset"
+                                : "Variant <code>" + escapeHtmlBody(rawKwText)
+                                    + "</code> is not a declared member of governing <code>"
+                                    + StvnVocabulary.TYPE_ENUM + "</code>",
+                            inRoot ? "E012" : "E028",
+                            inRoot ? DiagnosticBag.ERR_CONSTRAINT_VIOLATION : DiagnosticBag.ERR_TYPE_MISMATCH
+                        ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -6126,8 +6730,58 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     allowed,
                     allowed ? "Satisfied" : "In Violation",
                     allowed
-                        ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is a declared member of governing <code>:Enum</code>"
-                        : "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is not a declared member of governing <code>:Enum</code>",
+                        ? "Variant <code>" + escapeHtmlBody(rawKwText)
+                            + "</code> is a declared member of governing <code>" + StvnVocabulary.TYPE_ENUM + "</code>"
+                        : appendCoreCodeSuffixHtml(
+                            "Variant <code>" + escapeHtmlBody(rawKwText)
+                                + "</code> is not a declared member of governing <code>"
+                                + StvnVocabulary.TYPE_ENUM + "</code>",
+                            "E028",
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        ),
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+            var psiSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
+            if (psiSubset != null) {
+                boolean allowed = psiSubset.allowedVariants().contains(rawKwText);
+                boolean inRoot = psiSubset.rootVariants().contains(rawKwText);
+                return new StvnValueComplianceResult(
+                    allowed,
+                    allowed ? "Satisfied" : "In Violation",
+                    allowed
+                        ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is permitted in active enum subset"
+                        : appendCoreCodeSuffixHtml(
+                            inRoot
+                                ? "Variant <code>" + escapeHtmlBody(rawKwText) + "</code> is excluded from active enum subset"
+                                : "Variant <code>" + escapeHtmlBody(rawKwText)
+                                    + "</code> is not a declared member of governing <code>"
+                                    + StvnVocabulary.TYPE_ENUM + "</code>",
+                            inRoot ? "E012" : "E028",
+                            inRoot ? DiagnosticBag.ERR_CONSTRAINT_VIOLATION : DiagnosticBag.ERR_TYPE_MISMATCH
+                        ),
+                    Collections.emptyMap(),
+                    buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                );
+            }
+            var psiRootEnum = StvnTypeResolver.resolveRootEnumDef(schemaType);
+            if (psiRootEnum != null) {
+                boolean allowed = psiRootEnum.getValueKeywordList().stream()
+                    .anyMatch(kw -> rawKwText.equals(kw.getText().trim()));
+                return new StvnValueComplianceResult(
+                    allowed,
+                    allowed ? "Satisfied" : "In Violation",
+                    allowed
+                        ? "Variant <code>" + escapeHtmlBody(rawKwText)
+                            + "</code> is a declared member of governing <code>" + StvnVocabulary.TYPE_ENUM + "</code>"
+                        : appendCoreCodeSuffixHtml(
+                            "Variant <code>" + escapeHtmlBody(rawKwText)
+                                + "</code> is not a declared member of governing <code>"
+                                + StvnVocabulary.TYPE_ENUM + "</code>",
+                            "E028",
+                            DiagnosticBag.ERR_TYPE_MISMATCH
+                        ),
                     Collections.emptyMap(),
                     buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                 );
@@ -6135,7 +6789,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return new StvnValueComplianceResult(
                 false,
                 "In Violation",
-                "Undeclared value keyword or constant: <code>" + escapeHtmlBody(rawKwText) + "</code>",
+                appendCoreCodeSuffixHtml(
+                    "Undeclared value keyword or constant: <code>" + escapeHtmlBody(rawKwText) + "</code>",
+                    "E030",
+                    DiagnosticBag.ERR_UNDEFINED_CONSTANT
+                ),
                 Collections.emptyMap(),
                 buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
             );
@@ -6144,26 +6802,44 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // 6. Container literal arity and cardinality evaluation
         if (value.getCollectionValue() != null) {
             var coll = value.getCollectionValue();
-            if (coll.getTupleLiteral() != null && irSchema instanceof StvnSchema.TupleSchema ts) {
-                int actual = coll.getTupleLiteral().getValueList().size();
-                int expected = ts.fieldSchemas().size();
-                if (actual != expected) {
-                    return new StvnValueComplianceResult(
-                        false,
-                        "Violated",
-                        "Tuple arity mismatch: expected " + expected + " element(s), found " + actual,
-                        Collections.emptyMap(),
-                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
-                    );
+            SchemaType unwrappedContainerSchema = unwrapMultiHopNominalSchema(schemaType);
+            var containerCtor = unwrappedContainerSchema != null ? unwrappedContainerSchema.getSchemaConstructor() : null;
+            if (coll.getTupleLiteral() != null) {
+                Integer expectedArity = null;
+                if (irSchema instanceof StvnSchema.TupleSchema ts) {
+                    expectedArity = ts.fieldSchemas().size();
+                } else if (containerCtor != null && containerCtor.getProductType() != null) {
+                    expectedArity = containerCtor.getProductType().getSchemaTypeList().size();
+                }
+                if (expectedArity != null) {
+                    int actual = coll.getTupleLiteral().getValueList().size();
+                    if (actual != expectedArity) {
+                        return new StvnValueComplianceResult(
+                            false,
+                            "Violated",
+                            appendCoreCodeSuffixHtml(
+                                "Tuple arity mismatch: expected " + expectedArity + " element(s), found " + actual,
+                                "E028",
+                                DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH
+                            ),
+                            Collections.emptyMap(),
+                            buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                        );
+                    }
                 }
             } else if (coll.getListLiteral() != null && irSchema instanceof StvnSchema.SeqSchema sq) {
                 var count = BigInteger.valueOf(coll.getListLiteral().getValueList().size());
                 if (count.compareTo(sq.minSize()) < 0 || count.compareTo(sq.maxSize()) > 0) {
+                    boolean emptyViolation = count.signum() == 0 && sq.minSize().signum() > 0;
                     return new StvnValueComplianceResult(
                         false,
                         "Violated",
-                        "Collection cardinality violation: :Seq contains " + count
-                            + " element(s), outside bounds [" + sq.minSize() + ", " + sq.maxSize() + "]",
+                        appendCoreCodeSuffixHtml(
+                            "Collection cardinality violation: " + StvnVocabulary.TYPE_SEQ + " contains " + count
+                                + " element(s), outside bounds [" + sq.minSize() + ", " + sq.maxSize() + "]",
+                            emptyViolation ? "E017" : "E012",
+                            emptyViolation ? DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION : DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                        ),
                         Collections.emptyMap(),
                         buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                     );
@@ -6171,23 +6847,68 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             } else if (coll.getListLiteral() != null && irSchema instanceof StvnSchema.SetSchema st) {
                 var count = BigInteger.valueOf(coll.getListLiteral().getValueList().size());
                 if (count.compareTo(st.minSize()) < 0 || count.compareTo(st.maxSize()) > 0) {
+                    boolean emptyViolation = count.signum() == 0 && st.minSize().signum() > 0;
                     return new StvnValueComplianceResult(
                         false,
                         "Violated",
-                        "Collection cardinality violation: :Set contains " + count
-                            + " element(s), outside bounds [" + st.minSize() + ", " + st.maxSize() + "]",
+                        appendCoreCodeSuffixHtml(
+                            "Collection cardinality violation: " + StvnVocabulary.TYPE_SET + " contains " + count
+                                + " element(s), outside bounds [" + st.minSize() + ", " + st.maxSize() + "]",
+                            emptyViolation ? "E017" : "E012",
+                            emptyViolation ? DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION : DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                        ),
                         Collections.emptyMap(),
                         buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                     );
                 }
             } else if (coll.getMapLiteral() != null && irSchema instanceof StvnSchema.MapSchema mp) {
-                var count = BigInteger.valueOf(coll.getMapLiteral().getValueList().size());
+                var count = BigInteger.valueOf(coll.getMapLiteral().getValueList().size() / 2);
                 if (count.compareTo(mp.minSize()) < 0 || count.compareTo(mp.maxSize()) > 0) {
+                    boolean emptyViolation = count.signum() == 0 && mp.minSize().signum() > 0;
                     return new StvnValueComplianceResult(
                         false,
                         "Violated",
-                        "Collection cardinality violation: :Map contains " + count
-                            + " entries, outside bounds [" + mp.minSize() + ", " + mp.maxSize() + "]",
+                        appendCoreCodeSuffixHtml(
+                            "Collection cardinality violation: " + StvnVocabulary.TYPE_MAP + " contains " + count
+                                + " entries, outside bounds [" + mp.minSize() + ", " + mp.maxSize() + "]",
+                            emptyViolation ? "E017" : "E012",
+                            emptyViolation ? DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION : DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                        ),
+                        Collections.emptyMap(),
+                        buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
+                    );
+                }
+            } else if (irSchema == null && containerCtor != null && containerCtor.getCollectionType() != null) {
+                var lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
+                BigInteger psiMinSize = lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)
+                    ? StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(value, lineageMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE)).orElse(BigInteger.ZERO)
+                    : BigInteger.ZERO;
+                BigInteger psiMaxSize = lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)
+                    ? StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(value, lineageMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE)).orElse(StvnVocabulary.DEFAULT_MAX_SIZE)
+                    : StvnVocabulary.DEFAULT_MAX_SIZE;
+                BigInteger count = null;
+                String collKw = StvnVocabulary.TYPE_SEQ;
+                if (coll.getListLiteral() != null) {
+                    count = BigInteger.valueOf(coll.getListLiteral().getValueList().size());
+                    if (baseType.startsWith(StvnVocabulary.TYPE_SET)) {
+                        collKw = StvnVocabulary.TYPE_SET;
+                    }
+                } else if (coll.getMapLiteral() != null) {
+                    count = BigInteger.valueOf(coll.getMapLiteral().getValueList().size() / 2);
+                    collKw = StvnVocabulary.TYPE_MAP;
+                }
+                if (count != null && (count.compareTo(psiMinSize) < 0 || count.compareTo(psiMaxSize) > 0)) {
+                    boolean emptyViolation = count.signum() == 0 && psiMinSize.signum() > 0;
+                    String unitWord = StvnVocabulary.TYPE_MAP.equals(collKw) ? "entries" : "element(s)";
+                    return new StvnValueComplianceResult(
+                        false,
+                        "Violated",
+                        appendCoreCodeSuffixHtml(
+                            "Collection cardinality violation: " + collKw + " contains " + count
+                                + " " + unitWord + ", outside bounds [" + psiMinSize + ", " + psiMaxSize + "]",
+                            emptyViolation ? "E017" : "E012",
+                            emptyViolation ? DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION : DiagnosticBag.ERR_CAPACITY_OVERFLOW
+                        ),
                         Collections.emptyMap(),
                         buildSchemaValidLexicalForms(schemaType, irSchema, baseType)
                     );
@@ -6230,7 +6951,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || StvnVocabulary.TYPE_TIME_EPOCH.equals(baseType)
                 || StvnVocabulary.TYPE_INT.equals(baseType)) {
             return List.of(
-                "Decimal: <code>0</code>, <code>42</code>, <code>1_000_000</code>",
+                "Decimal: <code>0</code>, <code>42</code>, <code>1000000</code>",
                 "Hexadecimal: <code>0x0</code>, <code>0x2A</code>",
                 "Binary: <code>0b0</code>, <code>0b101010</code>",
                 "Octal: <code>0o0</code>, <code>0o52</code>"
@@ -6257,16 +6978,114 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (irSchema instanceof StvnSchema.BooleanSchema
                 || StvnVocabulary.TYPE_BOOLEAN.equals(baseType)) {
             return List.of(
-                "Canonical: <code>#TRUE</code>, <code>#FALSE</code>",
-                "Short Form: <code>#T</code>, <code>#F</code>"
+                "Canonical: <code>" + StvnVocabulary.VAL_TRUE + "</code>, <code>" + StvnVocabulary.VAL_FALSE + "</code>",
+                "Short Form: <code>" + StvnVocabulary.VAL_TRUE_SHORT + "</code>, <code>" + StvnVocabulary.VAL_FALSE_SHORT + "</code>"
             );
         }
         if (irSchema instanceof StvnSchema.EnumSchema
                 || irSchema instanceof StvnSchema.EnumSubsetSchema
                 || StvnVocabulary.TYPE_ENUM.equals(baseType)) {
-            return List.of("Enum Variant Tag: <code>#VARIANT</code>");
+            return List.of("Enum Variant Tag: <code>" + StvnVocabulary.SIGIL_VALUE + "VARIANT</code>");
         }
-        return List.of("Standard STVN literal");
+
+        SchemaType unwrappedPsi = unwrapMultiHopNominalSchema(schemaType);
+        SchemaConstructor ctor = unwrappedPsi != null ? unwrappedPsi.getSchemaConstructor() : null;
+        SumType sumPsi = ctor != null ? ctor.getSumType() : null;
+
+        if (irSchema instanceof StvnSchema.UnionSchema || (sumPsi != null && isUnionSumType(sumPsi))) {
+            var forms = new ArrayList<String>();
+            var psiBranches = sumPsi != null
+                ? PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class)
+                : List.<SchemaType>of();
+            var irBranches = (irSchema instanceof StvnSchema.UnionSchema us)
+                ? us.branchSchemas()
+                : List.<StvnSchema>of();
+            int count = Math.max(psiBranches.size(), irBranches.size());
+            for (int i = 0; i < count; i++) {
+                SchemaType bPsi = i < psiBranches.size() ? psiBranches.get(i) : null;
+                StvnSchema bIr = i < irBranches.size() ? irBranches.get(i) : null;
+                String branchLabel = bPsi != null
+                    ? StvnSchemaFormatter.formatSchema(bPsi)
+                    : (bIr != null ? StvnSchemaFormatter.formatCleanIrSchema(bIr) : "?");
+                String tag = StvnVocabulary.SIGIL_VALUE + (i + 1);
+                String exemplar = StvnExemplarValueGenerator.generateHoverExemplar(bPsi, bIr);
+                String item = "Branch " + tag + ": <code>" + tag + " " + escapeHtmlBody(branchLabel) + "</code>";
+                if (exemplar != null && !exemplar.isBlank()) {
+                    item += " (e.g. <code>" + tag + " " + escapeHtmlBody(exemplar) + "</code>)";
+                }
+                forms.add(item);
+            }
+            forms.add(
+                "Implicit Unambiguous Branch (Rule C): omit <code>" + StvnVocabulary.SIGIL_VALUE
+                    + "k</code> when a payload literal uniquely matches a single branch"
+            );
+            return List.copyOf(forms);
+        }
+
+        if (irSchema instanceof StvnSchema.OptionSchema || (sumPsi != null && isOptionSumType(sumPsi))) {
+            var psiBranches = sumPsi != null
+                ? PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class)
+                : List.<SchemaType>of();
+            SchemaType innerPsi = !psiBranches.isEmpty() ? psiBranches.get(0) : null;
+            String innerLabel = innerPsi != null ? StvnSchemaFormatter.formatSchema(innerPsi) : "<value>";
+            return List.of(
+                "Present Variant: <code>" + StvnVocabulary.VAL_SOME + " " + escapeHtmlBody(innerLabel)
+                    + "</code> or <code>" + StvnVocabulary.VAL_SOME_SHORT + " " + escapeHtmlBody(innerLabel) + "</code>",
+                "Empty Variant: <code>" + StvnVocabulary.VAL_NONE + "</code> or <code>" + StvnVocabulary.VAL_NONE_SHORT + "</code>",
+                "Implicit Happy-Path (Rule A): omit <code>" + StvnVocabulary.VAL_SOME + "</code> for non-empty payloads"
+            );
+        }
+
+        if (irSchema instanceof StvnSchema.EitherSchema || (sumPsi != null && isEitherSumType(sumPsi))) {
+            var psiBranches = sumPsi != null
+                ? PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class)
+                : List.<SchemaType>of();
+            String leftLabel = !psiBranches.isEmpty() ? StvnSchemaFormatter.formatSchema(psiBranches.get(0)) : "<left>";
+            String rightLabel = psiBranches.size() >= 2 ? StvnSchemaFormatter.formatSchema(psiBranches.get(1)) : "<right>";
+            return List.of(
+                "Left Branch (Rule E \u2014 explicit tag required): <code>"
+                    + StvnVocabulary.VAL_LEFT + " " + escapeHtmlBody(leftLabel) + "</code> or <code>"
+                    + StvnVocabulary.VAL_LEFT_SHORT + " " + escapeHtmlBody(leftLabel) + "</code>",
+                "Right Branch: <code>" + StvnVocabulary.VAL_RIGHT + " " + escapeHtmlBody(rightLabel)
+                    + "</code> or <code>" + StvnVocabulary.VAL_RIGHT_SHORT + " " + escapeHtmlBody(rightLabel) + "</code>",
+                "Implicit Happy-Path (Rule B): omit <code>" + StvnVocabulary.VAL_RIGHT + "</code> for right-branch payloads"
+            );
+        }
+
+        if (irSchema instanceof StvnSchema.TupleSchema
+                || (ctor != null && ctor.getProductType() != null)
+                || baseType.startsWith(StvnVocabulary.TYPE_TUPLE)) {
+            List<String> slotLabels = new ArrayList<>();
+            if (ctor != null && ctor.getProductType() != null) {
+                for (var s : ctor.getProductType().getSchemaTypeList()) {
+                    slotLabels.add(escapeHtmlBody(StvnSchemaFormatter.formatSchema(s)));
+                }
+            }
+            String slotsRepr = slotLabels.isEmpty() ? "<slot1> <slot2> ..." : String.join(" ", slotLabels);
+            return List.of("Positional Product Literal: <code>(" + slotsRepr + ")</code>");
+        }
+
+        if (irSchema instanceof StvnSchema.SeqSchema
+                || irSchema instanceof StvnSchema.SetSchema
+                || baseType.startsWith(StvnVocabulary.TYPE_SEQ)
+                || baseType.startsWith(StvnVocabulary.TYPE_SET)) {
+            return List.of(
+                "Bracketed Collection Literal: <code>[&lt;elem1&gt; &lt;elem2&gt; ...]</code>",
+                "Empty Collection Literal: <code>[]</code>"
+            );
+        }
+
+        if (irSchema instanceof StvnSchema.MapSchema
+                || baseType.startsWith(StvnVocabulary.TYPE_MAP)
+                || (ctor != null && ctor.getCollectionType() != null)) {
+            return List.of(
+                "Braced Key-Value Map Literal: <code>{ &lt;key1&gt; &lt;val1&gt; ... }</code>",
+                "Empty Map Literal: <code>{}</code>"
+            );
+        }
+
+        String fallbackLabel = StvnSchemaFormatter.formatSchema(schemaType);
+        return List.of("Schema-Typed Value: <code>" + escapeHtmlBody(fallbackLabel) + "</code>");
     }
 
     /**
@@ -6445,10 +7264,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return new StvnValueComplianceResult(
                 false,
                 "Violated",
-                "Temporal type <code>" + StvnVocabulary.TYPE_DATE_TIME + "</code> requires an explicit mode facet: <code>"
-                    + StvnVocabulary.FACET_KW_OFFSET + "</code>, <code>"
-                    + StvnVocabulary.FACET_KW_ZONED + "</code>, or <code>"
-                    + StvnVocabulary.FACET_KW_AUDITED + "</code>",
+                appendCoreCodeSuffixHtml(
+                    "Temporal type <code>" + StvnVocabulary.TYPE_DATE_TIME + "</code> requires an explicit mode facet: <code>"
+                        + StvnVocabulary.FACET_KW_OFFSET + "</code>, <code>"
+                        + StvnVocabulary.FACET_KW_ZONED + "</code>, or <code>"
+                        + StvnVocabulary.FACET_KW_AUDITED + "</code>",
+                    "E008",
+                    DiagnosticBag.ERR_DATETIME_MODE_INVALID
+                ),
                 Collections.emptyMap(),
                 forms
             );
@@ -6466,10 +7289,17 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var failureOpt = StvnCompiler.validateDateTimeLiteral(rawText, mode);
         if (failureOpt.isPresent()) {
+            var failure = failureOpt.get();
             return new StvnValueComplianceResult(
                 false,
                 "Violated",
-                escapeHtmlBody(failureOpt.get().message()),
+                escapeHtmlBody(
+                    StvnDiagnosticFormatter.formatCore(
+                        failure.message(),
+                        failure.canonicalCode(),
+                        failure.symbolicId()
+                    )
+                ),
                 Collections.emptyMap(),
                 forms
             );
@@ -6486,7 +7316,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         return new StvnValueComplianceResult(
                             false,
                             "Violated",
-                            escapeHtmlBody("Timestamp '" + cleanIso + "' is below minimum inclusive bound '" + minInclIso + "' for interval " + rangeDesc),
+                            appendCoreCodeSuffixHtml(
+                                escapeHtmlBody("Timestamp '" + cleanIso + "' is below minimum inclusive bound '" + minInclIso + "' for interval " + rangeDesc),
+                                "E012",
+                                DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                            ),
                             Collections.emptyMap(),
                             forms
                         );
@@ -6499,7 +7333,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                         return new StvnValueComplianceResult(
                             false,
                             "Violated",
-                            escapeHtmlBody("Timestamp '" + cleanIso + "' meets or exceeds exclusive upper bound '" + maxExclIso + "' for interval " + rangeDesc),
+                            appendCoreCodeSuffixHtml(
+                                escapeHtmlBody("Timestamp '" + cleanIso + "' meets or exceeds exclusive upper bound '" + maxExclIso + "' for interval " + rangeDesc),
+                                "E012",
+                                DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                            ),
                             Collections.emptyMap(),
                             forms
                         );

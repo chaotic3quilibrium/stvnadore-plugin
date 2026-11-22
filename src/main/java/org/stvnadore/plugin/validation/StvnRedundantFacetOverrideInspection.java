@@ -1256,7 +1256,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             entry,
             StvnDiagnosticFormatter.formatPlugin(
                 coreMessage,
-                DiagnosticBag.WARN_REDUNDANT_METADATA_FACET
+                StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET
             ),
             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
             new RemoveRedundantFacetQuickFix(entry, entryText)

@@ -20,7 +20,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -492,7 +491,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                     StvnDiagnosticFormatter.formatPlugin(
                                         "Duplicate metadata facet '" + StvnVocabulary.FACET_KW_STRIP
                                             + "' in " + StvnVocabulary.KEYWORD_USE + " options block",
-                                        DiagnosticBag.ERR_DUPLICATE_METADATA_FACET
+                                        StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix(
@@ -510,7 +509,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         "Metadata facet '" + StvnVocabulary.FACET_KW_STRIP
                                             + "' is a standalone flag and does not accept arguments; unexpected '"
                                             + argText + "'",
-                                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix(
@@ -569,7 +568,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                     StvnDiagnosticFormatter.formatPlugin(
                                         "Duplicate metadata facet '" + StvnVocabulary.FACET_KW_STRIP
                                             + "' in " + StvnVocabulary.KEYWORD_INCLUDE + " options block",
-                                        DiagnosticBag.ERR_DUPLICATE_METADATA_FACET
+                                        StvnDiagnosticCodes.ERR_DUPLICATE_METADATA_FACET
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix(
@@ -587,7 +586,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                                         "Metadata facet '" + StvnVocabulary.FACET_KW_STRIP
                                             + "' is a standalone flag and does not accept arguments; unexpected '"
                                             + argText + "'",
-                                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                                     ),
                                     ProblemHighlightType.GENERIC_ERROR,
                                     new RemoveElementQuickFix(
@@ -668,7 +667,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticFormatter.formatPlugin(
                             "Constraint violation (" + ownerLabel + "): facet '" + curKw
                                 + "' is mutually exclusive with '" + peerKw + "'",
-                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         new RemoveRedundantFacetQuickFix(entry, curKw, "Remove conflicting facet")
@@ -695,7 +694,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     kw,
                     StvnDiagnosticFormatter.formatPlugin(
                         "Metadata violation (" + ownerLabel + "): Unrecognized constraint facet '" + facetName + "'",
-                        DiagnosticBag.ERR_UNRECOGNIZED_METADATA_FACET
+                        StvnDiagnosticCodes.ERR_UNRECOGNIZED_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     new RemoveElementQuickFix("Remove unrecognized facet '" + facetName + "'", "Remove unrecognized facet")
@@ -888,7 +887,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     "Metadata facet '" + StvnVocabulary.FACET_KW_PRESERVE_INDENT
                         + "' requires an explicit boolean value ("
                         + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
-                    DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET
+                    StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
                 ),
                 ProblemHighlightType.GENERIC_ERROR,
                 fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
@@ -907,7 +906,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 StvnDiagnosticFormatter.formatPlugin(
                     "Metadata facet '" + kw + "' requires an explicit boolean value ("
                         + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
-                    DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET
+                    StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET
                 ),
                 ProblemHighlightType.GENERIC_ERROR,
                 fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
@@ -930,7 +929,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         "Metadata facet '" + StvnVocabulary.FACET_KW_PRESERVE_INDENT
                             + "' requires an explicit boolean value ("
                             + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
-                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR
                 );
@@ -951,7 +950,7 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     StvnDiagnosticFormatter.formatPlugin(
                         "Metadata facet '" + kw + "' requires an explicit boolean value ("
                             + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")",
-                        DiagnosticBag.ERR_INVALID_METADATA_FACET
+                        StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR
                 );

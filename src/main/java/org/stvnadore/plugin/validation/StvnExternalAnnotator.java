@@ -454,7 +454,7 @@ public final class StvnExternalAnnotator
                 var builder = holder.newAnnotation(HighlightSeverity.ERROR, message)
                     .fileLevel();
                 boolean isReservedDomain = DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
-                    || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                    || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED)
                     || rawMessage.contains("Reserved system domain");
 
                 if (isReservedDomain) {
@@ -709,7 +709,7 @@ public final class StvnExternalAnnotator
 
                 // Incomplete boolean trait quick-fixes (#preserveIndent, #equatable, #comparable)
                 if (DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET)
                         || rawMessage.contains("requires an explicit boolean value")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     if (targetElem != null) {
@@ -734,12 +734,12 @@ public final class StvnExternalAnnotator
                         || "E040".equals(diagnosticId)
                         || rawMessage.contains("non-overridable");
                 boolean isCrossHopAncestorMutex = (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                         || "E008".equals(diagnosticId)
                         || rawMessage.contains("mutually exclusive"))
                         && rawMessage.contains("ancestor");
                 boolean isRedundant = DiagnosticBag.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
-                        || StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.WARN_REDUNDANT_METADATA_FACET)
                         || rawMessage.contains("is redundant");
                 if (isRedundant || isNonOverridable || isCrossHopAncestorMutex) {
                     var targetElem = file.findElementAt(range.getStartOffset());
@@ -771,7 +771,7 @@ public final class StvnExternalAnnotator
 
                 // Inapplicable metadata facet quick-fix (ERR_INVALID_METADATA_FACET)
                 if ((DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET)
                         || rawMessage.contains("is not permitted on"))
                         && !rawMessage.contains(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
                     var targetElem = file.findElementAt(range.getStartOffset());
@@ -812,9 +812,9 @@ public final class StvnExternalAnnotator
 
                 // Mutually exclusive temporal mode/scale quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
                 if ((DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE)
                         || rawMessage.contains("Temporal scale facets")
                         || rawMessage.contains("Temporal mode facets")
                         || rawMessage.contains("Mutually exclusive temporal"))
@@ -861,9 +861,9 @@ public final class StvnExternalAnnotator
 
                 // Duplicate or misplaced root-section quick-fixes (ERR_DUPLICATE_ROOT_SECTION, ERR_SECTION_ORDER_VIOLATION, E033)
                 if (DiagnosticBag.ERR_DUPLICATE_ROOT_SECTION.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DUPLICATE_ROOT_SECTION)
                         || DiagnosticBag.ERR_SECTION_ORDER_VIOLATION.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_SECTION_ORDER_VIOLATION)
                         || DiagnosticBag.ERR_META_POSITION_INVALID.equals(diagnosticId)
                         || "E033".equals(canonicalCode)) {
                     var secLeaf = file.findElementAt(range.getStartOffset());
@@ -882,8 +882,8 @@ public final class StvnExternalAnnotator
 
                 // Missing temporal mode/scale quick-fixes (ERR_MISSING_TEMPORAL_FACET)
                 if (DiagnosticBag.ERR_MISSING_TEMPORAL_FACET.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DATETIME_MODE_MISSING)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_TEMPORAL_SCALE_MISSING)
                         || rawMessage.contains("requires explicit mode facet")
                         || rawMessage.contains("requires a scale facet")
                         || rawMessage.contains("requires exactly one mode facet")
@@ -906,7 +906,7 @@ public final class StvnExternalAnnotator
 
                 // Metadata facet and ':meta' entry order quick-fixes (ERR_FACET_ORDER_VIOLATION)
                 if (DiagnosticBag.ERR_FACET_ORDER_VIOLATION.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION)
                         || rawMessage.contains("5-tier hierarchy")
                         || rawMessage.contains("canonical order (#name, #domain, #kind)")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
@@ -923,7 +923,7 @@ public final class StvnExternalAnnotator
 
                 // Reserved package namespace quick-fix (E037)
                 if (DiagnosticBag.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_RESERVED_PACKAGE_PROHIBITED)
                         || rawMessage.contains("Reserved package namespace prohibited")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     if (targetElem != null) {
@@ -933,7 +933,7 @@ public final class StvnExternalAnnotator
 
                 // Trailing slash quick-fix (ERR_TRAILING_SLASH_PROHIBITED)
                 if (DiagnosticBag.ERR_TRAILING_SLASH_PROHIBITED.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_TRAILING_SLASH_PROHIBITED)
                         || rawMessage.contains("Trailing slash prohibited")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
                     PsiElement slashElem = PsiTreeUtil.getParentOfType(targetElem, org.stvnadore.psi.UseTarget.class, false);
@@ -950,7 +950,7 @@ public final class StvnExternalAnnotator
 
                 // Reserved domain quick-fixes (E038)
                 if (DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED)
                         || rawMessage.contains("Reserved system domain")) {
                     String fName = file.getName();
                     int lastDot = fName.lastIndexOf('.');
@@ -1020,7 +1020,7 @@ public final class StvnExternalAnnotator
 
                 // Tab character quick-fix (Rule STR-01 / E001)
                 if (DiagnosticBag.ERR_TAB_CHARACTER_FORBIDDEN.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_TAB_CHARACTER_FORBIDDEN)
                         || "TAB_DISCIPLINE_VIOLATION".equals(diagnosticId)
                         || rawMessage.contains("Tab character")) {
                     annotationBuilder = annotationBuilder.withFix(
@@ -1033,7 +1033,7 @@ public final class StvnExternalAnnotator
 
                 // Inverted interval bounds quick-fix (ERR_INVERTED_RANGE / INVALID_NUMERIC_RANGE)
                 if (DiagnosticBag.ERR_INVERTED_RANGE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_INVERTED_RANGE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_INVERTED_RANGE)
                         || "INVALID_NUMERIC_RANGE".equals(diagnosticId)
                         || rawMessage.contains("effective range is invalid")
                         || rawMessage.contains("cannot exceed " + StvnVocabulary.FACET_KW_MAX_SIZE)) {
@@ -1072,7 +1072,7 @@ public final class StvnExternalAnnotator
 
                 // Duplicate enum filter variant quick-fix (ERR_FILTER_DUPLICATE_VARIANT)
                 if (DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT)
                         || rawMessage.contains("in filter list")
                         || rawMessage.contains("duplicate variant in filter")) {
                     var targetElem = file.findElementAt(range.getStartOffset());
@@ -1086,7 +1086,7 @@ public final class StvnExternalAnnotator
 
                 // Interactive bootstrapping intention actions for incomplete clauses
                 if (DiagnosticBag.ERR_MALFORMED_SECTION_STRUCTURE.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE.equals(diagnosticId)) {
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_MALFORMED_SECTION_STRUCTURE)) {
                     var incLeaf = file.findElementAt(range.getStartOffset());
                     String leafKw = incLeaf != null ? incLeaf.getText().trim() : null;
                     String incKw;
@@ -1113,14 +1113,14 @@ public final class StvnExternalAnnotator
                     }
                 }
                 if (DiagnosticBag.ERR_EMPTY_META_BLOCK.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK.equals(diagnosticId)) {
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_EMPTY_META_BLOCK)) {
                     String expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(file.getName());
                     annotationBuilder = annotationBuilder.withFix(
                         new StvnMissingMetaInspection.InsertMissingMetaBlockQuickFix(expectedKind)
                     );
                 }
                 if (DiagnosticBag.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)
-                        || StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK.equals(diagnosticId)) {
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_EMPTY_DEFS_BLOCK)) {
                     var fileName = file.getName();
                     if (fileName.endsWith(".stvn_d") || fileName.endsWith(".stvn_bd") || fileName.endsWith(".stvn_di")) {
                         annotationBuilder = annotationBuilder.withFix(new InsertTypeDefinitionIntentionAction(range));
@@ -1221,6 +1221,7 @@ public final class StvnExternalAnnotator
                                     var failure = failureOpt.get();
                                     var formattedMsg = StvnDiagnosticFormatter.formatCore(
                                         failure.message(),
+                                        failure.canonicalCode(),
                                         failure.symbolicId()
                                     );
                                     var exactKey = "%d:%d:%s".formatted(valRange.getStartOffset(), valRange.getEndOffset(), formattedMsg);
@@ -1279,12 +1280,16 @@ public final class StvnExternalAnnotator
                         ? "Schema '" + aliasName
                             + "' has constraint errors at definition site in "
                             + StvnVocabulary.KEYWORD_DEFS
-                            + " (underlying base '" + fallbackBase + "' \u2014 payload evaluation is suspended)."
+                            + " (underlying base '" + fallbackBase + "' \u2014 payload evaluation is suspended)"
                         : "Schema '" + aliasName
                             + "' does not resolve to a base type in "
                             + StvnVocabulary.KEYWORD_DEFS
-                            + " (circular or unresolved lineage). Payload evaluation is suspended.";
-                    var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, degradedMsg)
+                            + " (circular or unresolved lineage). Payload evaluation is suspended";
+                    var formattedDegradedMsg = StvnDiagnosticFormatter.formatPlugin(
+                        degradedMsg,
+                        StvnDiagnosticCodes.WARN_DEGRADED_SCHEMA_USAGE
+                    );
+                    var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, formattedDegradedMsg)
                         .range(typeKw.getTextRange());
                     if (hasCrossFileInvertibleError || isTraitPoisoned) {
                         warnBuilder = StvnTraitViolationQuickFixProvider.registerActions(
@@ -1309,10 +1314,10 @@ public final class StvnExternalAnnotator
 
     private static boolean isLayer1IdentityDiagnostic(String diagnosticId, String rawMessage) {
         return DiagnosticBag.ERR_INVALID_FILENAME_STEM.equals(diagnosticId)
-            || StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM.equals(diagnosticId)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_INVALID_FILENAME_STEM)
             || DiagnosticBag.ERR_LEGACY_FILE_EXTENSION_PURGED.equals(diagnosticId)
             || DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
-            || StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED)
             || (DiagnosticBag.ERR_DOCUMENT_KIND_MISMATCH.equals(diagnosticId)
                 && rawMessage.startsWith("Unrecognized STVN file extension"))
             || rawMessage.contains("Reserved system domain prohibited")
@@ -1410,9 +1415,17 @@ public final class StvnExternalAnnotator
         var message = diag.message();
         var diagnosticId = resolvePrimaryDiagnosticId(diag);
 
-        // 3. StvnSemanticAnnotator owns in-flight and committed :Union tag overflow checks
-        if (DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW.equals(diagnosticId)
-                || (message.startsWith("Union variant tag '") && message.contains("exceeds branch count"))) {
+        // 3. StvnSemanticAnnotator owns in-flight and committed :Union tag overflow checks when PSI resolves the union
+        if ((DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_UNION_BRANCH_OVERFLOW)
+                || (message.startsWith("Union variant tag '") && message.contains("exceeds branch count")))
+                && StvnSemanticAnnotator.handlesUnionBranchOverflowAtOffset(file, diag.startOffset())) {
+            return true;
+        }
+        if ((DiagnosticBag.ERR_TYPE_MISMATCH.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_TYPE_MISMATCH))
+                && message.contains("matches neither Left nor Right branch")
+                && StvnSemanticAnnotator.hasActiveUnionBranchOverflowAtOffset(file, diag.startOffset())) {
             return true;
         }
 
@@ -1554,6 +1567,7 @@ public final class StvnExternalAnnotator
 
         record GroupedIncludeDiag(
             String rawMessage,
+            String formattedCoreMessage,
             String attributedMessage,
             String directPath,
             @Nullable VirtualFile directVirtualFile,
@@ -1588,6 +1602,7 @@ public final class StvnExternalAnnotator
             }
 
             var msg = diag.message();
+            var formattedDiagMsg = StvnDiagnosticFormatter.formatCore(diag);
             var chainStr = matchedNode.pathChain().size() > 1
                 ? String.join(" -> ", matchedNode.pathChain())
                 : matchedNode.directPath();
@@ -1607,6 +1622,7 @@ public final class StvnExternalAnnotator
                 groupedMap.computeIfAbsent(targetRangeElement, k -> new ArrayList<>())
                     .add(new GroupedIncludeDiag(
                         msg,
+                        formattedDiagMsg,
                         attributedMsg,
                         matchedNode.directPath(),
                         directVf,
@@ -1618,6 +1634,9 @@ public final class StvnExternalAnnotator
                     ));
             }
         }
+
+        String moduleImportSuffixHtml = "<br/><code>["
+            + StvnDiagnosticFormatter.ENCLAVE_CORE + ':' + StvnDiagnosticCodes.ERR_MODULE_IMPORT + "]</code>";
 
         for (var entry : groupedMap.entrySet()) {
             var element = entry.getKey();
@@ -1642,14 +1661,20 @@ public final class StvnExternalAnnotator
             String htmlTooltip;
             if (diagList.size() == 1) {
                 var single = diagList.get(0);
-                finalMessage = StvnDiagnosticFormatter.formatCore(single.attributedMessage(), "ERR_MODULE_IMPORT");
+                finalMessage = StvnDiagnosticFormatter.formatCore(
+                    single.attributedMessage(),
+                    "E005",
+                    DiagnosticBag.ERR_MODULE_IMPORT
+                );
                 if (single.depth() > 1) {
                     htmlTooltip = "<html>In included module '" + escapeHtml(single.chainStr()) + "':<br/>"
-                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
+                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.formattedCoreMessage())
+                        + moduleImportSuffixHtml + "</html>";
                 } else {
                     htmlTooltip = "<html>Included file '" + escapeHtml(single.directPath())
                         + "' contains compilation errors:<br/>"
-                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.rawMessage()) + "</html>";
+                        + "&nbsp;&nbsp;&bull; " + escapeHtml(single.formattedCoreMessage())
+                        + moduleImportSuffixHtml + "</html>";
                 }
             } else if (collapseNoise) {
                 var primaryRoot = rootCauses.get(0);
@@ -1661,7 +1686,11 @@ public final class StvnExternalAnnotator
                         ? ("In included module '" + primaryRoot.chainStr() + "': ")
                         : ("Included file '" + primaryRoot.directPath() + "' contains compilation errors: "))
                         + primaryRoot.rawMessage() + summarySuffix;
-                    finalMessage = StvnDiagnosticFormatter.formatCore(plainMsg, "ERR_MODULE_IMPORT");
+                    finalMessage = StvnDiagnosticFormatter.formatCore(
+                        plainMsg,
+                        "E005",
+                        DiagnosticBag.ERR_MODULE_IMPORT
+                    );
 
                     var htmlSb = new StringBuilder();
                     if (primaryRoot.depth() > 1) {
@@ -1670,9 +1699,10 @@ public final class StvnExternalAnnotator
                         htmlSb.append("<html>Included file '").append(escapeHtml(primaryRoot.directPath()))
                             .append("' contains compilation errors:<br/>");
                     }
-                    htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(primaryRoot.rawMessage())).append("<br/><br/>");
+                    htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(primaryRoot.formattedCoreMessage())).append("<br/><br/>");
                     htmlSb.append("<font color=\"#888888\"><i>(+").append(count)
-                        .append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                        .append(" secondary cascading undefined type errors suppressed)</i></font>")
+                        .append(moduleImportSuffixHtml).append("</html>");
                     htmlTooltip = htmlSb.toString();
                 } else {
                     var sb = new StringBuilder();
@@ -1689,25 +1719,30 @@ public final class StvnExternalAnnotator
                         }
                     }
                     sb.append("(+").append(count).append(" secondary cascading undefined type errors suppressed)");
-                    finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
+                    finalMessage = StvnDiagnosticFormatter.formatCore(
+                        sb.toString().trim(),
+                        "E005",
+                        DiagnosticBag.ERR_MODULE_IMPORT
+                    );
 
                     var htmlSb = new StringBuilder();
                     if (!isHierarchy) {
                         htmlSb.append("<html>Included file '").append(escapeHtml(directPath))
                             .append("' contains compilation errors:<br/>");
                         for (var r : rootCauses) {
-                            htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(r.rawMessage())).append("<br/>");
+                            htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(r.formattedCoreMessage())).append("<br/>");
                         }
                     } else {
                         htmlSb.append("<html>Included module hierarchy contains compilation errors:<br/>");
                         for (var r : rootCauses) {
                             htmlSb.append("&nbsp;&nbsp;&bull; <i>[")
                                 .append(escapeHtml(r.depth() > 1 ? r.chainStr() : r.directPath()))
-                                .append("]</i> ").append(escapeHtml(r.rawMessage())).append("<br/>");
+                                .append("]</i> ").append(escapeHtml(r.formattedCoreMessage())).append("<br/>");
                         }
                     }
                     htmlSb.append("<br/><font color=\"#888888\"><i>(+").append(count)
-                        .append(" secondary cascading undefined type errors suppressed)</i></font></html>");
+                        .append(" secondary cascading undefined type errors suppressed)</i></font>")
+                        .append(moduleImportSuffixHtml).append("</html>");
                     htmlTooltip = htmlSb.toString();
                 }
             } else if (!isHierarchy) {
@@ -1716,15 +1751,19 @@ public final class StvnExternalAnnotator
                 for (var d : diagList) {
                     sb.append("• ").append(d.rawMessage()).append("\n");
                 }
-                finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
+                finalMessage = StvnDiagnosticFormatter.formatCore(
+                    sb.toString().trim(),
+                    "E005",
+                    DiagnosticBag.ERR_MODULE_IMPORT
+                );
 
                 var htmlSb = new StringBuilder();
                 htmlSb.append("<html>Included file '").append(escapeHtml(directPath))
                     .append("' contains compilation errors:<br/>");
                 for (var d : diagList) {
-                    htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(d.rawMessage())).append("<br/>");
+                    htmlSb.append("&nbsp;&nbsp;&bull; ").append(escapeHtml(d.formattedCoreMessage())).append("<br/>");
                 }
-                htmlSb.append("</html>");
+                htmlSb.append(moduleImportSuffixHtml).append("</html>");
                 htmlTooltip = htmlSb.toString();
             } else {
                 var sb = new StringBuilder();
@@ -1733,16 +1772,20 @@ public final class StvnExternalAnnotator
                     sb.append("• [").append(d.depth() > 1 ? d.chainStr() : d.directPath()).append("] ")
                         .append(d.rawMessage()).append("\n");
                 }
-                finalMessage = StvnDiagnosticFormatter.formatCore(sb.toString().trim(), "ERR_MODULE_IMPORT");
+                finalMessage = StvnDiagnosticFormatter.formatCore(
+                    sb.toString().trim(),
+                    "E005",
+                    DiagnosticBag.ERR_MODULE_IMPORT
+                );
 
                 var htmlSb = new StringBuilder();
                 htmlSb.append("<html>Included module hierarchy contains compilation errors:<br/>");
                 for (var d : diagList) {
                     htmlSb.append("&nbsp;&nbsp;&bull; <i>[")
                         .append(escapeHtml(d.depth() > 1 ? d.chainStr() : d.directPath()))
-                        .append("]</i> ").append(escapeHtml(d.rawMessage())).append("<br/>");
+                        .append("]</i> ").append(escapeHtml(d.formattedCoreMessage())).append("<br/>");
                 }
-                htmlSb.append("</html>");
+                htmlSb.append(moduleImportSuffixHtml).append("</html>");
                 htmlTooltip = htmlSb.toString();
             }
 

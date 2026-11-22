@@ -18,7 +18,17 @@ public final class StvnDiagnosticFormatter {
     public static final String ENCLAVE_CORE = "stvn-core";
     public static final String ENCLAVE_PLUGIN = "stvn-plugin";
 
-    private static final Pattern ALREADY_PREFIXED_PATTERN = Pattern.compile("^[A-Z]{1,2}[0-9]{3}-.+");
+    /**
+     * Normative suffix pattern matching a complete {@code [stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]} attribution tag.
+     */
+    public static final Pattern COMPLETE_ATTRIBUTION_SUFFIX_PATTERN =
+        Pattern.compile("\\[stvn-(?:core|plugin):(?:E0[0-9]{2}|W00[1-3]|PW0[0-9]{2})-[A-Z0-9_]+\\]$");
+
+    private static final Pattern ALREADY_PREFIXED_PATTERN =
+        Pattern.compile("^(?:E0[0-9]{2}|W00[1-3]|PW0[0-9]{2})-[A-Z0-9_]+$");
+
+    private static final Pattern TRAILING_PARTIAL_SUFFIX_PATTERN =
+        Pattern.compile("\\s*\\[stvn-(?:core|plugin):[^\\]]*\\]$");
 
     private StvnDiagnosticFormatter() {}
 
@@ -30,7 +40,7 @@ public final class StvnDiagnosticFormatter {
      */
     public static String formatCore(StvnDiagnostic diagnostic) {
         var symbolicId = diagnostic.symbolicId().or(diagnostic::errorCode).orElse("ERR_COMPILATION_ERROR");
-        var canonicalCode = diagnostic.canonicalCode().orElse(null);
+        var canonicalCode = diagnostic.code().or(diagnostic::canonicalCode).orElse(null);
         return formatCore(diagnostic.message(), canonicalCode, symbolicId);
     }
 
@@ -54,7 +64,9 @@ public final class StvnDiagnosticFormatter {
             ? canonicalCode.trim()
             : StvnDiagnosticCodes.resolveCoreCanonicalPrefix(resolvedId);
         if (resolvedCanonical.equals(resolvedId)) {
-            return format(ENCLAVE_CORE, message, resolvedId);
+            var defaultSym = org.stvnadore.core.validation.DiagnosticBag.resolveDefaultSymbolicId(resolvedCanonical)
+                .orElse("ERR_COMPILATION_ERROR");
+            return format(ENCLAVE_CORE, message, resolvedCanonical + "-" + defaultSym);
         }
         return format(ENCLAVE_CORE, message, resolvedCanonical + "-" + resolvedId);
     }
@@ -74,7 +86,7 @@ public final class StvnDiagnosticFormatter {
      * Formats an editor/IDE hygiene inspection diagnostic originating from {@code stvnadore-plugin}.
      *
      * @param message human-readable description
-     * @param diagnosticId plugin diagnostic inspection code
+     * @param diagnosticId plugin diagnostic inspection code (prefixed or bare symbolic)
      * @return standardized bracketed diagnostic string
      */
     public static String formatPlugin(@Nullable String message, String diagnosticId) {
@@ -88,11 +100,12 @@ public final class StvnDiagnosticFormatter {
 
     /**
      * Formats a diagnostic string with the specified enclave prefix and diagnostic identifier.
-     * Removes trailing periods before appending the nominal tag to maintain clean punctuation.
+     * Strips any incomplete or malformed {@code [stvn-...]} suffix and trailing periods before
+     * appending the canonical nominal tag.
      *
-     * @param enclave origin enclave (e.g., "stvn-core" or "stvn-plugin")
+     * @param enclave origin enclave ({@code stvn-core} or {@code stvn-plugin})
      * @param message human-readable description
-     * @param diagnosticId diagnostic code
+     * @param diagnosticId canonical prefixed diagnostic code ({@code <CODE>-<SYMBOLIC_ID>})
      * @return standardized bracketed diagnostic string
      */
     public static String format(String enclave, @Nullable String message, String diagnosticId) {
@@ -100,13 +113,17 @@ public final class StvnDiagnosticFormatter {
             return "[" + enclave + ':' + diagnosticId + "]";
         }
         var clean = message.stripTrailing();
-        // Idempotent guard: avoid double formatting if string already contains nominal coordinates
-        if (clean.endsWith("]") && (clean.contains("[stvn-core:") || clean.contains("[stvn-plugin:"))) {
+        if (COMPLETE_ATTRIBUTION_SUFFIX_PATTERN.matcher(clean).find()) {
             return clean;
         }
-        // Remove trailing period if present so nominal suffix is clean
+        if (TRAILING_PARTIAL_SUFFIX_PATTERN.matcher(clean).find()) {
+            clean = TRAILING_PARTIAL_SUFFIX_PATTERN.matcher(clean).replaceFirst("").stripTrailing();
+        }
         if (clean.endsWith(".")) {
             clean = clean.substring(0, clean.length() - 1).stripTrailing();
+        }
+        if (clean.isEmpty()) {
+            return "[" + enclave + ':' + diagnosticId + "]";
         }
         return clean + " [" + enclave + ':' + diagnosticId + "]";
     }

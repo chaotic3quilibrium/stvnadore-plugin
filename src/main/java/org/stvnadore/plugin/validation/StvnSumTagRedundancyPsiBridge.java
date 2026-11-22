@@ -250,10 +250,14 @@ public final class StvnSumTagRedundancyPsiBridge {
             : StvnParserConfig.DEFAULT;
         StvnCompilationResult<StvnDocument> res = StvnCompiler.compileToResult(text, fileName, config);
         Optional<StvnDocument> docOpt = res.document();
+        StvnDefsCatalog recoveredCatalog = docOpt.map(StvnDocument::defs)
+            .orElseGet(() -> StvnCompiler.compileDefsCatalog(text, fileName, config)
+                .document()
+                .orElse(StvnDefsCatalog.EMPTY));
         return new StvnCompiledDocumentCache.CompiledSnapshot(
             StvnSchemaFlattener.normalizePath(fileName),
             docOpt,
-            docOpt.map(StvnDocument::defs).orElse(StvnDefsCatalog.EMPTY),
+            recoveredCatalog,
             docOpt.flatMap(StvnDocument::rootType),
             docOpt.flatMap(StvnDocument::payload),
             List.copyOf(res.diagnostics())

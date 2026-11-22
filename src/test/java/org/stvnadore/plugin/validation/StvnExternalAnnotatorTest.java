@@ -3191,7 +3191,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             2, typeWarnings.size());
         for (var warn : typeWarnings) {
             assertEquals(
-                "Schema ':TrapIntMinExcl' has constraint errors at definition site in :defs (underlying base ':Int' \u2014 payload evaluation is suspended).",
+                "Schema ':TrapIntMinExcl' has constraint errors at definition site in :defs (underlying base ':Int' \u2014 payload evaluation is suspended) [stvn-plugin:PW006-WARN_DEGRADED_SCHEMA_USAGE]",
                 warn.getDescription()
             );
         }

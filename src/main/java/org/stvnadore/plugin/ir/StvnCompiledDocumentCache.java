@@ -319,37 +319,29 @@ public final class StvnCompiledDocumentCache {
         if (defsEntry == null) {
             return StvnDefsCatalog.EMPTY;
         }
-        String defsText = defsEntry.getText();
-        if (defsText == null || defsText.isBlank()) {
-            return StvnDefsCatalog.EMPTY;
-        }
-        String probeSource = "{\n  " + defsText + "\n  :type :Boolean\n  :body #TRUE\n}";
-        boolean hasInclude = defsText.contains(StvnVocabulary.KEYWORD_INCLUDE);
-        String probePath = deriveSiblingProbePath(resolvedPath, hasInclude);
-        StvnParserConfig probeConfig = new StvnParserConfig(
-            false,
-            config.maxDiagnostics(),
-            true
-        );
-        StvnCompilationResult<StvnDocument> probeResult =
-            StvnCompiler.compileToResult(probeSource, probePath, probeConfig);
-        if (probeResult.document().isPresent()) {
-            return probeResult.document().get().defs();
+        StvnCompilationResult<StvnDefsCatalog> directResult =
+            StvnCompiler.compileDefsCatalog(psiFile.getText(), resolvedPath, config);
+        StvnDefsCatalog directCatalog = directResult.document().orElse(StvnDefsCatalog.EMPTY);
+        if (!directCatalog.nominalTypes().isEmpty() || !directCatalog.constants().isEmpty()) {
+            return directCatalog;
         }
         String sanitizedDefs = buildSanitizedDefsProbeText(defsEntry);
         if (sanitizedDefs != null) {
-            String sanitizedProbeSource = "{\n  " + sanitizedDefs + "\n  :type :Boolean\n  :body #TRUE\n}";
-            StvnCompilationResult<StvnDocument> sanitizedResult =
-                StvnCompiler.compileToResult(sanitizedProbeSource, probePath, probeConfig);
-            if (sanitizedResult.document().isPresent()) {
-                return sanitizedResult.document().get().defs();
-            }
+            String sanitizedProbeSource = "{\n  " + sanitizedDefs + "\n}";
+            StvnParserConfig probeConfig = new StvnParserConfig(
+                false,
+                config.maxDiagnostics(),
+                true
+            );
+            return StvnCompiler.compileDefsCatalog(sanitizedProbeSource, resolvedPath, probeConfig)
+                .document()
+                .orElse(StvnDefsCatalog.EMPTY);
         }
         return StvnDefsCatalog.EMPTY;
     }
 
     private static @Nullable String buildSanitizedDefsProbeText(DefsEntry defsEntry) {
-        StringBuilder sb = new StringBuilder(":defs {\n");
+        StringBuilder sb = new StringBuilder(StvnVocabulary.KEYWORD_DEFS + " {\n");
         boolean anyKept = false;
         for (var child : defsEntry.getChildren()) {
             if (child instanceof org.stvnadore.psi.PackageEnclosure pkg) {
@@ -357,7 +349,7 @@ public final class StvnCompiledDocumentCache {
                     sb.append("    ").append(pkg.getText()).append("\n");
                     anyKept = true;
                 } else if (pkg.getPackagePath() != null && !PsiTreeUtil.hasErrorElements(pkg.getPackagePath())) {
-                    StringBuilder pkgSb = new StringBuilder("    :package ")
+                    StringBuilder pkgSb = new StringBuilder("    " + StvnVocabulary.KEYWORD_PACKAGE + " ")
                         .append(pkg.getPackagePath().getText())
                         .append(" {\n");
                     boolean pkgKept = false;
@@ -380,16 +372,6 @@ public final class StvnCompiledDocumentCache {
         }
         sb.append("  }");
         return anyKept ? sb.toString() : null;
-    }
-
-    private static String deriveSiblingProbePath(String resolvedPath, boolean hasInclude) {
-        String probeFileName = hasInclude ? "__stvn_defs_probe.stvn_i" : "__stvn_defs_probe.stvn";
-        String posix = resolvedPath.replace('\\', '/');
-        int slash = posix.lastIndexOf('/');
-        if (slash >= 0) {
-            return posix.substring(0, slash + 1) + probeFileName;
-        }
-        return probeFileName;
     }
 
     private static boolean hasUnsavedStvnBuffers() {

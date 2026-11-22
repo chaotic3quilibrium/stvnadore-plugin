@@ -339,11 +339,11 @@ public final class StvnConstantRangeInspection extends LocalInspectionTool {
         }
         String msg = StvnDiagnosticFormatter.formatPlugin(
             rawMsg,
-            org.stvnadore.core.validation.DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+            StvnDiagnosticCodes.ERR_CONSTRAINT_VIOLATION
         );
         var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
             value,
-            org.stvnadore.core.validation.DiagnosticBag.ERR_CONSTRAINT_VIOLATION,
+            StvnDiagnosticCodes.ERR_CONSTRAINT_VIOLATION,
             msg,
             Clock.systemDefaultZone()
         ).toArray(LocalQuickFix.EMPTY_ARRAY);

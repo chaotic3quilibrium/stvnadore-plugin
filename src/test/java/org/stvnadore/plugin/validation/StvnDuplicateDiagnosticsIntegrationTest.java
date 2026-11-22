@@ -60,7 +60,7 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
 
     /**
      * Verifies that document metadata stem mismatches in roots.stvn produce exactly ONE warning
-     * on #domain and zero duplicate [stvn-core:WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME] highlights.
+     * on #domain and zero duplicate [stvn-core:W002-WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME] highlights.
      */
     public void testRootsDocumentMetadataStemMismatchHasZeroDuplicates() {
         var content = """

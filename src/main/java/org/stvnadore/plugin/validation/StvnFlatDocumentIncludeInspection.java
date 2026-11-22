@@ -23,7 +23,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.stdlib.StvnPrelude;
-import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnNamespaceRules;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
@@ -130,7 +129,7 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                         "Scoped " + StvnVocabulary.KEYWORD_USE
                             + " in hermetic document (.stvn, .stvn_d, .stvn_b, .stvn_bd) cannot target external package: "
                             + target,
-                        DiagnosticBag.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT
+                        StvnDiagnosticCodes.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
                     fixes.toArray(LocalQuickFix.EMPTY_ARRAY)

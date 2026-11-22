@@ -48,6 +48,7 @@ import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnSchema.DateTimeMode;
 import org.stvnadore.core.ir.StvnSchema.TemporalScale;
 import org.stvnadore.core.validation.DiagnosticBag;
+import org.stvnadore.plugin.validation.StvnDiagnosticCodes;
 import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.documentation.StvnTimeEpochFormatter;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -125,7 +126,7 @@ public final class StvnPayloadValueQuickFixProvider {
         int startOffset,
         int endOffset
     ) {
-        String code = diagnosticId != null ? diagnosticId : "";
+        String code = diagnosticId != null ? StvnDiagnosticCodes.stripCanonicalPrefix(diagnosticId) : "";
         int textLength = file.getTextLength();
 
         // 1. Prohibited numeric underscore separator removal (E002 / ERR_INVALID_NUMERIC_LITERAL)
@@ -2016,7 +2017,8 @@ public final class StvnPayloadValueQuickFixProvider {
         return endpoints.maxLiteral();
     }
 
-    private static boolean isPayloadValueDiagnostic(String code, String message) {
+    private static boolean isPayloadValueDiagnostic(String rawCode, String message) {
+        String code = StvnDiagnosticCodes.stripCanonicalPrefix(rawCode);
         if (code.startsWith("TEMPORAL_")
                 || code.startsWith("DATETIME_")
                 || code.equals("ERR_TYPE_MISMATCH")
@@ -2027,8 +2029,10 @@ public final class StvnPayloadValueQuickFixProvider {
                 || code.equals(DiagnosticBag.ERR_REGEX_MISMATCH)
                 || code.equals("E013")
                 || code.equals("ERR_INTEGER_OVERFLOW")
+                || code.equals("ERR_CONSTANT_INTEGER_OVERFLOW")
                 || code.equals("E009")
                 || code.equals("ERR_FLOAT_OVERFLOW")
+                || code.equals("ERR_CONSTANT_FLOAT_OVERFLOW")
                 || code.equals("E010")
                 || code.equals("ERR_INVALID_DATETIME_LITERAL")
                 || code.equals("E011")

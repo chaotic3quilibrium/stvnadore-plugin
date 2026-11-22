@@ -6194,7 +6194,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         assertEquals("Expected 0 compilation errors for explicit variant tags on duplicate branches", 0, errors.size());
 
         var warnings = highlights.stream()
-            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag [stvn-plugin:WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
+            .filter(h -> h.getSeverity().equals(HighlightSeverity.WARNING) && "Redundant variant tag [stvn-plugin:PW006-WARN_REDUNDANT_VARIANT_TAG]".equals(h.getDescription()))
             .toList();
         assertEquals("Explicit tags on identical branches are mandatory discriminators and must produce 0 redundant tag warnings", 0, warnings.size());
     }

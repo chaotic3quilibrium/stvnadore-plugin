@@ -22,7 +22,6 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
-import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
@@ -202,7 +201,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                                 + StvnVocabulary.FACET_KW_MAX_INCL
                                 + "'; use half-open bound '"
                                 + StvnVocabulary.FACET_KW_MAX_EXCL + "'",
-                            DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         quickFixes
@@ -216,7 +215,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             "Constraint violation (" + ownerLabel + "): "
                                 + StvnVocabulary.FACET_KW_MAX_INCL + " and "
                                 + StvnVocabulary.FACET_KW_MAX_EXCL + " are mutually exclusive",
-                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_INCL, "Remove conflicting facet")
@@ -262,7 +261,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                                 + StvnVocabulary.FACET_KW_MIN_EXCL
                                 + "'; use half-open bound '"
                                 + StvnVocabulary.FACET_KW_MIN_INCL + "'",
-                            DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED
+                            StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         quickFixes
@@ -276,7 +275,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             "Constraint violation (" + ownerLabel + "): "
                                 + StvnVocabulary.FACET_KW_MIN_INCL + " and "
                                 + StvnVocabulary.FACET_KW_MIN_EXCL + " are mutually exclusive",
-                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_EXCL, "Remove conflicting facet")
@@ -313,7 +312,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             "Constraint violation (" + ownerLabel + "): "
                                 + StvnVocabulary.FACET_KW_MIN_INCL + " and "
                                 + StvnVocabulary.FACET_KW_MIN_EXCL + " are mutually exclusive",
-                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_INCL, "Remove conflicting facet")
@@ -350,7 +349,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             "Constraint violation (" + ownerLabel + "): "
                                 + StvnVocabulary.FACET_KW_MAX_INCL + " and "
                                 + StvnVocabulary.FACET_KW_MAX_EXCL + " are mutually exclusive",
-                            DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
                         new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_EXCL, "Remove conflicting facet")

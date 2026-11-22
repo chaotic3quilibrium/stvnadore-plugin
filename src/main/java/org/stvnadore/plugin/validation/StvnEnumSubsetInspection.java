@@ -12,7 +12,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -123,7 +122,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                     "Constraint violation (" + kw + "): "
                                         + StvnVocabulary.FACET_KW_FILTER_INCL + " and "
                                         + StvnVocabulary.FACET_KW_FILTER_EXCL + " are mutually exclusive",
-                                    DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE
+                                    StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR,
                                 fixes
@@ -200,7 +199,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                 vkw,
                                 StvnDiagnosticFormatter.formatPlugin(
                                     "Monotonic narrowing violation (" + kw + "): variant '" + text + "' is not active in parent enum",
-                                    DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET
+                                    StvnDiagnosticCodes.ERR_ENUM_SUBSET_NOT_SUBSET
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
@@ -231,7 +230,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Root ordering violation (" + kw + "): variant '" + outOfOrderText + "' violates monotonic root enum declaration order",
-                            DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_ORDER_VIOLATION
                         );
                         for (var vkw : valueKeywords) {
                             if (vkw == outOfOrderNode) {
@@ -261,7 +260,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                 filter,
                                 StvnDiagnosticFormatter.formatPlugin(
                                     "Complete exclusion violation (" + kw + "): filtered enum subset evaluates to zero active variants",
-                                    DiagnosticBag.ERR_ENUM_SUBSET_EMPTY
+                                    StvnDiagnosticCodes.ERR_ENUM_SUBSET_EMPTY
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR
                             );
@@ -334,10 +333,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Invalid enum value for '" + fallbackRootInfo.label() + "': variant '" + text
                                 + "' is not declared; allowed variants: " + fallbackRootInfo.variants(),
-                            DiagnosticBag.ERR_TYPE_MISMATCH
+                            StvnDiagnosticCodes.ERR_TYPE_MISMATCH
                         );
                         var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
-                            value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
+                            value, StvnDiagnosticCodes.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
                         ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
                     }
@@ -354,20 +353,20 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Invalid enum value: variant '" + text + "' is not permitted in enum subset '"
                                 + subset.name() + "'; allowed variants: " + subset.allowedVariants(),
-                            DiagnosticBag.ERR_CONSTRAINT_VIOLATION
+                            StvnDiagnosticCodes.ERR_CONSTRAINT_VIOLATION
                         );
                         var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
-                            value, DiagnosticBag.ERR_CONSTRAINT_VIOLATION, msg, Clock.systemDefaultZone()
+                            value, StvnDiagnosticCodes.ERR_CONSTRAINT_VIOLATION, msg, Clock.systemDefaultZone()
                         ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
                     } else {
                         var msg = StvnDiagnosticFormatter.formatPlugin(
                             "Invalid enum value for '" + subset.name() + "': variant '" + text
                                 + "' is not declared; allowed variants: " + subset.allowedVariants(),
-                            DiagnosticBag.ERR_TYPE_MISMATCH
+                            StvnDiagnosticCodes.ERR_TYPE_MISMATCH
                         );
                         var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
-                            value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
+                            value, StvnDiagnosticCodes.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
                         ).toArray(LocalQuickFix.EMPTY_ARRAY);
                         holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
                     }
@@ -380,10 +379,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                     var msg = StvnDiagnosticFormatter.formatPlugin(
                         "Invalid enum value for '" + directEnumInfo.label() + "': variant '" + text
                             + "' is not declared; allowed variants: " + directEnumInfo.variants(),
-                        DiagnosticBag.ERR_TYPE_MISMATCH
+                        StvnDiagnosticCodes.ERR_TYPE_MISMATCH
                     );
                     var fixes = StvnPayloadValueQuickFixProvider.computeFixesForValue(
-                        value, DiagnosticBag.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
+                        value, StvnDiagnosticCodes.ERR_TYPE_MISMATCH, msg, Clock.systemDefaultZone()
                     ).toArray(LocalQuickFix.EMPTY_ARRAY);
                     holder.registerProblem(vkw, msg, ProblemHighlightType.GENERIC_ERROR, fixes);
                 }
