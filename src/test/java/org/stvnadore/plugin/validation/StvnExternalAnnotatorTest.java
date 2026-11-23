@@ -2963,7 +2963,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var fix = myFixture.findSingleIntention("Remove duplicate variant '#PENDING'");
         myFixture.launchAction(fix);
         assertTrue(
-            myFixture.getFile().getText().contains("#filterIncl [ #PENDING #SETTLED ]")
+            myFixture.getFile().getText().contains("#filterIncl [#PENDING #SETTLED]")
         );
         var postFixErrors = myFixture.doHighlighting().stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)

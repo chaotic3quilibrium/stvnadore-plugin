@@ -5,6 +5,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -32,6 +33,7 @@ import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnStringConstraintUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.MetadataMap;
@@ -1408,32 +1410,45 @@ public final class StvnExemplarValueGenerator {
     ) {
         ZoneId zone = resolveExemplarZoneId(clock.getZone());
         Instant targetInstant = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS);
+        boolean clamped = false;
 
         Instant minInstant = tryParseInstantBound(minIncl, zone);
         Instant maxInstant = tryParseInstantBound(maxExcl, zone);
         if (minInstant != null && targetInstant.isBefore(minInstant)) {
             targetInstant = minInstant;
+            clamped = true;
         }
         if (maxInstant != null && !targetInstant.isBefore(maxInstant)) {
             Instant candidate = maxInstant.minusSeconds(1);
-            targetInstant = (minInstant != null && candidate.isBefore(minInstant)) ? minInstant : candidate;
+            if (minInstant != null && candidate.isBefore(minInstant)) {
+                long spanNanos = Duration.between(minInstant, maxInstant).toNanos();
+                targetInstant = spanNanos > 1L ? minInstant.plusNanos(spanNanos / 2L) : minInstant;
+            } else {
+                targetInstant = candidate;
+            }
+            clamped = true;
         }
 
-        ZonedDateTime zdt = ZonedDateTime.ofInstant(targetInstant, zone).truncatedTo(ChronoUnit.SECONDS);
+        ZonedDateTime zdt = ZonedDateTime.ofInstant(
+            clamped ? targetInstant : targetInstant.truncatedTo(ChronoUnit.SECONDS),
+            zone
+        );
+        String localIso = StvnPayloadValueQuickFixProvider.formatCanonicalLocalDateTime(zdt.toLocalDateTime());
         return switch (mode) {
             case OFFSET -> {
                 OffsetDateTime odt = zdt.toOffsetDateTime();
                 String offsetStr = odt.getOffset().getTotalSeconds() == 0 ? "Z" : odt.getOffset().getId();
-                String formatted = LOCAL_SECONDS_FORMATTER.format(odt.toLocalDateTime()) + offsetStr;
+                String formatted = StvnPayloadValueQuickFixProvider.formatCanonicalLocalDateTime(odt.toLocalDateTime())
+                    + offsetStr;
                 yield "\"" + formatted + "\"";
             }
             case ZONED -> {
-                String formatted = LOCAL_SECONDS_FORMATTER.format(zdt.toLocalDateTime()) + "[" + zone.getId() + "]";
+                String formatted = localIso + "[" + zone.getId() + "]";
                 yield "\"" + formatted + "\"";
             }
             case AUDITED -> {
                 String offsetStr = zdt.getOffset().getTotalSeconds() == 0 ? "Z" : zdt.getOffset().getId();
-                String formatted = LOCAL_SECONDS_FORMATTER.format(zdt.toLocalDateTime())
+                String formatted = localIso
                     + offsetStr
                     + "["
                     + zone.getId()

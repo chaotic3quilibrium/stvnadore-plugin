@@ -55,10 +55,19 @@ public final class StvnStringCardinalityInspectionTest extends BasePlatformTestC
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
         myFixture.doHighlighting();
 
+        var upperActions = myFixture.filterAvailableIntentions("Convert '#size 64' to '#maxSize 64'");
+        assertFalse("Expected primary upper-bound conversion quick-fix to be available", upperActions.isEmpty());
         var primaryActions = myFixture.filterAvailableIntentions("Convert '#size 64' to '#minSize 1 #maxSize 64'");
         assertFalse("Expected bounded non-empty conversion quick-fix to be available", primaryActions.isEmpty());
         var fixedActions = myFixture.filterAvailableIntentions("Convert '#size 64' to '#minSize 64 #maxSize 64'");
         assertFalse("Expected fixed-length conversion quick-fix to be available", fixedActions.isEmpty());
+
+        var allIntentions = myFixture.getAvailableIntentions().stream().map(a -> a.getText()).toList();
+        int idxTop = allIntentions.indexOf("Convert '#size 64' to '#maxSize 64'");
+        int idxHigh = allIntentions.indexOf("Convert '#size 64' to '#minSize 1 #maxSize 64'");
+        int idxNorm = allIntentions.indexOf("Convert '#size 64' to '#minSize 64 #maxSize 64'");
+        assertTrue("Expected '#maxSize 64' (Priority.TOP) ahead of '#minSize 1 #maxSize 64' (Priority.HIGH)", idxTop >= 0 && idxTop < idxHigh);
+        assertTrue("Expected '#minSize 1 #maxSize 64' (Priority.HIGH) ahead of '#minSize 64 #maxSize 64' (Priority.NORMAL)", idxHigh < idxNorm);
 
         myFixture.launchAction(primaryActions.get(0));
 

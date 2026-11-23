@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -883,6 +884,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 if (schemaType != null && schemaType.getParent() instanceof ConstantDefinition) {
                     continue; // Handled by visitConstantDefinition
                 }
+                if (StvnDiagnosticAnnotatorMapping.isInspectionActive(holder.getFile(), "StvnEnumSubset")) {
+                    continue; // Authoritatively governed by StvnEnumSubsetInspection without duplicate E008
+                }
                 holder.registerProblem(
                     entry,
                     StvnDiagnosticFormatter.formatPlugin(
@@ -890,7 +894,10 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    inapplicableFixes
+                    StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                        entry,
+                        StvnEnumSubsetInspection.createRemoveFilterFacetFix(entry, PriorityAction.Priority.HIGH)
+                    )
                 );
             } else {
                 checkInvalidTraitArgument(entry, holder);

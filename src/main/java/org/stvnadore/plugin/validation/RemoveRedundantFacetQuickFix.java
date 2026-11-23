@@ -17,6 +17,8 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 
+import java.util.Objects;
+
 /**
  * Dedicated quick-fix and intention action that cleanly deletes redundant metadata facets.
  * <p>
@@ -125,13 +127,47 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       @NotNull PsiElement element,
       String facetKeyword
   ) {
+    return createRemoveInvalidFacetFix(element, facetKeyword, Priority.HIGH);
+  }
+
+  /**
+   * Creates a quick-fix with exact label {@code "Remove invalid '<facetKeyword>' facet"}
+   * and explicit intention priority.
+   *
+   * @param element      the offending metadata entry
+   * @param facetKeyword the canonical facet keyword constant
+   * @param priority     the intention priority ordering
+   * @return configured {@link RemoveRedundantFacetQuickFix}
+   */
+  public static RemoveRedundantFacetQuickFix createRemoveInvalidFacetFix(
+      @NotNull PsiElement element,
+      String facetKeyword,
+      @NotNull Priority priority
+  ) {
     return new RemoveRedundantFacetQuickFix(
         element,
         facetKeyword,
         "Remove invalid",
         " facet",
-        Priority.HIGH
+        priority
     );
+  }
+
+  /**
+   * Creates a quick-fix with exact label {@code "Remove '<facetSnippet>' facet"} that deletes
+   * the target {@link MetadataEntry} and excises sole comment-free enclosing {@code {}} braces.
+   *
+   * @param element      the offending metadata entry or child node
+   * @param facetSnippet the normalized facet snippet (for example, {@code "#filterIncl []"})
+   * @param priority     the intention priority ordering
+   * @return configured {@link RemoveRedundantFacetQuickFix}
+   */
+  public static RemoveRedundantFacetQuickFix createRemoveFacetFix(
+      @NotNull PsiElement element,
+      String facetSnippet,
+      @NotNull Priority priority
+  ) {
+    return new RemoveRedundantFacetQuickFix(element, facetSnippet, "Remove", " facet", priority);
   }
 
   @Override
@@ -173,6 +209,25 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       @NotNull PsiElement endElement
   ) {
     executeRemoval(startElement);
+  }
+
+  @Override
+  public boolean equals(@Nullable Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (!(obj instanceof RemoveRedundantFacetQuickFix other)) {
+      return false;
+    }
+    return Objects.equals(resolveMetadataEntry(getStartElement()), resolveMetadataEntry(other.getStartElement()))
+        && Objects.equals(actionPrefix, other.actionPrefix)
+        && Objects.equals(facetSnippet, other.facetSnippet)
+        && Objects.equals(actionSuffix, other.actionSuffix);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(resolveMetadataEntry(getStartElement()), actionPrefix, facetSnippet, actionSuffix);
   }
 
   /**

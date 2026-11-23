@@ -146,7 +146,7 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
                 {
                   :defs {
                     :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-                    :DuplicateFilterTrap { #filterIncl [ #LOW #HIGH ] } :Priority
+                    :DuplicateFilterTrap { #filterIncl [#LOW #HIGH] } :Priority
                   }
                   :type :DuplicateFilterTrap
                   :body #LOW
@@ -176,8 +176,8 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
             1, errors.size());
         assertTrue(errors.get(0).getDescription().contains("E008-ERR_FILTER_ON_CONSTANT"));
 
-        var actions = myFixture.filterAvailableIntentions("Remove invalid facet '#filterIncl'");
-        assertFalse("Expected \"Remove invalid facet '#filterIncl'\" quick-fix on constant filter", actions.isEmpty());
+        var actions = myFixture.filterAvailableIntentions("Remove '#filterIncl [#RED]' facet");
+        assertFalse("Expected \"Remove '#filterIncl [#RED]' facet\" quick-fix on constant filter", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 
         myFixture.checkResult("""

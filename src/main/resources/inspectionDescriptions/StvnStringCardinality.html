@@ -10,8 +10,10 @@
 
 <p><b>Available Quick-Fixes:</b></p>
 <ul>
+    <li>Convert positive <code>#size &lt;N&gt;</code> to upper-bounded <code>#maxSize &lt;N&gt;</code> (primary action, preserving compatible <code>#minSize</code> bounds).</li>
     <li>Convert positive <code>#size &lt;N&gt;</code> to bounded non-empty <code>#minSize 1 #maxSize &lt;N&gt;</code>.</li>
     <li>Convert positive <code>#size &lt;N&gt;</code> to fixed-length <code>#minSize &lt;N&gt; #maxSize &lt;N&gt;</code>.</li>
+    <li>Use default <code>16777216</code> <code>:String</code> capacity when <code>#size 16777216</code> matches the intrinsic ceiling without introducing redundant <code>#maxSize</code> warnings.</li>
     <li>Remove prohibited <code>#size</code> facets when non-positive or declared on derived nominal aliases.</li>
 </ul>
 </body>

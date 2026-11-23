@@ -29,6 +29,7 @@ import java.util.Set;
 @NullMarked
 public final class StvnMetadataFacetInsertionUtil {
 
+    private static final int MIN_SIZE_RANK = 1510;
     private static final int MAX_SIZE_RANK = 1520;
 
     private StvnMetadataFacetInsertionUtil() {
@@ -55,7 +56,9 @@ public final class StvnMetadataFacetInsertionUtil {
     ) {
         List<MetadataEntry> entries = metaMap.getMetadataEntryList();
         String effectiveMinVal = minSizeVal;
-        BigInteger targetMaxBi = StvnPsiLiteralEvaluator.parseBigInteger(maxSizeVal).orElse(null);
+        BigInteger targetMaxBi = entries.isEmpty()
+            ? StvnPsiLiteralEvaluator.parseBigInteger(maxSizeVal).orElse(null)
+            : StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(entries.getFirst(), maxSizeVal).orElse(null);
 
         if (effectiveMinVal == null && preserveValidMin && targetMaxBi != null) {
             for (MetadataEntry entry : entries) {
@@ -184,6 +187,170 @@ public final class StvnMetadataFacetInsertionUtil {
                 doc.insertString(closeOffset, " " + inlineJoined + " ");
             }
         }
+    }
+
+    /**
+     * Replaces {@code #size} on a root {@code :String} when the requested upper limit equals the
+     * intrinsic {@code 16,777,216} ceiling ({@link StvnVocabulary#DEFAULT_MAX_SIZE}), avoiding
+     * redundant {@code #maxSize 16777216} ({@code W003}).
+     * <ul>
+     *   <li>When {@code explicitMinVal == null}: retains an existing positive {@code #minSize <= 16777216}
+     *       if present, strips {@code #size} (and any tautological {@code #minSize 0}), and excises
+     *       the entire {@code {}} block when no facets or comments remain.</li>
+     *   <li>When {@code explicitMinVal != null}: replaces capacity facets with {@code #minSize <explicitMinVal>}
+     *       at canonical rank {@code 1510}.</li>
+     * </ul>
+     *
+     * @param doc            mutable document backing {@code metaMap}
+     * @param metaMap        target metadata map PSI node
+     * @param explicitMinVal explicit {@code #minSize} token, or {@code null} to use default capacity
+     */
+    public static void replaceSizeWithOptionalMinOnly(
+            Document doc,
+            MetadataMap metaMap,
+            @Nullable String explicitMinVal
+    ) {
+        List<MetadataEntry> entries = metaMap.getMetadataEntryList();
+        String effectiveMinVal = explicitMinVal;
+        if (effectiveMinVal == null) {
+            for (MetadataEntry entry : entries) {
+                String kw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
+                if (StvnVocabulary.FACET_KW_MIN_SIZE.equals(kw) && entry.getMetadataValue() != null) {
+                    String rawMin = entry.getMetadataValue().getText().trim();
+                    BigInteger existingMin = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(entry, rawMin).orElse(null);
+                    if (existingMin != null
+                            && existingMin.signum() > 0
+                            && existingMin.compareTo(StvnVocabulary.DEFAULT_MAX_SIZE) <= 0) {
+                        effectiveMinVal = rawMin;
+                        break;
+                    }
+                }
+            }
+        }
+
+        boolean allCapacity = entries.isEmpty() || entries.stream().allMatch(StvnMetadataFacetInsertionUtil::isCapacityEntry);
+        boolean hasInteriorComment = PsiTreeUtil.findChildOfType(metaMap, PsiComment.class) != null;
+        int mapStart = metaMap.getTextRange().getStartOffset();
+        int mapEnd = metaMap.getTextRange().getEndOffset();
+        boolean multiLine = doc.getLineNumber(mapStart) < doc.getLineNumber(Math.max(mapStart, mapEnd - 1));
+
+        if (effectiveMinVal == null && allCapacity && !hasInteriorComment) {
+            CharSequence seq = doc.getCharsSequence();
+            int delStart = mapStart;
+            int delEnd = mapEnd;
+            if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                delStart--;
+            } else if (delEnd < seq.length() && seq.charAt(delEnd) == ' ') {
+                delEnd++;
+            }
+            doc.deleteString(delStart, delEnd);
+            return;
+        }
+
+        if (effectiveMinVal != null && allCapacity && !hasInteriorComment && !multiLine) {
+            doc.replaceString(mapStart, mapEnd, "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " " + effectiveMinVal + " }");
+            return;
+        }
+
+        ASTNode rbraceNode = metaMap.getNode().findChildByType(StvnTypes.RBRACE);
+        int closeOffset = rbraceNode != null ? rbraceNode.getStartOffset() : -1;
+        List<MetadataEntry> nonCapacitySurviving = new ArrayList<>();
+        List<MetadataEntry> toRemove = new ArrayList<>();
+        for (MetadataEntry entry : entries) {
+            if (isCapacityEntry(entry)) {
+                toRemove.add(entry);
+            } else {
+                nonCapacitySurviving.add(entry);
+            }
+        }
+
+        MetadataEntry insertBeforeEntry = null;
+        if (effectiveMinVal != null) {
+            for (MetadataEntry surviving : nonCapacitySurviving) {
+                String kw = StvnMetadataOrderInspection.extractFacetKeyword(surviving);
+                if (StvnMetadataOrderInspection.getFacetRank(kw) > MIN_SIZE_RANK) {
+                    insertBeforeEntry = surviving;
+                    break;
+                }
+            }
+        }
+
+        int anchorOffset = insertBeforeEntry != null ? insertBeforeEntry.getTextRange().getStartOffset() : -1;
+        String lineSep = doc.getText().contains("\r\n") ? "\r\n" : "\n";
+
+        toRemove.sort(Comparator.comparingInt((MetadataEntry e) -> e.getTextRange().getStartOffset()).reversed());
+        for (MetadataEntry capEntry : toRemove) {
+            int delStart = capEntry.getTextRange().getStartOffset();
+            int delEnd = capEntry.getTextRange().getEndOffset();
+            CharSequence seq = doc.getCharsSequence();
+            if (multiLine) {
+                int lineNum = doc.getLineNumber(delStart);
+                int lineStart = doc.getLineStartOffset(lineNum);
+                int lineEnd = doc.getLineEndOffset(lineNum);
+                String prefix = seq.subSequence(lineStart, delStart).toString();
+                String suffix = seq.subSequence(delEnd, lineEnd).toString();
+                if (prefix.isBlank() && suffix.isBlank()) {
+                    if (lineEnd + 1 < seq.length() && seq.charAt(lineEnd) == '\r' && seq.charAt(lineEnd + 1) == '\n') {
+                        delStart = lineStart;
+                        delEnd = lineEnd + 2;
+                    } else if (lineEnd < seq.length() && seq.charAt(lineEnd) == '\n') {
+                        delStart = lineStart;
+                        delEnd = lineEnd + 1;
+                    } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                        delStart--;
+                    }
+                } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                    delStart--;
+                }
+            } else if (delStart > 0 && seq.charAt(delStart - 1) == ' ') {
+                delStart--;
+            } else if (delEnd < seq.length() && seq.charAt(delEnd) == ' ') {
+                delEnd++;
+            }
+            int deletedChars = delEnd - delStart;
+            doc.deleteString(delStart, delEnd);
+            if (anchorOffset >= delEnd) {
+                anchorOffset -= deletedChars;
+            }
+            if (closeOffset >= delEnd) {
+                closeOffset -= deletedChars;
+            }
+        }
+
+        if (effectiveMinVal == null) {
+            return;
+        }
+
+        String singleMinFacet = StvnVocabulary.FACET_KW_MIN_SIZE + " " + effectiveMinVal;
+        List<String> newFacetTokens = List.of(singleMinFacet);
+        CharSequence chars = doc.getCharsSequence();
+        if (multiLine) {
+            if (anchorOffset >= 0) {
+                int anchorLine = doc.getLineNumber(anchorOffset);
+                int lineStart = doc.getLineStartOffset(anchorLine);
+                String indent = extractLeadingSpaces(chars, lineStart, anchorOffset);
+                doc.insertString(lineStart, formatMultiLineFacets(newFacetTokens, indent, lineSep));
+            } else if (closeOffset >= 0) {
+                int closeLine = doc.getLineNumber(closeOffset);
+                int closeLineStart = doc.getLineStartOffset(closeLine);
+                String closeIndent = extractLeadingSpaces(chars, closeLineStart, closeOffset);
+                doc.insertString(closeLineStart, formatMultiLineFacets(singleTokenOrList(newFacetTokens), closeIndent + "  ", lineSep));
+            }
+            return;
+        }
+        if (anchorOffset >= 0) {
+            doc.insertString(anchorOffset, singleMinFacet + " ");
+        } else if (closeOffset >= 0) {
+            if (closeOffset > 0 && chars.charAt(closeOffset - 1) == ' ') {
+                doc.insertString(closeOffset - 1, " " + singleMinFacet);
+            } else {
+                doc.insertString(closeOffset, " " + singleMinFacet + " ");
+            }
+        }
+    }
+
+    private static List<String> singleTokenOrList(List<String> tokens) {
+        return tokens;
     }
 
     /**

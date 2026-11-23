@@ -29,6 +29,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -43,6 +45,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.core.ir.StvnSchema.DateTimeMode;
@@ -75,10 +78,62 @@ import org.stvnadore.psi.Value;
 public final class StvnPayloadValueQuickFixProvider {
 
     private static final Pattern TEMPORAL_COMPONENTS_PATTERN = Pattern.compile(
-        "^(\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?)"
-            + "(Z|[+-]\\d{2}:\\d{2})?"
+        "^([+-]?\\d{4,}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?)"
+            + "([Zz]|[+-]\\d{2}:\\d{2})?"
             + "(?:\\[([^\\]]+)\\])?$"
     );
+
+    /**
+     * Mandatory STVN § 5.6.2 local date-time formatter guaranteeing two-digit {@code :ss} seconds
+     * even when {@code second == 0 && nano == 0}, while preserving sub-second {@code .fraction} digits.
+     */
+    private static final DateTimeFormatter CANONICAL_LOCAL_DATE_TIME_FORMATTER =
+        new DateTimeFormatterBuilder()
+            .appendPattern("uuuu-MM-dd'T'HH:mm:ss")
+            .optionalStart()
+            .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+            .optionalEnd()
+            .toFormatter(Locale.ROOT);
+
+    /**
+     * Formats a {@link LocalDateTime} into canonical STVN § 5.6.2 {@code YYYY-MM-DDTHH:mm:ss[.fraction]}
+     * syntax, never omitting {@code :00} whole-minute seconds.
+     *
+     * @param ldt local date-time component
+     * @return canonical local date-time text with mandatory {@code :ss} seconds
+     */
+    public static String formatCanonicalLocalDateTime(LocalDateTime ldt) {
+        return CANONICAL_LOCAL_DATE_TIME_FORMATTER.format(ldt);
+    }
+
+    /**
+     * Verifies that a quoted candidate {@code :DateTime} literal passes {@link StvnCompiler#validateDateTimeLiteral}.
+     *
+     * @param candidateLiteral quoted STVN string literal candidate
+     * @param targetMode       governing temporal mode
+     * @return {@code true} if valid under STVN § 5.6.2; {@code false} otherwise
+     */
+    public static boolean isValidCanonicalDateTimeLiteral(String candidateLiteral, DateTimeMode targetMode) {
+        return StvnCompiler.validateDateTimeLiteral(candidateLiteral, targetMode).isEmpty();
+    }
+
+    private static String normalizeLocalTimeSeconds(String rawLocal) {
+        String normalized = rawLocal.replace(' ', 'T');
+        int tIdx = normalized.indexOf('T');
+        if (tIdx > 0 && normalized.length() - tIdx == 6) {
+            return normalized + ":00";
+        }
+        return normalized;
+    }
+
+    private static String formatShiftedLocalPreservingFraction(LocalDateTime shifted, String authoredLocal) {
+        int dotIdx = authoredLocal.indexOf('.');
+        if (dotIdx > 0 && shifted.getNano() != 0) {
+            String baseSec = shifted.truncatedTo(ChronoUnit.SECONDS).format(CANONICAL_LOCAL_DATE_TIME_FORMATTER);
+            return baseSec + authoredLocal.substring(dotIdx);
+        }
+        return formatCanonicalLocalDateTime(shifted);
+    }
 
     private static final Pattern VALID_METADATA_RANGE_PATTERN = Pattern.compile(
         "valid\\s+(#\\w+)\\s+range\\s+is\\s+\\[(-?\\d+),\\s*(-?\\d+)\\]"
@@ -448,16 +503,18 @@ public final class StvnPayloadValueQuickFixProvider {
                 addDateTimeClampFixesIfOutOfBounds(fixes, value, rawValueText, mode, minIncl, maxExcl, clock);
 
                 String initialExemplar = StvnExemplarValueGenerator.generateDateTimeExemplar(mode, minIncl, maxExcl, clock);
-                fixes.add(
-                    new PayloadValueQuickFix(
-                        value,
-                        "Replace with current " + modeFlag + " " + StvnVocabulary.TYPE_DATE_TIME,
-                        "STVN Exemplar Value Replacement",
-                        initialExemplar,
-                        () -> StvnExemplarValueGenerator.generateDateTimeExemplar(mode, minIncl, maxExcl, clock),
-                        PriorityAction.Priority.LOW
-                    )
-                );
+                if (isValidCanonicalDateTimeLiteral(initialExemplar, mode)) {
+                    fixes.add(
+                        new PayloadValueQuickFix(
+                            value,
+                            "Replace with current " + modeFlag + " " + StvnVocabulary.TYPE_DATE_TIME,
+                            "STVN Exemplar Value Replacement",
+                            initialExemplar,
+                            () -> StvnExemplarValueGenerator.generateDateTimeExemplar(mode, minIncl, maxExcl, clock),
+                            PriorityAction.Priority.LOW
+                        )
+                    );
+                }
             }
             case StvnVocabulary.TYPE_TIME_EPOCH -> {
                 TemporalScale scale = resolveEpochScale(meta, irSchema);
@@ -1195,7 +1252,7 @@ public final class StvnPayloadValueQuickFixProvider {
             return null;
         }
 
-        String localPart = matcher.group(1).replace(' ', 'T');
+        String localPart = normalizeLocalTimeSeconds(matcher.group(1));
         String offsetPart = matcher.group(2);
         String zonePart = matcher.group(3);
 
@@ -1223,7 +1280,10 @@ public final class StvnPayloadValueQuickFixProvider {
         ZoneOffset parsedOffset = null;
         if (offsetPart != null && !offsetPart.isBlank()) {
             try {
-                parsedOffset = ZoneOffset.of(offsetPart.trim());
+                String trimmedOffset = offsetPart.trim();
+                parsedOffset = trimmedOffset.equalsIgnoreCase("Z")
+                    ? ZoneOffset.UTC
+                    : ZoneOffset.of(trimmedOffset);
             } catch (Exception ignored) {
                 return null;
             }
@@ -1231,11 +1291,14 @@ public final class StvnPayloadValueQuickFixProvider {
 
         ZoneId fallbackZone = StvnExemplarValueGenerator.resolveExemplarZoneId(clock.getZone());
 
-        return switch (targetMode) {
+        String candidate = switch (targetMode) {
             case OFFSET -> {
                 if (parsedZone != null) {
                     ZonedDateTime zdt = ZonedDateTime.ofLocal(ldt, parsedZone, parsedOffset);
-                    yield "\"" + localPart + formatOffsetForMode(zdt.getOffset()) + "\"";
+                    String resolvedLocal = zdt.toLocalDateTime().equals(ldt)
+                        ? localPart
+                        : formatShiftedLocalPreservingFraction(zdt.toLocalDateTime(), localPart);
+                    yield "\"" + resolvedLocal + formatOffsetForMode(zdt.getOffset()) + "\"";
                 }
                 if (parsedOffset != null) {
                     yield "\"" + localPart + formatOffsetForMode(parsedOffset) + "\"";
@@ -1248,23 +1311,24 @@ public final class StvnPayloadValueQuickFixProvider {
                     ZonedDateTime zdt = ZonedDateTime.ofLocal(ldt, parsedZone, parsedOffset);
                     String resolvedLocal = zdt.toLocalDateTime().equals(ldt)
                         ? localPart
-                        : zdt.toLocalDateTime().toString();
+                        : formatShiftedLocalPreservingFraction(zdt.toLocalDateTime(), localPart);
                     yield "\"" + resolvedLocal + "[" + parsedZone.getId() + "]\"";
                 }
                 if (parsedOffset != null) {
-                    if (fallbackZone.getRules().getValidOffsets(ldt).contains(parsedOffset)) {
-                        yield "\"" + localPart + "[" + fallbackZone.getId() + "]\"";
-                    }
                     if (parsedOffset.getTotalSeconds() == 0) {
                         yield "\"" + localPart + "[UTC]\"";
                     }
+                    if (fallbackZone.getRules().getValidOffsets(ldt).contains(parsedOffset)) {
+                        yield "\"" + localPart + "[" + fallbackZone.getId() + "]\"";
+                    }
                     ZonedDateTime converted = OffsetDateTime.of(ldt, parsedOffset).atZoneSameInstant(fallbackZone);
-                    yield "\"" + converted.toLocalDateTime() + "[" + fallbackZone.getId() + "]\"";
+                    yield "\"" + formatShiftedLocalPreservingFraction(converted.toLocalDateTime(), localPart)
+                        + "[" + fallbackZone.getId() + "]\"";
                 }
                 ZonedDateTime zdt = ldt.atZone(fallbackZone);
                 String resolvedLocal = zdt.toLocalDateTime().equals(ldt)
                     ? localPart
-                    : zdt.toLocalDateTime().toString();
+                    : formatShiftedLocalPreservingFraction(zdt.toLocalDateTime(), localPart);
                 yield "\"" + resolvedLocal + "[" + fallbackZone.getId() + "]\"";
             }
             case AUDITED -> {
@@ -1272,7 +1336,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     ZonedDateTime zdt = ZonedDateTime.ofLocal(ldt, parsedZone, parsedOffset);
                     String resolvedLocal = zdt.toLocalDateTime().equals(ldt)
                         ? localPart
-                        : zdt.toLocalDateTime().toString();
+                        : formatShiftedLocalPreservingFraction(zdt.toLocalDateTime(), localPart);
                     yield "\""
                         + resolvedLocal
                         + formatOffsetForMode(zdt.getOffset())
@@ -1281,6 +1345,9 @@ public final class StvnPayloadValueQuickFixProvider {
                         + "]\"";
                 }
                 if (parsedOffset != null) {
+                    if (parsedOffset.getTotalSeconds() == 0) {
+                        yield "\"" + localPart + "Z[UTC]\"";
+                    }
                     if (fallbackZone.getRules().getValidOffsets(ldt).contains(parsedOffset)) {
                         yield "\""
                             + localPart
@@ -1289,12 +1356,9 @@ public final class StvnPayloadValueQuickFixProvider {
                             + fallbackZone.getId()
                             + "]\"";
                     }
-                    if (parsedOffset.getTotalSeconds() == 0) {
-                        yield "\"" + localPart + "Z[UTC]\"";
-                    }
                     ZonedDateTime converted = OffsetDateTime.of(ldt, parsedOffset).atZoneSameInstant(fallbackZone);
                     yield "\""
-                        + converted.toLocalDateTime()
+                        + formatShiftedLocalPreservingFraction(converted.toLocalDateTime(), localPart)
                         + formatOffsetForMode(converted.getOffset())
                         + "["
                         + fallbackZone.getId()
@@ -1303,7 +1367,7 @@ public final class StvnPayloadValueQuickFixProvider {
                 ZonedDateTime zdt = ldt.atZone(fallbackZone);
                 String resolvedLocal = zdt.toLocalDateTime().equals(ldt)
                     ? localPart
-                    : zdt.toLocalDateTime().toString();
+                    : formatShiftedLocalPreservingFraction(zdt.toLocalDateTime(), localPart);
                 yield "\""
                     + resolvedLocal
                     + formatOffsetForMode(zdt.getOffset())
@@ -1312,6 +1376,7 @@ public final class StvnPayloadValueQuickFixProvider {
                     + "]\"";
             }
         };
+        return isValidCanonicalDateTimeLiteral(candidate, targetMode) ? candidate : null;
     }
 
     private static void addDateTimeClampFixesIfOutOfBounds(
@@ -2120,13 +2185,32 @@ public final class StvnPayloadValueQuickFixProvider {
 
     private static String formatInstantForDateTimeMode(Instant instant, DateTimeMode mode, ZoneId zone) {
         ZonedDateTime zdt = ZonedDateTime.ofInstant(instant, zone);
-        String localStr = zdt.toLocalDateTime().toString();
+        String localStr = formatCanonicalLocalDateTime(zdt.toLocalDateTime());
         String offsetStr = formatOffsetForMode(zdt.getOffset());
-        return switch (mode) {
+        String formatted = switch (mode) {
             case OFFSET -> "\"" + localStr + offsetStr + "\"";
             case ZONED -> "\"" + localStr + "[" + zone.getId() + "]\"";
             case AUDITED -> "\"" + localStr + offsetStr + "[" + zone.getId() + "]\"";
         };
+        return isValidCanonicalDateTimeLiteral(formatted, mode) ? formatted : "\"" + localStr + "Z\"";
+    }
+
+    /**
+     * Parses a valid or convertible STVN {@code :DateTime} literal into an {@link Instant}.
+     *
+     * @param rawLiteralText quoted or unquoted STVN {@code :DateTime} literal
+     * @param clock          clock supplying fallback zone
+     * @return resolved instant, or {@code null} if unparseable
+     */
+    public static @Nullable Instant tryParseDateTimeInstant(String rawLiteralText, Clock clock) {
+        String unquoted = stripQuotesOrFences(rawLiteralText);
+        if (unquoted == null || unquoted.isBlank()) {
+            return null;
+        }
+        return parseAnyIsoTimestampToInstant(
+            unquoted.trim(),
+            StvnExemplarValueGenerator.resolveExemplarZoneId(clock.getZone())
+        );
     }
 
     private static @Nullable Instant parseAnyIsoTimestampToInstant(String clean, ZoneId fallbackZone) {
@@ -2134,7 +2218,7 @@ public final class StvnPayloadValueQuickFixProvider {
         if (!matcher.matches()) {
             return null;
         }
-        String localPart = matcher.group(1).replace(' ', 'T');
+        String localPart = normalizeLocalTimeSeconds(matcher.group(1));
         String offsetPart = matcher.group(2);
         String zonePart = matcher.group(3);
         try {
@@ -2142,12 +2226,15 @@ public final class StvnPayloadValueQuickFixProvider {
             if (zonePart != null && !zonePart.isBlank()) {
                 ZoneId zone = ZoneId.of(zonePart.trim());
                 ZoneOffset preferred = (offsetPart != null && !offsetPart.isBlank())
-                    ? ZoneOffset.of(offsetPart.trim())
+                    ? (offsetPart.trim().equalsIgnoreCase("Z") ? ZoneOffset.UTC : ZoneOffset.of(offsetPart.trim()))
                     : null;
                 return ZonedDateTime.ofLocal(ldt, zone, preferred).toInstant();
             }
             if (offsetPart != null && !offsetPart.isBlank()) {
-                return OffsetDateTime.of(ldt, ZoneOffset.of(offsetPart.trim())).toInstant();
+                ZoneOffset off = offsetPart.trim().equalsIgnoreCase("Z")
+                    ? ZoneOffset.UTC
+                    : ZoneOffset.of(offsetPart.trim());
+                return OffsetDateTime.of(ldt, off).toInstant();
             }
             return ldt.atZone(fallbackZone).toInstant();
         } catch (Exception e) {

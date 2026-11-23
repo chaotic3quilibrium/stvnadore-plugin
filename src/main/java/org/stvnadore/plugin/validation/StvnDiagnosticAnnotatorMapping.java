@@ -570,6 +570,16 @@ public final class StvnDiagnosticAnnotatorMapping {
 
         if (DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(sym)
                 || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET)) {
+            if (message.contains("Filter facets are only permitted on")
+                    || message.contains("Filter facets (" + StvnVocabulary.FACET_KW_FILTER_INCL)
+                    || message.contains("filter facets cannot be applied")
+                    || message.contains("filter facets are not allowed")) {
+                if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                    return true;
+                }
+                return isInspectionActive(file, "StvnEnumSubset")
+                    || isInspectionActive(file, "StvnMetadataFacet");
+            }
             if (message.contains("cannot be applied to :Map directly")) {
                 return false;
             }
@@ -633,6 +643,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("Complete exclusion violation")
                 || message.contains("filter facets cannot be applied")
                 || message.contains("filter facets are not allowed")
+                || message.contains("Filter facets are only permitted on")
+                || message.contains("Filter facets (" + StvnVocabulary.FACET_KW_FILTER_INCL)
                 || message.contains("in filter list")
                 || message.contains("duplicate variant in filter")) {
             return "StvnEnumSubset";

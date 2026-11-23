@@ -14,22 +14,25 @@
 <p><b>Quick-Fixes Available:</b></p>
 <ul>
     <li><b>Sort variants to match root enum declaration order:</b> Reorders out-of-order variants in a filter list to match the canonical root enum declaration order.</li>
+    <li><b>Remove '&lt;#VARIANT&gt;' from '&lt;#filterIncl|#filterExcl&gt;':</b> Deletes inactive variants from multi-element filter lists with canonical bracket spacing.</li>
+    <li><b>Remove duplicate variant '&lt;#VARIANT&gt;':</b> Deletes duplicate variant tokens inside filter lists.</li>
+    <li><b>Remove '&lt;facet&gt;' facet:</b> Deletes empty filter lists, complete-exclusion filters, single-element invalid filters, and prohibited filter attachments on inline enums, constants, or non-enum types (excising empty <code>{}</code> blocks).</li>
     <li><b>Remove conflicting facet:</b> Deletes a conflicting <code>#filterIncl</code> or <code>#filterExcl</code> facet.</li>
     <li><b>Replace with '&lt;#VARIANT&gt;':</b> Offers deterministic per-variant replacement actions for every active variant in declaration order.</li>
 </ul>
 
 <p><b>Example (Root Ordering Violation):</b></p>
 <pre><code>:defs {
-  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
+  :Priority :Enum[#LOW #MEDIUM #HIGH #CRITICAL]
   // Error: Root ordering violation (:InvalidOrder): variant '#MEDIUM' violates monotonic root enum declaration order
-  :InvalidOrder { #filterIncl [ #HIGH #MEDIUM ] } :Priority
+  :InvalidOrder { #filterIncl [#HIGH #MEDIUM] } :Priority
 }
 </code></pre>
 
 <p><b>Correct Form:</b></p>
 <pre><code>:defs {
-  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-  :ValidOrder { #filterIncl [ #MEDIUM #HIGH ] } :Priority
+  :Priority :Enum[#LOW #MEDIUM #HIGH #CRITICAL]
+  :ValidOrder { #filterIncl [#MEDIUM #HIGH] } :Priority
 }
 </code></pre>
 </body>

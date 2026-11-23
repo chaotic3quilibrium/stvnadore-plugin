@@ -1,5 +1,6 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
@@ -11,11 +12,13 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ValueKeyword;
 import org.stvnadore.psi.VariantList;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Objects;
 
 /**
  * In-place AST rewrite quick-fix and intention action that removes a duplicate
@@ -26,6 +29,7 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
         extends LocalQuickFixAndIntentionActionOnPsiElement
         implements PriorityAction {
 
+    @SafeFieldForPreview
     private final String variantText;
 
     /**
@@ -41,7 +45,7 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
 
     @Override
     public @NotNull Priority getPriority() {
-        return Priority.TOP;
+        return Priority.HIGH;
     }
 
     @Override
@@ -104,7 +108,9 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
             }
         }
 
-        var replacementText = kept.isEmpty() ? "[]" : "[ " + String.join(" ", kept) + " ]";
+        var replacementText = kept.isEmpty()
+            ? StvnVocabulary.DELIM_OPEN_BRACKET + StvnVocabulary.DELIM_CLOSE_BRACKET
+            : StvnVocabulary.DELIM_OPEN_BRACKET + String.join(" ", kept) + StvnVocabulary.DELIM_CLOSE_BRACKET;
         var docManager = PsiDocumentManager.getInstance(project);
         var doc = file.getViewProvider().getDocument();
         if (doc != null) {
@@ -112,5 +118,22 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
             doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacementText);
             docManager.commitDocument(doc);
         }
+    }
+
+    @Override
+    public boolean equals(@Nullable Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof StvnRemoveDuplicateFilterVariantQuickFix other)) {
+            return false;
+        }
+        return Objects.equals(getStartElement(), other.getStartElement())
+            && Objects.equals(variantText, other.variantText);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getStartElement(), variantText);
     }
 }

@@ -1,9 +1,12 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -14,6 +17,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnConstantReference;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
@@ -23,6 +27,7 @@ import org.stvnadore.psi.*;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Real-time inspection validating STVN Enum Subset invariants:
@@ -49,226 +54,37 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDef)) {
                     return;
                 }
-                var metaMap = typeDef.getMetadataMap();
-                if (metaMap == null) return;
-
-                var entries = metaMap.getMetadataEntryList();
-                var filterEntries = new ArrayList<MetadataFilter>();
-                for (var entry : entries) {
-                    if (entry.getMetadataFilter() != null) {
-                        filterEntries.add(entry.getMetadataFilter());
-                    }
-                }
-                if (filterEntries.isEmpty()) return;
-
                 var schemaType = typeDef.getSchemaType();
-                var kw = typeDef.getTypeKeyword() != null ? typeDef.getTypeKeyword().getText() : ":Type";
-
-                // Attachment check 1: Inline enum constructors prohibited
-                if (schemaType != null && schemaType.getSchemaConstructor() != null &&
-                    schemaType.getSchemaConstructor().getSumType() != null &&
-                    schemaType.getSchemaConstructor().getSumType().getEnumDef() != null) {
-                    for (var filter : filterEntries) {
-                        holder.registerProblem(
-                            filter,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Constraint violation (" + kw + "): filter facets cannot be applied to inline enum constructors; filter facets are only allowed on nominal aliases of :Enum or existing enum subsets",
-                                StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter)
-                        );
-                    }
+                var metaMap = typeDef.getMetadataMap() != null
+                    ? typeDef.getMetadataMap()
+                    : (schemaType != null ? schemaType.getMetadataMap() : null);
+                if (metaMap == null) {
                     return;
                 }
+                var kw = typeDef.getTypeKeyword() != null
+                    ? typeDef.getTypeKeyword().getText()
+                    : StvnVocabulary.SIGIL_TYPIC + "Type";
+                validateFilterMetadata(kw, schemaType, metaMap, holder, isOnTheFly);
+            }
 
-                // Attachment check 2: Non-enum primitives prohibited
-                var parentSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
-                var resolvedParent = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
-                boolean isEnum = parentSubset != null || (resolvedParent != null && resolvedParent.getSchemaConstructor() != null &&
-                    resolvedParent.getSchemaConstructor().getSumType() != null &&
-                    resolvedParent.getSchemaConstructor().getSumType().getEnumDef() != null);
-                if (!isEnum) {
-                    var baseName = schemaType != null ? schemaType.getText() : "non-enum";
-                    for (var filter : filterEntries) {
-                        holder.registerProblem(
-                            filter,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Constraint violation (" + kw + "): filter facets are not allowed on " + baseName,
-                                StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR,
-                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter)
-                        );
-                    }
+            @Override
+            public void visitSchemaType(@NotNull SchemaType schemaType) {
+                super.visitSchemaType(schemaType);
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(schemaType)) {
                     return;
                 }
-
-                // Mutual exclusivity check (#filterIncl and #filterExcl): pin GENERIC_ERROR strictly to i >= 1
-                boolean hasIncl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null);
-                boolean hasExcl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null);
-                if (hasIncl && hasExcl) {
-                    for (int i = 0; i < filterEntries.size(); i++) {
-                        var filter = filterEntries.get(i);
-                        var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
-                        var fKw = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
-                            ? StvnVocabulary.FACET_KW_FILTER_INCL
-                            : StvnVocabulary.FACET_KW_FILTER_EXCL;
-                        var fixes = parentEntry != null
-                            ? new LocalQuickFix[]{new RemoveRedundantFacetQuickFix(parentEntry, fKw, "Remove conflicting facet")}
-                            : LocalQuickFix.EMPTY_ARRAY;
-                        if (i >= 1) {
-                            holder.registerProblem(
-                                filter,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Constraint violation (" + kw + "): "
-                                        + StvnVocabulary.FACET_KW_FILTER_INCL + " and "
-                                        + StvnVocabulary.FACET_KW_FILTER_EXCL + " are mutually exclusive",
-                                    StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR,
-                                StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter, fixes)
-                            );
-                        } else if (isOnTheFly && fixes.length > 0) {
-                            holder.registerProblem(filter, "", ProblemHighlightType.INFORMATION, fixes);
-                        }
-                    }
+                if (schemaType.getParent() instanceof TypeDefinition
+                        || schemaType.getParent() instanceof ConstantDefinition) {
                     return;
                 }
-
-                // Retrieve immediate parent and root variants
-                if (parentSubset == null) {
-                    parentSubset = StvnTypeResolver.resolveEnumSubset(schemaType);
+                var metaMap = schemaType.getMetadataMap();
+                if (metaMap == null) {
+                    return;
                 }
-                List<String> parentAllowed;
-                String parentName;
-                String rootEnumName;
-                List<String> rootVariants;
-
-                if (parentSubset != null) {
-                    parentAllowed = parentSubset.allowedVariants();
-                    parentName = parentSubset.name();
-                    rootEnumName = parentSubset.rootEnum();
-                    rootVariants = parentSubset.rootVariants();
-                } else {
-                    var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
-                    rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
-                    parentAllowed = rootVariants;
-                    parentName = schemaType.getTypeKeyword() != null ? schemaType.getTypeKeyword().getText() : StvnVocabulary.TYPE_ENUM;
-                    rootEnumName = parentName;
-                }
-
-                for (var filter : filterEntries) {
-                    var variantList = filter.getVariantList();
-                    if (variantList == null) continue;
-                    var valueKeywords = variantList.getValueKeywordList();
-
-                    // Non-empty bracket check
-                    if (valueKeywords.isEmpty()) {
-                        holder.registerProblem(
-                            variantList,
-                            StvnDiagnosticFormatter.formatPlugin(
-                                "Constraint violation (" + kw + "): enum filter variant list cannot be empty",
-                                StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST
-                            ),
-                            ProblemHighlightType.GENERIC_ERROR
-                        );
-                        continue;
-                    }
-
-                    // Duplicate variant check
-                    var seen = new HashSet<String>();
-                    for (var vkw : valueKeywords) {
-                        var text = vkw.getText();
-                        if (!seen.add(text)) {
-                            holder.registerProblem(
-                                vkw,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Enum subset violation (" + kw + "): duplicate variant '" + text + "' in filter list",
-                                    StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR,
-                                new StvnRemoveDuplicateFilterVariantQuickFix(vkw, text)
-                            );
-                        }
-                    }
-
-                    // Monotonic narrowing check
-                    for (var vkw : valueKeywords) {
-                        var text = vkw.getText();
-                        if (!parentAllowed.contains(text)) {
-                            holder.registerProblem(
-                                vkw,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Monotonic narrowing violation (" + kw + "): variant '" + text + "' is not active in parent enum",
-                                    StvnDiagnosticCodes.ERR_ENUM_SUBSET_NOT_SUBSET
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        }
-                    }
-
-                    // Relative root order check
-                    int prevRootIdx = -1;
-                    ValueKeyword outOfOrderNode = null;
-                    var seenForOrder = new HashSet<String>();
-                    for (var vkw : valueKeywords) {
-                        var text = vkw.getText();
-                        if (!seenForOrder.add(text)) {
-                            continue;
-                        }
-                        int idx = rootVariants.indexOf(text);
-                        if (idx >= 0) {
-                            if (idx <= prevRootIdx) {
-                                outOfOrderNode = vkw;
-                                break;
-                            }
-                            prevRootIdx = idx;
-                        }
-                    }
-
-                    if (outOfOrderNode != null) {
-                        var outOfOrderText = outOfOrderNode.getText();
-                        var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
-                        var msg = StvnDiagnosticFormatter.formatPlugin(
-                            "Root ordering violation (" + kw + "): variant '" + outOfOrderText + "' violates monotonic root enum declaration order",
-                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_ORDER_VIOLATION
-                        );
-                        for (var vkw : valueKeywords) {
-                            if (vkw == outOfOrderNode) {
-                                holder.registerProblem(
-                                    vkw,
-                                    msg,
-                                    ProblemHighlightType.GENERIC_ERROR,
-                                    quickFix
-                                );
-                            } else if (isOnTheFly) {
-                                holder.registerProblem(
-                                    vkw,
-                                    "",
-                                    ProblemHighlightType.INFORMATION,
-                                    quickFix
-                                );
-                            }
-                        }
-                    }
-
-                    // Complete exclusion check
-                    if (filter.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null) {
-                        var facetList = valueKeywords.stream().map(ValueKeyword::getText).toList();
-                        var remaining = parentAllowed.stream().filter(v -> !facetList.contains(v)).toList();
-                        if (remaining.isEmpty()) {
-                            holder.registerProblem(
-                                filter,
-                                StvnDiagnosticFormatter.formatPlugin(
-                                    "Complete exclusion violation (" + kw + "): filtered enum subset evaluates to zero active variants",
-                                    StvnDiagnosticCodes.ERR_ENUM_SUBSET_EMPTY
-                                ),
-                                ProblemHighlightType.GENERIC_ERROR
-                            );
-                        }
-                    }
-                }
+                String ownerLabel = schemaType.getParent() instanceof TypeEntry
+                    ? StvnVocabulary.KEYWORD_TYPE
+                    : StvnVocabulary.TYPE_ENUM;
+                validateFilterMetadata(ownerLabel, schemaType, metaMap, holder, isOnTheFly);
             }
 
             @Override
@@ -277,16 +93,18 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)) {
                     return;
                 }
-                var metaMap = constDef.getMetadataMap();
+                var schemaType = constDef.getSchemaType();
+                var metaMap = constDef.getMetadataMap() != null
+                    ? constDef.getMetadataMap()
+                    : (schemaType != null ? schemaType.getMetadataMap() : null);
                 if (metaMap == null) return;
 
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var filter = entry.getMetadataFilter();
                     if (filter != null) {
-                        var constName = constDef.getValueKeyword() != null ? constDef.getValueKeyword().getText() : "#CONST";
-                        var facetTag = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
-                            ? StvnVocabulary.FACET_KW_FILTER_INCL
-                            : StvnVocabulary.FACET_KW_FILTER_EXCL;
+                        var constName = constDef.getValueKeyword() != null
+                            ? constDef.getValueKeyword().getText()
+                            : StvnVocabulary.SIGIL_VALUE + "CONST";
                         holder.registerProblem(
                             filter,
                             StvnDiagnosticFormatter.formatPlugin(
@@ -296,7 +114,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                             ProblemHighlightType.GENERIC_ERROR,
                             StvnMetadataOrderInspection.appendReorderFixIfDisordered(
                                 entry,
-                                new RemoveRedundantFacetQuickFix(entry, facetTag, "Remove invalid facet")
+                                createRemoveFilterFacetFix(entry, PriorityAction.Priority.HIGH)
                             )
                         );
                     }
@@ -393,6 +211,457 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 }
             }
         };
+    }
+
+    private static void validateFilterMetadata(
+            String kw,
+            @Nullable SchemaType schemaType,
+            MetadataMap metaMap,
+            ProblemsHolder holder,
+            boolean isOnTheFly
+    ) {
+        var entries = metaMap.getMetadataEntryList();
+        var filterEntries = new ArrayList<MetadataFilter>();
+        for (var entry : entries) {
+            if (entry.getMetadataFilter() != null) {
+                filterEntries.add(entry.getMetadataFilter());
+            }
+        }
+        if (filterEntries.isEmpty()) {
+            return;
+        }
+
+        // Attachment check 1: Inline enum constructors prohibited
+        if (schemaType != null
+                && schemaType.getSchemaConstructor() != null
+                && schemaType.getSchemaConstructor().getSumType() != null
+                && schemaType.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            for (var filter : filterEntries) {
+                var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
+                var fixes = parentEntry != null
+                    ? StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                        parentEntry,
+                        createRemoveFilterFacetFix(parentEntry, PriorityAction.Priority.HIGH)
+                    )
+                    : StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter);
+                holder.registerProblem(
+                    filter,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Constraint violation (" + kw + "): filter facets cannot be applied to inline enum constructors; filter facets are only allowed on nominal aliases of :Enum or existing enum subsets",
+                        StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    fixes
+                );
+            }
+            return;
+        }
+
+        // Bail out on unresolved nominal type references so E029 does not stack a bogus ERR_FILTER_ON_NON_ENUM
+        if (schemaType != null
+                && schemaType.getSchemaConstructor() == null
+                && schemaType.getTypeKeyword() != null) {
+            var refKw = schemaType.getTypeKeyword();
+            String refText = refKw.getText().trim();
+            if (!StvnVocabulary.isBaseScalarType(refText)
+                    && StvnPreludeBridge.resolvePreludeTypeDefinition(holder.getProject(), refText) == null
+                    && new StvnTypeReference(refKw).resolve() == null) {
+                return;
+            }
+        }
+
+        // Attachment check 2: Non-enum primitives and composites prohibited
+        var parentSubset = schemaType != null ? StvnTypeResolver.resolveEnumSubset(schemaType) : null;
+        var resolvedParent = schemaType != null ? StvnTypeResolver.resolveNominalSchema(schemaType) : null;
+        boolean isEnum = parentSubset != null
+            || (resolvedParent != null
+                && resolvedParent.getSchemaConstructor() != null
+                && resolvedParent.getSchemaConstructor().getSumType() != null
+                && resolvedParent.getSchemaConstructor().getSumType().getEnumDef() != null);
+        if (!isEnum) {
+            var baseName = schemaType != null ? schemaType.getText() : "non-enum";
+            for (var filter : filterEntries) {
+                var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
+                var fixes = parentEntry != null
+                    ? StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                        parentEntry,
+                        createRemoveFilterFacetFix(parentEntry, PriorityAction.Priority.HIGH)
+                    )
+                    : StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter);
+                holder.registerProblem(
+                    filter,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Constraint violation (" + kw + "): filter facets are not allowed on " + baseName,
+                        StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    fixes
+                );
+            }
+            return;
+        }
+
+        // Mutual exclusivity check (#filterIncl and #filterExcl): pin GENERIC_ERROR strictly to i >= 1
+        boolean hasIncl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null);
+        boolean hasExcl = filterEntries.stream().anyMatch(f -> f.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null);
+        if (hasIncl && hasExcl) {
+            for (int i = 0; i < filterEntries.size(); i++) {
+                var filter = filterEntries.get(i);
+                var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
+                var fKw = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
+                    ? StvnVocabulary.FACET_KW_FILTER_INCL
+                    : StvnVocabulary.FACET_KW_FILTER_EXCL;
+                var fixes = parentEntry != null
+                    ? new LocalQuickFix[]{new RemoveRedundantFacetQuickFix(parentEntry, fKw, "Remove conflicting facet")}
+                    : LocalQuickFix.EMPTY_ARRAY;
+                if (i >= 1) {
+                    holder.registerProblem(
+                        filter,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Constraint violation (" + kw + "): "
+                                + StvnVocabulary.FACET_KW_FILTER_INCL + " and "
+                                + StvnVocabulary.FACET_KW_FILTER_EXCL + " are mutually exclusive",
+                            StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter, fixes)
+                    );
+                } else if (isOnTheFly && fixes.length > 0) {
+                    holder.registerProblem(filter, "", ProblemHighlightType.INFORMATION, fixes);
+                }
+            }
+            return;
+        }
+
+        List<String> parentAllowed;
+        List<String> rootVariants;
+        if (parentSubset != null) {
+            parentAllowed = parentSubset.allowedVariants();
+            rootVariants = parentSubset.rootVariants();
+        } else {
+            var enumDef = resolvedParent.getSchemaConstructor().getSumType().getEnumDef();
+            rootVariants = enumDef.getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+            parentAllowed = rootVariants;
+        }
+
+        for (var filter : filterEntries) {
+            var variantList = filter.getVariantList();
+            if (variantList == null) {
+                continue;
+            }
+            var parentEntry = filter.getParent() instanceof MetadataEntry me ? me : null;
+            var valueKeywords = variantList.getValueKeywordList();
+
+            // Non-empty bracket check (E016)
+            if (valueKeywords.isEmpty()) {
+                var removeFix = parentEntry != null
+                    ? createRemoveFilterFacetFix(parentEntry, PriorityAction.Priority.HIGH)
+                    : null;
+                var emptyFixes = (parentEntry != null && removeFix != null)
+                    ? StvnMetadataOrderInspection.appendReorderFixIfDisordered(parentEntry, removeFix)
+                    : LocalQuickFix.EMPTY_ARRAY;
+                holder.registerProblem(
+                    variantList,
+                    StvnDiagnosticFormatter.formatPlugin(
+                        "Constraint violation (" + kw + "): enum filter variant list cannot be empty",
+                        StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST
+                    ),
+                    ProblemHighlightType.GENERIC_ERROR,
+                    emptyFixes
+                );
+                if (isOnTheFly && parentEntry != null && removeFix != null) {
+                    int eStart = parentEntry.getTextRange().getStartOffset();
+                    int vStart = variantList.getTextRange().getStartOffset();
+                    if (vStart > eStart) {
+                        int kwLen = Math.max(1, vStart - eStart - 1);
+                        holder.registerProblem(
+                            parentEntry,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            TextRange.create(0, kwLen),
+                            removeFix
+                        );
+                    }
+                }
+                continue;
+            }
+
+            // Duplicate variant check (E008)
+            var seen = new HashSet<String>();
+            Set<ValueKeyword> duplicateNodes = new HashSet<>();
+            for (var vkw : valueKeywords) {
+                var text = vkw.getText();
+                if (!seen.add(text)) {
+                    duplicateNodes.add(vkw);
+                    holder.registerProblem(
+                        vkw,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Enum subset violation (" + kw + "): duplicate variant '" + text + "' in filter list",
+                            StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            parentEntry != null ? parentEntry : vkw,
+                            new StvnRemoveDuplicateFilterVariantQuickFix(vkw, text)
+                        )
+                    );
+                }
+            }
+
+            // Monotonic narrowing check (E014)
+            boolean hadInvalidMember = false;
+            for (var vkw : valueKeywords) {
+                if (duplicateNodes.contains(vkw)) {
+                    continue;
+                }
+                var text = vkw.getText();
+                if (!parentAllowed.contains(text)) {
+                    hadInvalidMember = true;
+                    List<LocalQuickFix> narrowingFixes = createInvalidSubsetVariantFixes(vkw, parentAllowed);
+                    holder.registerProblem(
+                        vkw,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Monotonic narrowing violation (" + kw + "): variant '" + text + "' is not active in parent enum",
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_NOT_SUBSET
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            parentEntry != null ? parentEntry : vkw,
+                            narrowingFixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                        )
+                    );
+                }
+            }
+
+            // Relative root order check (E015)
+            int prevRootIdx = -1;
+            ValueKeyword outOfOrderNode = null;
+            var seenForOrder = new HashSet<String>();
+            for (var vkw : valueKeywords) {
+                var text = vkw.getText();
+                if (!seenForOrder.add(text)) {
+                    continue;
+                }
+                int idx = rootVariants.indexOf(text);
+                if (idx >= 0) {
+                    if (idx <= prevRootIdx) {
+                        outOfOrderNode = vkw;
+                        break;
+                    }
+                    prevRootIdx = idx;
+                }
+            }
+
+            if (outOfOrderNode != null) {
+                var outOfOrderText = outOfOrderNode.getText();
+                var quickFix = new StvnReorderEnumFilterVariantsQuickFix(variantList);
+                var msg = StvnDiagnosticFormatter.formatPlugin(
+                    "Root ordering violation (" + kw + "): variant '" + outOfOrderText + "' violates monotonic root enum declaration order",
+                    StvnDiagnosticCodes.ERR_ENUM_SUBSET_ORDER_VIOLATION
+                );
+                for (var vkw : valueKeywords) {
+                    if (vkw == outOfOrderNode) {
+                        holder.registerProblem(
+                            vkw,
+                            msg,
+                            ProblemHighlightType.GENERIC_ERROR,
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                                parentEntry != null ? parentEntry : vkw,
+                                quickFix
+                            )
+                        );
+                    } else if (isOnTheFly) {
+                        holder.registerProblem(
+                            vkw,
+                            "",
+                            ProblemHighlightType.INFORMATION,
+                            quickFix
+                        );
+                    }
+                }
+            }
+
+            // Complete exclusion check (E016)
+            if (!hadInvalidMember && filter.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL) != null) {
+                var facetList = valueKeywords.stream().map(ValueKeyword::getText).toList();
+                var remaining = parentAllowed.stream().filter(v -> !facetList.contains(v)).toList();
+                if (remaining.isEmpty()) {
+                    var exclFixes = parentEntry != null
+                        ? StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            parentEntry,
+                            createRemoveFilterFacetFix(parentEntry, PriorityAction.Priority.HIGH)
+                        )
+                        : StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter);
+                    holder.registerProblem(
+                        filter,
+                        StvnDiagnosticFormatter.formatPlugin(
+                            "Complete exclusion violation (" + kw + "): filtered enum subset evaluates to zero active variants",
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_EMPTY
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        exclFixes
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Formats a normalized single-line display snippet for a filter {@link MetadataEntry}
+     * (for example {@code "#filterIncl []"} or {@code "#filterIncl [#SCRAPPED]"}).
+     *
+     * @param entry filter metadata entry
+     * @return normalized facet snippet
+     */
+    public static String formatFilterFacetSnippet(MetadataEntry entry) {
+        MetadataFilter filter = entry.getMetadataFilter();
+        if (filter == null) {
+            return entry.getText().trim().replaceAll("\\s+", " ");
+        }
+        String kw = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null
+            ? StvnVocabulary.FACET_KW_FILTER_INCL
+            : StvnVocabulary.FACET_KW_FILTER_EXCL;
+        VariantList list = filter.getVariantList();
+        if (list == null) {
+            return kw;
+        }
+        List<String> variants = list.getValueKeywordList().stream()
+            .map(v -> v.getText().trim())
+            .toList();
+        return kw + " " + StvnVocabulary.DELIM_OPEN_BRACKET
+            + String.join(" ", variants)
+            + StvnVocabulary.DELIM_CLOSE_BRACKET;
+    }
+
+    /**
+     * Creates a {@code "Remove '<facetSnippet>' facet"} quick-fix that deletes {@code entry}
+     * and excises sole comment-free enclosing {@code {}} braces.
+     *
+     * @param entry    target filter metadata entry
+     * @param priority intention priority ordering
+     * @return configured {@link RemoveRedundantFacetQuickFix}
+     */
+    public static RemoveRedundantFacetQuickFix createRemoveFilterFacetFix(
+            MetadataEntry entry,
+            PriorityAction.Priority priority
+    ) {
+        return RemoveRedundantFacetQuickFix.createRemoveFacetFix(
+            entry,
+            formatFilterFacetSnippet(entry),
+            priority
+        );
+    }
+
+    /**
+     * Builds quick-fixes for an inactive variant {@link ValueKeyword} inside {@code #filterIncl}
+     * or {@code #filterExcl} ({@code E014 / ENUM_SUBSET_NOT_SUBSET}).
+     * <ul>
+     *   <li>When {@code VariantList} contains {@code <= 1} token: offers strictly
+     *       {@code "Remove '<facetSnippet>' facet"} ({@code Priority.HIGH}) so {@code []} is never left behind.</li>
+     *   <li>When {@code VariantList} contains {@code >= 2} tokens: offers
+     *       {@code "Remove '<#VARIANT>' from '<#filterIncl|#filterExcl>'"} ({@code Priority.HIGH}),
+     *       plus {@code "Remove '<facetSnippet>' facet"} ({@code Priority.TOP} if removing the token
+     *       would leave {@code 0} active variants, or {@code Priority.NORMAL} if it would leave an
+     *       identity {@code #filterIncl} matching {@code parentAllowed}).</li>
+     * </ul>
+     *
+     * @param offendingVkw  the invalid variant keyword node
+     * @param parentAllowed immediate parent allowed variants, or {@code null} if unknown
+     * @return ordered list of quick-fixes
+     */
+    public static List<LocalQuickFix> createInvalidSubsetVariantFixes(
+            ValueKeyword offendingVkw,
+            @Nullable List<String> parentAllowed
+    ) {
+        VariantList variantList = PsiTreeUtil.getParentOfType(offendingVkw, VariantList.class);
+        MetadataFilter filter = PsiTreeUtil.getParentOfType(offendingVkw, MetadataFilter.class);
+        MetadataEntry entry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(offendingVkw);
+        if (variantList == null || filter == null || entry == null) {
+            return List.of();
+        }
+        List<ValueKeyword> allKeywords = variantList.getValueKeywordList();
+        if (allKeywords.size() <= 1) {
+            return List.of(createRemoveFilterFacetFix(entry, PriorityAction.Priority.HIGH));
+        }
+
+        boolean isIncl = filter.getNode().findChildByType(StvnTypes.KW_FILTER_INCL) != null;
+        String filterKw = isIncl ? StvnVocabulary.FACET_KW_FILTER_INCL : StvnVocabulary.FACET_KW_FILTER_EXCL;
+        List<String> keptTokens = new ArrayList<>(allKeywords.size() - 1);
+        boolean skippedTarget = false;
+        for (ValueKeyword kw : allKeywords) {
+            if (!skippedTarget && kw == offendingVkw) {
+                skippedTarget = true;
+                continue;
+            }
+            keptTokens.add(kw.getText().trim());
+        }
+
+        boolean leavesZeroActive = false;
+        boolean leavesIdentityIncl = false;
+        if (parentAllowed != null && !parentAllowed.isEmpty()) {
+            if (isIncl) {
+                List<String> activeAfter = keptTokens.stream().filter(parentAllowed::contains).distinct().toList();
+                leavesZeroActive = activeAfter.isEmpty();
+                leavesIdentityIncl = activeAfter.size() == parentAllowed.size()
+                    && new HashSet<>(activeAfter).containsAll(parentAllowed);
+            } else {
+                leavesZeroActive = parentAllowed.stream().allMatch(keptTokens::contains);
+            }
+        }
+
+        List<LocalQuickFix> fixes = new ArrayList<>(2);
+        if (leavesZeroActive) {
+            fixes.add(createRemoveFilterFacetFix(entry, PriorityAction.Priority.TOP));
+        }
+        fixes.add(new StvnRemoveFilterVariantQuickFix(
+            offendingVkw,
+            offendingVkw.getText().trim(),
+            filterKw,
+            PriorityAction.Priority.HIGH
+        ));
+        if (!leavesZeroActive && leavesIdentityIncl) {
+            fixes.add(createRemoveFilterFacetFix(entry, PriorityAction.Priority.NORMAL));
+        }
+        return fixes;
+    }
+
+    /**
+     * Resolves the immediate parent enum's allowed variants for a filter {@link MetadataEntry},
+     * used by {@link StvnExternalAnnotator} in {@code Pass A} ({@code 0}-inspection mode).
+     *
+     * @param entry filter metadata entry
+     * @return parent allowed variant list, or {@code null} if unresolvable
+     */
+    public static @Nullable List<String> resolveParentAllowedVariantsForEntry(MetadataEntry entry) {
+        MetadataMap metaMap = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
+        if (metaMap == null) {
+            return null;
+        }
+        PsiElement parent = metaMap.getParent();
+        SchemaType schemaType = switch (parent) {
+            case TypeDefinition td -> td.getSchemaType();
+            case SchemaType st -> st;
+            case TypeEntry te -> te.getSchemaType();
+            case null, default -> null;
+        };
+        if (schemaType == null) {
+            return null;
+        }
+        var subset = StvnTypeResolver.resolveEnumSubset(schemaType);
+        if (subset != null) {
+            return subset.allowedVariants();
+        }
+        var resolvedParent = StvnTypeResolver.resolveNominalSchema(schemaType);
+        if (resolvedParent != null
+                && resolvedParent.getSchemaConstructor() != null
+                && resolvedParent.getSchemaConstructor().getSumType() != null
+                && resolvedParent.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            return resolvedParent.getSchemaConstructor().getSumType().getEnumDef()
+                .getValueKeywordList().stream()
+                .map(ValueKeyword::getText)
+                .toList();
+        }
+        return null;
     }
 
     private record DirectEnumInfo(String label, List<String> variants) {}

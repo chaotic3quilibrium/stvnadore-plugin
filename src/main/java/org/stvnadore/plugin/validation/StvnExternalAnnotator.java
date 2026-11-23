@@ -49,6 +49,7 @@ import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RenameFileExtensionToKindQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnDateTimeBoundQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnFileRenameExecutor;
 import org.stvnadore.plugin.validation.quickfix.StvnFloatFacetQuickFixProvider;
@@ -1149,6 +1150,52 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                TextRange deferredMetadataKeywordRange = null;
+                List<IntentionAction> deferredMetadataKeywordFixes = new ArrayList<>(4);
+
+                // Pass A :String '#size <N>' cardinality quick-fixes (ERR_STRING_CARDINALITY_PROHIBITED)
+                if (DiagnosticBag.ERR_STRING_CARDINALITY_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(
+                            diagnosticId,
+                            StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED
+                        )
+                        || rawMessage.contains("Storage sizing " + StvnVocabulary.FACET_KW_SIZE
+                            + " is prohibited on " + StvnVocabulary.TYPE_STRING)
+                        || rawMessage.contains("Facet '" + StvnVocabulary.FACET_KW_SIZE
+                            + "' is prohibited on " + StvnVocabulary.TYPE_STRING)) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var sizeEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (sizeEntry != null) {
+                        boolean nominal = StvnStringCardinalityInspection.isNominalStringDerivation(sizeEntry);
+                        for (var fix : StvnStringCardinalityInspection.createCardinalityQuickFixes(sizeEntry, nominal)) {
+                            if (fix instanceof IntentionAction ia) {
+                                annotationBuilder = annotationBuilder.withFix(ia);
+                            }
+                        }
+                    }
+                }
+
+                // Pass A + Pass B :DateTime MetadataEntry bound remediation quick-fixes (E019, E021, E022, E028, E008)
+                var boundTargetElem = file.findElementAt(range.getStartOffset());
+                var boundEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(boundTargetElem);
+                if (boundEntry != null && isDateTimeBoundDiagnostic(diagnosticId, canonicalCode)) {
+                    var dtBoundFixes = StvnDateTimeBoundQuickFixProvider.computeBoundQuickFixes(
+                        boundEntry,
+                        java.time.Clock.systemDefaultZone()
+                    );
+                    for (IntentionAction dtFix : dtBoundFixes) {
+                        annotationBuilder = annotationBuilder.withFix(dtFix);
+                        deferredMetadataKeywordFixes.add(dtFix);
+                    }
+                    int eStart = boundEntry.getTextRange().getStartOffset();
+                    if (!dtBoundFixes.isEmpty() && range.getStartOffset() > eStart) {
+                        TextRange kwRange = new TextRange(eStart, Math.max(eStart + 1, range.getStartOffset() - 1));
+                        if (!rangeIntersectsActiveError(kwRange, activeErrorDiagnostics)) {
+                            deferredMetadataKeywordRange = kwRange;
+                        }
+                    }
+                }
+
                 // Duplicate enum filter variant quick-fix (ERR_FILTER_DUPLICATE_VARIANT)
                 if (DiagnosticBag.ERR_FILTER_DUPLICATE_VARIANT.equals(diagnosticId)
                         || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_DUPLICATE_VARIANT)
@@ -1160,6 +1207,48 @@ public final class StvnExternalAnnotator
                         annotationBuilder = annotationBuilder.withFix(
                             new StvnRemoveDuplicateFilterVariantQuickFix(vkw, vkw.getText())
                         );
+                    }
+                }
+
+                // Pass A E014-ENUM_SUBSET_NOT_SUBSET quick-fixes
+                if (DiagnosticBag.ERR_ENUM_SUBSET_NOT_SUBSET.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(
+                            diagnosticId,
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_NOT_SUBSET
+                        )
+                        || "ENUM_SUBSET_NOT_SUBSET".equals(diagnosticId)
+                        || rawMessage.contains("Monotonic narrowing violation")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var vkw = targetElem instanceof ValueKeyword directVkw
+                        ? directVkw
+                        : PsiTreeUtil.getParentOfType(targetElem, ValueKeyword.class, false);
+                    var filterEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (vkw != null && filterEntry != null) {
+                        var parentAllowed = StvnEnumSubsetInspection.resolveParentAllowedVariantsForEntry(filterEntry);
+                        for (var fix : StvnEnumSubsetInspection.createInvalidSubsetVariantFixes(vkw, parentAllowed)) {
+                            if (fix instanceof IntentionAction ia) {
+                                annotationBuilder = annotationBuilder.withFix(ia);
+                            }
+                        }
+                    }
+                }
+
+                // Pass A E016 (empty filter list / complete exclusion) & E008 (prohibited filter attachment) quick-fixes
+                if (boundEntry != null
+                        && boundEntry.getMetadataFilter() != null
+                        && isEnumFilterRemovalDiagnostic(diagnosticId, canonicalCode, rawMessage)) {
+                    var removeFilterFix = StvnEnumSubsetInspection.createRemoveFilterFacetFix(
+                        boundEntry,
+                        PriorityAction.Priority.HIGH
+                    );
+                    annotationBuilder = annotationBuilder.withFix(removeFilterFix);
+                    int eStart = boundEntry.getTextRange().getStartOffset();
+                    if (range.getStartOffset() > eStart) {
+                        TextRange kwRange = new TextRange(eStart, Math.max(eStart + 1, range.getStartOffset() - 1));
+                        if (!rangeIntersectsActiveError(kwRange, activeErrorDiagnostics)) {
+                            deferredMetadataKeywordRange = kwRange;
+                            deferredMetadataKeywordFixes.add(removeFilterFix);
+                        }
                     }
                 }
 
@@ -1308,6 +1397,14 @@ public final class StvnExternalAnnotator
                     }
                     infoBuilder.create();
                 }
+                if (deferredMetadataKeywordRange != null && !deferredMetadataKeywordFixes.isEmpty()) {
+                    var infoBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredMetadataKeywordRange);
+                    for (IntentionAction fix : deferredMetadataKeywordFixes) {
+                        infoBuilder = infoBuilder.withFix(fix);
+                    }
+                    infoBuilder.create();
+                }
             }
         }
 
@@ -1451,6 +1548,67 @@ public final class StvnExternalAnnotator
             .or(diag::canonicalCode)
             .or(diag::errorCode)
             .orElse("ERR_COMPILATION_ERROR");
+    }
+
+    private static boolean rangeIntersectsActiveError(
+            TextRange candidateRange,
+            List<StvnDiagnostic> activeErrorDiagnostics
+    ) {
+        return activeErrorDiagnostics.stream().anyMatch(ed ->
+            ed.startOffset() < candidateRange.getEndOffset()
+                && ed.endOffset() > candidateRange.getStartOffset()
+        );
+    }
+
+    private static boolean isDateTimeBoundDiagnostic(
+            String diagnosticId,
+            @Nullable String canonicalCode
+    ) {
+        return DiagnosticBag.ERR_TEMPORAL_OFFSET_IN_ZONED.equals(diagnosticId)
+            || DiagnosticBag.ERR_TEMPORAL_AUDITED_MISMATCH.equals(diagnosticId)
+            || DiagnosticBag.ERR_TEMPORAL_DST_GAP_LITERAL.equals(diagnosticId)
+            || DiagnosticBag.ERR_TEMPORAL_ZONE_IN_OFFSET.equals(diagnosticId)
+            || DiagnosticBag.ERR_TEMPORAL_ZONE_IN_EPOCH.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_FENCED_STRING_PROHIBITED.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_MISSING_OFFSET.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_MISSING_ZONE.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_INVALID_FORMAT.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_INVALID_CALENDAR.equals(diagnosticId)
+            || DiagnosticBag.ERR_DATETIME_INVALID_ZONE.equals(diagnosticId)
+            || DiagnosticBag.ERR_INCOMPATIBLE_METADATA_TYPE.equals(diagnosticId)
+            || "TEMPORAL_LITERAL_FORMAT_INVALID".equals(diagnosticId)
+            || "E019".equals(canonicalCode)
+            || "E021".equals(canonicalCode)
+            || "E022".equals(canonicalCode)
+            || "E028".equals(canonicalCode);
+    }
+
+    private static boolean isEnumFilterRemovalDiagnostic(
+            String diagnosticId,
+            @Nullable String canonicalCode,
+            String rawMessage
+    ) {
+        if (DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
+                || rawMessage.contains("are mutually exclusive")) {
+            return false;
+        }
+        return DiagnosticBag.ERR_ENUM_SUBSET_EMPTY.equals(diagnosticId)
+            || "ENUM_SUBSET_EMPTY".equals(diagnosticId)
+            || "E016".equals(canonicalCode)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_EMPTY_LIST)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT)
+            || DiagnosticBag.ERR_INVALID_METADATA_FACET.equals(diagnosticId)
+            || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET)
+            || rawMessage.contains("enum filter variant list cannot be empty")
+            || rawMessage.contains("Complete exclusion violation")
+            || rawMessage.contains("filtered enum subset evaluates to zero active variants")
+            || rawMessage.contains("Filter facets are only permitted on")
+            || rawMessage.contains("Filter facets (" + StvnVocabulary.FACET_KW_FILTER_INCL)
+            || rawMessage.contains("filter facets cannot be applied")
+            || rawMessage.contains("filter facets are not allowed");
     }
 
     private static boolean isLayer1IdentityDiagnostic(String diagnosticId, String rawMessage) {

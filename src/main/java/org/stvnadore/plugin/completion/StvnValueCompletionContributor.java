@@ -12,9 +12,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnLanguage;
+import org.stvnadore.plugin.documentation.StvnExemplarValueGenerator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
 import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetadataFilter;
 import org.stvnadore.psi.MetadataMap;
@@ -25,11 +27,8 @@ import org.stvnadore.psi.VariantList;
 
 import java.util.List;
 
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -500,21 +499,18 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
         String typeLabel,
         CompletionResultSet result
     ) {
-        var zone = ZoneId.systemDefault();
+        var zone = StvnExemplarValueGenerator.resolveExemplarZoneId(ZoneId.systemDefault());
         var nowZoned = ZonedDateTime.now(zone).truncatedTo(ChronoUnit.SECONDS);
-        var nowOffset = OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS);
-        var nowLocal = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         var zoneId = zone.getId();
-        var localFormatted = nowLocal.format(DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss"));
-        var offsetFormatted = nowOffset.format(DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX"));
+        var localFormatted = StvnPayloadValueQuickFixProvider.formatCanonicalLocalDateTime(nowZoned.toLocalDateTime());
+        var offsetId = nowZoned.getOffset().getTotalSeconds() == 0 ? "Z" : nowZoned.getOffset().getId();
+        var offsetFormatted = localFormatted + offsetId;
 
         boolean isDateTime = schemaText.contains(StvnVocabulary.TYPE_DATE_TIME) || typeLabel.contains(StvnVocabulary.TYPE_DATE_TIME);
         boolean isTimeEpoch = schemaText.contains(StvnVocabulary.TYPE_TIME_EPOCH) || typeLabel.contains(StvnVocabulary.TYPE_TIME_EPOCH);
 
         if (isDateTime && (schemaText.contains(StvnVocabulary.FACET_KW_AUDITED) || typeLabel.contains(StvnVocabulary.FACET_KW_AUDITED))) {
-            var offsetStr = nowZoned.getOffset().getId();
-            if (offsetStr.equals("Z")) offsetStr = "+00:00";
-            var timestamp = localFormatted + offsetStr + "[" + zoneId + "]";
+            var timestamp = localFormatted + offsetId + "[" + zoneId + "]";
             result.addElement(PrioritizedLookupElement.withPriority(
                 LookupElementBuilder.create("\"" + timestamp + "\"")
                     .withPresentableText("\"" + timestamp + "\"")
