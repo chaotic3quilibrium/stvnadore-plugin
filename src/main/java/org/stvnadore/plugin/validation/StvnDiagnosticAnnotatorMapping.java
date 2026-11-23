@@ -110,7 +110,9 @@ public final class StvnDiagnosticAnnotatorMapping {
         putDual(map, StvnDiagnosticCodes.ERR_STRIP_ON_TYPE_DEF, "StvnMetadataFacet");
         putDual(map, StvnDiagnosticCodes.ERR_INVALID_METADATA_FACET, "StvnMetadataFacet");
         putDual(map, StvnDiagnosticCodes.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
+        putDual(map, StvnDiagnosticCodes.ERR_FLOAT_INVALID_SIZE, "StvnMetadataFacet");
         map.put(DiagnosticBag.ERR_INCOMPLETE_TRAIT_FACET, "StvnMetadataFacet");
+        map.put(DiagnosticBag.ERR_FLOAT_INVALID_SIZE, "StvnMetadataFacet");
         map.put("INVALID_FACET_TARGET", "StvnMetadataFacet");
         map.put("EMPTY_METADATA_BLOCK", "StvnMetadataFacet");
         map.put("EMPTY_META_BLOCK", "StvnMetadataFacet");
@@ -510,7 +512,6 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains(": Size ")
                 || message.contains("must be >= 1")
                 || message.contains("must be >= 0")
-                || message.contains("must be 32 or 64")
                 || message.contains("cannot exceed #maxSize")
                 || message.contains("lexicographical")
                 || message.contains("exceeds #maxSize")
@@ -689,7 +690,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                 || message.contains("Empty '" + StvnVocabulary.KEYWORD_META + " {}' section is prohibited")
                 || message.contains("Empty '" + StvnVocabulary.KEYWORD_DEFS + " {}' section is prohibited")
                 || message.contains("Empty definition block ':defs {}' is redundant")
-                || message.contains("Definition schema ':defs {}' must declare at least one definition")) {
+                || message.contains("Definition schema ':defs {}' must declare at least one definition")
+                || message.contains("continuous " + StvnVocabulary.TYPE_FLOAT + " " + StvnVocabulary.FACET_KW_SIZE + " must be 32 or 64")) {
             return "StvnMetadataFacet";
         }
         if (message.contains("Prohibited fenced string delimiter arrow")

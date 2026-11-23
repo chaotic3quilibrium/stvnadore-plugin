@@ -1,11 +1,13 @@
 package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInspection.LocalInspectionTool;
+import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.lang.ASTNode;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
@@ -23,6 +25,8 @@ import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.Visitor;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -143,21 +147,16 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     return;
                 }
 
-                boolean hasIllegalFacets = false;
-                for (MetadataEntry entry : entries) {
-                    if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
-                        hasIllegalFacets = true;
-                        break;
-                    }
-                }
+                boolean canReorder = !PsiTreeUtil.hasErrorElements(metadataMap)
+                    && !hasIncompleteTraitEntry(metadataMap);
 
                 int currentMaxRank = -1;
                 Set<Integer> seenMutexGroups = new HashSet<>();
                 Set<MetadataEntry> flaggedEntries = new HashSet<>();
-                var reorderFacetFix = hasIllegalFacets ? null : new StvnReorderMetadataFacetsQuickFix(metadataMap);
+                var reorderFacetFix = canReorder ? new StvnReorderMetadataFacetsQuickFix(metadataMap) : null;
                 var fixes = reorderFacetFix == null
-                    ? com.intellij.codeInspection.LocalQuickFix.EMPTY_ARRAY
-                    : new com.intellij.codeInspection.LocalQuickFix[]{reorderFacetFix};
+                    ? LocalQuickFix.EMPTY_ARRAY
+                    : new LocalQuickFix[]{reorderFacetFix};
                 for (MetadataEntry entry : entries) {
                     if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, metadataMap)) {
                         continue;
@@ -204,7 +203,7 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             ASTNode parentNode,
             com.intellij.psi.tree.IElementType tokenType,
             String description,
-            com.intellij.codeInspection.LocalQuickFix fix
+            LocalQuickFix fix
     ) {
         ASTNode childNode = parentNode.findChildByType(tokenType);
         if (childNode != null && childNode.getPsi() != null) {
@@ -212,8 +211,21 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
         }
     }
 
-    private static @Nullable PsiElement resolveMetadataMapOwnerTarget(MetadataMap metadataMap) {
+    /**
+     * Resolves the owning declaration target token ({@code :TypeName}, {@code #CONST}, or {@code :type})
+     * for a schema {@link MetadataMap}.
+     *
+     * @param metadataMap target metadata map
+     * @return owning declaration keyword PSI element, or {@code null} for anonymous nested constructors
+     */
+    public static @Nullable PsiElement resolveMetadataMapOwnerTarget(MetadataMap metadataMap) {
         PsiElement parent = metadataMap.getParent();
+        if (parent instanceof TypeDefinition typeDef) {
+            return typeDef.getTypeDefTarget();
+        }
+        if (parent instanceof ConstantDefinition constDef) {
+            return constDef.getValueKeyword();
+        }
         if (parent instanceof SchemaType schemaType) {
             PsiElement grandParent = schemaType.getParent();
             if (grandParent instanceof TypeDefinition typeDef) {
@@ -231,6 +243,75 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             return kwNode != null ? kwNode.getPsi() : null;
         }
         return null;
+    }
+
+    /**
+     * Checks whether any entry inside {@code map} is a bare incomplete boolean or trait facet
+     * missing its required boolean argument.
+     *
+     * @param map metadata map to inspect
+     * @return {@code true} if an incomplete trait or boolean facet is present; {@code false} otherwise
+     */
+    public static boolean hasIncompleteTraitEntry(MetadataMap map) {
+        for (MetadataEntry entry : map.getMetadataEntryList()) {
+            if ((entry.getMetadataBool() != null && entry.getMetadataBool().getMetadataValue() == null)
+                    || (entry.getMetadataTrait() != null && entry.getMetadataTrait().getMetadataValue() == null)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Appends the enclosing {@link StvnReorderMetaEntriesQuickFix} or {@link StvnReorderMetadataFacetsQuickFix}
+     * to {@code baseFixes} whenever {@code anchor} resides inside a disordered primary {@link MetaEntry}
+     * or disordered {@link MetadataMap}, ensuring co-located {@code ERROR} descriptors never hide the reorder action.
+     *
+     * @param anchor    target PSI element receiving an {@code ERROR} descriptor
+     * @param baseFixes base quick-fixes for the diagnostic
+     * @return merged quick-fix array including the deduplicated reorder quick-fix when disordered
+     */
+    public static LocalQuickFix @NotNull [] appendReorderFixIfDisordered(
+            @NotNull PsiElement anchor,
+            LocalQuickFix @NotNull ... baseFixes
+    ) {
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(anchor)) {
+            return baseFixes;
+        }
+        MetaEntry metaEntry = anchor instanceof MetaEntry me
+            ? me
+            : PsiTreeUtil.getParentOfType(anchor, MetaEntry.class, false);
+        if (metaEntry != null && StvnMetaTemplateUtil.isPrimaryMetaEntry(metaEntry)) {
+            MetaBlock metaBlock = metaEntry.getMetaBlock();
+            if (metaBlock != null
+                    && !PsiTreeUtil.hasErrorElements(metaBlock)
+                    && isMetaBlockDisordered(metaBlock)) {
+                for (LocalQuickFix existing : baseFixes) {
+                    if (existing instanceof StvnReorderMetaEntriesQuickFix) {
+                        return baseFixes;
+                    }
+                }
+                List<LocalQuickFix> merged = new ArrayList<>(baseFixes.length + 1);
+                merged.addAll(Arrays.asList(baseFixes));
+                merged.add(new StvnReorderMetaEntriesQuickFix(metaBlock));
+                return merged.toArray(LocalQuickFix.EMPTY_ARRAY);
+            }
+        }
+        MetadataMap metaMap = anchor instanceof MetadataMap mm
+            ? mm
+            : PsiTreeUtil.getParentOfType(anchor, MetadataMap.class, false);
+        if (metaMap != null && isMetadataMapDisordered(metaMap)) {
+            for (LocalQuickFix existing : baseFixes) {
+                if (existing instanceof StvnReorderMetadataFacetsQuickFix) {
+                    return baseFixes;
+                }
+            }
+            List<LocalQuickFix> merged = new ArrayList<>(baseFixes.length + 1);
+            merged.addAll(Arrays.asList(baseFixes));
+            merged.add(new StvnReorderMetadataFacetsQuickFix(metaMap));
+            return merged.toArray(LocalQuickFix.EMPTY_ARRAY);
+        }
+        return baseFixes;
     }
 
     /**
@@ -304,21 +385,30 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
      * Determines whether the entries in a metadata map violate the canonical 5-tier order.
      *
      * @param map the metadata map PSI node
-     * @return true if any facet is out of order, false otherwise
+     * @return {@code true} if any facet is out of order, {@code false} otherwise
      */
     public static boolean isDisordered(MetadataMap map) {
+        return isMetadataMapDisordered(map);
+    }
+
+    /**
+     * Determines whether a metadata map has at least one 5-tier order violation and is eligible
+     * for comment-preserving 5-tier facet reordering.
+     *
+     * @param map the metadata map PSI node
+     * @return {@code true} if the map is syntactically complete and contains a 5-tier order violation
+     */
+    public static boolean isMetadataMapDisordered(MetadataMap map) {
         List<MetadataEntry> entries = map.getMetadataEntryList();
-        if (entries.size() <= 1) {
+        if (entries.size() <= 1 || PsiTreeUtil.hasErrorElements(map) || hasIncompleteTraitEntry(map)) {
             return false;
-        }
-        for (MetadataEntry entry : entries) {
-            if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, map)) {
-                return false;
-            }
         }
         int maxRank = -1;
         Set<Integer> seenMutexGroups = new HashSet<>();
         for (MetadataEntry entry : entries) {
+            if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, map)) {
+                continue;
+            }
             String keyword = extractFacetKeyword(entry);
             int mutexGroup = getMutexGroupId(keyword);
             if (mutexGroup > 0 && !seenMutexGroups.add(mutexGroup)) {

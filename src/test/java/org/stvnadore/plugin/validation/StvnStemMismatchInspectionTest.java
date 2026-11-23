@@ -282,7 +282,9 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("WARN_DOCUMENT_NAME_MISMATCH"))
             .toList();
-        assertEquals("Expected 1 W001 warning on mismatched stem slot 1", 1, w001Warnings.size());
+        assertEquals("Reserved domain E038 must suppress secondary W001 stem warning (0 yellow squigglies)",
+            0, w001Warnings.size());
+        assertEquals("\"stvn_reserved_trap\"", e038Errors.get(0).getText());
 
         var illegalRename = myFixture.filterAvailableIntentions(
             "Rename file to 'gauntlet_v4_stage1_meta_multi_error_and_body.stvn_reserved_trap.stvn_i'"
@@ -411,7 +413,8 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
                 && h.getDescription() != null
                 && h.getDescription().contains("WARN_DOCUMENT_NAME_MISMATCH"))
             .toList();
-        assertEquals("Both #domain and #name W001 warnings must survive co-located E008 errors", 2, w001Warnings.size());
+        assertEquals("Valid #name W001 warning must survive co-located E008 while reserved #domain suppresses W001",
+            1, w001Warnings.size());
 
         // 1. Caret on ':meta {' opening brace: zero #name or #domain quick-fixes
         int lbraceOffset = fileText.indexOf(":meta {") + ":meta ".length();

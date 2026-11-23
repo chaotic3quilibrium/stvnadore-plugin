@@ -24,7 +24,8 @@
 <p><b>Duplicate &amp; Conflicting Facets (ERR_DUPLICATE_METADATA_FACET / MUTUALLY_EXCLUSIVE_BOUNDS):</b></p>
 <ul>
     <li>Each facet keyword may appear at most once per metadata block. Duplicate declarations (e.g. <code>{ #size 53 #size 1 }</code>) are prohibited.</li>
-    <li>Co-declaring <code>#size</code> and <code>#exact</code> on <code>:Float</code> triggers <code>E008 / MUTUALLY_EXCLUSIVE_BOUNDS</code> on the second conflicting facet with <code>Remove conflicting facet '&lt;facet&gt;'</code>.</li>
+    <li>Co-declaring <code>#size</code> and <code>#exact</code> on <code>:Float</code> triggers <code>E008 / MUTUALLY_EXCLUSIVE_BOUNDS</code> on the second conflicting facet with bidirectional zero-warning quick-fixes across both <code>#exact</code> and <code>#size</code>.</li>
+    <li>Declaring a bit width other than <code>32</code> or <code>64</code> on continuous <code>:Float</code> (such as <code>{ #size 16 } :Float</code>) triggers <code>E010 / FLOAT_INVALID_SIZE</code> with quick-fixes to select <code>#size 32</code>, use default 64-bit <code>:Float</code>, or replace with <code>#exact</code>.</li>
 </ul>
 
 <p><b>Nominal Type Resolution and Undeclared Type Bailout:</b></p>

@@ -3,6 +3,7 @@ package org.stvnadore.plugin.validation;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.problems.ProblemImpl;
 import com.intellij.ide.projectView.ProjectView;
@@ -50,6 +51,7 @@ import org.stvnadore.plugin.validation.quickfix.RenameFileExtensionToKindQuickFi
 import org.stvnadore.plugin.validation.quickfix.StvnChangeReservedDomainQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnDeclareConstantQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnFileRenameExecutor;
+import org.stvnadore.plugin.validation.quickfix.StvnFloatFacetQuickFixProvider;
 import org.stvnadore.plugin.validation.quickfix.StvnInteractiveRenameQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnMatchMetaFileRenameQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnOmitDomainQuickFix;
@@ -63,10 +65,14 @@ import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
+import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
+import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaNameFacet;
+import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
@@ -839,7 +845,35 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Mutually exclusive temporal mode/scale quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
+                // Invalid continuous :Float #size bit-width quick-fixes (E010 / FLOAT_INVALID_SIZE)
+                if (DiagnosticBag.ERR_FLOAT_INVALID_SIZE.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FLOAT_INVALID_SIZE)
+                        || rawMessage.contains("continuous " + StvnVocabulary.TYPE_FLOAT + " " + StvnVocabulary.FACET_KW_SIZE + " must be 32 or 64")) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var sizeEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(targetElem);
+                    if (sizeEntry == null && range.getStartOffset() + 1 < textLength) {
+                        sizeEntry = RemoveRedundantFacetQuickFix.resolveMetadataEntry(
+                            file.findElementAt(range.getStartOffset() + 1)
+                        );
+                    }
+                    var metaMap = sizeEntry != null ? PsiTreeUtil.getParentOfType(sizeEntry, MetadataMap.class, false) : null;
+                    if (metaMap != null && sizeEntry != null) {
+                        var exactEntry = StvnFloatFacetQuickFixProvider.findFirstExactEntry(metaMap);
+                        var floatFixes = exactEntry != null
+                            ? StvnFloatFacetQuickFixProvider.buildExactAndSizeMutexFixes(metaMap, exactEntry, sizeEntry)
+                            : StvnFloatFacetQuickFixProvider.buildStandaloneInvalidFloatSizeFixes(metaMap, sizeEntry);
+                        for (var floatFix : floatFixes) {
+                            if (floatFix instanceof IntentionAction ia) {
+                                annotationBuilder = annotationBuilder.withFix(ia);
+                            }
+                        }
+                    }
+                }
+
+                TextRange deferredFirstFloatMutexRange = null;
+                List<IntentionAction> deferredFirstFloatMutexFixes = null;
+
+                // Mutually exclusive temporal mode/scale and :Float #exact/#size quick-fixes (ERR_MUTUALLY_EXCLUSIVE)
                 if ((DiagnosticBag.ERR_MUTUALLY_EXCLUSIVE.equals(diagnosticId)
                         || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE)
                         || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DATETIME_MODE_MUTUALLY_EXCLUSIVE)
@@ -856,7 +890,7 @@ public final class StvnExternalAnnotator
                         );
                     }
                     if (entry != null) {
-                        var metaMap = PsiTreeUtil.getParentOfType(entry, org.stvnadore.psi.MetadataMap.class);
+                        var metaMap = PsiTreeUtil.getParentOfType(entry, MetadataMap.class);
                         if (metaMap != null) {
                             boolean isMode = KeepOnlyTemporalFacetQuickFix.isModeEntry(entry);
                             boolean isScale = KeepOnlyTemporalFacetQuickFix.isScaleEntry(entry);
@@ -881,8 +915,41 @@ public final class StvnExternalAnnotator
                                     .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw, "Remove conflicting facet"));
                             } else {
                                 String clickedKw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
-                                annotationBuilder = annotationBuilder
-                                    .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw, "Remove conflicting facet"));
+                                var exactEntry = StvnFloatFacetQuickFixProvider.findFirstExactEntry(metaMap);
+                                var sizeEntry = StvnFloatFacetQuickFixProvider.findFirstSizeEntry(metaMap);
+                                if ((StvnVocabulary.FACET_KW_EXACT.equals(clickedKw)
+                                        || StvnVocabulary.FACET_KW_SIZE.equals(clickedKw))
+                                        && exactEntry != null && sizeEntry != null) {
+                                    var mutexFixes = StvnFloatFacetQuickFixProvider.buildExactAndSizeMutexFixes(
+                                        metaMap,
+                                        exactEntry,
+                                        sizeEntry
+                                    );
+                                    List<IntentionAction> mutexActions = new ArrayList<>(mutexFixes.length + 1);
+                                    for (var mf : mutexFixes) {
+                                        if (mf instanceof IntentionAction ia) {
+                                            annotationBuilder = annotationBuilder.withFix(ia);
+                                            mutexActions.add(ia);
+                                        }
+                                    }
+                                    MetadataEntry firstMutexEntry = (entry == sizeEntry) ? exactEntry : sizeEntry;
+                                    if (!StvnDiagnosticAnnotatorMapping.isInspectionActive(file, "StvnMetadataFacet")) {
+                                        TextRange firstRange = firstMutexEntry.getTextRange();
+                                        boolean firstHasFloatSizeError = activeErrorDiagnostics.stream().anyMatch(ed ->
+                                            ed.startOffset() <= firstRange.getStartOffset()
+                                                && firstRange.getEndOffset() <= ed.endOffset()
+                                                && (DiagnosticBag.ERR_FLOAT_INVALID_SIZE.equals(resolvePrimaryDiagnosticId(ed))
+                                                    || ed.message().contains("must be 32 or 64"))
+                                        );
+                                        if (!firstHasFloatSizeError && !mutexActions.isEmpty()) {
+                                            deferredFirstFloatMutexRange = firstRange;
+                                            deferredFirstFloatMutexFixes = mutexActions;
+                                        }
+                                    }
+                                } else {
+                                    annotationBuilder = annotationBuilder
+                                        .withFix(new RemoveRedundantFacetQuickFix(entry, clickedKw, "Remove conflicting facet"));
+                                }
                             }
                         }
                     }
@@ -977,6 +1044,9 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                TextRange deferredE038KeywordRange = null;
+                List<IntentionAction> deferredE038KeywordFixes = null;
+
                 // Reserved domain quick-fixes (E038)
                 if (DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
                         || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_RESERVED_DOMAIN_PROHIBITED)
@@ -1004,24 +1074,33 @@ public final class StvnExternalAnnotator
                             ? sl
                             : PsiTreeUtil.getParentOfType(targetElem, StringLiteral.class, false);
                         PsiElement fixTarget = stringLit != null ? stringLit : targetElem;
-                        if (dotParts.length >= 2 && !dotParts[1].isEmpty()) {
-                            annotationBuilder = annotationBuilder.withFix(
-                                new StvnStemMismatchInspection.AlignDomainWithStemQuickFix(fixTarget, dotParts[1], false)
+                        var domainFacet = PsiTreeUtil.getParentOfType(fixTarget, MetaDomainFacet.class, false);
+                        List<IntentionAction> e038Actions = new ArrayList<>(4);
+                        if (dotParts.length == 2
+                                && !dotParts[1].isEmpty()
+                                && !dotParts[1].startsWith("stvn_")
+                                && POSIX_META_ID_PATTERN.matcher(dotParts[1]).matches()) {
+                            e038Actions.add(
+                                new StvnStemMismatchInspection.AlignDomainWithStemQuickFix(fixTarget, dotParts[1])
                             );
                         }
-                        annotationBuilder = annotationBuilder.withFix(
+                        e038Actions.add(
                             new StvnStemMismatchInspection.StvnChangeReservedDomainQuickFix(fixTarget)
                         );
-                        if (dotParts.length == 1) {
-                            var domainFacet = PsiTreeUtil.getParentOfType(
-                                fixTarget,
-                                org.stvnadore.psi.MetaDomainFacet.class,
-                                false
+                        if (dotParts.length == 1 && domainFacet != null) {
+                            e038Actions.add(
+                                new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
                             );
-                            if (domainFacet != null) {
-                                annotationBuilder = annotationBuilder.withFix(
-                                    new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
-                                );
+                        }
+                        for (IntentionAction e038Fix : e038Actions) {
+                            annotationBuilder = annotationBuilder.withFix(e038Fix);
+                        }
+                        if (domainFacet != null && stringLit != null) {
+                            int fStart = domainFacet.getTextRange().getStartOffset();
+                            int sStart = stringLit.getTextRange().getStartOffset();
+                            if (sStart > fStart) {
+                                deferredE038KeywordRange = new TextRange(fStart, Math.max(fStart + 1, sStart - 1));
+                                deferredE038KeywordFixes = e038Actions;
                             }
                         }
                     }
@@ -1203,6 +1282,42 @@ public final class StvnExternalAnnotator
                     range.getEndOffset()
                 );
 
+                // Attach reorder quick-fix to co-located ERROR annotations inside disordered :meta or MetadataMap
+                if (severity.equals(HighlightSeverity.ERROR)
+                        && !DiagnosticBag.ERR_FACET_ORDER_VIOLATION.equals(diagnosticId)
+                        && !StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION)) {
+                    var reorderElem = file.findElementAt(range.getStartOffset());
+                    if (reorderElem != null && !StvnMetaTemplateUtil.isInSecondaryRootSection(reorderElem)) {
+                        var enclosingMetaEntry = reorderElem instanceof MetaEntry me
+                            ? me
+                            : PsiTreeUtil.getParentOfType(reorderElem, MetaEntry.class, false);
+                        if (enclosingMetaEntry != null && StvnMetaTemplateUtil.isPrimaryMetaEntry(enclosingMetaEntry)) {
+                            var enclosingMetaBlock = enclosingMetaEntry.getMetaBlock();
+                            if (enclosingMetaBlock != null
+                                    && !PsiTreeUtil.hasErrorElements(enclosingMetaBlock)
+                                    && StvnMetadataOrderInspection.isMetaBlockDisordered(enclosingMetaBlock)) {
+                                var reorderMetaFix = new StvnReorderMetaEntriesQuickFix(enclosingMetaBlock);
+                                annotationBuilder = annotationBuilder.withFix(reorderMetaFix);
+                                if (deferredE038KeywordFixes != null) {
+                                    deferredE038KeywordFixes.add(reorderMetaFix);
+                                }
+                            }
+                        } else {
+                            var enclosingMetaMap = reorderElem instanceof MetadataMap mm
+                                ? mm
+                                : PsiTreeUtil.getParentOfType(reorderElem, MetadataMap.class, false);
+                            if (enclosingMetaMap != null
+                                    && StvnMetadataOrderInspection.isMetadataMapDisordered(enclosingMetaMap)) {
+                                var reorderMapFix = new StvnReorderMetadataFacetsQuickFix(enclosingMetaMap);
+                                annotationBuilder = annotationBuilder.withFix(reorderMapFix);
+                                if (deferredFirstFloatMutexFixes != null) {
+                                    deferredFirstFloatMutexFixes.add(reorderMapFix);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 annotationBuilder.create();
                 if (deferredEarlierSwapRange != null && deferredEarlierSwapFix != null) {
                     holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
@@ -1210,7 +1325,28 @@ public final class StvnExternalAnnotator
                         .withFix(deferredEarlierSwapFix)
                         .create();
                 }
+                if (deferredE038KeywordRange != null && deferredE038KeywordFixes != null && !deferredE038KeywordFixes.isEmpty()) {
+                    var infoBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredE038KeywordRange);
+                    for (IntentionAction fix : deferredE038KeywordFixes) {
+                        infoBuilder = infoBuilder.withFix(fix);
+                    }
+                    infoBuilder.create();
+                }
+                if (deferredFirstFloatMutexRange != null && deferredFirstFloatMutexFixes != null && !deferredFirstFloatMutexFixes.isEmpty()) {
+                    var infoBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredFirstFloatMutexRange);
+                    for (IntentionAction fix : deferredFirstFloatMutexFixes) {
+                        infoBuilder = infoBuilder.withFix(fix);
+                    }
+                    infoBuilder.create();
+                }
             }
+        }
+
+        // Pass A (0-inspection) silent INFORMATION reorder anchors on non-error tokens when StvnMetadataOrder is inactive
+        if (!StvnDiagnosticAnnotatorMapping.isInspectionActive(file, "StvnMetadataOrder")) {
+            emitPassADisorderedBlockAnchors(file, holder, activeErrorDiagnostics);
         }
 
         // Validate DateTime literals in healthy :body slots inside structurally recovered containers (skipping degraded schemas per VOP Option D)
@@ -1997,6 +2133,81 @@ public final class StvnExternalAnnotator
         };
     }
 
+    private static void emitPassADisorderedBlockAnchors(
+        PsiFile file,
+        AnnotationHolder holder,
+        List<StvnDiagnostic> activeErrorDiagnostics
+    ) {
+        var primaryMetaEntry = PsiTreeUtil.findChildOfType(file, MetaEntry.class);
+        if (primaryMetaEntry != null && StvnMetaTemplateUtil.isPrimaryMetaEntry(primaryMetaEntry)) {
+            MetaBlock metaBlock = primaryMetaEntry.getMetaBlock();
+            if (metaBlock != null
+                    && !PsiTreeUtil.hasErrorElements(metaBlock)
+                    && StvnMetadataOrderInspection.isMetaBlockDisordered(metaBlock)) {
+                var reorderMetaFix = new StvnReorderMetaEntriesQuickFix(metaBlock);
+                var kwMeta = primaryMetaEntry.getNode().findChildByType(StvnTypes.KW_META);
+                if (kwMeta != null && kwMeta.getPsi() != null) {
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, kwMeta.getPsi().getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                }
+                var lbrace = metaBlock.getNode().findChildByType(StvnTypes.LBRACE);
+                if (lbrace != null && lbrace.getPsi() != null) {
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, lbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                }
+                var rbrace = metaBlock.getNode().findChildByType(StvnTypes.RBRACE);
+                if (rbrace != null && rbrace.getPsi() != null) {
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, rbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                }
+                for (MetaElement element : metaBlock.getMetaElementList()) {
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, element.getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                }
+            }
+        }
+
+        for (MetadataMap metaMap : PsiTreeUtil.findChildrenOfType(file, MetadataMap.class)) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(metaMap)
+                    || !StvnMetadataOrderInspection.isMetadataMapDisordered(metaMap)) {
+                continue;
+            }
+            var reorderMapFix = new StvnReorderMetadataFacetsQuickFix(metaMap);
+            PsiElement ownerAnchor = StvnMetadataOrderInspection.resolveMetadataMapOwnerTarget(metaMap);
+            if (ownerAnchor != null) {
+                emitSilentReorderAnchorIfNoErrorOverlap(holder, ownerAnchor.getTextRange(), activeErrorDiagnostics, reorderMapFix);
+            }
+            var lbrace = metaMap.getNode().findChildByType(StvnTypes.LBRACE);
+            if (lbrace != null && lbrace.getPsi() != null) {
+                emitSilentReorderAnchorIfNoErrorOverlap(holder, lbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMapFix);
+            }
+            var rbrace = metaMap.getNode().findChildByType(StvnTypes.RBRACE);
+            if (rbrace != null && rbrace.getPsi() != null) {
+                emitSilentReorderAnchorIfNoErrorOverlap(holder, rbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMapFix);
+            }
+            for (MetadataEntry entry : metaMap.getMetadataEntryList()) {
+                emitSilentReorderAnchorIfNoErrorOverlap(holder, entry.getTextRange(), activeErrorDiagnostics, reorderMapFix);
+            }
+        }
+    }
+
+    private static void emitSilentReorderAnchorIfNoErrorOverlap(
+        AnnotationHolder holder,
+        @Nullable TextRange anchorRange,
+        List<StvnDiagnostic> activeErrorDiagnostics,
+        IntentionAction reorderFix
+    ) {
+        if (anchorRange == null || anchorRange.isEmpty()) {
+            return;
+        }
+        boolean overlapsActiveError = activeErrorDiagnostics.stream().anyMatch(ed ->
+            ed.startOffset() < anchorRange.getEndOffset()
+                && ed.endOffset() > anchorRange.getStartOffset()
+        );
+        if (!overlapsActiveError) {
+            holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .range(anchorRange)
+                .withFix(reorderFix)
+                .create();
+        }
+    }
+
     private static final Pattern POSIX_META_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
 
     private static AnnotationBuilder attachMetaIdentityQuickFixes(
@@ -2180,7 +2391,7 @@ public final class StvnExternalAnnotator
                             );
                         } else {
                             annotationBuilder = annotationBuilder.withFix(
-                                new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet, true, stringLit)
+                                new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
                             );
                         }
                     } else {
@@ -2190,12 +2401,13 @@ public final class StvnExternalAnnotator
                                 new StvnMatchMetaFileRenameQuickFix(domainFacet, metaSummary.targetFileName())
                             );
                         }
-                        if (!stemDomain.isEmpty() && !stemDomain.startsWith("stvn_")) {
+                        if (!stemDomain.isEmpty()
+                                && !stemDomain.startsWith("stvn_")
+                                && POSIX_META_ID_PATTERN.matcher(stemDomain).matches()) {
                             annotationBuilder = annotationBuilder.withFix(
                                 new StvnStemMismatchInspection.AlignDomainWithStemQuickFix(
                                     stringLit,
                                     stemDomain,
-                                    emitReservedDomainError,
                                     hasAtomicMetaFix ? PriorityAction.Priority.HIGH : PriorityAction.Priority.TOP
                                 )
                             );

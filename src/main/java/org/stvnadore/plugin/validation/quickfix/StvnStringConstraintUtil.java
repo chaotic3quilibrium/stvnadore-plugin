@@ -18,7 +18,7 @@ import java.util.regex.PatternSyntaxException;
  * Pure-IR and PSI-backed constraint evaluator, bound-neighbor calculator, and deterministic
  * inhabitant synthesizer for {@code :String} schemas ({@code B2-05}).
  * <p>
- * Enforces 1:1 parity with {@code StvnPayloadLowerer.validateStringValue}:
+ * Enforces 1:1 string constraint parity with the core STVN 2.0.0 specification:
  * <ul>
  *   <li>{@code #minSize} and {@code #maxSize} measure Unicode code points ({@link String#codePointCount}).</li>
  *   <li>{@code #minIncl}, {@code #minExcl}, {@code #maxIncl}, and {@code #maxExcl} compare unsigned UTF-8 byte sequences.</li>
@@ -32,18 +32,18 @@ public final class StvnStringConstraintUtil {
     private static final int MAX_TRUNCATE_LENGTH = 65536;
 
     private static final List<String> PRELUDE_AND_DOMAIN_CANDIDATES = List.of(
+        "example_id",
+        "example",
+        "EXAMPLE",
+        "12345",
+        "AA00",
         "550e8400-e29b-41d4-a716-446655440000",
         "01ARZ3NDEKTSV4RRFFQ69G5FAV",
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "1.0.0",
         "user@example.com",
         "127.0.0.1",
-        "https://example.com",
-        "example_id",
-        "example",
-        "EXAMPLE",
-        "12345",
-        "AA00"
+        "https://example.com"
     );
 
     private StvnStringConstraintUtil() {
@@ -149,7 +149,7 @@ public final class StvnStringConstraintUtil {
     }
 
     /**
-     * Compares two strings in unsigned UTF-8 byte lexicographical order (1:1 with {@code StvnDefsLowerer}).
+     * Compares two strings in unsigned UTF-8 byte lexicographical order (1:1 with STVN 2.0.0 Core semantic lowering).
      *
      * @param a first string
      * @param b second string

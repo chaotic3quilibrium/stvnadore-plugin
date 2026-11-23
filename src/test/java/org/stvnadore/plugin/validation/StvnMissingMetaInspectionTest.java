@@ -151,7 +151,7 @@ public final class StvnMissingMetaInspectionTest extends BasePlatformTestCase {
             errors.get(0).getDescription()
         );
 
-        var insertKind = myFixture.filterAvailableIntentions("Insert missing #kind facet");
+        var insertKind = myFixture.filterAvailableIntentions("Insert missing '#kind' facet");
         assertEquals("Expected InsertMissingMetaKindFacetQuickFix at ':meta'", 1, insertKind.size());
         String preview = myFixture.getIntentionPreviewText(insertKind.get(0));
         assertNotNull("InsertMissingMetaKindFacetQuickFix Intention Preview must render DIFF", preview);

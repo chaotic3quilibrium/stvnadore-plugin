@@ -3109,11 +3109,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .toList();
 
-        // Exactly 7 ERRORs and 2 WARNINGs matching duplicate_meta_and_body_fault_isolation.contract.stvn_i 1:1
+        // Exactly 7 ERRORs and 1 WARNING matching duplicate_meta_and_body_fault_isolation.contract.stvn_i 1:1
         assertEquals("Expected strictly 7 ERROR highlights (zero false-positive E031/E039 and zero suppressed E033), got: " + errors,
             7, errors.size());
-        assertEquals("Expected strictly 2 WARNING highlights (zero false-positive W002 on secondary :meta), got: " + warnings,
-            2, warnings.size());
+        assertEquals("Expected strictly 1 WARNING highlight (W001 on #name only; E038 suppresses #domain W001), got: " + warnings,
+            1, warnings.size());
 
         // Verify both duplicate :meta blocks receive red E033 errors at exact offsets 147..152 and 158..163
         assertTrue("Expected E033 on first duplicate ':meta {}' at [147, 152]: " + errors,

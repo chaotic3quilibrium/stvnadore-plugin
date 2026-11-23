@@ -142,7 +142,10 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
                         StvnDiagnosticCodes.ERR_STRING_CARDINALITY_PROHIBITED
                     ),
                     ProblemHighlightType.GENERIC_ERROR,
-                    fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                    StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                        entry,
+                        fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                    )
                 );
             }
         }

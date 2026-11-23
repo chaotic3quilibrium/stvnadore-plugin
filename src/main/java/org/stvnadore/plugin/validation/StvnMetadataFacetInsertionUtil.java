@@ -16,6 +16,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Canonical § 6.1 5-tier metadata facet insertion helper for capacity and string length quick-fixes.
@@ -201,6 +202,27 @@ public final class StvnMetadataFacetInsertionUtil {
             String facetKeyword,
             String fullEntryText
     ) {
+        insertOrReplaceSingleFacetRemoving(doc, metaMap, facetKeyword, fullEntryText, Set.of());
+    }
+
+    /**
+     * Inserts or replaces {@code fullEntryText} at {@code facetKeyword}'s canonical § 6.1 5-tier rank
+     * while simultaneously removing any conflicting facet entries whose keywords appear in
+     * {@code extraKeywordsToRemove}.
+     *
+     * @param doc                   mutable document backing {@code metaMap}
+     * @param metaMap               target metadata map PSI node
+     * @param facetKeyword          canonical facet keyword being inserted or updated
+     * @param fullEntryText         full facet entry text to insert (for example {@code #exact} or {@code #size 32})
+     * @param extraKeywordsToRemove additional facet keywords (for example {@code #size} or {@code #exact}) to remove atomically
+     */
+    public static void insertOrReplaceSingleFacetRemoving(
+            Document doc,
+            MetadataMap metaMap,
+            String facetKeyword,
+            String fullEntryText,
+            Set<String> extraKeywordsToRemove
+    ) {
         List<MetadataEntry> entries = metaMap.getMetadataEntryList();
         int targetRank = StvnMetadataOrderInspection.getFacetRank(facetKeyword);
 
@@ -208,7 +230,7 @@ public final class StvnMetadataFacetInsertionUtil {
         List<MetadataEntry> toRemove = new ArrayList<>();
         for (MetadataEntry entry : entries) {
             String kw = StvnMetadataOrderInspection.extractFacetKeyword(entry);
-            if (facetKeyword.equals(kw)) {
+            if (facetKeyword.equals(kw) || extraKeywordsToRemove.contains(kw)) {
                 toRemove.add(entry);
             } else {
                 surviving.add(entry);

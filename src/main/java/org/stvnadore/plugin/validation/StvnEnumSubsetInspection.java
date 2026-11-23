@@ -75,7 +75,8 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                 "Constraint violation (" + kw + "): filter facets cannot be applied to inline enum constructors; filter facets are only allowed on nominal aliases of :Enum or existing enum subsets",
                                 StvnDiagnosticCodes.ERR_FILTER_ON_INLINE_ENUM
                             ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            ProblemHighlightType.GENERIC_ERROR,
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter)
                         );
                     }
                     return;
@@ -96,7 +97,8 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                 "Constraint violation (" + kw + "): filter facets are not allowed on " + baseName,
                                 StvnDiagnosticCodes.ERR_FILTER_ON_NON_ENUM
                             ),
-                            ProblemHighlightType.GENERIC_ERROR
+                            ProblemHighlightType.GENERIC_ERROR,
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter)
                         );
                     }
                     return;
@@ -125,7 +127,7 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                     StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR,
-                                fixes
+                                StvnMetadataOrderInspection.appendReorderFixIfDisordered(filter, fixes)
                             );
                         } else if (isOnTheFly && fixes.length > 0) {
                             holder.registerProblem(filter, "", ProblemHighlightType.INFORMATION, fixes);
@@ -292,7 +294,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                                 StvnDiagnosticCodes.ERR_FILTER_ON_CONSTANT
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
-                            new RemoveRedundantFacetQuickFix(entry, facetTag, "Remove invalid facet")
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                                entry,
+                                new RemoveRedundantFacetQuickFix(entry, facetTag, "Remove invalid facet")
+                            )
                         );
                     }
                 }

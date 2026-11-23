@@ -236,6 +236,10 @@ public final class StvnMetadataFacetAllowlist {
         if (baseType == null) {
             return true; // Bail out on undeclared base types
         }
+        if (StvnVocabulary.TYPE_FLOAT.equals(baseType)
+                && StvnVocabulary.FACET_KW_SIZE.equals(facetKeyword)) {
+            return true;
+        }
         boolean exactActive = isExactActive(metadataMap, schemaType);
         return isFacetPermittedOnBaseType(facetKeyword, baseType, exactActive);
     }

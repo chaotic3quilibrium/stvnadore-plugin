@@ -4,7 +4,7 @@
 
 <p>Filename stem slot 0 corresponds to the declared document <code>#name</code>. Filename stem slot 1 corresponds to the optional declared document <code>#domain</code>.</p>
 
-<p>Reports <code>WARN_DOCUMENT_NAME_MISMATCH</code> (<code>W001</code>) when declared <code>#name</code> or <code>#domain</code> differs from its filename stem slot, <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> or <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_META</code> (<code>W002</code>) when only one side declares a domain, and <code>ERR_RESERVED_DOMAIN_PROHIBITED</code> (<code>E038</code>) when a user document declares a reserved <code>stvn_*</code> domain.</p>
+<p>Reports <code>WARN_DOCUMENT_NAME_MISMATCH</code> (<code>W001</code>) when a valid POSIX declared <code>#name</code> or <code>#domain</code> differs from its filename stem slot, <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_FILENAME</code> or <code>WARN_DOCUMENT_DOMAIN_OMITTED_IN_META</code> (<code>W002</code>) when only one side declares a valid user domain, and <code>ERR_RESERVED_DOMAIN_PROHIBITED</code> (<code>E038</code>) when a user document declares a reserved <code>stvn_*</code> domain. Suppresses secondary stem warnings whenever <code>#name</code> or <code>#domain</code> is lexically undecodable, fails <code>^[a-zA-Z0-9_-]{1,64}$</code>, or triggers <code>E038</code>.</p>
 
 <p><b>Quick-Fix:</b></p>
 <p>Aligns the <code>#name</code> or <code>#domain</code> facet with filename stem slot 0 or slot 1.</p>

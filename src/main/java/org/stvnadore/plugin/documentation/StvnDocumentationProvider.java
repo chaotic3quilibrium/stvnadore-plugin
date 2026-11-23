@@ -39,6 +39,7 @@ import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.StvnDiagnosticCodes;
 import org.stvnadore.plugin.validation.StvnDiagnosticFormatter;
+import org.stvnadore.plugin.validation.StvnMetadataFacetAllowlist;
 import org.stvnadore.plugin.validation.StvnTrailingSlashInspection;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
@@ -574,24 +575,46 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             appendConstantContextAndTemporalPreview(sb, constDef, originalElement);
             if (value != null) {
                 sb.append("<hr/>");
+                var chainResolution = resolveConstantTerminalValue(constDef);
+                boolean isIntConstSchema = isPureIntNonTemporalSchema(schemaType);
+                Value effectiveIntLeaf = (!chainResolution.cyclic() && chainResolution.terminalValue() != null)
+                    ? chainResolution.terminalValue()
+                    : value;
+                BigInteger resolvedIntVal = isIntConstSchema ? parseCleanIntConstantValue(effectiveIntLeaf) : null;
+
                 if (value.getStringLiteral() != null && value.getStringLiteral().getText().startsWith("\"\"\"")) {
                     boolean preserveIndent = StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(schemaType);
                     String formattedVal = StvnPsiLiteralEvaluator.decodeStringLiteral(value.getStringLiteral().getText(), preserveIndent)
                         .map(StvnPsiLiteralEvaluator::formatCanonicalQuotedString)
                         .orElseGet(() -> value.getText().trim());
                     sb.append("<b>Value:</b> <code>").append(escapeHtmlBody(formattedVal)).append("</code>");
+                } else if (isIntConstSchema && resolvedIntVal != null) {
+                    String rawValText = value.getText().trim();
+                    if (!chainResolution.cyclic() && chainResolution.hops().size() > 1) {
+                        sb.append("<b>Value:</b> <code>").append(escapeHtmlBody(rawValText))
+                          .append("</code> (&rarr; <code>").append(resolvedIntVal).append("</code>)");
+                    } else if (isNonDecimalRadixIntLiteral(rawValText)) {
+                        sb.append("<b>Value:</b> <code>").append(escapeHtmlBody(rawValText))
+                          .append("</code> (= <code>").append(resolvedIntVal).append("</code>)");
+                    } else {
+                        sb.append("<b>Value:</b> ").append(escapeHtmlBody(value.getText()));
+                    }
                 } else {
                     sb.append("<b>Value:</b> ").append(escapeHtmlBody(value.getText()));
                 }
-                var chainResolution = resolveConstantTerminalValue(constDef);
                 if (chainResolution.cyclic()) {
                     sb.append("<br/><b>Constant Cycle:</b> <code>")
                       .append(String.join(" &rarr; ", chainResolution.hops()))
                       .append("</code>");
                 } else if (chainResolution.hops().size() > 1 && chainResolution.terminalValue() != null) {
+                    String termText = chainResolution.terminalValue().getText().trim();
                     sb.append("<br/><b>Resolved Value:</b> <code>")
-                      .append(escapeHtmlBody(chainResolution.terminalValue().getText().trim()))
-                      .append("</code> (via <code>")
+                      .append(escapeHtmlBody(termText))
+                      .append("</code>");
+                    if (isIntConstSchema && resolvedIntVal != null && isNonDecimalRadixIntLiteral(termText)) {
+                        sb.append(" (= <code>").append(resolvedIntVal).append("</code>)");
+                    }
+                    sb.append(" (via <code>")
                       .append(String.join(" &rarr; ", chainResolution.hops()))
                       .append("</code>)");
                 }
@@ -599,6 +622,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var sumSpineHtml = StvnConstantSumSpineRenderer.renderConstantSumSpineRows(constDef, useLongForm);
                 if (sumSpineHtml != null) {
                     sb.append(sumSpineHtml);
+                }
+                if (isIntConstSchema
+                        && resolvedIntVal != null
+                        && !chainResolution.cyclic()
+                        && schemaType != null
+                        && collectContainedCompilerErrorMessages(constDef).isEmpty()) {
+                    var intCompliance = evaluateValueComplianceInternal(effectiveIntLeaf, schemaType);
+                    if (intCompliance.isSatisfied() && !intCompliance.validLexicalForms().isEmpty()) {
+                        sb.append("<hr/><b>Valid Lexical &amp; Syntax Forms:</b><br/>");
+                        for (String form : intCompliance.validLexicalForms()) {
+                            sb.append("&bull; ").append(form).append("<br/>");
+                        }
+                    }
                 }
             }
             appendBodyConstantComplianceSection(sb, constDef, originalElement);
@@ -722,7 +758,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var text = entry.getText().trim();
             var keyword = text.split("\\s+")[0];
-            var specDesc = getFacetSpecificationDoc(keyword);
+            var specDesc = getFacetSpecificationDoc(keyword, entry);
             if (specDesc != null) {
                 return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
             }
@@ -3191,7 +3227,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
             var text = entry.getText().trim();
             var keyword = text.split("\\s+")[0];
-            var specDesc = getFacetSpecificationDoc(keyword);
+            var specDesc = getFacetSpecificationDoc(keyword, entry);
             if (specDesc != null) {
                 return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
             }
@@ -4396,6 +4432,23 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable String getFacetSpecificationDoc(String keyword) {
+        return getFacetSpecificationDoc(keyword, null);
+    }
+
+    private static @Nullable String getFacetSpecificationDoc(
+            String keyword,
+            @Nullable MetadataEntry contextEntry
+    ) {
+        if (StvnVocabulary.FACET_KW_SIZE.equals(keyword)
+                && contextEntry != null
+                && isInsideFloatGovernedMetadataMap(contextEntry)) {
+            return "Selects IEEE-754 floating-point bit width on <code>" + StvnVocabulary.TYPE_FLOAT
+                + "</code>: declare <code>" + StvnVocabulary.FACET_KW_SIZE
+                + " 32</code> for 32-bit single precision; unadorned <code>" + StvnVocabulary.TYPE_FLOAT
+                + "</code> defaults to 64-bit IEEE-754 double precision (explicit <code>"
+                + StvnVocabulary.FACET_KW_SIZE + " 64</code> triggers <code>W003</code>); use <code>"
+                + StvnVocabulary.FACET_KW_EXACT + "</code> for arbitrary-precision decimal.";
+        }
         return switch (keyword) {
             case StvnVocabulary.FACET_KW_SIZE -> "Configures physical storage bit-width (e.g. <code>#size 16</code>, <code>#size 64</code>).";
             case StvnVocabulary.FACET_KW_UNSIGNED -> "Enforces non-negative physical unsigned boundaries <code>[0, 2^n - 1]</code> on integer domains.";
@@ -4411,6 +4464,81 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             case StvnVocabulary.FACET_KW_PRESERVE_INDENT -> "Preserves verbatim leading indentation and whitespace across multiline strings.";
             default -> null;
         };
+    }
+
+    private static boolean isInsideFloatGovernedMetadataMap(MetadataEntry entry) {
+        MetadataMap metaMap = PsiTreeUtil.getParentOfType(entry, MetadataMap.class, false);
+        if (metaMap == null) {
+            return false;
+        }
+        SchemaType schemaType = PsiTreeUtil.getParentOfType(metaMap, SchemaType.class, false);
+        if (schemaType == null) {
+            TypeDefinition td = PsiTreeUtil.getParentOfType(metaMap, TypeDefinition.class, false);
+            if (td != null) {
+                schemaType = td.getSchemaType();
+            }
+        }
+        if (schemaType == null) {
+            ConstantDefinition cd = PsiTreeUtil.getParentOfType(metaMap, ConstantDefinition.class, false);
+            if (cd != null) {
+                schemaType = cd.getSchemaType();
+            }
+        }
+        if (schemaType == null) {
+            TypeEntry te = PsiTreeUtil.getParentOfType(metaMap, TypeEntry.class, false);
+            if (te != null) {
+                schemaType = te.getSchemaType();
+            }
+        }
+        if (schemaType == null) {
+            return false;
+        }
+        String baseType = StvnMetadataFacetAllowlist.resolveUnderlyingBaseType(schemaType, new HashSet<>());
+        return StvnVocabulary.TYPE_FLOAT.equals(baseType);
+    }
+
+    private static boolean isPureIntNonTemporalSchema(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return false;
+        }
+        String baseType = StvnMetadataFacetAllowlist.resolveUnderlyingBaseType(schemaType, new HashSet<>());
+        return StvnVocabulary.TYPE_INT.equals(baseType);
+    }
+
+    private static @Nullable BigInteger parseCleanIntConstantValue(@Nullable Value val) {
+        if (val == null || val.getIntegerLiteral() == null) {
+            return null;
+        }
+        String raw = val.getText().trim();
+        if (raw.contains("_")) {
+            return null;
+        }
+        return StvnPsiLiteralEvaluator.parseBigInteger(raw).orElse(null);
+    }
+
+    private static boolean isNonDecimalRadixIntLiteral(String rawText) {
+        String s = rawText.startsWith("-") ? rawText.substring(1) : rawText;
+        return s.startsWith("0x") || s.startsWith("0X")
+            || s.startsWith("0b") || s.startsWith("0B")
+            || s.startsWith("0o") || s.startsWith("0O");
+    }
+
+    private static @Nullable MetadataMap resolveInlineSchemaMetadataMap(
+            Value value,
+            @Nullable SchemaType schemaType
+    ) {
+        if (schemaType == null) {
+            return null;
+        }
+        if (schemaType.getMetadataMap() != null) {
+            return schemaType.getMetadataMap();
+        }
+        if (schemaType.getParent() instanceof ConstantDefinition enclosingConst
+                && enclosingConst.getValue() == value
+                && enclosingConst.getMetadataMap() != null) {
+            return enclosingConst.getMetadataMap();
+        }
+        return null;
     }
 
     // ============================================================================
@@ -5377,6 +5505,18 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var governingSchema = (unionContext != null)
             ? unionContext.governingSchema()
             : (hoverSlotTrajectory != null ? hoverSlotTrajectory : displayType);
+        if (unionContext == null
+                && !wrapperValidation.invalid()
+                && (schemaType == null || !isCoproductSumSchemaType(schemaType))
+                && !governingSchema.startsWith("{")) {
+            MetadataMap inlineMeta = resolveInlineSchemaMetadataMap(value, schemaType);
+            if (inlineMeta != null) {
+                String formattedMeta = StvnSchemaFormatter.formatSchema(inlineMeta);
+                if (!formattedMeta.isEmpty()) {
+                    governingSchema = formattedMeta + " " + governingSchema;
+                }
+            }
+        }
         var targetSchemaForCompliance = (unionContext != null && unionContext.branchSchema() != null)
             ? unionContext.branchSchema()
             : schemaType;
@@ -6299,22 +6439,25 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     }
                 }
 
+                boolean isNeg = valBI.signum() < 0;
+                BigInteger magBI = valBI.abs();
+                String signPrefix = isNeg ? "-" : "";
                 int padBits = (bitWidth.compareTo(BigInteger.ONE) >= 0 && bitWidth.compareTo(BigInteger.valueOf(128)) <= 0)
                     ? bitWidth.intValue()
                     : 0;
                 int hexDigits = padBits > 0 ? Math.max(1, (padBits + 3) / 4) : 1;
-                String hexStr = (valBI.compareTo(BigInteger.ZERO) >= 0 && padBits > 0)
-                    ? String.format("%0" + hexDigits + "X", valBI)
-                    : valBI.toString(16).toUpperCase(Locale.ROOT);
-                String binStr = (valBI.compareTo(BigInteger.ZERO) >= 0 && padBits > 0)
-                    ? String.format("%" + padBits + "s", valBI.toString(2)).replace(' ', '0')
-                    : valBI.toString(2);
+                String hexStr = (!isNeg && padBits > 0)
+                    ? String.format("%0" + hexDigits + "X", magBI)
+                    : magBI.toString(16).toUpperCase(Locale.ROOT);
+                String binStr = (!isNeg && padBits > 0)
+                    ? String.format("%" + padBits + "s", magBI.toString(2)).replace(' ', '0')
+                    : magBI.toString(2);
 
                 var forms = new ArrayList<String>();
                 forms.add("Decimal: <code>" + valBI.toString(10) + "</code>");
-                forms.add("Hex: <code>0x" + hexStr + "</code>");
-                forms.add("Binary: <code>0b" + binStr + "</code>");
-                forms.add("Octal: <code>0o" + valBI.toString(8) + "</code>");
+                forms.add("Hex: <code>" + signPrefix + "0x" + hexStr + "</code>");
+                forms.add("Binary: <code>" + signPrefix + "0b" + binStr + "</code>");
+                forms.add("Octal: <code>" + signPrefix + "0o" + magBI.toString(8) + "</code>");
 
                 if (satisfied && rawIntText.contains("_")) {
                     satisfied = false;

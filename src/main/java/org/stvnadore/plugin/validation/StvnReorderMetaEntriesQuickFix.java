@@ -1,18 +1,14 @@
 package org.stvnadore.plugin.validation;
 
-import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
-import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
-import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.SmartPointerManager;
-import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -37,16 +33,14 @@ import java.util.function.ToIntFunction;
  * while preserving all leading, same-line trailing, and footer {@code //} comments.
  */
 @NullMarked
-public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, IntentionAction, PriorityAction {
-
-    @SafeFieldForPreview
-    private final @Nullable SmartPsiElementPointer<MetaBlock> metaBlockPointer;
+public final class StvnReorderMetaEntriesQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement
+        implements PriorityAction {
 
     /**
      * Constructs a reordering quick-fix without a pre-bound PSI reference.
      */
     public StvnReorderMetaEntriesQuickFix() {
-        this.metaBlockPointer = null;
+        super(null);
     }
 
     /**
@@ -55,9 +49,7 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
      * @param metaBlock the {@code :meta} block containing unordered entries
      */
     public StvnReorderMetaEntriesQuickFix(@Nullable MetaBlock metaBlock) {
-        this.metaBlockPointer = metaBlock != null && metaBlock.isValid()
-            ? SmartPointerManager.getInstance(metaBlock.getProject()).createSmartPsiElementPointer(metaBlock)
-            : null;
+        super(metaBlock);
     }
 
     @Override
@@ -75,20 +67,31 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
 
     @Override
     public @NotNull Priority getPriority() {
-        return Priority.NORMAL;
+        return Priority.HIGH;
     }
 
     @Override
-    public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        MetaBlock metaBlock = metaBlockPointer != null ? metaBlockPointer.getElement() : null;
-        return metaBlock != null && metaBlock.isValid();
+    public boolean isAvailable(
+            @NotNull Project project,
+            @NotNull PsiFile file,
+            @Nullable Editor editor,
+            @NotNull PsiElement startElement,
+            @NotNull PsiElement endElement
+    ) {
+        return startElement.isValid();
     }
 
     @Override
-    public void invoke(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
-        MetaBlock metaBlock = metaBlockPointer != null ? metaBlockPointer.getElement() : null;
-        if (metaBlock != null && metaBlock.isValid()) {
-            reorderMetaBlock(project, metaBlock);
+    public void invoke(
+            @NotNull Project project,
+            @NotNull PsiFile file,
+            @Nullable Editor editor,
+            @NotNull PsiElement startElement,
+            @NotNull PsiElement endElement
+    ) {
+        MetaBlock targetBlock = startElement instanceof MetaBlock mb ? mb : resolveTargetMetaBlock(startElement);
+        if (targetBlock != null && targetBlock.isValid()) {
+            reorderMetaBlock(project, targetBlock);
         }
     }
 
@@ -98,9 +101,9 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
             @NotNull Editor editor,
             @NotNull PsiFile file
     ) {
-        MetaBlock original = metaBlockPointer != null ? metaBlockPointer.getElement() : null;
-        if (original != null && original.isValid()) {
-            MetaBlock copyBlock = PsiTreeUtil.findSameElementInCopy(original, file);
+        PsiElement original = getStartElement();
+        if (original instanceof MetaBlock mb && mb.isValid()) {
+            MetaBlock copyBlock = PsiTreeUtil.findSameElementInCopy(mb, file);
             reorderMetaBlock(project, copyBlock);
             return IntentionPreviewInfo.DIFF;
         }
@@ -131,18 +134,6 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         return true;
     }
 
-    @Override
-    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-        MetaBlock targetBlock = resolveTargetMetaBlock(descriptor.getPsiElement());
-        MetaBlock metaBlock = metaBlockPointer != null ? metaBlockPointer.getElement() : null;
-        if (targetBlock == null && metaBlock != null && metaBlock.isValid()) {
-            targetBlock = metaBlock;
-        }
-        if (targetBlock != null && targetBlock.isValid()) {
-            reorderMetaBlock(project, targetBlock);
-        }
-    }
-
     /**
      * Resolves the target {@link MetaBlock} from any inspection descriptor anchor
      * ({@link MetaBlock}, {@link MetaElement}, {@code LBRACE}, {@code RBRACE}, or {@link MetaEntry} {@code :meta} keyword).
@@ -170,12 +161,12 @@ public final class StvnReorderMetaEntriesQuickFix implements LocalQuickFix, Inte
         if (!(obj instanceof StvnReorderMetaEntriesQuickFix other)) {
             return false;
         }
-        return Objects.equals(metaBlockPointer, other.metaBlockPointer);
+        return Objects.equals(getStartElement(), other.getStartElement());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(metaBlockPointer);
+        return Objects.hashCode(getStartElement());
     }
 
     record CommentLine(

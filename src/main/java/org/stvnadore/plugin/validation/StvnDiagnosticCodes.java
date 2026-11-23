@@ -58,6 +58,8 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_UNION_BRANCH_OVERFLOW = "E028-" + DiagnosticBag.ERR_UNION_BRANCH_OVERFLOW;
     public static final String ERR_UNRESOLVED_TYPE = "E030-ERR_UNRESOLVED_TYPE";
     public static final String ERR_CONSTANT_INTEGER_OVERFLOW = "E009-ERR_CONSTANT_INTEGER_OVERFLOW";
+    /** Continuous {@code :Float} {@code #size} bit-width violation ({@code 32} or {@code 64} only). */
+    public static final String ERR_FLOAT_INVALID_SIZE = "E010-" + DiagnosticBag.ERR_FLOAT_INVALID_SIZE;
     public static final String ERR_CONSTANT_FLOAT_OVERFLOW = "E010-ERR_CONSTANT_FLOAT_OVERFLOW";
     public static final String ERR_DISCRETE_BOUND_KIND_PROHIBITED = "E011-ERR_DISCRETE_BOUND_KIND_PROHIBITED";
     public static final String ERR_CONSTRAINT_VIOLATION = "E012-" + DiagnosticBag.ERR_CONSTRAINT_VIOLATION;

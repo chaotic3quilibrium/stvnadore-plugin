@@ -282,7 +282,7 @@ public final class StvnPluginPureIncludeAndStage12RemediationTest extends BasePl
         assertTrue("Pass A must attach #kind extension rename fix: " + passAKindFixLabels,
             passAKindFixLabels.contains("Rename file extension to '.stvn_d' (rename to 'scratch.stvn_d')"));
         assertTrue("Pass A must attach Update #kind fix: " + passAKindFixLabels,
-            passAKindFixLabels.contains("Update #kind to match file extension"));
+            passAKindFixLabels.contains("Update '#kind' to match file extension"));
 
         // Pass B (all 26 local inspections enabled)
         enableAllRegisteredStvnInspections();
@@ -312,7 +312,7 @@ public final class StvnPluginPureIncludeAndStage12RemediationTest extends BasePl
 
         String matchMetaLabel = "Rename file to 'stage12_test.core_test.stvn_d' (match :meta)";
         String extRenameLabel = "Rename file extension to '.stvn_d' (rename to 'scratch.stvn_d')";
-        String updateKindLabel = "Update #kind to match file extension";
+        String updateKindLabel = "Update '#kind' to match file extension";
 
         assertEquals("Atomic match :meta quick-fix must appear strictly once: " + kindLabels,
             1, kindLabels.stream().filter(matchMetaLabel::equals).count());

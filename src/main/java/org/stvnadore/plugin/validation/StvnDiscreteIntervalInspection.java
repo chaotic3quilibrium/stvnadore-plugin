@@ -204,7 +204,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        quickFixes
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(entry, quickFixes)
                     );
                 }
                 if (firstValidUpper != null) {
@@ -218,7 +218,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_INCL, "Remove conflicting facet")
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            entry,
+                            new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_INCL, "Remove conflicting facet")
+                        )
                     );
                     if (isOnTheFly) {
                         var firstKw = firstValidUpper.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
@@ -264,7 +267,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        quickFixes
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(entry, quickFixes)
                     );
                 }
                 if (firstValidLower != null) {
@@ -278,7 +281,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_EXCL, "Remove conflicting facet")
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            entry,
+                            new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_EXCL, "Remove conflicting facet")
+                        )
                     );
                     if (isOnTheFly) {
                         var firstKw = firstValidLower.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null
@@ -315,7 +321,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_INCL, "Remove conflicting facet")
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            entry,
+                            new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MIN_INCL, "Remove conflicting facet")
+                        )
                     );
                     if (isOnTheFly) {
                         var firstKw = firstValidLower.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null
@@ -352,7 +361,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_EXCL, "Remove conflicting facet")
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                            entry,
+                            new RemoveRedundantFacetQuickFix(entry, StvnVocabulary.FACET_KW_MAX_EXCL, "Remove conflicting facet")
+                        )
                     );
                     if (isOnTheFly) {
                         var firstKw = firstValidUpper.getNode().findChildByType(StvnTypes.KW_MAX_EXCL) != null
@@ -578,6 +590,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             String formattedMessage,
             LocalQuickFix[] quickFixes
     ) {
+        LocalQuickFix[] mergedFixes = StvnMetadataOrderInspection.appendReorderFixIfDisordered(metaMap, quickFixes);
         if (localLowerEntry != null && localUpperEntry != null && localLowerIdx >= 0 && localUpperIdx >= 0) {
             boolean lowerFirst = localLowerIdx <= localUpperIdx;
             MetadataEntry earlier = lowerFirst ? localLowerEntry : localUpperEntry;
@@ -588,17 +601,17 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                     earlier.getTextRange().getStartOffset() - mapStart,
                     later.getTextRange().getEndOffset() - mapStart
                 );
-                holder.registerProblem(metaMap, formattedMessage, ProblemHighlightType.GENERIC_ERROR, relRange, quickFixes);
+                holder.registerProblem(metaMap, formattedMessage, ProblemHighlightType.GENERIC_ERROR, relRange, mergedFixes);
                 return;
             }
-            holder.registerProblem(later, formattedMessage, ProblemHighlightType.GENERIC_ERROR, quickFixes);
+            holder.registerProblem(later, formattedMessage, ProblemHighlightType.GENERIC_ERROR, mergedFixes);
             if (isOnTheFly && quickFixes.length > 0) {
                 holder.registerProblem(earlier, quickFixes[0].getFamilyName(), ProblemHighlightType.INFORMATION, quickFixes);
             }
             return;
         }
         PsiElement target = singleLocalFallback != null ? singleLocalFallback : metaMap;
-        holder.registerProblem(target, formattedMessage, ProblemHighlightType.GENERIC_ERROR, quickFixes);
+        holder.registerProblem(target, formattedMessage, ProblemHighlightType.GENERIC_ERROR, mergedFixes);
     }
 
     static @Nullable TextRange findLocalIntervalErrorRange(SchemaType schemaType, MetadataMap metaMap) {

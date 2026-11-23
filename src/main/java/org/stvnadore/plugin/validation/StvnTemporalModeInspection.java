@@ -155,7 +155,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                 StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
-                            fixes
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(scaleEntry, fixes)
                         );
                     } else if (isOnTheFly) {
                         holder.registerProblem(scaleEntry, "", ProblemHighlightType.INFORMATION, fixes);
@@ -211,7 +211,7 @@ public final class StvnTemporalModeInspection extends LocalInspectionTool {
                                 StvnDiagnosticCodes.ERR_MUTUALLY_EXCLUSIVE
                             ),
                             ProblemHighlightType.GENERIC_ERROR,
-                            fixes
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(modeEntry, fixes)
                         );
                     } else if (isOnTheFly) {
                         holder.registerProblem(modeEntry, "", ProblemHighlightType.INFORMATION, fixes);

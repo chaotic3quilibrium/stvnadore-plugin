@@ -696,7 +696,7 @@ public final class StvnMetadataFacetInspectionTest extends BasePlatformTestCase 
         var populateActions = myFixture.filterAvailableIntentions("Insert missing root :meta block");
         assertFalse("Expected InsertMissingMetaBlockQuickFix intention on :meta {}", populateActions.isEmpty());
 
-        var kindActions = myFixture.filterAvailableIntentions("Insert missing #kind facet");
+        var kindActions = myFixture.filterAvailableIntentions("Insert missing '#kind' facet");
         assertFalse("Expected InsertMissingMetaKindFacetQuickFix intention on :meta {}", kindActions.isEmpty());
 
         myFixture.launchAction(kindActions.get(0));

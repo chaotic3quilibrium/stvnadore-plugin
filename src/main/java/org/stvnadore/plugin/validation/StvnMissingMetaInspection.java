@@ -181,7 +181,10 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                             anchor,
                             message,
                             ProblemHighlightType.GENERIC_ERROR,
-                            new InsertMissingMetaKindFacetQuickFix(anchor, expectedKind)
+                            StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                                metaEntry,
+                                new InsertMissingMetaKindFacetQuickFix(anchor, expectedKind)
+                            )
                         );
                     }
                 }
@@ -236,7 +239,10 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
                                     StvnDiagnosticCodes.ERR_DOCUMENT_KIND_MISMATCH
                                 ),
                                 ProblemHighlightType.GENERIC_ERROR,
-                                fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                                StvnMetadataOrderInspection.appendReorderFixIfDisordered(
+                                    facet,
+                                    fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                                )
                             );
                         }
                     }
@@ -394,7 +400,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Insert missing " + StvnVocabulary.FACET_KW_META_KIND + " facet";
+            return "Insert missing '" + StvnVocabulary.FACET_KW_META_KIND + "' facet";
         }
 
         @Override
@@ -477,7 +483,7 @@ public final class StvnMissingMetaInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Update " + StvnVocabulary.FACET_KW_META_KIND + " to match file extension";
+            return "Update '" + StvnVocabulary.FACET_KW_META_KIND + "' to match file extension";
         }
 
         @Override
