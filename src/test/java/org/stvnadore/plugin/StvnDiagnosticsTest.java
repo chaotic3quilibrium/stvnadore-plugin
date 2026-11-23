@@ -6945,9 +6945,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                 .filter(h -> expectsWarning
                     ? (h.getSeverity() == HighlightSeverity.WARNING || h.getSeverity() == HighlightSeverity.WEAK_WARNING)
                     : h.getSeverity() == HighlightSeverity.ERROR)
-                .filter(h -> expectsWarning
-                    ? (h.getStartOffset() <= exp.startOffset() && h.getEndOffset() >= exp.endOffset())
-                    : (h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset()))
+                .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
                 .filter(h -> h.getDescription() != null
                     && (h.getDescription().contains(exp.messageSubstring()) || h.getDescription().contains(exp.symbolicId())))
                 .findFirst();
@@ -7010,6 +7008,32 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             new org.stvnadore.plugin.validation.StvnMetadataOrderInspection()
         );
         assertDiagnosticContract("syntax/invalid/metadata/duplicate_meta_and_body_fault_isolation.core_test.stvn_i");
+    }
+
+    public void testGauntletV10Stage1MetaOrderKeywordPinningSharedContractsPassAAndPassB() throws Exception {
+        String[] stage1Fixtures = {
+            "syntax/invalid/metadata/meta_order_domain_before_name_smoke.cryo_biobank.stvn_i",
+            "syntax/invalid/metadata/meta_order_keyword_pinning_disjoint_w001.cryo_biobank.stvn",
+            "syntax/invalid/metadata/meta_order_keyword_pinning_disjoint_w002_1stem.stvn"
+        };
+        for (String fixture : stage1Fixtures) {
+            assertDiagnosticContract(fixture);
+        }
+        var metaInspections = new com.intellij.codeInspection.InspectionProfileEntry[]{
+            new org.stvnadore.plugin.validation.StvnMissingMetaInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataFacetInspection(),
+            new org.stvnadore.plugin.validation.StvnStemMismatchInspection(),
+            new org.stvnadore.plugin.validation.StvnMetadataOrderInspection()
+        };
+        myFixture.enableInspections(metaInspections);
+        try {
+            assertDiagnosticContract("syntax/invalid/metadata/gauntlet_v4_stage1_meta_multi_error_and_body.core_test.stvn_i");
+            for (String fixture : stage1Fixtures) {
+                assertDiagnosticContract(fixture);
+            }
+        } finally {
+            myFixture.disableInspections(metaInspections);
+        }
     }
 
     public void testInvalidGroundedPoisonedSchemaBodySuspension() throws Exception {

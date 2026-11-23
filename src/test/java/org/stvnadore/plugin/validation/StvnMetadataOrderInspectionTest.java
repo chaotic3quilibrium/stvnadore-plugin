@@ -228,10 +228,30 @@ public final class StvnMetadataOrderInspectionTest extends BasePlatformTestCase 
             .filter(h -> h.getDescription() != null && h.getDescription().contains("violates 3-tier monotonic progression (#name -> #domain -> #kind)"))
             .toList();
         assertEquals("Expected 2 errors on out-of-order :meta entries (#name and #domain after #kind)", 2, errors.size());
+        assertEquals("First :meta E008 must pin strictly to '#name' keyword token", "#name", errors.get(0).getText());
+        assertEquals("Second :meta E008 must pin strictly to '#domain' keyword token", "#domain", errors.get(1).getText());
+
+        var noisyInfoHighlights = highlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.INFORMATION
+                && h.getDescription() != null
+                && !h.getDescription().isEmpty())
+            .toList();
+        assertTrue("Silent INFORMATION reorder anchors must carry empty description '': " + noisyInfoHighlights,
+            noisyInfoHighlights.isEmpty());
+
+        String reorderLabel = "Reorder ':meta' entries to canonical order (#name, #domain, #kind)";
+        for (int valueOffset : new int[]{
+            text.indexOf("\"gauntlet_v2\"") + 3,
+            text.indexOf("\"core_test\"") + 3
+        }) {
+            myFixture.getEditor().getCaretModel().moveToOffset(valueOffset);
+            assertEquals("Expected single reorder quick-fix on value literal at offset " + valueOffset,
+                1, myFixture.filterAvailableIntentions(reorderLabel).size());
+        }
 
         int offset = text.indexOf("#name");
         myFixture.getEditor().getCaretModel().moveToOffset(offset);
-        var actions = myFixture.filterAvailableIntentions("Reorder ':meta' entries to canonical order (#name, #domain, #kind)");
+        var actions = myFixture.filterAvailableIntentions(reorderLabel);
         assertFalse("Expected ':meta' reorder quick-fix to be available", actions.isEmpty());
         myFixture.launchAction(actions.get(0));
 

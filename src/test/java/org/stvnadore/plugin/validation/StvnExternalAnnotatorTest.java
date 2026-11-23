@@ -3115,6 +3115,24 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         assertEquals("Expected strictly 1 WARNING highlight (W001 on #name only; E038 suppresses #domain W001), got: " + warnings,
             1, warnings.size());
 
+        // Verify disjoint keyword-pinned E008 vs. literal-pinned E038/W001 spans in primary :meta
+        assertTrue("Expected keyword-pinned E008 on '#domain' at [40, 47): " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 40 && e.getEndOffset() == 47
+                && "#domain".equals(e.getText())
+                && e.getDescription() != null && e.getDescription().contains("E008-ERR_FACET_ORDER_VIOLATION")));
+        assertTrue("Expected literal-pinned E038 on '\"stvn_reserved_trap\"' at [48, 68): " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 48 && e.getEndOffset() == 68
+                && "\"stvn_reserved_trap\"".equals(e.getText())
+                && e.getDescription() != null && e.getDescription().contains("E038-ERR_RESERVED_DOMAIN_PROHIBITED")));
+        assertTrue("Expected keyword-pinned E008 on '#name' at [73, 78): " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 73 && e.getEndOffset() == 78
+                && "#name".equals(e.getText())
+                && e.getDescription() != null && e.getDescription().contains("E008-ERR_FACET_ORDER_VIOLATION")));
+        assertTrue("Expected literal-pinned W001 on '\"gauntlet_v4_stage1_wrong_stem\"' at [79, 110): " + warnings,
+            warnings.stream().anyMatch(w -> w.getStartOffset() == 79 && w.getEndOffset() == 110
+                && "\"gauntlet_v4_stage1_wrong_stem\"".equals(w.getText())
+                && w.getDescription() != null && w.getDescription().contains("W001-WARN_DOCUMENT_NAME_MISMATCH")));
+
         // Verify both duplicate :meta blocks receive red E033 errors at exact offsets 147..152 and 158..163
         assertTrue("Expected E033 on first duplicate ':meta {}' at [147, 152]: " + errors,
             errors.stream().anyMatch(e -> e.getStartOffset() == 147 && e.getEndOffset() == 152

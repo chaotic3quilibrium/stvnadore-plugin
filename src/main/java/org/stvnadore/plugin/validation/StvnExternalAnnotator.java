@@ -563,56 +563,6 @@ public final class StvnExternalAnnotator
                     }
                 }
 
-                // Prevent IntelliJ HighlightInfoUpdater from dropping warnings whose range is identical to or inside an error range
-                if (severity.equals(HighlightSeverity.WARNING) || severity.equals(HighlightSeverity.WEAK_WARNING)) {
-                    final TextRange candidateWarnRange = range;
-                    boolean coveredByError = activeErrorDiagnostics.stream().anyMatch(ed ->
-                        ed.startOffset() >= 0
-                            && ed.startOffset() <= candidateWarnRange.getStartOffset()
-                            && candidateWarnRange.getEndOffset() <= ed.endOffset()
-                    );
-                    if (coveredByError) {
-                        var elemAtWarn = file.findElementAt(range.getStartOffset());
-                        PsiElement enclosing = PsiTreeUtil.getParentOfType(
-                            elemAtWarn,
-                            org.stvnadore.psi.MetaDomainFacet.class,
-                            org.stvnadore.psi.MetaNameFacet.class,
-                            org.stvnadore.psi.MetadataEntry.class
-                        );
-                        boolean escaped = false;
-                        while (enclosing != null
-                                && !(enclosing instanceof PsiFile)
-                                && !(enclosing instanceof org.stvnadore.psi.MetaBlock)
-                                && !(enclosing instanceof MetaEntry)
-                                && !(enclosing instanceof org.stvnadore.psi.MetadataMap)) {
-                            TextRange enclosingRange = enclosing.getTextRange();
-                            if (enclosingRange != null && enclosingRange.getLength() > range.getLength()) {
-                                range = enclosingRange;
-                                boolean stillCovered = activeErrorDiagnostics.stream().anyMatch(ed ->
-                                    ed.startOffset() >= 0
-                                        && ed.startOffset() <= enclosingRange.getStartOffset()
-                                        && enclosingRange.getEndOffset() <= ed.endOffset()
-                                );
-                                if (!stillCovered) {
-                                    escaped = true;
-                                    break;
-                                }
-                            }
-                            enclosing = enclosing.getParent();
-                        }
-                        if (!escaped) {
-                            CharSequence chars = file.getViewProvider().getContents();
-                            int wsStart = range.getStartOffset();
-                            int wsEnd = range.getEndOffset();
-                            if (wsStart > 0 && (chars.charAt(wsStart - 1) == ' ' || chars.charAt(wsStart - 1) == '\t')) {
-                                range = new TextRange(wsStart - 1, wsEnd);
-                            } else if (wsEnd < textLength && (chars.charAt(wsEnd) == ' ' || chars.charAt(wsEnd) == '\t')) {
-                                range = new TextRange(wsStart, wsEnd + 1);
-                            }
-                        }
-                    }
-                }
-
                 boolean isSyntaxError = rawMessage.startsWith("STVN Syntax Error");
                 String exactKey = "%d:%d:%s".formatted(range.getStartOffset(), range.getEndOffset(), message);
                 if (registeredExactAnnotations.contains(exactKey)
@@ -1046,6 +996,8 @@ public final class StvnExternalAnnotator
 
                 TextRange deferredE038KeywordRange = null;
                 List<IntentionAction> deferredE038KeywordFixes = null;
+                TextRange[] deferredStemKeywordRangeRef = new TextRange[1];
+                List<IntentionAction> deferredStemKeywordFixes = new ArrayList<>(4);
 
                 // Reserved domain quick-fixes (E038)
                 if (DiagnosticBag.ERR_RESERVED_DOMAIN_PROHIBITED.equals(diagnosticId)
@@ -1099,8 +1051,15 @@ public final class StvnExternalAnnotator
                             int fStart = domainFacet.getTextRange().getStartOffset();
                             int sStart = stringLit.getTextRange().getStartOffset();
                             if (sStart > fStart) {
-                                deferredE038KeywordRange = new TextRange(fStart, Math.max(fStart + 1, sStart - 1));
-                                deferredE038KeywordFixes = e038Actions;
+                                TextRange candidateKwRange = new TextRange(fStart, Math.max(fStart + 1, sStart - 1));
+                                boolean kwHasActiveError = activeErrorDiagnostics.stream().anyMatch(ed ->
+                                    ed.startOffset() < candidateKwRange.getEndOffset()
+                                        && ed.endOffset() > candidateKwRange.getStartOffset()
+                                );
+                                if (!kwHasActiveError) {
+                                    deferredE038KeywordRange = candidateKwRange;
+                                    deferredE038KeywordFixes = new ArrayList<>(e038Actions);
+                                }
                             }
                         }
                     }
@@ -1112,7 +1071,10 @@ public final class StvnExternalAnnotator
                     diagnosticId,
                     rawMessage,
                     s,
-                    range
+                    range,
+                    activeErrorDiagnostics,
+                    deferredStemKeywordRangeRef,
+                    deferredStemKeywordFixes
                 );
 
                 // Untagged triple-quoted block or inline string quick-fixes (Rule STR-04, E025)
@@ -1298,9 +1260,6 @@ public final class StvnExternalAnnotator
                                     && StvnMetadataOrderInspection.isMetaBlockDisordered(enclosingMetaBlock)) {
                                 var reorderMetaFix = new StvnReorderMetaEntriesQuickFix(enclosingMetaBlock);
                                 annotationBuilder = annotationBuilder.withFix(reorderMetaFix);
-                                if (deferredE038KeywordFixes != null) {
-                                    deferredE038KeywordFixes.add(reorderMetaFix);
-                                }
                             }
                         } else {
                             var enclosingMetaMap = reorderElem instanceof MetadataMap mm
@@ -1332,6 +1291,14 @@ public final class StvnExternalAnnotator
                         infoBuilder = infoBuilder.withFix(fix);
                     }
                     infoBuilder.create();
+                }
+                if (deferredStemKeywordRangeRef[0] != null && !deferredStemKeywordFixes.isEmpty()) {
+                    var stemKwBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredStemKeywordRangeRef[0]);
+                    for (IntentionAction fix : deferredStemKeywordFixes) {
+                        stemKwBuilder = stemKwBuilder.withFix(fix);
+                    }
+                    stemKwBuilder.create();
                 }
                 if (deferredFirstFloatMutexRange != null && deferredFirstFloatMutexFixes != null && !deferredFirstFloatMutexFixes.isEmpty()) {
                     var infoBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
@@ -2158,7 +2125,21 @@ public final class StvnExternalAnnotator
                     emitSilentReorderAnchorIfNoErrorOverlap(holder, rbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMetaFix);
                 }
                 for (MetaElement element : metaBlock.getMetaElementList()) {
-                    emitSilentReorderAnchorIfNoErrorOverlap(holder, element.getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                    TextRange fullRange = element.getTextRange();
+                    boolean fullOverlapsError = fullRange != null && activeErrorDiagnostics.stream().anyMatch(ed ->
+                        ed.startOffset() < fullRange.getEndOffset()
+                            && ed.endOffset() > fullRange.getStartOffset()
+                    );
+                    if (!fullOverlapsError) {
+                        emitSilentReorderAnchorIfNoErrorOverlap(holder, fullRange, activeErrorDiagnostics, reorderMetaFix);
+                    } else {
+                        PsiElement kwPsi = StvnMetadataOrderInspection.resolveMetaElementKeywordPsi(element);
+                        emitSilentReorderAnchorIfNoErrorOverlap(holder, kwPsi.getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                        PsiElement valPsi = StvnMetadataOrderInspection.resolveMetaElementValuePsi(element);
+                        if (valPsi != null) {
+                            emitSilentReorderAnchorIfNoErrorOverlap(holder, valPsi.getTextRange(), activeErrorDiagnostics, reorderMetaFix);
+                        }
+                    }
                 }
             }
         }
@@ -2216,7 +2197,10 @@ public final class StvnExternalAnnotator
         String diagnosticId,
         String rawMessage,
         int rawStartOffset,
-        TextRange range
+        TextRange range,
+        List<StvnDiagnostic> activeErrorDiagnostics,
+        TextRange[] deferredStemKeywordRangeRef,
+        List<IntentionAction> deferredStemKeywordFixes
     ) {
         String fileName = file.getName();
         int lastDot = fileName.lastIndexOf('.');
@@ -2322,8 +2306,13 @@ public final class StvnExternalAnnotator
                 : PsiTreeUtil.getParentOfType(elem, MetaDomainFacet.class, false);
 
             var metaSummary = StvnFileRenameExecutor.resolveMetaIdentitySummary(file);
+            PsiElement anchorFacet = null;
+            StringLiteral anchorStringLit = null;
+            List<IntentionAction> stemActions = new ArrayList<>(4);
             if (nameFacet != null && nameFacet.getStringLiteral() != null) {
+                anchorFacet = nameFacet;
                 StringLiteral stringLit = nameFacet.getStringLiteral();
+                anchorStringLit = stringLit;
                 var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
                 if (decodedOpt.isPresent()) {
                     String declared = decodedOpt.get();
@@ -2331,11 +2320,11 @@ public final class StvnExternalAnnotator
                     boolean hasReservedSlot1 = dotParts.length >= 2 && dotParts[1].startsWith("stvn_");
                     boolean hasAtomicMetaFix = metaSummary != null && metaSummary.mismatchedComponentCount() >= 2;
                     if (hasAtomicMetaFix) {
-                        annotationBuilder = annotationBuilder.withFix(
+                        stemActions.add(
                             new StvnMatchMetaFileRenameQuickFix(nameFacet, metaSummary.targetFileName())
                         );
                     }
-                    annotationBuilder = annotationBuilder.withFix(
+                    stemActions.add(
                         new StvnStemMismatchInspection.AlignStemNameQuickFix(
                             stringLit,
                             dotParts[0],
@@ -2348,7 +2337,7 @@ public final class StvnExternalAnnotator
                             targetSb.append('.').append(dotParts[i]);
                         }
                         targetSb.append(ext);
-                        annotationBuilder = annotationBuilder.withFix(
+                        stemActions.add(
                             new StvnStemMismatchInspection.RenameFileToDeclaredNameQuickFix(
                                 stringLit,
                                 targetSb.toString(),
@@ -2358,7 +2347,9 @@ public final class StvnExternalAnnotator
                     }
                 }
             } else if (domainFacet != null && domainFacet.getStringLiteral() != null) {
+                anchorFacet = domainFacet;
                 StringLiteral stringLit = domainFacet.getStringLiteral();
+                anchorStringLit = stringLit;
                 var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(stringLit.getText(), true);
                 if (decodedOpt.isPresent()) {
                     String declared = decodedOpt.get();
@@ -2373,12 +2364,12 @@ public final class StvnExternalAnnotator
                     if (dotParts.length == 1) {
                         if (!emitReservedDomainError) {
                             if (hasAtomicMetaFix) {
-                                annotationBuilder = annotationBuilder.withFix(
+                                stemActions.add(
                                     new StvnMatchMetaFileRenameQuickFix(domainFacet, metaSummary.targetFileName())
                                 );
                             }
                             if (!isReservedDomain && isValidPosixDomain) {
-                                annotationBuilder = annotationBuilder.withFix(
+                                stemActions.add(
                                     new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(
                                         stringLit,
                                         dotParts[0] + "." + declared + ext,
@@ -2386,25 +2377,25 @@ public final class StvnExternalAnnotator
                                     )
                                 );
                             }
-                            annotationBuilder = annotationBuilder.withFix(
+                            stemActions.add(
                                 new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
                             );
                         } else {
-                            annotationBuilder = annotationBuilder.withFix(
+                            stemActions.add(
                                 new StvnStemMismatchInspection.RemoveMetaDomainQuickFix(domainFacet)
                             );
                         }
                     } else {
                         String stemDomain = dotParts[1];
                         if (hasAtomicMetaFix) {
-                            annotationBuilder = annotationBuilder.withFix(
+                            stemActions.add(
                                 new StvnMatchMetaFileRenameQuickFix(domainFacet, metaSummary.targetFileName())
                             );
                         }
                         if (!stemDomain.isEmpty()
                                 && !stemDomain.startsWith("stvn_")
                                 && POSIX_META_ID_PATTERN.matcher(stemDomain).matches()) {
-                            annotationBuilder = annotationBuilder.withFix(
+                            stemActions.add(
                                 new StvnStemMismatchInspection.AlignDomainWithStemQuickFix(
                                     stringLit,
                                     stemDomain,
@@ -2418,7 +2409,7 @@ public final class StvnExternalAnnotator
                                 targetSb.append('.').append(dotParts[i]);
                             }
                             targetSb.append(ext);
-                            annotationBuilder = annotationBuilder.withFix(
+                            stemActions.add(
                                 new StvnStemMismatchInspection.IncludeDomainInFilenameQuickFix(
                                     stringLit,
                                     targetSb.toString(),
@@ -2426,6 +2417,24 @@ public final class StvnExternalAnnotator
                                 )
                             );
                         }
+                    }
+                }
+            }
+            for (IntentionAction stemFix : stemActions) {
+                annotationBuilder = annotationBuilder.withFix(stemFix);
+            }
+            if (anchorFacet != null && anchorStringLit != null && !stemActions.isEmpty()) {
+                int fStart = anchorFacet.getTextRange().getStartOffset();
+                int sStart = anchorStringLit.getTextRange().getStartOffset();
+                if (sStart > fStart) {
+                    TextRange candidateKwRange = new TextRange(fStart, Math.max(fStart + 1, sStart - 1));
+                    boolean kwHasActiveError = activeErrorDiagnostics.stream().anyMatch(ed ->
+                        ed.startOffset() < candidateKwRange.getEndOffset()
+                            && ed.endOffset() > candidateKwRange.getStartOffset()
+                    );
+                    if (!kwHasActiveError) {
+                        deferredStemKeywordRangeRef[0] = candidateKwRange;
+                        deferredStemKeywordFixes.addAll(stemActions);
                     }
                 }
             }

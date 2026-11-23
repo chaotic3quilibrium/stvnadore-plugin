@@ -201,7 +201,6 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     }
                     registerFacetIsolatedWarning(
                         holder,
-                        file,
                         facet,
                         stringLit,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -265,9 +264,10 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     if (dotParts.length == 1) {
                         e038Fixes.add(new RemoveMetaDomainQuickFix(facet));
                     }
+                    LocalQuickFix[] baseE038Fixes = e038Fixes.toArray(LocalQuickFix.EMPTY_ARRAY);
                     LocalQuickFix[] finalE038Fixes = StvnMetadataOrderInspection.appendReorderFixIfDisordered(
                         facet,
-                        e038Fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+                        baseE038Fixes
                     );
                     holder.registerProblem(
                         stringLit,
@@ -282,14 +282,18 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     );
                     int fStart = facet.getTextRange().getStartOffset();
                     int sStart = stringLit.getTextRange().getStartOffset();
-                    if (isOnTheFly && sStart > fStart) {
+                    MetaElement metaEl = PsiTreeUtil.getParentOfType(facet, MetaElement.class, false);
+                    MetaBlock metaBlock = PsiTreeUtil.getParentOfType(facet, MetaBlock.class, false);
+                    boolean keywordOutOfOrder = metaEl != null && metaBlock != null
+                        && StvnMetadataOrderInspection.isMetaElementOutOfOrder(metaBlock, metaEl);
+                    if (isOnTheFly && sStart > fStart && !keywordOutOfOrder) {
                         holder.registerProblem(holder.getManager().createProblemDescriptor(
                             facet,
                             new TextRange(0, Math.max(1, sStart - 1 - fStart)),
                             "",
                             ProblemHighlightType.INFORMATION,
                             isOnTheFly,
-                            finalE038Fixes
+                            baseE038Fixes
                         ));
                     }
                     return;
@@ -318,7 +322,6 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                     fixes.add(new RemoveMetaDomainQuickFix(facet));
                     registerFacetIsolatedWarning(
                         holder,
-                        file,
                         facet,
                         stringLit,
                         StvnDiagnosticFormatter.formatPlugin(
@@ -358,7 +361,6 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
                         }
                         registerFacetIsolatedWarning(
                             holder,
-                            file,
                             facet,
                             stringLit,
                             StvnDiagnosticFormatter.formatPlugin(
@@ -375,59 +377,35 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
     }
 
     /**
-     * Registers a facet-scoped warning strictly isolated to {@code stringLit} on a single line.
-     * When an out-of-order {@code E008} error spans the enclosing {@link MetaElement}, expands the warning
-     * sub-range by a single adjacent horizontal whitespace character inside {@link MetaBlock} so IntelliJ
-     * {@code HighlightInfoUpdaterImpl.removeWarningsInsideErrors} retains the warning without highlighting
-     * {@code MetaBlock}, comments, or sibling facets.
+     * Registers a stem-mismatch warning strictly on {@code stringLit} ({@code [val.start, val.end)})
+     * and, when the facet keyword is in canonical order, attaches a silent {@code ""}
+     * {@link ProblemHighlightType#INFORMATION} quick-fix anchor on
+     * {@code [facet.start, Math.max(facet.start + 1, strLit.start - 1))}.
      */
     private static void registerFacetIsolatedWarning(
             @NotNull ProblemsHolder holder,
-            @NotNull PsiFile file,
             @NotNull PsiElement facet,
             @NotNull StringLiteral stringLit,
             @NotNull String message,
             LocalQuickFix @NotNull [] fixes
     ) {
-        MetaElement metaEl = PsiTreeUtil.getParentOfType(facet, MetaElement.class, false);
-        MetaBlock metaBlock = PsiTreeUtil.getParentOfType(facet, MetaBlock.class, false);
-        if (metaEl != null && metaBlock != null && isMetaElementOutOfOrder(metaBlock, metaEl)) {
-            TextRange blockRange = metaBlock.getTextRange();
-            TextRange facetRange = facet.getTextRange();
-            if (blockRange != null && facetRange != null) {
-                CharSequence docChars = file.getViewProvider().getContents();
-                int wStart = facetRange.getStartOffset();
-                int wEnd = facetRange.getEndOffset();
-                if (wStart > blockRange.getStartOffset() + 1
-                        && (docChars.charAt(wStart - 1) == ' ' || docChars.charAt(wStart - 1) == '\t')) {
-                    wStart--;
-                } else if (wEnd < blockRange.getEndOffset() - 1
-                        && (docChars.charAt(wEnd) == ' ' || docChars.charAt(wEnd) == '\t')) {
-                    wEnd++;
-                } else if (wStart > blockRange.getStartOffset() + 1) {
-                    wStart--;
-                }
-                TextRange relRange = new TextRange(
-                    wStart - blockRange.getStartOffset(),
-                    wEnd - blockRange.getStartOffset()
-                );
-                holder.registerProblem(holder.getManager().createProblemDescriptor(
-                    metaBlock,
-                    relRange,
-                    message,
-                    ProblemHighlightType.WARNING,
-                    holder.isOnTheFly(),
-                    fixes
-                ));
-                return;
-            }
-        }
         holder.registerProblem(stringLit, message, ProblemHighlightType.WARNING, fixes);
         if (holder.isOnTheFly()) {
-            PsiElement kwToken = facet.getFirstChild();
-            if (kwToken != null && kwToken != stringLit
-                    && kwToken.getTextRange().getEndOffset() < stringLit.getTextRange().getStartOffset()) {
-                holder.registerProblem(kwToken, "", ProblemHighlightType.INFORMATION, fixes);
+            int fStart = facet.getTextRange().getStartOffset();
+            int sStart = stringLit.getTextRange().getStartOffset();
+            MetaElement metaEl = PsiTreeUtil.getParentOfType(facet, MetaElement.class, false);
+            MetaBlock metaBlock = PsiTreeUtil.getParentOfType(facet, MetaBlock.class, false);
+            boolean keywordOutOfOrder = metaEl != null && metaBlock != null
+                && StvnMetadataOrderInspection.isMetaElementOutOfOrder(metaBlock, metaEl);
+            if (sStart > fStart && !keywordOutOfOrder) {
+                holder.registerProblem(holder.getManager().createProblemDescriptor(
+                    facet,
+                    new TextRange(0, Math.max(1, sStart - 1 - fStart)),
+                    "",
+                    ProblemHighlightType.INFORMATION,
+                    true,
+                    fixes
+                ));
             }
         }
     }
@@ -440,6 +418,12 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
         for (MetaElement el : metaBlock.getMetaElementList()) {
             if (el.getMetaNameFacet() != null) {
                 return el.getMetaNameFacet() == facet;
+            }
+            if (el.getMetaUnknownFacet() != null
+                    && el.getMetaUnknownFacet().getValueKeyword() != null
+                    && StvnVocabulary.FACET_KW_META_NAME.equals(
+                        el.getMetaUnknownFacet().getValueKeyword().getText().trim())) {
+                return false;
             }
         }
         return true;
@@ -454,27 +438,14 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             if (el.getMetaDomainFacet() != null) {
                 return el.getMetaDomainFacet() == facet;
             }
+            if (el.getMetaUnknownFacet() != null
+                    && el.getMetaUnknownFacet().getValueKeyword() != null
+                    && StvnVocabulary.FACET_KW_META_DOMAIN.equals(
+                        el.getMetaUnknownFacet().getValueKeyword().getText().trim())) {
+                return false;
+            }
         }
         return true;
-    }
-
-    private static boolean isMetaElementOutOfOrder(@NotNull MetaBlock metaBlock, @NotNull MetaElement target) {
-        int maxRankSeen = -1;
-        java.util.Set<Integer> seenTiers = new java.util.HashSet<>();
-        for (MetaElement element : metaBlock.getMetaElementList()) {
-            int rank = StvnMetadataOrderInspection.getMetaElementRank(element);
-            if (rank > 3 || !seenTiers.add(rank)) {
-                continue;
-            }
-            if (rank < maxRankSeen) {
-                if (element == target) {
-                    return true;
-                }
-            } else {
-                maxRankSeen = rank;
-            }
-        }
-        return false;
     }
 
     private static boolean isMetaBlockEmpty(@NotNull MetaBlock block) {
@@ -486,13 +457,30 @@ public final class StvnStemMismatchInspection extends LocalInspectionTool {
             if (el.getMetaDomainFacet() != null) {
                 return true;
             }
+            if (el.getMetaUnknownFacet() != null
+                    && el.getMetaUnknownFacet().getValueKeyword() != null
+                    && StvnVocabulary.FACET_KW_META_DOMAIN.equals(
+                        el.getMetaUnknownFacet().getValueKeyword().getText().trim())) {
+                return true;
+            }
         }
         return false;
     }
 
     private static boolean containsInFlightFacetTag(@NotNull MetaBlock block, @NotNull String tagText) {
+        for (MetaElement el : block.getMetaElementList()) {
+            if (el.getMetaUnknownFacet() != null
+                    && el.getMetaUnknownFacet().getValueKeyword() != null
+                    && tagText.equals(el.getMetaUnknownFacet().getValueKeyword().getText().trim())) {
+                return true;
+            }
+        }
         for (PsiElement child = block.getFirstChild(); child != null; child = child.getNextSibling()) {
-            if (child.getText().startsWith(tagText)) {
+            String trimmed = child.getText().trim();
+            if (trimmed.startsWith(tagText)
+                    && (trimmed.length() == tagText.length()
+                        || (!Character.isLetterOrDigit(trimmed.charAt(tagText.length()))
+                            && trimmed.charAt(tagText.length()) != '_'))) {
                 return true;
             }
         }

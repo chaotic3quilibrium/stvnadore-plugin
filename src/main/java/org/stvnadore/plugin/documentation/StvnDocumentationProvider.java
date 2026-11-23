@@ -2,6 +2,7 @@ package org.stvnadore.plugin.documentation;
 
 import com.intellij.lang.documentation.DocumentationProvider;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
@@ -53,10 +54,13 @@ import org.stvnadore.psi.ExplicitOptionValue;
 import org.stvnadore.psi.ExplicitUnionValue;
 import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.MapLiteral;
+import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetaDomainFacet;
+import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaKindValue;
 import org.stvnadore.psi.MetaNameFacet;
+import org.stvnadore.psi.MetaUnknownFacet;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.PackageElement;
@@ -65,6 +69,7 @@ import org.stvnadore.psi.PackagePath;
 import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeDefTarget;
@@ -173,21 +178,24 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
 
-        // 1. If originalElement resides within a metadata facet or kind value, generate facet card directly
-        if (originalElement != null) {
-            var metaKindVal = PsiTreeUtil.getParentOfType(originalElement, MetaKindValue.class, false);
-            if (metaKindVal != null) return buildTargetDocumentation(metaKindVal, originalElement);
-            var metaKind = PsiTreeUtil.getParentOfType(originalElement, MetaKindFacet.class, false);
-            if (metaKind != null) return buildTargetDocumentation(metaKind, originalElement);
-            var metaName = PsiTreeUtil.getParentOfType(originalElement, MetaNameFacet.class, false);
-            if (metaName != null) return buildTargetDocumentation(metaName, originalElement);
-            var metaDomain = PsiTreeUtil.getParentOfType(originalElement, MetaDomainFacet.class, false);
-            if (metaDomain != null) return buildTargetDocumentation(metaDomain, originalElement);
+        if (isTriviaOrBadElement(element) || (originalElement != null && isTriviaOrBadElement(originalElement))) {
+            return null;
         }
 
-        // 2. Direct facet element fallback
-        if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet
-            || element instanceof MetaKindFacet || element instanceof MetaKindValue || element instanceof MetadataEntry) {
+        // 1. If originalElement resides within a metadata facet keyword, identity literal, or kind value, render disjoint card
+        if (originalElement != null) {
+            var metaHoverTarget = resolveMetaHoverTarget(originalElement);
+            if (metaHoverTarget != null) {
+                return buildTargetDocumentation(metaHoverTarget, originalElement);
+            }
+        }
+
+        // 2. Direct facet / identity literal fallback
+        var directMetaTarget = resolveMetaHoverTarget(element);
+        if (directMetaTarget != null) {
+            return buildTargetDocumentation(directMetaTarget, originalElement);
+        }
+        if (element instanceof MetadataEntry) {
             return buildTargetDocumentation(element, originalElement);
         }
         if (isContainerDocumentationSuppressionTarget(element) || (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement))) {
@@ -691,14 +699,24 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
-        if (target instanceof MetaNameFacet facet) {
+        if (target instanceof StringLiteral metaStrLit
+                && (metaStrLit.getParent() instanceof MetaNameFacet || metaStrLit.getParent() instanceof MetaDomainFacet)) {
+            return renderMetaIdentityStringValueCard(metaStrLit);
+        }
+
+        MetaNameFacet nameFacet = target instanceof MetaNameFacet mnf
+            ? mnf
+            : (target.getNode() != null
+                && target.getNode().getElementType() == StvnTypes.KW_META_NAME
+                && target.getParent() instanceof MetaNameFacet mnf ? mnf : null);
+        if (nameFacet != null) {
             String baseDoc = null;
             try {
-                var containingFile = facet.getContainingFile();
+                var containingFile = nameFacet.getContainingFile();
                 var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
                     ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnPosixId64")
-                    : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
-                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+                    : StvnPreludeBridge.resolvePreludeTypeDefinition(nameFacet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, null) : null;
             } catch (Exception ignored) {
             }
             return """
@@ -708,14 +726,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """ + (baseDoc != null ? baseDoc : "<b>Underlying Structure:</b> <code>{ #maxSize 64 } :PosixId</code>");
         }
 
-        if (target instanceof MetaDomainFacet facet) {
+        MetaDomainFacet domainFacet = target instanceof MetaDomainFacet mdf
+            ? mdf
+            : (target.getNode() != null
+                && target.getNode().getElementType() == StvnTypes.KW_META_DOMAIN
+                && target.getParent() instanceof MetaDomainFacet mdf ? mdf : null);
+        if (domainFacet != null) {
             String baseDoc = null;
             try {
-                var containingFile = facet.getContainingFile();
+                var containingFile = domainFacet.getContainingFile();
                 var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
                     ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnPosixId64")
-                    : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
-                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+                    : StvnPreludeBridge.resolvePreludeTypeDefinition(domainFacet.getProject(), ":org/stvnadore/prelude/meta/StvnPosixId64");
+                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, null) : null;
             } catch (Exception ignored) {
             }
             return """
@@ -725,14 +748,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 """ + (baseDoc != null ? baseDoc : "<b>Underlying Structure:</b> <code>{ #maxSize 64 } :PosixId</code>");
         }
 
-        if (target instanceof MetaKindFacet facet) {
+        MetaKindFacet kindFacet = target instanceof MetaKindFacet mkf
+            ? mkf
+            : (target.getNode() != null
+                && target.getNode().getElementType() == StvnTypes.KW_META_KIND
+                && target.getParent() instanceof MetaKindFacet mkf ? mkf : null);
+        if (kindFacet != null) {
             String baseDoc = null;
             try {
-                var containingFile = facet.getContainingFile();
+                var containingFile = kindFacet.getContainingFile();
                 var preludeDef = StvnPreludeBridge.isPreludeFile(containingFile)
                     ? StvnPreludeBridge.resolvePreludeTypeDefinition(containingFile, ":org/stvnadore/prelude/meta/StvnDocumentKind")
-                    : StvnPreludeBridge.resolvePreludeTypeDefinition(facet.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
-                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, originalElement) : null;
+                    : StvnPreludeBridge.resolvePreludeTypeDefinition(kindFacet.getProject(), ":org/stvnadore/prelude/meta/StvnDocumentKind");
+                baseDoc = preludeDef != null ? buildTargetDocumentation(preludeDef, null) : null;
             } catch (Exception ignored) {
             }
             return """
@@ -3831,14 +3859,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (originalElement != null) {
-            var metaKindVal = PsiTreeUtil.getParentOfType(originalElement, MetaKindValue.class);
-            if (metaKindVal != null) return metaKindVal;
-            var metaKind = PsiTreeUtil.getParentOfType(originalElement, MetaKindFacet.class);
-            if (metaKind != null) return metaKind;
-            var metaName = PsiTreeUtil.getParentOfType(originalElement, MetaNameFacet.class);
-            if (metaName != null) return metaName;
-            var metaDomain = PsiTreeUtil.getParentOfType(originalElement, MetaDomainFacet.class);
-            if (metaDomain != null) return metaDomain;
+            if (isTriviaOrBadElement(originalElement)) {
+                return null;
+            }
+            var metaHoverTarget = resolveMetaHoverTarget(originalElement);
+            if (metaHoverTarget != null) {
+                return metaHoverTarget;
+            }
             var metaEntry = PsiTreeUtil.getParentOfType(originalElement, MetadataEntry.class, false);
             if (metaEntry != null) return metaEntry;
 
@@ -3910,26 +3937,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             @NotNull PsiFile file,
             @Nullable PsiElement contextElement,
             int targetOffset) {
-        if (contextElement == null) {
+        if (contextElement == null || isTriviaOrBadElement(contextElement)) {
             return null;
         }
 
-        // 1. FIRST PRIORITY: Evaluate metadata facets before any container suppression filters
-        var metaKindVal = PsiTreeUtil.getParentOfType(contextElement, MetaKindValue.class, false);
-        if (metaKindVal != null) {
-            return metaKindVal;
-        }
-        var metaKind = PsiTreeUtil.getParentOfType(contextElement, MetaKindFacet.class, false);
-        if (metaKind != null) {
-            return metaKind;
-        }
-        var metaName = PsiTreeUtil.getParentOfType(contextElement, MetaNameFacet.class, false);
-        if (metaName != null) {
-            return metaName;
-        }
-        var metaDomain = PsiTreeUtil.getParentOfType(contextElement, MetaDomainFacet.class, false);
-        if (metaDomain != null) {
-            return metaDomain;
+        // 1. FIRST PRIORITY: Resolve disjoint :meta keyword leaf vs. value literal targets
+        var metaHoverTarget = resolveMetaHoverTarget(contextElement);
+        if (metaHoverTarget != null) {
+            return metaHoverTarget;
         }
 
         // 2. Container suppression check for non-metadata elements
@@ -4143,7 +4158,177 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         return firstChild != null && firstChild.getText().equals(StvnVocabulary.TYPE_EITHER);
     }
 
+    private static final Pattern POSIX_META_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
+
+    private static boolean isTriviaOrBadElement(@Nullable PsiElement element) {
+        if (element == null) {
+            return false;
+        }
+        if (element instanceof PsiWhiteSpace
+                || element instanceof PsiComment
+                || PsiTreeUtil.getParentOfType(element, PsiComment.class, false) != null
+                || element instanceof PsiErrorElement) {
+            return true;
+        }
+        var node = element.getNode();
+        return node != null && node.getElementType() == TokenType.BAD_CHARACTER;
+    }
+
+    private static @Nullable PsiElement resolveMetaHoverTarget(@Nullable PsiElement element) {
+        if (element == null || isTriviaOrBadElement(element)) {
+            return null;
+        }
+        var metaKindVal = PsiTreeUtil.getParentOfType(element, MetaKindValue.class, false);
+        if (metaKindVal != null) {
+            return metaKindVal;
+        }
+        var metaStrLit = element instanceof StringLiteral sl
+            ? sl
+            : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
+        if (metaStrLit != null
+                && (metaStrLit.getParent() instanceof MetaNameFacet || metaStrLit.getParent() instanceof MetaDomainFacet)) {
+            return metaStrLit;
+        }
+        if (element instanceof MetaNameFacet || element instanceof MetaDomainFacet || element instanceof MetaKindFacet) {
+            return element;
+        }
+        var node = element.getNode();
+        if (node != null) {
+            var elemType = node.getElementType();
+            if ((elemType == StvnTypes.KW_META_NAME && element.getParent() instanceof MetaNameFacet)
+                    || (elemType == StvnTypes.KW_META_DOMAIN && element.getParent() instanceof MetaDomainFacet)
+                    || (elemType == StvnTypes.KW_META_KIND && element.getParent() instanceof MetaKindFacet)) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    private static String renderMetaIdentityStringValueCard(StringLiteral strLit) {
+        boolean isNameFacet = strLit.getParent() instanceof MetaNameFacet;
+        String facetKw = isNameFacet ? StvnVocabulary.FACET_KW_META_NAME : StvnVocabulary.FACET_KW_META_DOMAIN;
+        String headerTitle = isNameFacet ? "Document Name Value" : "Document Domain Value";
+        String rawText = strLit.getText().trim();
+
+        var sb = new StringBuilder();
+        sb.append("<b>").append(headerTitle).append(":</b> <code>")
+            .append(escapeHtmlBody(rawText)).append("</code><br/>");
+        sb.append("<nobr><b>Governing Facet:</b> <code>").append(facetKw)
+            .append("</code> &rarr; <code>:org/stvnadore/prelude/meta/StvnPosixId64</code> ")
+            .append("(<code>^[a-zA-Z0-9_-]{1,64}$</code>)</nobr><br/><hr/>");
+
+        boolean isMalformedFence = strLit.getNode().findChildByType(StvnTypes.MALFORMED_FENCE) != null;
+        Optional<String> decodedOpt = isMalformedFence
+            ? Optional.empty()
+            : StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, true);
+        if (decodedOpt.isEmpty()) {
+            sb.append("<b>Identity Status:</b> Malformed string literal; must decode to an atomic POSIX identifier ")
+                .append("(<code>^[a-zA-Z0-9_-]{1,64}$</code>).");
+            return sb.toString();
+        }
+
+        String decoded = decodedOpt.get();
+        sb.append("<b>Character Length:</b> ").append(decoded.length()).append(" / 64<br/>");
+
+        if (!isPrimaryMetaFacetOccurrence(strLit, isNameFacet)) {
+            sb.append("<b>Identity Status:</b> Duplicate <code>").append(facetKw)
+                .append("</code> facet inside <code>").append(StvnVocabulary.KEYWORD_META)
+                .append("</code>; only the first declaration governs document identity.");
+            return sb.toString();
+        }
+
+        if (!POSIX_META_ID_PATTERN.matcher(decoded).matches()) {
+            sb.append("<b>Identity Status:</b> Violates atomic POSIX identifier pattern ")
+                .append("<code>^[a-zA-Z0-9_-]{1,64}$</code>.");
+            return sb.toString();
+        }
+
+        PsiFile file = strLit.getContainingFile();
+        String fileName = file != null ? file.getName() : "";
+        boolean isSystemFile = file != null && (StvnPreludeBridge.isPreludeFile(file)
+            || fileName.contains(".stvn_core.")
+            || fileName.contains(".stvn_ir.")
+            || fileName.contains(".stvn_cas."));
+        if (!isNameFacet && decoded.startsWith("stvn_") && !isSystemFile) {
+            sb.append("<b>Filename Stem Slot 1:</b> Prohibits reserved <code>stvn_</code> system domain prefix on user documents.");
+            return sb.toString();
+        }
+
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot <= 0) {
+            sb.append("<b>Identity Status:</b> Valid atomic POSIX identifier <code>")
+                .append(escapeHtmlBody(decoded)).append("</code>.");
+            return sb.toString();
+        }
+
+        String ext = fileName.substring(lastDot);
+        String[] dotParts = fileName.substring(0, lastDot).split("\\.", -1);
+        if (isNameFacet) {
+            String stem0 = dotParts.length > 0 ? dotParts[0] : "";
+            if (decoded.equals(stem0)) {
+                sb.append("<b>Filename Stem Slot 0:</b> Matches <code>")
+                    .append(escapeHtmlBody(stem0)).append("</code> in <code>")
+                    .append(escapeHtmlBody(fileName)).append("</code>.");
+            } else {
+                sb.append("<b>Filename Stem Slot 0:</b> Expected <code>")
+                    .append(escapeHtmlBody(stem0)).append("</code> from <code>")
+                    .append(escapeHtmlBody(fileName)).append("</code> (declared <code>")
+                    .append(escapeHtmlBody(decoded)).append("</code>).");
+            }
+        } else {
+            if (dotParts.length == 1) {
+                String expectedTwoStem = dotParts[0] + "." + decoded + ext;
+                sb.append("<b>Filename Stem Slot 1:</b> Omitted in 1-stem filename <code>")
+                    .append(escapeHtmlBody(fileName)).append("</code> (expected <code>")
+                    .append(escapeHtmlBody(expectedTwoStem)).append("</code> or omit <code>")
+                    .append(StvnVocabulary.FACET_KW_META_DOMAIN).append("</code>).");
+            } else {
+                String stem1 = dotParts[1];
+                if (decoded.equals(stem1)) {
+                    sb.append("<b>Filename Stem Slot 1:</b> Matches <code>")
+                        .append(escapeHtmlBody(stem1)).append("</code> in <code>")
+                        .append(escapeHtmlBody(fileName)).append("</code>.");
+                } else {
+                    sb.append("<b>Filename Stem Slot 1:</b> Expected <code>")
+                        .append(escapeHtmlBody(stem1)).append("</code> from <code>")
+                        .append(escapeHtmlBody(fileName)).append("</code> (declared <code>")
+                        .append(escapeHtmlBody(decoded)).append("</code>).");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isPrimaryMetaFacetOccurrence(StringLiteral strLit, boolean isNameFacet) {
+        if (!StvnMetaTemplateUtil.isPrimaryMetaEntry(strLit)) {
+            return false;
+        }
+        PsiElement parentFacet = strLit.getParent();
+        MetaBlock metaBlock = PsiTreeUtil.getParentOfType(strLit, MetaBlock.class, false);
+        if (metaBlock == null || parentFacet == null) {
+            return true;
+        }
+        String expectedKw = isNameFacet ? StvnVocabulary.FACET_KW_META_NAME : StvnVocabulary.FACET_KW_META_DOMAIN;
+        for (MetaElement el : metaBlock.getMetaElementList()) {
+            if (isNameFacet && el.getMetaNameFacet() != null) {
+                return el.getMetaNameFacet() == parentFacet;
+            }
+            if (!isNameFacet && el.getMetaDomainFacet() != null) {
+                return el.getMetaDomainFacet() == parentFacet;
+            }
+            MetaUnknownFacet unk = el.getMetaUnknownFacet();
+            if (unk != null && unk.getValueKeyword() != null
+                    && expectedKw.equals(unk.getValueKeyword().getText().trim())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean isContainerDocumentationSuppressionTarget(@Nullable PsiElement element) {
+        if (isTriviaOrBadElement(element)) {
+            return true;
+        }
         if (element != null) {
             var rawSigil = element.getText().trim();
             if (rawSigil.equals(StvnVocabulary.SIGIL_VALUE) || rawSigil.equals(StvnVocabulary.SIGIL_TYPIC) || rawSigil.equals("/")) {

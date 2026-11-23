@@ -415,6 +415,17 @@ public final class StvnStemMismatchInspectionTest extends BasePlatformTestCase {
             .toList();
         assertEquals("Valid #name W001 warning must survive co-located E008 while reserved #domain suppresses W001",
             1, w001Warnings.size());
+        assertEquals("W001 must pin strictly to StringLiteral without leading whitespace bleed",
+            "\"gauntlet_v6_stage1_wrong_stem_id\"", w001Warnings.get(0).getText());
+
+        var metaOrderErrors = diagHighlights.stream()
+            .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+                && h.getDescription() != null
+                && h.getDescription().contains("ERR_FACET_ORDER_VIOLATION"))
+            .toList();
+        assertEquals("Expected 2 keyword-pinned :meta E008 errors", 2, metaOrderErrors.size());
+        assertEquals("#domain", metaOrderErrors.get(0).getText());
+        assertEquals("#name", metaOrderErrors.get(1).getText());
 
         // 1. Caret on ':meta {' opening brace: zero #name or #domain quick-fixes
         int lbraceOffset = fileText.indexOf(":meta {") + ":meta ".length();

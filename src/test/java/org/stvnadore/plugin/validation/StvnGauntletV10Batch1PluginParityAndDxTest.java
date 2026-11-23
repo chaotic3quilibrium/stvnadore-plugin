@@ -217,11 +217,21 @@ public final class StvnGauntletV10Batch1PluginParityAndDxTest extends BasePlatfo
                 """;
             myFixture.configureByText("actual_file_stem.stvn", outOfOrderValidName);
             List<HighlightInfo> mixedMode = collectDiagnosticHighlights(myFixture.doHighlighting());
-            assertEquals("W001 must survive Core E008 containment even when StvnMetadataOrder is disabled: " + mixedMode,
-                1L,
-                mixedMode.stream().filter(h -> h.getSeverity() == HighlightSeverity.WARNING
+            List<HighlightInfo> mixedW001 = mixedMode.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.WARNING
                     && h.getDescription() != null
-                    && h.getDescription().contains("W001-WARN_DOCUMENT_NAME_MISMATCH")).count());
+                    && h.getDescription().contains("W001-WARN_DOCUMENT_NAME_MISMATCH"))
+                .toList();
+            assertEquals("W001 must remain disjoint from Core keyword-pinned E008 when StvnMetadataOrder is disabled: " + mixedMode,
+                1, mixedW001.size());
+            assertEquals("\"mismatched_valid_name\"", mixedW001.get(0).getText());
+            List<HighlightInfo> mixedE008 = mixedMode.stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.ERROR
+                    && h.getDescription() != null
+                    && h.getDescription().contains("E008-ERR_FACET_ORDER_VIOLATION"))
+                .toList();
+            assertEquals(1, mixedE008.size());
+            assertEquals("#name", mixedE008.get(0).getText());
         } finally {
             myFixture.disableInspections(new StvnStemMismatchInspection());
         }
@@ -263,12 +273,16 @@ public final class StvnGauntletV10Batch1PluginParityAndDxTest extends BasePlatfo
                 int metaKw = disorderedMetaWithKindE031.indexOf(":meta") + 2;
                 int metaLBrace = disorderedMetaWithKindE031.indexOf("{", metaKw);
                 int domainPos = disorderedMetaWithKindE031.indexOf("#domain \"cryo_biobank\"") + 3;
+                int domainValPos = disorderedMetaWithKindE031.indexOf("\"cryo_biobank\"") + 3;
                 int namePos = disorderedMetaWithKindE031.indexOf("#name \"vial_custody_manifest\"") + 3;
+                int nameValPos = disorderedMetaWithKindE031.indexOf("\"vial_custody_manifest\"") + 3;
                 int kindPos = disorderedMetaWithKindE031.indexOf("#kind #BODY_INCLUDE") + 3;
                 int kindValPos = disorderedMetaWithKindE031.indexOf("#BODY_INCLUDE") + 4;
                 int metaRBrace = disorderedMetaWithKindE031.indexOf("}", kindValPos);
 
-                for (int offset : new int[]{metaKw, metaLBrace, domainPos, namePos, kindPos, kindValPos, metaRBrace}) {
+                for (int offset : new int[]{
+                    metaKw, metaLBrace, domainPos, domainValPos, namePos, nameValPos, kindPos, kindValPos, metaRBrace
+                }) {
                     assertSingleIntentionWithPreview(offset, metaReorderLabel);
                 }
 

@@ -15,8 +15,12 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetaBlock;
+import org.stvnadore.psi.MetaDomainFacet;
 import org.stvnadore.psi.MetaElement;
 import org.stvnadore.psi.MetaEntry;
+import org.stvnadore.psi.MetaKindFacet;
+import org.stvnadore.psi.MetaNameFacet;
+import org.stvnadore.psi.MetaUnknownFacet;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
@@ -99,16 +103,22 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                 for (MetaElement element : elements) {
                     int rank = getMetaElementRank(element);
                     if (rank > 3) {
+                        int unknownTier = extractUnknownMetaFacetTier(element.getMetaUnknownFacet());
+                        if (unknownTier > 0) {
+                            seenTiers.add(unknownTier);
+                        }
                         continue;
                     }
                     if (!seenTiers.add(rank)) {
+                        maxRankSeen = Math.max(maxRankSeen, rank);
                         continue;
                     }
                     if (rank < maxRankSeen) {
                         flaggedMetaElements.add(element);
                         String keyword = extractMetaElementKeyword(element);
+                        PsiElement kwTarget = resolveMetaElementKeywordPsi(element);
                         holder.registerProblem(
-                            element,
+                            kwTarget,
                             StvnDiagnosticFormatter.formatPlugin(
                                 "Metadata facet '" + keyword + "' violates 3-tier monotonic progression ("
                                     + StvnVocabulary.FACET_KW_META_NAME + " -> "
@@ -124,13 +134,17 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     }
                 }
                 if (!flaggedMetaElements.isEmpty() && isOnTheFly) {
-                    String anchorMsg = reorderMetaFix.getFamilyName();
-                    registerChildTokenAnchor(holder, metaEntry.getNode(), StvnTypes.KW_META, anchorMsg, reorderMetaFix);
-                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.LBRACE, anchorMsg, reorderMetaFix);
-                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.RBRACE, anchorMsg, reorderMetaFix);
+                    registerChildTokenAnchor(holder, metaEntry.getNode(), StvnTypes.KW_META, "", reorderMetaFix);
+                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.LBRACE, "", reorderMetaFix);
+                    registerChildTokenAnchor(holder, metaBlock.getNode(), StvnTypes.RBRACE, "", reorderMetaFix);
                     for (MetaElement element : elements) {
                         if (!flaggedMetaElements.contains(element)) {
-                            holder.registerProblem(element, anchorMsg, ProblemHighlightType.INFORMATION, reorderMetaFix);
+                            holder.registerProblem(element, "", ProblemHighlightType.INFORMATION, reorderMetaFix);
+                        } else {
+                            PsiElement valTarget = resolveMetaElementValuePsi(element);
+                            if (valTarget != null) {
+                                holder.registerProblem(valTarget, "", ProblemHighlightType.INFORMATION, reorderMetaFix);
+                            }
                         }
                     }
                 }
@@ -181,16 +195,15 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     }
                 }
                 if (!flaggedEntries.isEmpty() && isOnTheFly && reorderFacetFix != null) {
-                    String anchorMsg = reorderFacetFix.getFamilyName();
                     PsiElement ownerAnchor = resolveMetadataMapOwnerTarget(metadataMap);
                     if (ownerAnchor != null) {
-                        holder.registerProblem(ownerAnchor, anchorMsg, ProblemHighlightType.INFORMATION, reorderFacetFix);
+                        holder.registerProblem(ownerAnchor, "", ProblemHighlightType.INFORMATION, reorderFacetFix);
                     }
-                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.LBRACE, anchorMsg, reorderFacetFix);
-                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.RBRACE, anchorMsg, reorderFacetFix);
+                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.LBRACE, "", reorderFacetFix);
+                    registerChildTokenAnchor(holder, metadataMap.getNode(), StvnTypes.RBRACE, "", reorderFacetFix);
                     for (MetadataEntry entry : entries) {
                         if (!flaggedEntries.contains(entry)) {
-                            holder.registerProblem(entry, anchorMsg, ProblemHighlightType.INFORMATION, reorderFacetFix);
+                            holder.registerProblem(entry, "", ProblemHighlightType.INFORMATION, reorderFacetFix);
                         }
                     }
                 }
@@ -327,9 +340,18 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             return false;
         }
         int maxRank = -1;
+        Set<Integer> seenTiers = new HashSet<>();
         for (MetaElement element : elements) {
             int rank = getMetaElementRank(element);
             if (rank > 3) {
+                int unknownTier = extractUnknownMetaFacetTier(element.getMetaUnknownFacet());
+                if (unknownTier > 0) {
+                    seenTiers.add(unknownTier);
+                }
+                continue;
+            }
+            if (!seenTiers.add(rank)) {
+                maxRank = Math.max(maxRank, rank);
                 continue;
             }
             if (rank < maxRank) {
@@ -338,6 +360,128 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
             maxRank = rank;
         }
         return false;
+    }
+
+    /**
+     * Determines whether a specific {@link MetaElement} violates 3-tier monotonic order
+     * ({@code #name -> #domain -> #kind}) within {@code metaBlock}.
+     *
+     * @param metaBlock enclosing {@code :meta} block
+     * @param target    target {@link MetaElement} to inspect
+     * @return {@code true} if {@code target}'s keyword token receives {@code E008-ERR_FACET_ORDER_VIOLATION}
+     */
+    public static boolean isMetaElementOutOfOrder(MetaBlock metaBlock, MetaElement target) {
+        int maxRankSeen = -1;
+        Set<Integer> seenTiers = new HashSet<>();
+        for (MetaElement element : metaBlock.getMetaElementList()) {
+            int rank = getMetaElementRank(element);
+            if (rank > 3) {
+                int unknownTier = extractUnknownMetaFacetTier(element.getMetaUnknownFacet());
+                if (unknownTier > 0) {
+                    seenTiers.add(unknownTier);
+                }
+                if (element.equals(target)) {
+                    return false;
+                }
+                continue;
+            }
+            if (!seenTiers.add(rank)) {
+                maxRankSeen = Math.max(maxRankSeen, rank);
+                if (element.equals(target)) {
+                    return false;
+                }
+                continue;
+            }
+            boolean outOfOrder = rank < maxRankSeen;
+            if (element.equals(target)) {
+                return outOfOrder;
+            }
+            if (!outOfOrder) {
+                maxRankSeen = rank;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Resolves the leading facet keyword leaf PSI element ({@code KW_META_NAME}, {@code KW_META_DOMAIN},
+     * or {@code KW_META_KIND}) of a {@link MetaElement} for exact {@code [kw.start, kw.end)} pinning.
+     *
+     * @param element {@code :meta} entry PSI node
+     * @return keyword leaf PSI element, falling back null-safely to the first child or {@code element}
+     */
+    public static @NotNull PsiElement resolveMetaElementKeywordPsi(MetaElement element) {
+        MetaNameFacet nameFacet = element.getMetaNameFacet();
+        if (nameFacet != null) {
+            ASTNode kwNode = nameFacet.getNode().findChildByType(StvnTypes.KW_META_NAME);
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            if (nameFacet.getFirstChild() != null) {
+                return nameFacet.getFirstChild();
+            }
+        }
+        MetaDomainFacet domainFacet = element.getMetaDomainFacet();
+        if (domainFacet != null) {
+            ASTNode kwNode = domainFacet.getNode().findChildByType(StvnTypes.KW_META_DOMAIN);
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            if (domainFacet.getFirstChild() != null) {
+                return domainFacet.getFirstChild();
+            }
+        }
+        MetaKindFacet kindFacet = element.getMetaKindFacet();
+        if (kindFacet != null) {
+            ASTNode kwNode = kindFacet.getNode().findChildByType(StvnTypes.KW_META_KIND);
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            if (kindFacet.getFirstChild() != null) {
+                return kindFacet.getFirstChild();
+            }
+        }
+        return element.getFirstChild() != null ? element.getFirstChild() : element;
+    }
+
+    /**
+     * Resolves the value child PSI element ({@code StringLiteral} or {@code MetaKindValue}) of a
+     * {@link MetaElement}, or {@code null} when no typed value child exists.
+     *
+     * @param element {@code :meta} entry PSI node
+     * @return value child PSI element, or {@code null}
+     */
+    public static @Nullable PsiElement resolveMetaElementValuePsi(MetaElement element) {
+        MetaNameFacet nameFacet = element.getMetaNameFacet();
+        if (nameFacet != null) {
+            return nameFacet.getStringLiteral();
+        }
+        MetaDomainFacet domainFacet = element.getMetaDomainFacet();
+        if (domainFacet != null) {
+            return domainFacet.getStringLiteral();
+        }
+        MetaKindFacet kindFacet = element.getMetaKindFacet();
+        if (kindFacet != null) {
+            return kindFacet.getMetaKindValue();
+        }
+        return null;
+    }
+
+    private static int extractUnknownMetaFacetTier(@Nullable MetaUnknownFacet unk) {
+        if (unk == null || unk.getValueKeyword() == null) {
+            return 0;
+        }
+        String unkTag = unk.getValueKeyword().getText().trim();
+        if (StvnVocabulary.FACET_KW_META_NAME.equals(unkTag)) {
+            return 1;
+        }
+        if (StvnVocabulary.FACET_KW_META_DOMAIN.equals(unkTag)) {
+            return 2;
+        }
+        if (StvnVocabulary.FACET_KW_META_KIND.equals(unkTag)) {
+            return 3;
+        }
+        return 0;
     }
 
     /**

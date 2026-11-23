@@ -19,6 +19,7 @@ import org.stvnadore.plugin.StvnFileType;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.StvnStringCapacityInspection;
 import org.stvnadore.psi.*;
 
@@ -64,7 +65,8 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
                 domainFacet = PsiTreeUtil.getParentOfType(prev, MetaDomainFacet.class);
               }
             }
-            if (domainFacet != null || isCaretInDomainFacet(position)) {
+            if ((domainFacet != null && !isCaretOnMetaFacetKeyword(position, domainFacet))
+                || isCaretInDomainFacet(position)) {
               var project = parameters.getOriginalFile().getProject();
               var candidateDomains = collectWorkspaceDomains(project);
               for (var domain : candidateDomains) {
@@ -82,6 +84,12 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
             if (position instanceof PsiComment
                 || PsiTreeUtil.getParentOfType(position, PsiComment.class) != null
                 || PsiTreeUtil.getParentOfType(position, VariantList.class) != null) {
+              return;
+            }
+
+            var enclosingMetaBlock = resolveEnclosingOrPrecedingMetaBlock(position);
+            if (enclosingMetaBlock != null) {
+              populateRootMetaBlockCompletions(position, enclosingMetaBlock, parameters, result);
               return;
             }
 
@@ -953,13 +961,178 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
     }
   }
 
-  private static boolean isCaretInDomainFacet(PsiElement position) {
-    var metaBlock = PsiTreeUtil.getParentOfType(position, MetaBlock.class);
-    if (metaBlock != null) {
-      var prev = PsiTreeUtil.prevVisibleLeaf(position);
-      if (prev != null && StvnVocabulary.FACET_KW_META_DOMAIN.equals(prev.getText())) {
-        return true;
+  private static void populateRootMetaBlockCompletions(
+      PsiElement position,
+      MetaBlock metaBlock,
+      CompletionParameters parameters,
+      CompletionResultSet result
+  ) {
+    var rbrace = metaBlock.getNode().findChildByType(StvnTypes.RBRACE);
+    if (rbrace != null && position.getTextOffset() > rbrace.getStartOffset()) {
+      return;
+    }
+    var fileName = parameters.getOriginalFile().getName();
+    var expectedKind = StvnMetaTemplateUtil.resolveExpectedKind(fileName);
+    var prefix = result.getPrefixMatcher().getPrefix();
+    var sigilMatcher = result.getPrefixMatcher();
+    if (!prefix.isEmpty() && !prefix.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+      sigilMatcher = sigilMatcher.cloneWithPrefix(StvnVocabulary.SIGIL_VALUE + prefix);
+    }
+
+    // 1. In-flight '#kind <caret>' or '#kind #<caret>' or inside MetaKindValue
+    var kindFacet = PsiTreeUtil.getParentOfType(position, MetaKindFacet.class);
+    boolean inKindArg = (kindFacet != null && !isCaretOnMetaFacetKeyword(position, kindFacet))
+        || isCaretAfterMetaFacetKeyword(position, metaBlock, StvnVocabulary.FACET_KW_META_KIND);
+    if (inKindArg) {
+      var kindResult = result.withPrefixMatcher(sigilMatcher);
+      String[] kinds = {
+          StvnVocabulary.KIND_KW_BODY,
+          StvnVocabulary.KIND_KW_DEFS,
+          StvnVocabulary.KIND_KW_BODY_INCLUDE,
+          StvnVocabulary.KIND_KW_DEFS_INCLUDE
+      };
+      for (String kind : kinds) {
+        double priority = kind.equals(expectedKind) ? 100.0 : 90.0;
+        var item = LookupElementBuilder.create(kind)
+            .withIcon(AllIcons.Nodes.Enum)
+            .withBoldness(kind.equals(expectedKind))
+            .withTypeText("Document Kind", true)
+            .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE);
+        kindResult.addElement(PrioritizedLookupElement.withPriority(item, priority));
       }
+      return;
+    }
+
+    // 2. In-flight '#name "<caret>"' or '#name <caret>'
+    var nameFacet = PsiTreeUtil.getParentOfType(position, MetaNameFacet.class);
+    boolean inNameArg = (nameFacet != null && !isCaretOnMetaFacetKeyword(position, nameFacet))
+        || isCaretAfterMetaFacetKeyword(position, metaBlock, StvnVocabulary.FACET_KW_META_NAME);
+    if (inNameArg) {
+      String slot0 = extractStemSlot(fileName, 0, "document");
+      boolean insideStringLit = PsiTreeUtil.getParentOfType(position, StringLiteral.class) != null;
+      if (insideStringLit) {
+        result.addElement(LookupElementBuilder.create(slot0)
+            .withIcon(AllIcons.Nodes.Artifact)
+            .withTypeText("Document Name", true));
+      } else {
+        result.addElement(LookupElementBuilder.create("\"" + slot0 + "\"")
+            .withIcon(AllIcons.Nodes.Artifact)
+            .withTypeText("Document Name", true)
+            .withInsertHandler(StvnMetadataFacetInsertHandler.INSTANCE));
+      }
+      return;
+    }
+
+    // 3. Facet keyword slot inside ':meta { <caret> }' or ':meta { #<caret> }'
+    Set<String> declaredMetaFacets = new HashSet<>();
+    for (MetaElement el : metaBlock.getMetaElementList()) {
+      if (PsiTreeUtil.isAncestor(el, position, false)) {
+        continue;
+      }
+      if (el.getMetaNameFacet() != null) {
+        declaredMetaFacets.add(StvnVocabulary.FACET_KW_META_NAME);
+      } else if (el.getMetaDomainFacet() != null) {
+        declaredMetaFacets.add(StvnVocabulary.FACET_KW_META_DOMAIN);
+      } else if (el.getMetaKindFacet() != null) {
+        declaredMetaFacets.add(StvnVocabulary.FACET_KW_META_KIND);
+      } else if (el.getMetaUnknownFacet() != null && el.getMetaUnknownFacet().getValueKeyword() != null) {
+        declaredMetaFacets.add(el.getMetaUnknownFacet().getValueKeyword().getText().trim());
+      }
+    }
+
+    var facetResult = result.withPrefixMatcher(sigilMatcher);
+    String slot0 = extractStemSlot(fileName, 0, "document");
+    String slot1 = extractStemSlot(fileName, 1, "domain");
+    if (!declaredMetaFacets.contains(StvnVocabulary.FACET_KW_META_NAME)) {
+      facetResult.addElement(PrioritizedLookupElement.withPriority(
+          createFacetLookup(
+              StvnVocabulary.FACET_KW_META_NAME + " \"" + slot0 + "\"",
+              false,
+              "Root Metadata Facet",
+              null,
+              StvnMetadataFacetInsertHandler.INSTANCE
+          ),
+          100.0
+      ));
+    }
+    if (!declaredMetaFacets.contains(StvnVocabulary.FACET_KW_META_DOMAIN)) {
+      facetResult.addElement(PrioritizedLookupElement.withPriority(
+          createFacetLookup(
+              StvnVocabulary.FACET_KW_META_DOMAIN + " \"" + slot1 + "\"",
+              false,
+              "Root Metadata Facet",
+              null,
+              StvnMetadataFacetInsertHandler.INSTANCE
+          ),
+          95.0
+      ));
+    }
+    if (!declaredMetaFacets.contains(StvnVocabulary.FACET_KW_META_KIND)) {
+      facetResult.addElement(PrioritizedLookupElement.withPriority(
+          createFacetLookup(
+              StvnVocabulary.FACET_KW_META_KIND + " " + expectedKind,
+              false,
+              "Root Metadata Facet",
+              null,
+              StvnMetadataFacetInsertHandler.INSTANCE
+          ),
+          90.0
+      ));
+    }
+  }
+
+  private static boolean isCaretOnMetaFacetKeyword(PsiElement position, PsiElement facet) {
+    var first = facet.getFirstChild();
+    return first != null && PsiTreeUtil.isAncestor(first, position, false);
+  }
+
+  private static boolean isCaretAfterMetaFacetKeyword(
+      PsiElement position,
+      MetaBlock metaBlock,
+      String expectedKeyword
+  ) {
+    var unk = PsiTreeUtil.getParentOfType(position, MetaUnknownFacet.class);
+    if (unk != null && unk.getValueKeyword() != null) {
+      if (!PsiTreeUtil.isAncestor(unk.getValueKeyword(), position, false)) {
+        return expectedKeyword.equals(unk.getValueKeyword().getText().trim());
+      }
+      return false;
+    }
+    var prev = PsiTreeUtil.prevVisibleLeaf(position);
+    if (prev != null && ("\"".equals(prev.getText()) || StvnVocabulary.SIGIL_VALUE.equals(prev.getText()))) {
+      prev = PsiTreeUtil.prevVisibleLeaf(prev);
+    }
+    return prev != null
+        && PsiTreeUtil.isAncestor(metaBlock, prev, true)
+        && expectedKeyword.equals(prev.getText().trim());
+  }
+
+  private static String extractStemSlot(String fileName, int slotIndex, String fallback) {
+    int lastDot = fileName.lastIndexOf('.');
+    String stemPart = lastDot >= 0 ? fileName.substring(0, lastDot) : fileName;
+    String[] dotParts = stemPart.split("\\.", -1);
+    if (slotIndex < dotParts.length && !dotParts[slotIndex].isEmpty() && !dotParts[slotIndex].startsWith("stvn_")) {
+      return dotParts[slotIndex];
+    }
+    return fallback;
+  }
+
+  private static @Nullable MetaBlock resolveEnclosingOrPrecedingMetaBlock(PsiElement position) {
+    var direct = PsiTreeUtil.getParentOfType(position, MetaBlock.class);
+    if (direct != null) {
+      return direct;
+    }
+    var prev = PsiTreeUtil.prevVisibleLeaf(position);
+    if (prev != null && !"}".equals(prev.getText())) {
+      return PsiTreeUtil.getParentOfType(prev, MetaBlock.class);
+    }
+    return null;
+  }
+
+  private static boolean isCaretInDomainFacet(PsiElement position) {
+    var metaBlock = resolveEnclosingOrPrecedingMetaBlock(position);
+    if (metaBlock != null) {
+      return isCaretAfterMetaFacetKeyword(position, metaBlock, StvnVocabulary.FACET_KW_META_DOMAIN);
     }
     return false;
   }

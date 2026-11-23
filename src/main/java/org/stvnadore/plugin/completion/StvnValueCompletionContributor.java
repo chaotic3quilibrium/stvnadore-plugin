@@ -15,6 +15,7 @@ import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.psi.MetaBlock;
 import org.stvnadore.psi.MetadataFilter;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
@@ -75,8 +76,12 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                         return;
                     }
 
-                    // Suppress body value completions inside metadata map declarations
-                    if (PsiTreeUtil.getParentOfType(position, MetadataMap.class) != null) {
+                    // Suppress body value completions inside metadata map and root :meta declarations
+                    var prevVisible = PsiTreeUtil.prevVisibleLeaf(position);
+                    if (PsiTreeUtil.getParentOfType(position, MetadataMap.class) != null
+                        || PsiTreeUtil.getParentOfType(position, MetaBlock.class) != null
+                        || (prevVisible != null && !"}".equals(prevVisible.getText())
+                            && PsiTreeUtil.getParentOfType(prevVisible, MetaBlock.class) != null)) {
                         return;
                     }
 

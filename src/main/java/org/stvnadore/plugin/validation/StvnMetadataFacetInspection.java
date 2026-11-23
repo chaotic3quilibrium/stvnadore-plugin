@@ -143,6 +143,11 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     if (unk != null) {
                         var vkw = unk.getValueKeyword();
                         String facetTag = vkw != null ? vkw.getText().trim() : unk.getText().trim();
+                        if (StvnVocabulary.FACET_KW_META_NAME.equals(facetTag)
+                                || StvnVocabulary.FACET_KW_META_DOMAIN.equals(facetTag)
+                                || StvnVocabulary.FACET_KW_META_KIND.equals(facetTag)) {
+                            seenMetaFacets.add(facetTag);
+                        }
                         holder.registerProblem(
                             unk,
                             StvnDiagnosticFormatter.formatPlugin(
@@ -1305,13 +1310,21 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                     if (enclosingMetaBlock != null) {
                         if (targetMetaElement.getMetaNameFacet() != null) {
                             long nameCount = enclosingMetaBlock.getMetaElementList().stream()
-                                .filter(e -> e.getMetaNameFacet() != null).count();
+                                .filter(e -> e.getMetaNameFacet() != null
+                                    || (e.getMetaUnknownFacet() != null
+                                        && e.getMetaUnknownFacet().getValueKeyword() != null
+                                        && StvnVocabulary.FACET_KW_META_NAME.equals(
+                                            e.getMetaUnknownFacet().getValueKeyword().getText().trim()))).count();
                             if (nameCount <= 1) {
                                 return;
                             }
                         } else if (targetMetaElement.getMetaKindFacet() != null) {
                             long kindCount = enclosingMetaBlock.getMetaElementList().stream()
-                                .filter(e -> e.getMetaKindFacet() != null).count();
+                                .filter(e -> e.getMetaKindFacet() != null
+                                    || (e.getMetaUnknownFacet() != null
+                                        && e.getMetaUnknownFacet().getValueKeyword() != null
+                                        && StvnVocabulary.FACET_KW_META_KIND.equals(
+                                            e.getMetaUnknownFacet().getValueKeyword().getText().trim()))).count();
                             if (kindCount <= 1) {
                                 return;
                             }
