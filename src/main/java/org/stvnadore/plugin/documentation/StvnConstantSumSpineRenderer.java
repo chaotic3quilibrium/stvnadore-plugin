@@ -83,8 +83,7 @@ public final class StvnConstantSumSpineRenderer {
             return null;
         }
 
-        Value effectiveRootPsiValue = unwrapConstantChainValue(declaredValue);
-        if (effectiveRootPsiValue == null) {
+        if (unwrapConstantChainValue(declaredValue) == null) {
             return null;
         }
 
@@ -125,12 +124,13 @@ public final class StvnConstantSumSpineRenderer {
         Set<PsiElement> visitedAliases = new HashSet<>();
 
         SchemaType currPsiSchema = declaredSchema;
-        Value currPsiValue = effectiveRootPsiValue;
+        Value currPsiValue = declaredValue;
         StvnValue currIrValue = rootIrValue;
         boolean sawAtLeastOneSumStep = false;
         boolean terminatedAtNone = false;
 
         for (int depth = 0; depth < MAX_SPINE_DEPTH && currPsiSchema != null; depth++) {
+            SchemaType layerStartSchema = currPsiSchema;
             currPsiSchema = appendAndUnwrapNominalHops(currPsiSchema, resolutionPathSegments, visitedAliases);
             if (currPsiSchema == null) {
                 return null;
@@ -141,6 +141,7 @@ public final class StvnConstantSumSpineRenderer {
                 break;
             }
 
+            currPsiValue = unwrapConstantForCurrentSumLayer(currPsiValue, layerStartSchema, currPsiSchema);
             List<SchemaType> branches = PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class);
             String sumText = sumPsi.getText().trim();
 
@@ -163,7 +164,7 @@ public final class StvnConstantSumSpineRenderer {
                 if (isExplicit) {
                     expandedTokens.add(someTag);
                     resolutionPathSegments.add("<code>" + escapeHtml(someTag) + "</code>");
-                    currPsiValue = unwrapConstantChainValue(explicitOpt.getValue());
+                    currPsiValue = explicitOpt.getValue();
                 } else {
                     String bracketed = StvnVocabulary.DELIM_OPEN_BRACKET + someTag + StvnVocabulary.DELIM_CLOSE_BRACKET;
                     expandedTokens.add(bracketed);
@@ -196,7 +197,7 @@ public final class StvnConstantSumSpineRenderer {
                 if (explicitEither != null) {
                     expandedTokens.add(eitherTag);
                     resolutionPathSegments.add("<code>" + escapeHtml(eitherTag) + "</code>");
-                    currPsiValue = unwrapConstantChainValue(explicitEither.getValue());
+                    currPsiValue = explicitEither.getValue();
                 } else {
                     if (!isRight) {
                         return null;
@@ -234,7 +235,7 @@ public final class StvnConstantSumSpineRenderer {
                     unionTag = StvnVocabulary.SIGIL_VALUE + parsed.get();
                     expandedTokens.add(unionTag);
                     resolutionPathSegments.add("<code>" + escapeHtml(unionTag) + "</code>");
-                    currPsiValue = unwrapConstantChainValue(explicitUnion.getValue());
+                    currPsiValue = explicitUnion.getValue();
                 } else if (currIrValue instanceof StvnValue.StvnUnion unionIr) {
                     BigInteger oneBased = unionIr.oneBasedBranchIndex();
                     if (oneBased.compareTo(BigInteger.ONE) < 0
@@ -275,6 +276,7 @@ public final class StvnConstantSumSpineRenderer {
         }
 
         if (!terminatedAtNone) {
+            currPsiValue = unwrapConstantChainValue(currPsiValue);
             if (currPsiValue == null) {
                 return null;
             }
@@ -327,6 +329,78 @@ public final class StvnConstantSumSpineRenderer {
             curr = next;
         }
         return false;
+    }
+
+    private static @Nullable Value unwrapConstantForCurrentSumLayer(
+        @Nullable Value startValue,
+        SchemaType layerStartSchema,
+        SchemaType unwrappedSumSchema
+    ) {
+        Value curr = startValue;
+        Set<PsiElement> visited = new HashSet<>();
+        for (int hop = 0; hop < MAX_SPINE_DEPTH && curr != null && visited.add(curr); hop++) {
+            ValueKeyword vk = curr.getValueKeyword();
+            if (vk == null || StvnVocabulary.CONTROL_KEYWORDS.contains(vk.getText().trim())) {
+                return curr;
+            }
+            PsiElement resolved = StvnConstantReference.resolveConstantWithContext(vk);
+            ConstantDefinition targetConst = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+            if (targetConst == null || targetConst.getSchemaType() == null) {
+                return curr;
+            }
+            if (!doesConstantSchemaMatchSumLayer(targetConst.getSchemaType(), layerStartSchema, unwrappedSumSchema)) {
+                return curr;
+            }
+            Value nextVal = targetConst.getValue();
+            if (nextVal == null || !visited.add(targetConst)) {
+                return curr;
+            }
+            curr = nextVal;
+        }
+        return curr;
+    }
+
+    private static boolean doesConstantSchemaMatchSumLayer(
+        SchemaType constSchema,
+        SchemaType layerStartSchema,
+        SchemaType unwrappedSumSchema
+    ) {
+        TypeDefinition constTargetDef = resolveNominalTargetDef(constSchema);
+        TypeDefinition layerTargetDef = resolveNominalTargetDef(layerStartSchema);
+        if (layerTargetDef != null) {
+            if (constTargetDef == null) {
+                return false;
+            }
+            if (constTargetDef == layerTargetDef) {
+                return true;
+            }
+            TypeDefinition unwrappedOwnerDef = PsiTreeUtil.getParentOfType(unwrappedSumSchema, TypeDefinition.class);
+            return constTargetDef == unwrappedOwnerDef;
+        }
+        if (constTargetDef == null) {
+            SchemaType unwrappedConst = StvnTypeResolver.resolveNominalSchema(constSchema);
+            SchemaType effectiveConst = unwrappedConst != null ? unwrappedConst : constSchema;
+            return StvnTypeResolver.formatSchemaType(effectiveConst)
+                .equals(StvnTypeResolver.formatSchemaType(unwrappedSumSchema));
+        }
+        return false;
+    }
+
+    private static @Nullable TypeDefinition resolveNominalTargetDef(SchemaType schema) {
+        TypeKeyword kw = schema.getTypeKeyword();
+        if (kw == null) {
+            return null;
+        }
+        String raw = kw.getText().trim();
+        if (StvnNamespaceRules.isReservedFundamentalType(raw)) {
+            return null;
+        }
+        PsiElement resolved = new StvnTypeReference(kw).resolve();
+        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        if (td != null) {
+            return td;
+        }
+        return StvnTypeResolver.findTypeDefinition(kw.getContainingFile(), raw, kw);
     }
 
     private static @Nullable Value unwrapConstantChainValue(@Nullable Value startValue) {

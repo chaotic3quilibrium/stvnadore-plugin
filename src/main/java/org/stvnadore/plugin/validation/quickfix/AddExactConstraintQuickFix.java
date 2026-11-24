@@ -1,7 +1,10 @@
 package org.stvnadore.plugin.validation.quickfix;
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
+import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
@@ -19,6 +22,8 @@ import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 
+import java.util.Objects;
+
 /**
  * Quick-fix attaching the {@code #exact} constraint to continuous {@code :Float} or a nominal
  * {@code :Float} definition in {@code :defs}.
@@ -26,10 +31,14 @@ import org.stvnadore.psi.TypeDefinition;
  * restoring {@code #equatable #TRUE} under STVN Spec § 6.2.
  */
 @NullMarked
-public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement implements PriorityAction {
 
     @SafeFieldForPreview
     private final @Nullable String nominalTypeName;
+    @SafeFieldForPreview
+    private final @Nullable String inlineSlotQualifier;
+    @SafeFieldForPreview
+    private final Priority priority;
 
     /**
      * Constructs a quick-fix targeting an inline continuous {@code :Float} {@link SchemaType}.
@@ -37,8 +46,26 @@ public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionA
      * @param element the {@link SchemaType} representing continuous {@code :Float}
      */
     public AddExactConstraintQuickFix(SchemaType element) {
+        this(element, null, Priority.HIGH);
+    }
+
+    /**
+     * Constructs a quick-fix targeting an inline continuous {@code :Float} {@link SchemaType}
+     * with an optional slot qualifier and explicit intention priority.
+     *
+     * @param element             the {@link SchemaType} representing continuous {@code :Float}
+     * @param inlineSlotQualifier optional slot qualifier when multiple inline {@code :Float} leaves exist
+     * @param priority            the intention priority ordering
+     */
+    public AddExactConstraintQuickFix(
+            SchemaType element,
+            @Nullable String inlineSlotQualifier,
+            Priority priority
+    ) {
         super(element);
         this.nominalTypeName = null;
+        this.inlineSlotQualifier = inlineSlotQualifier;
+        this.priority = priority;
     }
 
     /**
@@ -48,8 +75,31 @@ public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionA
      * @param nominalTypeName display name of the nominal type (for example {@code :SampleReading})
      */
     public AddExactConstraintQuickFix(TypeDefinition nominalFloatDef, String nominalTypeName) {
+        this(nominalFloatDef, nominalTypeName, Priority.HIGH);
+    }
+
+    /**
+     * Constructs a quick-fix targeting a nominal continuous {@code :Float} {@link TypeDefinition} in {@code :defs}
+     * with explicit intention priority.
+     *
+     * @param nominalFloatDef the {@link TypeDefinition} declaring continuous {@code :Float}
+     * @param nominalTypeName display name of the nominal type (for example {@code :SampleReading})
+     * @param priority        the intention priority ordering
+     */
+    public AddExactConstraintQuickFix(
+            TypeDefinition nominalFloatDef,
+            String nominalTypeName,
+            Priority priority
+    ) {
         super(nominalFloatDef);
         this.nominalTypeName = nominalTypeName;
+        this.inlineSlotQualifier = null;
+        this.priority = priority;
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return priority;
     }
 
     @Override
@@ -57,6 +107,10 @@ public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionA
         if (nominalTypeName != null) {
             return "Add '" + StvnVocabulary.FACET_KW_EXACT + "' to " + nominalTypeName
                 + " in " + StvnVocabulary.KEYWORD_DEFS;
+        }
+        if (inlineSlotQualifier != null && !inlineSlotQualifier.isEmpty()) {
+            return "Add '{ " + StvnVocabulary.FACET_KW_EXACT + " }' constraint to "
+                + StvnVocabulary.TYPE_FLOAT + " (" + inlineSlotQualifier + ")";
         }
         return "Add '{ " + StvnVocabulary.FACET_KW_EXACT + " }' constraint to " + StvnVocabulary.TYPE_FLOAT;
     }
@@ -168,6 +222,50 @@ public final class AddExactConstraintQuickFix extends LocalQuickFixAndIntentionA
         }
 
         StvnTraitViolationQuickFixProvider.postProcessFileMutation(project, file, targetFile);
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        var cross = StvnTraitViolationQuickFixProvider.tryGenerateCrossFilePreview(
+            project, file, getStartElement(), (p, copyFile, copyElem) -> invoke(p, copyFile, null, copyElem, copyElem)
+        );
+        return cross != null ? cross : super.generatePreview(project, editor, file);
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull ProblemDescriptor previewDescriptor
+    ) {
+        PsiElement descElem = previewDescriptor.getPsiElement();
+        PsiFile activeFile = descElem != null ? descElem.getContainingFile() : null;
+        var cross = activeFile != null
+            ? StvnTraitViolationQuickFixProvider.tryGenerateCrossFilePreview(
+                project, activeFile, getStartElement(), (p, copyFile, copyElem) -> invoke(p, copyFile, null, copyElem, copyElem))
+            : null;
+        return cross != null ? cross : super.generatePreview(project, previewDescriptor);
+    }
+
+    @Override
+    public boolean equals(@Nullable Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof AddExactConstraintQuickFix other)) {
+            return false;
+        }
+        return Objects.equals(getStartElement(), other.getStartElement())
+            && Objects.equals(nominalTypeName, other.nominalTypeName)
+            && Objects.equals(inlineSlotQualifier, other.inlineSlotQualifier);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getStartElement(), nominalTypeName, inlineSlotQualifier);
     }
 
     private static boolean containsExact(@Nullable MetadataMap map) {

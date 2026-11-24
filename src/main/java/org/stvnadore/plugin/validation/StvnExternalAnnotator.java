@@ -1310,18 +1310,23 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                StvnTraitViolationQuickFixProvider.PartnerTraitAnchor deferredTraitPartnerAnchor = null;
+
                 // Trait violation navigation and paired healing quick-fixes (ERR_TRAIT_VIOLATION)
                 if (DiagnosticBag.ERR_TRAIT_VIOLATION.equals(diagnosticId)
                         || "ERR_TRAIT_VIOLATION".equals(diagnosticId)
-                        || rawMessage.contains("require types to be #equatable")
+                        || rawMessage.contains("require types to be " + StvnVocabulary.FACET_KW_EQUATABLE)
+                        || rawMessage.contains("requires '" + StvnVocabulary.FACET_KW_EQUATABLE)
                         || rawMessage.contains("requires equatable")
                         || rawMessage.contains("requires comparable")) {
-                    annotationBuilder = StvnTraitViolationQuickFixProvider.registerActions(
+                    var traitReg = StvnTraitViolationQuickFixProvider.registerActionsWithPartner(
                         annotationBuilder,
                         file,
                         range,
                         message
                     );
+                    annotationBuilder = traitReg.builder();
+                    deferredTraitPartnerAnchor = traitReg.partnerAnchor();
                 }
 
                 annotationBuilder = StvnPayloadValueQuickFixProvider.registerPayloadValueQuickFixes(
@@ -1361,12 +1366,30 @@ public final class StvnExternalAnnotator
                                 if (deferredFirstFloatMutexFixes != null) {
                                     deferredFirstFloatMutexFixes.add(reorderMapFix);
                                 }
+                                if (deferredTraitPartnerAnchor != null) {
+                                    List<IntentionAction> merged = new ArrayList<>(deferredTraitPartnerAnchor.actions());
+                                    merged.add(reorderMapFix);
+                                    deferredTraitPartnerAnchor = new StvnTraitViolationQuickFixProvider.PartnerTraitAnchor(
+                                        deferredTraitPartnerAnchor.partnerRange(),
+                                        List.copyOf(merged)
+                                    );
+                                }
                             }
                         }
                     }
                 }
 
                 annotationBuilder.create();
+                if (deferredTraitPartnerAnchor != null
+                        && !rangeIntersectsActiveError(deferredTraitPartnerAnchor.partnerRange(), activeErrorDiagnostics)
+                        && !deferredTraitPartnerAnchor.actions().isEmpty()) {
+                    var partnerBuilder = holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
+                        .range(deferredTraitPartnerAnchor.partnerRange());
+                    for (IntentionAction fix : deferredTraitPartnerAnchor.actions()) {
+                        partnerBuilder = partnerBuilder.withFix(fix);
+                    }
+                    partnerBuilder.create();
+                }
                 if (deferredEarlierSwapRange != null && deferredEarlierSwapFix != null) {
                     holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                         .range(deferredEarlierSwapRange)

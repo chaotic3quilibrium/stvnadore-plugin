@@ -1318,30 +1318,19 @@ public final class StvnTypeResolver {
         // 3. Anonymous Deep Sum Trajectory Handling
         if (StvnSumTrajectory.isSumValue(resolvedNode)) {
             var rootLabel = getLabelForSchema(baseSchema, file);
-            var levels = collectSumLevels(resolvedNode, useLong);
-            if (levels.isEmpty()) {
+            var info = resolveBaseTypeInfo(value);
+            SchemaType anonSchemaPsi = info != null ? info.getSchema() : null;
+            List<String> anonTags = collectAnonymousSumRenderedTags(
+                anonSchemaPsi,
+                value,
+                resolvedNode,
+                catalog,
+                useLong
+            );
+            if (anonTags.isEmpty()) {
                 return rootLabel;
             }
-
-            var tokens = extractLeadingTagTokens(value);
-            var sb = new StringBuilder(rootLabel);
-            int tokenIdx = 0;
-
-            for (var level : levels) {
-                sb.append(" ");
-                boolean isExplicit = (tokenIdx < tokens.size()) && level.validExplicitTokens().contains(tokens.get(tokenIdx));
-                if (isExplicit) {
-                    sb.append(level.canonicalTag());
-                    tokenIdx++;
-                } else {
-                    sb.append("[").append(level.canonicalTag()).append("]");
-                }
-                if (level.isTerminalNone()) {
-                    break;
-                }
-            }
-
-            return sb.toString();
+            return rootLabel + " " + String.join(" ", anonTags);
         }
 
         // 4. Default Schema Formatting
@@ -1703,7 +1692,6 @@ public final class StvnTypeResolver {
         Value currPsi = psiCursor;
         StvnValue currIr = irCursor;
         boolean terminatedAtNone = false;
-        boolean hitConstantBarrier = false;
 
         for (int hop = 0; hop < 16; hop++) {
             if (hop > 0 && currSchemaPsi != null && currSchemaPsi.getTypeKeyword() != null) {
@@ -1719,16 +1707,20 @@ public final class StvnTypeResolver {
             if (sumPsi == null && !irIsSum) {
                 break;
             }
-            if (!hitConstantBarrier && currPsi != null && currIr != null) {
-                var probeTraj = StvnSumTrajectory.evaluate(currPsi, currIr, catalog);
-                if (probeTraj.steps().isEmpty() && probeTraj.stoppedAtConstantReference()) {
-                    hitConstantBarrier = true;
-                }
-            } else if (!hitConstantBarrier && currPsi != null && currIr == null) {
-                var barrierConst = resolveWholeSumConstantBarrierPsi(currPsi, nominalAlias, currSchemaPsi);
-                if (barrierConst != null) {
-                    hitConstantBarrier = true;
-                    currPsi = barrierConst.getValue();
+            String activeLayerAlias = hop == 0 ? nominalAlias : null;
+            SchemaType layerRawSchema = hop == 0 ? sumRhsPsi : currSchemaPsi;
+            var unwrappedConstStep = unwrapConstantAtCurrentSumLayer(
+                currPsi,
+                activeLayerAlias,
+                layerRawSchema,
+                currSchemaPsi,
+                currIr,
+                catalog
+            );
+            if (unwrappedConstStep != null) {
+                currPsi = unwrappedConstStep.rhsPsiValue();
+                if (currIr == null && unwrappedConstStep.loweredIrValue() != null) {
+                    currIr = unwrappedConstStep.loweredIrValue();
                 }
             }
 
@@ -1754,8 +1746,7 @@ public final class StvnTypeResolver {
                     terminatedAtNone = true;
                     break;
                 }
-                boolean isExplicit = hitConstantBarrier
-                    || explicitOpt != null
+                boolean isExplicit = explicitOpt != null
                     || (currPsi != null && isExplicitOptionText(currPsi.getText().trim()));
                 String tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
                 renderedTags.add(isExplicit
@@ -1781,8 +1772,7 @@ public final class StvnTypeResolver {
                 } else {
                     isRight = true;
                 }
-                boolean isExplicit = hitConstantBarrier
-                    || explicitEither != null
+                boolean isExplicit = explicitEither != null
                     || (currPsi != null && isExplicitEitherText(currPsi.getText().trim()));
                 String tag = isRight
                     ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
@@ -1801,7 +1791,7 @@ public final class StvnTypeResolver {
                     : (!branches.isEmpty() ? branches.get(0) : null);
             } else if ((currIr instanceof StvnValue.StvnUnion) || sumKindText.startsWith(StvnVocabulary.TYPE_UNION)) {
                 var explicitUnion = currPsi != null ? currPsi.getExplicitUnionValue() : null;
-                BigInteger explicitOneBased = ((!hitConstantBarrier || currIr == null) && currPsi != null)
+                BigInteger explicitOneBased = currPsi != null
                     ? extractExplicitUnionOneBasedIndex(currPsi)
                     : null;
                 int zeroIdx;
@@ -1816,8 +1806,7 @@ public final class StvnTypeResolver {
                     zeroIdx = selectBestMatchingPsiUnionBranch(currPsi, branches);
                     rawTag = StvnVocabulary.SIGIL_VALUE + (zeroIdx + 1);
                 }
-                boolean isExplicit = hitConstantBarrier
-                    || explicitUnion != null
+                boolean isExplicit = explicitUnion != null
                     || explicitOneBased != null
                     || (currPsi != null && currPsi.getParent() instanceof ExplicitUnionValue);
                 renderedTags.add(isExplicit
@@ -1846,7 +1835,7 @@ public final class StvnTypeResolver {
         if (currSchemaPsi != null) {
             leafTrace = resolvePsiBranchTraceWithIr(
                 currSchemaPsi,
-                hitConstantBarrier ? null : currPsi,
+                currPsi,
                 currIr,
                 catalog,
                 file,
@@ -2101,11 +2090,18 @@ public final class StvnTypeResolver {
                         );
                         return (degradedSum ? "\u26A0 " : "") + formatted;
                     }
-                    var anonSteps = new ArrayList<SumTrajectoryStep>();
-                    collectPsiFallbackSumSteps(info.getSchema(), value, useLong, anonSteps, new HashSet<>());
-                    if (!anonSteps.isEmpty()) {
-                        var tagsJoined = String.join(" ", anonSteps.stream().map(SumTrajectoryStep::displayTag).toList());
-                        return baseLabel + " " + tagsJoined;
+                    var catalog = file != null
+                        ? StvnCompiledDocumentCache.getSnapshot(file).catalog()
+                        : StvnDefsCatalog.EMPTY;
+                    List<String> anonTags = collectAnonymousSumRenderedTags(
+                        info.getSchema(),
+                        value,
+                        null,
+                        catalog,
+                        useLong
+                    );
+                    if (!anonTags.isEmpty()) {
+                        return baseLabel + " " + String.join(" ", anonTags);
                     }
                     return baseLabel;
                 } else {
@@ -2188,11 +2184,10 @@ public final class StvnTypeResolver {
             if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortKw)) {
                 return shortKw;
             }
-            var lookupFile = file != null ? file : keyword.getContainingFile();
-            var resolvedTarget = lookupFile != null
-                ? StvnTypeReference.resolveTypeInFile(lookupFile, keyword.getText(), new HashSet<>())
+            var kwFile = keyword.getContainingFile() != null ? keyword.getContainingFile() : file;
+            var targetDef = kwFile != null
+                ? findTypeDefinition(kwFile, keyword.getText().trim(), keyword)
                 : null;
-            var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
             if (targetDef != null) {
                 var targetSchema = targetDef.getSchemaType();
                 var unwrappedTarget = targetSchema != null ? unwrapNominalSchemaChain(targetSchema) : null;
@@ -2200,14 +2195,14 @@ public final class StvnTypeResolver {
                         && unwrappedTarget.getSchemaConstructor() != null
                         && unwrappedTarget.getSchemaConstructor().getSumType() != null
                         && unwrappedTarget.getSchemaConstructor().getSumType().getEnumDef() == null
-                        && lookupFile != null) {
+                        && targetDef.getContainingFile() != null) {
                     return formatNominalSumMultiHopTrajectory(
                         keyword.getText().trim(),
                         targetSchema,
                         innerValue,
                         innerIr,
                         catalog,
-                        lookupFile,
+                        targetDef.getContainingFile(),
                         project,
                         useLong,
                         visitedAliases
@@ -2350,6 +2345,29 @@ public final class StvnTypeResolver {
             var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
             if (branches.isEmpty()) {
                 break;
+            }
+            String activeAlias = current.getTypeKeyword() != null
+                ? current.getTypeKeyword().getText().trim()
+                : null;
+            PsiFile activeFile = (currPsi != null && currPsi.getContainingFile() != null)
+                ? currPsi.getContainingFile()
+                : startSchema.getContainingFile();
+            var catalog = activeFile != null
+                ? StvnCompiledDocumentCache.getSnapshot(activeFile).catalog()
+                : StvnDefsCatalog.EMPTY;
+            var unwrappedStep = unwrapConstantAtCurrentSumLayer(
+                currPsi,
+                activeAlias,
+                current,
+                inspected,
+                currIr,
+                catalog
+            );
+            if (unwrappedStep != null) {
+                currPsi = unwrappedStep.rhsPsiValue();
+                if (currIr == null && unwrappedStep.loweredIrValue() != null) {
+                    currIr = unwrappedStep.loweredIrValue();
+                }
             }
             String sumText = sum.getText().trim();
             if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
@@ -2917,6 +2935,386 @@ public final class StvnTypeResolver {
         return localName;
     }
 
+    private record UnwrappedLayerConstant(Value rhsPsiValue, @Nullable StvnValue loweredIrValue) {
+    }
+
+    private static @Nullable UnwrappedLayerConstant unwrapConstantAtCurrentSumLayer(
+        @Nullable Value currPsi,
+        @Nullable String activeLayerAlias,
+        @Nullable SchemaType layerRawSchema,
+        @Nullable SchemaType inspectedSumSchema,
+        @Nullable StvnValue currIr,
+        StvnDefsCatalog catalog
+    ) {
+        if (currPsi == null) {
+            return null;
+        }
+        Value cursor = currPsi;
+        StvnValue hydratedIr = currIr;
+        boolean unwrappedAny = false;
+        Set<ConstantDefinition> visited = new HashSet<>();
+
+        for (int hop = 0; hop < 16 && cursor != null; hop++) {
+            var valKw = cursor.getValueKeyword();
+            if (valKw == null || StvnVocabulary.CONTROL_KEYWORDS.contains(valKw.getText().trim())) {
+                break;
+            }
+            var constDef = resolveContextAwareConstantDefinition(valKw);
+            if (constDef == null
+                    || constDef.getSchemaType() == null
+                    || constDef.getValue() == null
+                    || !visited.add(constDef)) {
+                break;
+            }
+            if (!doesConstantMatchCurrentSumLayer(
+                    constDef.getSchemaType(),
+                    cursor.getContainingFile(),
+                    activeLayerAlias,
+                    layerRawSchema,
+                    inspectedSumSchema)) {
+                break;
+            }
+            unwrappedAny = true;
+            if (hydratedIr == null) {
+                hydratedIr = resolveLoweredConstantIrValue(constDef, catalog);
+            }
+            cursor = constDef.getValue();
+        }
+        if (!unwrappedAny || cursor == null) {
+            return null;
+        }
+        return new UnwrappedLayerConstant(cursor, hydratedIr);
+    }
+
+    private static @Nullable StvnValue resolveLoweredConstantIrValue(
+        ConstantDefinition constDef,
+        StvnDefsCatalog activeCatalog
+    ) {
+        var constKw = constDef.getValueKeyword();
+        var constFile = constDef.getContainingFile();
+        if (constKw == null || constFile == null) {
+            return null;
+        }
+        var pkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+        String pkgPath = (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null)
+            ? pkg.getPackagePath().getText().trim()
+            : null;
+        String constName = constKw.getText().trim();
+        var found = StvnPreludeBridge.isPreludeFile(constFile)
+            ? StvnPreludeBridge.getPreludeCatalog().findConstant(pkgPath, constName)
+            : activeCatalog.findConstant(pkgPath, constName);
+        if (found.isEmpty()) {
+            return null;
+        }
+        StvnValue val = found.get().value();
+        return val instanceof StvnValue.StvnErrorValue ? null : val;
+    }
+
+    private static boolean doesConstantMatchCurrentSumLayer(
+        SchemaType constSchema,
+        @Nullable PsiFile referenceFile,
+        @Nullable String activeLayerAlias,
+        @Nullable SchemaType layerRawSchema,
+        @Nullable SchemaType inspectedSumSchema
+    ) {
+        String constBrand = resolveCanonicalBrandFqni(constSchema);
+        if (activeLayerAlias != null && !activeLayerAlias.isEmpty()) {
+            if (constBrand == null) {
+                return false;
+            }
+            TypeDefinition rawOwner = layerRawSchema != null
+                ? PsiTreeUtil.getParentOfType(layerRawSchema, TypeDefinition.class)
+                : null;
+            String rawOwnerBrand = extractCanonicalTypeDefFqni(rawOwner);
+            if (constBrand.equals(rawOwnerBrand)) {
+                return true;
+            }
+            TypeDefinition unwrappedOwner = inspectedSumSchema != null
+                ? PsiTreeUtil.getParentOfType(inspectedSumSchema, TypeDefinition.class)
+                : null;
+            String unwrappedOwnerBrand = extractCanonicalTypeDefFqni(unwrappedOwner);
+            if (constBrand.equals(unwrappedOwnerBrand)) {
+                return true;
+            }
+            String fileLayerBrand = resolveCanonicalBrandForAliasInFile(referenceFile, activeLayerAlias);
+            return constBrand.equals(fileLayerBrand);
+        }
+        if (constBrand == null && inspectedSumSchema != null) {
+            SchemaType unwrappedConst = unwrapNominalSchemaChain(constSchema);
+            return unwrappedConst != null
+                && StvnSchemaFormatter.formatCleanSchema(unwrappedConst)
+                    .equals(StvnSchemaFormatter.formatCleanSchema(inspectedSumSchema));
+        }
+        return false;
+    }
+
+    private static List<String> collectAnonymousSumRenderedTags(
+        @Nullable SchemaType startSchemaPsi,
+        Value startValue,
+        @Nullable StvnValue startIr,
+        StvnDefsCatalog catalog,
+        boolean useLong
+    ) {
+        List<String> renderedTags = new ArrayList<>();
+        SchemaType currRawSchema = startSchemaPsi;
+        Value currPsi = startValue;
+        StvnValue currIr = startIr;
+        Set<PsiElement> visitedSchemas = new HashSet<>();
+
+        for (int hop = 0; hop < 16; hop++) {
+            String activeAlias = (currRawSchema != null && currRawSchema.getTypeKeyword() != null)
+                ? currRawSchema.getTypeKeyword().getText().trim()
+                : null;
+            SchemaType currSchemaPsi = currRawSchema != null ? unwrapNominalSchemaChain(currRawSchema) : null;
+            if (currSchemaPsi != null && !visitedSchemas.add(currSchemaPsi)) {
+                break;
+            }
+            SumType sumPsi = (currSchemaPsi != null && currSchemaPsi.getSchemaConstructor() != null)
+                ? currSchemaPsi.getSchemaConstructor().getSumType()
+                : null;
+            if (sumPsi != null && sumPsi.getEnumDef() != null) {
+                break;
+            }
+            boolean irIsSum = StvnSumTrajectory.isSumValue(currIr);
+            if (sumPsi == null && !irIsSum) {
+                break;
+            }
+
+            var unwrappedConstStep = unwrapConstantAtCurrentSumLayer(
+                currPsi,
+                activeAlias,
+                currRawSchema,
+                currSchemaPsi,
+                currIr,
+                catalog
+            );
+            if (unwrappedConstStep != null) {
+                currPsi = unwrappedConstStep.rhsPsiValue();
+                if (currIr == null && unwrappedConstStep.loweredIrValue() != null) {
+                    currIr = unwrappedConstStep.loweredIrValue();
+                }
+            }
+
+            String sumKindText = sumPsi != null ? sumPsi.getText().trim() : "";
+            List<SchemaType> branches = sumPsi != null
+                ? PsiTreeUtil.getChildrenOfTypeAsList(sumPsi, SchemaType.class)
+                : List.of();
+
+            if ((currIr instanceof StvnValue.StvnOption) || sumKindText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                var explicitOpt = currPsi != null ? currPsi.getExplicitOptionValue() : null;
+                boolean isNone = false;
+                if (currIr instanceof StvnValue.StvnOption optIr) {
+                    isNone = optIr.value().isEmpty();
+                } else if (explicitOpt != null) {
+                    String head = explicitOpt.getText().trim().split("\\s+")[0];
+                    isNone = StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head);
+                } else if (currPsi != null) {
+                    String head = currPsi.getText().trim().split("\\s+")[0];
+                    isNone = StvnVocabulary.VAL_NONE.equals(head) || StvnVocabulary.VAL_NONE_SHORT.equals(head);
+                }
+                if (isNone) {
+                    renderedTags.add(useLong ? StvnVocabulary.VAL_NONE : StvnVocabulary.VAL_NONE_SHORT);
+                    break;
+                }
+                boolean isExplicit = explicitOpt != null
+                    || (currPsi != null && isExplicitOptionText(currPsi.getText().trim()));
+                String tag = useLong ? StvnVocabulary.VAL_SOME : StvnVocabulary.VAL_SOME_SHORT;
+                renderedTags.add(isExplicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitOpt != null) {
+                    currPsi = explicitOpt.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnOption optIr) {
+                    currIr = optIr.value().orElse(null);
+                }
+                currRawSchema = !branches.isEmpty() ? branches.get(0) : null;
+            } else if ((currIr instanceof StvnValue.StvnEither) || sumKindText.startsWith(StvnVocabulary.TYPE_EITHER)) {
+                var explicitEither = currPsi != null ? currPsi.getExplicitEitherValue() : null;
+                boolean isRight;
+                if (currIr instanceof StvnValue.StvnEither eitherIr) {
+                    isRight = eitherIr.branch() == StvnValue.EitherBranch.RIGHT;
+                } else if (explicitEither != null) {
+                    String head = explicitEither.getText().trim().split("\\s+")[0];
+                    isRight = !(StvnVocabulary.VAL_LEFT.equals(head) || StvnVocabulary.VAL_LEFT_SHORT.equals(head));
+                } else if (currPsi != null && !branches.isEmpty()) {
+                    isRight = branches.size() > 1 || !matchesSchemaPattern(currPsi, branches.get(0));
+                } else {
+                    isRight = true;
+                }
+                boolean isExplicit = explicitEither != null
+                    || (currPsi != null && isExplicitEitherText(currPsi.getText().trim()));
+                String tag = isRight
+                    ? (useLong ? StvnVocabulary.VAL_RIGHT : StvnVocabulary.VAL_RIGHT_SHORT)
+                    : (useLong ? StvnVocabulary.VAL_LEFT : StvnVocabulary.VAL_LEFT_SHORT);
+                renderedTags.add(isExplicit
+                    ? tag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitEither != null) {
+                    currPsi = explicitEither.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnEither eitherIr) {
+                    currIr = eitherIr.value();
+                }
+                currRawSchema = isRight
+                    ? (branches.size() > 1 ? branches.get(1) : null)
+                    : (!branches.isEmpty() ? branches.get(0) : null);
+            } else if ((currIr instanceof StvnValue.StvnUnion) || sumKindText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                var explicitUnion = currPsi != null ? currPsi.getExplicitUnionValue() : null;
+                BigInteger explicitOneBased = currPsi != null
+                    ? extractExplicitUnionOneBasedIndex(currPsi)
+                    : null;
+                int zeroIdx;
+                String rawTag;
+                if (explicitOneBased != null) {
+                    rawTag = StvnVocabulary.SIGIL_VALUE + explicitOneBased;
+                    zeroIdx = toSafeZeroBasedIndex(explicitOneBased);
+                } else if (currIr instanceof StvnValue.StvnUnion unionIr) {
+                    rawTag = StvnVocabulary.SIGIL_VALUE + unionIr.oneBasedBranchIndex();
+                    zeroIdx = toSafeZeroBasedIndex(unionIr.oneBasedBranchIndex());
+                } else {
+                    zeroIdx = selectBestMatchingPsiUnionBranch(currPsi, branches);
+                    rawTag = StvnVocabulary.SIGIL_VALUE + (zeroIdx + 1);
+                }
+                boolean isExplicit = explicitUnion != null
+                    || explicitOneBased != null
+                    || (currPsi != null && currPsi.getParent() instanceof ExplicitUnionValue);
+                renderedTags.add(isExplicit
+                    ? rawTag
+                    : StvnVocabulary.DELIM_OPEN_BRACKET + rawTag + StvnVocabulary.DELIM_CLOSE_BRACKET);
+                if (explicitUnion != null) {
+                    currPsi = explicitUnion.getValue();
+                }
+                if (currIr instanceof StvnValue.StvnUnion unionIr) {
+                    currIr = unionIr.value();
+                }
+                currRawSchema = (zeroIdx >= 0 && zeroIdx < branches.size()) ? branches.get(zeroIdx) : null;
+            } else {
+                break;
+            }
+        }
+        return renderedTags;
+    }
+
+    /**
+     * Resolves the start offset inside {@code badgeText} where {@code :body}-level sum tags begin
+     * (advancing past the matching closing {@code )} on anonymous outer sum constructors).
+     *
+     * @param valueElement the {@code :body} {@link Value} element
+     * @param badgeText    the rendered inlay badge text
+     * @return scan start index inside {@code badgeText}
+     */
+    public static int resolveBodyTagScanStartInBadge(Value valueElement, String badgeText) {
+        var info = resolveBaseTypeInfo(valueElement);
+        if (info != null && info.getSchema() != null && info.getSchema().getTypeKeyword() == null) {
+            return skipLeadingAnonymousConstructorEnd(badgeText);
+        }
+        return 0;
+    }
+
+    /**
+     * Resolves the exclusive upper character offset inside {@code badgeText} for clickable
+     * {@code :body}-level prefix-materializing sum tags so {@code #CONST}-internal {@code [#tag]}
+     * badges never materialize tags into {@code :body}.
+     *
+     * @param valueElement the {@code :body} {@link Value} element
+     * @param badgeText    the rendered inlay badge text
+     * @return exclusive character limit inside {@code badgeText} for {@code :body}-level sum steps
+     */
+    public static int resolveConstBarrierStartInBadge(Value valueElement, String badgeText) {
+        Value leafBodyValue = unwrapExplicitPsiValue(valueElement);
+        ValueKeyword leafKw = leafBodyValue.getValueKeyword();
+        if (leafKw == null || StvnVocabulary.CONTROL_KEYWORDS.contains(leafKw.getText().trim())) {
+            return badgeText.length();
+        }
+        ConstantDefinition constDef = resolveContextAwareConstantDefinition(leafKw);
+        if (constDef == null) {
+            return badgeText.length();
+        }
+        List<SumTrajectoryStep> bodySteps = resolveSumTrajectorySteps(valueElement);
+        if (bodySteps.isEmpty()) {
+            return 0;
+        }
+
+        var info = resolveBaseTypeInfo(valueElement);
+        boolean isAnonOuter = info != null && info.getSchema() != null && info.getSchema().getTypeKeyword() == null;
+        if (isAnonOuter) {
+            int scanCursor = skipLeadingAnonymousConstructorEnd(badgeText);
+            for (SumTrajectoryStep step : bodySteps) {
+                int idx = badgeText.indexOf(step.displayTag(), scanCursor);
+                if (idx < 0) {
+                    break;
+                }
+                scanCursor = idx + step.displayTag().length();
+            }
+            return scanCursor;
+        }
+
+        int limit = badgeText.length();
+        SchemaType constSchema = constDef.getSchemaType();
+        if (constSchema != null && constSchema.getTypeKeyword() != null) {
+            String constAlias = constSchema.getTypeKeyword().getText().trim();
+            int parenHopIdx = findHopBoundaryIndex(badgeText, "(-> " + constAlias, 1);
+            if (parenHopIdx >= 0) {
+                limit = Math.min(limit, parenHopIdx);
+            } else {
+                int arrowHopIdx = findHopBoundaryIndex(badgeText, "-> " + constAlias, 1);
+                if (arrowHopIdx >= 0) {
+                    limit = Math.min(limit, arrowHopIdx);
+                }
+            }
+        }
+        int stepEndCursor = 0;
+        for (SumTrajectoryStep step : bodySteps) {
+            int idx = badgeText.indexOf(step.displayTag(), stepEndCursor);
+            if (idx < 0 || idx >= limit) {
+                break;
+            }
+            stepEndCursor = idx + step.displayTag().length();
+        }
+        return Math.min(limit, stepEndCursor);
+    }
+
+    private static int findHopBoundaryIndex(String badgeText, String needle, int fromIndex) {
+        int search = fromIndex;
+        while (search < badgeText.length()) {
+            int pos = badgeText.indexOf(needle, search);
+            if (pos < 0) {
+                return -1;
+            }
+            int end = pos + needle.length();
+            if (end == badgeText.length() || !isTypicIdentContinuation(badgeText.charAt(end))) {
+                return pos;
+            }
+            search = pos + 1;
+        }
+        return -1;
+    }
+
+    private static boolean isTypicIdentContinuation(char ch) {
+        return Character.isLetterOrDigit(ch) || ch == '_' || ch == '/';
+    }
+
+    private static int skipLeadingAnonymousConstructorEnd(String badgeText) {
+        int openIdx = badgeText.indexOf(StvnVocabulary.DELIM_OPEN_PAREN.charAt(0));
+        if (openIdx < 0) {
+            return 0;
+        }
+        int depth = 0;
+        for (int i = openIdx; i < badgeText.length(); i++) {
+            char ch = badgeText.charAt(i);
+            if (ch == StvnVocabulary.DELIM_OPEN_PAREN.charAt(0)) {
+                depth++;
+            } else if (ch == StvnVocabulary.DELIM_CLOSE_PAREN.charAt(0)) {
+                depth--;
+                if (depth == 0) {
+                    return i + 1;
+                }
+            }
+        }
+        return 0;
+    }
+
     private static @Nullable ConstantDefinition resolveWholeSumConstantBarrierPsi(
         Value currPsi,
         @Nullable String currentNominalAlias,
@@ -3065,6 +3463,26 @@ public final class StvnTypeResolver {
             var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
             if (branches.isEmpty()) {
                 break;
+            }
+            String activeAlias = currSchema.getTypeKeyword() != null
+                ? currSchema.getTypeKeyword().getText().trim()
+                : null;
+            var catalog = value.getContainingFile() != null
+                ? StvnCompiledDocumentCache.getSnapshot(value.getContainingFile()).catalog()
+                : StvnDefsCatalog.EMPTY;
+            var unwrappedStep = unwrapConstantAtCurrentSumLayer(
+                currPsi,
+                activeAlias,
+                currSchema,
+                inspected,
+                currIr,
+                catalog
+            );
+            if (unwrappedStep != null) {
+                currPsi = unwrappedStep.rhsPsiValue();
+                if (currIr == null && unwrappedStep.loweredIrValue() != null) {
+                    currIr = unwrappedStep.loweredIrValue();
+                }
             }
             String sumText = sum.getText().trim();
             if (sumText.startsWith(StvnVocabulary.TYPE_OPTION)) {

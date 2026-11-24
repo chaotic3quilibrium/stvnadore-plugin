@@ -2,7 +2,9 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
+import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiComment;
@@ -14,6 +16,7 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 
@@ -170,6 +173,23 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
     return new RemoveRedundantFacetQuickFix(element, facetSnippet, "Remove", " facet", priority);
   }
 
+  /**
+   * Creates a quick-fix with exact label {@code "Remove conflicting '<facetSnippet>' facet"} that deletes
+   * the target {@link MetadataEntry} and excises sole comment-free enclosing {@code {}} braces.
+   *
+   * @param element      the conflicting metadata entry
+   * @param facetSnippet the authored facet snippet (for example, {@code "#equatable #FALSE"})
+   * @param priority     the intention priority ordering
+   * @return configured {@link RemoveRedundantFacetQuickFix}
+   */
+  public static RemoveRedundantFacetQuickFix createRemoveConflictingFacetFix(
+      @NotNull PsiElement element,
+      String facetSnippet,
+      @NotNull Priority priority
+  ) {
+    return new RemoveRedundantFacetQuickFix(element, facetSnippet, "Remove conflicting", " facet", priority);
+  }
+
   @Override
   public @NotNull Priority getPriority() {
     return priority;
@@ -209,6 +229,35 @@ public final class RemoveRedundantFacetQuickFix extends LocalQuickFixAndIntentio
       @NotNull PsiElement endElement
   ) {
     executeRemoval(startElement);
+  }
+
+  @Override
+  public @NotNull IntentionPreviewInfo generatePreview(
+      @NotNull Project project,
+      @NotNull Editor editor,
+      @NotNull PsiFile file
+  ) {
+    var cross = StvnTraitViolationQuickFixProvider.tryGenerateCrossFilePreview(
+        project, file, getStartElement(), this::invokeOnCopy);
+    return cross != null ? cross : super.generatePreview(project, editor, file);
+  }
+
+  @Override
+  public @NotNull IntentionPreviewInfo generatePreview(
+      @NotNull Project project,
+      @NotNull ProblemDescriptor previewDescriptor
+  ) {
+    PsiElement descElem = previewDescriptor.getPsiElement();
+    PsiFile activeFile = descElem != null ? descElem.getContainingFile() : null;
+    var cross = activeFile != null
+        ? StvnTraitViolationQuickFixProvider.tryGenerateCrossFilePreview(
+            project, activeFile, getStartElement(), this::invokeOnCopy)
+        : null;
+    return cross != null ? cross : super.generatePreview(project, previewDescriptor);
+  }
+
+  private void invokeOnCopy(Project project, PsiFile remoteCopy, PsiElement copyElem) {
+    executeRemoval(copyElem);
   }
 
   @Override

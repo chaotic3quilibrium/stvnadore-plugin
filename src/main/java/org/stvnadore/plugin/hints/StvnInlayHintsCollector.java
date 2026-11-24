@@ -54,6 +54,22 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
     }
 
     /**
+     * Describes a clickable {@code :body}-level inferred {@code [#tag]} segment bound inside an inlay badge.
+     *
+     * @param stepIndex    0-based index within {@link StvnTypeResolver#resolveSumTrajectorySteps(Value)}
+     * @param badgeToken   rendered bracketed tag token (for example {@code "[#Some]"})
+     * @param startInBadge inclusive start character offset within {@code badgeText}
+     * @param endInBadge   exclusive end character offset within {@code badgeText}
+     */
+    public record MaterializableTagSegment(
+        int stepIndex,
+        String badgeToken,
+        int startInBadge,
+        int endInBadge
+    ) {
+    }
+
+    /**
      * Constructs a hints collector for the specified editor.
      *
      * @param editor the active text editor
@@ -124,14 +140,8 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
         var targetElement = StvnTypeResolver.resolveGoverningDeclarationTarget(valueElement);
         Map<String, PsiElement> hopTargets = StvnTypeResolver.resolveClickableTypeTargetsForValue(valueElement);
         List<StvnTypeResolver.SumTrajectoryStep> sumSteps = StvnTypeResolver.resolveSumTrajectorySteps(valueElement);
-        List<Integer> inferredStepIndices = new ArrayList<>();
-        for (int i = 0; i < sumSteps.size(); i++) {
-            if (sumSteps.get(i).inferred()) {
-                inferredStepIndices.add(i);
-            }
-        }
-        String inferredPrefixMarker = StvnVocabulary.DELIM_OPEN_BRACKET + StvnVocabulary.SIGIL_VALUE;
-        if (inferredStepIndices.isEmpty() || !badgeText.contains(inferredPrefixMarker)) {
+        List<MaterializableTagSegment> boundTagSegments = extractBoundMaterializableTagSegments(valueElement, badgeText);
+        if (boundTagSegments.isEmpty()) {
             return buildMultiHopOrSinglePresentation(badgeText, targetElement, hopTargets, false, true);
         }
 
@@ -140,12 +150,9 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
             .createSmartPsiElementPointer(valueElement);
         List<InlayPresentation> segments = new ArrayList<>();
         int searchFrom = 0;
-        for (int stepIdx : inferredStepIndices) {
-            String expectedBadge = sumSteps.get(stepIdx).displayTag();
-            int matchPos = badgeText.indexOf(expectedBadge, searchFrom);
-            if (matchPos < 0) {
-                continue;
-            }
+        for (MaterializableTagSegment tagSeg : boundTagSegments) {
+            int matchPos = tagSeg.startInBadge();
+            String expectedBadge = tagSeg.badgeToken();
             if (matchPos > searchFrom) {
                 segments.add(buildMultiHopOrSinglePresentation(
                     badgeText.substring(searchFrom, matchPos),
@@ -155,7 +162,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                     false
                 ));
             }
-            final int targetStepIndex = stepIdx;
+            final int targetStepIndex = tagSeg.stepIndex();
             String prefixPreview = buildPrefixInsertionPreview(sumSteps, targetStepIndex);
             InlayPresentation tagTextPres = getFactory().text(expectedBadge);
             InlayPresentation withTip = getFactory().withTooltip(
@@ -172,7 +179,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                 }
             );
             segments.add(clickableTag);
-            searchFrom = matchPos + expectedBadge.length();
+            searchFrom = tagSeg.endInBadge();
         }
         if (segments.isEmpty()) {
             return buildMultiHopOrSinglePresentation(badgeText, targetElement, hopTargets, false, true);
@@ -188,6 +195,44 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
         }
         InlayPresentation seq = getFactory().seq(segments.toArray(InlayPresentation[]::new));
         return new TextPreservingSequencePresentation(seq, badgeText);
+    }
+
+    /**
+     * Resolves the ordered list of clickable {@code :body}-level inferred {@code [#tag]} segments
+     * bound inside {@code badgeText} for {@code valueElement}, strictly excluding {@code #CONST}-internal
+     * {@code [#tag]} tokens.
+     *
+     * @param valueElement the payload {@link Value} element
+     * @param badgeText    the rendered inlay badge string
+     * @return immutable list of bound {@link MaterializableTagSegment} entries
+     */
+    public static List<MaterializableTagSegment> extractBoundMaterializableTagSegments(
+        @NotNull Value valueElement,
+        @NotNull String badgeText
+    ) {
+        List<StvnTypeResolver.SumTrajectoryStep> sumSteps = StvnTypeResolver.resolveSumTrajectorySteps(valueElement);
+        boolean hasBodyInferredSteps = sumSteps.stream().anyMatch(StvnTypeResolver.SumTrajectoryStep::inferred);
+        int bodyBarrierLimit = StvnTypeResolver.resolveConstBarrierStartInBadge(valueElement, badgeText);
+        String inferredPrefixMarker = StvnVocabulary.DELIM_OPEN_BRACKET + StvnVocabulary.SIGIL_VALUE;
+        if (!hasBodyInferredSteps || bodyBarrierLimit <= 0 || !badgeText.contains(inferredPrefixMarker)) {
+            return List.of();
+        }
+        List<MaterializableTagSegment> bound = new ArrayList<>();
+        int cursorInBodyPrefix = StvnTypeResolver.resolveBodyTagScanStartInBadge(valueElement, badgeText);
+        for (int stepIdx = 0; stepIdx < sumSteps.size(); stepIdx++) {
+            var step = sumSteps.get(stepIdx);
+            String expectedBadge = step.displayTag();
+            int matchPos = badgeText.indexOf(expectedBadge, cursorInBodyPrefix);
+            if (matchPos < 0 || matchPos + expectedBadge.length() > bodyBarrierLimit) {
+                break;
+            }
+            int matchEnd = matchPos + expectedBadge.length();
+            if (step.inferred()) {
+                bound.add(new MaterializableTagSegment(stepIdx, expectedBadge, matchPos, matchEnd));
+            }
+            cursorInBodyPrefix = matchEnd;
+        }
+        return List.copyOf(bound);
     }
 
     /**
