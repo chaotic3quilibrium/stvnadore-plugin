@@ -17,8 +17,10 @@ import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.printer.StvnSourceFormatterOptions;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.StvnParserDefinition;
+import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.StvnTypes;
 
 /**
@@ -53,6 +55,27 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
         PsiFile psiFile = formattingContext.getContainingFile();
         ASTNode rootNode = psiFile.getNode();
 
+        var snap = psiFile.getUserData(StvnMetadataOrderPreFormatProcessor.RAW_PRE_FORMAT_SNAPSHOT_KEY);
+        if (snap != null) {
+            if (snap.postStage1Text().length() == psiFile.getTextLength()
+                    && snap.postStage1Text().equals(psiFile.getText())) {
+                psiFile.putUserData(
+                    StvnMetadataOrderPreFormatProcessor.RAW_PRE_FORMAT_SNAPSHOT_KEY,
+                    new StvnMetadataOrderPreFormatProcessor.RawPreFormatSnapshot(
+                        snap.rawText(),
+                        snap.postStage1Text(),
+                        true
+                    )
+                );
+            } else {
+                psiFile.putUserData(StvnMetadataOrderPreFormatProcessor.RAW_PRE_FORMAT_SNAPSHOT_KEY, null);
+            }
+        }
+
+        StvnSourceFormatterOptions formatterOptions = StvnSettings.getInstance(psiFile.getProject())
+            .toCoreFormatterOptions();
+        StvnPsiFormatContext formatContext = StvnPsiFormatContext.analyze(psiFile, formatterOptions);
+
         SpacingBuilder spacingBuilder = createSpacingBuilder(settings);
         StvnBlock rootBlock = new StvnBlock(
                 rootNode,
@@ -60,7 +83,8 @@ public final class StvnFormattingModelBuilder implements FormattingModelBuilder 
                 Alignment.createAlignment(),
                 spacingBuilder,
                 settings,
-                Indent.getNoneIndent()
+                Indent.getNoneIndent(),
+                formatContext
         );
 
         return FormattingModelProvider.createFormattingModelForPsiFile(psiFile, rootBlock, settings);

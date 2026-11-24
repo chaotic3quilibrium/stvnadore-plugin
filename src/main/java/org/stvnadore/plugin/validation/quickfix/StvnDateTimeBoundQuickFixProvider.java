@@ -202,9 +202,7 @@ public final class StvnDateTimeBoundQuickFixProvider {
         }
         if (metaVal.getValueKeyword() != null) {
             PsiElement resolved = StvnConstantReference.resolveConstantWithContext(metaVal.getValueKeyword());
-            ConstantDefinition constDef = resolved instanceof ConstantDefinition cd
-                ? cd
-                : (resolved != null && resolved.getParent() instanceof ConstantDefinition pcd ? pcd : null);
+            ConstantDefinition constDef = org.stvnadore.plugin.psi.StvnPsiUtils.resolveTargetConstantDefinition(resolved);
             if (constDef != null && constDef.getValue() != null) {
                 return constDef.getValue().getText().trim();
             }

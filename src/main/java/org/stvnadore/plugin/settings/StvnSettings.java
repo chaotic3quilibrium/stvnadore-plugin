@@ -6,6 +6,8 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.printer.NestedContainerWrapPolicy;
+import org.stvnadore.core.printer.StvnSourceFormatterOptions;
 
 /**
  * Project-level persistent settings for STVN code style and syntax formatting.
@@ -96,6 +98,10 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public boolean showEpochMagnitudeWarnings = true;
         /** Engine delegation mode for Reformat Code (Ctrl+Alt+L). */
         public ReformatDelegationMode reformatDelegationMode = ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+        /** Nested container wrapping policy for schema definitions and root type sections. */
+        public NestedContainerWrapPolicy schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        /** Nested container wrapping policy for body payloads and constant values. */
+        public NestedContainerWrapPolicy payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
         /** Canonical bootstrap template for modular payload documents (.stvn). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
         /** Canonical bootstrap template for isolated payload documents (.stvn_i). */
@@ -129,8 +135,36 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
 
     @Override
     public void loadState(State state) {
+        if (state.reformatDelegationMode == null) {
+            state.reformatDelegationMode = ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+        }
+        if (state.schemaNestedWrapPolicy == null) {
+            state.schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        }
+        if (state.payloadNestedWrapPolicy == null) {
+            state.payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        }
         synchronized (lock) {
             myState = state;
         }
+    }
+
+    /**
+     * Converts the persisted schema and payload wrap policies into Core formatter options.
+     *
+     * @return non-null {@link StvnSourceFormatterOptions} instance
+     */
+    public StvnSourceFormatterOptions toCoreFormatterOptions() {
+        State snapshot;
+        synchronized (lock) {
+            snapshot = myState;
+        }
+        NestedContainerWrapPolicy schemaPolicy = snapshot.schemaNestedWrapPolicy != null
+            ? snapshot.schemaNestedWrapPolicy
+            : NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        NestedContainerWrapPolicy payloadPolicy = snapshot.payloadNestedWrapPolicy != null
+            ? snapshot.payloadNestedWrapPolicy
+            : NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        return new StvnSourceFormatterOptions(schemaPolicy, payloadPolicy);
     }
 }

@@ -20,6 +20,7 @@ import com.intellij.psi.tree.IFileElementType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.printer.NestedContainerWrapPolicy;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.psi.StvnTypes;
 
@@ -28,10 +29,11 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * AST Block node for the STVN native formatter.
+ * AST Block node for the STVN native PSI formatter.
  * <p>
- * This block enforces the canonical 2-space indentation hierarchy across nested
- * schemas, definitions, and compound payloads while preserving comments and fenced strings.
+ * Enforces the canonical 2-space indentation hierarchy, Zero-Tab Invariant, Law 2 section-scoped
+ * nested container wrap policies, Law 3 target-column horizontal anchoring, and Law 4 bidirectional
+ * peer-aware trailing {@code //} comment alignment via {@link StvnPsiFormatContext}.
  * </p>
  *
  * @since 1.3.0
@@ -45,10 +47,11 @@ public final class StvnBlock implements ASTBlock {
     private final SpacingBuilder spacingBuilder;
     private final CodeStyleSettings settings;
     private final Indent indent;
+    private final @Nullable StvnPsiFormatContext formatContext;
     private @Nullable List<Block> subBlocks;
 
     /**
-     * Constructs a new {@code StvnBlock}.
+     * Constructs a new {@code StvnBlock} without an explicit precomputed format context.
      *
      * @param node the underlying AST node
      * @param wrap the wrap specification for this block
@@ -65,12 +68,36 @@ public final class StvnBlock implements ASTBlock {
             CodeStyleSettings settings,
             Indent indent
     ) {
+        this(node, wrap, alignment, spacingBuilder, settings, indent, null);
+    }
+
+    /**
+     * Constructs a new {@code StvnBlock} bound to an analyzed {@link StvnPsiFormatContext}.
+     *
+     * @param node the underlying AST node
+     * @param wrap the wrap specification for this block
+     * @param alignment the alignment rule for this block
+     * @param spacingBuilder the configured spacing builder
+     * @param settings the code style settings
+     * @param indent the indentation rule for this block
+     * @param formatContext precomputed PSI format context, or {@code null}
+     */
+    public StvnBlock(
+            ASTNode node,
+            @Nullable Wrap wrap,
+            @Nullable Alignment alignment,
+            SpacingBuilder spacingBuilder,
+            CodeStyleSettings settings,
+            Indent indent,
+            @Nullable StvnPsiFormatContext formatContext
+    ) {
         this.node = node;
         this.wrap = wrap;
         this.alignment = alignment;
         this.spacingBuilder = spacingBuilder;
         this.settings = settings;
         this.indent = indent;
+        this.formatContext = formatContext;
     }
 
     @Override
@@ -107,7 +134,8 @@ public final class StvnBlock implements ASTBlock {
                         null,
                         spacingBuilder,
                         settings,
-                        childIndent
+                        childIndent,
+                        formatContext
                 ));
             }
             child = child.getTreeNext();
@@ -119,7 +147,6 @@ public final class StvnBlock implements ASTBlock {
         IElementType parentType = node.getElementType();
         IElementType childType = child.getElementType();
 
-        // Section keywords and top-level delimiters at block boundaries never indent
         if (childType == StvnTypes.KW_DEFS
                 || childType == StvnTypes.KW_PACKAGE
                 || childType == StvnTypes.PACKAGE_PATH
@@ -130,8 +157,10 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNoneIndent();
         }
 
-        // Map literal block boundaries: { and } never indent; all entries between them indent normally (+2)
         if (parentType == StvnTypes.MAP_LITERAL) {
+            if (!isContainerMultiLine(node)) {
+                return Indent.getNoneIndent();
+            }
             boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
             if (childType == StvnTypes.LBRACE) {
                 return Indent.getNoneIndent();
@@ -139,14 +168,17 @@ public final class StvnBlock implements ASTBlock {
             if (childType == StvnTypes.RBRACE) {
                 return sameLineMapContainer ? Indent.getNormalIndent() : Indent.getNoneIndent();
             }
+            int entrySpaces = sameLineMapContainer ? 4 : 2;
             if (isSecondValueOfMapEntry(child) && isMapEntryValueOnNewLine(child)) {
-                return Indent.getContinuationIndent();
+                return Indent.getSpaceIndent(entrySpaces + 2);
             }
-            return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
+            return Indent.getSpaceIndent(entrySpaces);
         }
 
-        // List literal block boundaries: [ and ] never indent; contents indent normally (+2)
         if (parentType == StvnTypes.LIST_LITERAL) {
+            if (!isContainerMultiLine(node)) {
+                return Indent.getNoneIndent();
+            }
             boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
             if (childType == StvnTypes.LBRACK) {
                 return Indent.getNoneIndent();
@@ -157,8 +189,10 @@ public final class StvnBlock implements ASTBlock {
             return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
-        // Tuple literal block boundaries: ( and ) never indent; contents indent normally (+2)
         if (parentType == StvnTypes.TUPLE_LITERAL) {
+            if (!isContainerMultiLine(node)) {
+                return Indent.getNoneIndent();
+            }
             boolean sameLineMapContainer = isSameLineMapEntryContainer(node);
             if (childType == StvnTypes.LPAREN) {
                 return Indent.getNoneIndent();
@@ -169,7 +203,6 @@ public final class StvnBlock implements ASTBlock {
             return sameLineMapContainer ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
-        // Schema-level composite type constructors: :Tuple(...), :Seq(...), :Set(...), :Map(...), :Option(...), :Either(...), :Union(...)
         if (parentType == StvnTypes.PRODUCT_TYPE
                 || parentType == StvnTypes.COLLECTION_TYPE
                 || parentType == StvnTypes.SUM_TYPE) {
@@ -186,35 +219,31 @@ public final class StvnBlock implements ASTBlock {
                     || childType == StvnTypes.RPAREN) {
                 return Indent.getNoneIndent();
             }
-            return Indent.getNormalIndent();
+            return isContainerMultiLine(node) ? Indent.getNormalIndent() : Indent.getNoneIndent();
         }
 
-        // Enum variant brackets [:Enum[#A #B]] and subset filter variant lists [#filterIncl [#A #B]]
         if (parentType == StvnTypes.ENUM_DEF || parentType == StvnTypes.VARIANT_LIST) {
-            if (childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
+            if (childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK || parentType == StvnTypes.VARIANT_LIST) {
                 return Indent.getNoneIndent();
             }
-            return Indent.getNormalIndent();
+            return isContainerMultiLine(node) ? Indent.getNormalIndent() : Indent.getNoneIndent();
         }
 
-        // Metadata facet map { #offset ... }: braces never indent; multiline facet entries indent by +2 spaces
         if (parentType == StvnTypes.METADATA_MAP) {
-            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
+            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE || !isContainerMultiLine(node)) {
                 return Indent.getNoneIndent();
             }
             return Indent.getNormalIndent();
         }
 
-        // Use options block boundaries ({ #strip })
         if (parentType == StvnTypes.USE_OPTIONS_BLOCK) {
-            if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE) {
-                return Indent.getNoneIndent();
-            }
-            return Indent.getNormalIndent();
+            return Indent.getNoneIndent();
         }
 
-        // Use alias block boundaries: context-aware indentation for same-line vs new-line '{'
         if (parentType == StvnTypes.USE_ALIAS_BLOCK) {
+            if (!isContainerMultiLine(node)) {
+                return Indent.getNoneIndent();
+            }
             boolean anchoredToDirective = isAliasBlockAnchoredToDirectiveHeader(node);
             if (childType == StvnTypes.LBRACE) {
                 return Indent.getNoneIndent();
@@ -225,35 +254,27 @@ public final class StvnBlock implements ASTBlock {
             return anchoredToDirective ? Indent.getSpaceIndent(4) : Indent.getNormalIndent();
         }
 
-        if (parentType == StvnTypes.USE_MAP_ALIAS) {
-            return Indent.getNoneIndent();
-        }
-
-        if (childType == StvnTypes.USE_MAP_ALIAS) {
-            return Indent.getNormalIndent();
-        }
-
-        if (parentType == StvnTypes.USE_ELEMENT || parentType == StvnTypes.INCLUDE_ELEMENT) {
+        if (parentType == StvnTypes.USE_MAP_ALIAS
+                || parentType == StvnTypes.USE_ELEMENT
+                || parentType == StvnTypes.INCLUDE_ELEMENT) {
             return Indent.getNoneIndent();
         }
 
         if (parentType == StvnTypes.USE_STMT || parentType == StvnTypes.INCLUDE_STMT) {
             if (childType == StvnTypes.KW_USE || childType == StvnTypes.KW_INCLUDE
-                    || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK) {
+                    || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
+                    || !isContainerMultiLine(node)) {
                 return Indent.getNoneIndent();
             }
             return Indent.getNormalIndent();
         }
 
-        // Delimiters at block boundaries never indent
         if (childType == StvnTypes.LBRACE || childType == StvnTypes.RBRACE
                 || childType == StvnTypes.LBRACK || childType == StvnTypes.RBRACK
                 || childType == StvnTypes.LPAREN || childType == StvnTypes.RPAREN) {
             return Indent.getNoneIndent();
         }
 
-        // Section entries inside documents indent by 2 spaces (normal indent);
-        // comments outside the root '{ ... }' envelope remain at column 0.
         if (parentType instanceof IFileElementType) {
             if (childType == StvnTypes.COMMENT && isOutsideRootBraces(child)) {
                 return Indent.getNoneIndent();
@@ -261,7 +282,6 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNormalIndent();
         }
 
-        // Elements inside :meta { ... } indent by 2 spaces relative to :meta (4 spaces relative to root)
         if (parentType == StvnTypes.META_BLOCK) {
             if (childType == StvnTypes.META_ELEMENT || childType == StvnTypes.COMMENT) {
                 return Indent.getNormalIndent();
@@ -269,7 +289,6 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNoneIndent();
         }
 
-        // Definitions inside :defs { ... } indent by 2 spaces relative to :defs
         if (parentType == StvnTypes.DEFS_ENTRY) {
             if (childType == StvnTypes.DEFS_ELEMENT || childType == StvnTypes.COMMENT) {
                 return Indent.getNormalIndent();
@@ -277,38 +296,21 @@ public final class StvnBlock implements ASTBlock {
             return Indent.getNoneIndent();
         }
 
-        // Elements inside :package ... { ... } indent by 2 spaces relative to :package
-        if (parentType == StvnTypes.PACKAGE_ENCLOSURE) {
+        if (parentType == StvnTypes.PACKAGE_ENCLOSURE || parentType == StvnTypes.NESTED_PACKAGE_ILLEGAL) {
             if (childType == StvnTypes.PACKAGE_ELEMENT || childType == StvnTypes.COMMENT) {
                 return Indent.getNormalIndent();
             }
             return Indent.getNoneIndent();
         }
 
-        // Compound collection value contents indent by 2 spaces
-        if (parentType == StvnTypes.LIST_LITERAL
-                || parentType == StvnTypes.MAP_LITERAL
-                || parentType == StvnTypes.TUPLE_LITERAL) {
-            return Indent.getNormalIndent();
-        }
-
-        // Comments inherit normal indent if enclosed within a document or collection
-        if (childType == StvnTypes.COMMENT) {
-            if (parentType instanceof IFileElementType
-                    || parentType == StvnTypes.LIST_LITERAL
-                    || parentType == StvnTypes.MAP_LITERAL
-                    || parentType == StvnTypes.TUPLE_LITERAL
-                    || parentType == StvnTypes.PRODUCT_TYPE
-                    || parentType == StvnTypes.COLLECTION_TYPE
-                    || parentType == StvnTypes.SUM_TYPE
-                    || parentType == StvnTypes.ENUM_DEF
-                    || parentType == StvnTypes.VARIANT_LIST
-                    || parentType == StvnTypes.METADATA_MAP) {
-                return Indent.getNormalIndent();
-            }
-        }
-
         return Indent.getNoneIndent();
+    }
+
+    private boolean isContainerMultiLine(ASTNode containerNode) {
+        if (formatContext != null) {
+            return formatContext.isMultiLine(containerNode);
+        }
+        return containerNode.textContains('\n') || StvnPsiFormatContext.containsComment(containerNode);
     }
 
     private boolean isSecondValueOfMapEntry(ASTNode child) {
@@ -332,7 +334,7 @@ public final class StvnBlock implements ASTBlock {
     private static boolean isMapEntryValueOnNewLine(ASTNode secondValueNode) {
         ASTNode prev = secondValueNode.getTreePrev();
         while (prev != null && (prev.getElementType() == TokenType.WHITE_SPACE || prev.getElementType() == StvnTypes.COMMENT)) {
-            if (prev.getText().indexOf('\n') >= 0) {
+            if (prev.getElementType() == StvnTypes.COMMENT || prev.getText().indexOf('\n') >= 0) {
                 return true;
             }
             prev = prev.getTreePrev();
@@ -341,19 +343,41 @@ public final class StvnBlock implements ASTBlock {
     }
 
     private boolean isSameLineMapEntryContainer(ASTNode containerNode) {
-        ASTNode collectionVal = containerNode.getTreeParent();
-        if (collectionVal == null || collectionVal.getElementType() != StvnTypes.COLLECTION_VALUE) {
+        ASTNode cur = containerNode.getTreeParent();
+        if (cur == null || cur.getElementType() != StvnTypes.COLLECTION_VALUE) {
             return false;
         }
-        ASTNode valueNode = collectionVal.getTreeParent();
-        if (valueNode == null || valueNode.getElementType() != StvnTypes.VALUE) {
-            return false;
+        ASTNode valueNode = cur.getTreeParent();
+        while (valueNode != null && valueNode.getElementType() == StvnTypes.VALUE) {
+            ASTNode parent = valueNode.getTreeParent();
+            if (parent == null) {
+                return false;
+            }
+            IElementType pt = parent.getElementType();
+            if (pt == StvnTypes.MAP_LITERAL) {
+                return isSecondValueOfMapEntry(valueNode) && !isMapEntryValueOnNewLine(valueNode);
+            }
+            if (pt == StvnTypes.EXPLICIT_OPTION_VALUE
+                    || pt == StvnTypes.EXPLICIT_EITHER_VALUE
+                    || pt == StvnTypes.EXPLICIT_UNION_VALUE) {
+                if (hasNewlineBeforeChild(parent, valueNode)) {
+                    return false;
+                }
+                valueNode = parent.getTreeParent();
+            } else {
+                return false;
+            }
         }
-        ASTNode parent = valueNode.getTreeParent();
-        if (parent == null || parent.getElementType() != StvnTypes.MAP_LITERAL) {
-            return false;
+        return false;
+    }
+
+    private static boolean hasNewlineBeforeChild(ASTNode parent, ASTNode targetChild) {
+        for (ASTNode c = parent.getFirstChildNode(); c != null && c != targetChild; c = c.getTreeNext()) {
+            if (c.textContains('\n')) {
+                return true;
+            }
         }
-        return isSecondValueOfMapEntry(valueNode) && !isMapEntryValueOnNewLine(valueNode);
+        return false;
     }
 
     @Override
@@ -374,27 +398,27 @@ public final class StvnBlock implements ASTBlock {
     @Override
     public @Nullable Spacing getSpacing(@Nullable Block child1, @NotNull Block child2) {
         if (child1 instanceof ASTBlock b1 && child2 instanceof ASTBlock b2) {
+            if (formatContext != null && formatContext.isCompleteDocument()) {
+                Spacing exact = formatContext.getSpacingBefore(b2.getNode());
+                if (exact != null) {
+                    return exact;
+                }
+            }
+
             IElementType t1 = b1.getNode().getElementType();
             IElementType t2 = b2.getNode().getElementType();
             int keepBlankLines = settings.getCommonSettings(StvnLanguage.INSTANCE).KEEP_BLANK_LINES_IN_CODE;
             if (t1 == StvnTypes.COMMENT && t2 == StvnTypes.COMMENT) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
-            if ((t1 == StvnTypes.DEFS_ELEMENT || t1 == StvnTypes.PACKAGE_ELEMENT || t1 == StvnTypes.META_ELEMENT || t1 == StvnTypes.RBRACK) && t2 == StvnTypes.COMMENT) {
-                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
-            }
             if (t1 == StvnTypes.COMMENT) {
                 return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
             }
-            IElementType parentType = node.getElementType();
-            if ((t1 == StvnTypes.LPAREN || t1 == StvnTypes.LBRACK || t1 == StvnTypes.LBRACE)
-                    && t2 == StvnTypes.COMMENT) {
-                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
-            }
             if (t2 == StvnTypes.COMMENT) {
-                return createTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
+                return createFallbackTrailingCommentSpacing(b1.getNode(), b2.getNode(), keepBlankLines);
             }
-            if (parentType == StvnTypes.METADATA_MAP && isMultiLineMetadataMap(node)) {
+            IElementType parentType = node.getElementType();
+            if (parentType == StvnTypes.METADATA_MAP && isContainerMultiLine(node)) {
                 if ((t1 == StvnTypes.LBRACE && t2 == StvnTypes.METADATA_ENTRY)
                         || (t1 == StvnTypes.METADATA_ENTRY && t2 == StvnTypes.METADATA_ENTRY)
                         || (t1 == StvnTypes.METADATA_ENTRY && t2 == StvnTypes.RBRACE)) {
@@ -402,37 +426,54 @@ public final class StvnBlock implements ASTBlock {
                 }
             }
             if ((parentType == StvnTypes.PRODUCT_TYPE
-                    || (parentType == StvnTypes.SUM_TYPE && node.findChildByType(StvnTypes.KW_UNION) != null))
-                    && requiresMultiLineSchemaGroup(node)) {
+                    || parentType == StvnTypes.COLLECTION_TYPE
+                    || parentType == StvnTypes.SUM_TYPE)
+                    && isContainerMultiLine(node)) {
                 if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.SCHEMA_TYPE)
                         || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.SCHEMA_TYPE)
                         || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.RPAREN)) {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
-            if ((parentType == StvnTypes.COLLECTION_TYPE
-                    || (parentType == StvnTypes.SUM_TYPE
-                        && (node.findChildByType(StvnTypes.KW_OPTION) != null
-                            || node.findChildByType(StvnTypes.KW_EITHER) != null)))
-                    && isAuthoredMultiLineParameterizedConstructor(node)) {
-                if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.SCHEMA_TYPE)
-                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.SCHEMA_TYPE)
-                        || (t1 == StvnTypes.SCHEMA_TYPE && t2 == StvnTypes.RPAREN)) {
-                    return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
-                }
-            }
-            if (parentType == StvnTypes.LIST_LITERAL && requiresMultiLinePayloadContainer(node)) {
+            if (parentType == StvnTypes.LIST_LITERAL && isContainerMultiLine(node)) {
                 if ((t1 == StvnTypes.LBRACK && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.RBRACK)) {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
                 }
             }
-            if (parentType == StvnTypes.TUPLE_LITERAL && requiresMultiLinePayloadContainer(node)) {
+            if (parentType == StvnTypes.TUPLE_LITERAL && isContainerMultiLine(node)) {
                 if ((t1 == StvnTypes.LPAREN && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.VALUE)
                         || (t1 == StvnTypes.VALUE && t2 == StvnTypes.RPAREN)) {
                     return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                }
+            }
+            if (parentType == StvnTypes.MAP_LITERAL) {
+                if (isContainerMultiLine(node)) {
+                    if ((t1 == StvnTypes.LBRACE && t2 == StvnTypes.LBRACK)
+                            || (t1 == StvnTypes.RBRACK && t2 == StvnTypes.LBRACK)
+                            || (t1 == StvnTypes.RBRACK && t2 == StvnTypes.RBRACE)) {
+                        return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+                    }
+                } else {
+                    if ((t1 == StvnTypes.LBRACE && t2 == StvnTypes.LBRACK)
+                            || (t1 == StvnTypes.RBRACK && t2 == StvnTypes.RBRACE)) {
+                        return Spacing.createSpacing(0, 0, 0, false, 0);
+                    }
+                    if (t1 == StvnTypes.RBRACK && t2 == StvnTypes.LBRACK) {
+                        return Spacing.createSpacing(1, 1, 0, false, 0);
+                    }
+                }
+            }
+            if (formatContext != null
+                    && formatContext.options().schemaNestedWrapPolicy() == NestedContainerWrapPolicy.PRESERVE_AUTHORED
+                    && !isContainerMultiLine(node)
+                    && (parentType == StvnTypes.PRODUCT_TYPE
+                        || parentType == StvnTypes.COLLECTION_TYPE
+                        || parentType == StvnTypes.SUM_TYPE)) {
+                if (t1 == StvnTypes.LPAREN || t2 == StvnTypes.RPAREN) {
+                    return Spacing.createSpacing(0, 0, 0, false, 0);
                 }
             }
         }
@@ -453,147 +494,6 @@ public final class StvnBlock implements ASTBlock {
         return !seenOpenBrace;
     }
 
-    private static boolean requiresMultiLineSchemaGroup(ASTNode groupNode) {
-        for (ASTNode child = groupNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-            if (child.getElementType() == StvnTypes.SCHEMA_TYPE
-                    && isInlineFacetedOrMultiLineSchemaNode(child)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isInlineFacetedOrMultiLineSchemaNode(ASTNode schemaTypeNode) {
-        ASTNode metaMap = schemaTypeNode.findChildByType(StvnTypes.METADATA_MAP);
-        if (metaMap != null && metaMap.findChildByType(StvnTypes.METADATA_ENTRY) != null) {
-            return true;
-        }
-        return containsMultiLineSchemaConstruct(schemaTypeNode);
-    }
-
-    private static boolean isMultiLineMetadataMap(ASTNode metadataMapNode) {
-        return metadataMapNode.textContains('\n')
-                || metadataMapNode.findChildByType(StvnTypes.COMMENT) != null;
-    }
-
-    private static boolean containsMultiLineSchemaConstruct(ASTNode schemaTypeNode) {
-        ASTNode metaMap = schemaTypeNode.findChildByType(StvnTypes.METADATA_MAP);
-        if (metaMap != null && isMultiLineMetadataMap(metaMap)) {
-            return true;
-        }
-        ASTNode constructor = schemaTypeNode.findChildByType(StvnTypes.SCHEMA_CONSTRUCTOR);
-        if (constructor == null) {
-            return false;
-        }
-        ASTNode productType = constructor.findChildByType(StvnTypes.PRODUCT_TYPE);
-        if (productType != null) {
-            return productType.textContains('\n') || requiresMultiLineSchemaGroup(productType);
-        }
-        ASTNode sumType = constructor.findChildByType(StvnTypes.SUM_TYPE);
-        if (sumType != null) {
-            if (sumType.findChildByType(StvnTypes.KW_UNION) != null) {
-                return sumType.textContains('\n') || requiresMultiLineSchemaGroup(sumType);
-            }
-            if (isAuthoredMultiLineParameterizedConstructor(sumType)) {
-                return true;
-            }
-            for (ASTNode child = sumType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-                if (child.getElementType() == StvnTypes.SCHEMA_TYPE
-                        && containsMultiLineSchemaConstruct(child)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        ASTNode collectionType = constructor.findChildByType(StvnTypes.COLLECTION_TYPE);
-        if (collectionType != null) {
-            if (isAuthoredMultiLineParameterizedConstructor(collectionType)) {
-                return true;
-            }
-            for (ASTNode child = collectionType.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-                if (child.getElementType() == StvnTypes.SCHEMA_TYPE
-                        && containsMultiLineSchemaConstruct(child)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Determines whether a parameterized collection or sum constructor ({@code :Map}, {@code :Seq},
-     * {@code :Set}, {@code :Option}, or {@code :Either}) was authored in multi-line form by checking
-     * whether any boundary between {@code (}, child {@code SCHEMA_TYPE} nodes, and {@code )} spans
-     * a newline or contains a comment token.
-     */
-    private static boolean isAuthoredMultiLineParameterizedConstructor(ASTNode constructorNode) {
-        ASTNode lparen = constructorNode.findChildByType(StvnTypes.LPAREN);
-        ASTNode rparen = constructorNode.findChildByType(StvnTypes.RPAREN);
-        if (lparen == null || rparen == null) {
-            return false;
-        }
-        List<ASTNode> schemaChildren = new ArrayList<>();
-        for (ASTNode child = constructorNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-            if (child.getElementType() == StvnTypes.SCHEMA_TYPE) {
-                schemaChildren.add(child);
-            }
-        }
-        if (schemaChildren.isEmpty()) {
-            return false;
-        }
-        if (hasNewlineOrCommentBetween(lparen, schemaChildren.get(0))) {
-            return true;
-        }
-        for (int i = 0; i < schemaChildren.size() - 1; i++) {
-            if (hasNewlineOrCommentBetween(schemaChildren.get(i), schemaChildren.get(i + 1))) {
-                return true;
-            }
-        }
-        return hasNewlineOrCommentBetween(schemaChildren.get(schemaChildren.size() - 1), rparen);
-    }
-
-    private static boolean hasNewlineOrCommentBetween(ASTNode left, ASTNode right) {
-        for (ASTNode cur = left.getTreeNext(); cur != null && cur != right; cur = cur.getTreeNext()) {
-            if (cur.getElementType() == StvnTypes.COMMENT || cur.textContains('\n')) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean requiresMultiLinePayloadContainer(ASTNode containerNode) {
-        for (ASTNode child = containerNode.getFirstChildNode(); child != null; child = child.getTreeNext()) {
-            if (child.getElementType() == StvnTypes.VALUE
-                    && isStructuredOrFencedPayloadValue(child)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isStructuredOrFencedPayloadValue(@Nullable ASTNode valueNode) {
-        if (valueNode == null) {
-            return false;
-        }
-        if (valueNode.findChildByType(StvnTypes.COLLECTION_VALUE) != null) {
-            return true;
-        }
-        ASTNode strNode = valueNode.findChildByType(StvnTypes.STRING_LITERAL);
-        if (strNode != null && strNode.findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
-            return true;
-        }
-        for (IElementType wrapperType : List.of(
-                StvnTypes.EXPLICIT_OPTION_VALUE,
-                StvnTypes.EXPLICIT_EITHER_VALUE,
-                StvnTypes.EXPLICIT_UNION_VALUE)) {
-            ASTNode wrapped = valueNode.findChildByType(wrapperType);
-            if (wrapped != null) {
-                return isStructuredOrFencedPayloadValue(wrapped.findChildByType(StvnTypes.VALUE));
-            }
-        }
-        return false;
-    }
-
     private static boolean isAliasBlockAnchoredToDirectiveHeader(ASTNode aliasBlockNode) {
         ASTNode prev = aliasBlockNode.getTreePrev();
         while (prev != null && (prev.getElementType() == TokenType.WHITE_SPACE || prev.getElementType() == StvnTypes.COMMENT)) {
@@ -610,6 +510,18 @@ public final class StvnBlock implements ASTBlock {
                     return false;
                 }
                 elemPrev = elemPrev.getTreePrev();
+            }
+            ASTNode useStmt = parent.getTreeParent();
+            if (useStmt != null && useStmt.getElementType() == StvnTypes.USE_STMT) {
+                int useElemCount = 0;
+                for (ASTNode c = useStmt.getFirstChildNode(); c != null; c = c.getTreeNext()) {
+                    if (c.getElementType() == StvnTypes.USE_ELEMENT) {
+                        useElemCount++;
+                    }
+                }
+                if (useElemCount > 1) {
+                    return false;
+                }
             }
         }
         return true;
@@ -636,6 +548,7 @@ public final class StvnBlock implements ASTBlock {
                 || type == StvnTypes.DEFS_ENTRY
                 || type == StvnTypes.META_BLOCK
                 || type == StvnTypes.PACKAGE_ENCLOSURE
+                || type == StvnTypes.NESTED_PACKAGE_ILLEGAL
                 || type == StvnTypes.USE_STMT
                 || type == StvnTypes.USE_ELEMENT
                 || type == StvnTypes.INCLUDE_STMT
@@ -684,12 +597,11 @@ public final class StvnBlock implements ASTBlock {
                 || node.getFirstChildNode() == null;
     }
 
-    /**
-     * Computes horizontal spacing before a comment node in compliance with STVN_LANGUAGE_SPEC.md § 3.3.1.
-     * Preserves multi-space horizontal padding ({@code authoredSpaces >= 2}) and compensates {@code minSpaces}
-     * when interior multi-space runs earlier on the same line collapse to 1 space during PSI formatting.
-     */
-    private static Spacing createTrailingCommentSpacing(ASTNode prevNode, ASTNode commentNode, int keepBlankLines) {
+    private static Spacing createFallbackTrailingCommentSpacing(
+            ASTNode prevNode,
+            ASTNode commentNode,
+            int keepBlankLines
+    ) {
         PsiElement psi = commentNode.getPsi();
         PsiFile file = psi != null ? psi.getContainingFile() : null;
         CharSequence chars = file != null ? file.getViewProvider().getContents() : null;
@@ -701,46 +613,23 @@ public final class StvnBlock implements ASTBlock {
         for (int i = prevEnd; i < commentStart; i++) {
             char c = chars.charAt(i);
             if (c == '\n' || c == '\r') {
-                return Spacing.createSpacing(1, Integer.MAX_VALUE, 0, true, keepBlankLines);
+                return Spacing.createSpacing(0, 0, 1, true, keepBlankLines);
+            }
+            if (c == '\t') {
+                return Spacing.createSpacing(1, 1, 0, false, 0);
             }
         }
         int authoredSpaces = commentStart - prevEnd;
         if (authoredSpaces <= 1) {
-            return Spacing.createSpacing(1, 1, 0, true, keepBlankLines);
+            return Spacing.createSpacing(1, 1, 0, false, 0);
         }
-        int lineStart = prevEnd;
+        int lineStart = commentStart;
         while (lineStart > 0 && chars.charAt(lineStart - 1) != '\n' && chars.charAt(lineStart - 1) != '\r') {
             lineStart--;
         }
-        int targetCol = commentStart - lineStart;
-        int collapsedInteriorSpaces = countCollapsibleInteriorSpacesOnLine(chars, lineStart, prevEnd);
-        int estimatedCurrentLineCol = Math.max(0, (prevEnd - lineStart) - collapsedInteriorSpaces);
-        int minSpaces = Math.max(authoredSpaces, targetCol - estimatedCurrentLineCol);
-        return Spacing.createSpacing(minSpaces, Integer.MAX_VALUE, 0, true, keepBlankLines);
-    }
-
-    private static int countCollapsibleInteriorSpacesOnLine(CharSequence chars, int lineStart, int codeEnd) {
-        int i = lineStart;
-        while (i < codeEnd && (chars.charAt(i) == ' ' || chars.charAt(i) == '\t')) {
-            i++;
-        }
-        int collapsible = 0;
-        boolean inString = false;
-        int spaceRun = 0;
-        for (; i < codeEnd; i++) {
-            char c = chars.charAt(i);
-            if (c == '"' && (i == lineStart || chars.charAt(i - 1) != '\\')) {
-                inString = !inString;
-                spaceRun = 0;
-            } else if (!inString && c == ' ') {
-                spaceRun++;
-                if (spaceRun >= 2) {
-                    collapsible++;
-                }
-            } else {
-                spaceRun = 0;
-            }
-        }
-        return collapsible;
+        int origCommentCol = commentStart - lineStart;
+        int currentCodeEndCol = prevEnd - lineStart;
+        int spaces = Math.max(1, origCommentCol - currentCodeEndCol);
+        return Spacing.createSpacing(spaces, spaces, 0, false, 0);
     }
 }

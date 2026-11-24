@@ -218,20 +218,74 @@ public final class StvnReorderMetadataFacetsQuickFix extends LocalQuickFixAndInt
         String rawMapText = map.getText();
         boolean multiLine = rawMapText.indexOf('\n') >= 0 || partitioned.hasAnyComment();
         String baseIndent = StvnReorderMetaEntriesQuickFix.detectElementLineIndent(map, "    ");
-        String entryIndent = StvnReorderMetaEntriesQuickFix.detectEntryIndent(rawMapText, baseIndent + "  ");
-        String closingIndent = StvnReorderMetaEntriesQuickFix.detectClosingBraceIndent(rawMapText, baseIndent);
+        if (baseIndent.indexOf('\t') >= 0) {
+            baseIndent = "    ";
+        }
+        String entryIndent = baseIndent + "  ";
+        String closingIndent = baseIndent;
 
         String rebuiltText = StvnReorderMetaEntriesQuickFix.renderSortedBlockText(
-            partitioned.openBraceSameLineComment(),
+            partitioned,
             sorted,
-            partitioned.footerComments(),
-            partitioned.footerHadBlankLineBefore(),
             multiLine,
             entryIndent,
             closingIndent
         );
+        int inlineLengthDelta = multiLine ? 0 : (rebuiltText.length() - rawMapText.length());
         MetadataMap newMap = StvnElementFactory.createMetadataMap(project, rebuiltText);
         replaceMetadataMapInteriorInPlace(map, newMap);
+        if (inlineLengthDelta != 0) {
+            compensateDownstreamSameLineAlignedGap(map.getNode(), inlineLengthDelta);
+        }
+    }
+
+    private static void compensateDownstreamSameLineAlignedGap(ASTNode mapNode, int mapLengthDelta) {
+        ASTNode cur = mapNode;
+        while (cur != null) {
+            for (ASTNode next = cur.getTreeNext(); next != null; next = next.getTreeNext()) {
+                ASTNode adjusted = compensateFirstAlignedGapInSubtree(next, mapLengthDelta);
+                if (adjusted != null) {
+                    return;
+                }
+                if (next.textContains('\n') || next.textContains('\r')) {
+                    return;
+                }
+            }
+            cur = cur.getTreeParent();
+        }
+    }
+
+    private static @Nullable ASTNode compensateFirstAlignedGapInSubtree(ASTNode node, int mapLengthDelta) {
+        if (node.getElementType() == com.intellij.psi.TokenType.WHITE_SPACE) {
+            String ws = node.getText();
+            if (ws.indexOf('\n') >= 0 || ws.indexOf('\r') >= 0 || ws.indexOf('\t') >= 0) {
+                return node;
+            }
+            if (ws.length() >= 2) {
+                int newLen = Math.max(1, ws.length() - mapLengthDelta);
+                if (newLen != ws.length()) {
+                    ASTNode parent = node.getTreeParent();
+                    if (parent != null) {
+                        parent.replaceChild(node, com.intellij.lang.ASTFactory.whitespace(" ".repeat(newLen)));
+                    }
+                }
+                return node;
+            }
+            return null;
+        }
+        if (node.getFirstChildNode() == null) {
+            return null;
+        }
+        for (ASTNode child = node.getFirstChildNode(); child != null; child = child.getTreeNext()) {
+            ASTNode res = compensateFirstAlignedGapInSubtree(child, mapLengthDelta);
+            if (res != null) {
+                return res;
+            }
+            if (child.textContains('\n') || child.textContains('\r')) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private static void replaceMetadataMapInteriorInPlace(MetadataMap target, MetadataMap replacement) {

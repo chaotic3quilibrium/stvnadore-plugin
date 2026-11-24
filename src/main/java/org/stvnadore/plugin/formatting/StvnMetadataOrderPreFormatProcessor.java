@@ -28,10 +28,23 @@ import java.util.Collection;
 public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProcessor {
 
     /**
-     * UserData key storing the document text after pre-format metadata reordering
-     * and immediately prior to Stage 2 IntelliJ PSI whitespace formatting.
+     * Immutable pre-Stage-1 raw file snapshot guarded across Stage 1, Stage 2, and Stage 3.
+     *
+     * @param rawText        unmodified full-file text captured before Stage 1 structural reorderings
+     * @param postStage1Text full-file text recorded immediately when Stage 1 exits
+     * @param stage2Verified {@code true} once Stage 2 verifies {@code postStage1Text} matches the active PSI file
      */
-    public static final Key<String> PRE_PSI_FORMAT_TEXT_KEY = Key.create("STVN_PRE_PSI_FORMAT_TEXT");
+    public record RawPreFormatSnapshot(
+        String rawText,
+        String postStage1Text,
+        boolean stage2Verified
+    ) {}
+
+    /**
+     * UserData key storing the stamp-guarded full-file {@link RawPreFormatSnapshot} for a single reformat pass.
+     */
+    public static final Key<RawPreFormatSnapshot> RAW_PRE_FORMAT_SNAPSHOT_KEY =
+        Key.create("STVN_RAW_PRE_FORMAT_SNAPSHOT");
 
     /**
      * Constructs a new StvnMetadataOrderPreFormatProcessor instance.
@@ -45,6 +58,11 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
         if (psi == null || !psi.isValid() || !psi.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return range;
         }
+        PsiFile initialFile = psi.getContainingFile();
+        TextRange initialFileRange = initialFile != null ? initialFile.getTextRange() : null;
+        boolean fullFileReformat = initialFile != null && initialFileRange != null && range.contains(initialFileRange);
+        String rawBeforeStage1 = fullFileReformat ? initialFile.getText() : null;
+
         int initialElementLength = element.getTextLength();
         TextRange activeRange = range;
 
@@ -84,10 +102,13 @@ public final class StvnMetadataOrderPreFormatProcessor implements PreFormatProce
         PsiFile containingFile = psi.getContainingFile();
         if (containingFile != null) {
             TextRange fileRange = containingFile.getTextRange();
-            if (fileRange != null && adjustedRange.contains(fileRange)) {
-                containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, containingFile.getText());
+            if (fullFileReformat && rawBeforeStage1 != null && fileRange != null && adjustedRange.contains(fileRange)) {
+                containingFile.putUserData(
+                    RAW_PRE_FORMAT_SNAPSHOT_KEY,
+                    new RawPreFormatSnapshot(rawBeforeStage1, containingFile.getText(), false)
+                );
             } else {
-                containingFile.putUserData(PRE_PSI_FORMAT_TEXT_KEY, null);
+                containingFile.putUserData(RAW_PRE_FORMAT_SNAPSHOT_KEY, null);
             }
         }
         return adjustedRange;

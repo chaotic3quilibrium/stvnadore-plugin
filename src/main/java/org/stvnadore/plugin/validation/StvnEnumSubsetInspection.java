@@ -133,10 +133,10 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
                 var vkw = value.getValueKeyword();
                 if (vkw == null) return;
 
-                // Exempt declared #CONST references so valid enum constants never trigger undeclared/subset errors
+                // Exempt declared #CONST and :use UseMapAlias constant references so valid enum constants never trigger undeclared/subset errors
                 var resolvedConst = StvnConstantReference.resolveConstantWithContext(vkw);
-                if (resolvedConst instanceof ConstantDefinition
-                        || (resolvedConst != null && resolvedConst.getParent() instanceof ConstantDefinition)) {
+                if (StvnPsiUtils.isConstantDefinitionTarget(resolvedConst)
+                        || StvnPsiUtils.resolveTargetConstantDefinition(resolvedConst) != null) {
                     return;
                 }
 

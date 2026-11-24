@@ -12,6 +12,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.psi.StvnElementFactory;
@@ -78,8 +79,8 @@ public final class StvnBooleanValidityInspection extends LocalInspectionTool {
         }
         if (element instanceof ValueKeyword valKw) {
             var resolved = StvnConstantReference.resolveConstantWithContext(valKw);
-            if (resolved instanceof ConstantDefinition
-                    || (resolved != null && resolved.getParent() instanceof ConstantDefinition)) {
+            if (StvnPsiUtils.isConstantDefinitionTarget(resolved)
+                    || StvnPsiUtils.resolveTargetConstantDefinition(resolved) != null) {
                 return;
             }
         }

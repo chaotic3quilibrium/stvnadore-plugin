@@ -1,0 +1,80 @@
+package org.stvnadore.plugin.intentions;
+
+import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.stvnadore.plugin.StvnLanguage;
+
+/**
+ * Intention action that expands the innermost non-empty single-line STVN schema or payload
+ * container at the caret onto multiple 2-space indented lines.
+ *
+ * @since 2.0.0
+ */
+@NullMarked
+public final class StvnExpandContainerIntention extends PsiElementBaseIntentionAction {
+
+    /**
+     * Canonical user-facing action text and family name.
+     */
+    public static final String TEXT = "Expand container to multiple lines";
+
+    /**
+     * Constructs a new {@code StvnExpandContainerIntention}.
+     */
+    public StvnExpandContainerIntention() {
+    }
+
+    @Override
+    public @NotNull String getText() {
+        return TEXT;
+    }
+
+    @Override
+    public @NotNull String getFamilyName() {
+        return TEXT;
+    }
+
+    @Override
+    public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @NotNull PsiElement element) {
+        PsiFile file = element.getContainingFile();
+        if (editor == null || file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
+            return false;
+        }
+        return StvnContainerLayoutUtil.findExpandOperation(file, editor.getCaretModel().getOffset()) != null;
+    }
+
+    @Override
+    public void invoke(@NotNull Project project, @Nullable Editor editor, @NotNull PsiElement element)
+            throws IncorrectOperationException {
+        PsiFile file = element.getContainingFile();
+        if (editor == null || file == null) {
+            return;
+        }
+        var op = StvnContainerLayoutUtil.findExpandOperation(file, editor.getCaretModel().getOffset());
+        if (op != null) {
+            StvnContainerLayoutUtil.applyOperation(project, file, op);
+        }
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        var op = StvnContainerLayoutUtil.findExpandOperation(file, editor.getCaretModel().getOffset());
+        if (op == null) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        StvnContainerLayoutUtil.applyOperation(project, file, op);
+        return IntentionPreviewInfo.DIFF;
+    }
+}

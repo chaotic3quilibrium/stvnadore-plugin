@@ -411,8 +411,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                     var vkw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ValueKeyword.class, false);
                     if (vkw != null) {
                         var resolved = StvnConstantReference.resolveConstantWithContext(vkw);
-                        boolean isConstRef = resolved instanceof org.stvnadore.psi.ConstantDefinition
-                            || (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+                        boolean isConstRef = org.stvnadore.plugin.psi.StvnPsiUtils.isConstantDefinitionTarget(resolved)
+                            || org.stvnadore.plugin.psi.StvnPsiUtils.resolveTargetConstantDefinition(resolved) != null;
                         if (!isConstRef) {
                             if (!ApplicationManager.getApplication().isUnitTestMode()) {
                                 return true;
@@ -464,8 +464,8 @@ public final class StvnDiagnosticAnnotatorMapping {
                 var vkw = com.intellij.psi.util.PsiTreeUtil.getParentOfType(elem, org.stvnadore.psi.ValueKeyword.class, false);
                 if (vkw != null) {
                     var resolved = StvnConstantReference.resolveConstantWithContext(vkw);
-                    boolean isConstRef = resolved instanceof org.stvnadore.psi.ConstantDefinition
-                        || (resolved != null && resolved.getParent() instanceof org.stvnadore.psi.ConstantDefinition);
+                    boolean isConstRef = org.stvnadore.plugin.psi.StvnPsiUtils.isConstantDefinitionTarget(resolved)
+                        || org.stvnadore.plugin.psi.StvnPsiUtils.resolveTargetConstantDefinition(resolved) != null;
                     if (!isConstRef) {
                         if (!ApplicationManager.getApplication().isUnitTestMode()) {
                             return true;

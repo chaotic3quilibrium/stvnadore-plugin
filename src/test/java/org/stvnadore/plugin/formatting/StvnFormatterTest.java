@@ -424,8 +424,8 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Double space before '{' must collapse to 1 space while preserving trailing comment column alignment:\n" + text,
-            text.contains("    :use [ :org/stvnadore/prelude {                    // <-- comment"));
+        assertTrue("Authored 2-space gap before '{' and trailing comment column alignment must be preserved:\n" + text,
+            text.contains("    :use [ :org/stvnadore/prelude  {                   // <-- comment"));
         assertTrue("Alias pairs must indent at column 8:\n" + text,
             text.contains("\n        :Port :Port")
                 && text.contains("\n        #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- comment"));
@@ -448,7 +448,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             """;
         var expectedBlock = """
                 :use [
-                  :org/stvnadore/prelude {
+                  :org/stvnadore/prelude  {
                     :Port :Port
                     #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX
                   }
@@ -913,7 +913,7 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
             }
             """;
         var expectedAlignedBlock = """
-                :use [ :org/stvnadore/prelude {                   // <-- Aligned trailing comment
+                :use [ :org/stvnadore/prelude  {                  // <-- Aligned trailing comment
                     :Port :Port                                   // <-- Aligned trailing comment
                     #SHA256_LOWER_CASE_REGEX #SHA256_LOWER_CASE_REGEX // <-- Aligned trailing comment
                   }                                               // <-- Aligned trailing comment

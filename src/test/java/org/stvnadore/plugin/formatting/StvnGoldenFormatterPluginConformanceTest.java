@@ -1,10 +1,11 @@
 package org.stvnadore.plugin.formatting;
 
-import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.TestActionEvent;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jspecify.annotations.NullMarked;
@@ -12,11 +13,16 @@ import org.stvnadore.core.StvnCompilationResult;
 import org.stvnadore.core.StvnCompiler;
 import org.stvnadore.core.StvnParserConfig;
 import org.stvnadore.core.ir.StvnDocument;
+import org.stvnadore.core.printer.NestedContainerWrapPolicy;
+import org.stvnadore.core.printer.StvnSourceFormatter;
+import org.stvnadore.core.printer.StvnSourceFormatterOptions;
 import org.stvnadore.plugin.actions.StvnCopyHermeticPayloadPrettyAction;
 import org.stvnadore.plugin.actions.StvnReplaceBufferCompactIrAction;
 import org.stvnadore.plugin.actions.StvnReplaceBufferPrettyIrAction;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 import org.stvnadore.plugin.settings.StvnSettings;
+import org.stvnadore.plugin.validation.StvnReorderMetadataFacetsQuickFix;
+import org.stvnadore.psi.MetadataMap;
 
 import java.awt.datatransfer.DataFlavor;
 import java.io.IOException;
@@ -32,14 +38,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Plugin-level Golden Formatter Conformance Suite verifying the 72 mirrored golden formatter quartet files
- * ({@code src/test/resources/shared-fixtures/formatting/{input,source_pretty,pretty,compact}/}) across:
- * <ul>
- *   <li>{@link StvnReplaceBufferPrettyIrAction} and {@link StvnReplaceBufferCompactIrAction}</li>
- *   <li>Default Core Source Formatter {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
- *   <li>Core Canonical Pretty {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnCoreDelegationPostFormatProcessor}</li>
- *   <li>Structure-preserving PSI {@code Reformat Code} ({@code Ctrl+Alt+L}) via {@link StvnFormattingModelBuilder} and {@link StvnBlock}</li>
- * </ul>
+ * Plugin-level Golden Formatter Conformance Suite verifying all 23 mirrored golden formatter quartets
+ * ({@code 92} files across {@code input/}, {@code source_pretty/}, {@code pretty/}, and {@code compact/}),
+ * all 4 {@code (schemaNestedWrapPolicy, payloadNestedWrapPolicy)} combinations across both
+ * {@code CORE_SOURCE_FORMATTER} and {@code PSI_STRUCTURE_PRESERVING}, and 0-character-diff fixed points
+ * on Probes 1, 2, and 3.
  */
 @NullMarked
 public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatformTestCase {
@@ -55,7 +58,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
     );
 
     /**
-     * Zero exemptions: PSI_STRUCTURE_PRESERVING matches source_pretty/ byte-for-byte across all golden quartets.
+     * Zero exemptions: PSI_STRUCTURE_PRESERVING matches source_pretty/ byte-for-byte across all 23 golden quartets.
      */
     private static final Set<String> PSI_VS_SOURCE_PRETTY_EXEMPTIONS = Set.of();
 
@@ -112,7 +115,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 20 mirrored golden formatter quartets", 20, inputNames.size());
+        assertEquals("Expected 23 mirrored golden formatter quartets", 23, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -122,10 +125,15 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         var settings = StvnSettings.getInstance(getProject());
         var projSettings = StvnProjectSettings.getInstance(getProject());
         var prevMode = settings.getState().reformatDelegationMode;
+        var prevSchemaWrap = settings.getState().schemaNestedWrapPolicy;
+        var prevPayloadWrap = settings.getState().payloadNestedWrapPolicy;
         boolean prevSuppress = projSettings.getState().suppressCanonicalizationWarning;
 
         try {
             projSettings.getState().suppressCanonicalizationWarning = true;
+            settings.getState().schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+            settings.getState().payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+
             for (Path inputPath : listSortedFiles(INPUT_DIR)) {
                 String fileName = inputPath.getFileName().toString();
                 String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
@@ -133,7 +141,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String expectedPretty = Files.readString(PRETTY_DIR.resolve(fileName), StandardCharsets.UTF_8);
                 String expectedCompact = Files.readString(COMPACT_DIR.resolve(fileName), StandardCharsets.UTF_8);
 
-                // 1. Verify StvnReplaceBufferPrettyIrAction on input/ (preserves active file #kind, including #BODY_INCLUDE on .stvn_i)
                 var prettyActionFile = configureFormattingBuffer(fileName, inputSource);
                 var prettyAction = new StvnReplaceBufferPrettyIrAction();
                 var prettyCtx = SimpleDataContext.builder()
@@ -163,7 +170,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         expectedPretty, copiedText.endsWith("\n") ? copiedText : copiedText + "\n");
                 }
 
-                // Safeguard 3: On .stvn_i quartets, Submenu 2 StvnCopyHermeticPayloadPrettyAction normalizes #BODY_INCLUDE -> #BODY
                 if ("14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
                         || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)
                         || "20_multiline_pure_include_and_comments.core_fmt.stvn_i".equals(fileName)) {
@@ -183,7 +189,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                         copiedHermetic.endsWith("\n") ? copiedHermetic : copiedHermetic + "\n");
                 }
 
-                // 2. Verify StvnReplaceBufferCompactIrAction on input/ (preserves active file #kind)
                 var compactActionFile = configureFormattingBuffer(fileName, inputSource);
                 var compactAction = new StvnReplaceBufferCompactIrAction();
                 var compactCtx = SimpleDataContext.builder()
@@ -196,7 +201,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("StvnReplaceBufferCompactIrAction mismatch for " + fileName,
                     expectedCompact, myFixture.getEditor().getDocument().getText() + "\n");
 
-                // 3. Verify Default Ctrl+Alt+L (CORE_SOURCE_FORMATTER) on input/, source_pretty/ (idempotency), and pretty/ (fixed-point)
                 settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
 
                 var sourceFormatFile = configureFormattingBuffer(fileName, inputSource);
@@ -219,7 +223,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("Default CORE_SOURCE_FORMATTER Ctrl+Alt+L must preserve pretty/" + fileName + " as a fixed point",
                     expectedPretty, prettyFixedPointFile.getText());
 
-                // 4. Verify Ctrl+Alt+L Core Canonical Delegation on input/, compact/, and pretty/ (idempotency)
                 settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_PRETTY_CANONICAL;
 
                 var fromInputFile = configureFormattingBuffer(fileName, inputSource);
@@ -244,6 +247,8 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
             }
         } finally {
             settings.getState().reformatDelegationMode = prevMode;
+            settings.getState().schemaNestedWrapPolicy = prevSchemaWrap;
+            settings.getState().payloadNestedWrapPolicy = prevPayloadWrap;
             projSettings.getState().suppressCanonicalizationWarning = prevSuppress;
             com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
         }
@@ -252,9 +257,14 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
     public void testPsiStructurePreservingFormatterGoldenPrettyIdempotencyAndInputEquivalence() throws IOException {
         var settings = StvnSettings.getInstance(getProject());
         var prevMode = settings.getState().reformatDelegationMode;
+        var prevSchemaWrap = settings.getState().schemaNestedWrapPolicy;
+        var prevPayloadWrap = settings.getState().payloadNestedWrapPolicy;
 
         try {
             settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+            settings.getState().schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+            settings.getState().payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+
             for (Path prettyPath : listSortedFiles(PRETTY_DIR)) {
                 String fileName = prettyPath.getFileName().toString();
                 Path inputPath = INPUT_DIR.resolve(fileName);
@@ -263,7 +273,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 String expectedSourcePretty = Files.readString(sourcePrettyPath, StandardCharsets.UTF_8);
                 String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
 
-                // 1. PSI Ctrl+Alt+L on golden source_pretty/* and pretty/* must be byte-for-byte idempotent
                 var sourcePrettyPsiFile = configureFormattingBuffer(fileName, expectedSourcePretty);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(sourcePrettyPsiFile);
@@ -282,7 +291,6 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                     expectedPretty, reformattedPretty);
                 assertZeroStructuralTabsOutsideFencedBodies(reformattedPretty, "PSI pretty/" + fileName);
 
-                // 2. PSI Ctrl+Alt+L on golden input/* must be idempotent, zero-tab compliant, and CAS-equivalent
                 var inputPsiFile = configureFormattingBuffer(fileName, inputSource);
                 WriteCommandAction.runWriteCommandAction(getProject(), () -> {
                     CodeStyleManager.getInstance(getProject()).reformat(inputPsiFile);
@@ -297,19 +305,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
                 assertEquals("PSI formatter must be strictly idempotent on input/" + fileName, passOne, passTwo);
 
                 assertTrue("PSI_VS_SOURCE_PRETTY_EXEMPTIONS must be empty", PSI_VS_SOURCE_PRETTY_EXEMPTIONS.isEmpty());
-                if ("01_tripartite_datetime_tuples.stvn".equals(fileName)
-                        || "09_multiline_use_and_comments.core_fmt.stvn_i".equals(fileName)
-                        || "10_deep_recursive_nesting.core_fmt.stvn_i".equals(fileName)
-                        || "11_trailing_comment_alignment_and_facet_sorting.core_fmt.stvn_i".equals(fileName)
-                        || "12_multiline_parameterized_constructors_depth_fifteen.core_fmt.stvn_i".equals(fileName)
-                        || "13_root_section_canonical_reordering.domain.stvn".equals(fileName)
-                        || "14_comment_preserving_meta_and_facet_reordering.core_fmt.stvn_i".equals(fileName)
-                        || "15_const_trait_facets_and_temporal_enum_comments.core_fmt.stvn_i".equals(fileName)
-                        || "16_fenced_regex_and_multiline_string_facets.core_fmt.stvn_d".equals(fileName)
-                        || "17_pretty_printer_fenced_string_bias_and_roundtrip_guards.core_fmt.stvn".equals(fileName)
-                        || "18_nested_sum_tag_capture_soundness.core_fmt.stvn".equals(fileName)
-                        || "19_multiline_multi_target_use.core_fmt.stvn_i".equals(fileName)
-                        || "20_multiline_pure_include_and_comments.core_fmt.stvn_i".equals(fileName)) {
+                if (!PSI_VS_SOURCE_PRETTY_EXEMPTIONS.contains(fileName)) {
                     assertEquals("PSI formatter must match golden source_pretty/" + fileName + " byte-for-byte",
                         expectedSourcePretty, passTwo);
                 }
@@ -322,6 +318,140 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
             }
         } finally {
             settings.getState().reformatDelegationMode = prevMode;
+            settings.getState().schemaNestedWrapPolicy = prevSchemaWrap;
+            settings.getState().payloadNestedWrapPolicy = prevPayloadWrap;
+        }
+    }
+
+    public void testAll23QuartetsAcrossAll4WrapPolicyCombinationsDualEngineParity() throws IOException {
+        var settings = StvnSettings.getInstance(getProject());
+        var prevMode = settings.getState().reformatDelegationMode;
+        var prevSchemaWrap = settings.getState().schemaNestedWrapPolicy;
+        var prevPayloadWrap = settings.getState().payloadNestedWrapPolicy;
+
+        try {
+            List<Path> inputPaths = listSortedFiles(INPUT_DIR);
+            assertEquals("Expected 23 golden input files", 23, inputPaths.size());
+
+            for (NestedContainerWrapPolicy schemaPolicy : NestedContainerWrapPolicy.values()) {
+                for (NestedContainerWrapPolicy payloadPolicy : NestedContainerWrapPolicy.values()) {
+                    settings.getState().schemaNestedWrapPolicy = schemaPolicy;
+                    settings.getState().payloadNestedWrapPolicy = payloadPolicy;
+                    StvnSourceFormatterOptions opts = settings.toCoreFormatterOptions();
+
+                    for (Path inputPath : inputPaths) {
+                        String fileName = inputPath.getFileName().toString();
+                        String inputSource = Files.readString(inputPath, StandardCharsets.UTF_8);
+                        boolean trailingNl = inputSource.endsWith("\n");
+                        String expected = StvnSourceFormatter.format(inputSource, opts) + (trailingNl ? "\n" : "");
+                        String label = fileName + " [" + schemaPolicy + ", " + payloadPolicy + "]";
+
+                        settings.getState().reformatDelegationMode =
+                            StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+                        var coreFile = configureFormattingBuffer(fileName, inputSource);
+                        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                            CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+                        });
+                        assertEquals("CORE_SOURCE_FORMATTER mismatch for " + label, expected, coreFile.getText());
+                        assertNull(
+                            "RAW_PRE_FORMAT_SNAPSHOT_KEY must be cleared in finally after CORE_SOURCE_FORMATTER",
+                            coreFile.getUserData(StvnMetadataOrderPreFormatProcessor.RAW_PRE_FORMAT_SNAPSHOT_KEY)
+                        );
+
+                        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                            CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+                        });
+                        assertEquals("CORE_SOURCE_FORMATTER Pass 2 idempotency mismatch for " + label,
+                            expected, coreFile.getText());
+
+                        settings.getState().reformatDelegationMode =
+                            StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+                        var psiFile = configureFormattingBuffer(fileName, inputSource);
+                        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+                        });
+                        assertEquals("PSI_STRUCTURE_PRESERVING mismatch for " + label, expected, psiFile.getText());
+
+                        WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                            CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+                        });
+                        assertEquals("PSI_STRUCTURE_PRESERVING Pass 2 idempotency mismatch for " + label,
+                            expected, psiFile.getText());
+                    }
+                }
+            }
+        } finally {
+            settings.getState().reformatDelegationMode = prevMode;
+            settings.getState().schemaNestedWrapPolicy = prevSchemaWrap;
+            settings.getState().payloadNestedWrapPolicy = prevPayloadWrap;
+            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
+        }
+    }
+
+    public void testProbes1To3ZeroCharacterDiffFixedPointAndQuickFixColumnParity() throws IOException {
+        var settings = StvnSettings.getInstance(getProject());
+        var prevMode = settings.getState().reformatDelegationMode;
+        var prevSchemaWrap = settings.getState().schemaNestedWrapPolicy;
+        var prevPayloadWrap = settings.getState().payloadNestedWrapPolicy;
+
+        List<String> probeNames = List.of(
+            "fmt_probe_01_type_alias_alignment.core_test.stvn",
+            "fmt_probe_02_constants_meta_use_and_maps.core_test.stvn",
+            "fmt_probe_03_multiline_facets_and_tabular_body.core_test.stvn"
+        );
+
+        try {
+            settings.getState().schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+            settings.getState().payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+
+            for (String probeName : probeNames) {
+                String canonicalProbe = Files.readString(SOURCE_PRETTY_DIR.resolve(probeName), StandardCharsets.UTF_8);
+
+                settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.CORE_SOURCE_FORMATTER;
+                var coreFile = configureFormattingBuffer(probeName, canonicalProbe);
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(coreFile);
+                });
+                assertEquals("CORE_SOURCE_FORMATTER must produce 0 character diffs on canonical " + probeName,
+                    canonicalProbe, coreFile.getText());
+
+                settings.getState().reformatDelegationMode = StvnSettings.ReformatDelegationMode.PSI_STRUCTURE_PRESERVING;
+                var psiFile = configureFormattingBuffer(probeName, canonicalProbe);
+                WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                    CodeStyleManager.getInstance(getProject()).reformat(psiFile);
+                });
+                assertEquals("PSI_STRUCTURE_PRESERVING must produce 0 character diffs on canonical " + probeName,
+                    canonicalProbe, psiFile.getText());
+            }
+
+            // Verify standalone Alt+Enter StvnReorderMetadataFacetsQuickFix on Probe 3 preserves target & 1-space peer // columns
+            String probe3Input = Files.readString(
+                INPUT_DIR.resolve("fmt_probe_03_multiline_facets_and_tabular_body.core_test.stvn"),
+                StandardCharsets.UTF_8
+            );
+            var qfFile = myFixture.configureByText("fmt_probe_03_multiline_facets_and_tabular_body.core_test.stvn", probe3Input);
+            MetadataMap packetHeaderMeta = PsiTreeUtil.findChildrenOfType(qfFile, MetadataMap.class)
+                .stream()
+                .findFirst()
+                .orElseThrow();
+            WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+                StvnReorderMetadataFacetsQuickFix.reorderMetadataMap(getProject(), packetHeaderMeta);
+            });
+            String expectedReorderedMap = """
+                {
+                      #minSize         4                  // lower length bound
+                      #maxSize         24                 // upper length bound
+                      #minIncl         "PKT-0000"         // lexical floor
+                      #maxIncl         "PKT-ZZZZ"         // lexical ceiling
+                      #preserveIndent  #TRUE              // verbatim margin
+                      #regex           "^PKT-[A-Z0-9-]+$" // identifier grammar
+                    }""";
+            assertEquals("StvnReorderMetadataFacetsQuickFix must preserve target and 1-space peer // columns",
+                expectedReorderedMap, packetHeaderMeta.getText());
+        } finally {
+            settings.getState().reformatDelegationMode = prevMode;
+            settings.getState().schemaNestedWrapPolicy = prevSchemaWrap;
+            settings.getState().payloadNestedWrapPolicy = prevPayloadWrap;
         }
     }
 

@@ -4,10 +4,13 @@ import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.printer.NestedContainerWrapPolicy;
 
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -43,6 +46,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JComboBox<StvnSettings.TimeEpochHourFormat> timeEpochHourFormatComboBox;
     private @Nullable JCheckBox showEpochMagnitudeWarningsCheckBox;
     private @Nullable JComboBox<StvnSettings.ReformatDelegationMode> reformatDelegationModeComboBox;
+    private @Nullable ComboBox<NestedContainerWrapPolicy> schemaNestedWrapPolicyComboBox;
+    private @Nullable ComboBox<NestedContainerWrapPolicy> payloadNestedWrapPolicyComboBox;
     private @Nullable JTextArea templateStvnArea;
     private @Nullable JTextArea templateStvnIArea;
     private @Nullable JTextArea templateStvnDArea;
@@ -155,6 +160,28 @@ public final class StvnConfigurable implements SearchableConfigurable {
         reformatModeCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, reformatModeCombo.getPreferredSize().height));
         panel.add(reformatModeCombo);
 
+        panel.add(javax.swing.Box.createVerticalStrut(10));
+        var schemaWrapLabel = new JLabel(
+            "Schema nested container wrapping ("
+                + StvnVocabulary.KEYWORD_DEFS + " & " + StvnVocabulary.KEYWORD_TYPE + "):"
+        );
+        schemaWrapLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        panel.add(schemaWrapLabel);
+
+        var schemaWrapCombo = createWrapPolicyComboBox();
+        panel.add(schemaWrapCombo);
+
+        panel.add(javax.swing.Box.createVerticalStrut(10));
+        var payloadWrapLabel = new JLabel(
+            "Payload nested container wrapping ("
+                + StvnVocabulary.KEYWORD_BODY + " & " + StvnVocabulary.SIGIL_VALUE + "CONST):"
+        );
+        payloadWrapLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        panel.add(payloadWrapLabel);
+
+        var payloadWrapCombo = createWrapPolicyComboBox();
+        panel.add(payloadWrapCombo);
+
         panel.add(javax.swing.Box.createVerticalStrut(15));
         var epochBorderPanel = new JPanel();
         epochBorderPanel.setLayout(new javax.swing.BoxLayout(epochBorderPanel, javax.swing.BoxLayout.Y_AXIS));
@@ -222,6 +249,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
         timeEpochHourFormatComboBox = epochCombo;
         showEpochMagnitudeWarningsCheckBox = epochWarnCb;
         reformatDelegationModeComboBox = reformatModeCombo;
+        schemaNestedWrapPolicyComboBox = schemaWrapCombo;
+        payloadNestedWrapPolicyComboBox = payloadWrapCombo;
         templateStvnArea = areaStvn;
         templateStvnIArea = areaStvnI;
         templateStvnDArea = areaStvnD;
@@ -245,8 +274,12 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
+        var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
+        var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
+                || combo == null || aliasCombo == null || epCombo == null || epWarn == null
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
             return false;
         }
 
@@ -276,6 +309,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
                epCombo.getSelectedItem() != settings.getState().timeEpochHourFormat ||
                epWarn.isSelected() != settings.getState().showEpochMagnitudeWarnings ||
                refCombo.getSelectedItem() != settings.getState().reformatDelegationMode ||
+               schemaWrapCombo.getSelectedItem() != settings.getState().schemaNestedWrapPolicy ||
+               payloadWrapCombo.getSelectedItem() != settings.getState().payloadNestedWrapPolicy ||
                aliasCombo.getSelectedItem() != projSettings.getState().aliasExpansionMode;
     }
 
@@ -293,8 +328,12 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
+        var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
+        var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
+                || combo == null || aliasCombo == null || epCombo == null || epWarn == null
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
             return;
         }
 
@@ -321,6 +360,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var selectedReformatMode = (StvnSettings.ReformatDelegationMode) refCombo.getSelectedItem();
         if (selectedReformatMode != null) {
             settings.getState().reformatDelegationMode = selectedReformatMode;
+        }
+        var selectedSchemaWrap = (NestedContainerWrapPolicy) schemaWrapCombo.getSelectedItem();
+        if (selectedSchemaWrap != null) {
+            settings.getState().schemaNestedWrapPolicy = selectedSchemaWrap;
+        }
+        var selectedPayloadWrap = (NestedContainerWrapPolicy) payloadWrapCombo.getSelectedItem();
+        if (selectedPayloadWrap != null) {
+            settings.getState().payloadNestedWrapPolicy = selectedPayloadWrap;
         }
 
         var a1 = templateStvnArea;
@@ -351,8 +398,12 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var epCombo = timeEpochHourFormatComboBox;
         var epWarn = showEpochMagnitudeWarningsCheckBox;
         var refCombo = reformatDelegationModeComboBox;
+        var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
+        var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
 
-        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null || combo == null || aliasCombo == null || epCombo == null || epWarn == null || refCombo == null) {
+        if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
+                || combo == null || aliasCombo == null || epCombo == null || epWarn == null
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
             return;
         }
 
@@ -371,6 +422,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
         epCombo.setSelectedItem(settings.getState().timeEpochHourFormat);
         epWarn.setSelected(settings.getState().showEpochMagnitudeWarnings);
         refCombo.setSelectedItem(settings.getState().reformatDelegationMode);
+        schemaWrapCombo.setSelectedItem(settings.getState().schemaNestedWrapPolicy);
+        payloadWrapCombo.setSelectedItem(settings.getState().payloadNestedWrapPolicy);
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -399,10 +452,37 @@ public final class StvnConfigurable implements SearchableConfigurable {
         timeEpochHourFormatComboBox = null;
         showEpochMagnitudeWarningsCheckBox = null;
         reformatDelegationModeComboBox = null;
+        schemaNestedWrapPolicyComboBox = null;
+        payloadNestedWrapPolicyComboBox = null;
         templateStvnArea = null;
         templateStvnIArea = null;
         templateStvnDArea = null;
         templateStvnDiArea = null;
+    }
+
+    private static ComboBox<NestedContainerWrapPolicy> createWrapPolicyComboBox() {
+        var combo = new ComboBox<>(NestedContainerWrapPolicy.values());
+        combo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(
+                    javax.swing.JList<?> list,
+                    Object value,
+                    int index,
+                    boolean isSelected,
+                    boolean cellHasFocus
+            ) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value == NestedContainerWrapPolicy.PRESERVE_AUTHORED) {
+                    setText("Preserve authored single-line / multi-line layout (Default)");
+                } else if (value == NestedContainerWrapPolicy.EXPAND_NESTED) {
+                    setText("Expand nested containers to multiple lines");
+                }
+                return this;
+            }
+        });
+        combo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, combo.getPreferredSize().height));
+        return combo;
     }
 
     private static JTextArea createTemplateEditorArea() {
