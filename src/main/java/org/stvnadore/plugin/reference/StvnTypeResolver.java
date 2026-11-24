@@ -1224,6 +1224,50 @@ public final class StvnTypeResolver {
      */
     public static @Nullable String resolveValueType(Value value) {
         var resolvedNode = resolveCoreValue(value);
+        if (StvnPsiUtils.isInsideBody(value)) {
+            if (value.getValueKeyword() != null && resolveBodyPoisonedConstantInfo(value.getValueKeyword()) != null) {
+                if (resolvedNode instanceof StvnValue.StvnErrorValue err) {
+                    String errCanon = err.diagnostic().canonicalCode().orElse("");
+                    if ("E027".equals(errCanon) || "E028".equals(errCanon)) {
+                        return null;
+                    }
+                }
+                var info = resolveBaseTypeInfo(value);
+                if (info == null || info.getSchema() == null) {
+                    return null;
+                }
+                if (!StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+                    return null;
+                }
+                return formatDegradedPoisonedConstantSlotBadge(info);
+            }
+            Value unwrappedBodyLeaf = unwrapExplicitPsiValue(value);
+            if (unwrappedBodyLeaf != value
+                    && unwrappedBodyLeaf.getValueKeyword() != null
+                    && resolveBodyPoisonedConstantInfo(unwrappedBodyLeaf.getValueKeyword()) != null) {
+                var info = resolveBaseTypeInfo(value);
+                if (info == null
+                        || info.getSchema() == null
+                        || !StvnTypeInferenceHelper.isStructurallyCompatible(value, info.getSchema())) {
+                    return null;
+                }
+                String wrappedLabel = null;
+                if (resolvedNode != null && !(resolvedNode instanceof StvnValue.StvnErrorValue)) {
+                    var file = value.getContainingFile();
+                    if (file != null) {
+                        var project = value.getProject();
+                        var useLong = useLongFormSumTypes(project);
+                        wrappedLabel = formatResolvedNodeTrajectory(resolvedNode, value, file, project, useLong);
+                    }
+                }
+                if (wrappedLabel == null || wrappedLabel.isEmpty()) {
+                    wrappedLabel = resolvePsiFallbackValueType(value);
+                }
+                return (wrappedLabel == null || wrappedLabel.isEmpty())
+                    ? null
+                    : ensureDegradedWarningPrefix(wrappedLabel);
+            }
+        }
         if (resolvedNode instanceof StvnValue.StvnErrorValue err) {
             if (!isRecoverableCoreError(err, value)) {
                 return null;
@@ -1692,6 +1736,7 @@ public final class StvnTypeResolver {
         Value currPsi = psiCursor;
         StvnValue currIr = irCursor;
         boolean terminatedAtNone = false;
+        boolean haltedAtPoisonedConst = false;
 
         for (int hop = 0; hop < 16; hop++) {
             if (hop > 0 && currSchemaPsi != null && currSchemaPsi.getTypeKeyword() != null) {
@@ -1709,6 +1754,12 @@ public final class StvnTypeResolver {
             }
             String activeLayerAlias = hop == 0 ? nominalAlias : null;
             SchemaType layerRawSchema = hop == 0 ? sumRhsPsi : currSchemaPsi;
+            if (currPsi != null
+                    && currPsi.getValueKeyword() != null
+                    && resolveBodyPoisonedConstantInfo(currPsi.getValueKeyword()) != null) {
+                haltedAtPoisonedConst = true;
+                break;
+            }
             var unwrappedConstStep = unwrapConstantAtCurrentSumLayer(
                 currPsi,
                 activeLayerAlias,
@@ -1827,7 +1878,7 @@ public final class StvnTypeResolver {
         String headWithTags = renderedTags.isEmpty()
             ? nominalAlias
             : nominalAlias + " " + String.join(" ", renderedTags);
-        if (terminatedAtNone) {
+        if (terminatedAtNone || haltedAtPoisonedConst) {
             return headWithTags;
         }
 
@@ -2105,7 +2156,7 @@ public final class StvnTypeResolver {
                     }
                     return baseLabel;
                 } else {
-                    if (degradedSum || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
+                    if (degradedSum || matchesSchemaPattern(value, info.getSchema())) {
                         if (info.getSchema().getTypeKeyword() != null) {
                             var prefix = degradedSum ? "\u26A0 " : "";
                             var trace = StvnTypeReference.extractResolutionTrace(info.getSchema().getTypeKeyword());
@@ -2124,7 +2175,7 @@ public final class StvnTypeResolver {
         var isDegraded = keyword != null && isDegradedNominalAlias(value.getContainingFile(), keyword.getText());
         if (keyword != null) {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
-            if (trace.size() > 1 && (isDegraded || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema()))) {
+            if (trace.size() > 1 && (isDegraded || matchesSchemaPattern(value, info.getSchema()))) {
                 if (!StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(keyword.getText())) {
                     var prefix = isDegraded ? "\u26A0 " : "";
                     return prefix + trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")";
@@ -2132,7 +2183,7 @@ public final class StvnTypeResolver {
                 return info.getLabel();
             }
         }
-        if (isDegraded || matchesSchemaPattern(value, resolvedSchema != null ? resolvedSchema : info.getSchema())) {
+        if (isDegraded || matchesSchemaPattern(value, info.getSchema())) {
             var prefix = isDegraded ? "\u26A0 " : "";
             return prefix + info.getLabel();
         }
@@ -2248,7 +2299,10 @@ public final class StvnTypeResolver {
                 break;
             }
             String stepAlias = currSchema.getTypeKeyword() != null ? currSchema.getTypeKeyword().getText().trim() : null;
-            if (currVal != null && resolveWholeSumConstantBarrierPsi(currVal, stepAlias, inspected) != null) {
+            if (currVal != null
+                    && (resolveWholeSumConstantBarrierPsi(currVal, stepAlias, inspected) != null
+                        || (currVal.getValueKeyword() != null
+                            && resolveBodyPoisonedConstantInfo(currVal.getValueKeyword()) != null))) {
                 break;
             }
             int anchorOffset = currVal != null ? currVal.getTextRange().getStartOffset() : 0;
@@ -2452,12 +2506,19 @@ public final class StvnTypeResolver {
         var valKwForConst = value.getValueKeyword();
         if (valKwForConst != null && value.getContainingFile() != null) {
             String constName = valKwForConst.getText().trim();
-            if (!visitedConstants.add(constName)) {
-                return false;
-            }
             var constDef = resolveContextAwareConstantDefinition(valKwForConst);
-            if (constDef != null && constDef.getValue() != null) {
-                return matchesSchemaPattern(constDef.getValue(), schema, visitedSchemas, visitedConstants);
+            if (constDef != null) {
+                if (hasConstantNominalBrandMismatch(constDef, schema)) {
+                    return false;
+                }
+                if (isPoisonedConstantDefinition(constDef) || !visitedConstants.add(constName)) {
+                    return isSchemaStructurallyAssignableToSlot(constDef.getSchemaType(), schema);
+                }
+                if (constDef.getValue() != null) {
+                    return matchesSchemaPattern(constDef.getValue(), schema, visitedSchemas, visitedConstants);
+                }
+            } else if (!visitedConstants.add(constName)) {
+                return false;
             }
         }
         if (!visitedSchemas.add(schema)) {
@@ -2747,6 +2808,407 @@ public final class StvnTypeResolver {
     }
 
     /**
+     * Classifies why a {@link ConstantDefinition} in {@code :defs} is poisoned and omitted from
+     * {@link StvnDefsCatalog}.
+     */
+    public enum PoisonedConstantStatus {
+        /** Constant participates in a direct or transitive {@code :defs} reference cycle. */
+        CIRCULAR,
+        /** Constant has a poisoned governing schema or an invalid {@code :defs} value expression. */
+        INVALID_DEFINITION
+    }
+
+    /**
+     * Pairs a resolved {@code :defs} {@link ConstantDefinition} with its {@link PoisonedConstantStatus}.
+     *
+     * @param declaration target {@link ConstantDefinition} in {@code :defs}
+     * @param status      poisoned classification
+     */
+    public record PoisonedConstantInfo(
+        ConstantDefinition declaration,
+        PoisonedConstantStatus status
+    ) {
+    }
+
+    /**
+     * Resolves {@link PoisonedConstantInfo} for a primary {@code :body} {@link ValueKeyword}
+     * constant reference when it resolves to a circular or invalid {@link ConstantDefinition}.
+     *
+     * @param valKw candidate {@link ValueKeyword} inside {@code :body}
+     * @return {@link PoisonedConstantInfo} when poisoned, or {@code null} when healthy, unresolved, or non-constant
+     */
+    public static @Nullable PoisonedConstantInfo resolveBodyPoisonedConstantInfo(@Nullable ValueKeyword valKw) {
+        if (valKw == null || !(valKw.getParent() instanceof Value)) {
+            return null;
+        }
+        if (StvnMetaTemplateUtil.isInSecondaryRootSection(valKw)) {
+            return null;
+        }
+        String rawKw = valKw.getText().trim();
+        if (StvnVocabulary.BOOLEAN_KEYWORDS.contains(rawKw)
+                || StvnVocabulary.CONTROL_KEYWORDS.contains(rawKw)) {
+            return null;
+        }
+        if (resolveGoverningEnumVariant(valKw) != null) {
+            return null;
+        }
+        ConstantDefinition constDef = resolveContextAwareConstantDefinition(valKw);
+        if (constDef == null) {
+            return null;
+        }
+        PoisonedConstantStatus status = resolvePoisonedConstantStatus(constDef);
+        return status != null ? new PoisonedConstantInfo(constDef, status) : null;
+    }
+
+    /**
+     * Resolves {@link PoisonedConstantStatus} for a direct {@code :body} constant {@link Value},
+     * or {@code null} when {@code value} is not a poisoned constant reference.
+     *
+     * @param value candidate {@code :body} {@link Value}
+     * @return {@link PoisonedConstantStatus}, or {@code null}
+     */
+    public static @Nullable PoisonedConstantStatus resolveBodyPoisonedConstantStatus(@Nullable Value value) {
+        if (value == null || value.getValueKeyword() == null) {
+            return null;
+        }
+        PoisonedConstantInfo info = resolveBodyPoisonedConstantInfo(value.getValueKeyword());
+        return info != null ? info.status() : null;
+    }
+
+    /**
+     * Checks whether {@code constDef} is circular or poisoned in its declaring {@code :defs} scope.
+     *
+     * @param constDef target {@link ConstantDefinition}
+     * @return {@code true} if {@code constDef} is circular or poisoned; {@code false} otherwise
+     */
+    public static boolean isPoisonedConstantDefinition(@Nullable ConstantDefinition constDef) {
+        return resolvePoisonedConstantStatus(constDef) != null;
+    }
+
+    /**
+     * Resolves {@link PoisonedConstantStatus} for a {@link ConstantDefinition} across same-file,
+     * {@code :package}, and {@code :include}d modules, returning {@code null} when healthy.
+     *
+     * @param constDef target {@link ConstantDefinition}
+     * @return {@link PoisonedConstantStatus}, or {@code null} if {@code constDef} is healthy
+     */
+    public static @Nullable PoisonedConstantStatus resolvePoisonedConstantStatus(@Nullable ConstantDefinition constDef) {
+        if (constDef == null) {
+            return null;
+        }
+        PsiFile declFile = constDef.getContainingFile();
+        if (declFile == null || StvnPreludeBridge.isPreludeFile(declFile)) {
+            return null;
+        }
+        if (hasConstantReferenceCyclePsi(constDef, new HashSet<>())) {
+            return PoisonedConstantStatus.CIRCULAR;
+        }
+        if (constDef.getValue() == null || PsiTreeUtil.hasErrorElements(constDef)) {
+            return PoisonedConstantStatus.INVALID_DEFINITION;
+        }
+        if (constDef.getSchemaType() != null && isDegradedOrUngroundedSchema(declFile, constDef.getSchemaType())) {
+            return PoisonedConstantStatus.INVALID_DEFINITION;
+        }
+        var constKw = constDef.getValueKeyword();
+        if (constKw == null) {
+            return PoisonedConstantStatus.INVALID_DEFINITION;
+        }
+        var pkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+        String pkgPath = (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null)
+            ? pkg.getPackagePath().getText().trim()
+            : null;
+        String constName = constKw.getText().trim();
+        var snapshot = StvnCompiledDocumentCache.getSnapshot(declFile);
+        if (snapshot.catalog().findConstant(pkgPath, constName).isPresent()
+                || snapshot.catalog().findConstant(constName).isPresent()) {
+            return null;
+        }
+        if (snapshot.document().isPresent()
+                || !snapshot.catalog().nominalTypes().isEmpty()
+                || !snapshot.catalog().constants().isEmpty()) {
+            return PoisonedConstantStatus.INVALID_DEFINITION;
+        }
+        if (hasTransitiveConstantDeclarationError(constDef, new HashSet<>())) {
+            return PoisonedConstantStatus.INVALID_DEFINITION;
+        }
+        return null;
+    }
+
+    private static boolean hasConstantReferenceCyclePsi(
+        ConstantDefinition current,
+        Set<ConstantDefinition> activeStack
+    ) {
+        if (!activeStack.add(current)) {
+            return true;
+        }
+        List<ValueKeyword> candidateRefs = new ArrayList<>();
+        if (current.getValue() != null) {
+            candidateRefs.addAll(PsiTreeUtil.findChildrenOfType(current.getValue(), ValueKeyword.class));
+        }
+        if (current.getMetadataMap() != null) {
+            candidateRefs.addAll(PsiTreeUtil.findChildrenOfType(current.getMetadataMap(), ValueKeyword.class));
+        }
+        if (current.getSchemaType() != null && current.getSchemaType().getMetadataMap() != null) {
+            candidateRefs.addAll(PsiTreeUtil.findChildrenOfType(current.getSchemaType().getMetadataMap(), ValueKeyword.class));
+        }
+        for (ValueKeyword refKw : candidateRefs) {
+            String refText = refKw.getText().trim();
+            if (StvnVocabulary.BOOLEAN_KEYWORDS.contains(refText)
+                    || StvnVocabulary.CONTROL_KEYWORDS.contains(refText)
+                    || resolveGoverningEnumVariant(refKw) != null) {
+                continue;
+            }
+            ConstantDefinition nextDef = resolveContextAwareConstantDefinition(refKw);
+            if (nextDef != null && hasConstantReferenceCyclePsi(nextDef, new HashSet<>(activeStack))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasTransitiveConstantDeclarationError(
+        ConstantDefinition current,
+        Set<ConstantDefinition> visited
+    ) {
+        if (!visited.add(current)) {
+            return true;
+        }
+        PsiFile file = current.getContainingFile();
+        var range = current.getTextRange();
+        if (file != null && range != null) {
+            var snap = StvnCompiledDocumentCache.getSnapshot(file);
+            boolean directOverlap = snap.diagnostics().stream().anyMatch(d ->
+                d.severity() == StvnDiagnostic.DiagnosticSeverity.ERROR
+                    && d.startOffset() < range.getEndOffset()
+                    && d.endOffset() > range.getStartOffset()
+            );
+            if (directOverlap) {
+                return true;
+            }
+        }
+        if (current.getValue() != null) {
+            for (ValueKeyword refKw : PsiTreeUtil.findChildrenOfType(current.getValue(), ValueKeyword.class)) {
+                String refText = refKw.getText().trim();
+                if (StvnVocabulary.BOOLEAN_KEYWORDS.contains(refText)
+                        || StvnVocabulary.CONTROL_KEYWORDS.contains(refText)
+                        || resolveGoverningEnumVariant(refKw) != null) {
+                    continue;
+                }
+                ConstantDefinition nextDef = resolveContextAwareConstantDefinition(refKw);
+                if (nextDef == null || hasTransitiveConstantDeclarationError(nextDef, visited)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Evaluates whether a constant's declared {@link SchemaType} is structurally and nominally
+     * assignable to {@code slotSchema} across scalar, {@code :Enum}, composite, collection, and sum slots.
+     *
+     * @param constSchema declared {@link SchemaType} on the {@link ConstantDefinition}
+     * @param slotSchema  governing {@link SchemaType} of the target payload slot
+     * @return {@code true} if structurally and nominally compatible; {@code false} otherwise
+     */
+    public static boolean isSchemaStructurallyAssignableToSlot(
+        @Nullable SchemaType constSchema,
+        @Nullable SchemaType slotSchema
+    ) {
+        return isSchemaStructurallyAssignableToSlot(constSchema, slotSchema, new HashSet<>());
+    }
+
+    private static boolean isSchemaStructurallyAssignableToSlot(
+        @Nullable SchemaType constSchema,
+        @Nullable SchemaType slotSchema,
+        Set<String> visitedPairs
+    ) {
+        if (constSchema == null || slotSchema == null) {
+            return false;
+        }
+        String pairKey = constSchema.getTextOffset() + "=>" + slotSchema.getTextOffset();
+        if (!visitedPairs.add(pairKey)) {
+            return false;
+        }
+        if (hasSchemaNominalBrandMismatch(constSchema, slotSchema, new HashSet<>())) {
+            return false;
+        }
+        SchemaType effSlot = unwrapNominalSchemaChain(slotSchema);
+        if (effSlot == null || effSlot.getSchemaConstructor() == null) {
+            return true;
+        }
+        SchemaType effConst = unwrapNominalSchemaChain(constSchema);
+        if (effConst == null || effConst.getSchemaConstructor() == null) {
+            return false;
+        }
+        SchemaConstructor slotCtor = effSlot.getSchemaConstructor();
+        SchemaConstructor constCtor = effConst.getSchemaConstructor();
+
+        if (slotCtor.getSumType() != null && slotCtor.getSumType().getEnumDef() == null) {
+            SumType slotSum = slotCtor.getSumType();
+            List<SchemaType> slotBranches = PsiTreeUtil.getChildrenOfTypeAsList(slotSum, SchemaType.class);
+            String slotSumText = slotSum.getText().trim();
+            if (constCtor.getSumType() != null && constCtor.getSumType().getEnumDef() == null) {
+                SumType constSum = constCtor.getSumType();
+                List<SchemaType> constBranches = PsiTreeUtil.getChildrenOfTypeAsList(constSum, SchemaType.class);
+                String constSumText = constSum.getText().trim();
+                if (slotSumText.startsWith(StvnVocabulary.TYPE_OPTION)
+                        && constSumText.startsWith(StvnVocabulary.TYPE_OPTION)
+                        && !slotBranches.isEmpty()
+                        && !constBranches.isEmpty()
+                        && isSchemaStructurallyAssignableToSlot(constBranches.get(0), slotBranches.get(0), new HashSet<>(visitedPairs))) {
+                    return true;
+                }
+                if (slotSumText.startsWith(StvnVocabulary.TYPE_EITHER)
+                        && constSumText.startsWith(StvnVocabulary.TYPE_EITHER)
+                        && slotBranches.size() >= 2
+                        && constBranches.size() >= 2
+                        && isSchemaStructurallyAssignableToSlot(constBranches.get(0), slotBranches.get(0), new HashSet<>(visitedPairs))
+                        && isSchemaStructurallyAssignableToSlot(constBranches.get(1), slotBranches.get(1), new HashSet<>(visitedPairs))) {
+                    return true;
+                }
+                if (slotSumText.startsWith(StvnVocabulary.TYPE_UNION)
+                        && constSumText.startsWith(StvnVocabulary.TYPE_UNION)
+                        && !slotBranches.isEmpty()
+                        && slotBranches.size() == constBranches.size()) {
+                    boolean allBranchesMatch = true;
+                    for (int i = 0; i < slotBranches.size(); i++) {
+                        if (!isSchemaStructurallyAssignableToSlot(constBranches.get(i), slotBranches.get(i), new HashSet<>(visitedPairs))) {
+                            allBranchesMatch = false;
+                            break;
+                        }
+                    }
+                    if (allBranchesMatch) {
+                        return true;
+                    }
+                }
+            }
+            if (slotSumText.startsWith(StvnVocabulary.TYPE_OPTION)) {
+                return !slotBranches.isEmpty()
+                    && isSchemaStructurallyAssignableToSlot(constSchema, slotBranches.get(0), new HashSet<>(visitedPairs));
+            }
+            if (slotSumText.startsWith(StvnVocabulary.TYPE_EITHER)) {
+                return slotBranches.size() >= 2
+                    && isSchemaStructurallyAssignableToSlot(constSchema, slotBranches.get(1), new HashSet<>(visitedPairs));
+            }
+            if (slotSumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+                for (SchemaType branch : slotBranches) {
+                    if (isSchemaStructurallyAssignableToSlot(constSchema, branch, new HashSet<>(visitedPairs))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if (slotCtor.getAtomicType() != null) {
+            return constCtor.getAtomicType() != null
+                && slotCtor.getAtomicType().getText().trim().equals(constCtor.getAtomicType().getText().trim());
+        }
+        if (slotCtor.getSumType() != null && slotCtor.getSumType().getEnumDef() != null) {
+            if (constCtor.getSumType() == null || constCtor.getSumType().getEnumDef() == null) {
+                return false;
+            }
+            Set<String> allowed = new HashSet<>();
+            for (var v : slotCtor.getSumType().getEnumDef().getValueKeywordList()) {
+                allowed.add(v.getText().trim());
+            }
+            for (var cv : constCtor.getSumType().getEnumDef().getValueKeywordList()) {
+                if (!allowed.contains(cv.getText().trim())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (slotCtor.getProductType() != null) {
+            if (constCtor.getProductType() == null) {
+                return false;
+            }
+            List<SchemaType> slotElems = slotCtor.getProductType().getSchemaTypeList();
+            List<SchemaType> constElems = constCtor.getProductType().getSchemaTypeList();
+            if (slotElems.size() != constElems.size()) {
+                return false;
+            }
+            for (int i = 0; i < slotElems.size(); i++) {
+                if (!isSchemaStructurallyAssignableToSlot(constElems.get(i), slotElems.get(i), new HashSet<>(visitedPairs))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (slotCtor.getCollectionType() != null) {
+            if (constCtor.getCollectionType() == null) {
+                return false;
+            }
+            var slotHead = slotCtor.getCollectionType().getFirstChild();
+            var constHead = constCtor.getCollectionType().getFirstChild();
+            String slotHeadText = slotHead != null ? slotHead.getText().trim() : "";
+            String constHeadText = constHead != null ? constHead.getText().trim() : "";
+            if (!slotHeadText.equals(constHeadText)) {
+                return false;
+            }
+            List<SchemaType> slotArgs = slotCtor.getCollectionType().getSchemaTypeList();
+            List<SchemaType> constArgs = constCtor.getCollectionType().getSchemaTypeList();
+            if (slotArgs.size() != constArgs.size()) {
+                return false;
+            }
+            for (int i = 0; i < slotArgs.size(); i++) {
+                if (!isSchemaStructurallyAssignableToSlot(constArgs.get(i), slotArgs.get(i), new HashSet<>(visitedPairs))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static String formatDegradedPoisonedConstantSlotBadge(ResolvedTypeInfo info) {
+        SchemaType slotSchema = info.getSchema();
+        SchemaType unwrapped = unwrapNominalSchemaChain(slotSchema);
+        SchemaType inspectSchema = unwrapped != null ? unwrapped : slotSchema;
+        TypeKeyword slotKw = slotSchema.getTypeKeyword();
+        if (slotKw != null) {
+            String rawAlias = slotKw.getText().trim();
+            String shortAlias = rawAlias.startsWith(":org/stvnadore/prelude/")
+                ? StvnVocabulary.SIGIL_TYPIC + rawAlias.substring(":org/stvnadore/prelude/".length())
+                : rawAlias;
+            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
+                return ensureDegradedWarningPrefix(shortAlias);
+            }
+            if (isCompositeOrCollectionPsiSchema(inspectSchema)) {
+                var hops = StvnTypeReference.extractClickableResolutionHops(slotKw, true);
+                if (!hops.isEmpty()) {
+                    String head = hops.get(0).displayLabel();
+                    if (hops.size() > 1) {
+                        String tail = String.join(
+                            " -> ",
+                            hops.subList(1, hops.size()).stream().map(StvnTypeReference.TraceHop::displayLabel).toList()
+                        );
+                        return ensureDegradedWarningPrefix(head + " (-> " + tail + ")");
+                    }
+                    return ensureDegradedWarningPrefix(head);
+                }
+            }
+            var trace = StvnTypeReference.extractResolutionTrace(slotKw);
+            if (trace.size() > 1) {
+                return ensureDegradedWarningPrefix(
+                    trace.get(0) + " (-> " + String.join(" -> ", trace.subList(1, trace.size())) + ")"
+                );
+            }
+            return ensureDegradedWarningPrefix(rawAlias);
+        }
+        var ctor = inspectSchema.getSchemaConstructor();
+        if (ctor != null && ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
+            return ensureDegradedWarningPrefix(StvnVocabulary.TYPE_ENUM);
+        }
+        return ensureDegradedWarningPrefix(info.getLabel());
+    }
+
+    private static String ensureDegradedWarningPrefix(String label) {
+        return label.startsWith("\u26A0 ") ? label : "\u26A0 " + label;
+    }
+
+    /**
      * Checks pure-PSI nominal brand compatibility (§ 9.1 {@code E027}) between a {@link ConstantDefinition}
      * and an expected slot {@link SchemaType}, including sum branch reachability and composite element brands.
      *
@@ -2963,6 +3425,7 @@ public final class StvnTypeResolver {
             if (constDef == null
                     || constDef.getSchemaType() == null
                     || constDef.getValue() == null
+                    || isPoisonedConstantDefinition(constDef)
                     || !visited.add(constDef)) {
                 break;
             }
@@ -3230,6 +3693,9 @@ public final class StvnTypeResolver {
         ConstantDefinition constDef = resolveContextAwareConstantDefinition(leafKw);
         if (constDef == null) {
             return badgeText.length();
+        }
+        if (valueElement == leafBodyValue && isPoisonedConstantDefinition(constDef)) {
+            return 0;
         }
         List<SumTrajectoryStep> bodySteps = resolveSumTrajectorySteps(valueElement);
         if (bodySteps.isEmpty()) {
@@ -5033,7 +5499,7 @@ public final class StvnTypeResolver {
                 if (err.schema() instanceof StvnSchema.PoisonedSchema) {
                     return true;
                 }
-                if (matchesSchemaPattern(value, toInspect)) {
+                if (matchesSchemaPattern(value, info.getSchema())) {
                     return true;
                 }
                 var ctor = toInspect.getSchemaConstructor();

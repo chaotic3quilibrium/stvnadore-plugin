@@ -72,11 +72,14 @@ public final class StvnTypeInferenceHelper {
             if (!isMatchingEnumVariant) {
                 var constDef = StvnTypeResolver.resolveContextAwareConstantDefinition(valKw);
                 if (constDef != null) {
-                    if (!visitedConstants.add(constDef)) {
-                        return false;
-                    }
                     if (StvnTypeResolver.hasConstantNominalBrandMismatch(constDef, expectedSchema)) {
                         return false;
+                    }
+                    if (StvnTypeResolver.isPoisonedConstantDefinition(constDef) || !visitedConstants.add(constDef)) {
+                        return StvnTypeResolver.isSchemaStructurallyAssignableToSlot(
+                            constDef.getSchemaType(),
+                            expectedSchema
+                        );
                     }
                     var constVal = constDef.getValue();
                     return constVal != null
@@ -117,10 +120,38 @@ public final class StvnTypeInferenceHelper {
             if (sum.getEnumDef() != null) {
                 return valueElement.getValueKeyword() != null || (valueElement.getText() != null && valueElement.getText().startsWith(org.stvnadore.core.StvnVocabulary.SIGIL_VALUE));
             }
-            if (valueElement.getExplicitOptionValue() != null || valueElement.getExplicitEitherValue() != null || valueElement.getExplicitUnionValue() != null) {
-                return true;
-            }
             var innerSchemas = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            String sumText = sum.getText().trim();
+            if (valueElement.getExplicitOptionValue() != null
+                    && sumText.startsWith(org.stvnadore.core.StvnVocabulary.TYPE_OPTION)) {
+                var innerOptVal = valueElement.getExplicitOptionValue().getValue();
+                return innerOptVal == null
+                    || (!innerSchemas.isEmpty()
+                        && isStructurallyCompatible(innerOptVal, innerSchemas.get(0), new HashSet<>(visited), new HashSet<>(visitedConstants)));
+            }
+            if (valueElement.getExplicitEitherValue() != null
+                    && sumText.startsWith(org.stvnadore.core.StvnVocabulary.TYPE_EITHER)
+                    && innerSchemas.size() >= 2) {
+                var expEither = valueElement.getExplicitEitherValue();
+                boolean isLeft = expEither.getLeftLiteral() != null || expEither.getLeftShortLiteral() != null;
+                var innerEitherVal = expEither.getValue();
+                return innerEitherVal == null
+                    || isStructurallyCompatible(innerEitherVal, innerSchemas.get(isLeft ? 0 : 1), new HashSet<>(visited), new HashSet<>(visitedConstants));
+            }
+            if (valueElement.getExplicitUnionValue() != null
+                    && sumText.startsWith(org.stvnadore.core.StvnVocabulary.TYPE_UNION)) {
+                var expUnion = valueElement.getExplicitUnionValue();
+                var idxOpt = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.resolveZeroBasedUnionBranchIndex(
+                    expUnion.getUnionTagPrefix().getText().trim(),
+                    innerSchemas.size()
+                );
+                if (idxOpt.isEmpty()) {
+                    return false;
+                }
+                var innerUnionVal = expUnion.getValue();
+                return innerUnionVal == null
+                    || isStructurallyCompatible(innerUnionVal, innerSchemas.get(idxOpt.getAsInt()), new HashSet<>(visited), new HashSet<>(visitedConstants));
+            }
             for (var branch : innerSchemas) {
                 if (isStructurallyCompatible(valueElement, branch, new HashSet<>(visited), new HashSet<>(visitedConstants))) {
                     return true;

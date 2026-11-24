@@ -396,8 +396,8 @@ public final class StvnGauntletV10Stage1PluginMetaDisjointParityTest extends Bas
                         && h.getStartOffset() == nameLitStart && h.getEndOffset() == nameLitEnd
                         && h.getDescription().contains("W001-WARN_DOCUMENT_NAME_MISMATCH")));
 
-                // Schema MetadataMap 5-tier spans remain unchanged
-                int expectedSizeEnd = enable26 ? sizeEntryStart + "#size".length() : sizeEntryEnd;
+                // Schema MetadataMap 5-tier spans pin uniformly to the facet keyword token in both Pass A and Pass B
+                int expectedSizeEnd = sizeEntryStart + "#size".length();
                 assertTrue("Expected #size 16 order error in " + diags, diags.stream().anyMatch(h ->
                     h.getSeverity() == HighlightSeverity.ERROR
                         && h.getStartOffset() == sizeEntryStart && h.getEndOffset() == expectedSizeEnd

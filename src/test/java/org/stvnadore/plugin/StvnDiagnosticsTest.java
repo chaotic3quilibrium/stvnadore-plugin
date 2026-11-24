@@ -6947,7 +6947,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     : h.getSeverity() == HighlightSeverity.ERROR)
                 .filter(h -> h.getStartOffset() == exp.startOffset() && h.getEndOffset() == exp.endOffset())
                 .filter(h -> h.getDescription() != null
-                    && (h.getDescription().contains(exp.messageSubstring()) || h.getDescription().contains(exp.symbolicId())))
+                    && (h.getDescription().contains(exp.messageSubstring())
+                        || h.getDescription().contains(exp.symbolicId())
+                        || h.getDescription().contains(":" + exp.canonicalCode() + "-")))
                 .findFirst();
             assertTrue("Missing coordinate-pinned highlight at [" + exp.startOffset() + ", " + exp.endOffset() + "] for "
                 + exp.canonicalCode() + "/" + exp.symbolicId() + " ('" + exp.messageSubstring() + "') in " + fileName
@@ -7033,6 +7035,35 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             }
         } finally {
             myFixture.disableInspections(metaInspections);
+        }
+    }
+
+    public void testGauntletV10Batch4SchemaFacetOrderKeywordPinningSharedContractsPassAAndPassB() throws Exception {
+        String[] batch4Fixtures = {
+            "metadata/invalid/order_violation/inv_order_005_non_poisoning_const_and_body_bounds.stvn",
+            "metadata/invalid/order_violation/inv_order_bounds_before_definition.stvn",
+            "metadata/invalid/order_violation/inv_order_bounds_subtier_inversion.stvn",
+            "metadata/invalid/order_violation/inv_order_constraint_before_bounds.stvn",
+            "metadata/invalid/order_violation/inv_order_trait_before_definition.stvn",
+            "syntax/invalid/intervals/inverted_bounds_sibling_facet_and_non_adjacent_pinning.stvn_d",
+            "syntax/invalid/metadata/schema_facet_order_keyword_pinning_valve_tag.stvn",
+            "syntax/invalid/metadata/standalone_orphan_type_filter_order_keyword_pinning.stvn"
+        };
+        for (String fixture : batch4Fixtures) {
+            assertDiagnosticContract(fixture);
+        }
+        var allStvnInspections = com.intellij.codeInspection.LocalInspectionEP.LOCAL_INSPECTION.getExtensionList().stream()
+            .filter(ep -> "STVN".equals(ep.language))
+            .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
+            .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
+        assertEquals("Expected all 26 STVN local inspections registered in plugin.xml", 26, allStvnInspections.length);
+        myFixture.enableInspections(allStvnInspections);
+        try {
+            for (String fixture : batch4Fixtures) {
+                assertDiagnosticContract(fixture);
+            }
+        } finally {
+            myFixture.disableInspections(allStvnInspections);
         }
     }
 

@@ -41,6 +41,7 @@ import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.StvnDiagnosticCodes;
 import org.stvnadore.plugin.validation.StvnDiagnosticFormatter;
 import org.stvnadore.plugin.validation.StvnMetadataFacetAllowlist;
+import org.stvnadore.plugin.validation.StvnMetadataOrderInspection;
 import org.stvnadore.plugin.validation.StvnTrailingSlashInspection;
 import org.stvnadore.plugin.validation.quickfix.StvnTraitViolationQuickFixProvider;
 import org.stvnadore.psi.AtomicType;
@@ -63,6 +64,7 @@ import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.MetaUnknownFacet;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.MetadataValue;
 import org.stvnadore.psi.PackageElement;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.PackagePath;
@@ -79,6 +81,7 @@ import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
+import org.stvnadore.psi.VariantList;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -182,11 +185,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
 
-        // 1. If originalElement resides within a metadata facet keyword, identity literal, or kind value, render disjoint card
+        // 1. If originalElement resides within a metadata facet keyword, identity literal, kind value, or schema facet keyword/argument, render disjoint card
         if (originalElement != null) {
             var metaHoverTarget = resolveMetaHoverTarget(originalElement);
             if (metaHoverTarget != null) {
                 return buildTargetDocumentation(metaHoverTarget, originalElement);
+            }
+            var schemaFacetHoverTarget = resolveMetadataEntryHoverTarget(originalElement);
+            if (schemaFacetHoverTarget != null) {
+                return buildTargetDocumentation(schemaFacetHoverTarget, originalElement);
             }
         }
 
@@ -195,7 +202,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (directMetaTarget != null) {
             return buildTargetDocumentation(directMetaTarget, originalElement);
         }
-        if (element instanceof MetadataEntry) {
+        var directSchemaFacetTarget = resolveMetadataEntryHoverTarget(element);
+        if (directSchemaFacetTarget != null) {
+            return buildTargetDocumentation(directSchemaFacetTarget, originalElement);
+        }
+        if (element instanceof MetadataEntry || element instanceof MetadataValue || element instanceof VariantList) {
             return buildTargetDocumentation(element, originalElement);
         }
         if (isContainerDocumentationSuppressionTarget(element) || (originalElement != null && isContainerDocumentationSuppressionTarget(originalElement))) {
@@ -649,6 +660,20 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return sb.toString();
         }
 
+        if (target instanceof MetadataValue metaVal) {
+            return renderMetadataFacetValueCard(metaVal);
+        }
+
+        if (target instanceof VariantList variantList) {
+            return renderMetadataFilterListCard(variantList);
+        }
+
+        MetadataEntry kwParentEntry = PsiTreeUtil.getParentOfType(target, MetadataEntry.class, false);
+        if (kwParentEntry != null
+                && PsiTreeUtil.isAncestor(StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(kwParentEntry), target, false)) {
+            return renderMetadataEntryFacetCard(kwParentEntry);
+        }
+
         if (target instanceof ValueKeyword valKw) {
             var text = valKw.getText().trim();
             if (valKw.getParent() instanceof ConstantDefinition constDef) {
@@ -780,17 +805,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
 
         if (target instanceof MetadataEntry entry) {
-            var redundantCard = buildRedundantFacetHoverDoc(entry);
-            if (redundantCard != null) {
-                return redundantCard;
-            }
-            var text = entry.getText().trim();
-            var keyword = text.split("\\s+")[0];
-            var specDesc = getFacetSpecificationDoc(keyword, entry);
-            if (specDesc != null) {
-                return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
-            }
-            return "<b>Metadata Facet:</b> <code>" + text + "</code>";
+            return renderMetadataEntryFacetCard(entry);
         }
 
         if (target instanceof ProductType productType) {
@@ -1397,7 +1412,11 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
               .append(escapeHtmlBody(constLabel))
               .append("</code> participates in a circular constant definition in <code>")
               .append(StvnVocabulary.KEYWORD_DEFS)
-              .append("</code>.");
+              .append("</code> <code>[")
+              .append(StvnDiagnosticFormatter.ENCLAVE_PLUGIN)
+              .append(':')
+              .append(StvnDiagnosticCodes.WARN_POISONED_CONSTANT_USAGE)
+              .append("]</code>.");
             return;
         }
         StvnSchema rawLeafIr = resolveRawLeafIrSchemaForCompliance(bodyVal, leafSchema);
@@ -1470,6 +1489,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     "STVN_SYNTAX_ERROR"
                 )
             );
+        }
+        if (compilerErrs.isEmpty() && StvnTypeResolver.isPoisonedConstantDefinition(constDef)) {
+            sb.append("<hr/>");
+            sb.append("<b>Compliance Status:</b> <b style=\"color: #").append(getWarningBadgeColorHex()).append(";\">")
+              .append("Suspended (Invalid Constant)</b><br/>");
+            sb.append("Payload compliance evaluation is suspended because constant <code>")
+              .append(escapeHtmlBody(constLabel))
+              .append("</code> has an invalid constant definition in <code>")
+              .append(StvnVocabulary.KEYWORD_DEFS)
+              .append("</code> <code>[")
+              .append(StvnDiagnosticFormatter.ENCLAVE_PLUGIN)
+              .append(':')
+              .append(StvnDiagnosticCodes.WARN_POISONED_CONSTANT_USAGE)
+              .append("]</code>.");
+            return;
         }
         if (compilerErrs.isEmpty() && isBodyPass3Suspended(bodyVal)) {
             appendSuspendedDocumentErrorsFooter(sb);
@@ -3251,18 +3285,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
 
+        if (target instanceof MetadataValue metaVal) {
+            return renderMetadataFacetValueCard(metaVal);
+        }
+
+        if (target instanceof VariantList variantList) {
+            return renderMetadataFilterListCard(variantList);
+        }
+
+        MetadataEntry kwQuickEntry = PsiTreeUtil.getParentOfType(target, MetadataEntry.class, false);
+        if (kwQuickEntry != null
+                && PsiTreeUtil.isAncestor(StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(kwQuickEntry), target, false)) {
+            return renderMetadataEntryFacetCard(kwQuickEntry);
+        }
+
         if (target instanceof MetadataEntry entry) {
-            var redundantCard = buildRedundantFacetHoverDoc(entry);
-            if (redundantCard != null) {
-                return redundantCard;
-            }
-            var text = entry.getText().trim();
-            var keyword = text.split("\\s+")[0];
-            var specDesc = getFacetSpecificationDoc(keyword, entry);
-            if (specDesc != null) {
-                return "<b>Metadata Facet:</b> <code>" + text + "</code><br/><hr/>" + specDesc;
-            }
-            return "<b>Metadata Facet:</b> <code>" + text + "</code>";
+            return renderMetadataEntryFacetCard(entry);
         }
 
         if (target instanceof ProductType productType) {
@@ -3869,8 +3907,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (metaHoverTarget != null) {
                 return metaHoverTarget;
             }
-            var metaEntry = PsiTreeUtil.getParentOfType(originalElement, MetadataEntry.class, false);
-            if (metaEntry != null) return metaEntry;
+            var schemaFacetTarget = resolveMetadataEntryHoverTarget(originalElement);
+            if (schemaFacetTarget != null) {
+                return schemaFacetTarget;
+            }
 
             var lhsTarget = PsiTreeUtil.getParentOfType(originalElement, TypeDefTarget.class, false);
             if (lhsTarget != null) {
@@ -3944,10 +3984,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
 
-        // 1. FIRST PRIORITY: Resolve disjoint :meta keyword leaf vs. value literal targets
+        // 1. FIRST PRIORITY: Resolve disjoint :meta and schema MetadataEntry keyword leaf vs. value literal targets
         var metaHoverTarget = resolveMetaHoverTarget(contextElement);
         if (metaHoverTarget != null) {
             return metaHoverTarget;
+        }
+        var schemaFacetHoverTarget = resolveMetadataEntryHoverTarget(contextElement);
+        if (schemaFacetHoverTarget != null) {
+            return schemaFacetHoverTarget;
         }
 
         // 2. Container suppression check for non-metadata elements
@@ -4205,6 +4249,122 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             }
         }
         return null;
+    }
+
+    private static @Nullable PsiElement resolveMetadataEntryHoverTarget(@Nullable PsiElement element) {
+        if (element == null || isTriviaOrBadElement(element)) {
+            return null;
+        }
+        if (element instanceof MetadataValue || element instanceof VariantList) {
+            return element;
+        }
+        MetadataEntry metaEntry = element instanceof MetadataEntry directEntry
+            ? directEntry
+            : PsiTreeUtil.getParentOfType(element, MetadataEntry.class, false);
+        if (metaEntry == null || element == metaEntry) {
+            return null;
+        }
+        PsiElement kwPsi = StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(metaEntry);
+        if (PsiTreeUtil.isAncestor(kwPsi, element, false)) {
+            return kwPsi;
+        }
+        if (PsiTreeUtil.getParentOfType(element, ValueKeyword.class, false) != null
+                || element instanceof ValueKeyword) {
+            return null;
+        }
+        PsiElement valPsi = StvnMetadataOrderInspection.resolveMetadataEntryValuePsi(metaEntry);
+        if (valPsi != null && PsiTreeUtil.isAncestor(valPsi, element, false)) {
+            return valPsi;
+        }
+        return null;
+    }
+
+    private static String renderMetadataEntryFacetCard(MetadataEntry entry) {
+        var redundantCard = buildRedundantFacetHoverDoc(entry);
+        if (redundantCard != null) {
+            return redundantCard;
+        }
+        var text = entry.getText().trim();
+        var keyword = StvnMetadataOrderInspection.extractFacetKeyword(entry);
+        var specDesc = getFacetSpecificationDoc(keyword, entry);
+        if (specDesc != null) {
+            return "<b>Metadata Facet:</b> <code>" + escapeHtmlBody(text) + "</code><br/><hr/>" + specDesc;
+        }
+        return "<b>Metadata Facet:</b> <code>" + escapeHtmlBody(text) + "</code>";
+    }
+
+    private static String renderMetadataFacetValueCard(MetadataValue metaVal) {
+        MetadataEntry entry = PsiTreeUtil.getParentOfType(metaVal, MetadataEntry.class, false);
+        String facetKw = entry != null ? StvnMetadataOrderInspection.extractFacetKeyword(entry) : "";
+        String rawValText = metaVal.getText().trim();
+
+        var sb = new StringBuilder();
+        sb.append("<b>Metadata Facet Argument:</b> <code>")
+            .append(escapeHtmlBody(rawValText)).append("</code><br/>");
+        if (!facetKw.isEmpty()) {
+            sb.append("<nobr><b>Governing Facet:</b> <code>")
+                .append(escapeHtmlBody(facetKw)).append("</code></nobr><br/>");
+        }
+        sb.append("<hr/>");
+        boolean isTrueArg = StvnVocabulary.VAL_TRUE.equals(rawValText)
+            || StvnVocabulary.VAL_TRUE_SHORT.equals(rawValText);
+        boolean isFalseArg = StvnVocabulary.VAL_FALSE.equals(rawValText)
+            || StvnVocabulary.VAL_FALSE_SHORT.equals(rawValText);
+        if (StvnVocabulary.FACET_KW_PRESERVE_INDENT.equals(facetKw)) {
+            sb.append(isTrueArg
+                ? "Enables verbatim leading indentation preservation across multiline fenced strings."
+                : (isFalseArg
+                    ? "Trims common leading indentation across multiline fenced strings."
+                    : "Specifies the boolean indentation preservation flag ("
+                        + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")."));
+        } else if (StvnVocabulary.FACET_KW_EQUATABLE.equals(facetKw)) {
+            sb.append(isTrueArg
+                ? "Enables value equality and set/map key hashing capability on the governed schema."
+                : (isFalseArg
+                    ? "Disables value equality and set/map key hashing capability on the governed schema."
+                    : "Specifies the boolean equality capability flag ("
+                        + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")."));
+        } else if (StvnVocabulary.FACET_KW_COMPARABLE.equals(facetKw)) {
+            sb.append(isTrueArg
+                ? "Enables total ordering comparison capability on the governed schema."
+                : (isFalseArg
+                    ? "Disables total ordering comparison capability on the governed schema."
+                    : "Specifies the boolean total ordering capability flag ("
+                        + StvnVocabulary.VAL_TRUE + " or " + StvnVocabulary.VAL_FALSE + ")."));
+        } else {
+            var specDesc = !facetKw.isEmpty() ? getFacetSpecificationDoc(facetKw, entry) : null;
+            if (specDesc != null) {
+                sb.append(specDesc);
+            } else {
+                sb.append("Declares the constraint argument value for metadata facet <code>")
+                    .append(escapeHtmlBody(facetKw)).append("</code>.");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String renderMetadataFilterListCard(VariantList variantList) {
+        MetadataEntry entry = PsiTreeUtil.getParentOfType(variantList, MetadataEntry.class, false);
+        String facetKw = entry != null ? StvnMetadataOrderInspection.extractFacetKeyword(entry) : "";
+        String rawListText = variantList.getText().trim();
+        int variantCount = PsiTreeUtil.findChildrenOfType(variantList, ValueKeyword.class).size();
+
+        var sb = new StringBuilder();
+        sb.append("<b>Enum Filter Variant List:</b> <code>")
+            .append(escapeHtmlBody(rawListText)).append("</code><br/>");
+        if (!facetKw.isEmpty()) {
+            sb.append("<nobr><b>Governing Facet:</b> <code>")
+                .append(escapeHtmlBody(facetKw)).append("</code></nobr><br/>");
+        }
+        sb.append("<b>Declared Variants:</b> ").append(variantCount).append("<br/><hr/>");
+        if (StvnVocabulary.FACET_KW_FILTER_INCL.equals(facetKw)) {
+            sb.append("Restricts active enumeration variants strictly to the listed whitelist subset.");
+        } else if (StvnVocabulary.FACET_KW_FILTER_EXCL.equals(facetKw)) {
+            sb.append("Excludes the listed enumeration variants from the ancestor variant domain.");
+        } else {
+            sb.append("Declares the enumeration subset variant list.");
+        }
+        return sb.toString();
     }
 
     private static String renderMetaIdentityStringValueCard(StringLiteral strLit) {

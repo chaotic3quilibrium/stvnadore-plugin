@@ -250,6 +250,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
         var fallbackTarget = StvnTypeResolver.resolveGoverningDeclarationTarget(valueElement);
         Map<String, PsiElement> hopTargets = StvnTypeResolver.resolveClickableTypeTargetsForValue(valueElement);
         List<ClickableTypeSegment> bound = new ArrayList<>();
+        int headTokenStart = badgeText.startsWith("\u26A0 ") ? 2 : 0;
         Matcher matcher = TYPE_TOKEN_PATTERN.matcher(badgeText);
         while (matcher.find()) {
             String token = matcher.group();
@@ -257,7 +258,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                 continue;
             }
             PsiElement target = hopTargets.get(token);
-            if (target == null && hopTargets.isEmpty() && matcher.start() == 0) {
+            if (target == null && hopTargets.isEmpty() && matcher.start() == headTokenStart) {
                 target = fallbackTarget;
             }
             if (target instanceof TypeDefinition targetTypeDef && targetTypeDef.getTypeKeyword() != null) {
@@ -277,9 +278,13 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
         boolean isSubSegment,
         boolean wrapPreservingToString
     ) {
-        if (!isSubSegment && !segmentText.contains("->") && fallbackTarget instanceof SchemaType) {
+        if (!isSubSegment
+                && !segmentText.startsWith("\u26A0 ")
+                && !segmentText.contains("->")
+                && fallbackTarget instanceof SchemaType) {
             return createTypeSegmentPresentation(segmentText, fallbackTarget);
         }
+        int headTokenStart = segmentText.startsWith("\u26A0 ") ? 2 : 0;
         Matcher matcher = TYPE_TOKEN_PATTERN.matcher(segmentText);
         List<InlayPresentation> parts = new ArrayList<>();
         int cursor = 0;
@@ -290,7 +295,7 @@ public final class StvnInlayHintsCollector extends FactoryInlayHintsCollector {
                 continue;
             }
             PsiElement specificTarget = hopTargets.get(token);
-            if (specificTarget == null && hopTargets.isEmpty() && matcher.start() == 0) {
+            if (specificTarget == null && hopTargets.isEmpty() && matcher.start() == headTokenStart) {
                 specificTarget = fallbackTarget;
             }
             if (specificTarget != null) {

@@ -45,6 +45,7 @@ import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
+import org.stvnadore.plugin.validation.quickfix.JumpToConstantDeclarationIntention;
 import org.stvnadore.plugin.validation.quickfix.OpenIncludedFileQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RemoveIllegalStructuralSectionQuickFix;
 import org.stvnadore.plugin.validation.quickfix.RenameFileExtensionToKindQuickFix;
@@ -1564,6 +1565,41 @@ public final class StvnExternalAnnotator
                 }
             }
         }
+
+        // Emit PW006-WARN_POISONED_CONSTANT_USAGE on primary :body constant references resolving to circular or invalid :defs constants
+        if (bodyClause != null && !StvnMetaTemplateUtil.isInSecondaryRootSection(bodyClause)) {
+            for (var valKw : PsiTreeUtil.findChildrenOfType(bodyClause, ValueKeyword.class)) {
+                if (!(valKw.getParent() instanceof Value)) {
+                    continue;
+                }
+                TextRange kwRange = valKw.getTextRange();
+                if (kwRange == null || rangeIntersectsActiveError(kwRange, activeErrorDiagnostics)) {
+                    continue;
+                }
+                var poisonedInfo = StvnTypeResolver.resolveBodyPoisonedConstantInfo(valKw);
+                if (poisonedInfo == null) {
+                    continue;
+                }
+                String authoredName = valKw.getText().trim();
+                String reasonPhrase = poisonedInfo.status() == StvnTypeResolver.PoisonedConstantStatus.CIRCULAR
+                    ? "has a circular definition in " + StvnVocabulary.KEYWORD_DEFS
+                    : "has an invalid definition in " + StvnVocabulary.KEYWORD_DEFS;
+                String rawWarnMsg = "Constant '" + authoredName + "' " + reasonPhrase + "; payload evaluation is suspended";
+                String formattedWarnMsg = StvnDiagnosticFormatter.formatPlugin(
+                    rawWarnMsg,
+                    StvnDiagnosticCodes.WARN_POISONED_CONSTANT_USAGE
+                );
+                var targetKw = poisonedInfo.declaration().getValueKeyword();
+                var warnBuilder = holder.newAnnotation(HighlightSeverity.WARNING, formattedWarnMsg)
+                    .range(kwRange);
+                if (targetKw != null) {
+                    warnBuilder = warnBuilder.withFix(
+                        new JumpToConstantDeclarationIntention(targetKw, targetKw.getText().trim())
+                    );
+                }
+                warnBuilder.create();
+            }
+        }
     }
 
     private static String resolvePrimaryDiagnosticId(StvnDiagnostic diag) {
@@ -2344,7 +2380,31 @@ public final class StvnExternalAnnotator
                 emitSilentReorderAnchorIfNoErrorOverlap(holder, rbrace.getPsi().getTextRange(), activeErrorDiagnostics, reorderMapFix);
             }
             for (MetadataEntry entry : metaMap.getMetadataEntryList()) {
-                emitSilentReorderAnchorIfNoErrorOverlap(holder, entry.getTextRange(), activeErrorDiagnostics, reorderMapFix);
+                TextRange fullEntryRange = entry.getTextRange();
+                boolean entryOverlapsError = fullEntryRange != null
+                    && rangeIntersectsActiveError(fullEntryRange, activeErrorDiagnostics);
+                if (!entryOverlapsError) {
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, fullEntryRange, activeErrorDiagnostics, reorderMapFix);
+                } else {
+                    PsiElement kwPsi = StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(entry);
+                    emitSilentReorderAnchorIfNoErrorOverlap(holder, kwPsi.getTextRange(), activeErrorDiagnostics, reorderMapFix);
+                    PsiElement valPsi = StvnMetadataOrderInspection.resolveMetadataEntryValuePsi(entry);
+                    if (valPsi != null) {
+                        TextRange valRange = valPsi.getTextRange();
+                        if (valRange != null && !rangeIntersectsActiveError(valRange, activeErrorDiagnostics)) {
+                            emitSilentReorderAnchorIfNoErrorOverlap(holder, valRange, activeErrorDiagnostics, reorderMapFix);
+                        } else if (valPsi instanceof org.stvnadore.psi.VariantList variantList) {
+                            for (var childNode : variantList.getNode().getChildren(null)) {
+                                PsiElement childPsi = childNode.getPsi();
+                                if (childPsi != null
+                                        && !(childPsi instanceof com.intellij.psi.PsiWhiteSpace)
+                                        && !(childPsi instanceof com.intellij.psi.PsiComment)) {
+                                    emitSilentReorderAnchorIfNoErrorOverlap(holder, childPsi.getTextRange(), activeErrorDiagnostics, reorderMapFix);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

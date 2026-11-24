@@ -126,6 +126,8 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_DEGENERATE_ENUM = "PW006-WARN_DEGENERATE_ENUM";
     public static final String WARN_DEGENERATE_UNION = "PW006-WARN_DEGENERATE_UNION";
     public static final String WARN_DEGRADED_SCHEMA_USAGE = "PW006-WARN_DEGRADED_SCHEMA_USAGE";
+    /** Advisory warning emitted when a {@code :body} constant reference resolves to a circular or invalid {@code :defs} {@code ConstantDefinition}. */
+    public static final String WARN_POISONED_CONSTANT_USAGE = "PW006-WARN_POISONED_CONSTANT_USAGE";
 
     // Literals & Style
     public static final String ERR_INVALID_BOOLEAN_CASING = "E028-ERR_INVALID_BOOLEAN_CASING";
@@ -231,6 +233,7 @@ public final class StvnDiagnosticCodes {
                  "WARN_DEGENERATE_ENUM",
                  "WARN_DEGENERATE_UNION",
                  "WARN_DEGRADED_SCHEMA_USAGE",
+                 "WARN_POISONED_CONSTANT_USAGE",
                  "WARN_REDUNDANT_VARIANT_TAG",
                  "WARN_VARIANT_FORM_DISCREPANCY" -> "PW006";
             default -> bareId.startsWith("WARN_") ? "PW006" : "E002";

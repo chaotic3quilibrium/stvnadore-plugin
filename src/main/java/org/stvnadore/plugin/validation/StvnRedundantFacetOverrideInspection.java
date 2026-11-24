@@ -207,6 +207,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
         }
         for (var diag : StvnCompiledDocumentCache.getSnapshot(file).diagnostics()) {
             if (diag.severity() == StvnDiagnostic.DiagnosticSeverity.ERROR
+                    && !DiagnosticBag.ERR_FACET_ORDER_VIOLATION.equals(diag.symbolicId().orElse(""))
                     && diag.startOffset() < range.getEndOffset()
                     && diag.endOffset() > range.getStartOffset()) {
                 return true;

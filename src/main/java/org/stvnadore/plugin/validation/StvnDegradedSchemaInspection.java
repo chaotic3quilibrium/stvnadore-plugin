@@ -68,6 +68,9 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                 if (bodyParent == null) {
                     return;
                 }
+                if (StvnTypeResolver.resolveBodyPoisonedConstantStatus(value) != null) {
+                    return;
+                }
 
                 // Check if this leaf value's resolved schema is degraded
                 var info = StvnTypeResolver.resolveBaseTypeInfo(value);

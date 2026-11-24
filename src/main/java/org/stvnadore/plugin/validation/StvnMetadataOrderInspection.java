@@ -21,8 +21,14 @@ import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetaNameFacet;
 import org.stvnadore.psi.MetaUnknownFacet;
+import org.stvnadore.psi.MetadataBareFlag;
+import org.stvnadore.psi.MetadataBool;
+import org.stvnadore.psi.MetadataDirective;
 import org.stvnadore.psi.MetadataEntry;
+import org.stvnadore.psi.MetadataFilter;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.MetadataTrait;
+import org.stvnadore.psi.MetadataUnknownEntry;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeDefinition;
@@ -164,7 +170,8 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                 boolean canReorder = !PsiTreeUtil.hasErrorElements(metadataMap)
                     && !hasIncompleteTraitEntry(metadataMap);
 
-                int currentMaxRank = -1;
+                int lastRank = -1;
+                Set<String> seenKeywords = new HashSet<>();
                 Set<Integer> seenMutexGroups = new HashSet<>();
                 Set<MetadataEntry> flaggedEntries = new HashSet<>();
                 var reorderFacetFix = canReorder ? new StvnReorderMetadataFacetsQuickFix(metadataMap) : null;
@@ -176,23 +183,25 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                         continue;
                     }
                     String keyword = extractFacetKeyword(entry);
+                    if (!seenKeywords.add(keyword)) {
+                        continue;
+                    }
                     int rank = getFacetRank(keyword);
                     int mutexGroup = getMutexGroupId(keyword);
                     if (mutexGroup > 0 && !seenMutexGroups.add(mutexGroup)) {
                         continue;
                     }
-                    if (rank < currentMaxRank) {
+                    if (rank < lastRank) {
                         flaggedEntries.add(entry);
-                        PsiElement target = entry.getFirstChild() != null ? entry.getFirstChild() : entry;
+                        PsiElement target = resolveMetadataEntryKeywordPsi(entry);
                         holder.registerProblem(
                             target,
                             StvnDiagnosticFormatter.formatPlugin("Metadata facet '" + keyword + "' violates canonical 5-tier order", StvnDiagnosticCodes.ERR_FACET_ORDER_VIOLATION),
                             ProblemHighlightType.GENERIC_ERROR,
                             fixes
                         );
-                    } else {
-                        currentMaxRank = rank;
                     }
+                    lastRank = rank;
                 }
                 if (!flaggedEntries.isEmpty() && isOnTheFly && reorderFacetFix != null) {
                     PsiElement ownerAnchor = resolveMetadataMapOwnerTarget(metadataMap);
@@ -204,6 +213,11 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
                     for (MetadataEntry entry : entries) {
                         if (!flaggedEntries.contains(entry)) {
                             holder.registerProblem(entry, "", ProblemHighlightType.INFORMATION, reorderFacetFix);
+                        } else {
+                            PsiElement valTarget = resolveMetadataEntryValuePsi(entry);
+                            if (valTarget != null) {
+                                holder.registerProblem(valTarget, "", ProblemHighlightType.INFORMATION, reorderFacetFix);
+                            }
                         }
                     }
                 }
@@ -467,6 +481,104 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
         return null;
     }
 
+    /**
+     * Resolves the leading facet keyword leaf PSI element of a schema {@link MetadataEntry}
+     * across all grammar branches for strict {@code [kw.start, kw.end)} coordinate pinning.
+     *
+     * @param entry schema metadata entry PSI node
+     * @return facet keyword leaf PSI element, falling back null-safely to the first child or {@code entry}
+     */
+    public static @NotNull PsiElement resolveMetadataEntryKeywordPsi(@NotNull MetadataEntry entry) {
+        MetadataBool mb = entry.getMetadataBool();
+        if (mb != null) {
+            ASTNode kwNode = mb.getNode().findChildByType(StvnTypes.KW_EQUATABLE);
+            if (kwNode == null) {
+                kwNode = mb.getNode().findChildByType(StvnTypes.KW_COMPARABLE);
+            }
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            return mb.getFirstChild() != null ? mb.getFirstChild() : mb;
+        }
+        MetadataTrait mt = entry.getMetadataTrait();
+        if (mt != null) {
+            ASTNode kwNode = mt.getNode().findChildByType(StvnTypes.KW_PRESERVE_INDENT);
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            return mt.getFirstChild() != null ? mt.getFirstChild() : mt;
+        }
+        MetadataFilter mf = entry.getMetadataFilter();
+        if (mf != null) {
+            ASTNode kwNode = mf.getNode().findChildByType(StvnTypes.KW_FILTER_INCL);
+            if (kwNode == null) {
+                kwNode = mf.getNode().findChildByType(StvnTypes.KW_FILTER_EXCL);
+            }
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+            return mf.getFirstChild() != null ? mf.getFirstChild() : mf;
+        }
+        MetadataBareFlag bf = entry.getMetadataBareFlag();
+        if (bf != null) {
+            return bf.getFirstChild() != null ? bf.getFirstChild() : bf;
+        }
+        MetadataDirective md = entry.getMetadataDirective();
+        if (md != null) {
+            return md.getFirstChild() != null ? md.getFirstChild() : md;
+        }
+        MetadataUnknownEntry unk = entry.getMetadataUnknownEntry();
+        if (unk != null) {
+            return unk.getValueKeyword();
+        }
+        for (var kwType : List.of(
+            StvnTypes.KW_SIZE,
+            StvnTypes.KW_MIN_SIZE,
+            StvnTypes.KW_MAX_SIZE,
+            StvnTypes.KW_MIN_INCL,
+            StvnTypes.KW_MAX_INCL,
+            StvnTypes.KW_MIN_EXCL,
+            StvnTypes.KW_MAX_EXCL,
+            StvnTypes.KW_REGEX
+        )) {
+            ASTNode kwNode = entry.getNode().findChildByType(kwType);
+            if (kwNode != null && kwNode.getPsi() != null) {
+                return kwNode.getPsi();
+            }
+        }
+        return entry.getFirstChild() != null ? entry.getFirstChild() : entry;
+    }
+
+    /**
+     * Resolves the trailing argument PSI element ({@code MetadataValue}, {@code VariantList}, or
+     * unrecognized argument) of a schema {@link MetadataEntry}, or {@code null} for standalone flags.
+     *
+     * @param entry schema metadata entry PSI node
+     * @return trailing value or variant-list PSI element, or {@code null}
+     */
+    public static @Nullable PsiElement resolveMetadataEntryValuePsi(@NotNull MetadataEntry entry) {
+        MetadataBool mb = entry.getMetadataBool();
+        if (mb != null) {
+            return mb.getMetadataValue();
+        }
+        MetadataTrait mt = entry.getMetadataTrait();
+        if (mt != null) {
+            return mt.getMetadataValue();
+        }
+        MetadataFilter mf = entry.getMetadataFilter();
+        if (mf != null) {
+            return mf.getVariantList();
+        }
+        MetadataUnknownEntry unk = entry.getMetadataUnknownEntry();
+        if (unk != null) {
+            return unk.getValue() != null ? unk.getValue() : unk.getSchemaType();
+        }
+        if (entry.getMetadataBareFlag() != null || entry.getMetadataDirective() != null) {
+            return null;
+        }
+        return entry.getMetadataValue();
+    }
+
     private static int extractUnknownMetaFacetTier(@Nullable MetaUnknownFacet unk) {
         if (unk == null || unk.getValueKeyword() == null) {
             return 0;
@@ -547,22 +659,26 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
         if (entries.size() <= 1 || PsiTreeUtil.hasErrorElements(map) || hasIncompleteTraitEntry(map)) {
             return false;
         }
-        int maxRank = -1;
+        int lastRank = -1;
+        Set<String> seenKeywords = new HashSet<>();
         Set<Integer> seenMutexGroups = new HashSet<>();
         for (MetadataEntry entry : entries) {
             if (!StvnMetadataFacetAllowlist.isFacetPermittedForOrdering(entry, map)) {
                 continue;
             }
             String keyword = extractFacetKeyword(entry);
+            if (!seenKeywords.add(keyword)) {
+                continue;
+            }
             int mutexGroup = getMutexGroupId(keyword);
             if (mutexGroup > 0 && !seenMutexGroups.add(mutexGroup)) {
                 continue;
             }
             int rank = getFacetRank(keyword);
-            if (rank < maxRank) {
+            if (rank < lastRank) {
                 return true;
             }
-            maxRank = rank;
+            lastRank = rank;
         }
         return false;
     }
@@ -639,11 +755,15 @@ public final class StvnMetadataOrderInspection extends LocalInspectionTool {
      * @return the facet keyword (e.g. "#unsigned", "#size", "#minIncl")
      */
     public static String extractFacetKeyword(MetadataEntry entry) {
+        PsiElement kwPsi = resolveMetadataEntryKeywordPsi(entry);
+        if (kwPsi != entry) {
+            return kwPsi.getText().trim();
+        }
         String text = entry.getText().trim();
         int end = text.length();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (Character.isWhitespace(c) || c == '[' || c == '{' || c == '(') {
+            if (Character.isWhitespace(c) || c == '[' || c == '{' || c == '(' || c == '"' || (i > 0 && c == '#')) {
                 end = i;
                 break;
             }

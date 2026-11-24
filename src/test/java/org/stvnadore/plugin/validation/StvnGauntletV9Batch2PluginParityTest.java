@@ -80,7 +80,7 @@ public final class StvnGauntletV9Batch2PluginParityTest extends BasePlatformTest
         assertEquals("#minIncl \"Z\" #maxIncl \"A\"", passAErrors.get(0).getText());
         assertEquals("#minSize 12 #maxSize 4", passAErrors.get(1).getText());
         assertEquals("#minIncl 200 #maxExcl 100", passAErrors.get(2).getText());
-        assertEquals("#size 16", passAErrors.get(3).getText());
+        assertEquals("#size", passAErrors.get(3).getText());
         assertEquals("#maxExcl 5", passAErrors.get(4).getText());
 
         // Pass B: all 26 local inspections enabled
