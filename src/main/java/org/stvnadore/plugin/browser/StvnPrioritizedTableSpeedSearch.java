@@ -8,11 +8,18 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Customized table speed search prioritizing Column 0 ({@code Name}) across all rows
- * before falling back to secondary columns ({@code Source}, {@code Upstream Target},
- * {@code Resolved Type}, and {@code Use Depth}).
+ * before scanning secondary columns ({@code Upstream Target}, {@code Source},
+ * {@code Resolved Type}, and {@code Use Depth} on 5-column namespace tables).
  */
 @NullMarked
 public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
+
+    private static final int[] FIVE_COLUMN_SECONDARY_ORDER = {
+        StvnNamespaceTableModel.COL_UPSTREAM_TARGET,
+        StvnNamespaceTableModel.COL_SOURCE,
+        StvnNamespaceTableModel.COL_RESOLVED_TYPE,
+        StvnNamespaceTableModel.COL_USE_DEPTH
+    };
 
     /**
      * Installs prioritized speed search on the specified table component.
@@ -38,7 +45,8 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
 
     /**
      * Finds the matching element index for the given search pattern.
-     * Prioritizes Column 0 across all rows before scanning secondary metadata columns.
+     * Prioritizes Column 0 across all rows before scanning secondary metadata columns
+     * in priority order ({@code Upstream Target -> Source -> Resolved Type -> Use Depth}).
      *
      * @param s the user search string
      * @return the matched element index, or {@code null} if no match exists
@@ -60,16 +68,16 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
         // Phase 1: Prioritize Column 0 (Name column) across all rows starting from selectedRow
         for (int i = 0; i < rowCount; i++) {
             int row = (selectedRow + i) % rowCount;
-            int element = row * colCount; // Column 0 index
+            int element = row * colCount;
             if (isMatchingElement(element, pattern)) {
                 return element;
             }
         }
 
-        // Phase 2: If no match in Column 0, scan remaining metadata columns (1..colCount-1)
-        for (int i = 0; i < rowCount; i++) {
-            int row = (selectedRow + i) % rowCount;
-            for (int col = 1; col < colCount; col++) {
+        // Phase 2: Scan secondary columns in priority order across all rows
+        for (int col : resolveSecondaryColumnOrder(colCount)) {
+            for (int i = 0; i < rowCount; i++) {
+                int row = (selectedRow + i) % rowCount;
                 int element = row * colCount + col;
                 if (isMatchingElement(element, pattern)) {
                     return element;
@@ -82,7 +90,7 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
 
     /**
      * Locates the next matching element for keyboard navigation (Down Arrow).
-     * Restricts navigation to Column 0 when Column 0 contains matches.
+     * Restricts navigation to the highest-priority column containing matches.
      *
      * @param s the user search string
      * @return the next matched element index, or {@code null}
@@ -97,39 +105,26 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
 
         String pattern = s.trim();
         int selectedRow = myComponent.getSelectedRow();
-        int selectedCol = myComponent.getSelectedColumn();
-        if (selectedRow < 0) selectedRow = 0;
-        if (selectedCol < 0) selectedCol = 0;
+        if (selectedRow < 0) {
+            selectedRow = 0;
+        }
 
-        if (hasColumn0Match(pattern)) {
-            // Cycle forward strictly through Column 0
+        int priorityCol = findHighestPriorityMatchingColumn(pattern);
+        if (priorityCol >= 0) {
             for (int i = 1; i <= rowCount; i++) {
                 int row = (selectedRow + i) % rowCount;
-                int element = row * colCount;
+                int element = row * colCount + priorityCol;
                 if (isMatchingElement(element, pattern)) {
                     return element;
                 }
             }
-            return null;
         }
-
-        // Fallback: cycle through metadata columns (col 1..colCount-1)
-        int currentFlatIndex = selectedRow * colCount + selectedCol;
-        int totalCells = rowCount * colCount;
-        for (int i = 1; i <= totalCells; i++) {
-            int flatIndex = (currentFlatIndex + i) % totalCells;
-            int col = flatIndex % colCount;
-            if (col != 0 && isMatchingElement(flatIndex, pattern)) {
-                return flatIndex;
-            }
-        }
-
         return null;
     }
 
     /**
      * Locates the previous matching element for keyboard navigation (Up Arrow).
-     * Restricts navigation to Column 0 when Column 0 contains matches.
+     * Restricts navigation to the highest-priority column containing matches.
      *
      * @param s the user search string
      * @return the previous matched element index, or {@code null}
@@ -144,33 +139,20 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
 
         String pattern = s.trim();
         int selectedRow = myComponent.getSelectedRow();
-        int selectedCol = myComponent.getSelectedColumn();
-        if (selectedRow < 0) selectedRow = 0;
-        if (selectedCol < 0) selectedCol = 0;
+        if (selectedRow < 0) {
+            selectedRow = 0;
+        }
 
-        if (hasColumn0Match(pattern)) {
-            // Cycle backward strictly through Column 0
+        int priorityCol = findHighestPriorityMatchingColumn(pattern);
+        if (priorityCol >= 0) {
             for (int i = 1; i <= rowCount; i++) {
                 int row = (selectedRow - i + rowCount) % rowCount;
-                int element = row * colCount;
+                int element = row * colCount + priorityCol;
                 if (isMatchingElement(element, pattern)) {
                     return element;
                 }
             }
-            return null;
         }
-
-        // Fallback: cycle backward through metadata columns
-        int currentFlatIndex = selectedRow * colCount + selectedCol;
-        int totalCells = rowCount * colCount;
-        for (int i = 1; i <= totalCells; i++) {
-            int flatIndex = (currentFlatIndex - i + totalCells) % totalCells;
-            int col = flatIndex % colCount;
-            if (col != 0 && isMatchingElement(flatIndex, pattern)) {
-                return flatIndex;
-            }
-        }
-
         return null;
     }
 
@@ -184,20 +166,50 @@ public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {
      */
     @Override
     protected boolean isMatchingRow(int row, String pattern) {
-        if (hasColumn0Match(pattern)) {
+        if (hasColumnMatch(0, pattern)) {
             return isMatchingElement(row * myComponent.getColumnCount(), pattern);
         }
         return super.isMatchingRow(row, pattern);
     }
 
-    private boolean hasColumn0Match(String pattern) {
+    private int findHighestPriorityMatchingColumn(String pattern) {
+        int colCount = myComponent.getColumnCount();
+        if (colCount <= 0) {
+            return -1;
+        }
+        if (hasColumnMatch(0, pattern)) {
+            return 0;
+        }
+        for (int col : resolveSecondaryColumnOrder(colCount)) {
+            if (hasColumnMatch(col, pattern)) {
+                return col;
+            }
+        }
+        return -1;
+    }
+
+    private boolean hasColumnMatch(int col, String pattern) {
         int rowCount = myComponent.getRowCount();
         int colCount = myComponent.getColumnCount();
+        if (col < 0 || col >= colCount) {
+            return false;
+        }
         for (int r = 0; r < rowCount; r++) {
-            if (isMatchingElement(r * colCount, pattern)) {
+            if (isMatchingElement(r * colCount + col, pattern)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static int[] resolveSecondaryColumnOrder(int colCount) {
+        if (colCount == 5) {
+            return FIVE_COLUMN_SECONDARY_ORDER;
+        }
+        int[] cols = new int[Math.max(0, colCount - 1)];
+        for (int i = 1; i < colCount; i++) {
+            cols[i - 1] = i;
+        }
+        return cols;
     }
 }

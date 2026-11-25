@@ -97,9 +97,11 @@ public final class StvnNamespaceBrowserUxAndDepthParityTest extends BasePlatform
             assertFalse(uiAlpha.popupTitle().contains("config.finance.stvn"));
             assertFalse(uiAlpha.popupTitle().contains("[:"));
 
-            // 2. Homonymous filenames display "File: config.finance.stvn" with folder-disambiguated tooltips
-            assertEquals("File: config.finance.stvn", uiAlpha.fileLabel().getText());
-            assertEquals("File: config.finance.stvn", uiBeta.fileLabel().getText());
+            // 2. Homonymous filenames display bold "File:" + plain "config.finance.stvn" with folder-disambiguated tooltips
+            assertEquals("File:", uiAlpha.filePrefixLabel().getText());
+            assertEquals("config.finance.stvn", uiAlpha.fileLabel().getText());
+            assertEquals("File: config.finance.stvn", uiAlpha.fullFileHeaderText());
+            assertEquals("File: config.finance.stvn", uiBeta.fullFileHeaderText());
             assertEquals("alpha/config.finance.stvn", uiAlpha.fileLabel().getToolTipText());
             assertEquals("beta/config.finance.stvn", uiBeta.fileLabel().getToolTipText());
 
@@ -114,9 +116,14 @@ public final class StvnNamespaceBrowserUxAndDepthParityTest extends BasePlatform
             JPanel row2 = (JPanel) northPanel.getComponent(2);
             JPanel row3 = (JPanel) northPanel.getComponent(4);
 
-            assertSame(uiAlpha.fileLabel(), ((BorderLayout) row1.getLayout()).getLayoutComponent(BorderLayout.WEST));
+            JPanel row1West = (JPanel) ((BorderLayout) row1.getLayout()).getLayoutComponent(BorderLayout.WEST);
+            assertSame(uiAlpha.filePrefixLabel(), row1West.getComponent(0));
+            assertSame(uiAlpha.fileLabel(), row1West.getComponent(2));
             assertSame(uiAlpha.showPreludeCheckBox(), ((BorderLayout) row1.getLayout()).getLayoutComponent(BorderLayout.EAST));
-            assertSame(uiAlpha.headerLabel(), ((BorderLayout) row2.getLayout()).getLayoutComponent(BorderLayout.WEST));
+
+            JPanel row2West = (JPanel) ((BorderLayout) row2.getLayout()).getLayoutComponent(BorderLayout.WEST);
+            assertSame(uiAlpha.scopeSummaryPrefixLabel(), row2West.getComponent(0));
+            assertSame(uiAlpha.headerLabel(), row2West.getComponent(2));
             assertSame(uiAlpha.filterField(), ((BorderLayout) row3.getLayout()).getLayoutComponent(BorderLayout.CENTER));
 
             // 4. Switching scopes, filtering, and toggling Prelude never alter static title or File: row
@@ -125,8 +132,8 @@ public final class StvnNamespaceBrowserUxAndDepthParityTest extends BasePlatform
             uiAlpha.showPreludeCheckBox().doClick();
             assertEquals("STVN Namespace Dependencies", uiAlpha.popupTitle());
             assertEquals("STVN Namespace Dependencies", StvnNamespaceBrowserPopup.resolvePopupTitle());
-            assertEquals("File: config.finance.stvn", uiAlpha.fileLabel().getText());
-            assertTrue(uiAlpha.headerLabel().getText().startsWith("Scope: :type \u2014 Root :type Schema Closure ("));
+            assertEquals("File: config.finance.stvn", uiAlpha.fullFileHeaderText());
+            assertTrue(uiAlpha.fullScopeSummaryText().startsWith("Scope: :type \u2014 Root :type Schema Closure ("));
         } finally {
             Disposer.dispose(disposable);
         }

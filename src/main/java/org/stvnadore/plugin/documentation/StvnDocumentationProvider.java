@@ -420,29 +420,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static String formatMetadataMapCompact(MetadataMap metaMap) {
-        var entries = metaMap.getMetadataEntryList();
+        var entries = new ArrayList<>(metaMap.getMetadataEntryList());
         if (entries.isEmpty()) {
             return metaMap.getText().trim();
         }
+        entries.sort(java.util.Comparator.comparingInt(StvnSchemaFormatter::resolveEntryFacetRank));
         List<String> parts = new ArrayList<>(entries.size());
         for (var entry : entries) {
-            var mv = entry.getMetadataValue();
-            if (mv != null && mv.getStringLiteral() != null && mv.getStringLiteral().getText().startsWith("\"\"\"")) {
-                String entryText = entry.getText().trim();
-                int ws = 0;
-                while (ws < entryText.length() && !Character.isWhitespace(entryText.charAt(ws))) {
-                    ws++;
-                }
-                String facetTag = entryText.substring(0, ws);
-                String formatted = StvnPsiLiteralEvaluator.decodeStringLiteral(mv.getStringLiteral().getText(), false)
-                    .map(StvnPsiLiteralEvaluator::formatCanonicalQuotedString)
-                    .orElseGet(() -> mv.getStringLiteral().getText().trim());
-                parts.add(facetTag + " " + formatted);
-            } else {
-                parts.add(entry.getText().trim().replaceAll("\\s+", " "));
+            String clean = StvnSchemaFormatter.formatSanitizedMetadataEntry(entry, false);
+            if (!clean.isEmpty()) {
+                parts.add(clean);
             }
         }
-        return "{ " + String.join(" ", parts) + " }";
+        return StvnVocabulary.DELIM_OPEN_BRACE + " " + String.join(" ", parts) + " " + StvnVocabulary.DELIM_CLOSE_BRACE;
     }
 
     private @Nullable String buildTargetDocumentation(PsiElement target, @Nullable PsiElement originalElement) {
@@ -2324,9 +2314,14 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     }
                 }
                 case StvnSchema.TimeEpochSchema te -> {
-                    String scaleKw = StvnVocabulary.SIGIL_VALUE + te.scale().name().toLowerCase(Locale.ROOT);
+                    String scaleKw = switch (te.scale()) {
+                        case NS -> StvnVocabulary.FACET_KW_SCALE_NS;
+                        case US -> StvnVocabulary.FACET_KW_SCALE_US;
+                        case MS -> StvnVocabulary.FACET_KW_SCALE_MS;
+                        case S -> StvnVocabulary.FACET_KW_SCALE_S;
+                    };
                     String scStatus = invalidFacetTags.contains(scaleKw) ? "Invalid" : "Active";
-                    rows.add(new FacetRow("#scale", scaleKw, "Declared", scStatus));
+                    rows.add(new FacetRow(scaleKw, StvnVocabulary.VAL_TRUE, "Declared", scStatus));
                     if (te.explicitMinIncl().isPresent()) {
                         String status = invalidFacetTags.contains(StvnVocabulary.FACET_KW_MIN_INCL) ? "Invalid" : "Active";
                         rows.add(new FacetRow(StvnVocabulary.FACET_KW_MIN_INCL, te.explicitMinIncl().get().toString(), "Declared", status));
@@ -2392,13 +2387,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         // Recover declared facets stripped by core during degraded schema sanitization
         if (declaredMeta != null) {
             for (var entry : declaredMeta.getMetadataEntryList()) {
-                var entryText = entry.getText().trim();
+                var entryText = StvnSchemaFormatter.formatSanitizedMetadataEntry(entry, false);
                 for (var tag : List.of(
                         StvnVocabulary.FACET_KW_UNSIGNED, StvnVocabulary.FACET_KW_EXACT, StvnVocabulary.FACET_KW_INVERTIBLE,
                         StvnVocabulary.FACET_KW_SCALE_NS, StvnVocabulary.FACET_KW_SCALE_US, StvnVocabulary.FACET_KW_SCALE_MS, StvnVocabulary.FACET_KW_SCALE_S,
                         StvnVocabulary.FACET_KW_OFFSET, StvnVocabulary.FACET_KW_ZONED, StvnVocabulary.FACET_KW_AUDITED,
-                        StvnVocabulary.FACET_KW_PRESERVE_INDENT, StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
-                        StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_REGEX, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE)) {
+                        StvnVocabulary.FACET_KW_SIZE, StvnVocabulary.FACET_KW_MIN_SIZE, StvnVocabulary.FACET_KW_MAX_SIZE,
+                        StvnVocabulary.FACET_KW_MIN_INCL, StvnVocabulary.FACET_KW_MIN_EXCL, StvnVocabulary.FACET_KW_MAX_INCL, StvnVocabulary.FACET_KW_MAX_EXCL,
+                        StvnVocabulary.FACET_KW_FILTER_INCL, StvnVocabulary.FACET_KW_FILTER_EXCL,
+                        StvnVocabulary.FACET_KW_PRESERVE_INDENT, StvnVocabulary.FACET_KW_REGEX)) {
                     if (hasExactFacetTag(entryText, tag)) {
                         boolean alreadyPresent = rows.stream().anyMatch(r -> r.tag().equals(tag));
                         if (!alreadyPresent) {
@@ -2414,6 +2411,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                                 val = StvnPsiLiteralEvaluator.resolveStringOrConst(entry, rawVal, false)
                                     .map(d -> escapeHtmlBody(StvnPsiLiteralEvaluator.formatCanonicalQuotedString(d)))
                                     .orElseGet(() -> escapeHtmlBody(rawVal));
+                            } else {
+                                val = escapeHtmlBody(val);
                             }
                             if (StvnVocabulary.FACET_KW_PRESERVE_INDENT.equals(tag)) {
                                 var piOrigin = resolveFacetOrigin(typeDef, trace, currentAlias, baseType, StvnVocabulary.FACET_NAME_PRESERVE_INDENT);
@@ -8248,15 +8247,13 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     /**
-     * Extracts human-readable constraint summaries for composite slot projections.
+     * Extracts human-readable constraint summaries for composite slot projections in canonical 5-tier order.
      */
     private static @NotNull String extractConstraintsSummary(SchemaType schema) {
         var metaMap = schema.getMetadataMap();
-        var facets = new ArrayList<String>();
+        var collectedEntries = new ArrayList<MetadataEntry>();
         if (metaMap != null) {
-            for (var entry : metaMap.getMetadataEntryList()) {
-                facets.add("<code>" + entry.getText().trim() + "</code>");
-            }
+            collectedEntries.addAll(metaMap.getMetadataEntryList());
         }
         var kw = schema.getTypeKeyword();
         if (kw != null) {
@@ -8265,10 +8262,19 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
                 var td = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
                 if (td != null && td.getMetadataMap() != null) {
-                    for (var entry : td.getMetadataMap().getMetadataEntryList()) {
-                        facets.add("<code>" + entry.getText().trim() + "</code>");
-                    }
+                    collectedEntries.addAll(td.getMetadataMap().getMetadataEntryList());
                 }
+            }
+        }
+        if (collectedEntries.isEmpty()) {
+            return "<i>None</i>";
+        }
+        collectedEntries.sort(java.util.Comparator.comparingInt(StvnSchemaFormatter::resolveEntryFacetRank));
+        var facets = new ArrayList<String>(collectedEntries.size());
+        for (var entry : collectedEntries) {
+            String clean = StvnSchemaFormatter.formatSanitizedMetadataEntry(entry, false);
+            if (!clean.isEmpty()) {
+                facets.add("<code>" + escapeHtmlBody(clean) + "</code>");
             }
         }
         return facets.isEmpty() ? "<i>None</i>" : String.join(" ", facets);

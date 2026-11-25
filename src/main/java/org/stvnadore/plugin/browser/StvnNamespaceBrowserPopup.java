@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CustomShortcutSet;
+import com.intellij.openapi.actionSystem.KeyboardShortcut;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
@@ -41,6 +42,7 @@ import com.intellij.ui.components.JBRadioButton;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -66,9 +68,10 @@ import javax.swing.JRadioButton;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
+import javax.swing.text.BadLocationException;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -77,6 +80,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
@@ -115,27 +119,36 @@ public final class StvnNamespaceBrowserPopup {
     public static final String DISABLED_BODY_SCOPE_TOOLTIP =
         StvnBundle.message("stvn.browser.scope.body.disabled");
 
+    /** Tooltip displayed on the live symbol filter field and its inner text editor. */
+    public static final String FILTER_FIELD_TOOLTIP =
+        StvnBundle.message("stvn.browser.filter.tooltip");
+
     private StvnNamespaceBrowserPopup() {
     }
 
     /**
      * Encapsulates the constructed Swing components, live scope buttons, filter input,
-     * column manager, popup-scoped shortcuts, and async snapshot future.
+     * column manager, popup-scoped shortcuts, navigation callback, and async snapshot future.
      *
-     * @param panel                outer popup container panel
-     * @param table                5-column symbol table
-     * @param showPreludeCheckBox  prelude toggle checkbox
-     * @param filterField          live symbol filter field
-     * @param scopeButtons         radio buttons keyed by {@link StvnNamespaceScope}
-     * @param activeScopeRef       mutable reference tracking the currently selected scope
-     * @param tableModel           underlying 5-column {@link StvnNamespaceTableModel}
-     * @param fileLabel            Row 1 {@code File: <filename>} label carrying relative-path tooltip
-     * @param headerLabel          Row 2 dynamic scope and count summary label
-     * @param columnManager        spreadsheet column sizing and width-lock manager
-     * @param scopeShortcutActions popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
-     * @param popupTitle           static window caption ({@code STVN Namespace Dependencies})
-     * @param loadingPanel         asynchronous loading wrapper panel
-     * @param analysisFuture       completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
+     * @param panel                    outer popup container panel
+     * @param table                    5-column symbol table
+     * @param showPreludeCheckBox      prelude toggle checkbox
+     * @param filterField              live symbol filter field
+     * @param scopeButtons             radio buttons keyed by {@link StvnNamespaceScope}
+     * @param activeScopeRef           mutable reference tracking the currently selected scope
+     * @param tableModel               underlying 5-column {@link StvnNamespaceTableModel}
+     * @param filePrefixLabel          Row 1 bold {@code File:} prefix label aligned at {@code x = 0}
+     * @param fileLabel                Row 1 plain {@code <filename>} value label carrying relative-path tooltip
+     * @param scopeSummaryPrefixLabel  Row 2 bold {@code Scope:} prefix label aligned at {@code x = 0}
+     * @param headerLabel              Row 2 plain dynamic scope and count summary value label
+     * @param scopeSelectorPrefixLabel Row 3 bold {@code Scope:} prefix label aligned at {@code x = 0}
+     * @param columnManager            spreadsheet column sizing and width-lock manager
+     * @param scopeShortcutActions     popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
+     * @param filterFocusAction        popup-scoped {@code Alt+F} / {@code Ctrl+F} / {@code Meta+F} filter focus action
+     * @param navigationHandlerRef     mutable callback invoked on {@code Enter} from {@code table} or {@code filterField}
+     * @param popupTitle               static window caption ({@code STVN Namespace Dependencies})
+     * @param loadingPanel             asynchronous loading wrapper panel
+     * @param analysisFuture           completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
      */
     record BrowserContent(
         JPanel panel,
@@ -145,14 +158,37 @@ public final class StvnNamespaceBrowserPopup {
         Map<StvnNamespaceScope, JRadioButton> scopeButtons,
         AtomicReference<StvnNamespaceScope> activeScopeRef,
         StvnNamespaceTableModel tableModel,
+        JBLabel filePrefixLabel,
         JBLabel fileLabel,
+        JBLabel scopeSummaryPrefixLabel,
         JBLabel headerLabel,
+        JBLabel scopeSelectorPrefixLabel,
         StvnNamespaceColumnManager columnManager,
         Map<StvnNamespaceScope, AnAction> scopeShortcutActions,
+        AnAction filterFocusAction,
+        AtomicReference<Runnable> navigationHandlerRef,
         String popupTitle,
         JBLoadingPanel loadingPanel,
         CompletableFuture<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> analysisFuture
     ) {
+        /**
+         * Returns the combined plain-text representation of Row 1 ({@code "File: <filename>"}).
+         *
+         * @return combined Row 1 file header text
+         */
+        public String fullFileHeaderText() {
+            return filePrefixLabel.getText() + " " + fileLabel.getText();
+        }
+
+        /**
+         * Returns the combined plain-text representation of Row 2 ({@code "Scope: <summary>"}).
+         *
+         * @return combined Row 2 scope summary text
+         */
+        public String fullScopeSummaryText() {
+            return scopeSummaryPrefixLabel.getText() + " " + headerLabel.getText();
+        }
+
         /**
          * Waits for the background dependency snapshot analysis to complete.
          *
@@ -197,7 +233,8 @@ public final class StvnNamespaceBrowserPopup {
             }
         };
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        StvnPrioritizedTableSpeedSearch.installOn(table);
+        // Intentional: do NOT call StvnPrioritizedTableSpeedSearch.installOn(table) here so typing on JBTable
+        // routes exclusively into filterField without opening a competing floating TableSpeedSearch bubble.
 
         var scrollPane = new JBScrollPane(table);
         var columnManager = new StvnNamespaceColumnManager(table, scrollPane, tableModel);
@@ -212,41 +249,89 @@ public final class StvnNamespaceBrowserPopup {
 
         var northPanel = new JPanel();
         northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
+        northPanel.setBorder(JBUI.Borders.empty());
 
-        // Row 1: Left-aligned "File: <filename>" (with relative-path tooltip) + right-aligned Prelude checkbox
+        // Row 1: Flush-left bold "File:" + plain "<filename>" (with relative-path tooltip) + right-aligned Prelude checkbox
         var fileRow = new JPanel(new BorderLayout(JBUI.scale(8), 0));
-        var fileLabel = new JBLabel(StvnBundle.message("stvn.browser.header.file", file.getName()));
-        fileLabel.setToolTipText(resolveFileTooltipPath(project, file));
-        fileRow.add(fileLabel, BorderLayout.WEST);
+        fileRow.setBorder(JBUI.Borders.empty());
+        fileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        var fileHeaderPanel = new JPanel();
+        fileHeaderPanel.setLayout(new BoxLayout(fileHeaderPanel, BoxLayout.X_AXIS));
+        fileHeaderPanel.setBorder(JBUI.Borders.empty());
+        fileHeaderPanel.setOpaque(false);
+
+        String fileTooltipPath = resolveFileTooltipPath(project, file);
+        var filePrefixLabel = createBoldPrefixLabel(StvnBundle.message("stvn.browser.file.label"));
+        var fileLabel = createPlainHeaderValueLabel(file.getName());
+        filePrefixLabel.setToolTipText(fileTooltipPath);
+        fileLabel.setToolTipText(fileTooltipPath);
+        fileHeaderPanel.setToolTipText(fileTooltipPath);
+        fileHeaderPanel.add(filePrefixLabel);
+        fileHeaderPanel.add(Box.createHorizontalStrut(JBUI.scale(4)));
+        fileHeaderPanel.add(fileLabel);
+        fileRow.add(fileHeaderPanel, BorderLayout.WEST);
 
         var showPreludeCheckBox = new JBCheckBox(StvnBundle.message("stvn.browser.prelude.checkbox"), false);
+        showPreludeCheckBox.setFont(JBFont.label().asPlain());
         showPreludeCheckBox.setEnabled(false);
         fileRow.add(showPreludeCheckBox, BorderLayout.EAST);
         northPanel.add(fileRow);
-        northPanel.add(Box.createVerticalStrut(JBUI.scale(4)));
+        Component strut1 = Box.createVerticalStrut(JBUI.scale(4));
+        if (strut1 instanceof JComponent jc1) {
+            jc1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        }
+        northPanel.add(strut1);
 
-        // Row 2: Dynamic "Scope: <scope> — <scopeTitle> (<count> symbols...)" summary directly under File:
+        // Row 2: Flush-left bold "Scope:" + plain "<scope> — <scopeTitle> (<count> symbols...)" directly under File:
         var summaryRow = new JPanel(new BorderLayout(JBUI.scale(8), 0));
-        var headerLabel = new JBLabel(
+        summaryRow.setBorder(JBUI.Borders.empty());
+        summaryRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        var scopeSummaryPanel = new JPanel();
+        scopeSummaryPanel.setLayout(new BoxLayout(scopeSummaryPanel, BoxLayout.X_AXIS));
+        scopeSummaryPanel.setBorder(JBUI.Borders.empty());
+        scopeSummaryPanel.setOpaque(false);
+
+        var scopeSummaryPrefixLabel = createBoldPrefixLabel(StvnBundle.message("stvn.browser.scope.label"));
+        var headerLabel = createPlainHeaderValueLabel(
             StvnBundle.message(
-                "stvn.browser.header.scope.analyzing",
+                "stvn.browser.header.scope.analyzing.value",
                 initialScope.getSectionKeyword(),
                 initialScope.getDisplayTitle()
             )
         );
-        summaryRow.add(headerLabel, BorderLayout.WEST);
+        scopeSummaryPanel.add(scopeSummaryPrefixLabel);
+        scopeSummaryPanel.add(Box.createHorizontalStrut(JBUI.scale(4)));
+        scopeSummaryPanel.add(headerLabel);
+        summaryRow.add(scopeSummaryPanel, BorderLayout.WEST);
         northPanel.add(summaryRow);
-        northPanel.add(Box.createVerticalStrut(JBUI.scale(4)));
+        Component strut2 = Box.createVerticalStrut(JBUI.scale(4));
+        if (strut2 instanceof JComponent jc2) {
+            jc2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        }
+        northPanel.add(strut2);
 
-        // Row 3: "Scope:" + clean :defs / :type / :body radio buttons (no mnemonic suffix) + live SearchTextField
+        // Row 3: Flush-left bold "Scope:" + plain :defs / :type / :body radios (zero leading inset) + live SearchTextField
         var controlsRow = new JPanel(new BorderLayout(JBUI.scale(10), 0));
-        var scopeSelectorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
-        scopeSelectorPanel.add(new JBLabel(StvnBundle.message("stvn.browser.scope.label")));
+        controlsRow.setBorder(JBUI.Borders.empty());
+        controlsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        var scopeSelectorPanel = new JPanel();
+        scopeSelectorPanel.setLayout(new BoxLayout(scopeSelectorPanel, BoxLayout.X_AXIS));
+        scopeSelectorPanel.setBorder(JBUI.Borders.empty());
+        scopeSelectorPanel.setOpaque(false);
+
+        var scopeSelectorPrefixLabel = createBoldPrefixLabel(StvnBundle.message("stvn.browser.scope.label"));
+        scopeSelectorPanel.add(scopeSelectorPrefixLabel);
 
         var scopeGroup = new ButtonGroup();
         Map<StvnNamespaceScope, JRadioButton> scopeButtons = new EnumMap<>(StvnNamespaceScope.class);
         for (StvnNamespaceScope candidateScope : StvnNamespaceScope.values()) {
+            scopeSelectorPanel.add(Box.createHorizontalStrut(JBUI.scale(6)));
             var radio = new JBRadioButton(candidateScope.getSectionKeyword(), candidateScope == initialScope);
+            radio.setFont(JBFont.label().asPlain());
+            radio.setAlignmentY(Component.CENTER_ALIGNMENT);
             radio.setEnabled(false);
             radio.setToolTipText(resolveEnabledScopeTooltip(candidateScope));
             scopeGroup.add(radio);
@@ -257,6 +342,8 @@ public final class StvnNamespaceBrowserPopup {
 
         var filterField = new SearchTextField(false);
         filterField.getTextEditor().getEmptyText().setText(StvnBundle.message("stvn.browser.filter.placeholder"));
+        filterField.setToolTipText(FILTER_FIELD_TOOLTIP);
+        filterField.getTextEditor().setToolTipText(FILTER_FIELD_TOOLTIP);
         filterField.setEnabled(false);
         controlsRow.add(filterField, BorderLayout.CENTER);
 
@@ -285,9 +372,15 @@ public final class StvnNamespaceBrowserPopup {
 
             tableModel.updateView(filtered);
             if (!filtered.isEmpty()) {
-                table.setRowSelectionInterval(0, 0);
+                int targetViewRow = !filterText.isEmpty() ? table.convertRowIndexToView(0) : 0;
+                if (targetViewRow < 0 || targetViewRow >= table.getRowCount()) {
+                    targetViewRow = 0;
+                }
+                selectAndScrollTableRow(table, targetViewRow);
             }
-            headerLabel.setText(formatScopeSummaryText(currentScope, filtered.size(), combined.size(), showPrelude, !filterText.isEmpty()));
+            headerLabel.setText(formatScopeSummaryValueText(
+                currentScope, filtered.size(), combined.size(), showPrelude, !filterText.isEmpty()
+            ));
         };
 
         Consumer<StvnNamespaceScope> trySwitchScope = targetScope -> {
@@ -308,11 +401,8 @@ public final class StvnNamespaceBrowserPopup {
             JRadioButton radio = entry.getValue();
             radio.addActionListener(e -> {
                 if (radio.isSelected() && radio.isEnabled()) {
-                    if (activeScopeRef.getAndSet(buttonScope) != buttonScope) {
-                        refreshView.run();
-                    } else {
-                        refreshView.run();
-                    }
+                    activeScopeRef.set(buttonScope);
+                    refreshView.run();
                 }
             });
         }
@@ -329,6 +419,27 @@ public final class StvnNamespaceBrowserPopup {
         scopeShortcutActions.put(
             StvnNamespaceScope.BODY,
             registerScopeShortcut(panel, parentDisposable, KeyEvent.VK_3, StvnNamespaceScope.BODY, scopeButtons, trySwitchScope)
+        );
+
+        AnAction filterFocusAction = registerFilterFocusShortcut(panel, parentDisposable, filterField);
+
+        AtomicReference<Runnable> navigationHandlerRef = new AtomicReference<>(() -> {
+            int visualRow = table.getSelectedRow();
+            if (visualRow < 0) {
+                return;
+            }
+            int modelRow = table.convertRowIndexToModel(visualRow);
+            var entry = tableModel.getItem(modelRow);
+            navigateToSymbol(project, file, entry);
+        });
+
+        installTypeAnywhereAndNavigationListeners(
+            panel,
+            table,
+            scopeButtons,
+            showPreludeCheckBox,
+            filterField,
+            navigationHandlerRef
         );
 
         showPreludeCheckBox.addActionListener(e -> refreshView.run());
@@ -392,14 +503,39 @@ public final class StvnNamespaceBrowserPopup {
             Map.copyOf(scopeButtons),
             activeScopeRef,
             tableModel,
+            filePrefixLabel,
             fileLabel,
+            scopeSummaryPrefixLabel,
             headerLabel,
+            scopeSelectorPrefixLabel,
             columnManager,
             Map.copyOf(scopeShortcutActions),
+            filterFocusAction,
+            navigationHandlerRef,
             resolvePopupTitle(),
             loadingPanel,
             analysisFuture
         );
+    }
+
+    private static JBLabel createBoldPrefixLabel(String text) {
+        var label = new JBLabel();
+        label.putClientProperty("html.disable", Boolean.TRUE);
+        label.setFont(JBFont.label().asBold());
+        label.setBorder(JBUI.Borders.empty());
+        label.setAlignmentY(Component.CENTER_ALIGNMENT);
+        label.setText(text);
+        return label;
+    }
+
+    private static JBLabel createPlainHeaderValueLabel(String text) {
+        var label = new JBLabel();
+        label.putClientProperty("html.disable", Boolean.TRUE);
+        label.setFont(JBFont.label().asPlain());
+        label.setBorder(JBUI.Borders.empty());
+        label.setAlignmentY(Component.CENTER_ALIGNMENT);
+        label.setText(text);
+        return label;
     }
 
     static String resolvePopupTitle() {
@@ -493,7 +629,215 @@ public final class StvnNamespaceBrowserPopup {
         return action;
     }
 
-    private static String formatScopeSummaryText(
+    private static AnAction registerFilterFocusShortcut(
+        JPanel rootPanel,
+        Disposable parentDisposable,
+        SearchTextField filterField
+    ) {
+        KeyStroke altF = KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.ALT_DOWN_MASK);
+        KeyStroke ctrlF = KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_DOWN_MASK);
+        KeyStroke metaF = KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.META_DOWN_MASK);
+
+        var action = new DumbAwareAction() {
+            @Override
+            public void update(@NotNull AnActionEvent e) {
+                // Keep enabled inside popup so Alt+F / Ctrl+F / Cmd+F never leak to IDE File menu or editor Find bar
+                e.getPresentation().setEnabled(true);
+            }
+
+            @Override
+            public @NotNull ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.EDT;
+            }
+
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent e) {
+                focusAndSelectFilterField(filterField);
+            }
+        };
+        action.registerCustomShortcutSet(
+            new CustomShortcutSet(
+                new KeyboardShortcut(altF, null),
+                new KeyboardShortcut(ctrlF, null),
+                new KeyboardShortcut(metaF, null)
+            ),
+            rootPanel,
+            parentDisposable
+        );
+
+        String actionKey = "stvn.browser.filter.focus";
+        var inputMap = rootPanel.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+        inputMap.put(altF, actionKey);
+        inputMap.put(ctrlF, actionKey);
+        inputMap.put(metaF, actionKey);
+        rootPanel.getActionMap().put(actionKey, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                focusAndSelectFilterField(filterField);
+            }
+        });
+        return action;
+    }
+
+    static void focusAndSelectFilterField(SearchTextField filterField) {
+        if (!filterField.isEnabled()) {
+            return;
+        }
+        var editor = filterField.getTextEditor();
+        IdeFocusManager.getGlobalInstance().requestFocus(editor, true);
+        editor.requestFocusInWindow();
+        editor.selectAll();
+    }
+
+    static boolean isStvnTypeAnywhereFilterChar(char ch) {
+        return (ch >= 'A' && ch <= 'Z')
+            || (ch >= 'a' && ch <= 'z')
+            || (ch >= '0' && ch <= '9')
+            || ch == StvnVocabulary.SIGIL_TYPIC.charAt(0)
+            || ch == StvnVocabulary.SIGIL_VALUE.charAt(0)
+            || ch == '/'
+            || ch == '_'
+            || ch == '.'
+            || ch == '-';
+    }
+
+    private static boolean hasNoCommandModifiers(KeyEvent e) {
+        int forbidden = InputEvent.CTRL_DOWN_MASK
+            | InputEvent.ALT_DOWN_MASK
+            | InputEvent.META_DOWN_MASK
+            | InputEvent.ALT_GRAPH_DOWN_MASK;
+        return (e.getModifiersEx() & forbidden) == 0;
+    }
+
+    private static void installTypeAnywhereAndNavigationListeners(
+        JPanel rootPanel,
+        JBTable table,
+        Map<StvnNamespaceScope, JRadioButton> scopeButtons,
+        JBCheckBox showPreludeCheckBox,
+        SearchTextField filterField,
+        AtomicReference<Runnable> navigationHandlerRef
+    ) {
+        var editor = filterField.getTextEditor();
+
+        KeyAdapter nonEditorListener = new KeyAdapter() {
+            @Override
+            public void keyTyped(KeyEvent e) {
+                if (e.isConsumed() || !filterField.isEnabled() || e.getComponent() == editor) {
+                    return;
+                }
+                if (!hasNoCommandModifiers(e)) {
+                    return;
+                }
+                char ch = e.getKeyChar();
+                if (!isStvnTypeAnywhereFilterChar(ch)) {
+                    return;
+                }
+                IdeFocusManager.getGlobalInstance().requestFocus(editor, true);
+                editor.requestFocusInWindow();
+                if (editor.getSelectionStart() == editor.getSelectionEnd()) {
+                    editor.setCaretPosition(editor.getDocument().getLength());
+                }
+                editor.replaceSelection(String.valueOf(ch));
+                e.consume();
+            }
+
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.isConsumed() || e.getComponent() != table) {
+                    return;
+                }
+                if (e.getKeyCode() == KeyEvent.VK_ENTER && hasNoCommandModifiers(e)) {
+                    navigationHandlerRef.get().run();
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_BACK_SPACE
+                        && hasNoCommandModifiers(e)
+                        && filterField.isEnabled()
+                        && !filterField.getText().isEmpty()) {
+                    IdeFocusManager.getGlobalInstance().requestFocus(editor, true);
+                    editor.requestFocusInWindow();
+                    if (editor.getSelectionStart() < editor.getSelectionEnd()) {
+                        editor.replaceSelection("");
+                    } else {
+                        int len = editor.getDocument().getLength();
+                        if (len > 0) {
+                            try {
+                                editor.getDocument().remove(len - 1, 1);
+                                editor.setCaretPosition(editor.getDocument().getLength());
+                            } catch (BadLocationException ignored) {
+                            }
+                        }
+                    }
+                    e.consume();
+                }
+            }
+        };
+
+        table.addKeyListener(nonEditorListener);
+        for (JRadioButton radio : scopeButtons.values()) {
+            radio.addKeyListener(nonEditorListener);
+        }
+        showPreludeCheckBox.addKeyListener(nonEditorListener);
+        rootPanel.addKeyListener(nonEditorListener);
+
+        editor.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.isConsumed() || !hasNoCommandModifiers(e)) {
+                    return;
+                }
+                int code = e.getKeyCode();
+                if (code == KeyEvent.VK_ENTER) {
+                    navigationHandlerRef.get().run();
+                    e.consume();
+                    return;
+                }
+                int rowCount = table.getRowCount();
+                if (rowCount <= 0) {
+                    return;
+                }
+                int current = table.getSelectedRow();
+                if (code == KeyEvent.VK_DOWN) {
+                    int next = current < 0 ? 0 : Math.min(rowCount - 1, current + 1);
+                    selectAndScrollTableRow(table, next);
+                    e.consume();
+                } else if (code == KeyEvent.VK_UP) {
+                    int prev = current < 0 ? 0 : Math.max(0, current - 1);
+                    selectAndScrollTableRow(table, prev);
+                    e.consume();
+                } else if (code == KeyEvent.VK_PAGE_DOWN) {
+                    int step = computeTablePageStep(table);
+                    int next = current < 0 ? 0 : Math.min(rowCount - 1, current + step);
+                    selectAndScrollTableRow(table, next);
+                    e.consume();
+                } else if (code == KeyEvent.VK_PAGE_UP) {
+                    int step = computeTablePageStep(table);
+                    int prev = current < 0 ? 0 : Math.max(0, current - step);
+                    selectAndScrollTableRow(table, prev);
+                    e.consume();
+                }
+            }
+        });
+    }
+
+    private static void selectAndScrollTableRow(JBTable table, int visualRow) {
+        if (visualRow < 0 || visualRow >= table.getRowCount()) {
+            return;
+        }
+        table.setRowSelectionInterval(visualRow, visualRow);
+        table.scrollRectToVisible(table.getCellRect(visualRow, 0, true));
+    }
+
+    private static int computeTablePageStep(JBTable table) {
+        int rowHeight = Math.max(1, table.getRowHeight());
+        int visibleHeight = table.getVisibleRect().height;
+        if (visibleHeight <= 0 && table.getParent() != null) {
+            visibleHeight = table.getParent().getHeight();
+        }
+        int visibleRows = visibleHeight > 0 ? (visibleHeight / rowHeight) : 10;
+        return Math.max(1, visibleRows - 1);
+    }
+
+    private static String formatScopeSummaryValueText(
         StvnNamespaceScope scope,
         int visibleCount,
         int totalInScopeCount,
@@ -509,7 +853,7 @@ public final class StvnNamespaceBrowserPopup {
             : StvnBundle.message("stvn.browser.header.symbols.total", Integer.toString(visibleCount));
         String preludePart = preludeEnabled ? StvnBundle.message("stvn.browser.header.prelude.suffix") : "";
         return StvnBundle.message(
-            "stvn.browser.header.scope.summary",
+            "stvn.browser.header.scope.summary.value",
             scope.getSectionKeyword(),
             scope.getDisplayTitle(),
             countPart,
@@ -538,7 +882,7 @@ public final class StvnNamespaceBrowserPopup {
         return List.copyOf(merged);
     }
 
-    private static List<StvnNamespaceSymbolEntry> applyFilterQuery(
+    static List<StvnNamespaceSymbolEntry> applyFilterQuery(
         List<StvnNamespaceSymbolEntry> entries,
         String query
     ) {
@@ -546,12 +890,49 @@ public final class StvnNamespaceBrowserPopup {
             return entries;
         }
         String needle = query.toLowerCase(Locale.ROOT);
-        return entries.stream()
-            .filter(e -> e.name().toLowerCase(Locale.ROOT).contains(needle)
-                || e.source().toLowerCase(Locale.ROOT).contains(needle)
-                || e.upstreamTarget().toLowerCase(Locale.ROOT).contains(needle)
-                || e.resolvedType().toLowerCase(Locale.ROOT).contains(needle))
-            .toList();
+        record RankedEntry(StvnNamespaceSymbolEntry entry, int priority, int originalIndex) {}
+        List<RankedEntry> matches = new ArrayList<>();
+        for (int i = 0; i < entries.size(); i++) {
+            StvnNamespaceSymbolEntry entry = entries.get(i);
+            int priority = computeFilterMatchPriority(entry, needle);
+            if (priority >= 0) {
+                matches.add(new RankedEntry(entry, priority, i));
+            }
+        }
+        matches.sort(Comparator.comparingInt(RankedEntry::priority).thenComparingInt(RankedEntry::originalIndex));
+        return matches.stream().map(RankedEntry::entry).toList();
+    }
+
+    private static int computeFilterMatchPriority(StvnNamespaceSymbolEntry entry, String needle) {
+        String nameLower = entry.name().toLowerCase(Locale.ROOT);
+        String bareNameLower = stripLeadingSigil(nameLower);
+        if (nameLower.equals(needle) || bareNameLower.equals(needle)) {
+            return 0;
+        }
+        if (nameLower.startsWith(needle) || bareNameLower.startsWith(needle)) {
+            return 1;
+        }
+        if (nameLower.contains(needle)) {
+            return 2;
+        }
+        if (!StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH.equals(entry.upstreamTarget())
+                && entry.upstreamTarget().toLowerCase(Locale.ROOT).contains(needle)) {
+            return 3;
+        }
+        if (entry.source().toLowerCase(Locale.ROOT).contains(needle)) {
+            return 4;
+        }
+        if (entry.resolvedType().toLowerCase(Locale.ROOT).contains(needle)) {
+            return 5;
+        }
+        return -1;
+    }
+
+    private static String stripLeadingSigil(String text) {
+        if (text.startsWith(StvnVocabulary.SIGIL_TYPIC) || text.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+            return text.substring(1);
+        }
+        return text;
     }
 
     /**
@@ -583,6 +964,7 @@ public final class StvnNamespaceBrowserPopup {
 
             navigateToSymbol(project, file, entry);
         };
+        content.navigationHandlerRef().set(navigationRunnable);
 
         table.addMouseListener(new MouseAdapter() {
             @Override
@@ -606,34 +988,6 @@ public final class StvnNamespaceBrowserPopup {
             public void mouseReleased(MouseEvent e) {
                 if (e.isPopupTrigger()) {
                     showContextMenu(e, project, file, table, tableModel);
-                }
-            }
-        });
-
-        KeyAdapter enterNavigationListener = new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    navigationRunnable.run();
-                    e.consume();
-                }
-            }
-        };
-        table.addKeyListener(enterNavigationListener);
-        content.filterField().getTextEditor().addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    navigationRunnable.run();
-                    e.consume();
-                } else if (e.getKeyCode() == KeyEvent.VK_DOWN && table.getRowCount() > 0) {
-                    int next = Math.min(table.getRowCount() - 1, Math.max(0, table.getSelectedRow() + 1));
-                    table.setRowSelectionInterval(next, next);
-                    e.consume();
-                } else if (e.getKeyCode() == KeyEvent.VK_UP && table.getRowCount() > 0) {
-                    int prev = Math.max(0, table.getSelectedRow() - 1);
-                    table.setRowSelectionInterval(prev, prev);
-                    e.consume();
                 }
             }
         });

@@ -17,15 +17,11 @@ public final class StvnMetadataRegistry {
     private static final Map<String, List<StvnFacetMetadata>> DOMAIN_FACETS = new HashMap<>();
 
     static {
+        // Tier 1.1: Representation & Bijection Flags (1.1.1 .. 1.1.3)
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_UNSIGNED, 1, false,
             "Designates an integer representation as unsigned (non-negative)",
             Set.of(StvnVocabulary.TYPE_INT), StvnVocabulary.FACET_KW_UNSIGNED
-        ));
-        register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SIZE, 1, false,
-            "Enforces explicit storage bit-width (e.g. 8, 16, 32, 64)",
-            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT), "#size 32"
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_EXACT, 1, false,
@@ -37,15 +33,12 @@ public final class StvnMetadataRegistry {
             "Enforces bidirectional unique value-to-key mapping",
             Set.of(StvnVocabulary.TYPE_MAP), StvnVocabulary.FACET_KW_INVERTIBLE
         ));
+
+        // Tier 1.2: Temporal Scale & DateTime Mode Flags (1.2.1 .. 1.2.7)
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_S, 1, false,
-            "Physical epoch resolution in seconds (64-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_S
-        ));
-        register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_MS, 1, false,
-            "Physical epoch resolution in milliseconds (64-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_MS
+            StvnVocabulary.FACET_KW_SCALE_NS, 1, false,
+            "Physical epoch resolution in nanoseconds (128-bit integer ticks)",
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_NS
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_SCALE_US, 1, false,
@@ -53,9 +46,14 @@ public final class StvnMetadataRegistry {
             Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_US
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_SCALE_NS, 1, false,
-            "Physical epoch resolution in nanoseconds (128-bit integer ticks)",
-            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_NS
+            StvnVocabulary.FACET_KW_SCALE_MS, 1, false,
+            "Physical epoch resolution in milliseconds (64-bit integer ticks)",
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_MS
+        ));
+        register(new StvnFacetMetadata(
+            StvnVocabulary.FACET_KW_SCALE_S, 1, false,
+            "Physical epoch resolution in seconds (64-bit integer ticks)",
+            Set.of(StvnVocabulary.TYPE_TIME_EPOCH), StvnVocabulary.FACET_KW_SCALE_S
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_OFFSET, 1, false,
@@ -72,6 +70,27 @@ public final class StvnMetadataRegistry {
             "Dual-verified audit timestamp with numerical offset and IANA jurisdiction",
             Set.of(StvnVocabulary.TYPE_DATE_TIME), StvnVocabulary.FACET_KW_AUDITED
         ));
+
+        // Tier 1.3 & 1.5: Bit-Width & Cardinality Bounds (1.3.1, 1.5.1, 1.5.2)
+        register(new StvnFacetMetadata(
+            StvnVocabulary.FACET_KW_SIZE, 1, false,
+            "Enforces explicit storage bit-width (e.g. 8, 16, 32, 64)",
+            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT), "#size 32"
+        ));
+        register(new StvnFacetMetadata(
+            StvnVocabulary.FACET_KW_MIN_SIZE, 1, false,
+            "Minimum cardinality or character length bound",
+            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP),
+            "#minSize 1"
+        ));
+        register(new StvnFacetMetadata(
+            StvnVocabulary.FACET_KW_MAX_SIZE, 1, false,
+            "Maximum cardinality or character length bound",
+            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP, StvnVocabulary.TYPE_FLOAT),
+            "#maxSize 256"
+        ));
+
+        // Tier 2: Algebraic Traits (2.1 .. 2.2)
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_EQUATABLE, 2, true,
             "Overrides mathematical equivalence comparison capability",
@@ -96,17 +115,13 @@ public final class StvnMetadataRegistry {
             ),
             "#comparable #TRUE"
         ));
+
+        // Tier 3: Domain Bounds (3.1 .. 3.4)
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_MIN_INCL, 3, true,
             "Inclusive lower bound value",
             Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
             "#minIncl 0"
-        ));
-        register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_MAX_EXCL, 3, true,
-            "Exclusive upper bound value",
-            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
-            "#maxExcl 100"
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_MIN_EXCL, 3, true,
@@ -121,16 +136,22 @@ public final class StvnMetadataRegistry {
             "#maxIncl 1.0"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_MIN_SIZE, 1, false,
-            "Minimum cardinality or character length bound",
-            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP),
-            "#minSize 1"
+            StvnVocabulary.FACET_KW_MAX_EXCL, 3, true,
+            "Exclusive upper bound value",
+            Set.of(StvnVocabulary.TYPE_INT, StvnVocabulary.TYPE_FLOAT, StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_TIME_EPOCH, StvnVocabulary.TYPE_DATE_TIME),
+            "#maxExcl 100"
+        ));
+
+        // Tier 4: Subset & Lexical Constraints (4.1 .. 4.4)
+        register(new StvnFacetMetadata(
+            StvnVocabulary.FACET_KW_FILTER_INCL, 4, true,
+            "Inclusive subset filtering for nominal enumeration derivations",
+            Set.of(StvnVocabulary.TYPE_ENUM), "#filterIncl [ #VARIANT_A #VARIANT_B ]"
         ));
         register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_MAX_SIZE, 1, false,
-            "Maximum cardinality or character length bound",
-            Set.of(StvnVocabulary.TYPE_STRING, StvnVocabulary.TYPE_SEQ, StvnVocabulary.TYPE_SET, StvnVocabulary.TYPE_MAP, StvnVocabulary.TYPE_FLOAT),
-            "#maxSize 256"
+            StvnVocabulary.FACET_KW_FILTER_EXCL, 4, true,
+            "Exclusive subset filtering for nominal enumeration derivations",
+            Set.of(StvnVocabulary.TYPE_ENUM), "#filterExcl [ #EXCLUDED_VARIANT ]"
         ));
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_PRESERVE_INDENT, 4, true,
@@ -142,16 +163,8 @@ public final class StvnMetadataRegistry {
             "Regular expression validation pattern for string literals",
             Set.of(StvnVocabulary.TYPE_STRING), "#regex \"^[A-Za-z0-9]+$\""
         ));
-        register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_FILTER_INCL, 4, true,
-            "Inclusive subset filtering for nominal enumeration derivations",
-            Set.of(StvnVocabulary.TYPE_ENUM), "#filterIncl [ #VARIANT_A #VARIANT_B ]"
-        ));
-        register(new StvnFacetMetadata(
-            StvnVocabulary.FACET_KW_FILTER_EXCL, 4, true,
-            "Exclusive subset filtering for nominal enumeration derivations",
-            Set.of(StvnVocabulary.TYPE_ENUM), "#filterExcl [ #EXCLUDED_VARIANT ]"
-        ));
+
+        // Tier 5: Directive Modifiers (5.0)
         register(new StvnFacetMetadata(
             StvnVocabulary.FACET_KW_STRIP, 5, false,
             "Terminal segment slicing; strips package prefixes from imported identifiers upon ingestion",

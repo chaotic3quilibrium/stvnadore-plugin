@@ -426,13 +426,13 @@ The plugin registers **26** real-time local inspections synchronized 1:1 with `s
 
 Press **`Ctrl+Alt+N`** (macOS: **`Cmd+Alt+N`**) or click any section gutter icon (`:defs`, `:type`, `:body`) to launch **STVN Namespace Dependencies**:
 
-* **Static Title & 3-Row Structured Header:** Displays a static **STVN Namespace Dependencies** popup title above `File: <filename>` (with a hover tooltip showing the project-relative path to disambiguate homonymous filenames across folders) + `Show Standard Library Prelude` (`prelude.stvn_core.stvn_d`), a dynamic `Scope: <scope> — <title> (<count> symbols)` summary row, and a controls row with clean `:defs` / `:type` / `:body` radio buttons (`Alt+1`, `Alt+2`, `Alt+3`) and a live `SearchTextField`. On `#DEFS` / `#DEFS_INCLUDE` schemas, `:type` and `:body` remain disabled with explanatory STE tooltips and `Alt+2` / `Alt+3` act as strict no-ops.
+* **Static Title, Flush-Left Bold Prefixes & Type-Anywhere Filter:** Displays a static **STVN Namespace Dependencies** popup title above three flush-left (`x = 0`) rows with bold metadata prefixes (`**File:**`, `**Scope:**`, `**Scope:**`) and regular-weight values: Row 1 (`**File:** <filename>` with a project-relative path tooltip + `Show Standard Library Prelude`), Row 2 (`**Scope:** <scope> — <title> (<count> symbols)` dynamic summary), and Row 3 (`**Scope:**` + clean `:defs` / `:type` / `:body` radio buttons via `Alt+1..3` + live `SearchTextField` via `Alt+F` or `Ctrl+F` / `Cmd+F`). Typing any unmodified STVN character (`[A-Za-z0-9:#/_.-]`) or `BackSpace` anywhere inside the popup focuses `SearchTextField` directly without opening a competing floating speed-search bubble, ranks matches by `Name -> Upstream Target -> Source -> Resolved Type`, and keeps `Up` / `Down` / `PageUp` / `PageDown` / `Enter` navigating the symbol table seamlessly. On `#DEFS` / `#DEFS_INCLUDE` schemas, `:type` and `:body` remain disabled with explanatory STE tooltips and `Alt+2` / `Alt+3` act as strict no-ops.
 * **Spreadsheet-Grade Column Sizing & Width Locking:** Supports independent manual column resizing with horizontal scrolling as needed, full-value hover tooltips on truncated cells, a default-locked right-aligned `Use Depth` column with a compact header lock icon, double-click header divider right-sizing without toggling column sort order, and a right-click column header context menu (`Lock Column Width`, `Right-Size Column`, `Right-Size All Unlocked Columns`).
 * **5-Column Closure Schema:**
   1. **`Name`**: In-scope local identifier (`:ValveMode`, `#INIT_VALVE`, `:ManifoldReport`).
   2. **`Source`**: Origin module, `:package` enclave (`:cooling/manifold`), or Prelude.
   3. **`Upstream Target`**: Canonical upstream FQNI (`:cooling/manifold/CoolantValveMode`), or `—` for local root `:defs` declarations.
-  4. **`Resolved Type`**: Zero-bracket-padded STVN 2.0.0 schema signature (`:Enum[#OPEN #BYPASS #CLOSED]`, `{ #minIncl -40 #maxExcl 250 } :Int`).
+  4. **`Resolved Type`**: Zero-bracket-padded STVN 2.0.0 schema signature (`:Enum[#OPEN #BYPASS #CLOSED]`, `{ #minSize 4 #maxSize 24 #minIncl "PKT-0000" #maxIncl "PKT-ZZZZ" #preserveIndent #TRUE #regex "^PKT-[A-Z0-9-]+$" } :String`) rendered strictly in § 6.1 5-tier decimal facet order (`1.1.1` through `5.0`).
   5. **`Use Depth`**: Shortest-path named-symbol hop depth (`+0` across inline anonymous constructors and inline `MetadataMap` blocks; `+1` strictly when crossing into a named `:Type` or `#CONST`).
 
 ---
@@ -644,6 +644,7 @@ flowchart TD
 |:------------------------------------|:----------------------------------------------------|:------------------------|:---------------------------|
 | **Browse Namespace Dependencies**   | `STVN Namespace Dependencies` (`:defs`/`:type`/`:body`) | `Ctrl+Alt+N`        | `Cmd+Alt+N`                |
 | **Switch Browser Scope**            | Scope `:defs` / `:type` / `:body` inside popup      | `Alt+1` / `Alt+2` / `Alt+3` | `⌥1` / `⌥2` / `⌥3`    |
+| **Focus Browser Symbol Filter**     | Focus & select symbol filter inside popup           | `Alt+F` / `Ctrl+F`      | `⌥F` / `⌘F`               |
 | **Scaffold Data Skeleton**          | Generate STVN data skeleton                         | `Alt+Enter`             | `⌥Enter`                   |
 | **Convert String to Fenced Block**  | Convert to Fenced String Block / Escaped to Fenced  | `Alt+Enter`             | `⌥Enter`                   |
 | **Expand / Collapse Container**     | Expand or collapse single/multi-line container      | `Alt+Enter`             | `⌥Enter`                   |

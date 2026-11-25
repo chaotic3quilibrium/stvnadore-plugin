@@ -230,7 +230,9 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             ui.waitForAnalysis(5, TimeUnit.SECONDS);
 
             assertEquals("STVN Namespace Dependencies", ui.popupTitle());
-            assertEquals("File: browser_document.finance.stvn_i", ui.fileLabel().getText());
+            assertEquals("File:", ui.filePrefixLabel().getText());
+            assertEquals("browser_document.finance.stvn_i", ui.fileLabel().getText());
+            assertEquals("File: browser_document.finance.stvn_i", ui.fullFileHeaderText());
             assertNotNull(ui.fileLabel().getToolTipText());
             assertTrue(ui.fileLabel().getToolTipText().contains("browser_document.finance.stvn_i"));
 
