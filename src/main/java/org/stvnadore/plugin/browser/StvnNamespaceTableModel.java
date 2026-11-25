@@ -4,7 +4,9 @@ import com.intellij.util.ui.ColumnInfo;
 import com.intellij.util.ui.ListTableModel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.plugin.StvnBundle;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -31,7 +33,7 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
     public static final int COL_USE_DEPTH = 4;
 
     private static final ColumnInfo<StvnNamespaceSymbolEntry, String> NAME_COLUMN =
-        new ColumnInfo<>("Name") {
+        new ColumnInfo<>(StvnBundle.message("stvn.browser.column.name")) {
             @Override
             public String valueOf(StvnNamespaceSymbolEntry item) {
                 return item.name();
@@ -49,7 +51,7 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
         };
 
     private static final ColumnInfo<StvnNamespaceSymbolEntry, String> SOURCE_COLUMN =
-        new ColumnInfo<>("Source") {
+        new ColumnInfo<>(StvnBundle.message("stvn.browser.column.source")) {
             @Override
             public String valueOf(StvnNamespaceSymbolEntry item) {
                 return item.source();
@@ -67,7 +69,7 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
         };
 
     private static final ColumnInfo<StvnNamespaceSymbolEntry, String> UPSTREAM_TARGET_COLUMN =
-        new ColumnInfo<>("Upstream Target") {
+        new ColumnInfo<>(StvnBundle.message("stvn.browser.column.upstream")) {
             @Override
             public String valueOf(StvnNamespaceSymbolEntry item) {
                 return item.upstreamTarget();
@@ -85,7 +87,7 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
         };
 
     private static final ColumnInfo<StvnNamespaceSymbolEntry, String> RESOLVED_TYPE_COLUMN =
-        new ColumnInfo<>("Resolved Type") {
+        new ColumnInfo<>(StvnBundle.message("stvn.browser.column.resolvedType")) {
             @Override
             public String valueOf(StvnNamespaceSymbolEntry item) {
                 return item.resolvedType();
@@ -103,7 +105,7 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
         };
 
     private static final ColumnInfo<StvnNamespaceSymbolEntry, Integer> DEPTH_COLUMN =
-        new ColumnInfo<>("Use Depth") {
+        new ColumnInfo<>(StvnBundle.message("stvn.browser.column.useDepth")) {
             @Override
             public Integer valueOf(StvnNamespaceSymbolEntry item) {
                 return item.useDepth();
@@ -135,6 +137,28 @@ public final class StvnNamespaceTableModel extends ListTableModel<StvnNamespaceS
      * @param items initial list of symbol entries
      */
     public StvnNamespaceTableModel(List<StvnNamespaceSymbolEntry> items) {
-        super(COLUMNS, items, 0);
+        super(COLUMNS, new ArrayList<>(items), 0);
+    }
+
+    /**
+     * Replaces the displayed rows in place and fires strictly {@link #fireTableDataChanged()},
+     * preserving user-adjusted {@code TableColumn} pixel widths and per-column lock states.
+     *
+     * @param entries updated list of visible symbol rows
+     */
+    public void updateView(List<StvnNamespaceSymbolEntry> entries) {
+        List<StvnNamespaceSymbolEntry> backing = getItems();
+        if (backing instanceof ArrayList<StvnNamespaceSymbolEntry> mutable) {
+            mutable.clear();
+            mutable.addAll(entries);
+            fireTableDataChanged();
+        } else {
+            super.setItems(new ArrayList<>(entries));
+        }
+    }
+
+    @Override
+    public void setItems(List<StvnNamespaceSymbolEntry> items) {
+        updateView(items);
     }
 }

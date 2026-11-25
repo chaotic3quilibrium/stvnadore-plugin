@@ -18,7 +18,6 @@ import javax.swing.JMenuItem;
 import java.awt.datatransfer.DataFlavor;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -219,37 +218,52 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNull("Enum variant #ACTIVE must not appear in :body closure",
             findEntryByName(bodyClosure, "#ACTIVE"));
 
-        // Verify live in-dialog scope switching (:defs -> :type -> :body) + live SearchTextField filter without reopening!
-        List<String> observedTitles = new ArrayList<>();
+        // Verify live in-dialog scope switching (:defs -> :type -> :body), static title, 3-row header, and SearchTextField filter!
         var disposable = Disposer.newDisposable("LiveSwitcherTest");
         try {
             var ui = StvnNamespaceBrowserPopup.createBrowserContent(
                 getProject(),
                 payloadFile,
                 StvnNamespaceScope.DEFS,
-                disposable,
-                observedTitles::add
+                disposable
             );
             ui.waitForAnalysis(5, TimeUnit.SECONDS);
 
-            assertTrue(ui.scopeButtons().get(StvnNamespaceScope.DEFS).isEnabled());
-            assertTrue(ui.scopeButtons().get(StvnNamespaceScope.TYPE).isEnabled());
-            assertTrue(ui.scopeButtons().get(StvnNamespaceScope.BODY).isEnabled());
+            assertEquals("STVN Namespace Dependencies", ui.popupTitle());
+            assertEquals("File: browser_document.finance.stvn_i", ui.fileLabel().getText());
+            assertNotNull(ui.fileLabel().getToolTipText());
+            assertTrue(ui.fileLabel().getToolTipText().contains("browser_document.finance.stvn_i"));
+
+            var defsBtn = ui.scopeButtons().get(StvnNamespaceScope.DEFS);
+            var typeBtn = ui.scopeButtons().get(StvnNamespaceScope.TYPE);
+            var bodyBtn = ui.scopeButtons().get(StvnNamespaceScope.BODY);
+            assertTrue(defsBtn.isEnabled());
+            assertTrue(typeBtn.isEnabled());
+            assertTrue(bodyBtn.isEnabled());
+            assertEquals(":defs", defsBtn.getText());
+            assertEquals(":type", typeBtn.getText());
+            assertEquals(":body", bodyBtn.getText());
+            assertEquals(0, defsBtn.getMnemonic());
+            assertEquals(0, typeBtn.getMnemonic());
+            assertEquals(0, bodyBtn.getMnemonic());
+            assertEquals(StvnNamespaceBrowserPopup.ENABLED_DEFS_SCOPE_TOOLTIP, defsBtn.getToolTipText());
+            assertEquals(StvnNamespaceBrowserPopup.ENABLED_TYPE_SCOPE_TOOLTIP, typeBtn.getToolTipText());
+            assertEquals(StvnNamespaceBrowserPopup.ENABLED_BODY_SCOPE_TOOLTIP, bodyBtn.getToolTipText());
             assertEquals(defs.size(), ui.tableModel().getRowCount());
 
             // Switch live to :type
-            ui.scopeButtons().get(StvnNamespaceScope.TYPE).doClick();
+            typeBtn.doClick();
             assertEquals(StvnNamespaceScope.TYPE, ui.activeScopeRef().get());
             assertEquals(typeClosure.size(), ui.tableModel().getRowCount());
             assertTrue(ui.headerLabel().getText().contains(":type"));
-            assertTrue(observedTitles.getLast().contains("[:type]"));
+            assertEquals("STVN Namespace Dependencies", StvnNamespaceBrowserPopup.resolvePopupTitle());
 
             // Switch live to :body
-            ui.scopeButtons().get(StvnNamespaceScope.BODY).doClick();
+            bodyBtn.doClick();
             assertEquals(StvnNamespaceScope.BODY, ui.activeScopeRef().get());
             assertEquals(bodyClosure.size(), ui.tableModel().getRowCount());
             assertTrue(ui.headerLabel().getText().contains(":body"));
-            assertTrue(observedTitles.getLast().contains("[:body]"));
+            assertEquals("STVN Namespace Dependencies", ui.popupTitle());
 
             // Filter live by "#DEFAULT_PORT"
             ui.filterField().setText("#DEFAULT_PORT");

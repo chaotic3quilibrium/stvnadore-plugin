@@ -186,13 +186,13 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 * **Gutter Navigation Markers**: Displays interactive gutter icons on section headers (`:defs`, `:type`, `:body`). Clicking an icon opens the popup initialized to the target section scope.
 * **Global Keyboard Shortcut (`Ctrl+Alt+N` / `Cmd+Alt+N`)**: Resolves the editor caret to determine the enclosing section scope, falling back to `:defs` scope when invoked outside `:type` or `:body`.
-* **Live 3-Scope Switcher & Filter Header**: Switch instantaneously on EDT across `:defs` (`Alt+1`), `:type` (`Alt+2`), and `:body` (`Alt+3`) over an off-EDT `StvnNamespaceSnapshot`, filter rows via the live `SearchTextField`, and toggle `Show Standard Library Prelude`. Sections absent from pure `#DEFS` / `#DEFS_INCLUDE` schemas are disabled with explanatory STE tooltips.
-* **5-Column Searchable Grid (`JBTable` & `JBPopup`)**: Backed by `StvnNamespaceTableModel` with multi-column sorting and zero-bracket-padded STVN 2.0.0 schema signatures:
+* **Structured 3-Row Header & Live 3-Scope Switcher**: Displays a static **`STVN Namespace Dependencies`** window caption above Row 1 (`File: <filename>` with project-relative path tooltip + `Show Standard Library Prelude`), Row 2 (`Scope: <scope> — <title> (<count> symbols)` dynamic summary), and Row 3 (clean `:defs` / `:type` / `:body` radio buttons without mnemonic suffixes + popup-scoped `Alt+1`, `Alt+2`, `Alt+3` shortcuts + STE enabled/disabled tooltips + live `SearchTextField`). Sections absent from `#DEFS` / `#DEFS_INCLUDE` schemas remain disabled (`setEnabled(false)`) with explanatory STE tooltips.
+* **5-Column Spreadsheet Grid (`JBTable` & `JBPopup`)**: Configured with `JTable.AUTO_RESIZE_OFF`, horizontal scrolling as needed, full-value hover tooltips on truncated cells, a default-locked right-aligned `Use Depth` column with compact header lock indicator, double-click header divider right-sizing (deconflicted from sort toggles), and a right-click header width-lock menu (`Lock Column Width`, `Right-Size Column`, `Right-Size All Unlocked Columns`):
   1. `Name`: In-scope local `:Type`, `#CONST`, or `UseMapAlias` token (enforcing § 4.2 `:use` eviction).
   2. `Source`: Origin file name, `:package` enclave path, or `prelude.stvn_core.stvn_d`.
   3. `Upstream Target`: Canonical upstream FQNI (`:cooling/manifold/CoolantValveMode`, `#cooling/manifold/DEFAULT_VALVE_MODE`), or `—` when declared directly in root `:defs`.
   4. `Resolved Type`: Compact canonical STVN 2.0.0 underlying schema (`:Tuple(:ValveMode :LoopTempC :Int :Boolean :ZoneFlowMap)`, `{ #minIncl 0 #maxExcl 65536 } :Int`).
-  5. `Use Depth`: Integer hop/reference depth (numeric sort).
+  5. `Use Depth`: Shortest-path symbol-hop depth (`0 -> 1 -> 2`), traversing inline anonymous constructors (`:Tuple`, `:Seq`, `:Set`, `:Map`, `:Option`, `:Either`, `:Union`) and inline `MetadataMap` blocks at `+0` hop cost and incrementing by `+1` strictly when crossing into a named `:Type` or `#CONST`.
 * **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a read-only `LightVirtualFile` (`prelude.stvn_core.stvn_d`) positioned at the nominal declaration.
 
 ---

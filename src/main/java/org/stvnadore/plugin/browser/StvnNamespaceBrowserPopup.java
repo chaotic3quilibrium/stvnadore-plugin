@@ -2,6 +2,10 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CustomShortcutSet;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
@@ -11,12 +15,17 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiDocumentManager;
@@ -37,6 +46,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.StvnBundle;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.psi.DefsEntry;
@@ -45,17 +55,23 @@ import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseStmt;
 
+import javax.swing.AbstractAction;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
+import javax.swing.JComponent;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
-import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -79,30 +95,47 @@ import java.util.function.Consumer;
 @NullMarked
 public final class StvnNamespaceBrowserPopup {
 
+    /** Tooltip displayed on the enabled {@code :defs} scope button. */
+    public static final String ENABLED_DEFS_SCOPE_TOOLTIP =
+        StvnBundle.message("stvn.browser.scope.defs.enabled");
+
+    /** Tooltip displayed on the enabled {@code :type} scope button. */
+    public static final String ENABLED_TYPE_SCOPE_TOOLTIP =
+        StvnBundle.message("stvn.browser.scope.type.enabled");
+
     /** Tooltip displayed on the disabled {@code :type} scope button when {@code :type} is absent. */
     public static final String DISABLED_TYPE_SCOPE_TOOLTIP =
-        "Unavailable: this document does not declare a root :type section.";
+        StvnBundle.message("stvn.browser.scope.type.disabled");
+
+    /** Tooltip displayed on the enabled {@code :body} scope button. */
+    public static final String ENABLED_BODY_SCOPE_TOOLTIP =
+        StvnBundle.message("stvn.browser.scope.body.enabled");
 
     /** Tooltip displayed on the disabled {@code :body} scope button when {@code :body} is absent. */
     public static final String DISABLED_BODY_SCOPE_TOOLTIP =
-        "Unavailable: this document does not declare a root :body section.";
+        StvnBundle.message("stvn.browser.scope.body.disabled");
 
     private StvnNamespaceBrowserPopup() {
     }
 
     /**
-     * Encapsulates the constructed Swing components, live scope buttons, filter input, and async snapshot future.
+     * Encapsulates the constructed Swing components, live scope buttons, filter input,
+     * column manager, popup-scoped shortcuts, and async snapshot future.
      *
-     * @param panel               outer popup container panel
-     * @param table               5-column symbol table
-     * @param showPreludeCheckBox prelude toggle checkbox
-     * @param filterField         live symbol filter field
-     * @param scopeButtons        radio buttons keyed by {@link StvnNamespaceScope}
-     * @param activeScopeRef      mutable reference tracking the currently selected scope
-     * @param tableModel          underlying 5-column {@link StvnNamespaceTableModel}
-     * @param headerLabel         dynamic scope and count summary label
-     * @param loadingPanel        asynchronous loading wrapper panel
-     * @param analysisFuture      completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
+     * @param panel                outer popup container panel
+     * @param table                5-column symbol table
+     * @param showPreludeCheckBox  prelude toggle checkbox
+     * @param filterField          live symbol filter field
+     * @param scopeButtons         radio buttons keyed by {@link StvnNamespaceScope}
+     * @param activeScopeRef       mutable reference tracking the currently selected scope
+     * @param tableModel           underlying 5-column {@link StvnNamespaceTableModel}
+     * @param fileLabel            Row 1 {@code File: <filename>} label carrying relative-path tooltip
+     * @param headerLabel          Row 2 dynamic scope and count summary label
+     * @param columnManager        spreadsheet column sizing and width-lock manager
+     * @param scopeShortcutActions popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
+     * @param popupTitle           static window caption ({@code STVN Namespace Dependencies})
+     * @param loadingPanel         asynchronous loading wrapper panel
+     * @param analysisFuture       completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
      */
     record BrowserContent(
         JPanel panel,
@@ -112,7 +145,11 @@ public final class StvnNamespaceBrowserPopup {
         Map<StvnNamespaceScope, JRadioButton> scopeButtons,
         AtomicReference<StvnNamespaceScope> activeScopeRef,
         StvnNamespaceTableModel tableModel,
+        JBLabel fileLabel,
         JBLabel headerLabel,
+        StvnNamespaceColumnManager columnManager,
+        Map<StvnNamespaceScope, AnAction> scopeShortcutActions,
+        String popupTitle,
         JBLoadingPanel loadingPanel,
         CompletableFuture<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> analysisFuture
     ) {
@@ -141,63 +178,77 @@ public final class StvnNamespaceBrowserPopup {
     }
 
     static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
-        return createBrowserContent(project, file, scope, Disposer.newDisposable(), title -> {});
-    }
-
-    static BrowserContent createBrowserContent(
-        Project project,
-        PsiFile file,
-        StvnNamespaceScope scope,
-        Disposable parentDisposable
-    ) {
-        return createBrowserContent(project, file, scope, parentDisposable, title -> {});
+        return createBrowserContent(project, file, scope, Disposer.newDisposable());
     }
 
     static BrowserContent createBrowserContent(
         Project project,
         PsiFile file,
         StvnNamespaceScope initialScope,
-        Disposable parentDisposable,
-        Consumer<String> popupTitleUpdater
+        Disposable parentDisposable
     ) {
         var tableModel = new StvnNamespaceTableModel(new ArrayList<>());
-        var table = new JBTable(tableModel);
-
+        var columnManagerHolder = new StvnNamespaceColumnManager[1];
+        var table = new JBTable(tableModel) {
+            @Override
+            public @Nullable String getToolTipText(@NotNull MouseEvent event) {
+                var mgr = columnManagerHolder[0];
+                return mgr != null ? mgr.resolveTruncatedCellTooltip(event) : super.getToolTipText(event);
+            }
+        };
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setRowSorter(new TableRowSorter<>(tableModel));
-        table.setAutoResizeMode(JBTable.AUTO_RESIZE_ALL_COLUMNS);
         StvnPrioritizedTableSpeedSearch.installOn(table);
 
-        var panel = new JPanel(new BorderLayout(0, 6));
+        var scrollPane = new JBScrollPane(table);
+        var columnManager = new StvnNamespaceColumnManager(table, scrollPane, tableModel);
+        columnManagerHolder[0] = columnManager;
+
+        var panel = new JPanel(new BorderLayout(0, JBUI.scale(6)));
         panel.setBorder(JBUI.Borders.empty(8));
-        panel.setPreferredSize(new Dimension(880, 420));
+        panel.setPreferredSize(new Dimension(JBUI.scale(920), JBUI.scale(440)));
 
         var activeScopeRef = new AtomicReference<>(initialScope);
         var snapshotRef = new AtomicReference<StvnNamespaceSymbolCollector.@Nullable StvnNamespaceSnapshot>(null);
 
-        var northPanel = new JPanel(new BorderLayout(0, 4));
-        var topRow = new JPanel(new BorderLayout(8, 0));
-        var headerLabel = new JBLabel(
-            "Scope: " + initialScope.getSectionKeyword() + " \u2014 " + initialScope.getDisplayTitle() + " (Analyzing...)"
-        );
-        topRow.add(headerLabel, BorderLayout.WEST);
+        var northPanel = new JPanel();
+        northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
 
-        var showPreludeCheckBox = new JBCheckBox("Show Standard Library Prelude", false);
+        // Row 1: Left-aligned "File: <filename>" (with relative-path tooltip) + right-aligned Prelude checkbox
+        var fileRow = new JPanel(new BorderLayout(JBUI.scale(8), 0));
+        var fileLabel = new JBLabel(StvnBundle.message("stvn.browser.header.file", file.getName()));
+        fileLabel.setToolTipText(resolveFileTooltipPath(project, file));
+        fileRow.add(fileLabel, BorderLayout.WEST);
+
+        var showPreludeCheckBox = new JBCheckBox(StvnBundle.message("stvn.browser.prelude.checkbox"), false);
         showPreludeCheckBox.setEnabled(false);
-        topRow.add(showPreludeCheckBox, BorderLayout.EAST);
-        northPanel.add(topRow, BorderLayout.NORTH);
+        fileRow.add(showPreludeCheckBox, BorderLayout.EAST);
+        northPanel.add(fileRow);
+        northPanel.add(Box.createVerticalStrut(JBUI.scale(4)));
 
-        var controlsRow = new JPanel(new BorderLayout(10, 0));
-        var scopeSelectorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        scopeSelectorPanel.add(new JBLabel("Scope:"));
+        // Row 2: Dynamic "Scope: <scope> — <scopeTitle> (<count> symbols...)" summary directly under File:
+        var summaryRow = new JPanel(new BorderLayout(JBUI.scale(8), 0));
+        var headerLabel = new JBLabel(
+            StvnBundle.message(
+                "stvn.browser.header.scope.analyzing",
+                initialScope.getSectionKeyword(),
+                initialScope.getDisplayTitle()
+            )
+        );
+        summaryRow.add(headerLabel, BorderLayout.WEST);
+        northPanel.add(summaryRow);
+        northPanel.add(Box.createVerticalStrut(JBUI.scale(4)));
+
+        // Row 3: "Scope:" + clean :defs / :type / :body radio buttons (no mnemonic suffix) + live SearchTextField
+        var controlsRow = new JPanel(new BorderLayout(JBUI.scale(10), 0));
+        var scopeSelectorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
+        scopeSelectorPanel.add(new JBLabel(StvnBundle.message("stvn.browser.scope.label")));
 
         var scopeGroup = new ButtonGroup();
         Map<StvnNamespaceScope, JRadioButton> scopeButtons = new EnumMap<>(StvnNamespaceScope.class);
-        int mnemonicIndex = 1;
         for (StvnNamespaceScope candidateScope : StvnNamespaceScope.values()) {
             var radio = new JBRadioButton(candidateScope.getSectionKeyword(), candidateScope == initialScope);
-            radio.setMnemonic(KeyEvent.VK_0 + mnemonicIndex++);
             radio.setEnabled(false);
+            radio.setToolTipText(resolveEnabledScopeTooltip(candidateScope));
             scopeGroup.add(radio);
             scopeButtons.put(candidateScope, radio);
             scopeSelectorPanel.add(radio);
@@ -205,17 +256,16 @@ public final class StvnNamespaceBrowserPopup {
         controlsRow.add(scopeSelectorPanel, BorderLayout.WEST);
 
         var filterField = new SearchTextField(false);
-        filterField.getTextEditor().getEmptyText().setText("Filter symbols by name, source, target, or type...");
+        filterField.getTextEditor().getEmptyText().setText(StvnBundle.message("stvn.browser.filter.placeholder"));
         filterField.setEnabled(false);
         controlsRow.add(filterField, BorderLayout.CENTER);
 
-        northPanel.add(controlsRow, BorderLayout.SOUTH);
+        northPanel.add(controlsRow);
         panel.add(northPanel, BorderLayout.NORTH);
 
-        var scrollPane = new JBScrollPane(table);
         var loadingPanel = new JBLoadingPanel(new BorderLayout(), parentDisposable);
         loadingPanel.add(scrollPane, BorderLayout.CENTER);
-        loadingPanel.setLoadingText("Analyzing " + initialScope.getSectionKeyword() + " dependencies...");
+        loadingPanel.setLoadingText(StvnBundle.message("stvn.browser.loading.text", initialScope.getSectionKeyword()));
         loadingPanel.startLoading();
         panel.add(loadingPanel, BorderLayout.CENTER);
 
@@ -233,12 +283,24 @@ public final class StvnNamespaceBrowserPopup {
             List<StvnNamespaceSymbolEntry> combined = mergeWithPrelude(baseEntries, snapshot.preludeEntries(), showPrelude);
             List<StvnNamespaceSymbolEntry> filtered = applyFilterQuery(combined, filterText);
 
-            tableModel.setItems(filtered);
+            tableModel.updateView(filtered);
             if (!filtered.isEmpty()) {
                 table.setRowSelectionInterval(0, 0);
             }
             headerLabel.setText(formatScopeSummaryText(currentScope, filtered.size(), combined.size(), showPrelude, !filterText.isEmpty()));
-            popupTitleUpdater.accept(formatPopupTitle(file.getName(), currentScope));
+        };
+
+        Consumer<StvnNamespaceScope> trySwitchScope = targetScope -> {
+            JRadioButton btn = scopeButtons.get(targetScope);
+            if (btn == null || !btn.isEnabled()) {
+                return;
+            }
+            if (activeScopeRef.get() == targetScope && btn.isSelected()) {
+                return;
+            }
+            btn.setSelected(true);
+            activeScopeRef.set(targetScope);
+            refreshView.run();
         };
 
         for (var entry : scopeButtons.entrySet()) {
@@ -246,11 +308,28 @@ public final class StvnNamespaceBrowserPopup {
             JRadioButton radio = entry.getValue();
             radio.addActionListener(e -> {
                 if (radio.isSelected() && radio.isEnabled()) {
-                    activeScopeRef.set(buttonScope);
-                    refreshView.run();
+                    if (activeScopeRef.getAndSet(buttonScope) != buttonScope) {
+                        refreshView.run();
+                    } else {
+                        refreshView.run();
+                    }
                 }
             });
         }
+
+        Map<StvnNamespaceScope, AnAction> scopeShortcutActions = new EnumMap<>(StvnNamespaceScope.class);
+        scopeShortcutActions.put(
+            StvnNamespaceScope.DEFS,
+            registerScopeShortcut(panel, parentDisposable, KeyEvent.VK_1, StvnNamespaceScope.DEFS, scopeButtons, trySwitchScope)
+        );
+        scopeShortcutActions.put(
+            StvnNamespaceScope.TYPE,
+            registerScopeShortcut(panel, parentDisposable, KeyEvent.VK_2, StvnNamespaceScope.TYPE, scopeButtons, trySwitchScope)
+        );
+        scopeShortcutActions.put(
+            StvnNamespaceScope.BODY,
+            registerScopeShortcut(panel, parentDisposable, KeyEvent.VK_3, StvnNamespaceScope.BODY, scopeButtons, trySwitchScope)
+        );
 
         showPreludeCheckBox.addActionListener(e -> refreshView.run());
 
@@ -277,18 +356,18 @@ public final class StvnNamespaceBrowserPopup {
 
             var defsBtn = scopeButtons.get(StvnNamespaceScope.DEFS);
             defsBtn.setEnabled(true);
-            defsBtn.setToolTipText("Display all in-scope :defs declarations and :use projections");
+            defsBtn.setToolTipText(ENABLED_DEFS_SCOPE_TOOLTIP);
 
             var typeBtn = scopeButtons.get(StvnNamespaceScope.TYPE);
             typeBtn.setEnabled(snapshot.hasTypeSection());
             typeBtn.setToolTipText(snapshot.hasTypeSection()
-                ? "Display transitive symbol closure reachable from root :type"
+                ? ENABLED_TYPE_SCOPE_TOOLTIP
                 : DISABLED_TYPE_SCOPE_TOOLTIP);
 
             var bodyBtn = scopeButtons.get(StvnNamespaceScope.BODY);
             bodyBtn.setEnabled(snapshot.hasBodySection());
             bodyBtn.setToolTipText(snapshot.hasBodySection()
-                ? "Display transitive symbol closure reachable from :type and :body"
+                ? ENABLED_BODY_SCOPE_TOOLTIP
                 : DISABLED_BODY_SCOPE_TOOLTIP);
 
             scopeButtons.get(resolvedScope).setSelected(true);
@@ -296,6 +375,8 @@ public final class StvnNamespaceBrowserPopup {
             filterField.setEnabled(true);
 
             refreshView.run();
+            columnManager.applyInitialContentWidthsIfUnmodified();
+            columnManager.markInitialSnapshotComplete();
             loadingPanel.stopLoading();
             analysisFuture.complete(snapshot);
         })
@@ -311,14 +392,105 @@ public final class StvnNamespaceBrowserPopup {
             Map.copyOf(scopeButtons),
             activeScopeRef,
             tableModel,
+            fileLabel,
             headerLabel,
+            columnManager,
+            Map.copyOf(scopeShortcutActions),
+            resolvePopupTitle(),
             loadingPanel,
             analysisFuture
         );
     }
 
-    static String formatPopupTitle(String fileName, StvnNamespaceScope scope) {
-        return "STVN Namespace Dependencies \u2014 " + fileName + " [" + scope.getSectionKeyword() + "]";
+    static String resolvePopupTitle() {
+        return StvnBundle.message("stvn.browser.title");
+    }
+
+    static String resolveFileTooltipPath(Project project, PsiFile file) {
+        return ReadAction.compute(() -> {
+            PsiFile originFile = file.getOriginalFile();
+            VirtualFile vf = originFile.getVirtualFile() != null
+                ? originFile.getVirtualFile()
+                : file.getVirtualFile();
+            if (vf == null) {
+                return file.getName();
+            }
+            String vfPath = FileUtil.toSystemIndependentName(vf.getPath());
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isEmpty()) {
+                String normBase = FileUtil.toSystemIndependentName(basePath);
+                if (normBase.endsWith("/")) {
+                    normBase = normBase.substring(0, normBase.length() - 1);
+                }
+                if (vfPath.startsWith(normBase + "/")) {
+                    return vfPath.substring(normBase.length() + 1);
+                }
+            }
+            if (!project.isDisposed()) {
+                VirtualFile contentRoot = ProjectFileIndex.getInstance(project).getContentRootForFile(vf);
+                if (contentRoot != null) {
+                    String rel = VfsUtilCore.getRelativePath(vf, contentRoot, '/');
+                    if (rel != null && !rel.isEmpty()) {
+                        return rel;
+                    }
+                }
+            }
+            return vfPath;
+        });
+    }
+
+    private static String resolveEnabledScopeTooltip(StvnNamespaceScope scope) {
+        return switch (scope) {
+            case DEFS -> ENABLED_DEFS_SCOPE_TOOLTIP;
+            case TYPE -> ENABLED_TYPE_SCOPE_TOOLTIP;
+            case BODY -> ENABLED_BODY_SCOPE_TOOLTIP;
+        };
+    }
+
+    private static AnAction registerScopeShortcut(
+        JPanel rootPanel,
+        Disposable parentDisposable,
+        int keyCode,
+        StvnNamespaceScope targetScope,
+        Map<StvnNamespaceScope, JRadioButton> scopeButtons,
+        Consumer<StvnNamespaceScope> trySwitchScope
+    ) {
+        KeyStroke keyStroke = KeyStroke.getKeyStroke(keyCode, InputEvent.ALT_DOWN_MASK);
+        var action = new DumbAwareAction() {
+            @Override
+            public void update(@NotNull AnActionEvent e) {
+                // Keep enabled inside popup so disabled Alt+2/Alt+3 do not leak to IDE tool windows
+                e.getPresentation().setEnabled(true);
+            }
+
+            @Override
+            public @NotNull ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.EDT;
+            }
+
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent e) {
+                JRadioButton btn = scopeButtons.get(targetScope);
+                if (btn == null || !btn.isEnabled()) {
+                    return;
+                }
+                trySwitchScope.accept(targetScope);
+            }
+        };
+        action.registerCustomShortcutSet(new CustomShortcutSet(keyStroke), rootPanel, parentDisposable);
+
+        String actionKey = "stvn.browser.scope." + targetScope.name();
+        rootPanel.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(keyStroke, actionKey);
+        rootPanel.getActionMap().put(actionKey, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JRadioButton btn = scopeButtons.get(targetScope);
+                if (btn != null && btn.isEnabled()) {
+                    trySwitchScope.accept(targetScope);
+                }
+            }
+        });
+        return action;
     }
 
     private static String formatScopeSummaryText(
@@ -329,11 +501,20 @@ public final class StvnNamespaceBrowserPopup {
         boolean filterActive
     ) {
         String countPart = filterActive
-            ? visibleCount + "/" + totalInScopeCount + " symbols"
-            : visibleCount + " symbols";
-        String preludePart = preludeEnabled ? ", Prelude shown" : "";
-        return "Scope: " + scope.getSectionKeyword() + " \u2014 " + scope.getDisplayTitle()
-            + " (" + countPart + preludePart + ")";
+            ? StvnBundle.message(
+                "stvn.browser.header.symbols.filtered",
+                Integer.toString(visibleCount),
+                Integer.toString(totalInScopeCount)
+            )
+            : StvnBundle.message("stvn.browser.header.symbols.total", Integer.toString(visibleCount));
+        String preludePart = preludeEnabled ? StvnBundle.message("stvn.browser.header.prelude.suffix") : "";
+        return StvnBundle.message(
+            "stvn.browser.header.scope.summary",
+            scope.getSectionKeyword(),
+            scope.getDisplayTitle(),
+            countPart,
+            preludePart
+        );
     }
 
     private static List<StvnNamespaceSymbolEntry> mergeWithPrelude(
@@ -383,17 +564,7 @@ public final class StvnNamespaceBrowserPopup {
     public static void showPopup(Project project, PsiFile file, StvnNamespaceScope scope) {
         var popupDisposable = Disposer.newDisposable("StvnNamespaceBrowserPopup");
         var popupRef = new JBPopup[1];
-        var content = createBrowserContent(
-            project,
-            file,
-            scope,
-            popupDisposable,
-            updatedTitle -> {
-                if (popupRef[0] != null && !popupRef[0].isDisposed()) {
-                    popupRef[0].setCaption(updatedTitle);
-                }
-            }
-        );
+        var content = createBrowserContent(project, file, scope, popupDisposable);
         var panel = content.panel();
         var table = content.table();
         var tableModel = content.tableModel();
@@ -469,7 +640,7 @@ public final class StvnNamespaceBrowserPopup {
 
         var popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(panel, table)
-            .setTitle(formatPopupTitle(file.getName(), scope))
+            .setTitle(content.popupTitle())
             .setMovable(true)
             .setResizable(true)
             .setRequestFocus(true)
@@ -507,18 +678,18 @@ public final class StvnNamespaceBrowserPopup {
         StvnNamespaceSymbolEntry entry
     ) {
         var popupMenu = new JBPopupMenu();
-        var itemUse = new JMenuItem("Insert Reference (:use)");
+        var itemUse = new JMenuItem(StvnBundle.message("stvn.browser.row.menu.insertUse"));
         itemUse.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
             insertUseReferenceInEditor(project, sourceFile, entry)
         ));
         popupMenu.add(itemUse);
 
-        var itemCopyFqni = new JMenuItem("Copy FQNI");
+        var itemCopyFqni = new JMenuItem(StvnBundle.message("stvn.browser.row.menu.copyFqni"));
         itemCopyFqni.addActionListener(ev -> copyFqniToClipboard(project, entry));
         popupMenu.add(itemCopyFqni);
 
         if (!isConstantSymbol(entry)) {
-            var itemBrand = new JMenuItem("Brand as New Nominal Type in :defs");
+            var itemBrand = new JMenuItem(StvnBundle.message("stvn.browser.row.menu.brandNominal"));
             itemBrand.addActionListener(ev -> WriteCommandAction.runWriteCommandAction(project, () ->
                 insertNominalBrandInDefs(project, sourceFile, entry)
             ));
@@ -695,11 +866,11 @@ public final class StvnNamespaceBrowserPopup {
         CopyPasteManager.getInstance().setContents(new StringSelection(fqni));
         var statusBar = WindowManager.getInstance().getStatusBar(project);
         if (statusBar != null) {
-            statusBar.setInfo("Copied FQNI to clipboard: " + fqni);
+            statusBar.setInfo(StvnBundle.message("stvn.browser.status.copiedFqni", fqni));
         }
         var editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
         if (editor != null) {
-            HintManager.getInstance().showInformationHint(editor, "Copied FQNI: " + fqni);
+            HintManager.getInstance().showInformationHint(editor, StvnBundle.message("stvn.browser.hint.copiedFqni", fqni));
         }
     }
 
