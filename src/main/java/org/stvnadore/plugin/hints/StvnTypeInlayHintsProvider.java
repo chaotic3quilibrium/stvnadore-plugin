@@ -1,6 +1,11 @@
 package org.stvnadore.plugin.hints;
 
-import com.intellij.codeInsight.hints.*;
+import com.intellij.codeInsight.hints.ImmediateConfigurable;
+import com.intellij.codeInsight.hints.InlayHintsCollector;
+import com.intellij.codeInsight.hints.InlayHintsProvider;
+import com.intellij.codeInsight.hints.InlayHintsSink;
+import com.intellij.codeInsight.hints.NoSettings;
+import com.intellij.codeInsight.hints.SettingsKey;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
@@ -9,13 +14,14 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.settings.StvnProjectSettings;
 
 /**
- * Provides inlay type hints in the editor for inferred or complex types.
+ * Provides inlay type hints in the editor for inferred sum variants, nominal lineages, and {@code :use} aliases.
  */
 @NullMarked
 public final class StvnTypeInlayHintsProvider implements InlayHintsProvider<NoSettings> {
 
-    /** Constructs an StvnTypeInlayHintsProvider instance. */
-    public StvnTypeInlayHintsProvider() {}
+    /** Constructs a {@code StvnTypeInlayHintsProvider} instance. */
+    public StvnTypeInlayHintsProvider() {
+    }
 
     private static final SettingsKey<NoSettings> KEY = new SettingsKey<>("stvn.type.hints");
 
@@ -37,9 +43,9 @@ public final class StvnTypeInlayHintsProvider implements InlayHintsProvider<NoSe
     @Override
     public @Nullable String getPreviewText() {
         return "{\n" +
-               "  :type :Tuple( :Either( :Int :String ) )\n" +
-               "  :body ( #Left -105 )\n" +
-               "}";
+            "  :type :Tuple(:Either(:Int :String))\n" +
+            "  :body (#Left -105)\n" +
+            "}";
     }
 
     @Override

@@ -46,7 +46,7 @@ import java.util.Set;
 public final class StvnConvertEscapedStringToFencedIntention extends PsiElementBaseIntentionAction {
 
     private static final String INTENTION_TEXT = "Convert escaped string to fenced string";
-    private static final String FAMILY_NAME = "STVN";
+    private static final String FAMILY_NAME = "Convert escaped string to fenced string";
 
     private static final Set<String> ALLOWED_STRING_FACETS = Set.of(
         StvnVocabulary.FACET_KW_REGEX,
@@ -79,7 +79,7 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         if (file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return false;
         }
-        return resolveConversionSpec(element) != null;
+        return resolveConversionSpec(element, true) != null;
     }
 
     @Override
@@ -88,11 +88,47 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         if (editor == null) {
             return;
         }
-        ConversionSpec spec = resolveConversionSpec(element);
+        ConversionSpec spec = resolveConversionSpec(element, true);
         if (spec == null) {
             return;
         }
+        applyConversionSpec(project, editor, spec);
+    }
 
+    /**
+     * Checks whether {@code element} resides inside a simple double-quoted STVN string literal
+     * (escaped or escape-free) that can convert losslessly into a Rule {@code STR-04} fenced string.
+     *
+     * @param element PSI element under the editor caret
+     * @return {@code true} when lossless simple-to-fenced conversion is available
+     */
+    public static boolean canConvertAnySimpleStringToFenced(PsiElement element) {
+        PsiFile file = element.getContainingFile();
+        if (file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
+            return false;
+        }
+        return resolveConversionSpec(element, false) != null;
+    }
+
+    /**
+     * Converts the simple double-quoted STVN string literal enclosing {@code element} into a
+     * canonical Rule {@code STR-04} fenced string block when lossless round-trip soundness holds.
+     *
+     * @param project active IntelliJ project
+     * @param editor  active text editor
+     * @param element PSI element under the editor caret
+     * @return {@code true} if a simple string literal was converted, or {@code false} otherwise
+     */
+    public static boolean invokeAnySimpleStringToFenced(Project project, Editor editor, PsiElement element) {
+        ConversionSpec spec = resolveConversionSpec(element, false);
+        if (spec == null) {
+            return false;
+        }
+        applyConversionSpec(project, editor, spec);
+        return true;
+    }
+
+    private static void applyConversionSpec(Project project, Editor editor, ConversionSpec spec) {
         Document document = editor.getDocument();
         PsiDocumentManager docManager = PsiDocumentManager.getInstance(project);
         docManager.doPostponedOperationsAndUnblockDocument(document);
@@ -122,7 +158,7 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         String tag
     ) {}
 
-    private static @Nullable ConversionSpec resolveConversionSpec(PsiElement element) {
+    private static @Nullable ConversionSpec resolveConversionSpec(PsiElement element, boolean requireEscapeTrigger) {
         StringLiteral strLit = element instanceof StringLiteral sl
             ? sl
             : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
@@ -156,13 +192,15 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
             if (!StvnVocabulary.FACET_KW_REGEX.equals(facetName) && isDateTimeSchema(enclosingSchema)) {
                 return null;
             }
-            if (!StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, false)) {
-                return null;
-            }
             String baseTag = StvnVocabulary.FACET_KW_REGEX.equals(facetName)
                 ? StvnVocabulary.FENCE_TAG_REGEX
                 : StvnVocabulary.FENCE_TAG_RAW;
             String safeTag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(decoded, baseTag);
+            if (requireEscapeTrigger
+                    ? !StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, false)
+                    : !isRoundTripLosslessFencedString(decoded, safeTag, false)) {
+                return null;
+            }
             return new ConversionSpec(strLit, decoded, false, safeTag);
         }
 
@@ -185,17 +223,31 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
             return null;
         }
         boolean preserveIndent = schemaRes.preserveIndent();
-        if (!StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, preserveIndent)) {
-            return null;
-        }
-
         String baseTag = (constDef != null
                 && constDef.getValueKeyword() != null
                 && StvnPsiLiteralEvaluator.isRegexConstantIdentifier(constDef.getValueKeyword().getText().trim()))
             ? StvnVocabulary.FENCE_TAG_REGEX
             : StvnVocabulary.FENCE_TAG_RAW;
         String safeTag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(decoded, baseTag);
+        if (requireEscapeTrigger
+                ? !StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, preserveIndent)
+                : !isRoundTripLosslessFencedString(decoded, safeTag, preserveIndent)) {
+            return null;
+        }
         return new ConversionSpec(strLit, decoded, preserveIndent, safeTag);
+    }
+
+    private static boolean isRoundTripLosslessFencedString(String decoded, String safeTag, boolean preserveIndent) {
+        for (int i = 0; i < decoded.length(); i++) {
+            char c = decoded.charAt(i);
+            if (c < 0x20 && c != '\n' && c != '\t') {
+                return false;
+            }
+        }
+        String sampleRendered = renderFencedLiteral(decoded, safeTag, preserveIndent, 2);
+        return StvnPsiLiteralEvaluator.decodeStringLiteral(sampleRendered, preserveIndent)
+            .filter(decoded::equals)
+            .isPresent();
     }
 
     private record SchemaResolution(boolean isDateTime, boolean preserveIndent) {}
@@ -398,8 +450,8 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
             boolean preserveIndent,
             int ownerIndentSpaces
     ) {
-        String openFence = "\"\"\"[" + tag + "]\n";
-        String closeFence = "[" + tag + "]\"\"\"";
+        String openFence = "\"\"\"" + StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET + "\n";
+        String closeFence = StvnVocabulary.DELIM_OPEN_BRACKET + tag + StvnVocabulary.DELIM_CLOSE_BRACKET + "\"\"\"";
         if (preserveIndent) {
             return openFence + decoded + closeFence;
         }

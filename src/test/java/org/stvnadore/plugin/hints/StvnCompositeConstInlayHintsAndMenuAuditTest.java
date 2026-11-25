@@ -315,7 +315,7 @@ public final class StvnCompositeConstInlayHintsAndMenuAuditTest extends BasePlat
             Map<Integer, String> stateAInlays = collectInlayMap(vfStateAE027);
             assertEquals(":BridgeNavFix (-> :rov/nav/NavFix -> :Tuple)",
                 stateAInlays.get(stateASlots.get(0).getTextRange().getEndOffset()));
-            assertEquals(":rov/nav/NavFix",
+            assertEquals(":BridgeNavFix (-> :rov/nav/NavFix -> :Tuple)",
                 stateAInlays.get(stateASlots.get(1).getTextRange().getEndOffset()));
             assertEquals(":rov/units/DepthMeters (-> :Float)",
                 stateAInlays.get(stateASlots.get(2).getTextRange().getEndOffset()));
@@ -550,7 +550,7 @@ public final class StvnCompositeConstInlayHintsAndMenuAuditTest extends BasePlat
             StvnNamespaceSymbolEntry deepFixEntry = findSymbol(body10c, "#DEEP_TEST_FIX");
             assertNotNull("BODY scope must include #DEEP_TEST_FIX", deepFixEntry);
             assertEquals(":rov/nav", deepFixEntry.source());
-            assertEquals(":NavFix", deepFixEntry.typeStructure());
+            assertEquals(":BridgeNavFix (-> :rov/nav/NavFix -> :Tuple)", deepFixEntry.typeStructure());
             assertTrue("All Namespace Browser typeStructure strings must be single-line",
                 defs10c.stream().noneMatch(e -> e.typeStructure().contains("\n")));
 

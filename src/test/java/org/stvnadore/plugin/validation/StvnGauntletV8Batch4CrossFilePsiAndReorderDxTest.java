@@ -271,17 +271,31 @@ public final class StvnGauntletV8Batch4CrossFilePsiAndReorderDxTest extends Base
         String[] expectedOuterHints = {
             ":DishAzimuth (-> :Int)",
             ":PriorityLevel (-> :Enum)",
-            ":satcom/uplink/StationCode (-> :String)",
+            ":UplinkStationCode (-> :satcom/uplink/StationCode -> :String)",
             ":satcom/relay/StationCode (-> :String)",
-            ":satcom/uplink/LinkStatus (-> :Enum)",
-            ":satcom/relay/LinkStatus (-> :Enum)",
-            ":satcom/uplink/FirmwareRelease (-> :String)",
+            ":UplinkStatus (-> :satcom/uplink/LinkStatus -> :Enum)",
+            ":RelayStatus (-> :satcom/relay/LinkStatus -> :Enum)",
+            ":ReleaseTag (-> :satcom/uplink/FirmwareRelease -> :String)",
             ":satcom/uplink/FrameTag (-> :String)",
             ":satcom/relay/RelayHop"
         };
         for (int i = 0; i < expectedOuterHints.length; i++) {
             assertInlayHintBadge(collector, outerSlots.get(i), expectedOuterHints[i]);
         }
+
+        var uplinkStationLinks = StvnInlayHintsCollector.extractBoundClickableTypeSegments(
+            outerSlots.get(2),
+            expectedOuterHints[2]
+        );
+        assertEquals(2, uplinkStationLinks.size());
+        assertEquals(":UplinkStationCode", uplinkStationLinks.get(0).tokenText());
+        assertTrue(uplinkStationLinks.get(0).targetElement().getParent() instanceof org.stvnadore.psi.UseMapAlias);
+        assertEquals(":satcom/uplink/StationCode", uplinkStationLinks.get(1).tokenText());
+        assertNotNull(PsiTreeUtil.getParentOfType(uplinkStationLinks.get(1).targetElement(), TypeDefinition.class, false));
+        assertEquals(
+            "gauntlet_v8_stage10a_diamond_root_schema.core_test.stvn_d",
+            uplinkStationLinks.get(1).targetElement().getContainingFile().getName()
+        );
 
         var innerTuple = outerSlots.get(8).getCollectionValue() != null
             ? outerSlots.get(8).getCollectionValue().getTupleLiteral()

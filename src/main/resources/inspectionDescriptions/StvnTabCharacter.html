@@ -1,10 +1,10 @@
 <html>
 <body>
-<p>Audits STVN document source to enforce the Zero-Tab Invariant (Rule TAB-01).</p>
+<p>Audits STVN document source to enforce the Strict Zero-Tab Invariant (STVN Spec &sect; 1.3).</p>
 
-<p>Tab characters (<code>\t</code>, <code>U+0009</code>) are strictly forbidden in canonical STVN source text. Only standard ASCII space characters (<code>U+0020</code>) are permitted for indentation and whitespace formatting.</p>
+<p>Raw horizontal tab characters (<code>\t</code>, <code>U+0009</code>) are forbidden outside Rule <code>STR-04</code> verbatim fenced string bodies (<code>"""[TAG] ... [TAG]"""</code>, STVN Spec &sect; 5.3). Only standard ASCII space characters (<code>U+0020</code>) are permitted for structural indentation and delimiter alignment.</p>
 
 <p><b>Quick-Fix:</b></p>
-<p>Replaces the offending tab character with two standard ASCII spaces.</p>
+<p>Replaces the offending structural tab character with two standard ASCII spaces.</p>
 </body>
 </html>

@@ -1,4 +1,7 @@
-:type <spot>:Tuple(
-  :Int
-  :Boolean
-)</spot>
+{
+  :type <spot>:Tuple(
+    :Int
+    :Boolean
+  )</spot>
+  :body (1 #TRUE)
+}

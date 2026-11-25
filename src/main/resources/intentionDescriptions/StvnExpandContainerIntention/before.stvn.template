@@ -1,1 +1,4 @@
-:body <spot>{["zone_a" 120] ["zone_b" 145]}</spot>
+{
+  :type :Map(:String :Int)
+  :body <spot>{["zone_a" 120] ["zone_b" 145]}</spot>
+}

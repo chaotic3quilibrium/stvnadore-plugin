@@ -1,6 +1,6 @@
 <html>
 <body>
-<p>Validates that nominal string and collection type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec § 5.3).</p>
+<p>Validates that nominal string and collection type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec &sect; 5.1.5, &sect; 5.5.3, and &sect; 6.1).</p>
 <!-- tooltip end -->
 <p>
   STVN defines a default allocation capacity of 16 MiB (16,777,216 characters or elements) for unadorned <code>:String</code>,
@@ -41,14 +41,14 @@
 <p><b>Example (Violation):</b></p>
 <pre><code>:defs {
   :Username :String
-  :Identifiers :Seq( :Int )
+  :Identifiers :Seq(:Int)
 }
 </code></pre>
 
 <p><b>Example (Compliant):</b></p>
 <pre><code>:defs {
-  :Username { #minSize 1 #maxSize 64 } :String
-  :Identifiers { #maxSize 4096 } :Seq( :Int )
+  :Username    { #minSize 1 #maxSize 64 } :String
+  :Identifiers { #maxSize 4096 }          :Seq(:Int)
 }
 </code></pre>
 </body>

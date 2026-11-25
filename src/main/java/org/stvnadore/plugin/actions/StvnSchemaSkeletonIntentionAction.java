@@ -36,7 +36,7 @@ public final class StvnSchemaSkeletonIntentionAction extends PsiElementBaseInten
 
     @Override
     public @NotNull String getFamilyName() {
-        return "STVN Schema Scaffolding";
+        return "Generate schema data skeleton";
     }
 
     @Override

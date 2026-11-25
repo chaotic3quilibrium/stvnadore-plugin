@@ -1275,6 +1275,13 @@ public final class StvnTypeResolver {
             if (err.schema() instanceof StvnSchema.PoisonedSchema poisoned
                     && poisoned.isUngrounded()
                     && poisoned.aliasName().isPresent()) {
+                var slotKw = resolveSlotTypeKeywordForValue(value);
+                if (slotKw != null) {
+                    var hops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
+                    if (!hops.isEmpty()) {
+                        return ensureDegradedWarningPrefix(formatHopsAsArrowBadge(hops));
+                    }
+                }
                 return "\u26A0 " + poisoned.aliasName().get();
             }
         }
@@ -1293,6 +1300,29 @@ public final class StvnTypeResolver {
         return resolvePsiFallbackValueType(value);
     }
 
+    private static @Nullable TypeKeyword resolveSlotTypeKeywordForValue(Value value) {
+        if (!StvnPsiUtils.isInsideBody(value)) {
+            return null;
+        }
+        var info = resolveBaseTypeInfo(value);
+        return (info != null && info.getSchema() != null) ? info.getSchema().getTypeKeyword() : null;
+    }
+
+    private static String formatHopsAsArrowBadge(List<StvnTypeReference.TraceHop> hops) {
+        if (hops.isEmpty()) {
+            return "";
+        }
+        String head = hops.get(0).displayLabel();
+        if (hops.size() == 1) {
+            return head;
+        }
+        String tail = String.join(
+            " -> ",
+            hops.subList(1, hops.size()).stream().map(StvnTypeReference.TraceHop::displayLabel).toList()
+        );
+        return head + " (-> " + tail + ")";
+    }
+
     private static @Nullable String formatResolvedNodeTrajectory(
         StvnValue resolvedNode,
         Value value,
@@ -1303,25 +1333,54 @@ public final class StvnTypeResolver {
         var baseSchema = resolvedNode.schema();
         var rootAliasOpt = baseSchema.aliasName();
         var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+        var slotKw = resolveSlotTypeKeywordForValue(value);
 
         if (!StvnSumTrajectory.isSumValue(resolvedNode) && isCompositeOrCollectionIrValue(resolvedNode)) {
             var compConstLabel = formatCompositeConstantReferenceLabel(value);
             if (compConstLabel != null) {
                 return compConstLabel;
             }
+            if (slotKw != null && value.getCollectionValue() != null) {
+                var isDegradedSlot = isDegradedNominalAlias(file, slotKw.getText().trim())
+                    || (rootAliasOpt.isPresent() && isDegradedNominalAlias(file, rootAliasOpt.get()));
+                var prefix = isDegradedSlot ? "\u26A0 " : "";
+                var baseHops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
+                if (baseHops.size() >= 2) {
+                    var fullHops = StvnTypeReference.extractClickableResolutionHops(slotKw, true);
+                    return prefix + formatHopsAsArrowBadge(fullHops);
+                } else if (baseHops.size() == 1) {
+                    return prefix + baseHops.get(0).displayLabel();
+                }
+            }
         }
 
-        // 1. Nominal Sum Type Handling
+        // 1. Nominal Type & Nominal Sum Handling
         if (rootAliasOpt.isPresent()) {
             var rootAlias = rootAliasOpt.get();
-            var isDegraded = isDegradedNominalAlias(file, rootAlias);
+            var isDegraded = isDegradedNominalAlias(file, rootAlias)
+                || (slotKw != null && isDegradedNominalAlias(file, slotKw.getText().trim()));
             var prefix = isDegraded ? "\u26A0 " : "";
 
             if (StvnSumTrajectory.isSumValue(resolvedNode)) {
                 var rootDef = findTypeDefinition(file, rootAlias, value);
                 var rootRhsPsi = rootDef != null ? rootDef.getSchemaType() : null;
+                String displayHead = rootAlias;
+                List<String> intermediateNominalHops = List.of();
+                if (slotKw != null) {
+                    var slotHops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
+                    if (!slotHops.isEmpty()) {
+                        displayHead = slotHops.get(0).displayLabel();
+                        if (slotHops.size() > 1) {
+                            intermediateNominalHops = slotHops.subList(1, slotHops.size())
+                                .stream()
+                                .map(StvnTypeReference.TraceHop::displayLabel)
+                                .toList();
+                        }
+                    }
+                }
                 String formattedNominalSum = formatNominalSumMultiHopTrajectory(
-                    rootAlias,
+                    displayHead,
+                    intermediateNominalHops,
                     rootRhsPsi,
                     value,
                     resolvedNode,
@@ -1334,17 +1393,22 @@ public final class StvnTypeResolver {
                 return prefix + formattedNominalSum;
             }
 
+            if (slotKw != null && !isCompositeOrCollectionIrValue(resolvedNode)) {
+                var slotHops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
+                if (!slotHops.isEmpty()) {
+                    return prefix + formatHopsAsArrowBadge(slotHops);
+                }
+            }
+
             var alias = rootAlias;
-            var shortAlias = alias.startsWith(":org/stvnadore/prelude/")
-                ? StvnVocabulary.SIGIL_TYPIC + alias.substring(":org/stvnadore/prelude/".length())
-                : alias;
-            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortAlias)) {
-                return prefix + shortAlias;
+            var shortPrelude = StvnTypeReference.toShortPreludeTerminal(alias);
+            if (shortPrelude != null) {
+                return prefix + shortPrelude;
             }
             var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
             var typeKw = kw instanceof TypeDefinition td ? td.getTypeKeyword()
                 : kw instanceof TypeKeyword k ? k : null;
-            if (typeKw != null) {
+            if (typeKw != null && !isCompositeOrCollectionIrValue(resolvedNode)) {
                 var trace = StvnTypeReference.extractResolutionTrace(typeKw);
                 if (trace.size() > 1) {
                     var head = alias.contains("/") ? alias : trace.get(0);
@@ -1728,6 +1792,32 @@ public final class StvnTypeResolver {
         boolean useLong,
         Set<String> visitedAliases
     ) {
+        return formatNominalSumMultiHopTrajectory(
+            nominalAlias,
+            List.of(),
+            sumRhsPsi,
+            psiCursor,
+            irCursor,
+            catalog,
+            file,
+            project,
+            useLong,
+            visitedAliases
+        );
+    }
+
+    private static String formatNominalSumMultiHopTrajectory(
+        String nominalAlias,
+        List<String> intermediateNominalHops,
+        @Nullable SchemaType sumRhsPsi,
+        @Nullable Value psiCursor,
+        @Nullable StvnValue irCursor,
+        StvnDefsCatalog catalog,
+        PsiFile file,
+        Project project,
+        boolean useLong,
+        Set<String> visitedAliases
+    ) {
         if (!visitedAliases.add(nominalAlias)) {
             return nominalAlias;
         }
@@ -1879,7 +1969,9 @@ public final class StvnTypeResolver {
             ? nominalAlias
             : nominalAlias + " " + String.join(" ", renderedTags);
         if (terminatedAtNone || haltedAtPoisonedConst) {
-            return headWithTags;
+            return !intermediateNominalHops.isEmpty()
+                ? headWithTags + " (-> " + String.join(" -> ", intermediateNominalHops) + ")"
+                : headWithTags;
         }
 
         String leafTrace = "";
@@ -1899,7 +1991,13 @@ public final class StvnTypeResolver {
         if (leafTrace.isEmpty() && currIr != null) {
             leafTrace = unspoolBranchTrajectory(currIr.schema(), currIr, file, project, useLong);
         }
-        return !leafTrace.isEmpty() ? headWithTags + " (-> " + leafTrace + ")" : headWithTags;
+        List<String> fullTailParts = new ArrayList<>(intermediateNominalHops);
+        if (!leafTrace.isEmpty()) {
+            fullTailParts.add(leafTrace);
+        }
+        return !fullTailParts.isEmpty()
+            ? headWithTags + " (-> " + String.join(" -> ", fullTailParts) + ")"
+            : headWithTags;
     }
 
     private static int selectBestMatchingPsiUnionBranch(@Nullable Value value, List<SchemaType> branches) {
@@ -2095,9 +2193,20 @@ public final class StvnTypeResolver {
         }
 
         if (info.getSchema() != null && info.getSchema().getTypeKeyword() != null) {
-            var governingAlias = info.getSchema().getTypeKeyword().getText().trim();
+            var slotKw = info.getSchema().getTypeKeyword();
+            var governingAlias = slotKw.getText().trim();
             var governingIr = resolveIrSchemaByAlias(value.getContainingFile(), governingAlias);
+            if (governingIr == null) {
+                var canonicalAlias = resolveCanonicalBrandForAliasInFile(value.getContainingFile(), governingAlias);
+                if (canonicalAlias != null) {
+                    governingIr = resolveIrSchemaByAlias(value.getContainingFile(), canonicalAlias);
+                }
+            }
             if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
+                var hops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
+                if (!hops.isEmpty()) {
+                    return ensureDegradedWarningPrefix(formatHopsAsArrowBadge(hops));
+                }
                 return "\u26A0 " + governingAlias;
             }
         }
@@ -2113,6 +2222,18 @@ public final class StvnTypeResolver {
             if (compConstLabel != null) {
                 return compConstLabel.isEmpty() ? null : compConstLabel;
             }
+            var compSlotKw = info.getSchema().getTypeKeyword();
+            if (compSlotKw != null && value.getCollectionValue() != null) {
+                boolean isDegradedComp = isDegradedNominalAlias(value.getContainingFile(), compSlotKw.getText().trim());
+                String compPrefix = isDegradedComp ? "\u26A0 " : "";
+                var baseHops = StvnTypeReference.extractClickableResolutionHops(compSlotKw, false);
+                if (baseHops.size() >= 2) {
+                    var fullHops = StvnTypeReference.extractClickableResolutionHops(compSlotKw, true);
+                    return compPrefix + formatHopsAsArrowBadge(fullHops);
+                } else if (baseHops.size() == 1) {
+                    return compPrefix + baseHops.get(0).displayLabel();
+                }
+            }
         }
         var constructor = schemaToInspect.getSchemaConstructor();
         if (constructor != null) {
@@ -2126,10 +2247,23 @@ public final class StvnTypeResolver {
                 if (sumType.getEnumDef() == null) {
                     var file = value.getContainingFile();
                     if (info.getSchema().getTypeKeyword() != null && file != null) {
-                        String rootAlias = info.getSchema().getTypeKeyword().getText().trim();
+                        var sumSlotKw = info.getSchema().getTypeKeyword();
+                        String rootAlias = sumSlotKw.getText().trim();
+                        List<String> intermediateNominalHops = List.of();
+                        var slotHops = StvnTypeReference.extractClickableResolutionHops(sumSlotKw, false);
+                        if (!slotHops.isEmpty()) {
+                            rootAlias = slotHops.get(0).displayLabel();
+                            if (slotHops.size() > 1) {
+                                intermediateNominalHops = slotHops.subList(1, slotHops.size())
+                                    .stream()
+                                    .map(StvnTypeReference.TraceHop::displayLabel)
+                                    .toList();
+                            }
+                        }
                         var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
                         String formatted = formatNominalSumMultiHopTrajectory(
                             rootAlias,
+                            intermediateNominalHops,
                             schemaToInspect,
                             value,
                             null,
@@ -2229,10 +2363,8 @@ public final class StvnTypeResolver {
         }
         var keyword = branchSchema.getTypeKeyword();
         if (keyword != null) {
-            var shortKw = keyword.getText().startsWith(":org/stvnadore/prelude/")
-                ? StvnVocabulary.SIGIL_TYPIC + keyword.getText().substring(":org/stvnadore/prelude/".length())
-                : keyword.getText();
-            if (StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(shortKw)) {
+            var shortKw = StvnTypeReference.toShortPreludeTerminal(keyword.getText());
+            if (shortKw != null) {
                 return shortKw;
             }
             var kwFile = keyword.getContainingFile() != null ? keyword.getContainingFile() : file;
@@ -2247,8 +2379,21 @@ public final class StvnTypeResolver {
                         && unwrappedTarget.getSchemaConstructor().getSumType() != null
                         && unwrappedTarget.getSchemaConstructor().getSumType().getEnumDef() == null
                         && targetDef.getContainingFile() != null) {
+                    String sumBranchHead = keyword.getText().trim();
+                    List<String> branchIntermediateHops = List.of();
+                    var branchHops = StvnTypeReference.extractClickableResolutionHops(keyword, false);
+                    if (!branchHops.isEmpty()) {
+                        sumBranchHead = branchHops.get(0).displayLabel();
+                        if (branchHops.size() > 1) {
+                            branchIntermediateHops = branchHops.subList(1, branchHops.size())
+                                .stream()
+                                .map(StvnTypeReference.TraceHop::displayLabel)
+                                .toList();
+                        }
+                    }
                     return formatNominalSumMultiHopTrajectory(
-                        keyword.getText().trim(),
+                        sumBranchHead,
+                        branchIntermediateHops,
                         targetSchema,
                         innerValue,
                         innerIr,
@@ -2267,9 +2412,15 @@ public final class StvnTypeResolver {
                     return String.join(" -> ", hops.stream().map(StvnTypeReference.TraceHop::displayLabel).toList());
                 }
             }
-            var trace = StvnTypeReference.extractResolutionTrace(keyword);
-            if (!trace.isEmpty()) {
-                return String.join(" -> ", trace);
+            var baseBranchHops = StvnTypeReference.extractClickableResolutionHops(keyword, false);
+            if (baseBranchHops.size() >= 2 && innerValue != null && innerValue.getCollectionValue() != null) {
+                var compBranchHops = StvnTypeReference.extractClickableResolutionHops(keyword, true);
+                if (!compBranchHops.isEmpty() && isCompositeConstructorHop(compBranchHops.getLast().displayLabel())) {
+                    return String.join(" -> ", compBranchHops.stream().map(StvnTypeReference.TraceHop::displayLabel).toList());
+                }
+            }
+            if (!baseBranchHops.isEmpty()) {
+                return String.join(" -> ", baseBranchHops.stream().map(StvnTypeReference.TraceHop::displayLabel).toList());
             }
         }
         if (branchSchema.getSchemaConstructor() != null && branchSchema.getSchemaConstructor().getSumType() != null

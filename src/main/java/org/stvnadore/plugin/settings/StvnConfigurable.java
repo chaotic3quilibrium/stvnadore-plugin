@@ -83,7 +83,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var cb3 = new JCheckBox("Show type information on hover (Quick Doc)");
         var cb4 = new JCheckBox("Enable redundant tag warnings (e.g., explicit #Some when implied)");
         var cb5 = new JCheckBox("Enable tag form discrepancy warnings (e.g., #S vs #Some)");
-        var cb6 = new JCheckBox("Enforce implied/implicit algebraic sum types");
+        var cb6 = new JCheckBox("Prefer implied algebraic sum types");
         var cb7 = new JCheckBox("Prompt before in-place canonicalization removes authoring constructs");
 
         cb1.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -113,7 +113,7 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(aliasModeCombo);
 
         panel.add(javax.swing.Box.createVerticalStrut(10));
-        var styleLabel = new JLabel("Multiline string auto-closing style:");
+        var styleLabel = new JLabel("Fenced string Enter-key auto-closing style:");
         styleLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
         panel.add(styleLabel);
 

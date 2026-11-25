@@ -226,7 +226,7 @@ public final class StvnSchemaSkeletonScaffolder {
             var collName = firstChild != null ? firstChild.getText().trim() : StvnVocabulary.TYPE_SEQ;
             var children = collection.getSchemaTypeList();
 
-            if (collName.startsWith(StvnVocabulary.TYPE_MAP) || collName.startsWith(":MapInv")) {
+            if (collName.startsWith(StvnVocabulary.TYPE_MAP)) {
                 sb.append("{\n");
                 var innerIndent = currentIndent + "  ";
                 sb.append(innerIndent).append("[ ");
@@ -313,7 +313,7 @@ public final class StvnSchemaSkeletonScaffolder {
     }
 
     private static void scaffoldFromKeywordText(String text, StringBuilder sb, List<PlaceholderSpec> placeholders) {
-        if (text.startsWith(StvnVocabulary.TYPE_INT) || text.startsWith(":Uint") || text.startsWith(StvnVocabulary.TYPE_TIME_EPOCH)) {
+        if (text.startsWith(StvnVocabulary.TYPE_INT) || text.startsWith(StvnVocabulary.TYPE_TIME_EPOCH)) {
             appendPlaceholder("0", sb, placeholders);
         } else if (text.startsWith(StvnVocabulary.TYPE_FLOAT)) {
             appendPlaceholder("0.0", sb, placeholders);

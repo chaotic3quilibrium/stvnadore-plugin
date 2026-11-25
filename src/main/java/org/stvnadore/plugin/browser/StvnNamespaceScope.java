@@ -5,6 +5,7 @@ import com.intellij.psi.PsiFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.TypeEntry;
@@ -15,24 +16,18 @@ import org.stvnadore.psi.TypeEntry;
 @NullMarked
 public enum StvnNamespaceScope {
 
-    /** Displays all declared, aliased, and imported symbols in document scope. */
-    DEFS(StvnVocabulary.KEYWORD_DEFS, "All Document Symbols (:defs Scope)"),
+    /** Displays all declared and imported symbols in root {@code :defs} scope. */
+    DEFS(StvnVocabulary.KEYWORD_DEFS, "All In-Scope :defs Symbols"),
 
-    /** Displays symbols referenced and instantiated by the root schema contract. */
-    TYPE(StvnVocabulary.KEYWORD_TYPE, "Schema Contract Symbols (:type Scope)"),
+    /** Displays transitive symbols reachable from the root {@code :type} schema contract. */
+    TYPE(StvnVocabulary.KEYWORD_TYPE, "Root :type Schema Closure"),
 
-    /** Displays symbols referenced and instantiated by payload data values. */
-    BODY(StvnVocabulary.KEYWORD_BODY, "Payload Instantiated Symbols (:body Scope)");
+    /** Displays transitive symbols reachable from {@code :type} and {@code :body} payload values. */
+    BODY(StvnVocabulary.KEYWORD_BODY, "Payload & :type Instantiated Closure");
 
     private final String sectionKeyword;
     private final String displayTitle;
 
-    /**
-     * Constructs a new StvnNamespaceScope with keyword and display title.
-     *
-     * @param sectionKeyword section header token string
-     * @param displayTitle human-readable title of this scope
-     */
     StvnNamespaceScope(String sectionKeyword, String displayTitle) {
         this.sectionKeyword = sectionKeyword;
         this.displayTitle = displayTitle;
@@ -57,8 +52,8 @@ public enum StvnNamespaceScope {
     }
 
     /**
-     * Resolves the enclosing {@link StvnNamespaceScope} from a PSI element,
-     * falling back to {@link #DEFS} when outside section blocks.
+     * Resolves the enclosing primary {@link StvnNamespaceScope} from a PSI element,
+     * falling back to {@link #DEFS} when outside primary {@code :type} or {@code :body} blocks.
      *
      * @param element the PSI element at the caret position
      * @return the resolved namespace scope
@@ -66,13 +61,13 @@ public enum StvnNamespaceScope {
     public static StvnNamespaceScope resolveFromElement(@Nullable PsiElement element) {
         var current = element;
         while (current != null && !(current instanceof PsiFile)) {
-            if (current instanceof DefsEntry) {
+            if (current instanceof DefsEntry && !StvnMetaTemplateUtil.isInSecondaryRootSection(current)) {
                 return DEFS;
             }
-            if (current instanceof TypeEntry) {
+            if (current instanceof TypeEntry && !StvnMetaTemplateUtil.isInSecondaryRootSection(current)) {
                 return TYPE;
             }
-            if (current instanceof BodyEntry) {
+            if (current instanceof BodyEntry && !StvnMetaTemplateUtil.isInSecondaryRootSection(current)) {
                 return BODY;
             }
             current = current.getParent();

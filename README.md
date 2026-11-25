@@ -20,7 +20,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 * [STVN Language Support for IntelliJ IDEA (`ij_stvnadore_plugin`)](#stvn-language-support-for-intellij-idea-ij_stvnadore_plugin)
   * [Key Features](#key-features)
     * [1. Interactive Authoring & Scaffolding](#1-interactive-authoring--scaffolding)
-    * [2. Visual Inlay Badging](#2-visual-inlay-badging)
+    * [2. Visual Inlay Badging & Per-Hop Navigation](#2-visual-inlay-badging--per-hop-navigation)
     * [3. Sub-Token Precision Diagnostics](#3-sub-token-precision-diagnostics)
     * [4. Workspace Flattening & Schema Publishing](#4-workspace-flattening--schema-publishing)
     * [5. Enum Subset Filtering & Derivation](#5-enum-subset-filtering--derivation)
@@ -58,12 +58,14 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 ### 1. Interactive Authoring & Scaffolding
 
 * **Schema Skeleton Generator (`Alt+Enter` on `:body`)**: Automatically generates a complete, valid data skeleton matching the document's resolved `:type` contract, attaching tab-stops to each mock literal for rapid data entry.
-* **Trap 2 Map Auto-Healer (`Alt+Enter`)**: Detects flat lists authored in `:Map` slots and atomically converts them to canonical paired bracket syntax (`{ [ key val ] }`).
+* **Trap 2 Map Auto-Healer (`Alt+Enter`)**: Detects flat lists authored in `:Map` slots and atomically converts them to canonical paired bracket syntax (`{["key" "val"]}`).
 
-### 2. Visual Inlay Badging
+### 2. Visual Inlay Badging & Per-Hop Navigation
 
-* **Compiler-Inferred Variant Badges**: Annotates unbracketed literals with inferred variant tags (e.g., `"ready"` renders with inlay badge `:Option [#Some]`).
-* **Closing Container Signatures**: Displays type signatures on closing delimiters (e.g., `):Tuple( :Int :String )`).
+* **Unified Renamed `:use` Alias Trajectories**: Starts `:body` inlay badges at the local renamed `UseMapAlias` token across scalar, `:Enum`, temporal, algebraic sum, and composite slots (for example `:ValveMode (-> :cooling/manifold/CoolantValveMode -> :Enum)`) while collapsing unrenamed `#strip` and identity `:Port :Port` projections cleanly without duplicate hops.
+* **Per-Hop `Ctrl+Click` Type Navigation**: Binds each nominal hop in an inlay badge independently so clicking `:ValveMode` jumps to the local `:use` alias declaration and clicking `:cooling/manifold/CoolantValveMode` jumps to the upstream `:package` `TypeDefinition`.
+* **Compiler-Inferred Variant Badges**: Annotates unbracketed literals with inferred variant tags (for example `"ready"` renders `:Option [#Some]`) and materializes inferred tags on click.
+* **Closing Container Signatures**: Displays type signatures on closing delimiters (for example `):Tuple(:Int :String)`).
 
 ### 3. Sub-Token Precision Diagnostics
 
@@ -84,9 +86,9 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ```stvn
 :defs {
-  :Environment :Enum [ #LOCAL #DEV #STAGING #CANARY #PROD ]
-  :DeployEnv   { #filterIncl [ #DEV #STAGING #CANARY ] } :Environment
-  :CanaryOnly  { #filterExcl [ #DEV #STAGING ] } :DeployEnv
+  :Environment :Enum[#LOCAL #DEV #STAGING #CANARY #PROD]
+  :DeployEnv   { #filterIncl [#DEV #STAGING #CANARY] } :Environment
+  :CanaryOnly  { #filterExcl [#DEV #STAGING] } :DeployEnv
 }
 ```
 
@@ -103,21 +105,21 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ### 7. Context-Aware Code Completion
 
-* **Bracketed Filter Authoring**: Inside `#filterIncl [ <caret> ]` or `#filterExcl [ <caret> ]`, completion suggests only valid variants from the parent enum, suppresses already declared variants to avoid duplicates, and sorts items by root enum order.
+* **Bracketed Filter Authoring**: Inside `#filterIncl [<caret>]` or `#filterExcl [<caret>]`, completion suggests only valid variants from the parent enum, suppresses already declared variants to avoid duplicates, and sorts items by root enum order.
 * **Subset Payload Domain Filtering**: In `:body` or data expressions expecting an enum subset, completion restricts suggestions strictly to valid subset variants, suppressing excluded variants across all ancestor tiers.
 
 ### 8. Enhanced Hover Documentation
 
 * **Effective Variant Count**: Displays `Variant Count: N` reflecting the filtered subset cardinality rather than the root enum count.
-* **Unrolled Structure**: Displays the active allowed variants unrolled as `:Enum [ #A #B ... ]`.
-* **Derivation Lineage**: Details the immediate parent type and filter facet (e.g., `Parent: :PieceRole via #filterExcl [ #PAWN #KING ]`).
+* **Unrolled Structure**: Displays the active allowed variants unrolled as `:Enum[#A #B ...]`.
+* **Derivation Lineage**: Details the immediate parent type and filter facet (for example `Parent: :PieceRole via #filterExcl [#PAWN #KING]`).
 * **Resolution Path**: Traces transitive type aliases back to the root declaration (`:Terminal -> :Intermediate -> :RootEnum`).
 
 ### 8b. Polyglot Fenced Strings & Delimiter Invariants (Rule STR-04)
 
-* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]` (Rule STR-04), followed by optional horizontal whitespace and a newline.
+* **Standard Delimiters**: Standard opening fences follow canonical `"""[TAG]` (Rule STR-04), followed by optional horizontal whitespace and a newline, and close with matching `[TAG]"""`.
 * **Symmetrical Recursive Nesting**: Exact-match scanning allows arbitrary nesting of inner fenced strings without premature termination.
-* **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and punctuation.
+* **Strict Language Discriminators**: Enforces character class `^[a-zA-Z0-9_.-]{1,256}$`, prohibiting whitespace, empty tags, quotes, and brackets.
 * **Mismatched Tag Detection**: Identifies asymmetric closing tags (`"""[SQL]` ... `[JSON]"""`) and reports actionable errors.
 * **In-Editor Quick-Fixes (`Alt+Enter`)**:
   * Balances mismatched delimiter tags bidirectionally from either opening or closing fence lines.
@@ -126,12 +128,12 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
   * Strips illegal characters and whitespace from tags.
   * Atomically supplies default tag `[FENCE]` and closes unclosed delimiters on the next line.
   * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
-* **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical closing delimiters for both bare `"""` and fenced `"""[TAG]` blocks under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
-* **Interactive Live Template Launch**: Typing `[` after `"""` launches the `fence` Live Template with synchronized dual-tag variables.
-* **Conversion Intention Action**: Press `Alt+Enter` on bare `"""` to convert to a fenced string block.
+* **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical `[TAG]"""` closing delimiters when pressing `Enter` after `"""[TAG]` under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
+* **Interactive Live Template Launch**: Typing `[` immediately after three double-quote characters launches the `fence` Live Template with synchronized dual-tag variables.
+* **Simple & Escaped String Conversion Intentions (`Alt+Enter`)**: Converts standard double-quoted simple string literals (`"..."`) and escaped strings into canonical `"""[RAW]...[RAW]"""` or `"""[REGEX]...[REGEX]"""` blocks with collision-safe tags, and heals incomplete opening fences into `"""[FENCE]...[FENCE]"""`.
 * **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
 * **In-Editor `Shift+F6` Synchronized Tag Renaming**: Place caret on opening or closing tag brackets and press `Shift+F6` to launch live linked editing across both delimiters.
-* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`) or violating character class `^[a-zA-Z0-9_-]{1,256}$`, preserving document integrity.
+* **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`) or violating the tag character class, preserving document integrity.
 
 ### 9. Byte 4 Wire Framing Awareness
 
@@ -142,7 +144,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 ### 10. Package Enclaves & Lexical Scoping (STVN 2.0)
 
 * **`:package` Enclaves**: Author modular package enclosures (`:package :acme/domain { ... }`) inside `:defs` schemas, establishing formal multi-file lexical boundaries.
-* **Lexical Imports (`:use`)**: Selectively import types using scoped `:use` statements inside `:defs` and `:package` blocks with multi-target maps and aliasing (`:use [ :org/stvnadore/prelude { #strip } ]`).
+* **Lexical Imports (`:use`)**: Selectively import types and constants using scoped `:use` statements inside `:defs` and `:package` blocks with multi-target maps and aliasing (`:use [ :org/stvnadore/prelude { #strip } ]`).
 * **Cross-File Scoped Resolution**: Resolves relative, absolute, and nested package identifiers seamlessly with full IDE navigation and type completion.
 
 ### 11. Canonical 6-File Taxonomy (`.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, `.stvn_bd`)
@@ -160,7 +162,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ### 13. Native Code Formatter & Dual Projections (STVN 2.0)
 
-* **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy and the Zero-Tab Invariant across all files and selections.
+* **Native Code Formatter (`Ctrl+Alt+L` / `Cmd+Alt+L`)**: Enforces canonical 2-space indentation hierarchy, column alignment, and the Zero-Tab Invariant across all files and selections.
 * **Immutable Leaf Preservation**: Preserves user comments (`// ...`) and multiline fenced string bodies (`"""[TAG]...[TAG]"""`) without text distortion.
 * **3-Submenu VOP Projection & Canonicalization Matrix (`STVN >`)**:
   * **Extract Hermetic Schema (`.stvn_d` — `#DEFS` Only)**: Copies (`Pretty` or `Compact CAS`) to clipboard or exports sibling `<stem>.stvn_d` without modifying source buffers.
@@ -170,10 +172,10 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ### 14. First-Class Rename Refactoring (Shift+F6)
 
-* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, constant declaration, include alias (`:include`), or package enclave use alias (`:use`) to trigger synchronized in-place rename refactoring across the document and included files.
+* **Unified Symbol Renaming**: Press `Shift+F6` on any nominal type definition, constant declaration, or package enclave `:use` alias to trigger synchronized in-place rename refactoring across the document and included files.
 * **Value-Oriented Programming (VOP) Architecture**: Strictly decouples mutable identifier strings from immutable syntax kinds.
-* **Bare Identifier Input**: Text input field initializes with bare names (`AccountHolder`, `DefaultPort`), eliminating sigil corruption (`::`, `:#`, `#:`) by design.
-* **Canonical Presentation Projection**: Dialog header titles (`Rename Type Declaration ':AccountHolder'`), Find Usages trees, and Project Structure project canonical syntax (`:Type`, `#Constant`).
+* **Bare Identifier Input**: Text input field initializes with bare names (`AccountHolder`, `DEFAULT_PORT`), eliminating sigil corruption (`::`, `:#`, `#:`) by design.
+* **Canonical Presentation Projection**: Dialog header titles (`Rename Type Declaration ':AccountHolder'`), Find Usages trees, and Project Structure project canonical syntax (`:Type`, `#CONST`).
 * **Fail-Closed Mutator Perimeter**: Rejects permissive parsing; invoking `setName()` or `handleElementRename()` with leading `:` or `#` immediately throws `IncorrectOperationException`.
 * **Real-time Rename Validation**: `StvnRenameInputValidator` blocks sigil prefixes in real time with explicit footer errors, disabling the Refactor action until a bare identifier is entered.
 * **Dual Search Everywhere Indexing**: Indexes symbols by both bare name and canonical prefixed name for zero-friction `Ctrl+N` / `Shift+Shift` navigation.
@@ -182,55 +184,68 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ### 15. Interactive Namespace Dependency Browser
 
-* **Gutter Navigation Markers**: Displays interactive gutter icons on section headers (`:defs`, `:type`, `:body`). Clicking an icon launches the browser filtered to the target section scope.
-* **Global Keyboard Shortcut (`Ctrl+Alt+N` / `Cmd+Alt+N`)**: Resolves the editor caret to determine the enclosing section scope, falling back to full `:defs` scope when invoked outside section blocks.
-* **Searchable Grid (`JBTable` & `JBPopup`)**: Backed by `ListTableModel` with multi-column sorting:
-  1. `Name`: Symbol identifier token (alphabetical sort).
-  2. `Root Namespaced Source`: Origin file path, package enclave URI, or prelude standard library URI (alphabetical sort).
-  3. `Type`: Terminal schema structure or constructor layout (alphabetical sort).
-  4. `Use Depth`: Resolution depth as integer (alias hop count in `:defs`, derivation depth in `:type`, nesting depth in `:body`; numeric sort).
-* **Zero-Latency Speed Search**: Attached via `TableSpeedSearch` for immediate keyboard-driven filtering.
-* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a synthetic, read-only `LightVirtualFile` (`prelude.stvn_core.stvn_d`) positioned at the nominal declaration.
+* **Gutter Navigation Markers**: Displays interactive gutter icons on section headers (`:defs`, `:type`, `:body`). Clicking an icon opens the popup initialized to the target section scope.
+* **Global Keyboard Shortcut (`Ctrl+Alt+N` / `Cmd+Alt+N`)**: Resolves the editor caret to determine the enclosing section scope, falling back to `:defs` scope when invoked outside `:type` or `:body`.
+* **Live 3-Scope Switcher & Filter Header**: Switch instantaneously on EDT across `:defs` (`Alt+1`), `:type` (`Alt+2`), and `:body` (`Alt+3`) over an off-EDT `StvnNamespaceSnapshot`, filter rows via the live `SearchTextField`, and toggle `Show Standard Library Prelude`. Sections absent from pure `#DEFS` / `#DEFS_INCLUDE` schemas are disabled with explanatory STE tooltips.
+* **5-Column Searchable Grid (`JBTable` & `JBPopup`)**: Backed by `StvnNamespaceTableModel` with multi-column sorting and zero-bracket-padded STVN 2.0.0 schema signatures:
+  1. `Name`: In-scope local `:Type`, `#CONST`, or `UseMapAlias` token (enforcing § 4.2 `:use` eviction).
+  2. `Source`: Origin file name, `:package` enclave path, or `prelude.stvn_core.stvn_d`.
+  3. `Upstream Target`: Canonical upstream FQNI (`:cooling/manifold/CoolantValveMode`, `#cooling/manifold/DEFAULT_VALVE_MODE`), or `—` when declared directly in root `:defs`.
+  4. `Resolved Type`: Compact canonical STVN 2.0.0 underlying schema (`:Tuple(:ValveMode :LoopTempC :Int :Boolean :ZoneFlowMap)`, `{ #minIncl 0 #maxExcl 65536 } :Int`).
+  5. `Use Depth`: Integer hop/reference depth (numeric sort).
+* **Synthetic Prelude Navigation**: Double-clicking or pressing `Enter` on a prelude symbol opens a read-only `LightVirtualFile` (`prelude.stvn_core.stvn_d`) positioned at the nominal declaration.
 
 ---
 
 ## Action Registrations
 
-| Action ID                                                          | Name                                                   | Menu Location                     | Shortcut / Trigger                               |
-|:-------------------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:-------------------------------------------------|
-| `org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction` | **Export Hermetic STVN Schema (.stvn_d, Compact CAS)** | Build Menu                        | Active `.stvn_di`, `.stvn_i`, or `.stvn` file    |
-| `org.stvnadore.plugin.actions.PublishSchemaAction`                 | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn_d` or `.stvn_di`          |
-| `org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup`          | **Extract Hermetic Schema (.stvn_d — #DEFS Only)**     | `STVN >` Submenu 1                | Clipboard & Sibling `.stvn_d` (`Pretty` / `CAS`) |
-| `org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup`         | **Extract Hermetic Payload (.stvn — Includes :body)**  | `STVN >` Submenu 2                | Clipboard & Sibling `.stvn` (`Pretty` / `Compact`)|
-| `org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup`    | **Canonicalize Active Buffer In-Place**                | `STVN >` Submenu 3                | `Replace Buffer with Pretty IR` / `Compact IR`   |
-| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`           | **Browse Namespace Dependencies**                      | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)                |
-| `StvnSchemaSkeletonIntentionAction`                                | **Generate schema data skeleton**                      | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body`         |
-| `StvnReorderEnumFilterVariantsQuickFix`                            | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list          |
+| Action ID                                                            | Name                                                   | Menu Location                     | Shortcut / Trigger                                |
+|:---------------------------------------------------------------------|:-------------------------------------------------------|:----------------------------------|:--------------------------------------------------|
+| `org.stvnadore.plugin.actions.StvnBuildExportSchemaCompactCasAction` | **Export Hermetic STVN Schema (.stvn_d, Compact CAS)** | Build Menu                        | Active `.stvn_di`, `.stvn_i`, or `.stvn` file     |
+| `org.stvnadore.plugin.actions.PublishSchemaAction`                   | **Publish Schema to STVN Repository**                  | Project View Popup / Editor Popup | Context menu on `.stvn_d` or `.stvn_di`           |
+| `org.stvnadore.plugin.actions.StvnExtractSchemaMenuGroup`            | **Extract Hermetic Schema (.stvn_d — #DEFS Only)**     | `STVN >` Submenu 1                | Clipboard & Sibling `.stvn_d` (`Pretty` / `CAS`)  |
+| `org.stvnadore.plugin.actions.StvnExtractPayloadMenuGroup`           | **Extract Hermetic Payload (.stvn — Includes :body)**  | `STVN >` Submenu 2                | Clipboard & Sibling `.stvn` (`Pretty` / `Compact`)|
+| `org.stvnadore.plugin.actions.StvnCanonicalizeInPlaceMenuGroup`      | **Canonicalize Active Buffer In-Place**                | `STVN >` Submenu 3                | `Replace Buffer with Pretty IR` / `Compact IR`    |
+| `org.stvnadore.plugin.browser.StvnBrowseNamespaceAction`             | **Browse Namespace Dependencies**                      | Editor Popup Menu (`STVN`)        | `Ctrl+Alt+N` (macOS: `Cmd+Alt+N`)                 |
+| `StvnSchemaSkeletonIntentionAction`                                  | **Generate STVN data skeleton**                        | Editor Intention                  | `Alt+Enter` (macOS: `⌥Enter`) on `:body`          |
+| `StvnCreateFencedStringIntention`                                    | **Convert to Fenced String Block**                     | Editor Intention                  | `Alt+Enter` on simple `"..."` string              |
+| `StvnConvertEscapedStringToFencedIntention`                          | **Convert escaped string to fenced string**            | Editor Intention                  | `Alt+Enter` on escaped `"..."` string             |
+| `StvnReorderEnumFilterVariantsQuickFix`                              | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list           |
 
 ---
 
 ## Inspection Registrations
 
-| Inspection Class                    | Short Name                | Display Name                                | Group Path                   | Default Level  |
-|:------------------------------------|:--------------------------|:--------------------------------------------|:-----------------------------|:--------------:|
-| `StvnEnumSubsetInspection`          | `StvnEnumSubset`          | Enum subset filtering inspection            | `STVN / Semantics`           |    `ERROR`     |
-| `StvnVariantStyleInspection`        | `StvnVariantStyle`        | Variant tag style inspection                | `STVN / Style`               |   `WARNING`    |
-| `StvnBooleanValidityInspection`     | `StvnBooleanValidity`     | Boolean validity inspection                 | `STVN / Validity`            |    `ERROR`     |
-| `StvnFencedStringInspection`        | `StvnFencedString`        | Fenced string delimiter inspection          | `STVN / Syntax`              |    `ERROR`     |
-| `StvnMapStructuralInspection`       | `StvnMapStructural`       | Flat list in map slot inspection            | `STVN / Structural`          |    `ERROR`     |
-| `StvnDegradedSchemaInspection`      | `StvnDegradedSchema`      | Degraded schema payload evaluation          | `STVN / Quality & Semantics` | `WEAK WARNING` |
-| `StvnDegenerateCompositeInspection` | `StvnDegenerateComposite` | Degenerate arity-1 composite schema         | `STVN / Schema Design`       |   `WARNING`    |
-| `StvnNestedPackageInspection`       | `StvnNestedPackage`       | Nested package declaration                  | `STVN / Semantics`           |    `ERROR`     |
-| `StvnTrailingSlashInspection`       | `StvnTrailingSlash`       | Trailing slash in type target               | `STVN / Syntax`              |    `ERROR`     |
-| `StvnLhsReservedTypeInspection`     | `StvnLhsReservedType`     | Reserved keyword in LHS definition          | `STVN / Validity`            |    `ERROR`     |
-| `StvnFlatDocumentIncludeInspection` | `StvnFlatDocumentInclude` | Include directive in hermetic document      | `STVN / Validity`            |    `ERROR`     |
-| `StvnConstantRangeInspection`       | `StvnConstantRange`       | Inverted numeric constant range             | `STVN / Semantics`           |    `ERROR`     |
-| `StvnStringCapacityInspection`      | `StvnStringCapacity`      | String capacity governance inspection       | `STVN / Governance`          |   `WARNING`    |
-| `StvnMetadataFacetInspection`       | `StvnMetadataFacet`       | Metadata facet and block governance         | `STVN / Governance`          |    `ERROR`     |
-| `StvnStringCardinalityInspection`   | `StvnStringCardinality`   | String cardinality facet governance         | `STVN / Governance`          |    `ERROR`     |
-| `StvnDiscreteIntervalInspection`    | `StvnDiscreteInterval`    | Discrete interval bound governance          | `STVN / Governance`          |    `ERROR`     |
-| `StvnTemporalModeInspection`        | `StvnTemporalMode`        | Temporal mode and scale facet governance    | `STVN / Governance`          |    `ERROR`     |
-| `StvnMetadataOrderInspection`       | `StvnMetadataOrder`       | Metadata facet canonical ordering (5 tiers) | `STVN / Governance`          | `WEAK WARNING` |
+All **26** `<localInspection>` registrations declared in [`plugin.xml`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_plugin/src/main/resources/META-INF/plugin.xml):
+
+| Inspection Class                              | Short Name                        | Display Name                                          | Group Path                      | Default Level  |
+|:----------------------------------------------|:----------------------------------|:------------------------------------------------------|:--------------------------------|:--------------:|
+| `StvnVariantStyleInspection`                  | `StvnVariantStyle`                | Variant tag style inspection                          | `STVN / Style`                  |   `WARNING`    |
+| `StvnBooleanValidityInspection`               | `StvnBooleanValidity`             | Boolean validity inspection                           | `STVN / Validity`               |    `ERROR`     |
+| `StvnMapStructuralInspection`                 | `StvnMapStructural`               | Flat list in map slot inspection                      | `STVN / Structural`             |    `ERROR`     |
+| `StvnDegradedSchemaInspection`                | `StvnDegradedSchema`              | Degraded schema payload evaluation                    | `STVN / Quality & Semantics`    | `WEAK WARNING` |
+| `StvnDegenerateCompositeInspection`           | `StvnDegenerateComposite`         | Degenerate arity-1 composite schema                   | `STVN / Schema Design`          |   `WARNING`    |
+| `StvnEnumSubsetInspection`                    | `StvnEnumSubset`                  | Enum subset filtering inspection                      | `STVN / Semantics`              |    `ERROR`     |
+| `StvnFencedStringInspection`                  | `StvnFencedString`                | Fenced string delimiter inspection                    | `STVN / Syntax`                 |    `ERROR`     |
+| `StvnLhsReservedTypeInspection`               | `StvnLhsReservedType`             | LHS reserved type inspection                          | `STVN / Semantics`              |    `ERROR`     |
+| `StvnConstantRangeInspection`                 | `StvnConstantRange`               | Constant integer range inspection                     | `STVN / Validity`               |    `ERROR`     |
+| `StvnFlatDocumentIncludeInspection`           | `StvnFlatDocumentInclude`         | Flat document include inspection                      | `STVN / Structural`             |    `ERROR`     |
+| `StvnNestedPackageInspection`                 | `StvnNestedPackage`               | Nested package inspection                             | `STVN / Structural`             |    `ERROR`     |
+| `StvnTrailingSlashInspection`                 | `StvnTrailingSlash`               | Trailing slash inspection                             | `STVN / Syntax`                 |    `ERROR`     |
+| `StvnStringCapacityInspection`                | `StvnStringCapacity`              | String capacity governance inspection                 | `STVN / Governance`             |   `WARNING`    |
+| `StvnExcessiveExactFloatPrecisionInspection`  | `StvnExcessiveExactFloatPrecision`| Excessive exact float mantissa precision inspection   | `STVN / Governance`             |   `WARNING`    |
+| `StvnFloatPrecisionLossInspection`            | `StvnFloatPrecisionLoss`          | Continuous float precision loss inspection            | `STVN / Numeric & Floating-Point`|  `WARNING`    |
+| `StvnMetadataFacetInspection`                 | `StvnMetadataFacet`               | Metadata facet and block governance inspection        | `STVN / Governance`             |    `ERROR`     |
+| `StvnStringCardinalityInspection`             | `StvnStringCardinality`           | String cardinality facet governance inspection        | `STVN / Governance`             |    `ERROR`     |
+| `StvnDiscreteIntervalInspection`              | `StvnDiscreteInterval`            | Discrete interval bound governance inspection         | `STVN / Governance`             |    `ERROR`     |
+| `StvnTemporalModeInspection`                  | `StvnTemporalMode`                | Temporal mode and unit facet governance inspection    | `STVN / Governance`             |    `ERROR`     |
+| `StvnMetadataOrderInspection`                 | `StvnMetadataOrder`               | Metadata facet canonical ordering inspection          | `STVN / Governance`             |    `ERROR`     |
+| `StvnRedundantFacetOverrideInspection`        | `StvnRedundantFacetOverride`      | Redundant metadata facet override inspection          | `STVN / Governance`             |   `WARNING`    |
+| `StvnUnresolvedTypeInspection`                | `StvnUnresolvedType`              | Unresolved type reference inspection                  | `STVN / Semantics`              |    `ERROR`     |
+| `StvnTabCharacterInspection`                  | `StvnTabCharacter`                | Tab character forbidden inspection                    | `STVN / Governance`             |    `ERROR`     |
+| `StvnMissingMetaInspection`                   | `StvnMissingMeta`                 | Missing root metadata block inspection                | `STVN / Governance`             |    `ERROR`     |
+| `StvnStemMismatchInspection`                  | `StvnStemMismatch`                | Document stem mismatch inspection                     | `STVN / Governance`             |   `WARNING`    |
+| `StvnSuspiciousEpochMagnitudeInspection`      | `StvnSuspiciousEpochMagnitude`    | Suspicious epoch magnitude inspection                 | `STVN / Governance`             |   `WARNING`    |
 
 ---
 
@@ -242,13 +257,25 @@ Configure STVN options under: **Settings | Languages & Frameworks | STVN** and *
 Settings
 ├── Languages & Frameworks
 │   └── STVN
-│       ├── [X] Show Type Inlay Hints
-│       ├── [X] Use Long-Form Sum Types (#Some / #Right vs. #S / #R)
-│       └── [X] Show Hover Documentation
+│       ├── [X] Use long-form variants for algebraic sum types (e.g., #Left instead of #L)
+│       ├── [X] Show type inlay hints in editor
+│       ├── [X] Show type information on hover (Quick Doc)
+│       ├── [X] Enable redundant tag warnings (e.g., explicit #Some when implied)
+│       ├── [X] Enable tag form discrepancy warnings (e.g., #S vs #Some)
+│       ├── [X] Prefer implied algebraic sum types
+│       ├── [X] Prompt before in-place canonicalization removes authoring constructs
+│       ├── Nominal type alias expansion display mode: FULL | FIRST_HOP | ALIAS_TO_BASE | SYMBOL_ONLY | NONE
+│       ├── Fenced string Enter-key auto-closing style: EXPANDED_THREE_LINE | TIGHT_TWO_LINE
+│       ├── Reformat Code (Ctrl+Alt+L) engine mode: CORE_SOURCE_FORMATTER | PSI_STRUCTURE_PRESERVING | ...
+│       ├── Schema nested container wrapping (:defs & :type): PRESERVE_AUTHORED | EXPAND_NESTED
+│       ├── Payload nested container wrapping (:body & #CONST): PRESERVE_AUTHORED | EXPAND_NESTED
+│       ├── TimeEpoch Formatting: 12-Hour / 24-Hour UTC preview + suspicious magnitude warning toggle
+│       └── Bootstrap Templates: Payload (.stvn) | Payload Include (.stvn_i) | Defs Schema (.stvn_d) | Defs Include (.stvn_di)
 └── Tools
     └── STVN Schema Repository
-        ├── Repository URL: http://localhost:8080
-        └── Timeout (ms): 5000
+        ├── Repository Endpoint URL: http://localhost:8080
+        ├── Request Timeout (ms): 5000
+        └── Default Schema Namespace: default
 ```
 
 ---
@@ -320,6 +347,7 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ## Release Notes
 
 ### 2.0.0-SNAPSHOT (Clean-Sheet Pure-IR Baseline)
+- **Unified `:use` Alias Inlay Hints & 3-Scope Namespace Browser:** Prepends renamed `UseMapAlias` head hops with independent per-hop `Ctrl+Click` navigation across all `:body` inlay slots (`State A` and `State B`) and upgrades `STVN Namespace Dependencies` (`Ctrl+Alt+N`) with a live `:defs` / `:type` / `:body` scope switcher, live symbol filter, disabled-section tooltips, and a 5-column zero-bracket-padded STVN 2.0.0 schema view.
 - **Pure-IR Architecture:** Coupled exclusively to `stvnadore-core:2.0.0-SNAPSHOT` immutable `org.stvnadore.core.ir.*` records (`StvnDocument`, `StvnDefsCatalog`, `StvnSchema`, `StvnValue`) via `StvnCompiledDocumentCache` with zero ANTLR CST coupling.
 - **Canonical 6-File Taxonomy:** Supports `.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, and `.stvn_bd` documents plus reserved multi-part system substrates (`*.stvn_ir.*`, `*.stvn_cas.*`).
 - **95-Row Facet Matrix & Zero-Argument Bare Flags:** Enforces 5-tier canonical facet ordering, standalone bare flags (`#unsigned`, `#exact`, `#invertible`, `#ns`, `#us`, `#ms`, `#s`, `#offset`, `#zoned`, `#audited`, `#strip`), and inductive `#equatable` / `#comparable` trait healing.

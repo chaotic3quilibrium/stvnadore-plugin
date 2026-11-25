@@ -1,10 +1,10 @@
 <html>
 <body>
-<p>Reports style discrepancies and redundant discriminator tags on algebraic sum types (<code>:Option</code>, <code>:Either</code>, <code>:Union</code>) and boolean literals according to project code style preferences.</p>
+<p>Reports style discrepancies and redundant discriminator tags on algebraic sum types (<code>:Option</code>, <code>:Either</code>, <code>:Union</code>) and boolean literals according to project code style preferences (STVN Spec &sect; 5.2 and &sect; 8.1).</p>
 <!-- tooltip end -->
 <p>This inspection enforces two distinct style rules:</p>
 <ol>
-    <li><b>Redundant Variant Tags:</b> When <i>"Prefer Implied Sum Types"</i> is enabled in project settings, explicit tags across <code>:body</code> slots and <code>:defs</code> constant values are verified via full-spine Pure-IR equivalence and flagged only when removing them preserves exact value semantics:
+    <li><b>Redundant Variant Tags:</b> When <i>"Prefer implied algebraic sum types"</i> is enabled in project settings, explicit tags across <code>:body</code> slots and <code>:defs</code> constant values are verified via full-spine Pure-IR equivalence and flagged only when removing them preserves exact value semantics:
         <ul>
             <li><code>#Some "text"</code> in <code>:Option(:String)</code> (Rule A inference)</li>
             <li><code>#Right 42</code> in <code>:Either(:String :Int)</code> (Rule B inference)</li>
@@ -28,12 +28,12 @@
     <li><b>Change tag to #...:</b> Converts short-form tags to long-form or vice versa to align with project settings.</li>
 </ul>
 
-<p><b>Example (Redundant Tag & Form Discrepancy):</b></p>
+<p><b>Example (Redundant Tag &amp; Form Discrepancy):</b></p>
 <pre><code>{
   :type :Tuple(
-    :Option( :String )
-    :Either( :String :Int )
-    :Union( :String :Int )
+    :Option(:String)
+    :Either(:String :Int)
+    :Union(:String :Int)
     :Boolean
   )
   :body (
@@ -48,9 +48,9 @@
 <p><b>Canonical Compliant Form:</b></p>
 <pre><code>{
   :type :Tuple(
-    :Option( :String )
-    :Either( :String :Int )
-    :Union( :String :Int )
+    :Option(:String)
+    :Either(:String :Int)
+    :Union(:String :Int)
     :Boolean
   )
   :body (

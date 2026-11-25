@@ -1,5 +1,5 @@
 {
-  :body """[raw]
-    Hello World
-  """[raw]
+  :type :String
+  :body """[RAW]
+    SELECT id, status FROM manifold_events WHERE active = 1;[RAW]"""
 }

@@ -2,38 +2,39 @@
 <body>
 <p>Reports degenerate arity-1 composite schema definitions (<code>:Enum</code>, <code>:Tuple</code>) that offer zero branching entropy or redundant container wrapping, and provides an unwrap quick-fix (also available on invalid single-branch <code>:Union</code> schemas reported as <code>E010</code>).</p>
 <!-- tooltip end -->
-<p>In algebraic type systems, composites containing exactly one component are isomorphic to simpler forms:</p>
+<p>In algebraic type systems, composites containing one component are isomorphic to simpler forms:</p>
 <ul>
-    <li><b>Single-Variant Enum (<code>:Enum [ #Variant ]</code>):</b> An enumeration with only 1 variant has 0 bits of information entropy. It acts as a static constant rather than a branching state machine.</li>
-    <li><b>Single-Branch Union (<code>:Union( :T )</code>):</b> A coproduct with a single branch (<code>:T + ∅ ≅ :T</code>) is a fatal Pass 2 schema error (<code>E010-MALFORMED_SCHEMA</code>) and offers an unwrap quick-fix to <code>:T</code>.</li>
-    <li><b>Single-Element Tuple (<code>:Tuple( :T )</code>):</b> A Cartesian product with one factor (<code>:T × 1 ≅ :T</code>) adds redundant parenthesis wrapping without positional decomposition benefits.</li>
+    <li><b>Single-Variant Enum (<code>:Enum[#VARIANT]</code>):</b> An enumeration with only 1 variant has 0 bits of information entropy and acts as a static constant rather than a branching state machine.</li>
+    <li><b>Single-Branch Union (<code>:Union(:T)</code>):</b> A coproduct with a single branch (<code>:T + &empty; &cong; :T</code>) is a Pass 2 schema error (<code>E010-MALFORMED_SCHEMA</code>) and offers an unwrap quick-fix to <code>:T</code>.</li>
+    <li><b>Single-Element Tuple (<code>:Tuple(:T)</code>):</b> A product with one factor (<code>:T &times; 1 &cong; :T</code>) adds redundant parenthesis wrapping without positional decomposition benefits.</li>
 </ul>
 
 <p><b>Quick-Fix Available:</b></p>
 <ul>
-    <li><b>Unwrap degenerate composite to ':T':</b> Atomically replaces <code>:Union( :T )</code> or <code>:Tuple( :T )</code> with the inner schema type <code>:T</code>.</li>
+    <li><b>Unwrap degenerate composite to ':T':</b> Atomically replaces <code>:Union(:T)</code> or <code>:Tuple(:T)</code> with the inner schema type <code>:T</code>.</li>
 </ul>
 
 <p><b>Anti-Pattern Example:</b></p>
 <pre><code>{
   :defs {
-    :Status :Enum [ #Active ]       // Warning: 0 branching entropy
-    :SingleBranch :Union( :String ) // Error (E010): Malformed 1-branch union
-    :WrappedId :Tuple( :Int )      // Warning: Redundant container wrapping
+    :Status       :Enum[#ACTIVE]      // Warning: 0 branching entropy
+    :SingleBranch :Union(:String)     // Error (E010): Malformed 1-branch union
+    :WrappedId    :Tuple(:Int)        // Warning: Redundant container wrapping
   }
-  :type :Tuple( :Status :SingleBranch :WrappedId )
-  :body ...
+  :type :Tuple(:Status :SingleBranch :WrappedId)
+  :body (#ACTIVE #1 "alpha" (42))
 }
 </code></pre>
 
 <p><b>Canonical Unwrapped Schema:</b></p>
 <pre><code>{
   :defs {
-    :SingleBranch :String           // Unwrapped
-    :WrappedId :Int               // Unwrapped
+    :Status       :Enum[#ACTIVE #INACTIVE]
+    :SingleBranch :String
+    :WrappedId    :Int
   }
-  :type :Tuple( :Enum [ #Active #Inactive ] :SingleBranch :WrappedId )
-  :body ...
+  :type :Tuple(:Status :SingleBranch :WrappedId)
+  :body (#ACTIVE "alpha" 42)
 }
 </code></pre>
 </body>

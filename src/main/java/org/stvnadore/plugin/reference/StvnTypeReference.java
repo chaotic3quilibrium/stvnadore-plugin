@@ -510,9 +510,15 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     public record TraceHop(String displayLabel, @Nullable PsiElement targetElement) {
     }
 
+    private static final String PRELUDE_NAMESPACE_PREFIX =
+        StvnVocabulary.PRELUDE_TYPE_POSIX_ID.substring(0, StvnVocabulary.PRELUDE_TYPE_POSIX_ID.lastIndexOf('/') + 1);
+    private static final String PRELUDE_META_NAMESPACE_PREFIX =
+        StvnVocabulary.META_TYPE_POSIX_ID_64.substring(0, StvnVocabulary.META_TYPE_POSIX_ID_64.lastIndexOf('/') + 1);
+
     /**
      * Extracts ordered, clickable resolution hops starting from {@code startKeyword}, qualifying
-     * {@code :use} targets to canonical package FQNIs and optionally appending composite or collection
+     * {@code :use} targets to canonical package FQNIs, prepending local aliases strictly when
+     * {@code localSimpleName != targetSimpleName}, and optionally appending composite or collection
      * constructor terminals.
      *
      * @param startKeyword            starting {@link TypeKeyword} PSI node
@@ -526,54 +532,49 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         var hops = new ArrayList<TraceHop>();
         String startText = startKeyword.getText().trim();
         if (EXACT_TERMINAL_TYPE_NAMES.contains(startText)) {
-            var preludeTarget = startText.startsWith(StvnVocabulary.SIGIL_TYPIC)
-                ? StvnPreludeBridge.resolvePreludeTypeDefinition(startKeyword.getProject(), startText)
-                : null;
-            PsiElement navTarget = preludeTarget != null && preludeTarget.getTypeKeyword() != null
-                ? preludeTarget.getTypeKeyword()
-                : null;
-            hops.add(new TraceHop(startText, navTarget));
+            hops.add(new TraceHop(startText, resolvePreludeKeywordTarget(startKeyword.getProject(), startText)));
             return List.copyOf(hops);
         }
 
+        var visitedUseAliases = new HashSet<PsiElement>();
         PsiElement currentElement;
         if (StvnPsiUtils.isTypeDefinitionTarget(startKeyword)) {
-            hops.add(new TraceHop(qualifyTypeDefinitionKeyword(startKeyword), startKeyword));
+            String qualifiedStart = qualifyTypeDefinitionKeyword(startKeyword);
+            String preludeShort = toShortPreludeTerminal(qualifiedStart);
+            if (preludeShort != null) {
+                hops.add(new TraceHop(preludeShort, startKeyword));
+                return List.copyOf(hops);
+            }
+            hops.add(new TraceHop(qualifiedStart, startKeyword));
             currentElement = startKeyword;
         } else if (startKeyword.getParent() instanceof org.stvnadore.psi.UseMapAlias directAlias
                 && directAlias.getTypeKeywordList().size() >= 2
                 && directAlias.getTypeKeywordList().get(1) == startKeyword) {
-            hops.add(new TraceHop(startText, startKeyword));
-            var remoteKw = directAlias.getTypeKeywordList().get(0);
-            var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-            if (remoteTarget instanceof TypeKeyword targetDefKw) {
-                hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
-                currentElement = targetDefKw;
-            } else if (remoteKw != null) {
-                hops.add(new TraceHop(qualifyUseRemoteKeyword(directAlias, remoteKw), remoteTarget));
-                currentElement = remoteTarget;
-            } else {
-                currentElement = null;
-            }
+            currentElement = appendUseMapAliasHeadHops(hops, startText, startKeyword, directAlias, visitedUseAliases);
         } else {
             currentElement = resolveTypeKeywordWithContext(startKeyword, null, true);
             if (currentElement instanceof TypeKeyword resolvedKw
                 && resolvedKw.getParent() instanceof org.stvnadore.psi.UseMapAlias useAlias
                 && useAlias.getTypeKeywordList().size() >= 2
                 && useAlias.getTypeKeywordList().get(1) == resolvedKw) {
-                hops.add(new TraceHop(startText, resolvedKw));
-                var remoteKw = useAlias.getTypeKeywordList().get(0);
-                var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-                if (remoteTarget instanceof TypeKeyword targetDefKw) {
-                    hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
-                    currentElement = targetDefKw;
-                } else if (remoteKw != null) {
-                    hops.add(new TraceHop(qualifyUseRemoteKeyword(useAlias, remoteKw), remoteTarget));
-                    currentElement = remoteTarget;
-                }
+                currentElement = appendUseMapAliasHeadHops(hops, startText, resolvedKw, useAlias, visitedUseAliases);
             } else if (currentElement instanceof TypeKeyword targetDefKw) {
-                hops.add(new TraceHop(qualifyTypeDefinitionKeyword(targetDefKw), targetDefKw));
+                String qualified = qualifyTypeDefinitionKeyword(targetDefKw);
+                String preludeShort = toShortPreludeTerminal(qualified);
+                if (preludeShort != null) {
+                    hops.add(new TraceHop(preludeShort, targetDefKw));
+                    return List.copyOf(hops);
+                }
+                hops.add(new TraceHop(qualified, targetDefKw));
             } else {
+                String preludeShort = toShortPreludeTerminal(startText);
+                if (preludeShort != null) {
+                    hops.add(new TraceHop(
+                        preludeShort,
+                        resolvePreludeKeywordTarget(startKeyword.getProject(), preludeShort)
+                    ));
+                    return List.copyOf(hops);
+                }
                 hops.add(new TraceHop(startText, currentElement));
             }
         }
@@ -595,6 +596,11 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             var nextKw = schemaType.getTypeKeyword();
             if (nextKw != null) {
                 String rawNext = nextKw.getText().trim();
+                String shortRawNext = toShortPreludeTerminal(rawNext);
+                if (shortRawNext != null) {
+                    hops.add(new TraceHop(shortRawNext, resolvePreludeKeywordTarget(nextKw.getProject(), shortRawNext)));
+                    break;
+                }
                 if (isPrimitiveTypeName(rawNext)) {
                     hops.add(new TraceHop(formatAtomicTerminal(rawNext, schemaType), null));
                     break;
@@ -604,18 +610,27 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     && resolvedNextKw.getParent() instanceof org.stvnadore.psi.UseMapAlias nextUseAlias
                     && nextUseAlias.getTypeKeywordList().size() >= 2
                     && nextUseAlias.getTypeKeywordList().get(1) == resolvedNextKw) {
-                    hops.add(new TraceHop(rawNext, resolvedNextKw));
-                    var remoteKw = nextUseAlias.getTypeKeywordList().get(0);
-                    var remoteTarget = remoteKw != null ? new StvnTypeReference(remoteKw).resolve() : null;
-                    if (remoteTarget instanceof TypeKeyword remoteDefKw && visited.add(remoteDefKw)) {
-                        hops.add(new TraceHop(qualifyTypeDefinitionKeyword(remoteDefKw), remoteDefKw));
-                        currentElement = remoteDefKw;
+                    var nextTarget = appendUseMapAliasHeadHops(
+                        hops,
+                        rawNext,
+                        resolvedNextKw,
+                        nextUseAlias,
+                        visitedUseAliases
+                    );
+                    if (nextTarget != null && visited.add(nextTarget)) {
+                        currentElement = nextTarget;
                         continue;
                     }
                     break;
                 }
                 if (resolvedNext instanceof TypeKeyword resolvedDefKw && visited.add(resolvedDefKw)) {
-                    hops.add(new TraceHop(qualifyTypeDefinitionKeyword(resolvedDefKw), resolvedDefKw));
+                    String qualifiedNext = qualifyTypeDefinitionKeyword(resolvedDefKw);
+                    String preludeShortNext = toShortPreludeTerminal(qualifiedNext);
+                    if (preludeShortNext != null) {
+                        hops.add(new TraceHop(preludeShortNext, resolvedDefKw));
+                        break;
+                    }
+                    hops.add(new TraceHop(qualifiedNext, resolvedDefKw));
                     currentElement = resolvedDefKw;
                     continue;
                 }
@@ -643,6 +658,111 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         return List.copyOf(hops);
     }
 
+    /**
+     * Extracts the unqualified simple type identifier without leading {@code :} sigil or package path.
+     *
+     * @param typeToken candidate STVN type token
+     * @return simple type identifier (for example, {@code "CoolantValveMode"} from {@code ":cooling/manifold/CoolantValveMode"})
+     */
+    public static String extractSimpleTypeName(String typeToken) {
+        String trimmed = typeToken.trim();
+        String withoutSigil = trimmed.startsWith(StvnVocabulary.SIGIL_TYPIC)
+            ? trimmed.substring(StvnVocabulary.SIGIL_TYPIC.length())
+            : trimmed;
+        int slashIdx = withoutSigil.lastIndexOf('/');
+        return slashIdx >= 0 ? withoutSigil.substring(slashIdx + 1) : withoutSigil;
+    }
+
+    /**
+     * Normalizes a canonical Prelude or Meta-Substrate FQNI to its short terminal identifier when
+     * registered in {@link #EXACT_TERMINAL_TYPE_NAMES}.
+     *
+     * @param qualifiedName candidate qualified or short type token
+     * @return short Prelude terminal name (for example, {@code ":Port"}), or {@code null} if not a terminal
+     */
+    public static @Nullable String toShortPreludeTerminal(String qualifiedName) {
+        String trimmed = qualifiedName.trim();
+        if (trimmed.startsWith(PRELUDE_META_NAMESPACE_PREFIX)) {
+            String candidate = StvnVocabulary.SIGIL_TYPIC + trimmed.substring(PRELUDE_META_NAMESPACE_PREFIX.length());
+            return EXACT_TERMINAL_TYPE_NAMES.contains(candidate) ? candidate : null;
+        }
+        if (trimmed.startsWith(PRELUDE_NAMESPACE_PREFIX)) {
+            String candidate = StvnVocabulary.SIGIL_TYPIC + trimmed.substring(PRELUDE_NAMESPACE_PREFIX.length());
+            return EXACT_TERMINAL_TYPE_NAMES.contains(candidate) ? candidate : null;
+        }
+        return EXACT_TERMINAL_TYPE_NAMES.contains(trimmed) ? trimmed : null;
+    }
+
+    private static @Nullable PsiElement resolvePreludeKeywordTarget(
+        com.intellij.openapi.project.Project project,
+        String shortPreludeName
+    ) {
+        if (project.isDisposed() || !shortPreludeName.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+            return null;
+        }
+        var preludeTarget = StvnPreludeBridge.resolvePreludeTypeDefinition(project, shortPreludeName);
+        return preludeTarget != null ? preludeTarget.getTypeKeyword() : null;
+    }
+
+    private static @Nullable PsiElement appendUseMapAliasHeadHops(
+        List<TraceHop> hops,
+        String localAliasText,
+        TypeKeyword useAliasRhsKw,
+        org.stvnadore.psi.UseMapAlias useAlias,
+        Set<PsiElement> visitedUseAliases
+    ) {
+        if (!visitedUseAliases.add(useAlias)) {
+            hops.add(new TraceHop(localAliasText, useAliasRhsKw));
+            return null;
+        }
+        var remoteKw = useAlias.getTypeKeywordList().get(0);
+        if (remoteKw == null) {
+            hops.add(new TraceHop(localAliasText, useAliasRhsKw));
+            return null;
+        }
+        String localSimple = extractSimpleTypeName(localAliasText);
+        String remoteSimple = extractSimpleTypeName(remoteKw.getText());
+        boolean isRenamed = !localSimple.equals(remoteSimple);
+        if (isRenamed) {
+            hops.add(new TraceHop(localAliasText, useAliasRhsKw));
+        }
+
+        var remoteTarget = new StvnTypeReference(remoteKw).resolve();
+        if (remoteTarget instanceof TypeKeyword remoteAliasKw
+                && remoteAliasKw.getParent() instanceof org.stvnadore.psi.UseMapAlias upstreamUseAlias
+                && upstreamUseAlias.getTypeKeywordList().size() >= 2
+                && upstreamUseAlias.getTypeKeywordList().get(1) == remoteAliasKw) {
+            return appendUseMapAliasHeadHops(
+                hops,
+                qualifyUseRemoteKeyword(useAlias, remoteKw),
+                remoteAliasKw,
+                upstreamUseAlias,
+                visitedUseAliases
+            );
+        }
+        if (remoteTarget instanceof TypeKeyword targetDefKw) {
+            String qualified = qualifyTypeDefinitionKeyword(targetDefKw);
+            String preludeShort = toShortPreludeTerminal(qualified);
+            if (preludeShort != null) {
+                hops.add(new TraceHop(preludeShort, targetDefKw));
+                return null;
+            }
+            hops.add(new TraceHop(qualified, targetDefKw));
+            return targetDefKw;
+        }
+        String qualifiedFallback = qualifyUseRemoteKeyword(useAlias, remoteKw);
+        String preludeShort = toShortPreludeTerminal(qualifiedFallback);
+        if (preludeShort != null) {
+            hops.add(new TraceHop(
+                preludeShort,
+                remoteTarget != null ? remoteTarget : resolvePreludeKeywordTarget(useAlias.getProject(), preludeShort)
+            ));
+            return null;
+        }
+        hops.add(new TraceHop(qualifiedFallback, remoteTarget != null ? remoteTarget : useAliasRhsKw));
+        return remoteTarget;
+    }
+
     private static String qualifyTypeDefinitionKeyword(TypeKeyword defKw) {
         String text = defKw.getText().trim();
         if (text.length() > 1 && text.substring(1).contains("/")) {
@@ -652,6 +772,14 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         if (pkg != null && !StvnPsiUtils.hasIllegalTrailingSlash(pkg) && pkg.getPackagePath() != null) {
             String bare = text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
             return pkg.getPackagePath().getText().trim() + "/" + bare;
+        }
+        if (defKw.getContainingFile() != null && StvnPreludeBridge.isPreludeFile(defKw.getContainingFile())) {
+            var typeDef = PsiTreeUtil.getParentOfType(defKw, TypeDefinition.class);
+            if (typeDef != null) {
+                String preludePkg = StvnPreludeBridge.getPreludePackagePath(typeDef);
+                String bare = text.startsWith(StvnVocabulary.SIGIL_TYPIC) ? text.substring(1) : text;
+                return preludePkg + "/" + bare;
+            }
         }
         return text;
     }
@@ -672,107 +800,31 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
     private static String formatAtomicTerminal(String atomicName, org.stvnadore.psi.SchemaType schemaType) {
         if (StvnVocabulary.TYPE_TIME_EPOCH.equals(atomicName)) {
             var scale = StvnTypeResolver.extractScaleFlagFromSchemaType(schemaType);
-            return scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH;
+            return scale != null
+                ? StvnVocabulary.DELIM_OPEN_BRACE + " " + scale + " " + StvnVocabulary.DELIM_CLOSE_BRACE + " " + StvnVocabulary.TYPE_TIME_EPOCH
+                : StvnVocabulary.TYPE_TIME_EPOCH;
         }
         if (StvnVocabulary.TYPE_DATE_TIME.equals(atomicName)) {
             var mode = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
-            return mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME;
+            return mode != null
+                ? StvnVocabulary.DELIM_OPEN_BRACE + " " + mode + " " + StvnVocabulary.DELIM_CLOSE_BRACE + " " + StvnVocabulary.TYPE_DATE_TIME
+                : StvnVocabulary.TYPE_DATE_TIME;
         }
         return atomicName;
     }
 
     /**
-     * Extracts the sequential type resolution trace starting from the given keyword.
+     * Extracts the sequential type resolution trace starting from the given keyword by delegating
+     * to {@link #extractClickableResolutionHops(TypeKeyword, boolean)}.
      *
-     * @param startKeyword the starting TypeKeyword element
-     * @return list of type names traversed during resolution
+     * @param startKeyword the starting {@link TypeKeyword} element
+     * @return ordered list of type names traversed during resolution
      */
     public static java.util.List<String> extractResolutionTrace(TypeKeyword startKeyword) {
-        var trace = new java.util.ArrayList<String>();
-        trace.add(startKeyword.getText());
-        if (EXACT_TERMINAL_TYPE_NAMES.contains(startKeyword.getText())) {
-            return trace;
-        }
-        PsiElement currentElement;
-        if (org.stvnadore.plugin.psi.StvnPsiUtils.isTypeDefinitionTarget(startKeyword)) {
-            currentElement = startKeyword;
-        } else if (startKeyword.getParent() instanceof org.stvnadore.psi.UseMapAlias useAlias
-                && useAlias.getTypeKeywordList().size() >= 2
-                && useAlias.getTypeKeywordList().get(1) == startKeyword) {
-            var remoteKw = useAlias.getTypeKeywordList().get(0);
-            if (remoteKw != null) {
-                trace.add(remoteKw.getText());
-            }
-            currentElement = useAlias;
-        } else {
-            currentElement = resolveTypeKeywordWithContext(startKeyword, trace, true);
-        }
-
-        var visitedElements = new java.util.HashSet<PsiElement>();
-        if (currentElement != null) {
-            visitedElements.add(currentElement);
-        }
-
-        while (currentElement != null) {
-            var parent = currentElement.getParent();
-            var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(currentElement);
-            if (typeDef != null) {
-                var schemaType = typeDef.getSchemaType();
-                if (schemaType != null) {
-                    var nextKeyword = schemaType.getTypeKeyword();
-                    var nextTypeName = "";
-                    if (nextKeyword != null) {
-                        nextTypeName = nextKeyword.getText().trim();
-                    } else if (schemaType.getSchemaConstructor() != null) {
-                        var ctor = schemaType.getSchemaConstructor();
-                        if (ctor.getAtomicType() != null) {
-                            nextTypeName = ctor.getAtomicType().getText().trim();
-                        } else if (ctor.getSumType() != null && ctor.getSumType().getEnumDef() != null) {
-                            nextTypeName = StvnVocabulary.TYPE_ENUM;
-                        }
-                    }
-
-                    if (!nextTypeName.isEmpty()) {
-                        if (isPrimitiveTypeName(nextTypeName) || nextTypeName.equals(StvnVocabulary.TYPE_ENUM)) {
-                            if (StvnVocabulary.TYPE_TIME_EPOCH.equals(nextTypeName)) {
-                                var scale = StvnTypeResolver.extractScaleFlagFromSchemaType(schemaType);
-                                trace.add(scale != null ? "{ " + scale + " } " + StvnVocabulary.TYPE_TIME_EPOCH : StvnVocabulary.TYPE_TIME_EPOCH);
-                            } else if (StvnVocabulary.TYPE_DATE_TIME.equals(nextTypeName)) {
-                                var mode = StvnTypeResolver.extractDateTimeModeFlagFromSchemaType(schemaType);
-                                trace.add(mode != null ? "{ " + mode + " } " + StvnVocabulary.TYPE_DATE_TIME : StvnVocabulary.TYPE_DATE_TIME);
-                            } else {
-                                trace.add(nextTypeName);
-                            }
-                            break;
-                        }
-
-                        if (nextKeyword != null) {
-                            trace.add(nextTypeName);
-                            var resolved = resolveTypeKeywordWithContext(nextKeyword, trace, true);
-                            if (resolved != null && visitedElements.add(resolved)) {
-                                currentElement = resolved;
-                                continue;
-                            }
-                        }
-                    }
-                }
-            } else if (currentElement instanceof org.stvnadore.psi.UseMapAlias || parent instanceof org.stvnadore.psi.UseMapAlias) {
-                var useAlias = currentElement instanceof org.stvnadore.psi.UseMapAlias a ? a : (org.stvnadore.psi.UseMapAlias) parent;
-                var list = useAlias.getTypeKeywordList();
-                if (list.size() >= 2) {
-                    var remoteKw = list.get(0);
-                    if (remoteKw != null) {
-                        var resolved = new StvnTypeReference(remoteKw).resolve();
-                        if (resolved != null && visitedElements.add(resolved)) {
-                            currentElement = resolved;
-                            continue;
-                        }
-                    }
-                }
-            }
-            break;
-        }
-        return trace;
+        return extractClickableResolutionHops(startKeyword, false)
+            .stream()
+            .map(TraceHop::displayLabel)
+            .toList();
     }
 
     /**

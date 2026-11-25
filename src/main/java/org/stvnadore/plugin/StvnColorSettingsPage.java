@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Exposes customizable color options for STVN to the IntelliJ Color Settings page.
+ * Exposes customizable color options for STVN 2.0.0 to the IntelliJ Color Settings page.
  */
 @NullMarked
 public final class StvnColorSettingsPage implements ColorSettingsPage {
@@ -27,18 +27,18 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
     }
 
     private static final AttributesDescriptor[] DESCRIPTORS = new AttributesDescriptor[]{
-            new AttributesDescriptor("Types//Primitive types (e.g., :Int, :Seq, :Option)", StvnSyntaxHighlighterColors.STVN_PRIMITIVE_TYPE),
-            new AttributesDescriptor("Types//Nominal types (e.g., custom user schemas)", StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE),
-            new AttributesDescriptor("Values//Value keywords (e.g., #TRUE, #Some, #None)", StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD),
-            new AttributesDescriptor("Metadata//Metadata targets (e.g., #equatable, #regex)", StvnSyntaxHighlighterColors.STVN_METADATA_TARGET),
-            new AttributesDescriptor("Comments//Line comment", DefaultLanguageHighlighterColors.LINE_COMMENT),
-            new AttributesDescriptor("Strings//String literal", DefaultLanguageHighlighterColors.STRING),
-            new AttributesDescriptor("Strings//Escape sequence (valid)", StvnSyntaxHighlighterColors.VALID_STRING_ESCAPE),
-            new AttributesDescriptor("Strings//Escape sequence (invalid)", StvnSyntaxHighlighterColors.INVALID_STRING_ESCAPE),
-            new AttributesDescriptor("Numbers//Number", DefaultLanguageHighlighterColors.NUMBER),
-            new AttributesDescriptor("Brackets and Operators//Brackets", DefaultLanguageHighlighterColors.BRACKETS),
-            new AttributesDescriptor("Brackets and Operators//Braces", DefaultLanguageHighlighterColors.BRACES),
-            new AttributesDescriptor("Brackets and Operators//Parentheses", DefaultLanguageHighlighterColors.PARENTHESES)
+        new AttributesDescriptor("Types//Primitive types (e.g., :Int, :Seq, :Option)", StvnSyntaxHighlighterColors.STVN_PRIMITIVE_TYPE),
+        new AttributesDescriptor("Types//Nominal types (e.g., custom user schemas)", StvnSyntaxHighlighterColors.STVN_NOMINAL_TYPE),
+        new AttributesDescriptor("Values//Value keywords (e.g., #TRUE, #Some, #None)", StvnSyntaxHighlighterColors.STVN_VALUE_KEYWORD),
+        new AttributesDescriptor("Metadata//Metadata targets (e.g., #equatable, #regex)", StvnSyntaxHighlighterColors.STVN_METADATA_TARGET),
+        new AttributesDescriptor("Comments//Line comment", DefaultLanguageHighlighterColors.LINE_COMMENT),
+        new AttributesDescriptor("Strings//String literal", DefaultLanguageHighlighterColors.STRING),
+        new AttributesDescriptor("Strings//Escape sequence (valid)", StvnSyntaxHighlighterColors.VALID_STRING_ESCAPE),
+        new AttributesDescriptor("Strings//Escape sequence (invalid)", StvnSyntaxHighlighterColors.INVALID_STRING_ESCAPE),
+        new AttributesDescriptor("Numbers//Number", DefaultLanguageHighlighterColors.NUMBER),
+        new AttributesDescriptor("Brackets and Operators//Brackets", DefaultLanguageHighlighterColors.BRACKETS),
+        new AttributesDescriptor("Brackets and Operators//Braces", DefaultLanguageHighlighterColors.BRACES),
+        new AttributesDescriptor("Brackets and Operators//Parentheses", DefaultLanguageHighlighterColors.PARENTHESES)
     };
 
     @Override
@@ -54,44 +54,51 @@ public final class StvnColorSettingsPage implements ColorSettingsPage {
     @Override
     public String getDemoText() {
         return "{\n" +
-                "  <comment>// Canonical STVN 2.0.0 Specification Showcase Document</comment>\n" +
-                "  <primitive>:meta</primitive> {\n" +
-                "    <metadata>#name</metadata> <string>\"service_gateway\"</string>\n" +
-                "    <metadata>#domain</metadata> <string>\"network\"</string>\n" +
-                "    <metadata>#kind</metadata> <value>#BODY</value>\n" +
-                "  }\n" +
-                "  <primitive>:defs</primitive> {\n" +
-                "    <primitive>:package</primitive> :org/example/service {\n" +
-                "      <nominal>:Port</nominal> { <metadata>#unsigned</metadata> <metadata>#size</metadata> <number>16</number> <metadata>#minIncl</metadata> <number>1</number> } <primitive>:Int</primitive>\n" +
-                "      <value>#DEFAULT_PORT</value> <nominal>:Port</nominal> <number>8443</number>\n" +
-                "      <nominal>:State</nominal> <primitive>:Enum</primitive> [ <value>#ACTIVE</value> <value>#INACTIVE</value> <value>#SUSPENDED</value> ]\n" +
-                "      <nominal>:ServiceConfig</nominal> <primitive>:Tuple</primitive>(\n" +
-                "        <nominal>:Port</nominal>\n" +
-                "        <nominal>:State</nominal>\n" +
-                "        <primitive>:Option</primitive>(<primitive>:String</primitive>)\n" +
-                "        <primitive>:Either</primitive>(<primitive>:String</primitive> <primitive>:Int</primitive>)\n" +
-                "        <primitive>:Union</primitive>(<primitive>:Int</primitive> <primitive>:String</primitive> <primitive>:Boolean</primitive>)\n" +
-                "        <primitive>:String</primitive>\n" +
-                "        <primitive>:String</primitive>\n" +
-                "      )\n" +
-                "    }\n" +
-                "  }\n" +
-                "  <primitive>:type</primitive> <nominal>:org/example/service/ServiceConfig</nominal>\n" +
-                "  <primitive>:body</primitive> (\n" +
-                "    <value>#org/example/service/DEFAULT_PORT</value>\n" +
-                "    <value>#ACTIVE</value>\n" +
-                "    <value>#Some</value> <string>\"Escaped string <valid_esc>\\n</valid_esc> <valid_esc>\\t</valid_esc> <valid_esc>\\\"</valid_esc>quotes<valid_esc>\\\"</valid_esc>\"</string>\n" +
-                "    <value>#Left</value> <string>\"primary\"</string>\n" +
-                "    <value>#2</value> <string>\"fallback\"</string>\n" +
-                "    <string>\"Standard string literal\"</string>\n" +
-                "    <string>\"\"\"[JSON]\n" +
-                "{\n" +
-                "  \"service\": \"active\",\n" +
-                "  \"endpoint\": \"gateway.internal\"\n" +
-                "}\n" +
-                "[JSON]\"\"\"</string>\n" +
-                "  )\n" +
-                "}";
+            "  <comment>// Canonical STVN 2.0.0 Specification Showcase Document</comment>\n" +
+            "  <primitive>:meta</primitive> {\n" +
+            "    <metadata>#name</metadata>   <string>\"service_gateway\"</string>\n" +
+            "    <metadata>#domain</metadata> <string>\"network\"</string>\n" +
+            "    <metadata>#kind</metadata>   <value>#BODY</value>\n" +
+            "  }\n" +
+            "  <primitive>:defs</primitive> {\n" +
+            "    <primitive>:package</primitive> :org/example/service {\n" +
+            "      <nominal>:ServicePort</nominal>   { <metadata>#unsigned</metadata> <metadata>#size</metadata> <number>16</number> <metadata>#minIncl</metadata> <number>1</number> } <primitive>:Int</primitive>\n" +
+            "      <nominal>:ServiceState</nominal>  <primitive>:Enum</primitive>[<value>#ACTIVE</value> <value>#INACTIVE</value> <value>#SUSPENDED</value>]\n" +
+            "      <value>#DEFAULT_PORT</value>  <nominal>:ServicePort</nominal> <number>8443</number>\n" +
+            "    }\n" +
+            "    <primitive>:use</primitive> [\n" +
+            "      :org/example/service {\n" +
+            "        <nominal>:ServicePort</nominal>   <nominal>:ListenPort</nominal>\n" +
+            "        <nominal>:ServiceState</nominal>  <nominal>:GatewayState</nominal>\n" +
+            "        <value>#DEFAULT_PORT</value>  <value>#HTTPS_PORT</value>\n" +
+            "      }\n" +
+            "    ]\n" +
+            "    <nominal>:ServiceConfig</nominal> <primitive>:Tuple</primitive>(\n" +
+            "      <nominal>:ListenPort</nominal>\n" +
+            "      <nominal>:GatewayState</nominal>\n" +
+            "      <primitive>:Option</primitive>(<primitive>:String</primitive>)\n" +
+            "      <primitive>:Either</primitive>(<primitive>:String</primitive> <primitive>:Int</primitive>)\n" +
+            "      <primitive>:Union</primitive>(<primitive>:Int</primitive> <primitive>:String</primitive> <primitive>:Boolean</primitive>)\n" +
+            "      <primitive>:String</primitive>\n" +
+            "      <primitive>:String</primitive>\n" +
+            "    )\n" +
+            "  }\n" +
+            "  <primitive>:type</primitive> <nominal>:ServiceConfig</nominal>\n" +
+            "  <primitive>:body</primitive> (\n" +
+            "    <value>#HTTPS_PORT</value>\n" +
+            "    <value>#ACTIVE</value>\n" +
+            "    <value>#Some</value> <string>\"Escaped string <valid_esc>\\n</valid_esc> <valid_esc>\\t</valid_esc> <valid_esc>\\\"</valid_esc>quotes<valid_esc>\\\"</valid_esc>\"</string>\n" +
+            "    <value>#Left</value> <string>\"primary\"</string>\n" +
+            "    <value>#2</value> <string>\"fallback\"</string>\n" +
+            "    <string>\"Standard string literal\"</string>\n" +
+            "    <string>\"\"\"[JSON]\n" +
+            "{\n" +
+            "  \"service\": \"active\",\n" +
+            "  \"endpoint\": \"gateway.internal\"\n" +
+            "}\n" +
+            "[JSON]\"\"\"</string>\n" +
+            "  )\n" +
+            "}";
     }
 
     @Override

@@ -9,13 +9,14 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.plugin.StvnFile;
 
 /**
- * Action triggered via Ctrl+Alt+N / Cmd+Alt+N to browse namespace dependencies at caret position.
+ * Action triggered via {@code Ctrl+Alt+N} / {@code Cmd+Alt+N} to open the 3-scope
+ * {@code STVN Namespace Dependencies} browser initialized from the caret section.
  */
 @NullMarked
 public final class StvnBrowseNamespaceAction extends AnAction {
 
     /**
-     * Default constructor for the namespace dependency browser action.
+     * Constructs the namespace dependency browser action.
      */
     public StvnBrowseNamespaceAction() {
         super("Browse Namespace Dependencies");
@@ -27,17 +28,18 @@ public final class StvnBrowseNamespaceAction extends AnAction {
         var editor = e.getData(CommonDataKeys.EDITOR);
         var file = e.getData(CommonDataKeys.PSI_FILE);
 
-        if (project == null || editor == null || file == null || !(file instanceof StvnFile)) {
+        if (project == null || editor == null || !(file instanceof StvnFile)) {
             return;
         }
 
-        var offset = editor.getCaretModel().getOffset();
-        var scope = ReadAction.compute(() -> {
-            var element = file.findElementAt(offset);
+        int offset = editor.getCaretModel().getOffset();
+        var initialScope = ReadAction.compute(() -> {
+            int safeOffset = Math.min(Math.max(0, offset), Math.max(0, file.getTextLength() - 1));
+            var element = file.getTextLength() > 0 ? file.findElementAt(safeOffset) : null;
             return StvnNamespaceScope.resolveFromElement(element);
         });
 
-        StvnNamespaceBrowserPopup.showPopup(project, file, scope);
+        StvnNamespaceBrowserPopup.showPopup(project, file, initialScope);
     }
 
     @Override

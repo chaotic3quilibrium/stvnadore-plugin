@@ -609,7 +609,7 @@ public final class StvnGauntletV10Batch3TraitQuickFixAndConstInlayParityTest ext
             ":OptAltitudeCm #Some (-> :AltitudeCm -> :Int)",
             ":OptAltitudeCm #None",
             ":OuterOption [#Some] (-> :InnerOption #Some (-> :BurnDurationMs -> :Int))",
-            ":hopper/guidance/NestedHopperEnvelope [#Some] [#Right] [#Some] (-> :BurnDurationMs -> :Int)",
+            ":LocalHopper [#Some] [#Right] [#Some] (-> :hopper/guidance/NestedHopperEnvelope -> :hopper/guidance/BurnDurationMs -> :Int)",
             ":OuterHopper [#Some] (-> :NestedHopperEnvelope [#Some] [#Right] [#Some] (-> :BurnDurationMs -> :Int))",
             ":Option( :NestedHopperEnvelope ) [#Some] [#Some] [#Right] [#Some]",
             ":DoubleOuter [#Some] (-> :OuterHopper [#Some] (-> :NestedHopperEnvelope [#Some] [#Right] [#Some] (-> :BurnDurationMs -> :Int)))"
@@ -679,7 +679,7 @@ public final class StvnGauntletV10Batch3TraitQuickFixAndConstInlayParityTest ext
             StvnCompiledDocumentCache.getSnapshot(stateBFile).document().flatMap(StvnDocument::payload).isEmpty()
         );
         List<Value> stateBSlots = extractOuterBodyTupleSlots(stateBFile);
-        for (int idx : new int[]{0, 1, 2, 3, 4, 5, 7, 8, 9}) {
+        for (int idx : new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) {
             assertEquals("State B must match State A on slot " + idx,
                 expectedFull[idx], StvnTypeResolver.resolveValueType(stateBSlots.get(idx)));
         }

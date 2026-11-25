@@ -854,7 +854,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     ]
                   }
                   :type :Tuple( :TypeA :TypeB :ConflictType :ConflictTypeB )
-                  :body ( 42<hint text=":TypeA (-> :Int)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int)"/> "world"<hint text=":org/example/mod_b/ConflictType (-> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :org/example/mod_b/ConflictType )"/>
+                  :body ( 42<hint text=":TypeA (-> :Int)"/> "hello"<hint text=":TypeB (-> :String)"/> 100<hint text=":ConflictType (-> :Int)"/> "world"<hint text=":ConflictTypeB (-> :org/example/mod_b/ConflictType -> :String)"/> )<hint text=":Tuple( :TypeA :TypeB :ConflictType :org/example/mod_b/ConflictType )"/>
                 }
                 """);
         myFixture.testInlays(
@@ -2639,11 +2639,11 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
               :body (
                 {
                   [
-                    "auth.internal"<hint text=":net/prim/HostName (-> :String)"/>
+                    "auth.internal"<hint text=":RemoteHost (-> :net/prim/HostName -> :String)"/>
                     #1 "10.0.0.1"<hint text=":IpAddress #1 (-> :HostIPv4 -> :String)"/>
                   ]
                   [
-                    "db.internal"<hint text=":net/prim/HostName (-> :String)"/>
+                    "db.internal"<hint text=":RemoteHost (-> :net/prim/HostName -> :String)"/>
                     #2 "100.000.000.002"<hint text=":IpAddress #2 (-> :String)"/>
                   ]
                 }<hint text=":RouteTable"/>

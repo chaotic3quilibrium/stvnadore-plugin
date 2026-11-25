@@ -1,4 +1,7 @@
 {
+  :defs {
+    :UserRecord :Tuple(:Int :String)
+  }
   :type :UserRecord
-  :body
+  <spot>:body ()</spot>
 }

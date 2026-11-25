@@ -10,9 +10,9 @@ import org.stvnadore.plugin.StvnLanguage;
 
 /**
  * Language code style settings provider configuring the canonical 2-space indentation
- * standard and Zero-Tab Invariant for STVN documents.
+ * standard, tabular column alignment preview, and Zero-Tab Invariant for STVN 2.0.0 documents.
  *
- * @since 1.3.0
+ * @since 2.0.0
  */
 @NullMarked
 public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeStyleSettingsProvider {
@@ -20,29 +20,36 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
     private static final String SAMPLE_INDENT = """
         {
           :meta {
-            #name "indent_showcase"
+            #name   "indent_showcase"
             #domain "layout"
-            #kind #BODY
+            #kind   #BODY
           }
           :defs {
-            :package :org/example/service {
-              :Port { #unsigned #size 16 #minIncl 1 } :Int
-              :Status :Enum[#ACTIVE #SUSPENDED]
-              :ServiceConfig :Tuple(
-                :Port
-                :Status
-                :String
-              )
+            :package :cooling/manifold {
+              :CoolantValveMode  :Enum[#CLOSED #THROTTLED #OPEN]
+              :FlowTargetLpm     { #unsigned #size 16 #maxExcl 5000 } :Int
+              #DEFAULT_VALVE     :CoolantValveMode  #THROTTLED
             }
+            :use [
+              :cooling/manifold {
+                :CoolantValveMode  :ValveMode
+                :FlowTargetLpm     :LoopFlowLpm
+                #DEFAULT_VALVE     #INIT_VALVE
+              }
+            ]
+            :ManifoldSnapshot :Tuple(
+              :ValveMode
+              :Map(:String :LoopFlowLpm)
+              :String
+            )
           }
-          :type :Tuple(
-            :org/example/service/Port
-            :org/example/service/Status
-            :String
-          )
+          :type :ManifoldSnapshot
           :body (
-            8443
-            #ACTIVE
+            #INIT_VALVE
+            {
+              ["zone_a"          120]
+              ["zone_north_rack" 480]
+            }
             \"\"\"[JSON]
         {
           "service": "active",
@@ -56,38 +63,37 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
     private static final String SAMPLE_SPACES = """
         {
           :meta {
-            #name "spaces_showcase"
+            #name   "spaces_showcase"
             #domain "layout"
-            #kind #BODY
+            #kind   #BODY
           }
           :defs {
-            :Port { #unsigned #size 16 } :Int
-            :State :Enum[#ACTIVE #INACTIVE]
-            :Endpoint :Tuple(:String :Port)
+            :ListenPort  { #unsigned #size 16 #minIncl 1024 } :Int
+            :LinkState   :Enum[#ACTIVE #INACTIVE]
+            :Endpoint    :Tuple(:String :ListenPort :LinkState)
           }
-          :type :Tuple(:Endpoint :State :Option(:String))
-          :body (
-            ("gateway.internal" 8080)
-            #ACTIVE
-            #Some "Standard string literal"
-          )
+          :type :Seq(:Endpoint)
+          :body [
+            ("gateway.internal"  8080  #ACTIVE)
+            ("metrics.internal"  9090  #INACTIVE)
+          ]
         }
         """;
 
     private static final String SAMPLE_BLANK_LINES = """
         {
           :meta {
-            #name "blank_lines_showcase"
+            #name   "blank_lines_showcase"
             #domain "layout"
-            #kind #BODY
+            #kind   #BODY
           }
 
           :defs {
-            :Port { #unsigned #size 16 } :Int
+            :ListenPort { #unsigned #size 16 } :Int
 
             :Status :Enum[#ACTIVE #SUSPENDED]
 
-            :Payload :Tuple(:Port :Status :String)
+            :Payload :Tuple(:ListenPort :Status :String)
           }
 
           :type :Payload
@@ -117,8 +123,8 @@ public final class StvnLanguageCodeStyleSettingsProvider extends LanguageCodeSty
 
     @Override
     protected void customizeDefaults(
-            @NotNull CommonCodeStyleSettings commonSettings,
-            @NotNull CommonCodeStyleSettings.IndentOptions indentOptions
+        @NotNull CommonCodeStyleSettings commonSettings,
+        @NotNull CommonCodeStyleSettings.IndentOptions indentOptions
     ) {
         commonSettings.KEEP_BLANK_LINES_IN_CODE = 1;
         commonSettings.KEEP_BLANK_LINES_IN_DECLARATIONS = 1;

@@ -1,4 +1,7 @@
-:body {
-  ["zone_a" 120]
-  ["zone_b" 145]
+{
+  :type :Map(:String :Int)
+  :body {
+    ["zone_a" 120]
+    ["zone_b" 145]
+  }
 }

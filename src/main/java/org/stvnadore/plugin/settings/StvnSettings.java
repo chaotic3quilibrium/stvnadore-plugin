@@ -102,13 +102,13 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public NestedContainerWrapPolicy schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
         /** Nested container wrapping policy for body payloads and constant values. */
         public NestedContainerWrapPolicy payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
-        /** Canonical bootstrap template for modular payload documents (.stvn). */
+        /** Canonical bootstrap template for hermetic payload documents ({@code .stvn}). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
-        /** Canonical bootstrap template for isolated payload documents (.stvn_i). */
+        /** Canonical bootstrap template for modular payload documents ({@code .stvn_i}). */
         public String bootstrapTemplateStvnI = DEFAULT_TEMPLATE_STVN_I;
-        /** Canonical bootstrap template for modular definitions schema documents (.stvn_d). */
+        /** Canonical bootstrap template for hermetic definitions schema documents ({@code .stvn_d}). */
         public String bootstrapTemplateStvnD = DEFAULT_TEMPLATE_STVN_D;
-        /** Canonical bootstrap template for isolated definitions schema documents (.stvn_di). */
+        /** Canonical bootstrap template for modular definitions schema modules ({@code .stvn_di}). */
         public String bootstrapTemplateStvnDi = DEFAULT_TEMPLATE_STVN_DI;
     }
 

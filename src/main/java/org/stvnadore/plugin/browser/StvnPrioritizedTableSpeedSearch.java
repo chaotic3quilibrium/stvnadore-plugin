@@ -7,8 +7,9 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 
 /**
- * Customized table speed search prioritizing Column 0 (Name column) across all rows
- * before falling back to metadata columns (Source, Type, Use Depth).
+ * Customized table speed search prioritizing Column 0 ({@code Name}) across all rows
+ * before falling back to secondary columns ({@code Source}, {@code Upstream Target},
+ * {@code Resolved Type}, and {@code Use Depth}).
  */
 @NullMarked
 public class StvnPrioritizedTableSpeedSearch extends TableSpeedSearch {

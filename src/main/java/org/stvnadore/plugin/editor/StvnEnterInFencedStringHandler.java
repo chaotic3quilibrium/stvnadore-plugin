@@ -17,9 +17,9 @@ import org.stvnadore.plugin.settings.StvnSettings;
 import java.util.regex.Pattern;
 
 /**
- * Intercepts Enter keystrokes immediately following unclosed multiline string opening delimiters
- * (bare """ or fenced """[TAG]) and automatically inserts the newline, indentation,
- * and symmetrical closing delimiter based on the configured BlockStringEnterStyle.
+ * Intercepts Enter keystrokes immediately following unclosed fenced string opening delimiters
+ * ({@code """[TAG]}) and automatically inserts the newline, indentation,
+ * and symmetrical closing delimiter ({@code [TAG]"""}) based on the configured {@link StvnSettings.BlockStringEnterStyle}.
  */
 @NullMarked
 public final class StvnEnterInFencedStringHandler implements EnterHandlerDelegate {

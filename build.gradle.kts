@@ -118,12 +118,24 @@ intellijPlatform {
         id.set("org.stvnadore.plugin")
         name.set("STVN Language Support")
         version.set(project.version.toString())
-        description.set("""
-            Provides comprehensive language support for Strongly Typed Value Notation (STVN).
-            Features include syntax highlighting, BNF-based parser inspection, 
-            type resolution, diagnostics, and test fixture support.
-        """.trimIndent())
+        description.set("<p>Official IntelliJ Platform language support for <b>Strongly Typed Value Notation (STVN 2.0.0)</b>.</p>\n" +
+            "<ul>\n" +
+            "  <li><b>Pure-IR Type &amp; Payload Validation:</b> Real-time syntax, schema, trait capability, enum subset, temporal mode, and Rule <code>STR-04</code> fenced string diagnostics powered by <code>org.stvnadore.core.ir</code>.</li>\n" +
+            "  <li><b>Interactive Inlay Hints &amp; Hover Documentation:</b> Multi-hop nominal and renamed <code>:use</code> alias trajectories with per-hop <code>Ctrl+Click</code> navigation and inferred algebraic sum tag materialization.</li>\n" +
+            "  <li><b>3-Scope Namespace Dependencies Browser (<code>Ctrl+Alt+N</code>):</b> Live scope switching across <code>:defs</code>, <code>:type</code>, and <code>:body</code> with a 5-column symbol closure view.</li>\n" +
+            "  <li><b>Canonical Formatting &amp; VOP Projections:</b> Column-aligned STVN 2.0.0 source formatting, Pretty/Compact IR canonicalization, hermetic <code>.stvn_d</code> / <code>.stvn</code> extraction, and zero-trust CAS repository publishing.</li>\n" +
+            "</ul>")
         changeNotes.set("""
+            <h3>2.0.0 - 2026.11.24</h3>
+            <ul>
+              <li><b>Unified <code>:use</code> Alias Inlay Hints &amp; 3-Scope Namespace Browser:</b>
+                <ul>
+                  <li>Unified renamed <code>UseMapAlias</code> head-hop inlay hints and per-hop <code>Ctrl+Click</code> navigation across scalar, <code>:Enum</code>, temporal, algebraic sum, and composite <code>:body</code> slots in both Clean Pass 3 and Pass-3-Suspended states.</li>
+                  <li>Upgraded <code>STVN Namespace Dependencies</code> (<code>Ctrl+Alt+N</code>) with a live <code>:defs</code> / <code>:type</code> / <code>:body</code> scope switcher, live symbol search filter, disabled-section tooltips, and a 5-column STVN 2.0.0 schema view.</li>
+                  <li>Aligned all 8 intention actions, 26 inspection descriptions, code style and color scheme samples, settings labels, and authoring documentation with STVN 2.0.0.</li>
+                </ul>
+              </li>
+            </ul>
             <h3>2.0.0 - 2026.10.31</h3>
             <ul>
               <li><b>STVN 2.0.0 Pure-IR Architecture Cutover:</b>
@@ -601,7 +613,9 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnDualProjectionActionsTest.class")
     exclude("**/StvnActionThreadingTest.class")
     exclude("**/StvnRenameRefactoringTest.class")
-    exclude("**/StvnNamespaceBrowserTest.class")
+    exclude("**/StvnNamespaceBrowserTest*.class")
+    exclude("**/StvnUseMapAliasInlayUnificationTest*.class")
+    exclude("**/StvnTemplateAndSampleConformanceTest*.class")
     exclude("**/StvnDualGrammarDifferentialTest*.class")
     exclude("**/StvnFileTypeTest.class")
     exclude("**/StvnIconsTest.class")

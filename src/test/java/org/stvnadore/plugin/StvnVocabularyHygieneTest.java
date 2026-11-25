@@ -53,11 +53,14 @@ public final class StvnVocabularyHygieneTest extends TestCase {
     );
 
     private static final Pattern INVENTED_TYPE_LITERAL_PATTERN = Pattern.compile(
-        ":(?:Value|Any|Record|Product|MapEntry)\\b"
+        ":(?:Value|Any|Record|Product|MapEntry|Optional|Variant|Tagged)\\b"
     );
 
     private static final Pattern PURGED_1X_TEMPORAL_TYPE_PATTERN = Pattern.compile(
-        ":(?:DateTimeOffset|DateTimeZoned|DateTimeAudited|EpochSeconds|EpochMillis|EpochMicros|EpochNanos)\\b"
+        ":(?:DateTimeOffset|DateTimeZoned|DateTimeAudited|EpochSeconds|EpochMillis|EpochMicros|EpochNanos"
+            + "|TimeEpochS|TimeEpochMs|TimeEpochUs|TimeEpochNs|Uint\\w*|Int(?:8|16|32|64|128)"
+            + "|Float(?:32|64|Exact)|StringFixed\\w*|StringNonEmpty\\w*|SeqNonEmpty\\w*|SetNonEmpty\\w*"
+            + "|MapNonEmpty\\w*|MapInv\\w*)\\b"
     );
 
     private static final Pattern DOUBLE_QUOTED_STRING_PATTERN = Pattern.compile(

@@ -1,6 +1,6 @@
 # STVN IDE Authoring Guide & Feature Handbook
 
-- **Strongly Typed Value Notation (STVN) for IntelliJ Platform**  
+- **Strongly Typed Value Notation (STVN 2.0.0) for IntelliJ Platform**
 - *An Authoritative, Example-Driven Guide for Software Engineers, Data Engineers, and System Architects*
 
 ---
@@ -11,87 +11,40 @@
 * [STVN IDE Authoring Guide & Feature Handbook](#stvn-ide-authoring-guide--feature-handbook)
   * [1. Core Philosophy & Quick Start](#1-core-philosophy--quick-start)
     * [1.1 Mathematical Typing Meets IDE Ergonomics](#11-mathematical-typing-meets-ide-ergonomics)
-    * [1.2 The "Typic vs. Variable" Track (Colon `:` vs. Hash `#`)](#12-the-typic-vs-variable-track-colon--vs-hash-)
-      * [Why This Partition Matters](#why-this-partition-matters)
-    * [1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN](#13-comparison-matrix-json-vs-yaml-vs-toml-vs-stvn)
-    * [1.4 60-Second Quick Start: Your First Valid STVN Document](#14-60-second-quick-start-your-first-valid-stvn-document)
+    * [1.2 The Dual-Track Lexical Partition (Colon `:` vs. Hash `#`)](#12-the-dual-track-lexical-partition-colon--vs-hash-)
+    * [1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN 2.0.0](#13-comparison-matrix-json-vs-yaml-vs-toml-vs-stvn-200)
+    * [1.4 60-Second Quick Start: Your First Valid STVN 2.0.0 Document](#14-60-second-quick-start-your-first-valid-stvn-200-document)
   * [2. Interactive Authoring & Scaffolding](#2-interactive-authoring--scaffolding)
-    * [2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on empty `:body`)](#21-schema-driven-skeleton-generator-altenter-on-empty-body)
-      * [The Problem: Blank Canvas Friction](#the-problem-blank-canvas-friction)
-      * [How the Skeleton Generator Works](#how-the-skeleton-generator-works)
-      * [Interactive Live Template Tab-Stop Navigation Flow](#interactive-live-template-tab-stop-navigation-flow)
+    * [2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on `:body`)](#21-schema-driven-skeleton-generator-altenter-on-body)
     * [2.2 Trap 2 Map Auto-Healer (`Alt+Enter` on Flat Lists in `:Map` Slots)](#22-trap-2-map-auto-healer-altenter-on-flat-lists-in-map-slots)
-      * [The Mental Model: Maps vs. Lists](#the-mental-model-maps-vs-lists)
-      * [One-Click Atomic Healing](#one-click-atomic-healing)
     * [2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)](#23-enum-subset-variant-reordering-altenter-on-out-of-order-filter-lists)
-      * [The Problem: Root Declaration Order Violations](#the-problem-root-declaration-order-violations)
-      * [One-Click Canonical Reordering](#one-click-canonical-reordering)
+    * [2.4 Resilient Payload Value Quick-Fixes & Container Layout Intentions](#24-resilient-payload-value-quick-fixes--container-layout-intentions)
   * [3. Visual Grammar & Inlay Hint Badging Guide](#3-visual-grammar--inlay-hint-badging-guide)
-    * [3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags](#31-inlay-hint-badging-semantics-explicit-vs-inferred-variant-tags)
-      * [Option Types (`:Option( :T )`)](#option-types-option-t-)
-      * [Either Types (`:Either( :L :R )`)](#either-types-either-l-r-)
-      * [Algebraic Unions (`:Union( :T1 :T2 ... )`)](#algebraic-unions-union-t1-t2--)
-      * [Master Visual Inlay Badging Key](#master-visual-inlay-badging-key)
-      * [3.1.4 Temporal Primitives Inlay Hints & Hover Inspection](#314-temporal-primitives-inlay-hints--hover-inspection)
-        * [Rendered Inlay Badges for Temporal Literals](#rendered-inlay-badges-for-temporal-literals)
-        * [Quick Documentation (`Ctrl+Q` / Hover) Inspection Tooltips](#quick-documentation-ctrlq--hover-inspection-tooltips)
-        * [Deep Semantic Assertions & Diagnostics](#deep-semantic-assertions--diagnostics)
-    * [3.2 Container Delimiter Signatures & Formatting](#32-container-delimiter-signatures--formatting)
-    * [3.3 Configuration Settings & Long/Short Form Toggles](#33-configuration-settings--longshort-form-toggles)
-    * [3.4 Enum Subset Domain Completion & Inlay Badging](#34-enum-subset-domain-completion--inlay-badging)
-      * [Bracketed Filter Facet Authoring](#bracketed-filter-facet-authoring)
-      * [Subset Payload Domain Filtering](#subset-payload-domain-filtering)
-  * [4. Sub-Token Precision Diagnostics & Recovery](#4-sub-token-precision-diagnostics--recovery)
+    * [3.1 Explicit vs. Inferred Sum Variant Tags](#31-explicit-vs-inferred-sum-variant-tags)
+    * [3.2 Unified Renamed `:use` Alias Head Hops & Per-Hop `Ctrl+Click` Navigation](#32-unified-renamed-use-alias-head-hops--per-hop-ctrlclick-navigation)
+    * [3.3 Temporal Primitives Inlay Hints & Four-Locus Hover Inspection](#33-temporal-primitives-inlay-hints--four-locus-hover-inspection)
+    * [3.4 Container Closing Delimiter Signatures & `AliasExpansionMode` Settings](#34-container-closing-delimiter-signatures--aliasexpansionmode-settings)
+    * [3.5 Enum Subset Domain Completion & Inlay Badging](#35-enum-subset-domain-completion--inlay-badging)
+  * [4. Sub-Token Precision Diagnostics & Real-Time Inspections](#4-sub-token-precision-diagnostics--real-time-inspections)
     * [4.1 Pinpoint Leaf-Token Error Targeting](#41-pinpoint-leaf-token-error-targeting)
-    * [4.2 Guaranteed Structural Immunity for `:defs`, `:type`, and Root Enclosures](#42-guaranteed-structural-immunity-for-defs-type-and-root-enclosures)
-    * [4.3 Real-Time Semantic Checkpoints](#43-real-time-semantic-checkpoints)
-      * [Non-Empty Constraint Checking (`:SeqNonEmpty`, `:MapNonEmpty`)](#non-empty-constraint-checking-seqnonempty-mapnonempty)
-      * [Duplicate Map Key Detection](#duplicate-map-key-detection)
-      * [Zero-Shadowing Constraints](#zero-shadowing-constraints)
-    * [4.4 STVN 1.2 Structural & Semantic Inspections](#44-stvn-12-structural--semantic-inspections)
-  * [5. Navigation, Quick Documentation & Polyglot Features](#5-navigation-quick-documentation--polyglot-features)
-    * [5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-jump-to-definition-across-module-hierarchies-ctrlclick--ctrlb)
-    * [5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#52-quick-documentation--nominal-lineage-ctrlq--hover)
-      * [Enum Subset Quick Documentation Hover Card](#enum-subset-quick-documentation-hover-card)
-    * [5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)](#53-polyglot-multi-language-fenced-strings-rule-str-04)
-    * [Delimiter Invariant (Rule STR-04)](#delimiter-invariant-rule-str-04)
-    * [Authoring Example](#authoring-example)
-    * [IDE Inspection & Quick-Fixes (`StvnFencedString`)](#ide-inspection--quick-fixes-stvnfencedstring)
-    * [Editor Enter-Key Auto-Closing & Layout Shapes](#editor-enter-key-auto-closing--layout-shapes)
-    * [Interactive Live Templates and Intentions](#interactive-live-templates-and-intentions)
-    * [In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection](#in-editor-tag-renaming-shiftf6--delimiter-collision-protection)
-    * [5.4 VOP Projection & Canonicalization Menu Matrix (`STVN >`)](#54-vop-projection--canonicalization-menu-matrix-stvn-)
-    * [5.5 Package Enclaves & Lexical Scoping (STVN 1.2)](#55-package-enclaves--lexical-scoping-stvn-12)
-      * [Package Enclaves (`:package`)](#package-enclaves-package)
-      * [Lexical Imports (`:use`)](#lexical-imports-use)
-    * [5.6 Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)](#56-hermetic-documents--definitions-schemas-stvn-stvn_d)
-    * [5.7 Token Boundary & Sum Disambiguation Quick-Fixes](#57-token-boundary--sum-disambiguation-quick-fixes)
-      * [Token Boundary Completion Guard](#token-boundary-completion-guard)
-      * [Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)](#right-first-sum-intention-actions-wrap-with-right--wrap-with-1)
-    * [5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization](#58-hash-sigil-autocomplete-activation-bare--quick-fixes--arity-localization)
-      * [Hash Sigil Autocomplete Activation](#hash-sigil-autocomplete-activation)
-      * [Bare '#' Completion Quick-Fixes](#bare--completion-quick-fixes)
-      * [Tuple Arity Error Localization](#tuple-arity-error-localization)
-    * [5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds](#59-quick-documentation-container-guards--in-flight-union-tag-bounds)
-      * [Container Documentation Leakage Guard](#container-documentation-leakage-guard)
-      * [In-Flight Rule G Union Tag Bounds Enforcement](#in-flight-rule-g-union-tag-bounds-enforcement)
-      * [Child Fault Isolation & Arity Underflow Immunity](#child-fault-isolation--arity-underflow-immunity)
-    * [5.10 Container Fault Isolation & Diagnostic Sanitization](#510-container-fault-isolation--diagnostic-sanitization)
-      * [Container Clamping Defanging](#container-clamping-defanging)
-      * [Explicit Union Value Type Resolution](#explicit-union-value-type-resolution)
-      * [Bare '#' Message Normalization](#bare--message-normalization)
-  * [6. STVN Data Type Cheat Sheet for Data Engineers](#6-stvn-data-type-cheat-sheet-for-data-engineers)
-    * [6.1 Atomic Primitives & Exact Numerics](#61-atomic-primitives--exact-numerics)
-    * [6.2 Product Types: Tuples vs. Maps vs. Sequences](#62-product-types-tuples-vs-maps-vs-sequences)
-    * [6.3 Sum Types: Options, Eithers, and Algebraic Unions](#63-sum-types-options-eithers-and-algebraic-unions)
-    * [6.4 Enumerations & Value Keywords](#64-enumerations--value-keywords)
-      * [Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)](#enum-subsets--filter-metadata-facets-filterincl-filterexcl)
-        * [Invariants & Rules](#invariants--rules)
-        * [Transitive Subset Chaining](#transitive-subset-chaining)
-    * [6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes](#65-temporal-types-epoch-timestamps-vs-tripartite-datetimes)
-      * [Machine-Level Epoch Timestamps](#machine-level-epoch-timestamps)
-      * [The Tripartite Temporal Type System](#the-tripartite-temporal-type-system)
-      * [Architectural Decision Guide: Which Temporal Type to Choose?](#architectural-decision-guide-which-temporal-type-to-choose)
+    * [4.2 Structural Immunity for `:meta`, `:defs`, `:type`, and Root Enclosures](#42-structural-immunity-for-meta-defs-type-and-root-enclosures)
+    * [4.3 Real-Time Semantic & Governance Checkpoints](#43-real-time-semantic--governance-checkpoints)
+    * [4.4 STVN 2.0.0 Structural, Validity & Governance Inspections](#44-stvn-200-structural-validity--governance-inspections)
+  * [5. Navigation, Namespace Browser, Quick Documentation & Polyglot Fenced Strings](#5-navigation-namespace-browser-quick-documentation--polyglot-fenced-strings)
+    * [5.1 Two-Hop `:use` Navigation & Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)](#51-two-hop-use-navigation--module-hierarchies-ctrlclick--ctrlb)
+    * [5.2 Interactive 3-Scope Namespace Dependencies Browser (`Ctrl+Alt+N`)](#52-interactive-3-scope-namespace-dependencies-browser-ctrlaltn)
+    * [5.3 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)](#53-quick-documentation--nominal-lineage-ctrlq--hover)
+    * [5.4 Polyglot Fenced Strings (Rule STR-04)](#54-polyglot-fenced-strings-rule-str-04)
+    * [5.5 VOP Projection & Canonicalization Menu Matrix (`STVN >`)](#55-vop-projection--canonicalization-menu-matrix-stvn-)
+    * [5.6 Package Enclaves (`:package`) & Lexical Imports (`:use`)](#56-package-enclaves-package--lexical-imports-use)
+    * [5.7 Canonical 6-File Taxonomy (`.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, `.stvn_bd`)](#57-canonical-6-file-taxonomy-stvn-stvn_i-stvn_d-stvn_di-stvn_b-stvn_bd)
+    * [5.8 Sum Disambiguation, Hash Sigil Completion & Fault Isolation](#58-sum-disambiguation-hash-sigil-completion--fault-isolation)
+  * [6. STVN 2.0.0 Data Type Cheat Sheet for Data Engineers](#6-stvn-200-data-type-cheat-sheet-for-data-engineers)
+    * [6.1 Atomic Primitives & Metadata Facet Qualifications](#61-atomic-primitives--metadata-facet-qualifications)
+    * [6.2 Composite & Collection Constructors: Tuples, Maps, Sequences & Sets](#62-composite--collection-constructors-tuples-maps-sequences--sets)
+    * [6.3 Algebraic Sum Constructors: Options, Eithers & Unions](#63-algebraic-sum-constructors-options-eithers--unions)
+    * [6.4 Enumerations & Subset Filter Facets (`#filterIncl`, `#filterExcl`)](#64-enumerations--subset-filter-facets-filterincl-filterexcl)
+    * [6.5 Temporal Types: `:TimeEpoch` Scales & Tripartite `:DateTime` Modes](#65-temporal-types-timeepoch-scales--tripartite-datetime-modes)
   * [7. Keyboard Shortcut Quick Reference](#7-keyboard-shortcut-quick-reference)
 <!-- TOC -->
 
@@ -101,1044 +54,605 @@
 
 ### 1.1 Mathematical Typing Meets IDE Ergonomics
 
-Strongly Typed Value Notation (STVN) is a high-assurance, human-readable data serialization language and formal algebraic type system. Unlike dynamically typed formats such as JSON, YAML, or TOML, where schema validation is an afterthought executed out-of-band, an STVN document is a **single-pass mathematically verified compilation unit**.
+Strongly Typed Value Notation (STVN 2.0.0) is a deterministic, human-readable data serialization language and algebraic type system governed by Value-Oriented Programming (VOP). Every payload compilation unit (`.stvn` or `.stvn_i`) establishes a single-pass verified contract between its root metadata (`:meta`), optional definitions (`:defs`), root schema (`:type`), and data payload (`:body`).
 
-In STVN, every payload file (`.stvn`) establishes an exact, isomorphic contract between its schema envelope (`:type`) and its runtime data payload (`:body`).
-
-The STVN IntelliJ Platform Plugin (`ij_stvnadore_plugin`) transforms this mathematical rigor into a rich, interactive compile-time canvas. Rather than burdening developers with manual boilerplate and syntactic traps, the IDE actively participates in data authoring:
-* **Generates complete data skeletons** matching complex nominal types with a single keystroke.
-* **Annotates unbracketed literals with compiler-inferred variant badges** directly in the editor viewport.
-* **Pinpoints semantic and type mismatches down to the exact offending leaf token**.
-* **Provides instant structural auto-healers** when transitioning from common JSON habits.
+The STVN IntelliJ Platform Plugin (`ij_stvnadore_plugin`) couples directly to the immutable `org.stvnadore.core.ir` model to provide real-time authoring assistance:
+* **Generates complete data skeletons** matching nominal and composite `:type` schemas with interactive tab-stops.
+* **Renders multi-hop nominal and renamed `:use` alias inlay badges** with independent per-hop `Ctrl+Click` navigation and inferred sum-tag materialization.
+* **Inspects symbol closures interactively** across `:defs`, `:type`, and `:body` scopes in a 5-column Namespace Dependencies Browser (`Ctrl+Alt+N`).
+* **Pinpoints syntax, constraint, and trait violations** directly to the offending leaf token with 1-click remediation quick-fixes.
 
 ```mermaid
-graph LR
-    subgraph "Formal Schema Contract"
-        DEF[":defs Nominal Types"] --> TYP[":type Root Schema"]
+flowchart LR
+    subgraph SchemaContract ["Formal STVN 2.0.0 Contract"]
+        DEF[":defs Types and #CONSTs"] --> TYP[":type Root Schema"]
         INC[":include Modules"] --> TYP
     end
 
-    subgraph "Interactive IntelliJ IDE Canvas"
-        TYP --> SCAFF["⚡ Skeleton Scaffolder (Alt+Enter)"]
-        TYP --> INLAY["🏷️ Inlay Hint Badges (:Type [#Some])"]
-        TYP --> DIAG["🎯 Sub-Token Diagnostics (Leaf Offsets)"]
-        TYP --> DOC["💡 Quick Doc & Type Lineage (Ctrl+Q)"]
-        TYP --> HEAL["🩺 Map Auto-Healer (Alt+Enter)"]
+    subgraph IdeCanvas ["Interactive IntelliJ Platform Surface"]
+        TYP --> SCAFF["Skeleton Scaffolder (Alt+Enter)"]
+        TYP --> INLAY["Per-Hop Inlay Badges (:Alias -> :Type)"]
+        TYP --> BROWSE["3-Scope Namespace Browser (Ctrl+Alt+N)"]
+        TYP --> DIAG["Sub-Token Diagnostics and Quick-Fixes"]
+        TYP --> DOC["Quick Doc and UTC Preview (Ctrl+Q)"]
     end
 ```
 
 ---
 
-### 1.2 The "Typic vs. Variable" Track (Colon `:` vs. Hash `#`)
+### 1.2 The Dual-Track Lexical Partition (Colon `:` vs. Hash `#`)
 
-Traditional serialization languages mix schema directives, data keys, and literal values within the same lexical namespace, causing ambiguous parsing and accidental type-key collisions.
+STVN partitions all symbolic identifiers into two disjoint lexical tracks:
 
-STVN strictly partitions the grammar into two physical tracks:
-
-1. **The Typic Track (`:`)**: Every identifier or constructor prefixed with a colon (`:`) belongs to the type system. Colons define structural envelopes, nominal aliases, and collection constructors (e.g., `:Int32`, `:String`, `:Tuple`, `:Option`, `:Map`, `:DateTimeZoned`).
-2. **The Variable / Value Track (`#`)**: Every identifier prefixed with a hash (`#`) represents a concrete algebraic variant tag, boolean literal, enumeration symbol, or metadata constraint (e.g., `#TRUE`, `#FALSE`, `#Some`, `#None`, `#Left`, `#Right`, `#1`, `#2`, `#preserveIndent`).
+1. **The Typic Track (`:`)**: Every structural section keyword, built-in type constructor, package path, and nominal type identifier begins with `:` (`:meta`, `:defs`, `:type`, `:body`, `:Int`, `:Float`, `:String`, `:Boolean`, `:TimeEpoch`, `:DateTime`, `:Tuple`, `:Seq`, `:Set`, `:Map`, `:Option`, `:Either`, `:Union`, `:Enum`, `:UserId`).
+2. **The Value & Facet Track (`#`)**: Every boolean literal, algebraic sum constructor tag, enumeration variant, named constant, and metadata constraint facet begins with `#` (`#TRUE`, `#FALSE`, `#Some`, `#None`, `#Left`, `#Right`, `#1`, `#2`, `#ADMIN`, `#MAX_RETRIES`, `#unsigned`, `#size`, `#minSize`, `#maxSize`, `#preserveIndent`).
 
 ```stvn
 {
+  :meta {
+    #name   "service_status"
+    #domain "telemetry"
+    #kind   #BODY
+  }
   :defs {
-    :Status :Option( :String ) // Colon ':' = Type Constructor
+    :Status :Option({ #minSize 1 #maxSize 64 } :String)
   }
   :type :Status
-  :body #Some "active"         // Hash '#' = Algebraic Variant Tag
+  :body #Some "active"
 }
 ```
 
-#### Why This Partition Matters
-* **Single-Pass Parsing:** The lexer immediately determines whether a token governs type constraints or literal payload data without lookahead.
-* **Ambiguity Elimination:** A value string or enumeration literal can never be mistaken for a type definition or structural keyword.
-* **Zero-Allocation Deserialization:** Binary codecs and AST evaluators can jump directly to value offsets without re-parsing schema headers.
+---
+
+### 1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN 2.0.0
+
+| Feature / Dimension    | JSON                          | YAML                            | TOML                    | STVN 2.0.0 (`.stvn` / `.stvn_i`)                  |
+|:-----------------------|:------------------------------|:--------------------------------|:------------------------|:--------------------------------------------------|
+| **Type Rigor**         | Untyped                       | Implicit (Loose)                | Primitive Tables        | Algebraic Sum & Product Types + Opaque Nominals   |
+| **Schema Binding**     | Out-of-band (JSON Schema)     | Out-of-band (SchemaStore)       | None                    | Embedded `:type` & Modular `:include` / `:use`    |
+| **Sum Types (Unions)** | Ad-hoc discriminator fields   | Tagged union conventions        | Unsupported             | First-Class (`:Option`, `:Either`, `:Union`)      |
+| **Map Syntax**         | `{"k": "v"}`                  | `k: v` (Indentation-sensitive)  | `k = "v"`               | `{["k" "v"]}` (Ordered Unique Key-Value Pairs)    |
+| **Null Safety**        | Ambiguous `null`              | Multi-form (`null`, `~`, empty) | Omitted keys            | Explicit `:Option` (`#Some` / `#None`), Zero Null |
+| **Multiline Strings**  | Escaped `\n` only             | Indentation block scalars       | Triple quotes           | Rule `STR-04` Tagged Fences (`"""[TAG]...[TAG]"""`)|
+| **Editor Inlays**      | None                          | Limited                         | None                    | Per-Hop Nominal Chains & Inferred `[#Tag]` Badges |
 
 ---
 
-### 1.3 Comparison Matrix: JSON vs. YAML vs. TOML vs. STVN
+### 1.4 60-Second Quick Start: Your First Valid STVN 2.0.0 Document
 
-| Feature / Dimension    | JSON                          | YAML                            | TOML                    | STVN (`.stvn`)                                   |
-|:-----------------------|:------------------------------|:--------------------------------|:------------------------|:-------------------------------------------------|
-| **Type Rigor**         | None (Untyped)                | Implicit (Loose)                | Primitive Tables        | Formal Algebraic Types (ADTs)                    |
-| **Schema Binding**     | Out-of-band (JSON Schema)     | Out-of-band (SchemaStore)       | None                    | Embedded In-File & Modular (`:include`)          |
-| **Sum Types (Unions)** | Ad-hoc (e.g. `{"type": "A"}`) | Tagged union hacks              | Not supported           | First-Class (`:Option`, `:Either`, `:Union`)     |
-| **Map Syntax**         | `{ "k": "v" }` (Unordered)    | `k: v` (Whitespace-sensitive)   | `k = "v"` (Flat tables) | `{ [ "k" "v" ] }` (Ordered Sequenced Pairs)      |
-| **Null Safety**        | Ambiguous `null`              | Multi-form (`null`, `~`, empty) | Missing key semantics   | Formal `:Option` (`#Some` / `#None`), Zero Nulls |
-| **IDE Diagnostics**    | Document-level                | Indentation errors              | Key syntax errors       | Sub-Token Precision on leaf literals             |
-| **Editor Inlays**      | None                          | Limited plugin hints            | None                    | Contextual Inlay Badges & Closing Delimiters     |
-
----
-
-### 1.4 60-Second Quick Start: Your First Valid STVN Document
-
-To create your first valid STVN document in IntelliJ IDEA:
-
-1. Create a new file with the `.stvn` extension (e.g., `user_profile.stvn`).
-2. Author the document below:
+Create `user_profile.identity.stvn` and author the following document:
 
 ```stvn
 {
+  :meta {
+    #name   "user_profile"
+    #domain "identity"
+    #kind   #BODY
+  }
   :defs {
-    :UserId   :Int64
-    :UserRole :Enum( #ADMIN #ENGINEER #ANALYST )
-    :Location :Tuple( :Float64 :Float64 )
+    :UserId       { #unsigned #size 64 } :Int
+    :NonEmptyText { #minSize 1 #maxSize 256 } :String
+    :UserRole     :Enum[#ADMIN #ENGINEER #ANALYST]
+    :Coordinates  :Tuple(:Float :Float)
   }
   :type :Tuple(
     :UserId
-    :StringNonEmpty
+    :NonEmptyText
     :UserRole
-    :Location
-    :Option( :String )
+    :Coordinates
+    :Option(:NonEmptyText)
   )
   :body (
     10042
     "ada.lovelace@stvnadore.org"
     #ENGINEER
-    ( 51.5074 -0.1278 )
-    "London Office" // Inlay badge automatically renders: :Option [#Some]
+    (51.5074 -0.1278)
+    "London Office"
   )
 }
 ```
 
-Notice how the IDE immediately validates the payload:
-* `10042` matches `:UserId` (`:Int64`).
-* `"ada.lovelace@stvnadore.org"` satisfies `:StringNonEmpty`.
-* `#ENGINEER` is validated against `:UserRole` enum tags.
-* `( 51.5074 -0.1278 )` satisfies `:Location` (`:Tuple( :Float64 :Float64 )`).
-* `"London Office"` is an untagged string, which the compiler automatically infers as `#Some "London Office"` under **Rule A**, displaying an inlay hint badge `:Option [#Some]`.
+The IDE validates every slot in real time:
+* `10042` satisfies `:UserId` (`{ #unsigned #size 64 } :Int`).
+* `"ada.lovelace@stvnadore.org"` satisfies `:NonEmptyText` (`{ #minSize 1 #maxSize 256 } :String`).
+* `#ENGINEER` resolves directly to `:UserRole` (`:Enum[#ADMIN #ENGINEER #ANALYST]`).
+* `(51.5074 -0.1278)` matches `:Coordinates` (`:Tuple(:Float :Float)`).
+* `"London Office"` is inferred under Rule A as `#Some "London Office"` and displays the clickable inlay badge `:Option(:NonEmptyText) [#Some] (-> :NonEmptyText -> :String)`.
 
 ---
 
 ## 2. Interactive Authoring & Scaffolding
 
-### 2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on empty `:body`)
+### 2.1 Schema-Driven Skeleton Generator (`Alt+Enter` on `:body`)
 
-#### The Problem: Blank Canvas Friction
-When authoring a complex, deeply nested STVN document, drafting the initial payload from scratch involves heavy cognitive load. A schema composed of nested maps, tuples, union branches, and optionals requires dozens of exact opening/closing delimiters (`{}`, `()`, `[]`), variant tags (`#1`, `#Some`), and mock literals.
+When authoring a nested STVN payload, place the caret on an empty `:body` section (or an empty `:body ()` placeholder) and press `Alt+Enter` (macOS: `⌥Enter`) to invoke **Generate STVN data skeleton** (family: *Generate schema data skeleton*).
 
-#### How the Skeleton Generator Works
-The STVN plugin introduces `StvnSchemaSkeletonIntentionAction`. When your caret is positioned on or immediately following an un-authored `:body` block, pressing `Alt+Enter` (macOS: `⌥Enter`) displays:
-
-> 💡 **Generate schema data skeleton**
-
-```
-┌────────────────────────────────────────────────────────┐
-│ :body <caret>                                          │
-│ ┌────────────────────────────────────────────────────┐ │
-│ │ 💡 Generate schema data skeleton                   │ │
-│ │    STVN Schema Scaffolding                         │ │
-│ └────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────┘
-```
-
-The underlying scaffolding engine (`StvnSchemaSkeletonScaffolder`):
-1. Traverses the document's resolved `:type` schema via `StvnTypeResolver`.
-2. Recursively expands all nominal aliases in `:defs` and `:include` files.
-3. Generates a canonical, beautifully indented STVN AST containing standard mock default values:
-   * `:Tuple(...)` &rarr; `( ... )`
-   * `:Map(:K :V)` &rarr; `{ [ key val ] }`
-   * `:Seq(:T)` / `:Set(:T)` &rarr; `[ item ]`
-   * `:Option(:T)` &rarr; `#Some val`
-   * `:Either(:L :R)` &rarr; `#Right val`
-   * `:Union(:T1 :T2 ...)` &rarr; `#1 val`
-   * `:Enum(#A #B ...)` &rarr; `#A`
-   * Primitives &rarr; `0`, `0.0`, `"placeholder"`, `#FALSE`, `"2026-08-18T18:00:00-05:00"` (`:DateTimeOffset`), `"2026-08-18T18:00:00[America/Chicago]"` (`:DateTimeZoned`), `"2026-08-18T18:00:00-05:00[America/Chicago]"` (`:DateTimeAudited`).
-
-#### Interactive Live Template Tab-Stop Navigation Flow
-
-Once generated, the scaffold is automatically attached to an interactive IntelliJ `TemplateBuilderImpl`. Each generated mock literal becomes an active tab-stop:
+`StvnSchemaSkeletonScaffolder` traverses the resolved `:type` contract across local `:defs`, `:package` / `:use` imports, and `:include` modules to emit a canonically indented payload attached to interactive `TemplateBuilderImpl` tab-stops:
+* `:Tuple(...)` &rarr; `(...)`
+* `:Map(:K :V)` &rarr; `{[key val]}`
+* `:Seq(:T)` / `:Set(:T)` &rarr; `[item]`
+* `:Option(:T)` &rarr; `#Some val`
+* `:Either(:L :R)` &rarr; `#Right val`
+* `:Union(:T1 :T2 ...)` &rarr; `#1 val`
+* `:Enum[#A #B ...]` &rarr; `#A`
+* Scalars &rarr; `0`, `0.0`, `"placeholder"`, `#FALSE`, `"2026-08-18T18:00:00-05:00"` (`{ #offset } :DateTime`), `"2026-08-18T18:00:00[America/Chicago]"` (`{ #zoned } :DateTime`), `"2026-08-18T18:00:00-05:00[America/Chicago]"` (`{ #audited } :DateTime`).
 
 ```stvn
-// 1. Author schema:
 {
-  :defs {
-    :MetricPoint :Tuple( :String :Float64 :Boolean )
+  :meta {
+    #name   "metrics"
+    #domain "telemetry"
+    #kind   #BODY
   }
-  :type :Map( :String :MetricPoint )
-  :body <caret>
-}
-
-// 2. Press Alt+Enter -> "Generate schema data skeleton":
-{
   :defs {
-    :MetricPoint :Tuple( :String :Float64 :Boolean )
+    :MetricPoint :Tuple(:String :Float :Boolean)
   }
-  :type :Map( :String :MetricPoint )
+  :type :Map(:String :MetricPoint)
   :body {
-    [ [|"placeholder"|] (   // <-- Tab-Stop 1 (Map Key)
-      [|"placeholder"|]     // <-- Tab-Stop 2 (Metric Name)
-      [|0.0|]               // <-- Tab-Stop 3 (Metric Value)
-      [|#FALSE|]            // <-- Tab-Stop 4 (Active Flag)
-    ) ]
+    ["placeholder" (
+      "placeholder"
+      0.0
+      #FALSE
+    )]
   }
 }
 ```
 
-* Press **`Tab`** to confirm the current value and advance to the next field.
-* Press **`Shift+Tab`** to move backward to the previous field.
-* Press **`Enter`** or **`Esc`** to finalize the template.
+Use **`Tab`** and **`Shift+Tab`** to step across generated placeholders and **`Enter`** or **`Esc`** to finish.
 
 ---
 
 ### 2.2 Trap 2 Map Auto-Healer (`Alt+Enter` on Flat Lists in `:Map` Slots)
 
-#### The Mental Model: Maps vs. Lists
-Engineers migrating from JSON or Python frequently make "Trap 2": attempting to write map entries as flat lists or flat colon-pairs inside `:Map` slots:
+Under STVN 2.0.0 Specification § 5.5.1, a `:Map` literal is an ordered sequence of bracketed `[key value]` pairs enclosed in braces `{ ... }`. Supplying a flat list `[k1 v1 k2 v2]` in a `:Map` slot triggers `StvnMapStructuralInspection`:
 
 ```stvn
-// ❌ INCORRECT (Trap 2: Flat list in map slot):
-:body [ "host" "localhost" "port" 8080 ]
+// Invalid flat list in a :Map slot:
+:type :Map(:String :Int)
+:body ["api_port" 8080 "grpc_port" 9090]
+
+// After pressing Alt+Enter -> "Convert flat list to canonical map literal '{ [ ... ] }'":
+:type :Map(:String :Int)
+:body {["api_port" 8080] ["grpc_port" 9090]}
 ```
 
-In STVN (§5.4), a `:Map` is an **ordered sequence of bracketed key-value entry pairs enclosed in braces**: `{ [ key value ] ... }`.
-
-#### One-Click Atomic Healing
-The plugin includes `StvnMapStructuralInspection` and `StvnMapAutoHealerQuickFix`. When a flat list literal is detected in a `:Map` slot:
-
-1. The editor flags the flat list with a structural error.
-2. Pressing `Alt+Enter` presents the quick-fix:
-   > 💡 **Convert flat list to canonical map literal '{ [ ... ] }'**
-3. The plugin atomically transforms the flat list into canonical paired entries, preserving single-line or multi-line formatting:
-
-```stvn
-// Before Quick-Fix:
-:type :Map( :String :Int32 )
-:body [ "api_port" 8080 "grpc_port" 9090 ]
-
-// Press Alt+Enter -> Convert flat list to canonical map literal
-// After Quick-Fix:
-:type :Map( :String :Int32 )
-:body { [ "api_port" 8080 ] [ "grpc_port" 9090 ] }
-```
-
-Multi-line lists are formatted with canonical indentation:
-
-```stvn
-// Multi-line Before:
-:body [
-  "alpha" 10
-  "beta" 20
-]
-
-// Multi-line After Alt+Enter:
-:body {
-  [ "alpha" 10 ]
-  [ "beta" 20 ]
-}
-```
+---
 
 ### 2.3 Enum Subset Variant Reordering (`Alt+Enter` on Out-of-Order Filter Lists)
 
-#### The Problem: Root Declaration Order Violations
-When authoring nominal enum subsets using `#filterIncl` or `#filterExcl`, variants must strictly preserve the relative declaration order of the root `:Enum` (§4.8). Listing variants out of order triggers a compile error from `StvnEnumSubsetInspection`:
+Under STVN 2.0.0 Specification § 4.8, `#filterIncl` and `#filterExcl` lists must preserve the declaration order of the root `:Enum`:
 
 ```stvn
 :defs {
-  :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-  // Error: Root ordering violation: variant #MEDIUM does not match relative declaration order of root :Enum :Priority
-  :AlertPriority { #filterIncl [ #CRITICAL #MEDIUM ] } :Priority
+  :Priority      :Enum[#LOW #MEDIUM #HIGH #CRITICAL]
+  // Before Quick-Fix (E015 order violation):
+  :AlertPriority { #filterIncl [#CRITICAL #MEDIUM] } :Priority
+  // After Alt+Enter -> "Sort variants to match root enum declaration order":
+  :FixedPriority { #filterIncl [#MEDIUM #CRITICAL] } :Priority
 }
 ```
 
-#### One-Click Canonical Reordering
-The plugin registers `StvnReorderEnumFilterVariantsQuickFix`. Position the caret on any highlighted out-of-order variant and press `Alt+Enter` (macOS: `⌥Enter`):
-
-> 💡 **Sort variants to match root enum declaration order**
-
-The quick-fix executes an in-place AST rewrite, reordering the bracketed list into canonical root enum sequence:
-
-```stvn
-// Before Quick-Fix:
-:AlertPriority { #filterIncl [ #CRITICAL #MEDIUM ] } :Priority
-
-// Press Alt+Enter -> Sort variants to match root enum declaration order
-// After Quick-Fix:
-:AlertPriority { #filterIncl [ #MEDIUM #CRITICAL ] } :Priority
-```
-
-The quick-fix also handles multi-tier transitive derivation chains by resolving intermediate parents back to the canonical root enum:
+Transitive subset derivations resolve back to the root `:Enum` declaration automatically:
 
 ```stvn
 :defs {
-  :Status          :Enum [ #Pending #Active #Suspended #Deleted ]
-  :WorkingStatus   { #filterExcl [ #Deleted ] } :Status
-  // Before Quick-Fix:
-  :ImmediateStatus { #filterIncl [ #Suspended #Active ] } :WorkingStatus
-  // After Quick-Fix (Alt+Enter):
-  :ImmediateStatus { #filterIncl [ #Active #Suspended ] } :WorkingStatus
+  :LifecycleState :Enum[#PENDING #ACTIVE #SUSPENDED #DELETED]
+  :WorkingState   { #filterExcl [#DELETED] } :LifecycleState
+  :UrgentState    { #filterIncl [#ACTIVE #SUSPENDED] } :WorkingState
 }
 ```
 
 ---
 
-### 2.4 Resilient Payload Value Quick-Fixes & Exact Float Precision Rounding (`Alt+Enter` in `:body` & `#CONST`)
+### 2.4 Resilient Payload Value Quick-Fixes & Container Layout Intentions
 
-- **Prohibited Numeric Underscore Removal (`E002`):** Strips prohibited `_` separators from integer and float literals in place (`Remove prohibited underscores from numeric literal '...'`) while preserving full PSI container slot resolution, hover cards, and quick-fixes on all sibling tuple, sequence, set, and map elements.
-- **Exact Decimal Float Precision Rounding & Truncation (`E012`):** On `{ #exact #maxSize N } :Float` precision overflow, offers `Round value to #maxSize N significant digits '...'` as the primary (`Priority.TOP`) quick-fix, `Truncate value to #maxSize N significant digits '...'` second (`Priority.HIGH`), and `Replace with exemplar value '...'` third (`Priority.LOW`).
+* **Prohibited Numeric Underscore Removal (`E002`):** Strips `_` separators from numeric literals (`Remove prohibited underscores from numeric literal '...'`).
+* **Exact Decimal Precision Rounding & Truncation (`E012`):** On `{ #exact #maxSize N } :Float` overflow, offers `Round value to #maxSize N significant digits '...'` (`Priority.TOP`) and `Truncate value to #maxSize N significant digits '...'` (`Priority.HIGH`).
+* **Container Layout Intentions (`Alt+Enter`):**
+  * **Expand container to multi-line** (`StvnExpandContainerIntention`)
+  * **Collapse container to single line** (`StvnCollapseContainerIntention`)
+  * **Collapse child elements to single line each** (`StvnCollapseChildElementsIntention`)
 
 ---
 
 ## 3. Visual Grammar & Inlay Hint Badging Guide
 
-### 3.1 Inlay Hint Badging Semantics: Explicit vs. Inferred Variant Tags
+### 3.1 Explicit vs. Inferred Sum Variant Tags
 
-STVN's compiler implements algebraic inference rules that allow developers to omit boilerplate variant tags when there is no ambiguity. The STVN IntelliJ plugin provides **Type Inlay Hints** that clearly decode how the compiler interprets every value.
+* **Unbracketed Tag (`#Some`, `#Right`, `#2`)**: Explicitly authored in `:body` (or inside a referenced `#CONST`).
+* **Bracketed Tag (`[#Some]`, `[#Right]`, `[#2]`)**: Inferred by the STVN 2.0.0 sum-inference rules. Clicking a `:body`-level `[#Tag]` segment in the inlay badge materializes the explicit tag directly into the buffer.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ INLAY HINT BADGE CONVENTION:                                                    │
-│ • Unbracketed Tag (#Tag)   = Explicitly Authored by Developer                   │
-│ • Bracketed Tag   ([#Tag]) = Compiler-Inferred via Language Specification Rules │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Option Types (`:Option( :T )`)
-* **Explicit Tag:** `#Some "hello"` &rarr; renders badge `"hello" :Option #Some`
-* **Inferred Tag (Rule A):** `"hello"` &rarr; renders badge `"hello" :Option [#Some]`
-* **Explicit None:** `#None` &rarr; renders badge `#None :Option #None`
-
-#### Either Types (`:Either( :L :R )`)
-* **Explicit Left:** `#Left 404` &rarr; renders badge `404 :Either #Left`
-* **Explicit Right:** `#Right "OK"` &rarr; renders badge `"OK" :Either #Right`
-* **Inferred Right (Rule B):** `"OK"` &rarr; renders badge `"OK" :Either [#Right]`
-
-#### Algebraic Unions (`:Union( :T1 :T2 ... )`)
-In an N-way disjoint union where branches have distinct structural types (e.g. `:Int32`, `:String`, `:Boolean`):
-* **Explicit Branch:** `#1 42` &rarr; renders badge `42 :Union #1`
-* **Explicit Branch:** `#2 "data"` &rarr; renders badge `"data" :Union #2`
-* **Inferred Branch 1 (Rule F/G):** `42` &rarr; renders badge `42 :Union [#1]`
-* **Inferred Branch 2 (Rule F/G):** `"data"` &rarr; renders badge `"data" :Union [#2]`
-* **Inferred Branch 3 (Rule F/G):** `#TRUE` &rarr; renders badge `#TRUE :Union [#3]`
-
-#### Master Visual Inlay Badging Key
-
-| Nominal Type Definition in `:defs`            | Document Payload Value  | Rendered Inlay Hint Badge       | Semantic Interpretation                  |
-|:----------------------------------------------|:------------------------|:--------------------------------|:-----------------------------------------|
-| `:OptDesc :Option( :String )`                 | `#Some "Ready"`         | `"Ready"` `:OptDesc #Some`      | Explicit Option `#Some` variant          |
-| `:OptDesc :Option( :String )`                 | `"Ready"`               | `"Ready"` `:OptDesc [#Some]`    | Rule A Inferred `#Some` variant          |
-| `:OptDesc :Option( :String )`                 | `#None`                 | `#None` `:OptDesc #None`        | Explicit Option `#None` variant          |
-| `:Result :Either( :Int32 :String )`           | `#Left -1`              | `-1` `:Result #Left`            | Explicit Either `#Left` error branch     |
-| `:Result :Either( :Int32 :String )`           | `"success"`             | `"success"` `:Result [#Right]`  | Rule B Inferred `#Right` success branch  |
-| `:Payload :Union( :Int32 :String :Boolean )`  | `#1 100`                | `100` `:Payload #1`             | Explicit Union branch 1 (`:Int32`)       |
-| `:Payload :Union( :Int32 :String :Boolean )`  | `100`                   | `100` `:Payload [#1]`           | Rule F Inferred Union branch 1           |
-| `:Payload :Union( :Int32 :String :Boolean )`  | `"data"`                | `"data"` `:Payload [#2]`        | Rule F Inferred Union branch 2           |
-| `:Payload :Union( :Int32 :String :Boolean )`  | `#FALSE`                | `#FALSE` `:Payload [#3]`        | Rule F Inferred Union branch 3           |
-
-#### 3.1.4 Temporal Primitives Inlay Hints & Hover Inspection
-
-The Tripartite Temporal Type System distinguishes between universal physical moments (**`:DateTimeOffset`**), civil jurisdictional schedules (**`:DateTimeZoned`**), and legally binding audited compliance logs (**`:DateTimeAudited`**). The STVN IntelliJ plugin provides comprehensive visual inlay badges, container closing signatures, and deep hover inspections (`Ctrl+Q` / `⌘J`) to ensure immediate clarity and prevent temporal bugs during authoring.
-
-##### Rendered Inlay Badges for Temporal Literals
-
-When temporal string literals are authored in collections, tuples, or alias slots, the plugin annotates each literal with its resolved primitive type and projects structural closing signatures on enclosing delimiters:
-
-```stvn
-{
-  :type :Tuple(
-    :DateTimeOffset
-    :DateTimeZoned
-    :DateTimeAudited
-    :Seq( :DateTimeOffset )
-  )
-  :body (
-    "2026-08-18T18:00:00-05:00"                  // Inlay badge: :DateTimeOffset
-    "2026-08-18T18:00:00[America/Chicago]"        // Inlay badge: :DateTimeZoned
-    "2026-08-18T18:00:00-05:00[America/Chicago]"  // Inlay badge: :DateTimeAudited
-    [
-      "2026-03-06T15:53:08Z"                      // Inlay badge: :DateTimeOffset
-      "2026-03-06T09:53:08-06:00"                 // Inlay badge: :DateTimeOffset
-    ]:Seq( :DateTimeOffset )                      // Closing container signature
-  ):Tuple( :DateTimeOffset :DateTimeZoned :DateTimeAudited :Seq( :DateTimeOffset ) )
-}
-```
-
-| Nominal / Structural Type | Document Payload Literal                       | Rendered Inlay Hint Badge                                 | Semantic Rules & Invariants                                                                                                                |
-|:--------------------------|:-----------------------------------------------|:----------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------|
-| `:DateTimeOffset`         | `"2026-08-18T18:00:00-05:00"`                  | `"..."` `:DateTimeOffset`                                 | Physical universal instant; mandates explicit offset (`±HH:mm` or `Z`); **prohibits** zone brackets (`[...]`).                             |
-| `:DateTimeZoned`          | `"2026-08-18T18:00:00[America/Chicago]"`       | `"..."` `:DateTimeZoned`                                  | Civil wall-clock schedule; mandates IANA zone ID (`[Region/City]`); **prohibits** numerical offset / `Z`; rejects DST spring-forward gaps. |
-| `:DateTimeAudited`        | `"2026-08-18T18:00:00-05:00[America/Chicago]"` | `"..."` `:DateTimeAudited`                                | Regulatory compliance record; **mandates** both offset AND IANA zone; compiler asserts offset consistency against zone rules.              |
-| `:Seq( :DateTimeOffset )` | `[ "2026-03-06T15:53:08Z" ]`                   | `[ "..."` `:DateTimeOffset` `]` `:Seq( :DateTimeOffset )` | Homogeneous sequence with per-element hints and structural closing delimiter signature.                                                    |
-
-##### Quick Documentation (`Ctrl+Q` / Hover) Inspection Tooltips
-
-Hovering over any built-in temporal primitive keyword (`:DateTimeOffset`, `:DateTimeZoned`, `:DateTimeAudited`) or pressing **`Ctrl+Q`** (macOS: **`F1`** / **`Ctrl+J`**) invokes `StvnDocumentationProvider`, rendering dedicated HTML documentation cards with physical representations, lexical rules, and usage examples:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Primitive Type: :DateTimeOffset                                                 │
-│ ─────────────────────────────────────────────────────────────────────────────── │
-│ Represents an unambiguous physical instant on the universal timeline.           │
-│ Lexical Form: ISO-8601 timestamp with explicit UTC offset (±HH:mm or Z).        │
-│ Constraint: Prohibits IANA zone brackets ([...]).                               │
-│ Example: "2026-08-18T18:00:00-05:00"                                            │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Primitive Type: :DateTimeZoned                                                  │
-│ ─────────────────────────────────────────────────────────────────────────────── │
-│ Represents a civil wall-clock schedule bound to an IANA time zone jurisdiction. │
-│ Lexical Form: ISO-8601 local timestamp with bracketed IANA zone ID              │
-│               ([Region/City]).                                                  │
-│ Constraint: Prohibits explicit numerical offsets (±HH:mm) or Z. Validates DST   │
-│             transition gaps.                                                    │
-│ Example: "2026-08-18T18:00:00[America/Chicago]"                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Primitive Type: :DateTimeAudited                                                │
-│ ─────────────────────────────────────────────────────────────────────────────── │
-│ Represents an audited compliance record capturing both observed UTC offset      │
-│ and regulatory IANA jurisdiction.                                               │
-│ Lexical Form: ISO-8601 timestamp with explicit UTC offset AND bracketed IANA    │
-│               zone ID.                                                          │
-│ Constraint: Mandates both offset and zone. Validates offset consistency against │
-│             IANA zone rules for that date-time.                                 │
-│ Example: "2026-08-18T18:00:00-05:00[America/Chicago]"                           │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-##### Deep Semantic Assertions & Diagnostics
-
-The background compiler and real-time annotator execute sub-token diagnostic verification on all temporal literals:
-
-1. **UTC Instant Calculations & Zone Bracket Prohibition (`:DateTimeOffset`):**
-   * Physical universal instants have no jurisdictional rules. If zone brackets are inadvertently appended, the annotator flags the literal with pinpoint precision:
-   ```stvn
-   :type :DateTimeOffset
-   :body "2026-08-18T18:00:00-05:00[America/Chicago]"
-         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ <-- Error: "Time zone brackets [...] are prohibited in :DateTimeOffset"
-   ```
-
-2. **IANA Zone Rule Resolutions & DST Spring-Forward Gap Validation (`:DateTimeZoned`):**
-   * Civil wall-clock appointments must dynamically follow daylight saving rules. Specifying an explicit numerical offset (which locks an astronomical instant) is prohibited:
-   ```stvn
-   :type :DateTimeZoned
-   :body "2026-03-15T08:00:00-05:00[America/Chicago]"
-         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ <-- Error: "Explicit offsets (e.g. -05:00 or Z) are prohibited in :DateTimeZoned"
-   ```
-   * The compiler queries the IANA Zone Database for the specified region. If a time falls into a DST spring-forward "clock jump" gap (e.g., 2:30 AM on March 8, 2026 in `America/Chicago` when local clocks advance from 02:00 directly to 03:00), the editor highlights the impossible wall-clock value:
-   ```stvn
-   :type :DateTimeZoned
-   :body "2026-03-08T02:30:00[America/Chicago]"
-         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ <-- Error: "Local date-time 2026-03-08T02:30:00 falls into a DST spring-forward gap in zone America/Chicago"
-   ```
-
-3. **Audit Compliance Assertions & Offset Consistency Checks (`:DateTimeAudited`):**
-   * In regulated domains (finance, healthcare, legal signing), records must preserve both what the local wall-clock indicated (jurisdiction) and the exact physical instant when the record was stamped (offset). Omitting either component triggers a compile error:
-   ```stvn
-   :type :DateTimeAudited
-   :body "2026-03-15T08:00:00-05:00"
-         ~~~~~~~~~~~~~~~~~~~~~~~~~~~ <-- Error: "Mandates both an explicit UTC offset and an IANA zone ID"
-   ```
-   * The compiler verifies that the explicit offset is mathematically consistent with the IANA zone rules for that local moment. If a mismatched offset is supplied, the compiler rejects it:
-   ```stvn
-   :type :DateTimeAudited
-   :body "2026-03-15T08:00:00-07:00[America/Chicago]"
-         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ <-- Error: "Contradictory offset in :DateTimeAudited literal: expected -05:00, got -07:00"
-   ```
+| `:defs` Declaration                           | `:body` Value | Rendered Inlay Badge (`FULL`)        | Interpretation                         |
+|:----------------------------------------------|:--------------|:-------------------------------------|:---------------------------------------|
+| `:OptDesc :Option(:String)`                   | `#Some "ok"`  | `:OptDesc #Some (-> :String)`        | Explicit `:Option` `#Some`             |
+| `:OptDesc :Option(:String)`                   | `"ok"`        | `:OptDesc [#Some] (-> :String)`      | Rule A inferred `#Some`                |
+| `:OptDesc :Option(:String)`                   | `#None`       | `:OptDesc #None`                     | Explicit `:Option` `#None`             |
+| `:Outcome :Either(:Int :String)`              | `#Left -1`    | `:Outcome #Left (-> :Int)`           | Explicit `:Either` `#Left`             |
+| `:Outcome :Either(:Int :String)`              | `"ok"`        | `:Outcome [#Right] (-> :String)`     | Rule B inferred `#Right`               |
+| `:Payload :Union(:Int :String :Boolean)`      | `#1 100`      | `:Payload #1 (-> :Int)`              | Explicit `:Union` branch `#1`          |
+| `:Payload :Union(:Int :String :Boolean)`      | `"data"`      | `:Payload [#2] (-> :String)`         | Rule C inferred `:Union` branch `#2`   |
 
 ---
 
-### 3.2 Container Delimiter Signatures & Formatting
+### 3.2 Unified Renamed `:use` Alias Head Hops & Per-Hop `Ctrl+Click` Navigation
 
-To prevent confusion in large, nested documents with many closing parentheses and brackets, the plugin projects container closing signatures with canonical single-space padding:
+When a document imports a packaged type via a renamed `UseMapAlias` (`localSimpleName != targetSimpleName`), every `:body` inlay slot (scalar, `:Enum`, temporal, sum outer/branch, composite `#CONST`, composite literal, and degraded `⚠ ` badge) begins with the in-scope local alias and traces through the upstream FQNI to the terminal base type across both Clean Pass 3 (`State A`) and Pass-3-Suspended (`State B`) editing:
 
 ```stvn
 {
-  :defs {
-    :Metric :Tuple( :String :Float64 )
+  :meta {
+    #name   "manifold_probe"
+    #domain "cooling"
+    #kind   #BODY
   }
-  :type :Tuple( :Int32 :Metric :Option( :String ) )
+  :defs {
+    :package :cooling/manifold {
+      :CoolantValveMode :Enum[#OPEN #BYPASS #CLOSED]
+      :ManifoldTempC    { #minIncl -40 #maxExcl 250 } :Int
+      :FlowTargetLpm    { #minIncl 0 #maxExcl 1000 } :Int
+      #DEFAULT_VALVE    :CoolantValveMode #OPEN
+    }
+
+    :use [
+      :cooling/manifold {
+        :CoolantValveMode :ValveMode
+        :ManifoldTempC    :LoopTempC
+        :FlowTargetLpm    :LoopFlowLpm
+        #DEFAULT_VALVE    #INIT_VALVE
+      }
+    ]
+
+    :ZoneFlowMap    :Map(:String :LoopFlowLpm)
+    :ManifoldReport :Tuple(:ValveMode :LoopTempC :ZoneFlowMap)
+  }
+  :type :ManifoldReport
   :body (
-    101
-    ( "cpu_util" 98.4 ):Metric( :String :Float64 )
-    "primary"
-  ):Tuple( :Int32 :Metric :Option( :String ) )
+    #INIT_VALVE          // Inlay: :ValveMode (-> :cooling/manifold/CoolantValveMode -> :Enum)
+    120                  // Inlay: :LoopTempC (-> :cooling/manifold/ManifoldTempC -> :Int)
+    {["zone_a" 480]}     // 480 Inlay: :LoopFlowLpm (-> :cooling/manifold/FlowTargetLpm -> :Int)
+  )
 }
 ```
 
-* **Tuples:** `):Tuple( :T1 :T2 ... )`
-* **Maps:** `}:Map( :KeyType :ValType )`
-* **Sequences:** `]:Seq( :ElemType )`
-* **Sets:** `]:Set( :ElemType )`
+* **Per-Hop `Ctrl+Click` Navigation:** Clicking `:ValveMode` in the inlay badge jumps to `:ValveMode` inside `:use`; clicking `:cooling/manifold/CoolantValveMode` jumps directly to `:CoolantValveMode` inside `:package :cooling/manifold` (or its external `.stvn_d` / `.stvn_di` file).
+* **Zero Duplicate-Hop Stutter:** Unrenamed `{ #strip }` imports (`:neutrino/optics/Photoelectrons (-> :Int)`) and identity `:Port :Port` projections (`:Port` for Prelude `:org/stvnadore/prelude/Port`) omit redundant head hops.
 
 ---
 
-### 3.3 Configuration Settings & Long/Short Form Toggles
+### 3.3 Temporal Primitives Inlay Hints & Four-Locus Hover Inspection
 
-You can configure STVN inlay hints and presentation options under:  
-**Settings / Preferences | Languages & Frameworks | STVN** (or search `STVN` in Settings).
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ Settings > Languages & Frameworks > STVN                               │
-├────────────────────────────────────────────────────────────────────────┤
-│ Inlay Hints & Annotations:                                             │
-│ [X] Show Type Inlay Hints                                              │
-│ [X] Use Long-Form Sum Types (#Some / #Right vs. #S / #R)               │
-│ [X] Show Hover Documentation                                           │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-* **Show Type Inlay Hints:** Toggles real-time type and closing delimiter hints in the editor.
-* **Use Long-Form Sum Types (Default: Checked):**
-  * When **Checked (Long Form):** Renders `:OptText #Some`, `:OptText [#Some]`, `:Disjoint #Right`, `:Disjoint [#Right]`.
-  * When **Unchecked (Short Form):** Renders ultra-compact badges: `:OptText #S`, `:OptText [#S]`, `:Disjoint #R`, `:Disjoint [#R]`, `:Disjoint #L`, `:OptText #N`.
-* **Show Hover Documentation:** Enables rich HTML type lineage and schema inspection popups on hover.
-
-### 3.4 Enum Subset Domain Completion & Inlay Badging
-
-`StvnValueCompletionContributor` provides context-aware code completion tailored for enum subsets:
-
-#### Bracketed Filter Facet Authoring
-When authoring `#filterIncl [ <caret> ]` or `#filterExcl [ <caret> ]`:
-* Completion suggests only valid variants declared in the immediate parent type.
-* Completion suppresses variants already declared in the active bracketed list to prevent duplicates.
-* Completion suppresses variants excluded by intermediate ancestor subsets in transitive chains.
-* Suggestions display with icon `AllIcons.Nodes.Enum`, tail text ` (parent: :ParentType)`, and bold styling, sorted by root enum order.
+STVN 2.0.0 represents epoch counters via `:TimeEpoch` qualified by a mandatory scale flag (`#s`, `#ms`, `#us`, `#ns`) and calendar timestamps via `:DateTime` qualified by a mandatory mode flag (`#offset`, `#zoned`, `#audited`):
 
 ```stvn
-:defs {
-  :Environment :Enum [ #LOCAL #DEV #STAGING #CANARY #PROD ]
-  :DeployEnv   { #filterIncl [ #DEV #STAGING #CANARY ] } :Environment
-  // In facet brackets, completion suggests only #DEV, #STAGING, #CANARY:
-  :ExternalEnv { #filterExcl [ #DEV <caret> ] } :DeployEnv
+{
+  :meta {
+    #name   "audit_window"
+    #domain "chronology"
+    #kind   #BODY
+  }
+  :defs {
+    :InstantUtc   { #offset } :DateTime
+    :ScheduleWall { #zoned } :DateTime
+    :AuditStamp   { #audited } :DateTime
+    :EpochMillis  { #ms } :TimeEpoch
+  }
+  :type :Tuple(:InstantUtc :ScheduleWall :AuditStamp :EpochMillis)
+  :body (
+    "2026-08-18T18:00:00-05:00"
+    "2026-08-18T18:00:00[America/Chicago]"
+    "2026-08-18T18:00:00-05:00[America/Chicago]"
+    1787094000000
+  )
 }
 ```
 
-#### Subset Payload Domain Filtering
-When typing in value positions expecting an enum subset (such as `:body <caret>` where `:type` resolves to `:DeployEnv`):
-* Completion restricts suggestions strictly to the subset's allowed variants (`#DEV`, `#STAGING`, `#CANARY`).
-* Disallowed variants (`#LOCAL`, `#PROD`) are completely excluded from the lookup popup.
-* Items display numbered tail text indicating subset index (e.g. ` (1/3)`).
-* Inlay hint badges annotate literals with the resolved nominal subset alias (e.g. `#DEV` `:DeployEnv`).
+Hovering (`Ctrl+Q`) over temporal `#CONST` declarations, `#CONST` RHS values, `:body` `#CONST` references, or `:body` literals displays deterministic ISO-8601 `UTC Preview` and configurable 12-hour / 24-hour `UTC Time` rows while validating DST spring-forward gaps and `#audited` offset-vs-IANA-zone consistency.
 
 ---
 
-## 4. Sub-Token Precision Diagnostics & Recovery
+### 3.4 Container Closing Delimiter Signatures & `AliasExpansionMode` Settings
+
+Multi-line composite literals project closing delimiter signatures (`):ManifoldReport`, `]:Seq(:Int)`, `}:ZoneFlowMap`). Configure nominal chain verbosity under **Settings | Languages & Frameworks | STVN | Nominal type alias expansion display mode**:
+* `FULL`: `:ValveMode (-> :cooling/manifold/CoolantValveMode -> :Enum)`
+* `FIRST_HOP`: `:ValveMode (-> :cooling/manifold/CoolantValveMode)`
+* `ALIAS_TO_BASE`: `:ValveMode (-> ... -> :Enum)`
+* `SYMBOL_ONLY`: `:ValveMode`
+* `NONE`: Base constructor hints only
+
+---
+
+### 3.5 Enum Subset Domain Completion & Inlay Badging
+
+* **Filter Bracket Completion:** Inside `#filterIncl [<caret>]` or `#filterExcl [<caret>]`, `StvnValueCompletionContributor` suggests only parent variants not yet listed, sorted in canonical root `:Enum` order.
+* **Payload Domain Filtering:** In `:body` and `#CONST` slots governed by an enum subset, completion offers only active allowed variants with `(k/N)` cardinality tail text.
+
+---
+
+## 4. Sub-Token Precision Diagnostics & Real-Time Inspections
 
 ### 4.1 Pinpoint Leaf-Token Error Targeting
 
-In legacy tools, schema mismatches often cause a "whole-document red squiggly," painting the entire file red from line 1 to the end.
-
-The STVN IntelliJ plugin implements **Sub-Token Precision Targeting** via `StvnExternalAnnotator`. Diagnostics computed by the background `StvnCompiler` are mapped directly to exact byte and character offsets of the specific offending leaf literal:
+`StvnExternalAnnotator` maps `StvnDiagnostic` byte/character spans directly to the offending leaf literal without painting enclosing containers red:
 
 ```stvn
 {
-  :defs {
-    :DisjointUnion :Union( :Int32 :Boolean :Float64 :String )
+  :meta {
+    #name   "union_check"
+    #domain "diagnostics"
+    #kind   #BODY
   }
-  :type :Tuple( :DisjointUnion )
+  :defs {
+    :DisjointUnion :Union(:Int :Boolean :Float :String)
+  }
+  :type :Tuple(:DisjointUnion)
   :body (
-    #1 1024.0
-       ~~~~~~ <-- Error strictly on "1024.0": "Type mismatch: Expected :Int32, got :Float64"
+    #1 1024.0 // Error highlights strictly 1024.0: Expected :Int, got :Float
   )
 }
 ```
 
----
+### 4.2 Structural Immunity for `:meta`, `:defs`, `:type`, and Root Enclosures
 
-### 4.2 Guaranteed Structural Immunity for `:defs`, `:type`, and Root Enclosures
+Errors inside `:body` values never highlight root braces `{ ... }`, `:meta`, `:defs`, or `:type`. Diagnostics originating inside an `:include` module route directly to the matching `:include` path literal with a 1-click `OpenIncludedFileQuickFix`.
 
-The plugin strictly enforces the **Structural Immunity Invariant**:
-* Errors in `:body` payload values **never** bleed upward to highlight root curly braces `{ ... }`, the `:defs` block, or the `:type` header.
-* If a payload literal is invalid, only that literal is underlined. Your schema definitions remain visually clean and stable.
+### 4.3 Real-Time Semantic & Governance Checkpoints
 
-```
-┌───────────────────────────────────────────────────────────┐
-│ IMMUNITY BOUNDARY GUARANTEE:                              │
-│ {                                    <- [IMMUNE]          │
-│   :defs { :Id :Int32 }               <- [IMMUNE]          │
-│   :type :Tuple( :Id )                <- [IMMUNE]          │
-│   :body (                            <- [IMMUNE]          │
-│     "invalid_id"                     <- [ERROR HIGHLIGHT] │
-│   )                                  <- [IMMUNE]          │
-│ }                                    <- [IMMUNE]          │
-└───────────────────────────────────────────────────────────┘
-```
+* **Collection Cardinality Bounds (`#minSize` / `#maxSize`):** Empty collections `[]` or `{}` supplied to `{ #minSize 1 } :Seq(:String)` or `{ #minSize 1 } :Map(:String :Int)` highlight immediately (`E012`).
+* **Unique `:Map` Keys & `#invertible` Values (§ 5.5.1 & § 6.1):** Duplicate keys in `:Map` and duplicate values in `{ #invertible } :Map` highlight at the colliding entry.
+* **Zero-Shadowing (§ 4.2):** Duplicate `:Type` or `#CONST` bindings across local `:defs`, `:use` projections, and `:include` modules highlight immediately.
+
+### 4.4 STVN 2.0.0 Structural, Validity & Governance Inspections
+
+The plugin registers **26** real-time local inspections synchronized 1:1 with `stvnadore-core` diagnostic codes (`[stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]`), including:
+* **`StvnMetadataOrder` (`ERROR`):** Enforces 3-tier `:meta` ordering (`#name -> #domain -> #kind`) and 5-tier schema `MetadataMap` ordering (§ 6.1) with comment-preserving 1-click reordering.
+* **`StvnDiscreteInterval` (`ERROR`):** Enforces half-open discrete intervals `[#minIncl, #maxExcl)` on `:Int`, `{ #exact } :Float`, `:TimeEpoch`, and `:DateTime`, offering `#maxIncl N -> #maxExcl N+1` and bound-swap quick-fixes.
+* **`StvnTemporalMode` (`ERROR`):** Requires explicit scale flags (`#s`, `#ms`, `#us`, `#ns`) on `:TimeEpoch` and explicit mode flags (`#offset`, `#zoned`, `#audited`) on `:DateTime`.
+* **`StvnStringCardinality` & `StvnStringCapacity` (`ERROR` / `WARNING`):** Prohibits `#size` on `:String` (converting to `#maxSize` / `#minSize`) and governs explicit `#maxSize` bounds.
+* **`StvnFlatDocumentInclude` (`ERROR`):** Flags illegal `:include` statements (`E005`) and unresolved external `:use` packages (`E035`) in hermetic `.stvn` and `.stvn_d` documents, and offers 3-tier `:use` package remediation (`Include '<path>'`, interactive package locator popup, or `:use` target removal) in modular `.stvn_i` and `.stvn_di` units.
 
 ---
 
-### 4.3 Real-Time Semantic Checkpoints
+## 5. Navigation, Namespace Browser, Quick Documentation & Polyglot Fenced Strings
 
-#### Non-Empty Constraint Checking (`:SeqNonEmpty`, `:MapNonEmpty`)
-When a schema specifies non-empty collections (`:SeqNonEmpty`, `:SetNonEmpty`, `:MapNonEmpty`), supplying an empty literal immediately highlights the empty brackets:
+### 5.1 Two-Hop `:use` Navigation & Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)
 
-```stvn
-:type :SeqNonEmpty( :String )
-:body []
-      ~~ <-- Error: "Collection is marked as non-empty but contains no elements"
-```
-
-#### Duplicate Map Key Detection
-STVN maps require strictly unique keys (§5.4). Duplicate keys are detected and highlighted on the second key occurrence:
-
-```stvn
-:type :Map( :String :Int32 )
-:body {
-  [ "timeout" 30 ]
-  [ "timeout" 60 ]
-    ~~~~~~~~~ <-- Error: "Duplicate map key detected: 'timeout'"
-}
-```
-
-#### Zero-Shadowing Constraints
-STVN enforces strict **Zero-Shadowing**: you cannot declare duplicate type alias names or duplicate constant identifiers within the same scope or across imported `:include` modules. The plugin highlights the conflicting name in `:defs` immediately.
+* **Hop 1 (Usage Site &rarr; Local `UseMapAlias`):** `Ctrl+Click` on a renamed `:use` symbol (`:ValveMode`, `#INIT_VALVE`) in `:defs`, `:type`, or `:body` jumps to the local alias binding inside `:use`.
+* **Hop 2 (`UseMapAlias` &rarr; Upstream Declaration):** `Ctrl+Click` on either token inside `:use { :CoolantValveMode :ValveMode }` jumps directly to the upstream declaration in `:package` or an included `.stvn_d` / `.stvn_di` module.
+* **1-Hop `#strip` & FQNI Resolution:** Unrenamed `{ #strip }` imports and explicit FQNIs (`:cooling/manifold/CoolantValveMode`) jump directly to the upstream declaration in 1 hop.
 
 ---
 
-### 4.4 STVN 1.2 Structural & Semantic Inspections
+### 5.2 Interactive 3-Scope Namespace Dependencies Browser (`Ctrl+Alt+N`)
 
-STVN 1.2 introduces five dedicated, in-editor real-time inspections that actively enforce architectural invariants before compilation or code generation:
+Press **`Ctrl+Alt+N`** (macOS: **`Cmd+Alt+N`**) or click any section gutter icon (`:defs`, `:type`, `:body`) to launch **STVN Namespace Dependencies**:
 
-1. **`StvnNestedPackage` (Illegal Nested Package Inspection):**
-   * STVN prohibits nesting package enclaves (`:package [ ... ] { ... }`) inside existing package blocks.
-   * Highlights offending nested package keywords with `ERROR` severity.
-2. **`StvnTrailingSlash` (Trailing Slash in Type Target):**
-   * Type definition targets must terminate with a valid symbol or identifier, not a dangling delimiter slash.
-   * Flags definitions like `:Target :org/stvnadore/` with `ERROR` severity.
-3. **`StvnLhsReservedType` (Reserved Keyword in LHS Definition):**
-   * Prevents overriding or redefining built-in STVN atomic or composite type keywords on the left-hand side of `:defs` (e.g., `:String :Int32` or `:Tuple :Seq`).
-   * Highlights the reserved keyword with `ERROR` severity.
-4. **`StvnFlatDocumentInclude` (Include Directive in Hermetic Document):**
-   * Hermetic documents (`.stvn`) and hermetic definitions schemas (`.stvn_d`) must be self-contained; they cannot contain `:include` statements under STVN 2.0.0 Specification § 1.2.
-   * Highlights illegal `:include` directives in `.stvn` and `.stvn_d` files with `ERROR` severity.
-5. **`StvnConstantRange` (Inverted Numeric Constant Range):**
-   * When declaring numeric bounding metadata (`#minIncl`, `#maxIncl`, `#minExcl`, `#maxExcl`), asserts that minimum bounds do not exceed maximum bounds.
-   * Highlights inverted range facets with `ERROR` severity.
+* **Live 3-Scope Radio Switcher:** Toggle instantaneously on EDT between `:defs` (`Alt+1`), `:type` (`Alt+2`), and `:body` (`Alt+3`). On pure `#DEFS` / `#DEFS_INCLUDE` schemas, `:type` and `:body` remain visible in a disabled state with explanatory STE tooltips.
+* **Live Symbol Filter & Prelude Toggle:** Filter symbols across `Name`, `Source`, `Upstream Target`, and `Resolved Type` via the embedded `SearchTextField`, and toggle `Show Standard Library Prelude` (`prelude.stvn_core.stvn_d`).
+* **5-Column Closure Schema:**
+  1. **`Name`**: In-scope local identifier (`:ValveMode`, `#INIT_VALVE`, `:ManifoldReport`).
+  2. **`Source`**: Origin module, `:package` enclave (`:cooling/manifold`), or Prelude.
+  3. **`Upstream Target`**: Canonical upstream FQNI (`:cooling/manifold/CoolantValveMode`), or `—` for local root `:defs` declarations.
+  4. **`Resolved Type`**: Zero-bracket-padded STVN 2.0.0 schema signature (`:Enum[#OPEN #BYPASS #CLOSED]`, `{ #minIncl -40 #maxExcl 250 } :Int`).
+  5. **`Use Depth`**: Numeric alias/reference hop depth.
 
 ---
 
-## 5. Navigation, Quick Documentation & Polyglot Features
+### 5.3 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)
 
-### 5.1 Jump-to-Definition Across Module Hierarchies (`Ctrl+Click` / `Ctrl+B`)
-
-STVN supports modular schema architecture via `.stvn_di` (modular definitions schemas) and `.stvn_i` (modular payload documents).
-
-* Place your cursor on any nominal type (e.g. `:UserId`, `:OrderHeader`) in `:type` or `:body` and press **`Ctrl+B`** (macOS: **`⌘B`**) or **`Ctrl+Click`** (macOS: **`⌘Click`**).
-* The editor navigates instantly across files to the exact line in `:defs` or `:include` where the type was declared.
-
-```stvn
-// In orders.stvn_i:
-{
-  :include [ "schemas/common_types.stvn_d" ]
-  :type :UserProfile // Ctrl+Click jumps directly to common_types.stvn_d!
-  :body ...
-}
-```
+Press **`Ctrl+Q`** (macOS: **`F1`**) or hover over any `:Type`, `#CONST`, `#VARIANT`, facet keyword, or `:body` literal to inspect:
+* **Nominal Resolution Path & Effective Facets Table:** Displays inherited, overridden, and default 5-tier facets and `#equatable` / `#comparable` traits with status badges and verified `Exemplar Value` previews.
+* **`:body` Slot Compliance Cards:** Shows `Slot Schema`, `Compliance Status` (`Satisfied`, `In Violation`, or `Suspended`), active diagnostic codes, and `Expanded Value` sum spines on `#CONST` references.
 
 ---
 
-### 5.2 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)
+### 5.4 Polyglot Fenced Strings (Rule STR-04)
 
-Pressing **`Ctrl+Q`** (macOS: **`F1`** or **`Ctrl+J`**) or hovering over any type or value displays the STVN Quick Documentation popup:
+Under STVN 2.0.0 Specification § 5.3 (**Rule `STR-04`**):
+1. **Opening Delimiter:** `"""[TAG]` followed by optional horizontal spaces/tabs and a mandatory newline `\n`.
+2. **Closing Delimiter:** Matching `[TAG]"""` (`TAG` matches `^[a-zA-Z0-9_.-]{1,256}$`).
+3. **Indentation Stripping:** By default (`#preserveIndent #FALSE`), common leading ASCII space (`0x20`) indentation across non-empty lines is stripped while preserving horizontal tabs (`0x09`) verbatim; `{ #preserveIndent } :String` retains all leading spaces verbatim.
 
-```
-┌────────────────────────────────────────────────────────┐
-│ Type Alias: :ShippingAddress                           │
-│ Resolution Path: :ShippingAddress -> :PostalLocation   │
-│                  -> :Tuple( :String :String :Int32 )   │
-│ ────────────────────────────────────────────────────── │
-│ Underlying Structure: :Tuple( :String :String :Int32 ) │
-└────────────────────────────────────────────────────────┘
-```
-
-The documentation popup reveals:
-1. **Type Lineage & Resolution Path:** Shows the complete alias trace if an alias points to another alias.
-2. **Underlying Concrete Structure:** Formats the final structural AST.
-3. **Value Type & Evaluation:** For payload values, shows the resolved type, active variant branch, and parsed literal value.
-
-#### Enum Subset Quick Documentation Hover Card
-
-When hovering over an enum subset alias (such as `:PromotionRole`), `StvnDocumentationProvider` unrolls the effective subset structure, displays the constrained variant count, and traces the derivation lineage:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ Type Alias: :PromotionRole                                             │
-│ Imported From: "chess_turn.stvn_di"                                    │
-│ Variant Count: 4                                                       │
-│ Derivation: Parent: :PieceRole via #filterExcl [ #PAWN #KING ]         │
-│ ────────────────────────────────────────────────────────────────────── │
-│ Underlying Structure: :Enum [ #KNIGHT #BISHOP #ROOK #QUEEN ]           │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 5.3 Polyglot Multi-Language Fenced Strings (Rule STR-04)
-
-Data pipelines often embed queries, templates, or scripts inside data files. STVN provides native **Fenced String Literals** with dedicated syntax highlighting:
-
-### Delimiter Invariant (Rule STR-04)
-Every fenced string literal must comply with **Rule STR-04**:
-1. **Opening Delimiter:** `"""[TAG]` (Canonical). Delimiters must start with `"""[TAG]`, followed by optional horizontal whitespace and a newline. Legacy arrow syntax is completely removed in STVN 2.0.0 under Rule STR-04.
-2. **Closing Delimiter:** `[TAG]"""`. The closing tag must match the opening tag identically ($\text{TAG}_{\text{close}} == \text{TAG}_{\text{open}}$).
-3. **Valid Character Class:** Tags must match positive character class `^[a-zA-Z0-9_-]{1,256}$`.
-4. **Length Bounds:** Tag length must satisfy $1 \le \text{length}(\text{TAG}) \le 256$.
-5. **Prohibited Patterns:** Empty tags (`[]`), whitespace (`0x20`, `\t`), quotes (`"`), brackets (`[` / `]`), and punctuation characters (`:`, `;`, `,`, `/`) are strictly prohibited.
-6. **Recursive Nesting:** Fenced strings may nest arbitrarily. Outer blocks encapsulate inner blocks with distinct tags.
-
-### Authoring Example
 ```stvn
 {
-  :defs {
-    :QueryDef :Tuple( :String :String )
+  :meta {
+    #name   "analytics_query"
+    #domain "reporting"
+    #kind   #BODY
   }
-  :type :QueryDef
+  :defs {
+    :QueryPair :Tuple(:String :String)
+  }
+  :type :QueryPair
   :body (
-    "user_analytics"
+    "active_users"
     """[SQL]
-    SELECT
-      u.user_id,
-      u.email,
-      COUNT(o.order_id) AS total_orders
-    FROM users u
-    LEFT JOIN orders o ON u.user_id = o.user_id
-    WHERE u.active = 1
-    GROUP BY u.user_id, u.email;
+      SELECT u.user_id, u.email
+      FROM users u
+      WHERE u.active = 1;
     [SQL]"""
   )
 }
 ```
 
-### IDE Inspection & Quick-Fixes (`StvnFencedString`)
-The IDE validates Rule STR-04 in real time:
-* **Malformed Opening Tags:** Highlights empty tags (`"""[]`), whitespace tags (`"""[ ]`), and illegal characters (`"""[C++]`).
-  * Press `Alt+Enter` to sanitize tags or supply default tag `[FENCE]`. When `"""[]` is unclosed, the quick-fix atomically supplies `[FENCE]` and inserts `[FENCE]"""` directly on the next line.
-* **Mismatched Closing Tags:** Underlines mismatched closing tags (e.g. `"""[SQL]` ... `[JSON]"""`).
-  * Press `Alt+Enter` on either the opening or closing delimiter line to balance tags bidirectionally.
-  * Options include updating the closing tag from the opening tag, or updating the opening tag from the closing tag.
-  * Delimiter pairing uses depth-aware scanning to preserve nested fenced strings.
-* **Unclosed Blocks:** Underlines unclosed fences reaching EOF.
-  * Press `Alt+Enter` to insert `[TAG]"""` directly on the line below the opening delimiter, matching opening indentation and leaving downstream code untouched.
-
-### Editor Enter-Key Auto-Closing & Layout Shapes
-When pressing **`Enter`** immediately behind multiline string opening delimiters (`"""` or `"""[TAG]`), the editor auto-closes the block according to the configured `BlockStringEnterStyle` (**Settings | Languages & Frameworks | STVN**):
-1. **`EXPANDED_THREE_LINE` (Default):** Inserts a newline, indented body line, and the closing delimiter on line 3. Positions the caret on the indented body line.
-2. **`TIGHT_TWO_LINE`:** Inserts a newline, indented body offset, and the closing delimiter on line 2. Positions the caret directly in front of the closing delimiter.
-
-### Interactive Live Templates and Intentions
-* **Live Template Trigger on `[`:** Typing `[` immediately following `"""` launches the interactive `fence` Live Template with synchronized tag variables (`$TAG$`) and positions the final caret at `$END$` in the body line.
-* **Convert to Fenced String Intention:** Press `Alt+Enter` on a bare triple-quote `"""` to invoke **Convert to Fenced String Block**, generating `"""[FENCE]\n  \n[FENCE]"""`.
-* **Live Template (`fence`):** Type `fence` and press `Tab` to expand `"""[$TAG$]\n  $END$\n[$TAG$]"""` with dynamic multi-caret tag synchronization.
-
-### In-Editor Tag Renaming (`Shift+F6`) & Delimiter Collision Protection
-Position the caret on either the opening `[TAG]` or closing `[TAG]` bracket and press **`Shift+F6`** (macOS: **`⇧F6`**):
-1. **Synchronized Linked Editing:** Both opening and closing delimiter tags enter interactive linked editing. Editing one tag automatically updates its symmetrical counterpart in real time.
-2. **Bidirectional Caret Affinity:** Invoking rename on the closing delimiter keeps cursor focus on the closing delimiter, editing seamlessly from the bottom of large multiline blocks.
-3. **Character Class Enforcement:** Pressing `Enter` commits the rename only if the new tag matches `^[a-zA-Z0-9_-]{1,256}$`. Invalid characters (whitespace, quotes, punctuation) are rejected and reverted.
-4. **AST Fracture & Collision Guard:** The rename listener inspects the enclosed body payload. If the proposed tag matches any delimiter sequence inside the payload (`[TAG]"""` or `"""[TAG]`), the commit aborts:
-   ```
-   Cannot rename tag: proposed tag collides with a delimiter sequence inside the string payload.
-   ```
-   The original tag is restored automatically, preventing catastrophic lexer token swallowing and premature closure.
+* **Enter-Key Auto-Closing:** Pressing `Enter` after `"""[SQL]` inserts the matching `[SQL]"""` closing delimiter using your configured **Fenced string Enter-key auto-closing style** (`EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE`).
+* **Simple & Escaped String Conversion Intentions (`Alt+Enter`):**
+  * On a standard `"..."` simple string literal, invoke **Convert to Fenced String Block** (`StvnCreateFencedStringIntention`) to convert into `"""[RAW]...[RAW]"""` (or `"""[REGEX]...[REGEX]"""` on `#regex` facets and `*REGEX` constants) with automatic collision-safe tag escalation (`RAW_1`, `REGEX_1`).
+  * On an escaped `"..."` string containing `\n`, `\t`, `\"`, or `\\`, invoke **Convert escaped string to fenced string** (`StvnConvertEscapedStringToFencedIntention`).
+* **Synchronized Tag Rename (`Shift+F6`):** Renames both `"""[TAG]` and `[TAG]"""` simultaneously with payload collision protection.
 
 ---
 
-### 5.4 VOP Projection & Canonicalization Menu Matrix (`STVN >`)
+### 5.5 VOP Projection & Canonicalization Menu Matrix (`STVN >`)
 
-Right-click any textual STVN file (`.stvn_di`, `.stvn_d`, `.stvn_i`, or `.stvn`) in the editor or **Project View** and open **STVN >** to select an explicit `(Artifact Kind x Format Profile x Output Sink)` projection:
-
-1. **Extract Hermetic Schema (`.stvn_d` — `#DEFS` Only):** Strips `:type` and `:body`, sets `#kind #DEFS`, resolves transitive `:include` graphs, and copies or exports a sibling `<stem>.stvn_d` file in **Pretty** or **Compact CAS** format (also available under **Build > Export Hermetic STVN Schema (.stvn_d, Compact CAS)**).
-2. **Extract Hermetic Payload (`.stvn` — Includes `:body`):** Retains `:type` and `:body`, normalizes `#kind #BODY`, inlines `#CONST` values, prunes unreachable `:defs`, and copies or exports a sibling `<stem>.stvn` file in **Pretty** or **Compact** format without modifying your commented `.stvn_i` source buffer.
-3. **Canonicalize Active Buffer In-Place:** Replaces the active buffer with **Pretty IR** or **Compact IR** while preserving the file's own `#kind` (undoable via `Ctrl+Z`).
+Right-click any textual STVN unit (`.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`) and open **STVN >**:
+1. **Extract Hermetic Schema (`.stvn_d` — `#DEFS` Only):** Copies or exports a flattened `#DEFS` schema in **Pretty** or **Compact CAS** format.
+2. **Extract Hermetic Payload (`.stvn` — Includes `:body`):** Copies or exports a self-contained `#BODY` payload in **Pretty** or **Compact** format.
+3. **Canonicalize Active Buffer In-Place:** Replaces the active editor buffer with **Pretty IR** or **Compact IR** (guarded when comments or authoring sugar would be removed, undoable via `Ctrl+Z`).
 
 ---
 
-### 5.5 Package Enclaves & Lexical Scoping (STVN 1.2)
+### 5.6 Package Enclaves (`:package`) & Lexical Imports (`:use`)
 
-STVN 1.2 formalizes modular namespace organization via `:package` enclosures and lexical `:use` statements:
-
-#### Package Enclaves (`:package`)
-Package declarations group nominal type definitions under formal, hierarchical namespace paths:
+Package enclaves declare hierarchical namespace paths directly with `:org/stvnadore/domain` typic path tokens (never bracketed lists), and `:use` imports selected symbols via `{ #strip }` and/or `{ :Remote :Local #REMOTE #LOCAL }` alias maps:
 
 ```stvn
-:defs {
-  :package [ :org :stvnadore :domain ] {
-    :UserId   :String
-    :OrderId  :Int64
+{
+  :meta {
+    #name   "ledger_entry"
+    #domain "finance"
+    #kind   #DEFS
+  }
+  :defs {
+    :package :acme/telemetry {
+      :SpanId  { #minSize 16 #maxSize 32 } :String
+      :TraceId { #minSize 32 #maxSize 32 } :String
+    }
+
+    :use [
+      :org/stvnadore/prelude {
+        :Uuid :RequestUuid
+      }
+      :acme/telemetry {
+        :SpanId  :LocalSpanId
+        :TraceId :LocalTraceId
+      }
+    ]
+
+    :TransactionEnvelope :Tuple(:RequestUuid :LocalSpanId :LocalTraceId)
   }
 }
 ```
 
-* All types declared inside the enclosure are qualified automatically under `:org/stvnadore/domain/*` (e.g., `:org/stvnadore/domain/UserId`).
-* Direct intra-package references resolve without qualification.
-* Cross-package references use either full namespace paths or scoped `:use` statements.
+---
 
-#### Lexical Imports (`:use`)
-The `:use` statement imports nominal types into the local lexical scope:
+### 5.7 Canonical 6-File Taxonomy (`.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, `.stvn_bd`)
+
+| Extension  | `:meta` `#kind` | `:include` Allowed? | Purpose                                                |
+|:-----------|:----------------|:-------------------:|:-------------------------------------------------------|
+| `.stvn`    | `#BODY`         |         No          | Hermetic self-contained payload document               |
+| `.stvn_i`  | `#BODY_INCLUDE` |         Yes         | Modular payload document importing `.stvn_d`/`.stvn_di`|
+| `.stvn_d`  | `#DEFS`         |         No          | Hermetic self-contained definitions schema             |
+| `.stvn_di` | `#DEFS_INCLUDE` |         Yes         | Modular definitions schema with `:include` DAGs        |
+| `.stvn_b`  | Binary `#BODY`  |         No          | Zero-trust binary wire payload                         |
+| `.stvn_bd` | Binary `#DEFS`  |         No          | Zero-trust binary definitions archive                  |
+
+---
+
+### 5.8 Sum Disambiguation, Hash Sigil Completion & Fault Isolation
+
+* **Ambiguous Sum Wrapping (`E024`):** When an untagged literal matches multiple branches of `:Either` or `:Union`, `Alt+Enter` offers `Wrap with #Right (-> ...)` / `Wrap with #Left (-> ...)` or `Wrap with #k (-> ...)`.
+* **Bare `#` Completion Quick-Fixes:** Typing `#` in a sum or enum slot triggers immediate tag completion and `Complete with #Right` / `Complete with #k` quick-fixes without cascading arity errors onto enclosing tuples.
+* **Strict Hover Boundary Guard:** Hovering over whitespace, comments, or incomplete sigils (`#`, `:`, `/`) returns `null` and never leaks parent container documentation.
+
+---
+
+## 6. STVN 2.0.0 Data Type Cheat Sheet for Data Engineers
+
+### 6.1 Atomic Primitives & Metadata Facet Qualifications
+
+STVN 2.0.0 defines **6** built-in atomic types qualified by canonical metadata facet blocks (`{ ... }`):
+
+| STVN 2.0.0 Type Expression                   | Physical Domain / Semantics                     | Example Literal            | Notes & Facet Rules (§ 5.1 & § 6.1)            |
+|:---------------------------------------------|:------------------------------------------------|:---------------------------|:-----------------------------------------------|
+| `:Boolean`                                   | Logical truth value                             | `#TRUE`, `#FALSE` (`#T`/`#F`)| Uppercase value keywords only                 |
+| `:Int`                                       | Default signed 32-bit integer                   | `0`, `-42`, `0xFF`         | Default `#size 32`; discrete `[#minIncl, #maxExcl)` |
+| `{ #size 64 } :Int`                          | Signed `N`-bit integer (`1 <= N <= 128`)        | `9223372036854775807`      | Arbitrary bit width `1..128`                   |
+| `{ #unsigned #size 16 } :Int`                | Unsigned `N`-bit integer (`[0, 2^N)`)           | `8080`, `65535`            | Standalone `#unsigned` bare flag               |
+| `:Float`                                     | IEEE-754 64-bit binary floating-point           | `3.14159`, `-0.5`          | `#size 32` or `#size 64`; `#equatable #FALSE`  |
+| `{ #exact #maxSize 38 } :Float`              | Arbitrary-precision exact decimal               | `1099.995`                 | Restores `#equatable #TRUE` & discrete bounds  |
+| `:String`                                    | UTF-8 text (`#minSize 0 #maxSize 16777216`)     | `"hello"`                  | Prohibits `#size`; use `#minSize` / `#maxSize` |
+| `{ #minSize 1 #maxSize 64 } :String`         | Non-empty bounded UTF-8 string                  | `"alpha"`                  | Unicode code-point cardinality                 |
+| `{ #minSize 2 #maxSize 2 } :String`          | Fixed-length 2-character UTF-8 string           | `"US"`                     | Exact cardinality via `#minSize == #maxSize`   |
+| `{ #preserveIndent } :String`                | Verbatim indentation-preserving string          | `"""[RAW]\n  x[RAW]"""`    | Retains leading ASCII spaces in fenced strings |
+
+---
+
+### 6.2 Composite & Collection Constructors: Tuples, Maps, Sequences & Sets
+
+| Constructor                           | Delimiters                  | Payload Example               | Description                                |
+|:--------------------------------------|:----------------------------|:------------------------------|:-------------------------------------------|
+| `:Tuple(:T1 :T2 ...)`                 | Parentheses `(...)`         | `(100 "active" #TRUE)`        | Heterogeneous fixed-arity product          |
+| `:Seq(:T)`                            | Brackets `[...]`            | `[10 20 30]`                  | Ordered homogeneous sequence               |
+| `{ #minSize 1 } :Seq(:T)`             | Brackets `[...]`            | `[10]`                        | Non-empty sequence via `#minSize 1`        |
+| `:Set(:T)`                            | Brackets `[...]`            | `["a" "b" "c"]`               | Unique homogeneous set (`T` `#equatable`)  |
+| `:Map(:K :V)`                         | Braces + Brackets `{[k v]}` | `{["k1" 10] ["k2" 20]}`       | Unique-key ordered map (`K` `#equatable`)  |
+| `{ #invertible } :Map(:K :V)`         | Braces + Brackets `{[k v]}` | `{["k1" 10] ["k2" 20]}`       | Bijective map (`K` and `V` `#equatable`)   |
+
+---
+
+### 6.3 Algebraic Sum Constructors: Options, Eithers & Unions
+
+| Sum Constructor         | Explicit Syntax             | Inferred Syntax        | Inlay Badge (`FULL`)                 |
+|:------------------------|:----------------------------|:-----------------------|:-------------------------------------|
+| `:Option(:T)`           | `#Some "value"` / `#None`   | `"value"` (Rule A)     | `:Option(:T) [#Some]` / `#None`      |
+| `:Either(:L :R)`        | `#Left 400` / `#Right "ok"` | `"ok"` (Rule B)        | `:Either(:L :R) #Left` / `[#Right]`  |
+| `:Union(:T1 :T2 ...)`   | `#1 100` / `#2 "text"`      | `100` / `"text"` (Rule C)| `:Union(...) [#1]` / `[#2]`        |
+
+---
+
+### 6.4 Enumerations & Subset Filter Facets (`#filterIncl`, `#filterExcl`)
+
+Enumerations use bracketed uppercase variant lists (`:Enum[#VARIANT_A #VARIANT_B]`):
 
 ```stvn
-:defs {
-  // Import prelude standard library types stripped of namespace prefixes
-  :use [ :org/stvnadore/prelude { #strip } ]
-
-  // Map-based import with local aliasing
-  :use [
-    :org/stvnadore/telemetry {
-      :SpanId :LocalSpanId
-      :TraceId :LocalTraceId
-    }
-  ]
-
-  :Transaction :Tuple( :Uuid :LocalSpanId :LocalTraceId )
+{
+  :meta {
+    #name   "task_workflow"
+    #domain "ops"
+    #kind   #BODY
+  }
+  :defs {
+    :TaskStatus      :Enum[#BACKLOG #TODO #IN_PROGRESS #REVIEW #DONE #CANCELLED]
+    :ActiveStatus    { #filterExcl [#BACKLOG #DONE #CANCELLED] } :TaskStatus
+    :ExecutionStatus { #filterIncl [#TODO #IN_PROGRESS] } :ActiveStatus
+  }
+  :type :ExecutionStatus
+  :body #IN_PROGRESS
 }
 ```
 
-* **`#strip` Modifier**: Strips the namespace path, making member types directly accessible under their bare names (e.g., `:Uuid`, `:Sha256`, `:DateTimeZoned`).
-* **Aliasing Maps**: Rename imported types to avoid collisions in local definitions.
-
 ---
 
-### 5.6 Hermetic Documents & Definitions Schemas (`.stvn`, `.stvn_d`)
+### 6.5 Temporal Types: `:TimeEpoch` Scales & Tripartite `:DateTime` Modes
 
-STVN 2.0.0 establishes canonical hermetic file types for self-contained schemas and payload documents:
+STVN 2.0.0 represents temporal types directly via `:TimeEpoch` and `:DateTime` qualified by mandatory standalone bare flags (§ 5.6):
 
-* **Hermetic Definitions Schemas (`.stvn_d`)**: Standalone schema definitions containing strictly `:defs` blocks without `:include` statements.
-* **Hermetic Payload Documents (`.stvn`)**: Standalone data documents containing inline `:type` and `:body` blocks without `:include` statements.
-* **Prohibition of `:include`**: Under STVN 2.0.0 Specification § 1.2, `:include` statements are strictly prohibited in hermetic documents and schemas, and are immediately flagged by the `StvnFlatDocumentInclude` inspection.
-
----
-
-### 5.7 Token Boundary & Sum Disambiguation Quick-Fixes
-
-#### Token Boundary Completion Guard
-The IDE protects document integrity during typing in composite containers (`:Tuple`, `:Seq`):
-* Typing a scalar value (e.g. `1`) suppresses lookahead completions for subsequent elements until the author enters whitespace.
-* Raw integer digits never match `#`-prefixed constructor tags across element boundaries.
-* Accepting a variant completion guarantees proper leading whitespace separation.
-
-#### Right-First Sum Intention Actions (`Wrap with #Right` / `Wrap with #1`)
-When an untagged literal matches multiple branches in an algebraic sum type, the compiler marks the value with an `ERR_AMBIGUOUS_SUM_INFERENCE` error squiggly:
-* Press `Alt+Enter` (macOS: `⌥Enter`) to display available wrapping quick-fixes.
-* **`:Either( L R )`:** Evaluates branch $R$ first. `Wrap with #Right (-> R)` appears as the primary action, followed by `Wrap with #Left (-> L)`.
-* **`:Union( T1 ... Tn )`:** Filters branches to compatible types. `Wrap with #k (-> Tk)` appears in 1-based index order.
-* Selecting the action wraps the literal (e.g. `42` becomes `#Right 42`), positions the caret after the tag, and clears all compile errors.
-
----
-
-### 5.8 Hash Sigil Autocomplete Activation, Bare '#' Quick-Fixes & Arity Localization
-
-#### Hash Sigil Autocomplete Activation
-When authoring variant tags in sum slots (`:Either`, `:Union`, `:Option`) or boolean slots (`:Boolean`), typing `#` immediately activates context-sensitive completion:
-* In empty tuple slots, typing `#` offers candidate tags (`#Right`, `#Left`, `#1`, `#2`) without lookahead suppression.
-* Raw numeric digits (such as `1` or `2`) do not trigger lookahead to subsequent elements.
-
-#### Bare '#' Completion Quick-Fixes
-When an author pauses or enters a bare `#` token, the IDE flags the incomplete token and provides quick-fixes (`Alt+Enter`):
-* For `:Either( L R )`: Offers `Complete with #Right (-> R)` (Priority HIGH) and `Complete with #Left (-> L)` (Priority NORMAL).
-* For `:Union( T1 ... Tn )`: Offers `Complete with #k (-> Tk)` for all candidate branches.
-* Invoking the quick-fix replaces the bare `#` with the completed variant tag and positions the caret for immediate payload entry.
-
-#### Tuple Arity Error Localization
-When a tuple contains fewer elements than declared in its schema:
-* The error squiggly pins strictly to the closing delimiter `)` (`RPAREN`).
-* Valid child scalar values remain unblemished with zero false-positive highlights.
-* The error message displays: `Tuple arity mismatch: Expected N elements, got M (X missing)`.
-
----
-
-### 5.9 Quick Documentation Container Guards & In-Flight Union Tag Bounds
-
-#### Container Documentation Leakage Guard
-When inspecting STVN documents via Quick Documentation (`Ctrl+Q` or mouse hover), incomplete tokens, syntax errors, and punctuation tokens must never trigger ancestor tree climbs.
-
-Hovering over a bare `#` sigil, a `PsiErrorElement`, or unparsed punctuation inside a `:Tuple` or `:Seq` produces `null`. Container documentation displays only when the author explicitly hovers over container header keywords (`:Tuple`, `:Union`, `:Enum`) or opening and closing container delimiters (`(`, `)`).
-
-#### In-Flight Rule G Union Tag Bounds Enforcement
-In algebraic sum unions (`:Union( T1 T2 ... Tn )`), variant tags must adhere to branch count bounds $1 \le k \le n$.
-
-The IDE enforces this rule immediately while typing:
-1. The grammar pins `explicit_union_value` on the variant tag prefix (`#k`).
-2. As soon as the author types `#3` in a 2-branch union slot, `StvnSemanticAnnotator` validates $k=3$ against $n=2$.
-3. The editor immediately underlines `#3` with `HighlightSeverity.ERROR`:
-   `Union variant tag '#3' exceeds branch count (2)`
-4. The error displays before the payload value is entered.
-
-#### Child Fault Isolation & Arity Underflow Immunity
-When an invalid child element (such as `#3 3`) occurs inside a `:Tuple`, the error remains strictly localized to `#3`. The container element count is preserved. The editor produces zero cascading `TUPLE_ARITY_MISMATCH` squigglies on the closing delimiter `)`.
-
----
-
-### 5.10 Container Fault Isolation & Diagnostic Sanitization
-
-#### Container Clamping Defanging
-Compiler diagnostic coordinates emitted by `stvnadore-core` are authoritative. The plugin annotator never diverts container-level errors onto earlier valid child elements. When typing an incomplete variant tag (`#3` or `#`) at the end of a tuple, earlier valid elements remain unblemished with zero false-positive highlights.
-
-#### Explicit Union Value Type Resolution
-When resolving expected schemas inside an `ExplicitUnionValue` (`#k <value>`), the type resolver unwraps the parent union schema and extracts the $k$-th branch schema. Inlay hints, annotators, and completion contributors accurately identify the expected payload type without unmapped schema warnings.
-
-#### Bare '#' Message Normalization
-When entering a bare `#` in value position, the editor normalizes internal compiler generator messages. The editor presents the clean domain notification:
-```text
-Incomplete variant tag '#'
-> Complete with #1 (-> :Int32)
-> Complete with #2 (-> :String)
-```
-Authors can press `Alt+Enter` to invoke completion quick-fixes immediately.
-
----
-
-## 6. STVN Data Type Cheat Sheet for Data Engineers
-
-### 6.1 Atomic Primitives & Exact Numerics
-
-| STVN Type         | Physical Domain / Range         | Example Literal                | Notes & Invariants               |
-|:------------------|:--------------------------------|:-------------------------------|:---------------------------------|
-| `:Boolean`        | Logical truth                   | `#TRUE`, `#FALSE` (`#T`, `#F`) | Strict uppercase value keywords  |
-| `:Int8`           | -128 to 127                     | `-42`, `127`                   | Signed 8-bit integer             |
-| `:Int16`          | -32,768 to 32,767               | `1024`, `-32000`               | Signed 16-bit integer            |
-| `:Int32`          | -2,147,483,648 to 2,147,483,647 | `0`, `499999`                  | Default 32-bit signed integer    |
-| `:Int64`          | -9.22e18 to 9.22e18             | `9223372036854775807`          | Signed 64-bit integer            |
-| `:Uint8`          | 0 to 255                        | `0`, `255`                     | Unsigned 8-bit byte              |
-| `:Uint16`         | 0 to 65,535                     | `8080`, `65535`                | Unsigned 16-bit word             |
-| `:Uint32`         | 0 to 4,294,967,295              | `4000000000`                   | Unsigned 32-bit integer          |
-| `:Uint64`         | 0 to 1.84e19                    | `18446744073709551615`         | Unsigned 64-bit integer          |
-| `:Float32`        | IEEE-754 32-bit Float           | `3.14159`, `-0.5`              | Requires explicit decimal point  |
-| `:Float64`        | IEEE-754 64-bit Float           | `2.718281828459045`            | Standard double precision        |
-| `:FloatExact`     | Arbitrary Decimal               | `1099.995`                     | Exact decimal for financial math |
-| `:String`         | UTF-8 Text String               | `"hello world"`                | Standard escaped string          |
-| `:StringNonEmpty` | UTF-8 Text ($\ge 1$ char)       | `"alpha"`                      | Compile error on `""`            |
-| `:StringFixed(N)` | Exactly $N$ Unicode chars       | `"US"` (for $N=2$)             | Compile error if length $\ne N$  |
-
----
-
-### 6.2 Product Types: Tuples vs. Maps vs. Sequences
-
-| Constructor             | Enclosure                   | Payload Syntax                | Description                      |
-|:------------------------|:----------------------------|:------------------------------|:---------------------------------|
-| `:Tuple( :T1 :T2 ... )` | Parentheses `()`            | `( 100 "active" #TRUE )`      | Heterogeneous ordered product    |
-| `:Map( :K :V )`         | Braces `{}` + Brackets `[]` | `{ [ "k1" 10 ] [ "k2" 20 ] }` | Sequenced unique key-value pairs |
-| `:MapNonEmpty( :K :V )` | Braces `{}` + Brackets `[]` | `{ [ "k1" 10 ] }`             | Requires at least 1 entry        |
-| `:MapInv( :K :V )`      | Braces `{}` + Brackets `[]` | `{ [ "k1" 10 ] }`             | Invertible map (unique values)   |
-| `:Seq( :T )`            | Brackets `[]`               | `[ 10 20 30 ]`                | Ordered homogeneous sequence     |
-| `:SeqNonEmpty( :T )`    | Brackets `[]`               | `[ 10 ]`                      | Sequence with $\ge 1$ element    |
-| `:Set( :T )`            | Brackets `[]`               | `[ "a" "b" "c" ]`             | Homogeneous unique elements      |
-| `:SetNonEmpty( :T )`    | Brackets `[]`               | `[ "a" ]`                     | Set with $\ge 1$ element         |
-
----
-
-### 6.3 Sum Types: Options, Eithers, and Algebraic Unions
-
-| Sum Type Constructor    | Explicit Syntax             | Inferred Syntax (Rule)      | Inlay Hint Badge                      |
-|:------------------------|:----------------------------|:----------------------------|:--------------------------------------|
-| `:Option( :T )`         | `#Some "value"` / `#None`   | `"value"` (Rule A)          | `:Option [#Some]` / `:Option #None`   |
-| `:Either( :L :R )`      | `#Left 400` / `#Right "ok"` | `"ok"` (Rule B)             | `:Either #Left` / `:Either [#Right]`  |
-| `:Union( :T1 :T2 ... )` | `#1 100` / `#2 "text"`      | `100` / `"text"` (Rule F/G) | `:Union [#1]` / `:Union [#2]`         |
-
----
-
-### 6.4 Enumerations & Value Keywords
-
-Enumerations define finite sets of constant value keywords:
-
-```stvn
-:defs {
-  :Environment :Enum [ #DEVELOPMENT #STAGING #PRODUCTION ]
-}
-:type :Environment
-:body #PRODUCTION
-```
-
-* Enum tags always begin with `#` and uppercase identifiers.
-* Autocompletion suggestions trigger automatically after `#`.
-
-#### Enum Subsets & Filter Metadata Facets (`#filterIncl`, `#filterExcl`)
-
-STVN Specification §4.8 enables nominal type aliases to derive constrained subsets from existing `:Enum` declarations:
-
-| Filter Facet         |    Keyword    | Semantics                                                 | Example                                                     |
-|:---------------------|:-------------:|:----------------------------------------------------------|:------------------------------------------------------------|
-| **Inclusive Subset** | `#filterIncl` | Permits only the explicitly listed variants.              | `:DeployEnv { #filterIncl [ #DEV #STAGING ] } :Environment` |
-| **Exclusive Subset** | `#filterExcl` | Permits all parent variants except the listed exclusions. | `:ActiveStatus { #filterExcl [ #DELETED ] } :Status`        |
-
-##### Invariants & Rules
-1. **Monotonic Narrowing:** Every variant in a filter list must exist in the immediate parent type.
-2. **Mutual Exclusivity:** `#filterIncl` and `#filterExcl` cannot coexist within the same metadata block `{ ... }`.
-3. **Relative Root Order:** Variants in filter lists must preserve the declaration order of the root `:Enum`.
-4. **Target Attachment:** Filter facets can attach only to nominal aliases of `:Enum` or existing subsets.
-5. **Non-Empty Guards:** Filter lists cannot be empty (`[]`), and `#filterExcl` cannot remove all parent variants.
-
-##### Transitive Subset Chaining
-Subsets can derive from other subsets across multiple specialization tiers:
-
-```stvn
-:defs {
-  :TaskStatus      :Enum [ #BACKLOG #TODO #IN_PROGRESS #CODE_REVIEW #TESTING #DONE #BLOCKED #CANCELLED ]
-  :ActiveStatus    { #filterExcl [ #BACKLOG #DONE #CANCELLED ] } :TaskStatus
-  :WorkableStatus  { #filterIncl [ #TODO #IN_PROGRESS #CODE_REVIEW #TESTING ] } :ActiveStatus
-  :ExecutionStatus { #filterExcl [ #CODE_REVIEW #TESTING ] } :WorkableStatus
-}
-:type :ExecutionStatus
-:body #IN_PROGRESS // Inlay badge renders: :ExecutionStatus
-```
-
----
-
-### 6.5 Temporal Types: Epoch Timestamps vs. Tripartite DateTimes
-
-STVN partitions temporal data into two distinct domains: low-level Unix epoch counters for machine processing and a formalized **Tripartite Temporal Type System** for ISO-8601 calendar representations.
-
-> [!NOTE]
-> **STVN 1.2 Prelude Architecture:** In STVN 1.2, temporal types (`:TimeEpochS`, `:TimeEpochMs`, `:TimeEpochNs`, `:DateTimeOffset`, `:DateTimeZoned`, `:DateTimeAudited`) are no longer hardcoded grammar tokens. They reside canonically in the standard library prelude (`:org/stvnadore/prelude/*`) using regex pattern constraints and integer bit-width bounds. To use bare type names, import them via `:use [ :org/stvnadore/prelude { #strip } ]` inside `:defs`.
-
-#### Machine-Level Epoch Timestamps
-
-| Type Constructor | Semantic Meaning                                | Example Literal       | Format Specification                  |
-|:-----------------|:------------------------------------------------|:----------------------|:--------------------------------------|
-| `:TimeEpochS`    | Seconds since Unix epoch (1970-01-01T00:00:00Z) | `1773792000`          | Signed 64-bit integer Unix seconds    |
-| `:TimeEpochMs`   | Milliseconds since Unix epoch                   | `1773792000000`       | High-precision milliseconds integer   |
-| `:TimeEpochNs`   | Nanoseconds since Unix epoch                    | `1773792000000000000` | Nanosecond telemetry/system timestamp |
-
-#### The Tripartite Temporal Type System
-
-To eliminate ambiguities between physical timeline moments, civil calendar appointments, and legally immutable records, STVN provides three distinct ISO-8601 date-time primitives:
+| STVN 2.0.0 Temporal Schema  | Semantic Role                        | Example Literal                                 | Key Compiler Invariant                             |
+|:----------------------------|:-------------------------------------|:------------------------------------------------|:---------------------------------------------------|
+| `{ #s } :TimeEpoch`         | Unix epoch seconds                   | `1773792000`                                    | Signed integer seconds since `1970-01-01T00:00:00Z`|
+| `{ #ms } :TimeEpoch`        | Unix epoch milliseconds              | `1773792000000`                                 | Millisecond telemetry timestamp                    |
+| `{ #us } :TimeEpoch`        | Unix epoch microseconds              | `1773792000000000`                              | Microsecond event timestamp                        |
+| `{ #ns } :TimeEpoch`        | Unix epoch nanoseconds               | `1773792000000000000`                           | Nanosecond trace timestamp                         |
+| `{ #offset } :DateTime`     | Physical universal timeline instant  | `"2026-08-18T18:00:00-05:00"`                   | Requires `±HH:mm` or `Z`; prohibits `[Zone]`       |
+| `{ #zoned } :DateTime`      | Civil wall-clock jurisdictional time | `"2026-08-18T18:00:00[America/Chicago]"`        | Requires `[Region/City]`; rejects DST gaps         |
+| `{ #audited } :DateTime`    | Audited regulatory compliance record | `"2026-08-18T18:00:00-05:00[America/Chicago]"`  | Requires both offset and `[Region/City]` parity    |
 
 ```mermaid
-graph TD
-    subgraph "STVN Tripartite Temporal Architecture"
-        OFFSET[":DateTimeOffset<br/><b>Physical Universal Instant</b><br/>• ISO-8601 with ±HH:mm or Z<br/>• Prohibits Zone Brackets [...]<br/>• e.g. '2026-08-18T18:00:00-05:00'"]
-        ZONED[":DateTimeZoned<br/><b>Civil Wall-Clock Schedule</b><br/>• ISO-8601 with [Region/City]<br/>• Prohibits Numeric Offsets / Z<br/>• Rejects DST Spring-Forward Gaps<br/>• e.g. '2026-08-18T18:00:00[America/Chicago]'"]
-        AUDITED[":DateTimeAudited<br/><b>Audited Regulatory Record</b><br/>• ISO-8601 with ±HH:mm AND [Region/City]<br/>• Mandates Both Offset & Zone ID<br/>• Asserts Offset Consistency vs. IANA Rules<br/>• e.g. '2026-08-18T18:00:00-05:00[America/Chicago]'"]
+flowchart TD
+    subgraph TemporalSystem ["STVN 2.0.0 Tripartite :DateTime Modes"]
+        OFFSET["{ #offset } :DateTime - Physical Instant (ISO-8601 with UTC offset or Z)"]
+        ZONED["{ #zoned } :DateTime - Civil Schedule (ISO-8601 with IANA Region/City)"]
+        AUDITED["{ #audited } :DateTime - Audited Record (ISO-8601 with matching offset and IANA zone)"]
     end
 ```
-
-| Type Constructor       | Semantic Role                | Example Literal                                                                     | Required Format & Constraints            | Prohibitions & Compiler Assertions                                                                      |
-|:-----------------------|:-----------------------------|:------------------------------------------------------------------------------------|:-----------------------------------------|:--------------------------------------------------------------------------------------------------------|
-| **`:DateTimeOffset`**  | Physical universal instant   | `"2026-08-18T18:00:00-05:00"`<br/>`"2026-08-18T23:00:00Z"`                          | `YYYY-MM-DDTHH:mm:ss±HH:mm` or `Z`       | **Prohibits zone brackets (`[...]`)**.<br/>Represents an exact astronomical timeline moment.            |
-| **`:DateTimeZoned`**   | Civil wall-clock schedule    | `"2026-08-18T18:00:00[America/Chicago]"`<br/>`"2026-08-18T18:30:00[Europe/London]"` | `YYYY-MM-DDTHH:mm:ss[Region/City]`       | **Prohibits numerical offsets (`±HH:mm`) and `Z`**.<br/>**Rejects DST spring-forward clock jump gaps**. |
-| **`:DateTimeAudited`** | Regulatory compliance record | `"2026-08-18T18:00:00-05:00[America/Chicago]"`                                      | `YYYY-MM-DDTHH:mm:ss±HH:mm[Region/City]` | **Mandates both offset and zone ID**.<br/>**Asserts consistency** between offset and IANA zone rules.   |
-
-#### Architectural Decision Guide: Which Temporal Type to Choose?
-
-* **Use `:DateTimeOffset` when:**
-  * Recording physical events on the universal timeline (e.g., IoT telemetry, distributed tracing spans, server access logs, immutable payment authorizations).
-  * You require unambiguous chronological ordering across distributed systems regardless of geographical boundaries.
-* **Use `:DateTimeZoned` when:**
-  * Scheduling human-facing future events (e.g., recurring meetings, flight departures, webinars, billing cycle runs).
-  * The local wall-clock time must remain fixed even if daylight saving regulations or political time zone boundaries shift before the scheduled event.
-* **Use `:DateTimeAudited` when:**
-  * Recording legally binding financial, medical, or regulatory transactions (e.g., electronic signatures, tax audit trails, clinical trial logs).
-  * You must capture both the exact physical timeline instant (numerical offset) and the legal jurisdictional authority (IANA zone identifier) under which the transaction occurred.
 
 ---
 
 ## 7. Keyboard Shortcut Quick Reference
 
-| Feature                          | Action Name                            | Windows / Linux         | macOS                      |
-|:---------------------------------|:---------------------------------------|:------------------------|:---------------------------|
-| **Scaffold Data Skeleton**       | Schema Skeleton Intention              | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Heal Flat Map List**           | Convert flat list to map               | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Next Scaffold Field**          | Next Live Template Variable            | `Tab`                   | `Tab`                      |
-| **Previous Scaffold Field**      | Previous Live Template Variable        | `Shift+Tab`             | `⇧Tab`                     |
-| **Quick Documentation**          | Show Documentation & Lineage           | `Ctrl+Q`                | `F1` / `Ctrl+J`            |
-| **Jump to Definition**           | Go to Type/Constant Declaration        | `Ctrl+B` / `Ctrl+Click` | `⌘B` / `⌘Click`            |
-| **Reorder Enum Filter Variants** | Sort variants to match root enum order | `Alt+Enter`             | `⌥Enter` / `Option+Return` |
-| **Export Hermetic Schema**       | Export Hermetic STVN Schema (.stvn_d, Compact CAS) | *STVN > / Build Menu* | *STVN > / Build Menu* |
+| Feature                             | Action Name                                         | Windows / Linux         | macOS                      |
+|:------------------------------------|:----------------------------------------------------|:------------------------|:---------------------------|
+| **Browse Namespace Dependencies**   | `STVN Namespace Dependencies` (`:defs`/`:type`/`:body`) | `Ctrl+Alt+N`        | `Cmd+Alt+N`                |
+| **Switch Browser Scope**            | Scope `:defs` / `:type` / `:body` inside popup      | `Alt+1` / `Alt+2` / `Alt+3` | `⌥1` / `⌥2` / `⌥3`    |
+| **Scaffold Data Skeleton**          | Generate STVN data skeleton                         | `Alt+Enter`             | `⌥Enter`                   |
+| **Convert String to Fenced Block**  | Convert to Fenced String Block / Escaped to Fenced  | `Alt+Enter`             | `⌥Enter`                   |
+| **Expand / Collapse Container**     | Expand or collapse single/multi-line container      | `Alt+Enter`             | `⌥Enter`                   |
+| **Heal Flat Map List**              | Convert flat list to canonical map literal          | `Alt+Enter`             | `⌥Enter`                   |
+| **Reorder Metadata / Enum Variants**| Canonical facet or enum filter reordering           | `Alt+Enter`             | `⌥Enter`                   |
+| **Reformat STVN Document**          | Native / Core Source Formatter                      | `Ctrl+Alt+L`            | `Cmd+Alt+L`                |
+| **Quick Documentation**             | Show Schema Lineage, Compliance & UTC Preview       | `Ctrl+Q`                | `F1` / `Ctrl+J`            |
+| **Jump to Definition**              | Two-Hop `:use` & Per-Hop Inlay Declaration Jump     | `Ctrl+B` / `Ctrl+Click` | `⌘B` / `⌘Click`            |
+| **Rename Symbol or Fence Tag**      | Bare-Identifier Symbol / Synchronized Fence Rename  | `Shift+F6`              | `⇧F6`                      |
 
 ---
 

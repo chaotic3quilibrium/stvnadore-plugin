@@ -1,10 +1,13 @@
-:body <spot>[
-  (
-    "RK-01"
-    7
-  )
-  (
-    "RK-02"
-    9
-  )
-]</spot>
+{
+  :type :Seq(:Tuple(:String :Int))
+  :body <spot>[
+    (
+      "RK-01"
+      7
+    )
+    (
+      "RK-02"
+      9
+    )
+  ]</spot>
+}

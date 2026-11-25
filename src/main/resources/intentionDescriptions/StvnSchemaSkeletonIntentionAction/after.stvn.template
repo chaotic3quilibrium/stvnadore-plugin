@@ -1,7 +1,10 @@
 {
-  :type :UserRecord
-  :body {
-    id: 0
-    username: ""
+  :defs {
+    :UserRecord :Tuple(:Int :String)
   }
+  :type :UserRecord
+  :body (
+    0
+    ""
+  )
 }

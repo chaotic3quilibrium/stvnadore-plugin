@@ -1,3 +1,4 @@
 {
-  :body """Hello World"""
+  :type :String
+  :body <spot>"SELECT id, status FROM manifold_events WHERE active = 1;"</spot>
 }

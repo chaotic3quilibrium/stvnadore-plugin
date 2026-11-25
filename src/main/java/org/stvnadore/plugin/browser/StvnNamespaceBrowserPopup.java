@@ -4,83 +4,123 @@ import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.ui.components.JBLoadingPanel;
-import com.intellij.util.concurrency.AppExecutorUtil;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.testFramework.LightVirtualFile;
+import com.intellij.ui.DocumentAdapter;
+import com.intellij.ui.SearchTextField;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBLoadingPanel;
+import com.intellij.ui.components.JBRadioButton;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.psi.DefsEntry;
+import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.UseElement;
+import org.stvnadore.psi.UseStmt;
+
+import javax.swing.ButtonGroup;
+import javax.swing.JMenuItem;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.ListSelectionModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
-import javax.swing.JMenuItem;
-import javax.swing.JPanel;
-import javax.swing.ListSelectionModel;
-import javax.swing.table.TableRowSorter;
-import org.jetbrains.annotations.Nullable;
-import org.jspecify.annotations.NullMarked;
-import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.stdlib.StvnPrelude;
-import org.stvnadore.plugin.StvnFileType;
-import org.stvnadore.plugin.psi.StvnPsiUtils;
-import org.stvnadore.plugin.reference.StvnPreludeBridge;
-import org.stvnadore.psi.DefsEntry;
-import org.stvnadore.psi.PackageEnclosure;
-import org.stvnadore.psi.UseElement;
-import org.stvnadore.psi.UseStmt;
+import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
- * UI controller constructing and displaying the lightweight interactive dependency browser popup.
+ * UI controller constructing and displaying the interactive 3-scope, 5-column
+ * {@code STVN Namespace Dependencies} browser popup.
  */
 @NullMarked
 public final class StvnNamespaceBrowserPopup {
 
+    /** Tooltip displayed on the disabled {@code :type} scope button when {@code :type} is absent. */
+    public static final String DISABLED_TYPE_SCOPE_TOOLTIP =
+        "Unavailable: this document does not declare a root :type section.";
+
+    /** Tooltip displayed on the disabled {@code :body} scope button when {@code :body} is absent. */
+    public static final String DISABLED_BODY_SCOPE_TOOLTIP =
+        "Unavailable: this document does not declare a root :body section.";
+
     private StvnNamespaceBrowserPopup() {
     }
 
+    /**
+     * Encapsulates the constructed Swing components, live scope buttons, filter input, and async snapshot future.
+     *
+     * @param panel               outer popup container panel
+     * @param table               5-column symbol table
+     * @param showPreludeCheckBox prelude toggle checkbox
+     * @param filterField         live symbol filter field
+     * @param scopeButtons        radio buttons keyed by {@link StvnNamespaceScope}
+     * @param activeScopeRef      mutable reference tracking the currently selected scope
+     * @param tableModel          underlying 5-column {@link StvnNamespaceTableModel}
+     * @param headerLabel         dynamic scope and count summary label
+     * @param loadingPanel        asynchronous loading wrapper panel
+     * @param analysisFuture      completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
+     */
     record BrowserContent(
         JPanel panel,
         JBTable table,
         JBCheckBox showPreludeCheckBox,
+        SearchTextField filterField,
+        Map<StvnNamespaceScope, JRadioButton> scopeButtons,
+        AtomicReference<StvnNamespaceScope> activeScopeRef,
         StvnNamespaceTableModel tableModel,
         JBLabel headerLabel,
         JBLoadingPanel loadingPanel,
-        CompletableFuture<List<StvnNamespaceSymbolEntry>> analysisFuture
+        CompletableFuture<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> analysisFuture
     ) {
         /**
-         * Waits for the background dependency analysis to complete.
+         * Waits for the background dependency snapshot analysis to complete.
          *
          * @param timeout maximum wait time
-         * @param unit time unit
+         * @param unit    time unit
          * @throws Exception if interrupted or timed out
          */
         public void waitForAnalysis(long timeout, TimeUnit unit) throws Exception {
@@ -88,7 +128,7 @@ public final class StvnNamespaceBrowserPopup {
                 long deadline = System.currentTimeMillis() + unit.toMillis(timeout);
                 while (!analysisFuture.isDone()) {
                     if (System.currentTimeMillis() > deadline) {
-                        throw new java.util.concurrent.TimeoutException("Timed out waiting for analysis");
+                        throw new TimeoutException("Timed out waiting for namespace dependency analysis");
                     }
                     com.intellij.util.ui.UIUtil.dispatchAllInvocationEvents();
                     Thread.sleep(10);
@@ -101,7 +141,7 @@ public final class StvnNamespaceBrowserPopup {
     }
 
     static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
-        return createBrowserContent(project, file, scope, Disposer.newDisposable());
+        return createBrowserContent(project, file, scope, Disposer.newDisposable(), title -> {});
     }
 
     static BrowserContent createBrowserContent(
@@ -109,6 +149,16 @@ public final class StvnNamespaceBrowserPopup {
         PsiFile file,
         StvnNamespaceScope scope,
         Disposable parentDisposable
+    ) {
+        return createBrowserContent(project, file, scope, parentDisposable, title -> {});
+    }
+
+    static BrowserContent createBrowserContent(
+        Project project,
+        PsiFile file,
+        StvnNamespaceScope initialScope,
+        Disposable parentDisposable,
+        Consumer<String> popupTitleUpdater
     ) {
         var tableModel = new StvnNamespaceTableModel(new ArrayList<>());
         var table = new JBTable(tableModel);
@@ -118,99 +168,241 @@ public final class StvnNamespaceBrowserPopup {
         table.setAutoResizeMode(JBTable.AUTO_RESIZE_ALL_COLUMNS);
         StvnPrioritizedTableSpeedSearch.installOn(table);
 
-        var panel = new JPanel(new BorderLayout(0, 5));
+        var panel = new JPanel(new BorderLayout(0, 6));
         panel.setBorder(JBUI.Borders.empty(8));
-        panel.setPreferredSize(new Dimension(750, 380));
+        panel.setPreferredSize(new Dimension(880, 420));
 
-        var northPanel = new JPanel(new BorderLayout(0, 0));
-        var headerLabel = new JBLabel("Scope: " + scope.getDisplayTitle() + " (Analyzing...)");
-        headerLabel.setBorder(JBUI.Borders.emptyBottom(4));
-        northPanel.add(headerLabel, BorderLayout.WEST);
+        var activeScopeRef = new AtomicReference<>(initialScope);
+        var snapshotRef = new AtomicReference<StvnNamespaceSymbolCollector.@Nullable StvnNamespaceSnapshot>(null);
+
+        var northPanel = new JPanel(new BorderLayout(0, 4));
+        var topRow = new JPanel(new BorderLayout(8, 0));
+        var headerLabel = new JBLabel(
+            "Scope: " + initialScope.getSectionKeyword() + " \u2014 " + initialScope.getDisplayTitle() + " (Analyzing...)"
+        );
+        topRow.add(headerLabel, BorderLayout.WEST);
 
         var showPreludeCheckBox = new JBCheckBox("Show Standard Library Prelude", false);
         showPreludeCheckBox.setEnabled(false);
-        northPanel.add(showPreludeCheckBox, BorderLayout.EAST);
+        topRow.add(showPreludeCheckBox, BorderLayout.EAST);
+        northPanel.add(topRow, BorderLayout.NORTH);
+
+        var controlsRow = new JPanel(new BorderLayout(10, 0));
+        var scopeSelectorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        scopeSelectorPanel.add(new JBLabel("Scope:"));
+
+        var scopeGroup = new ButtonGroup();
+        Map<StvnNamespaceScope, JRadioButton> scopeButtons = new EnumMap<>(StvnNamespaceScope.class);
+        int mnemonicIndex = 1;
+        for (StvnNamespaceScope candidateScope : StvnNamespaceScope.values()) {
+            var radio = new JBRadioButton(candidateScope.getSectionKeyword(), candidateScope == initialScope);
+            radio.setMnemonic(KeyEvent.VK_0 + mnemonicIndex++);
+            radio.setEnabled(false);
+            scopeGroup.add(radio);
+            scopeButtons.put(candidateScope, radio);
+            scopeSelectorPanel.add(radio);
+        }
+        controlsRow.add(scopeSelectorPanel, BorderLayout.WEST);
+
+        var filterField = new SearchTextField(false);
+        filterField.getTextEditor().getEmptyText().setText("Filter symbols by name, source, target, or type...");
+        filterField.setEnabled(false);
+        controlsRow.add(filterField, BorderLayout.CENTER);
+
+        northPanel.add(controlsRow, BorderLayout.SOUTH);
         panel.add(northPanel, BorderLayout.NORTH);
 
         var scrollPane = new JBScrollPane(table);
         var loadingPanel = new JBLoadingPanel(new BorderLayout(), parentDisposable);
         loadingPanel.add(scrollPane, BorderLayout.CENTER);
-        loadingPanel.setLoadingText("Analyzing " + scope.getSectionKeyword() + " dependencies...");
+        loadingPanel.setLoadingText("Analyzing " + initialScope.getSectionKeyword() + " dependencies...");
         loadingPanel.startLoading();
         panel.add(loadingPanel, BorderLayout.CENTER);
 
-        var cachedAllEntries = new ArrayList<StvnNamespaceSymbolEntry>();
-        var analysisFuture = new CompletableFuture<List<StvnNamespaceSymbolEntry>>();
+        Runnable refreshView = () -> {
+            var snapshot = snapshotRef.get();
+            if (snapshot == null) {
+                return;
+            }
+            StvnNamespaceScope currentScope = activeScopeRef.get();
+            boolean showPrelude = showPreludeCheckBox.isSelected();
+            String filterText = filterField.getText().trim();
 
-        showPreludeCheckBox.addActionListener(e -> {
-            boolean selected = showPreludeCheckBox.isSelected();
-            var visibleEntries = filterVisibleEntries(cachedAllEntries, selected);
-            tableModel.setItems(visibleEntries);
-            headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + visibleEntries.size() + " symbols)");
+            List<StvnNamespaceSymbolEntry> baseEntries = snapshot.entriesByScope()
+                .getOrDefault(currentScope, List.of());
+            List<StvnNamespaceSymbolEntry> combined = mergeWithPrelude(baseEntries, snapshot.preludeEntries(), showPrelude);
+            List<StvnNamespaceSymbolEntry> filtered = applyFilterQuery(combined, filterText);
+
+            tableModel.setItems(filtered);
+            if (!filtered.isEmpty()) {
+                table.setRowSelectionInterval(0, 0);
+            }
+            headerLabel.setText(formatScopeSummaryText(currentScope, filtered.size(), combined.size(), showPrelude, !filterText.isEmpty()));
+            popupTitleUpdater.accept(formatPopupTitle(file.getName(), currentScope));
+        };
+
+        for (var entry : scopeButtons.entrySet()) {
+            StvnNamespaceScope buttonScope = entry.getKey();
+            JRadioButton radio = entry.getValue();
+            radio.addActionListener(e -> {
+                if (radio.isSelected() && radio.isEnabled()) {
+                    activeScopeRef.set(buttonScope);
+                    refreshView.run();
+                }
+            });
+        }
+
+        showPreludeCheckBox.addActionListener(e -> refreshView.run());
+
+        filterField.addDocumentListener(new DocumentAdapter() {
+            @Override
+            protected void textChanged(@NotNull DocumentEvent e) {
+                refreshView.run();
+            }
         });
+
+        var analysisFuture = new CompletableFuture<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot>();
 
         var promise = ReadAction.nonBlocking(() -> {
             ProgressManager.checkCanceled();
-            var localSymbols = StvnNamespaceSymbolCollector.collectSymbols(file, scope);
-            ProgressManager.checkCanceled();
-            var preludeSymbols = StvnNamespaceSymbolCollector.collectPreludeSymbols(project);
-            var merged = new ArrayList<>(localSymbols);
-            for (var pe : preludeSymbols) {
-                if (!merged.contains(pe)) {
-                    merged.add(pe);
-                }
-            }
-            return List.copyOf(merged);
+            return StvnNamespaceSymbolCollector.collectSnapshot(project, file);
         })
         .inSmartMode(project)
         .expireWith(parentDisposable)
         .expireWhen(() -> !file.isValid() || project.isDisposed())
-        .finishOnUiThread(ModalityState.any(), entries -> {
-            cachedAllEntries.clear();
-            cachedAllEntries.addAll(entries);
-            boolean selected = showPreludeCheckBox.isSelected();
-            var visible = filterVisibleEntries(cachedAllEntries, selected);
-            tableModel.setItems(visible);
-            headerLabel.setText("Scope: " + scope.getDisplayTitle() + " (" + visible.size() + " symbols)");
+        .finishOnUiThread(ModalityState.any(), snapshot -> {
+            snapshotRef.set(snapshot);
+            StvnNamespaceScope resolvedScope = snapshot.resolveAvailableScope(initialScope);
+            activeScopeRef.set(resolvedScope);
+
+            var defsBtn = scopeButtons.get(StvnNamespaceScope.DEFS);
+            defsBtn.setEnabled(true);
+            defsBtn.setToolTipText("Display all in-scope :defs declarations and :use projections");
+
+            var typeBtn = scopeButtons.get(StvnNamespaceScope.TYPE);
+            typeBtn.setEnabled(snapshot.hasTypeSection());
+            typeBtn.setToolTipText(snapshot.hasTypeSection()
+                ? "Display transitive symbol closure reachable from root :type"
+                : DISABLED_TYPE_SCOPE_TOOLTIP);
+
+            var bodyBtn = scopeButtons.get(StvnNamespaceScope.BODY);
+            bodyBtn.setEnabled(snapshot.hasBodySection());
+            bodyBtn.setToolTipText(snapshot.hasBodySection()
+                ? "Display transitive symbol closure reachable from :type and :body"
+                : DISABLED_BODY_SCOPE_TOOLTIP);
+
+            scopeButtons.get(resolvedScope).setSelected(true);
             showPreludeCheckBox.setEnabled(true);
+            filterField.setEnabled(true);
+
+            refreshView.run();
             loadingPanel.stopLoading();
-            analysisFuture.complete(entries);
+            analysisFuture.complete(snapshot);
         })
         .submit(AppExecutorUtil.getAppExecutorService());
 
         promise.onError(analysisFuture::completeExceptionally);
 
-        return new BrowserContent(panel, table, showPreludeCheckBox, tableModel, headerLabel, loadingPanel, analysisFuture);
+        return new BrowserContent(
+            panel,
+            table,
+            showPreludeCheckBox,
+            filterField,
+            Map.copyOf(scopeButtons),
+            activeScopeRef,
+            tableModel,
+            headerLabel,
+            loadingPanel,
+            analysisFuture
+        );
     }
 
-    private static List<StvnNamespaceSymbolEntry> filterVisibleEntries(List<StvnNamespaceSymbolEntry> entries, boolean showPrelude) {
-        if (showPrelude) {
-            return List.copyOf(entries);
+    static String formatPopupTitle(String fileName, StvnNamespaceScope scope) {
+        return "STVN Namespace Dependencies \u2014 " + fileName + " [" + scope.getSectionKeyword() + "]";
+    }
+
+    private static String formatScopeSummaryText(
+        StvnNamespaceScope scope,
+        int visibleCount,
+        int totalInScopeCount,
+        boolean preludeEnabled,
+        boolean filterActive
+    ) {
+        String countPart = filterActive
+            ? visibleCount + "/" + totalInScopeCount + " symbols"
+            : visibleCount + " symbols";
+        String preludePart = preludeEnabled ? ", Prelude shown" : "";
+        return "Scope: " + scope.getSectionKeyword() + " \u2014 " + scope.getDisplayTitle()
+            + " (" + countPart + preludePart + ")";
+    }
+
+    private static List<StvnNamespaceSymbolEntry> mergeWithPrelude(
+        List<StvnNamespaceSymbolEntry> scopeEntries,
+        List<StvnNamespaceSymbolEntry> preludeEntries,
+        boolean showPrelude
+    ) {
+        if (!showPrelude) {
+            return List.copyOf(scopeEntries);
         }
+        var merged = new ArrayList<>(scopeEntries);
+        var existingNames = new HashSet<String>();
+        for (var e : scopeEntries) {
+            existingNames.add(e.name());
+        }
+        for (var pe : preludeEntries) {
+            if (existingNames.add(pe.name())) {
+                merged.add(pe);
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private static List<StvnNamespaceSymbolEntry> applyFilterQuery(
+        List<StvnNamespaceSymbolEntry> entries,
+        String query
+    ) {
+        if (query.isEmpty()) {
+            return entries;
+        }
+        String needle = query.toLowerCase(Locale.ROOT);
         return entries.stream()
-            .filter(e -> !e.isPrelude())
+            .filter(e -> e.name().toLowerCase(Locale.ROOT).contains(needle)
+                || e.source().toLowerCase(Locale.ROOT).contains(needle)
+                || e.upstreamTarget().toLowerCase(Locale.ROOT).contains(needle)
+                || e.resolvedType().toLowerCase(Locale.ROOT).contains(needle))
             .toList();
     }
 
     /**
-     * Constructs and displays the namespace browser popup filtered to the given scope.
+     * Constructs and displays the interactive 3-scope namespace browser popup.
      *
      * @param project the active IntelliJ project
-     * @param file the source STVN file
-     * @param scope the initial section scope
+     * @param file    the source STVN file
+     * @param scope   the initial section scope resolved from caret or gutter icon
      */
     public static void showPopup(Project project, PsiFile file, StvnNamespaceScope scope) {
         var popupDisposable = Disposer.newDisposable("StvnNamespaceBrowserPopup");
-        var content = createBrowserContent(project, file, scope, popupDisposable);
+        var popupRef = new JBPopup[1];
+        var content = createBrowserContent(
+            project,
+            file,
+            scope,
+            popupDisposable,
+            updatedTitle -> {
+                if (popupRef[0] != null && !popupRef[0].isDisposed()) {
+                    popupRef[0].setCaption(updatedTitle);
+                }
+            }
+        );
         var panel = content.panel();
         var table = content.table();
         var tableModel = content.tableModel();
 
-        var popupRef = new JBPopup[1];
-
-        var navigationRunnable = (Runnable) () -> {
+        Runnable navigationRunnable = () -> {
             int visualRow = table.getSelectedRow();
-            if (visualRow < 0) return;
+            if (visualRow < 0) {
+                return;
+            }
             int modelRow = table.convertRowIndexToModel(visualRow);
             var entry = tableModel.getItem(modelRow);
 
@@ -247,7 +439,7 @@ public final class StvnNamespaceBrowserPopup {
             }
         });
 
-        table.addKeyListener(new KeyAdapter() {
+        KeyAdapter enterNavigationListener = new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER) {
@@ -255,11 +447,29 @@ public final class StvnNamespaceBrowserPopup {
                     e.consume();
                 }
             }
+        };
+        table.addKeyListener(enterNavigationListener);
+        content.filterField().getTextEditor().addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    navigationRunnable.run();
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_DOWN && table.getRowCount() > 0) {
+                    int next = Math.min(table.getRowCount() - 1, Math.max(0, table.getSelectedRow() + 1));
+                    table.setRowSelectionInterval(next, next);
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_UP && table.getRowCount() > 0) {
+                    int prev = Math.max(0, table.getSelectedRow() - 1);
+                    table.setRowSelectionInterval(prev, prev);
+                    e.consume();
+                }
+            }
         });
 
         var popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(panel, table)
-            .setTitle("STVN Namespace Dependencies — " + scope.getSectionKeyword())
+            .setTitle(formatPopupTitle(file.getName(), scope))
             .setMovable(true)
             .setResizable(true)
             .setRequestFocus(true)
@@ -273,14 +483,16 @@ public final class StvnNamespaceBrowserPopup {
     }
 
     private static void showContextMenu(
-            MouseEvent e,
-            Project project,
-            PsiFile sourceFile,
-            JBTable table,
-            StvnNamespaceTableModel tableModel
+        MouseEvent e,
+        Project project,
+        PsiFile sourceFile,
+        JBTable table,
+        StvnNamespaceTableModel tableModel
     ) {
         int row = table.rowAtPoint(e.getPoint());
-        if (row < 0) return;
+        if (row < 0) {
+            return;
+        }
         table.setRowSelectionInterval(row, row);
         int modelRow = table.convertRowIndexToModel(row);
         var entry = tableModel.getItem(modelRow);
@@ -290,9 +502,9 @@ public final class StvnNamespaceBrowserPopup {
     }
 
     static JBPopupMenu buildContextMenu(
-            Project project,
-            PsiFile sourceFile,
-            StvnNamespaceSymbolEntry entry
+        Project project,
+        PsiFile sourceFile,
+        StvnNamespaceSymbolEntry entry
     ) {
         var popupMenu = new JBPopupMenu();
         var itemUse = new JMenuItem("Insert Reference (:use)");
@@ -318,7 +530,9 @@ public final class StvnNamespaceBrowserPopup {
 
     static void insertUseReferenceInEditor(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         var doc = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
-        if (doc == null) return;
+        if (doc == null) {
+            return;
+        }
 
         var rawSegment = entry.name().contains("/")
             ? entry.name().substring(entry.name().lastIndexOf('/') + 1)
@@ -326,7 +540,9 @@ public final class StvnNamespaceBrowserPopup {
         var cleanSegment = rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_TYPIC)
             ? rawSegment.substring(1)
             : rawSegment;
-        var bareName = (entry.name().startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE) ? StvnVocabulary.SIGIL_VALUE : StvnVocabulary.SIGIL_TYPIC) + cleanSegment;
+        var bareName = (entry.name().startsWith(StvnVocabulary.SIGIL_VALUE) || rawSegment.startsWith(StvnVocabulary.SIGIL_VALUE)
+            ? StvnVocabulary.SIGIL_VALUE
+            : StvnVocabulary.SIGIL_TYPIC) + cleanSegment;
 
         var enclosingPkg = PsiTreeUtil.findChildOfType(sourceFile, PackageEnclosure.class);
         if (enclosingPkg != null) {
@@ -351,13 +567,13 @@ public final class StvnNamespaceBrowserPopup {
         int insertOffset;
         String baseIndent;
         if (enclosingPkg != null) {
-            var openBrace = enclosingPkg.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
+            var openBrace = enclosingPkg.getNode().findChildByType(StvnTypes.LBRACE);
             insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : enclosingPkg.getTextOffset();
             baseIndent = computeElementIndent(doc, enclosingPkg);
         } else {
-            var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
+            var defsEntry = StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
             if (defsEntry != null) {
-                var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
+                var openBrace = defsEntry.getNode().findChildByType(StvnTypes.LBRACE);
                 insertOffset = openBrace != null ? openBrace.getStartOffset() + 1 : defsEntry.getTextOffset();
                 baseIndent = computeElementIndent(doc, defsEntry);
             } else {
@@ -365,19 +581,25 @@ public final class StvnNamespaceBrowserPopup {
             }
         }
         var childIndent = baseIndent + "  ";
-        var importStatement = "\n" + childIndent + ":use [ " + entry.source() + " { " + bareName + " " + bareName + " } ]";
+        var importStatement = "\n" + childIndent + StvnVocabulary.KEYWORD_USE + " "
+            + StvnVocabulary.DELIM_OPEN_BRACKET + " " + entry.source() + " "
+            + StvnVocabulary.DELIM_OPEN_BRACE + " " + bareName + " " + bareName + " "
+            + StvnVocabulary.DELIM_CLOSE_BRACE + " " + StvnVocabulary.DELIM_CLOSE_BRACKET;
         doc.insertString(insertOffset, importStatement);
         PsiDocumentManager.getInstance(project).commitDocument(doc);
     }
 
     private static @Nullable UseElement findExistingUse(PsiElement container, String targetSource) {
-        var useStmts = PsiTreeUtil.findChildrenOfType(container, UseStmt.class);
-        for (var use : useStmts) {
+        for (var use : PsiTreeUtil.findChildrenOfType(container, UseStmt.class)) {
             if (container instanceof PackageEnclosure pkg) {
-                if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) continue;
+                if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != pkg) {
+                    continue;
+                }
             } else if (container instanceof DefsEntry defs) {
                 if (PsiTreeUtil.getParentOfType(use, DefsEntry.class) != defs
-                        || PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) continue;
+                        || PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null) {
+                    continue;
+                }
             }
             for (var useElem : use.getUseElementList()) {
                 var target = useElem.getUseTarget();
@@ -390,25 +612,29 @@ public final class StvnNamespaceBrowserPopup {
     }
 
     private static void appendSymbolToExistingUse(
-            com.intellij.openapi.editor.Document doc,
-            UseElement existingUse,
-            String bareName
+        com.intellij.openapi.editor.Document doc,
+        UseElement existingUse,
+        String bareName
     ) {
         if (StvnPsiUtils.hasValidStripOption(existingUse.getUseOptionsBlock())) {
-            return; // Symbols already in scope via #strip
+            return;
         }
         var aliasBlock = existingUse.getUseAliasBlock();
         var chars = doc.getCharsSequence();
         if (aliasBlock != null) {
             for (var alias : aliasBlock.getUseMapAliasList()) {
                 for (var tk : alias.getTypeKeywordList()) {
-                    if (bareName.equals(tk.getText())) return;
+                    if (bareName.equals(tk.getText())) {
+                        return;
+                    }
                 }
                 for (var vk : alias.getValueKeywordList()) {
-                    if (bareName.equals(vk.getText())) return;
+                    if (bareName.equals(vk.getText())) {
+                        return;
+                    }
                 }
             }
-            var rbrace = aliasBlock.getNode().findChildByType(org.stvnadore.psi.StvnTypes.RBRACE);
+            var rbrace = aliasBlock.getNode().findChildByType(StvnTypes.RBRACE);
             int rbraceOffset = rbrace != null ? rbrace.getStartOffset() : aliasBlock.getTextRange().getEndOffset() - 1;
             if (rbraceOffset > 0 && chars.charAt(rbraceOffset - 1) == ' ') {
                 doc.insertString(rbraceOffset - 1, " " + bareName + " " + bareName);
@@ -417,7 +643,10 @@ public final class StvnNamespaceBrowserPopup {
             }
         } else {
             int elemEndOffset = existingUse.getTextRange().getEndOffset();
-            doc.insertString(elemEndOffset, " { " + bareName + " " + bareName + " }");
+            doc.insertString(
+                elemEndOffset,
+                " " + StvnVocabulary.DELIM_OPEN_BRACE + " " + bareName + " " + bareName + " " + StvnVocabulary.DELIM_CLOSE_BRACE
+            );
         }
     }
 
@@ -427,13 +656,14 @@ public final class StvnNamespaceBrowserPopup {
             return true;
         }
         int lastSlash = name.lastIndexOf('/');
-        if (lastSlash >= 0 && lastSlash + 1 < name.length()) {
-            return name.charAt(lastSlash + 1) == '#';
-        }
-        return false;
+        return lastSlash >= 0 && lastSlash + 1 < name.length() && name.charAt(lastSlash + 1) == '#';
     }
 
     static String resolveCanonicalFqni(StvnNamespaceSymbolEntry entry) {
+        if (!StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH.equals(entry.upstreamTarget())
+                && entry.upstreamTarget().contains("/")) {
+            return entry.upstreamTarget();
+        }
         if (isConstantSymbol(entry)) {
             if (entry.name().contains("/")) {
                 var raw = entry.name();
@@ -478,11 +708,13 @@ public final class StvnNamespaceBrowserPopup {
             return;
         }
         var doc = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
-        if (doc == null) return;
+        if (doc == null) {
+            return;
+        }
 
-        var defsEntry = org.stvnadore.plugin.psi.StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
+        var defsEntry = StvnPsiUtils.getOrCreateDefsBlock(sourceFile);
         if (defsEntry != null) {
-            var openBrace = defsEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.LBRACE);
+            var openBrace = defsEntry.getNode().findChildByType(StvnTypes.LBRACE);
             if (openBrace != null) {
                 int insertOffset = openBrace.getStartOffset() + 1;
                 var fqni = resolveCanonicalFqni(entry);
@@ -506,18 +738,23 @@ public final class StvnNamespaceBrowserPopup {
         int line = doc.getLineNumber(element.getTextOffset());
         int lineStart = doc.getLineStartOffset(line);
         int elemOffset = element.getTextOffset();
-        if (elemOffset < lineStart) return "  ";
+        if (elemOffset < lineStart) {
+            return "  ";
+        }
         String prefix = doc.getText(new TextRange(lineStart, elemOffset));
         var sb = new StringBuilder();
         for (int i = 0; i < prefix.length(); i++) {
             char c = prefix.charAt(i);
-            if (c == ' ') sb.append(' ');
-            else break;
+            if (c == ' ') {
+                sb.append(' ');
+            } else {
+                break;
+            }
         }
         return sb.toString();
     }
 
-    private static void navigateToSymbol(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
+    static void navigateToSymbol(Project project, PsiFile sourceFile, StvnNamespaceSymbolEntry entry) {
         if (entry.isPrelude()) {
             var lightFile = StvnPreludeBridge.getPreludeVirtualFile(project);
             FileEditorManager.getInstance(project).openTextEditor(
