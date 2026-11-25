@@ -470,7 +470,8 @@ public final class StvnHermeticIncludeQuickFixParityTest extends BasePlatformTes
             new StvnMissingMetaInspection(),
             new StvnStemMismatchInspection(),
             new StvnSuspiciousEpochMagnitudeInspection(),
-            new StvnFloatPrecisionLossInspection()
+            new StvnFloatPrecisionLossInspection(),
+            new StvnStringEscapeScrutinyInspection()
         };
     }
 }

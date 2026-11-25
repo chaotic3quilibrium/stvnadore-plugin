@@ -74,15 +74,18 @@ import static org.stvnadore.psi.StvnTypes.*;
         int tagLen = p - (i + 4);
         if (tagLen >= 1 && tagLen <= 256 && p < zzEndRead && zzBuffer.charAt(p) == ']') {
           int q = p + 1;
-          while (q < zzEndRead && (zzBuffer.charAt(q) == ' ' || zzBuffer.charAt(q) == '\t' || zzBuffer.charAt(q) == '\r')) {
+          while (q < zzEndRead && (zzBuffer.charAt(q) == ' ' || zzBuffer.charAt(q) == '\t')) {
             q++;
           }
-          if (q < zzEndRead && zzBuffer.charAt(q) == '\n') {
+          if (q < zzEndRead && (zzBuffer.charAt(q) == '\n' || zzBuffer.charAt(q) == '\r')) {
+            int afterBreak = (zzBuffer.charAt(q) == '\r' && q + 1 < zzEndRead && zzBuffer.charAt(q + 1) == '\n')
+                ? q + 2
+                : q + 1;
             String innerTag = zzBuffer.subSequence(i + 4, p).toString();
             String innerClose = "[" + innerTag + "]\"\"\"";
-            if (indexOfInBuffer(innerClose, q + 1) >= 0) {
+            if (indexOfInBuffer(innerClose, afterBreak) >= 0) {
               nestedStack.push(innerTag);
-              i = q + 1;
+              i = afterBreak;
               continue;
             }
           }
@@ -166,6 +169,7 @@ import static org.stvnadore.psi.StvnTypes.*;
 %unicode
 
 WHITE_SPACE=[ \r\n]+
+FENCE_NEWLINE=\r\n|\r|\n
 TAB_CHARACTER=\t+
 COMMENT="//"[^\r\n]*
 LITERAL_STRING_SIMPLE=\"([^\"\\\r\n]|\\.)*\"
@@ -275,10 +279,10 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
   \[[^\]\r\n]*\]\"\"\"          { return BAD_CHARACTER; }
 
   // Intercept prohibited Rule STR-04 fenced string arrow delimiter while preserving container slot arity
-  \"\"\"->\[[^\r\n]*\n          { return scanMalformedFenceBody(); }
+  \"\"\"->\[[^\r\n]*{FENCE_NEWLINE} { return scanMalformedFenceBody(); }
 
   // Strict Dynamic Fenced String (Rule STR-04): Matches strictly """[TAG]
-  \"\"\"\[[^\r\n\]]*\][ \t\r]*\n {
+  \"\"\"\[[^\r\n\]]*\][ \t]*{FENCE_NEWLINE} {
     String text = yytext().toString();
     int start = text.indexOf('[') + 1;
     int end = text.indexOf(']', start);
@@ -310,7 +314,7 @@ LITERAL_FLOAT=-?[0-9][0-9_]*\.[0-9][0-9_]*([eE][-+]?[0-9][0-9_]*)?
   \"\"\"[^\r\n]*?\"\"\"          { return MALFORMED_FENCE; }
 
   // Malformed multi-line or EOF triple-quoted fence opener (untagged, unclosed bracket, or trailing tokens)
-  \"\"\"([^\r\n\"]|\"[^\r\n\"]|\"\"[^\r\n\"])*\n { return scanMalformedFenceBody(); }
+  \"\"\"([^\r\n\"]|\"[^\r\n\"]|\"\"[^\r\n\"])*{FENCE_NEWLINE} { return scanMalformedFenceBody(); }
   \"\"\"([^\r\n\"]|\"[^\r\n\"]|\"\"[^\r\n\"])*   { return MALFORMED_FENCE; }
 
   {LITERAL_STRING_SIMPLE}        { return LITERAL_STRING_SIMPLE; }

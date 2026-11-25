@@ -15,6 +15,8 @@ import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnFile;
 import org.stvnadore.plugin.intentions.StvnConvertEscapedStringToFencedIntention;
+import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.StvnTypes;
 
 /**
  * Intention action that converts a double-quoted simple string literal (or an incomplete opening
@@ -55,6 +57,9 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
         }
         if (StvnConvertEscapedStringToFencedIntention.canConvertAnySimpleStringToFenced(element)) {
             return true;
+        }
+        if (isSimpleStringElement(element)) {
+            return false;
         }
         if (editor == null) {
             return false;
@@ -119,6 +124,9 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
         if (StvnConvertEscapedStringToFencedIntention.invokeAnySimpleStringToFenced(project, editor, element)) {
             return;
         }
+        if (isSimpleStringElement(element)) {
+            return;
+        }
 
         var doc = editor.getDocument();
         int offset = editor.getCaretModel().getOffset();
@@ -153,5 +161,14 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
 
         int caretPos = insertOffset + tagToken.length() + lineSep.length() + innerIndent.length();
         editor.getCaretModel().moveToOffset(caretPos);
+    }
+
+    private static boolean isSimpleStringElement(PsiElement element) {
+        if (element.getNode() != null && element.getNode().getElementType() == StvnTypes.LITERAL_STRING_SIMPLE) {
+            return true;
+        }
+        return element instanceof StringLiteral sl
+            && sl.getNode() != null
+            && sl.getNode().findChildByType(StvnTypes.LITERAL_STRING_SIMPLE) != null;
     }
 }

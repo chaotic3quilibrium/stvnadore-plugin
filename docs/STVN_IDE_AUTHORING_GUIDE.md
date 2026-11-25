@@ -403,11 +403,12 @@ Errors inside `:body` values never highlight root braces `{ ... }`, `:meta`, `:d
 
 ### 4.4 STVN 2.0.0 Structural, Validity & Governance Inspections
 
-The plugin registers **26** real-time local inspections synchronized 1:1 with `stvnadore-core` diagnostic codes (`[stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]`), including:
+The plugin registers **27** real-time local inspections synchronized 1:1 with `stvnadore-core` diagnostic codes (`[stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]`), including:
 * **`StvnMetadataOrder` (`ERROR`):** Enforces 3-tier `:meta` ordering (`#name -> #domain -> #kind`) and 5-tier schema `MetadataMap` ordering (§ 6.1) with comment-preserving 1-click reordering.
 * **`StvnDiscreteInterval` (`ERROR`):** Enforces half-open discrete intervals `[#minIncl, #maxExcl)` on `:Int`, `{ #exact } :Float`, `:TimeEpoch`, and `:DateTime`, offering `#maxIncl N -> #maxExcl N+1` and bound-swap quick-fixes.
 * **`StvnTemporalMode` (`ERROR`):** Requires explicit scale flags (`#s`, `#ms`, `#us`, `#ns`) on `:TimeEpoch` and explicit mode flags (`#offset`, `#zoned`, `#audited`) on `:DateTime`.
-* **`StvnStringCardinality` & `StvnStringCapacity` (`ERROR` / `WARNING`):** Prohibits `#size` on `:String` (converting to `#maxSize` / `#minSize`) and governs explicit `#maxSize` bounds.
+* **`StvnStringCardinality` & `StvnStringCapacity` (`ERROR` / `WARNING`):** Prohibits `#size` on `:String` (converting to `#maxSize` / `#minSize`) and governs explicit `#maxSize` bounds in Unicode Scalar Values.
+* **`StvnStringEscapeScrutiny` (`WARNING`):** Flags hazardous control, bidirectional text-direction, and invisible format escapes (`PW007`) across `:meta`, `:include`, `:defs`, `:type`, and `:body`, and warns by default on shorthand `\r` escapes (`PW008`) with 1-click **`Replace '\r' with explicit '\u000D'`** quick-fixes while exempting explicit `\u000D`, emoji joiners (`\u200C`, `\u200D`), and printable escapes.
 * **`StvnFlatDocumentInclude` (`ERROR`):** Flags illegal `:include` statements (`E005`) and unresolved external `:use` packages (`E035`) in hermetic `.stvn` and `.stvn_d` documents, and offers 3-tier `:use` package remediation (`Include '<path>'`, interactive package locator popup, or `:use` target removal) in modular `.stvn_i` and `.stvn_di` units.
 
 ---
@@ -439,16 +440,17 @@ Press **`Ctrl+Alt+N`** (macOS: **`Cmd+Alt+N`**) or click any section gutter icon
 
 ### 5.3 Quick Documentation & Nominal Lineage (`Ctrl+Q` / Hover)
 
-Press **`Ctrl+Q`** (macOS: **`F1`**) or hover over any `:Type`, `#CONST`, `#VARIANT`, facet keyword, or `:body` literal to inspect:
+Press **`Ctrl+Q`** (macOS: **`F1`**) or hover over any `:Type`, `#CONST`, `#VARIANT`, facet keyword, `:body` literal, or backslash escape sequence (`\...`) inside `"..."` to inspect:
 * **Nominal Resolution Path & Effective Facets Table:** Displays inherited, overridden, and default 5-tier facets and `#equatable` / `#comparable` traits with status badges and verified `Exemplar Value` previews.
 * **`:body` Slot Compliance Cards:** Shows `Slot Schema`, `Compliance Status` (`Satisfied`, `In Violation`, or `Suspended`), active diagnostic codes, and `Expanded Value` sum spines on `#CONST` references.
+* **String Escape Sequence Glyph & Emoji Hover Preview:** Hovering strictly inside a valid escape sequence (`\n`, `\r`, `\u000D`, `\u2705`, paired UTF-16 surrogates `\uD83D\uDE80`, or multi-codepoint ZWJ / variation-selector emoji clusters such as `"\uD83D\uDC68\u200D\uD83D\uDCBB"` and `"👨\u200D💻"`) renders the color glyph or `[Non-Printable / Invisible Character]` indicator, composed grapheme preview, source escape, Unicode scalar ID, character name, UTF-8 byte sequence, and STE hygiene notes while preserving standard slot/facet hover cards on surrounding characters.
 
 ---
 
 ### 5.4 Polyglot Fenced Strings (Rule STR-04)
 
 Under STVN 2.0.0 Specification § 5.3 (**Rule `STR-04`**):
-1. **Opening Delimiter:** `"""[TAG]` followed by optional horizontal spaces/tabs and a mandatory newline `\n`.
+1. **Opening Delimiter:** `"""[TAG]` followed by optional horizontal spaces/tabs and a mandatory line break (`\r\n`, standalone `\r`, or `\n`), with all fenced line endings normalized uniformly to `LF` (`U+000A`).
 2. **Closing Delimiter:** Matching `[TAG]"""` (`TAG` matches `^[a-zA-Z0-9_.-]{1,256}$`).
 3. **Indentation Stripping:** By default (`#preserveIndent #FALSE`), common leading ASCII space (`0x20`) indentation across non-empty lines is stripped while preserving horizontal tabs (`0x09`) verbatim; `{ #preserveIndent } :String` retains all leading spaces verbatim.
 
@@ -476,8 +478,8 @@ Under STVN 2.0.0 Specification § 5.3 (**Rule `STR-04`**):
 
 * **Enter-Key Auto-Closing:** Pressing `Enter` after `"""[SQL]` inserts the matching `[SQL]"""` closing delimiter using your configured **Fenced string Enter-key auto-closing style** (`EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE`).
 * **Simple & Escaped String Conversion Intentions (`Alt+Enter`):**
-  * On a standard `"..."` simple string literal, invoke **Convert to Fenced String Block** (`StvnCreateFencedStringIntention`) to convert into `"""[RAW]...[RAW]"""` (or `"""[REGEX]...[REGEX]"""` on `#regex` facets and `*REGEX` constants) with automatic collision-safe tag escalation (`RAW_1`, `REGEX_1`).
-  * On an escaped `"..."` string containing `\n`, `\t`, `\"`, or `\\`, invoke **Convert escaped string to fenced string** (`StvnConvertEscapedStringToFencedIntention`).
+  * On a standard `"..."` simple string literal that can round-trip losslessly under `StvnStringCharacterPolicy.canRepresentVerbatimInFencedString`, invoke **Convert to Fenced String Block** (`StvnCreateFencedStringIntention`) to convert into `"""[RAW]...[RAW]"""` (or `"""[REGEX]...[REGEX]"""` on `#regex` facets and `*REGEX` constants) with automatic collision-safe tag escalation (`RAW_1`, `REGEX_1`).
+  * On an escaped `"..."` string containing `\n`, `\t`, `\"`, `\\`, or printable Unicode / emoji escapes (`"🚀\n👨‍💻"`), invoke **Convert escaped string to fenced string** (`StvnConvertEscapedStringToFencedIntention`). Strings containing `\r` (`\r` or `\u000D`), hazardous control/bidi/invisible scalars, unpaired surrogates, or unpreserved leading spaces are cleanly excluded from fenced conversion.
 * **Synchronized Tag Rename (`Shift+F6`):** Renames both `"""[TAG]` and `[TAG]"""` simultaneously with payload collision protection.
 
 ---

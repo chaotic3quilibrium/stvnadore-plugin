@@ -1,0 +1,35 @@
+<html>
+<body>
+<p>
+  Reports valid escape sequences inside double-quoted STVN simple strings (<code>"..."</code>) that decode to
+  hazardous control, bidirectional text-direction, or invisible format scalars, and optionally flags shorthand
+  <code>\r</code> carriage-return escapes.
+</p>
+<ul>
+  <li>
+    <b>Hazardous Control, Bidirectional &amp; Invisible Escapes (<code>PW007</code>):</b>
+    Warns on escaped C0 controls (excluding <code>\t</code>, <code>\n</code>, and <code>\r</code>),
+    <code>DEL</code> (<code>U+007F</code>), C1 controls (<code>U+0080</code>&ndash;<code>U+009F</code>),
+    bidirectional override and isolate scalars (Trojan Source), and invisible format or line-separator scalars
+    (<code>U+200B</code>, <code>U+2060</code>, <code>U+2028</code>, <code>U+2029</code>, <code>U+FEFF</code>).
+  </li>
+  <li>
+    <b>Shorthand <code>\r</code> Escape Scrutiny (<code>PW008</code>, enabled by default):</b>
+    Warns on 2-character shorthand <code>\r</code> (<code>U+000D CARRIAGE RETURN</code>), which cannot be
+    represented verbatim in Rule STR-04 fenced strings (<code>"""[TAG]...[TAG]"""</code>). Use the
+    <b>Replace '\r' with explicit '\u000D'</b> quick-fix when deliberate carriage-return retention is required.
+  </li>
+  <li>
+    <b>Clean Exemptions:</b> Explicit <code>\u000D</code> / <code>\u000d</code>, emoji joiners
+    (<code>\u200C</code>, <code>\u200D</code>), standard escapes (<code>\n</code>, <code>\t</code>,
+    <code>\"</code>, <code>\\</code>, <code>\/</code>), and printable Unicode escapes (such as
+    <code>\u0041</code>, <code>\u2705</code>, and <code>\uD83D\uDE80</code>) produce zero warnings.
+  </li>
+</ul>
+<!-- tooltip end -->
+<p>
+  Configure the <b>Warn on shorthand \r escape (use explicit \u000D when intentional)</b> checkbox in the
+  inspection options panel to toggle shorthand <code>\r</code> scrutiny independently.
+</p>
+</body>
+</html>

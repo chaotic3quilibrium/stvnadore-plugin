@@ -80,6 +80,31 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         };
     }
 
+    private static int findFirstLineBreakStart(String text, int fromIndex) {
+        int len = text.length();
+        for (int i = Math.max(0, fromIndex); i < len; i++) {
+            char c = text.charAt(i);
+            if (c == '\r' || c == '\n') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int findFirstLineBreakEnd(String text, int fromIndex) {
+        int len = text.length();
+        for (int i = Math.max(0, fromIndex); i < len; i++) {
+            char c = text.charAt(i);
+            if (c == '\r') {
+                return (i + 1 < len && text.charAt(i + 1) == '\n') ? i + 2 : i + 1;
+            }
+            if (c == '\n') {
+                return i + 1;
+            }
+        }
+        return -1;
+    }
+
     private static String computeOpeningIndent(CharSequence docText, int startOffset) {
         int lineStart = 0;
         for (int i = startOffset - 1; i >= 0; i--) {
@@ -122,8 +147,8 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         if (text.startsWith("\"\"\"->")) {
-            int arrowLineEnd = text.indexOf('\n');
-            TextRange arrowRange = new TextRange(0, arrowLineEnd >= 0 ? arrowLineEnd + 1 : text.length());
+            int arrowLineEnd = findFirstLineBreakEnd(text, 0);
+            TextRange arrowRange = new TextRange(0, arrowLineEnd >= 0 ? arrowLineEnd : text.length());
             holder.registerProblem(
                 element,
                 arrowRange,
@@ -140,11 +165,12 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         if (!text.startsWith("\"\"\"[")) {
             return;
         }
-        int newline = text.indexOf('\n');
+        int newline = findFirstLineBreakStart(text, 0);
+        int newlineEnd = findFirstLineBreakEnd(text, 0);
         int openBracket = 3;
         int closeBracket = text.indexOf(']', openBracket + 1);
         if (closeBracket < 0 || (newline >= 0 && closeBracket > newline)) {
-            int unclosedEnd = newline >= 0 ? newline + 1 : text.length();
+            int unclosedEnd = newlineEnd >= 0 ? newlineEnd : text.length();
             holder.registerProblem(
                 element,
                 new TextRange(0, unclosedEnd),
@@ -158,11 +184,9 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
         }
 
         String openTag = text.substring(openBracket + 1, closeBracket);
-        int openDelimiterEnd = text.indexOf('\n', closeBracket);
+        int openDelimiterEnd = findFirstLineBreakEnd(text, closeBracket + 1);
         if (openDelimiterEnd < 0) {
             openDelimiterEnd = text.length();
-        } else {
-            openDelimiterEnd += 1;
         }
 
         TextRange openRange = new TextRange(0, Math.min(openDelimiterEnd, text.length()));
@@ -220,11 +244,12 @@ public final class StvnFencedStringInspection extends LocalInspectionTool {
             return;
         }
 
-        // Enforce mandatory newline immediately after """[TAG] (with optional spaces/CR only)
-        String trailingOnOpeningLine = newline >= 0
-            ? text.substring(closeBracket + 1, newline)
+        // Enforce mandatory newline immediately after """[TAG] (with optional horizontal spaces/tabs only)
+        int openBreakStart = findFirstLineBreakStart(text, closeBracket + 1);
+        String trailingOnOpeningLine = openBreakStart >= 0
+            ? text.substring(closeBracket + 1, openBreakStart)
             : text.substring(closeBracket + 1);
-        if (newline < 0 || !trailingOnOpeningLine.replace(" ", "").replace("\t", "").replace("\r", "").isEmpty()) {
+        if (openBreakStart < 0 || !trailingOnOpeningLine.replace(" ", "").replace("\t", "").isEmpty()) {
             holder.registerProblem(
                 element,
                 openRange,

@@ -79,12 +79,12 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
                                 && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
                             TextRange leafRange = leaf.getTextRange();
                             String leafText = leaf.getText();
-                            int firstNewline = leafText.indexOf('\n');
-                            int bodyEndRel = findFencedVerbatimBodyEndRelative(leafText, firstNewline);
+                            int bodyStartRel = findFirstLineBreakEnd(leafText);
+                            int bodyEndRel = findFencedVerbatimBodyEndRelative(leafText, bodyStartRel);
                             int relOffset = i - leafRange.getStartOffset();
-                            boolean inVerbatimBody = firstNewline >= 0
-                                && bodyEndRel > firstNewline
-                                && relOffset > firstNewline
+                            boolean inVerbatimBody = bodyStartRel > 0
+                                && bodyEndRel > bodyStartRel
+                                && relOffset >= bodyStartRel
                                 && relOffset < bodyEndRel;
                             if (inVerbatimBody) {
                                 // Verbatim tab character exemption strictly inside fenced body (§ 5.3)
@@ -188,12 +188,12 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
                                 && leaf.getNode().getElementType() == StvnTypes.LITERAL_STRING_FENCED) {
                             TextRange leafRange = leaf.getTextRange();
                             String leafText = leaf.getText();
-                            int firstNewline = leafText.indexOf('\n');
-                            int bodyEndRel = findFencedVerbatimBodyEndRelative(leafText, firstNewline);
+                            int bodyStartRel = findFirstLineBreakEnd(leafText);
+                            int bodyEndRel = findFencedVerbatimBodyEndRelative(leafText, bodyStartRel);
                             int relOffset = i - leafRange.getStartOffset();
-                            boolean inVerbatimBody = firstNewline >= 0
-                                && bodyEndRel > firstNewline
-                                && relOffset > firstNewline
+                            boolean inVerbatimBody = bodyStartRel > 0
+                                && bodyEndRel > bodyStartRel
+                                && relOffset >= bodyStartRel
                                 && relOffset < bodyEndRel;
                             if (inVerbatimBody) {
                                 int bodyEnd = Math.min(len, leafRange.getStartOffset() + bodyEndRel);
@@ -213,39 +213,74 @@ public final class StvnTabCharacterInspection extends LocalInspectionTool {
         }
     }
 
+    private static int findFirstLineBreakEnd(String text) {
+        int len = text.length();
+        for (int i = 0; i < len; i++) {
+            char c = text.charAt(i);
+            if (c == '\r') {
+                return (i + 1 < len && text.charAt(i + 1) == '\n') ? i + 2 : i + 1;
+            }
+            if (c == '\n') {
+                return i + 1;
+            }
+        }
+        return -1;
+    }
+
+    private static int findLastLineBreakStart(String text, int fromIndex) {
+        for (int i = Math.min(fromIndex, text.length() - 1); i >= 0; i--) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                return (i > 0 && text.charAt(i - 1) == '\r') ? i - 1 : i;
+            }
+            if (c == '\r') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int lineBreakLengthAt(String text, int breakStart) {
+        return (breakStart >= 0
+            && breakStart + 1 < text.length()
+            && text.charAt(breakStart) == '\r'
+            && text.charAt(breakStart + 1) == '\n') ? 2 : 1;
+    }
+
     /**
      * Computes the end offset (relative to {@code leafText}) of the verbatim payload body inside a
      * {@code LITERAL_STRING_FENCED} token, supporting both standalone closing fence lines and
-     * inline-closed payload lines under Rule STR-04.
+     * inline-closed payload lines under Rule STR-04 across {@code \r\n}, {@code \r}, and {@code \n}.
      */
-    private static int findFencedVerbatimBodyEndRelative(String leafText, int firstNewline) {
-        if (firstNewline < 4 || !leafText.startsWith("\"\"\"[")) {
+    private static int findFencedVerbatimBodyEndRelative(String leafText, int bodyStartRel) {
+        if (bodyStartRel < 5 || !leafText.startsWith("\"\"\"[")) {
             return -1;
         }
         int rb = leafText.indexOf(']', 4);
-        if (rb <= 4 || rb >= firstNewline) {
+        if (rb <= 4 || rb >= bodyStartRel) {
             return -1;
         }
         String closeDelim = leafText.substring(3, rb + 1) + "\"\"\"";
-        if (leafText.length() >= firstNewline + 1 + closeDelim.length() && leafText.endsWith(closeDelim)) {
+        if (leafText.length() >= bodyStartRel + closeDelim.length() && leafText.endsWith(closeDelim)) {
             int closeStart = leafText.length() - closeDelim.length();
-            int lastNewline = leafText.lastIndexOf('\n', closeStart - 1);
-            if (lastNewline > firstNewline) {
+            int lastBreakStart = findLastLineBreakStart(leafText, closeStart - 1);
+            if (lastBreakStart >= bodyStartRel) {
+                int afterBreak = lastBreakStart + lineBreakLengthAt(leafText, lastBreakStart);
                 boolean standaloneCloseLine = true;
-                for (int k = lastNewline + 1; k < closeStart; k++) {
+                for (int k = afterBreak; k < closeStart; k++) {
                     char ch = leafText.charAt(k);
-                    if (ch != ' ' && ch != '\t' && ch != '\r') {
+                    if (ch != ' ' && ch != '\t') {
                         standaloneCloseLine = false;
                         break;
                     }
                 }
                 if (standaloneCloseLine) {
-                    return lastNewline;
+                    return lastBreakStart;
                 }
             }
             return closeStart;
         }
-        int lastNewline = leafText.lastIndexOf('\n');
-        return lastNewline > firstNewline ? lastNewline : leafText.length();
+        int lastBreakStart = findLastLineBreakStart(leafText, leafText.length() - 1);
+        return lastBreakStart >= bodyStartRel ? lastBreakStart : leafText.length();
     }
 }

@@ -176,7 +176,7 @@ public final class StvnDiagnosticFormatterTest {
             }
         }
 
-        assertEquals("Expected all 26 local inspection classes", 26, inspectionCount);
+        assertEquals("Expected all 27 local inspection classes", 27, inspectionCount);
         assertTrue("Zero inspections may pass bare DiagnosticBag.* to formatPlugin:\n"
             + String.join("\n", violations), violations.isEmpty());
     }

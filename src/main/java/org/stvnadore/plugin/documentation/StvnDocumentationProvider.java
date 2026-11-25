@@ -181,6 +181,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
 
+        if (element instanceof StvnStringEscapeHoverElement escapeHoverElement) {
+            return StvnStringEscapeHoverSupport.renderEscapeHoverHtml(escapeHoverElement);
+        }
+
         if (isTriviaOrBadElement(element) || (originalElement != null && isTriviaOrBadElement(originalElement))) {
             return null;
         }
@@ -3983,6 +3987,12 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return null;
         }
 
+        // 0. Escape-Sequence Glyph & Emoji Hover Preview strictly when targetOffset is inside a valid '\...' escape
+        var escapeHoverElement = StvnStringEscapeHoverSupport.resolveEscapeHoverElement(file, contextElement, targetOffset);
+        if (escapeHoverElement != null) {
+            return escapeHoverElement;
+        }
+
         // 1. FIRST PRIORITY: Resolve disjoint :meta and schema MetadataEntry keyword leaf vs. value literal targets
         var metaHoverTarget = resolveMetaHoverTarget(contextElement);
         if (metaHoverTarget != null) {
@@ -6947,7 +6957,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return new StvnValueComplianceResult(false, "Violated", explanation, Collections.emptyMap(), forms);
             }
             String decodedContent = decodedOpt.get();
-            int len = decodedContent.length();
+            int len = decodedContent.codePointCount(0, decodedContent.length());
 
             var minSize = BigInteger.ZERO;
             var maxSize = StvnVocabulary.DEFAULT_MAX_SIZE;

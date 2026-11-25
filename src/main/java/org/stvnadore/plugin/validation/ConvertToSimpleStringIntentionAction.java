@@ -15,6 +15,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 
 /**
@@ -64,7 +65,9 @@ public final class ConvertToSimpleStringIntentionAction implements IntentionActi
             return null;
         }
         String rawBody = text.substring(3, text.length() - 3);
-        if (rawBody.indexOf('\n') >= 0 || rawBody.indexOf('\r') >= 0) {
+        if (rawBody.indexOf('\n') >= 0
+                || rawBody.indexOf('\r') >= 0
+                || StvnStringCharacterPolicy.containsUnpairedSurrogate(rawBody)) {
             return null;
         }
         String quoted = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(rawBody);

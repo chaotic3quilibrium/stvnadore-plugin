@@ -1067,7 +1067,8 @@ public final class StvnUnresolvedUsePackageAndCanonicalizeGuardTest extends Base
             new StvnMissingMetaInspection(),
             new StvnStemMismatchInspection(),
             new StvnSuspiciousEpochMagnitudeInspection(),
-            new StvnFloatPrecisionLossInspection()
+            new StvnFloatPrecisionLossInspection(),
+            new StvnStringEscapeScrutinyInspection()
         };
     }
 }

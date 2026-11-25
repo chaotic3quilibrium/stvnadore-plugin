@@ -10,9 +10,12 @@ import org.stvnadore.psi.StvnTypes;
 /**
  * Highlighting-only sub-lexer for single-line STVN strings ({@link StvnTypes#LITERAL_STRING_SIMPLE}).
  * <p>
- * Enforces exact STVN 2.0.0 escape parity with {@code StvnLexer.g4} and {@code StvnPayloadLowerer}:
- * valid escapes are strictly {@code \"}, {@code \\}, {@code \/}, {@code \b}, {@code \f}, {@code \n},
- * {@code \r}, {@code \t}, and four-digit hexadecimal {@code \u005cuXXXX}. Rule STR-04 fenced strings
+ * Enforces exact STVN 2.0.0 escape parity under Specification § 5.1.5 and
+ * {@link org.stvnadore.core.StvnStringCharacterPolicy}: valid escapes are strictly {@code \"},
+ * {@code \\}, {@code \/}, {@code \b}, {@code \f}, {@code \n}, {@code \r}, {@code \t}, four-digit
+ * non-surrogate hexadecimal {@code \u005cuXXXX}, and paired UTF-16 surrogate escapes
+ * {@code \u005cuD800}–{@code \u005cuDBFF\u005cuDC00}–{@code \u005cuDFFF}. Unpaired surrogate escapes
+ * highlight as {@link StringEscapesTokenTypes#INVALID_UNICODE_ESCAPE_TOKEN}. Rule STR-04 fenced strings
  * ({@link StvnTypes#LITERAL_STRING_FENCED} and {@link StvnTypes#MALFORMED_FENCE}) are never routed here.
  */
 @NullMarked
@@ -91,21 +94,39 @@ public final class StvnSimpleStringHighlightingLexer extends LexerBase {
                 int i = tokenStart + 2;
                 int limit = Math.min(tokenStart + 6, endOffset);
                 boolean allHex = true;
+                int unit1 = 0;
                 while (i < limit) {
                     char ch = buffer.charAt(i);
                     if (ch == '\\' || ch == '"' || ch == '\r' || ch == '\n' || ch == '\t') {
                         break;
                     }
-                    if (!isHexDigit(ch)) {
+                    int d = Character.digit(ch, 16);
+                    if (d < 0) {
                         allHex = false;
+                    } else {
+                        unit1 = (unit1 << 4) | d;
                     }
                     i++;
                 }
-                tokenEnd = i;
                 boolean validFourHex = allHex && (i - (tokenStart + 2)) == 4;
-                tokenType = validFourHex
-                    ? StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN
-                    : StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN;
+                if (!validFourHex) {
+                    tokenEnd = i;
+                    tokenType = StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN;
+                } else if (Character.isHighSurrogate((char) unit1)) {
+                    if (hasPairedLowSurrogate(tokenStart + 6)) {
+                        tokenEnd = tokenStart + 12;
+                        tokenType = StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN;
+                    } else {
+                        tokenEnd = tokenStart + 6;
+                        tokenType = StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN;
+                    }
+                } else if (Character.isLowSurrogate((char) unit1)) {
+                    tokenEnd = tokenStart + 6;
+                    tokenType = StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN;
+                } else {
+                    tokenEnd = tokenStart + 6;
+                    tokenType = StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN;
+                }
             }
             default -> {
                 tokenEnd = tokenStart + 2;
@@ -124,9 +145,20 @@ public final class StvnSimpleStringHighlightingLexer extends LexerBase {
         return endOffset;
     }
 
-    private static boolean isHexDigit(char c) {
-        return (c >= '0' && c <= '9')
-            || (c >= 'a' && c <= 'f')
-            || (c >= 'A' && c <= 'F');
+    private boolean hasPairedLowSurrogate(int secondEscapeStart) {
+        if (secondEscapeStart + 6 > endOffset
+                || buffer.charAt(secondEscapeStart) != '\\'
+                || buffer.charAt(secondEscapeStart + 1) != 'u') {
+            return false;
+        }
+        int unit2 = 0;
+        for (int k = 0; k < 4; k++) {
+            int d = Character.digit(buffer.charAt(secondEscapeStart + 2 + k), 16);
+            if (d < 0) {
+                return false;
+            }
+            unit2 = (unit2 << 4) | d;
+        }
+        return Character.isLowSurrogate((char) unit2);
     }
 }

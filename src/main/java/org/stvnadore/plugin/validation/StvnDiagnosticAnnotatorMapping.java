@@ -7,6 +7,7 @@ import com.intellij.psi.PsiFile;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnDiagnostic;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
 import org.stvnadore.plugin.reference.StvnConstantReference;
@@ -328,7 +329,9 @@ public final class StvnDiagnosticAnnotatorMapping {
     }
 
     private static boolean isExplicitlyUngovernedSymbolicId(String code) {
-        return DiagnosticBag.ERR_DUPLICATE_DEF.equals(code)
+        return StvnStringCharacterPolicy.ERR_FORBIDDEN_RAW_CHARACTER.equals(code)
+            || StvnStringCharacterPolicy.ERR_UNPAIRED_SURROGATE.equals(code)
+            || DiagnosticBag.ERR_DUPLICATE_DEF.equals(code)
             || "DUPLICATE_TYPE_DEFINITION".equals(code)
             || "E006".equals(code)
             || DiagnosticBag.ERR_CIRCULAR_TYPE.equals(code)

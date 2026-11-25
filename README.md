@@ -216,7 +216,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 
 ## Inspection Registrations
 
-All **26** `<localInspection>` registrations declared in [`plugin.xml`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_plugin/src/main/resources/META-INF/plugin.xml):
+All **27** `<localInspection>` registrations declared in [`plugin.xml`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_plugin/src/main/resources/META-INF/plugin.xml):
 
 | Inspection Class                              | Short Name                        | Display Name                                          | Group Path                      | Default Level  |
 |:----------------------------------------------|:----------------------------------|:------------------------------------------------------|:--------------------------------|:--------------:|
@@ -246,6 +246,7 @@ All **26** `<localInspection>` registrations declared in [`plugin.xml`](file:///
 | `StvnMissingMetaInspection`                   | `StvnMissingMeta`                 | Missing root metadata block inspection                | `STVN / Governance`             |    `ERROR`     |
 | `StvnStemMismatchInspection`                  | `StvnStemMismatch`                | Document stem mismatch inspection                     | `STVN / Governance`             |   `WARNING`    |
 | `StvnSuspiciousEpochMagnitudeInspection`      | `StvnSuspiciousEpochMagnitude`    | Suspicious epoch magnitude inspection                 | `STVN / Governance`             |   `WARNING`    |
+| `StvnStringEscapeScrutinyInspection`          | `StvnStringEscapeScrutiny`        | Hazardous or ambiguous string escape sequence         | `STVN`                          |   `WARNING`    |
 
 ---
 

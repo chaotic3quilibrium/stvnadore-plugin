@@ -76,7 +76,8 @@ public final class StvnRootSectionCohesionInspectionAndQuickFixTest extends Base
             new StvnTabCharacterInspection(),
             new StvnMissingMetaInspection(),
             new StvnStemMismatchInspection(),
-            new StvnSuspiciousEpochMagnitudeInspection()
+            new StvnSuspiciousEpochMagnitudeInspection(),
+            new StvnStringEscapeScrutinyInspection()
         );
     }
 

@@ -38,7 +38,7 @@ public final class StvnUseMapAliasConstantValidationTest extends BasePlatformTes
                 tools.add((LocalInspectionTool) ep.instantiateTool());
             }
         }
-        assertEquals("Expected all 26 registered STVN local inspections", 26, tools.size());
+        assertEquals("Expected all 27 registered STVN local inspections", 27, tools.size());
         myFixture.enableInspections(tools.toArray(LocalInspectionTool[]::new));
     }
 

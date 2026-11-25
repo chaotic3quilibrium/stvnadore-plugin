@@ -135,6 +135,10 @@ public final class StvnDiagnosticCodes {
     public static final String WARN_REDUNDANT_VARIANT_TAG = "PW006-WARN_REDUNDANT_VARIANT_TAG";
     public static final String WARN_VARIANT_FORM_DISCREPANCY = "PW006-WARN_VARIANT_FORM_DISCREPANCY";
     public static final String WARN_EXCESSIVE_EXACT_FLOAT_PRECISION = WARN_EXCESSIVE_EXACT_PRECISION;
+    /** Advisory warning emitted when a valid escape inside {@code "..."} decodes to a hazardous control, bidi, or invisible format scalar. */
+    public static final String WARN_HAZARDOUS_STRING_ESCAPE = "PW007-WARN_HAZARDOUS_STRING_ESCAPE";
+    /** Advisory warning emitted when shorthand {@code \r} is used instead of explicit {@code \u005Cu000D} inside {@code "..."}. */
+    public static final String WARN_SHORTHAND_CR_ESCAPE = "PW008-WARN_SHORTHAND_CR_ESCAPE";
 
     /**
      * Strips the leading canonical code prefix ({@code E0XX-}, {@code W00X-}, or {@code PW0XX-})
@@ -236,6 +240,8 @@ public final class StvnDiagnosticCodes {
                  "WARN_POISONED_CONSTANT_USAGE",
                  "WARN_REDUNDANT_VARIANT_TAG",
                  "WARN_VARIANT_FORM_DISCREPANCY" -> "PW006";
+            case "WARN_HAZARDOUS_STRING_ESCAPE" -> "PW007";
+            case "WARN_SHORTHAND_CR_ESCAPE" -> "PW008";
             default -> bareId.startsWith("WARN_") ? "PW006" : "E002";
         };
     }

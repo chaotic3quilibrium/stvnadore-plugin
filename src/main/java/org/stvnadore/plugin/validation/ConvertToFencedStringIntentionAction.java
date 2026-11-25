@@ -18,6 +18,7 @@ import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
@@ -80,7 +81,7 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
     public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @Nullable PsiFile file) {
         if (file == null) return false;
         int start = targetRange.getStartOffset();
-        return start >= 0 && start + 3 <= file.getTextLength();
+        return start >= 0 && start + 3 <= file.getTextLength() && isCleanUntaggedCandidate(file, start);
     }
 
     @Override
@@ -184,7 +185,7 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
         if (startsWithHorizontalPlusNewline(rawBody)) {
             return "\"\"\"[" + tag + "]" + rawBody + "[" + tag + "]\"\"\"";
         }
-        String normalized = rawBody.replace("\r\n", "\n").replace('\r', '\n');
+        String normalized = StvnStringCharacterPolicy.normalizeLineEndingsToLf(rawBody);
         if (normalized.isEmpty()) {
             String closePrefix = preserveIndent ? "" : cleanIndent;
             return "\"\"\"[" + tag + "]" + lineSep + closePrefix + "[" + tag + "]\"\"\"";
@@ -214,10 +215,36 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
 
     private static boolean startsWithHorizontalPlusNewline(String s) {
         int i = 0;
-        while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t' || s.charAt(i) == '\r')) {
+        while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) {
             i++;
         }
-        return i < s.length() && s.charAt(i) == '\n';
+        return i < s.length() && (s.charAt(i) == '\n' || s.charAt(i) == '\r');
+    }
+
+    private static boolean isCleanUntaggedCandidate(PsiFile file, int startOffset) {
+        CharSequence chars = file.getViewProvider().getContents();
+        if (startOffset + 3 > chars.length()) {
+            return false;
+        }
+        int endIdx = chars.length();
+        for (int i = startOffset + 3; i + 2 < chars.length(); i++) {
+            if (chars.charAt(i) == '"' && chars.charAt(i + 1) == '"' && chars.charAt(i + 2) == '"') {
+                endIdx = i;
+                break;
+            }
+        }
+        String rawSlice = chars.subSequence(startOffset + 3, endIdx).toString();
+        if (StvnStringCharacterPolicy.containsUnpairedSurrogate(rawSlice)) {
+            return false;
+        }
+        for (int i = 0; i < rawSlice.length(); ) {
+            int cp = rawSlice.codePointAt(i);
+            if (StvnStringCharacterPolicy.isForbiddenRawSourceCodePoint(cp)) {
+                return false;
+            }
+            i += Character.charCount(cp);
+        }
+        return true;
     }
 
     /**

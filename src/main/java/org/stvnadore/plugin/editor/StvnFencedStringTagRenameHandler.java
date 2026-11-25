@@ -189,11 +189,9 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
             return null;
         }
 
-        int openDelimiterEnd = text.indexOf('\n', openCloseBracket);
+        int openDelimiterEnd = findFirstLineBreakEnd(text, openCloseBracket + 1);
         if (openDelimiterEnd < 0) {
             openDelimiterEnd = text.length();
-        } else {
-            openDelimiterEnd += 1;
         }
 
         if (!text.endsWith("\"\"\"")) {
@@ -241,6 +239,20 @@ public final class StvnFencedStringTagRenameHandler implements RenameHandler {
             openDelimiterEnd,
             closingFenceStart
         );
+    }
+
+    private static int findFirstLineBreakEnd(String text, int fromIndex) {
+        int len = text.length();
+        for (int i = Math.max(0, fromIndex); i < len; i++) {
+            char c = text.charAt(i);
+            if (c == '\r') {
+                return (i + 1 < len && text.charAt(i + 1) == '\n') ? i + 2 : i + 1;
+            }
+            if (c == '\n') {
+                return i + 1;
+            }
+        }
+        return -1;
     }
 
     private record FencedBlockData(

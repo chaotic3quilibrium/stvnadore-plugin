@@ -54,7 +54,8 @@ public final class StvnDuplicateDiagnosticsIntegrationTest extends BasePlatformT
             new StvnMissingMetaInspection(),
             new StvnStemMismatchInspection(),
             new StvnSuspiciousEpochMagnitudeInspection(),
-            new StvnFloatPrecisionLossInspection()
+            new StvnFloatPrecisionLossInspection(),
+            new StvnStringEscapeScrutinyInspection()
         );
     }
 

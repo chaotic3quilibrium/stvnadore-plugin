@@ -533,7 +533,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                 if (decodedOpt.isEmpty()) {
                     return;
                 }
-                int decodedLength = decodedOpt.get().length();
+                String decoded = decodedOpt.get();
+                int decodedLength = decoded.codePointCount(0, decoded.length());
                 var contentLenBI = BigInteger.valueOf(decodedLength);
                 if (contentLenBI.compareTo(capBI) > 0) {
                     int capInt = capBI.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0 ? Integer.MAX_VALUE : capBI.intValue();

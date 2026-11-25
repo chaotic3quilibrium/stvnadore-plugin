@@ -132,7 +132,8 @@ intellijPlatform {
                 <ul>
                   <li>Unified renamed <code>UseMapAlias</code> head-hop inlay hints and per-hop <code>Ctrl+Click</code> navigation across scalar, <code>:Enum</code>, temporal, algebraic sum, and composite <code>:body</code> slots in both Clean Pass 3 and Pass-3-Suspended states.</li>
                   <li>Upgraded <code>STVN Namespace Dependencies</code> (<code>Ctrl+Alt+N</code>) with a live <code>:defs</code> / <code>:type</code> / <code>:body</code> scope switcher, live symbol search filter, disabled-section tooltips, and a 5-column STVN 2.0.0 schema view.</li>
-                  <li>Aligned all 8 intention actions, 26 inspection descriptions, code style and color scheme samples, settings labels, and authoring documentation with STVN 2.0.0.</li>
+                  <li>Added <code>StvnStringEscapeScrutiny</code> inspection (#27) with default-on shorthand <code>\r</code> scrutiny and <code>\u000D</code> quick-fixes, escape-sequence glyph and ZWJ emoji hover previews, 3-case fenced line-ending parity, and Pass 1 <code>E001</code> character hygiene parity.</li>
+                  <li>Aligned all 8 intention actions, 27 inspection descriptions, code style and color scheme samples, settings labels, and authoring documentation with STVN 2.0.0.</li>
                 </ul>
               </li>
             </ul>
@@ -676,6 +677,9 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnGauntletV10Batch4PluginKeywordOrderAndPoisonedConstDxTest*.class")
     exclude("**/StvnContainerLayoutIntentionsTest*.class")
     exclude("**/StvnUseMapAliasConstantValidationTest*.class")
+    exclude("**/StvnStringEscapeScrutinyInspectionTest*.class")
+    exclude("**/StvnStringEscapeHoverDocumentationTest*.class")
+    exclude("**/StvnStringCharacterHygieneParityTest*.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->
         val path = file.absolutePath.replace('\\', '/').lowercase()

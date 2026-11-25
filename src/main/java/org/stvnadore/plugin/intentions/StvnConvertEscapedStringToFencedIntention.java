@@ -12,6 +12,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.ir.StvnSchema;
@@ -238,11 +239,8 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
     }
 
     private static boolean isRoundTripLosslessFencedString(String decoded, String safeTag, boolean preserveIndent) {
-        for (int i = 0; i < decoded.length(); i++) {
-            char c = decoded.charAt(i);
-            if (c < 0x20 && c != '\n' && c != '\t') {
-                return false;
-            }
+        if (!StvnStringCharacterPolicy.canRepresentVerbatimInFencedString(decoded, preserveIndent)) {
+            return false;
         }
         String sampleRendered = renderFencedLiteral(decoded, safeTag, preserveIndent, 2);
         return StvnPsiLiteralEvaluator.decodeStringLiteral(sampleRendered, preserveIndent)

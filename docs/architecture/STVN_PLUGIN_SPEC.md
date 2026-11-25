@@ -502,6 +502,27 @@ flowchart LR
     FmtEngine --> Ranker
 ```
 
+### 4.35 String Escape Scrutiny (`#27`), Escape Glyph/Emoji Hover Preview & Pass 1 `E001` Hygiene Parity
+- **`StvnStringEscapeScrutinyInspection` (`<localInspection>` #27, `WARNING`):**
+  - Inspects every `LITERAL_STRING_SIMPLE` (`"..."`) leaf across `:meta`, `:include`, `:defs`, `:type`, and `:body` (skipping duplicate secondary root sections).
+  - Emits `[stvn-plugin:PW007-WARN_HAZARDOUS_STRING_ESCAPE]` pinned strictly to `[relStart, relStart + escLen)` whenever a valid escape decodes to `StvnStringCharacterPolicy.isHazardousEscapedCodePoint(cp)` (C0 controls excluding `\t`/`\n`/`\r`, `DEL` `U+007F`, C1 `U+0080`–`U+009F`, Trojan Source bidirectional controls, and invisible format/line-separator scalars `U+200B`, `U+2060`, `U+2028`, `U+2029`, `U+FEFF`).
+  - Exposes persistent `warnOnShorthandCrEscape = true` (`"Warn on shorthand \r escape (use explicit \u000D when intentional)"`), emitting `[stvn-plugin:PW008-WARN_SHORTHAND_CR_ESCAPE]` on 2-character `\r` with single and batch `Replace '\r' with explicit '\u000D'` quick-fixes (`IntentionPreviewInfo.DIFF`), while exempting explicit `\u000D` / `\u000d`, emoji joiners (`\u200C`, `\u200D`), standard escapes, printable BMP/surrogate escapes, and malformed/unpaired escapes owned by Core `E001` / `E002`.
+- **Escape-Sequence Glyph & Emoji Hover Preview (`StvnDocumentationProvider` & `StvnStringEscapeHoverSupport`):**
+  - Activates strictly when `targetOffset` falls inside a valid `\...` escape within `LITERAL_STRING_SIMPLE`, returning synthetic `StvnStringEscapeHoverElement` (`LightElement`) while preserving 100% of existing facet, schema, constant, and slot compliance hover cards elsewhere.
+  - Supports shorthand escapes, BMP `\uXXXX`, paired UTF-16 surrogates (`\uD83D\uDE80` hovered on either half), and UAX #29 `BreakIterator` multi-codepoint ZWJ / variation-selector emoji sequences (`"\uD83D\uDC68\u200D\uD83D\uDCBB"`, `"👨\u200D💻"`), rendering color emoji glyphs or `[Non-Printable / Invisible Character]`, composed sequence previews, scalar IDs, character names, UTF-8 hex bytes, and STE scrutiny notes.
+- **3-Case `FENCE_NEWLINE`, Surrogate Highlighting & `E001` Deconfliction:**
+  - `stvn.flex` (`FENCE_NEWLINE=\r\n|\r|\n`) and `StvnPsiLiteralEvaluator` normalize `\r\n`, standalone `\r`, and `\n` uniformly to `LF` (`U+000A`), while `StvnCreateFencedStringIntention` and `StvnConvertEscapedStringToFencedIntention` gate availability on `StvnStringCharacterPolicy.canRepresentVerbatimInFencedString`.
+  - `StvnSimpleStringHighlightingLexer` highlights paired `\uD800`–`\uDBFF\uDC00`–`\uDFFF` as 12-character `VALID_STRING_ESCAPE_TOKEN` and lone surrogates as 6-character `INVALID_UNICODE_ESCAPE_TOKEN`.
+  - `StvnDiagnosticAnnotatorMapping` marks `StvnStringCharacterPolicy.ERR_FORBIDDEN_RAW_CHARACTER` and `ERR_UNPAIRED_SURROGATE` explicitly ungoverned so Pass B (`27` inspections) preserves Core `E001` errors (`count == 1`) without suppression by `StvnTabCharacterInspection`.
+
+```mermaid
+flowchart LR
+    Lit["LITERAL_STRING_SIMPLE and Fenced Tokens"] --> EscInsp["StvnStringEscapeScrutinyInspection (PW007 and PW008)"]
+    Lit --> EscHov["StvnStringEscapeHoverSupport (Glyph, UAX #29 ZWJ, UTF-8)"]
+    Lit --> HiLex["StvnSimpleStringHighlightingLexer (Paired vs Unpaired Surrogates)"]
+    CoreE001["Core Pass 1 E001 (Forbidden Raw and Unpaired Surrogate)"] --> Deconf["StvnDiagnosticAnnotatorMapping (Ungoverned: Count == 1)"]
+```
+
 ---
 
 ## 5. Benchmarking & Quality Assurance Gates

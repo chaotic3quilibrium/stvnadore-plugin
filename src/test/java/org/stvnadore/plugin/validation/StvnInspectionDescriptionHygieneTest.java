@@ -91,7 +91,7 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
 
         try (Stream<Path> stream = Files.walk(htmlDir)) {
             var htmlFiles = stream.filter(p -> p.toString().endsWith(".html")).sorted().toList();
-            assertEquals("Expected 26 inspection HTML files", 26, htmlFiles.size());
+            assertEquals("Expected 27 inspection HTML files", 27, htmlFiles.size());
 
             for (var file : htmlFiles) {
                 var content = Files.readString(file, StandardCharsets.UTF_8);
@@ -257,9 +257,9 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
             }
         }
 
-        // 2. Verify README.md documents all 26 <localInspection> shortNames from plugin.xml
+        // 2. Verify README.md documents all 27 <localInspection> shortNames from plugin.xml
         NodeList inspectionNodes = xmlDoc.getElementsByTagName("localInspection");
-        assertEquals("Expected 26 <localInspection> entries in plugin.xml", 26, inspectionNodes.getLength());
+        assertEquals("Expected 27 <localInspection> entries in plugin.xml", 27, inspectionNodes.getLength());
         String readmeContent = Files.readString(root.resolve("README.md"), StandardCharsets.UTF_8);
         for (int i = 0; i < inspectionNodes.getLength(); i++) {
             Element insp = (Element) inspectionNodes.item(i);

@@ -5,6 +5,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
@@ -418,7 +419,7 @@ public final class StvnPsiLiteralEvaluator {
             return 0;
         }
         return decodeStringLiteral(literal.getText(), preserveIndent)
-            .map(String::length)
+            .map(s -> s.codePointCount(0, s.length()))
             .orElse(0);
     }
 
@@ -430,103 +431,7 @@ public final class StvnPsiLiteralEvaluator {
      * @return decoded UTF-8 string value, or empty when unclosed or malformed in-flight
      */
     public static Optional<String> decodeStringLiteral(@Nullable String rawLiteral, boolean preserveIndent) {
-        if (rawLiteral == null || rawLiteral.length() < 2) {
-            return Optional.empty();
-        }
-        if (rawLiteral.startsWith("\"\"\"[")) {
-            String normalized = rawLiteral.replace("\r\n", "\n").replace("\r", "\n");
-            int openCloseBracket = normalized.indexOf(']', 4);
-            if (openCloseBracket <= 4) {
-                return Optional.empty();
-            }
-            String tag = normalized.substring(4, openCloseBracket);
-            if (!VALID_FENCE_TAG_PATTERN.matcher(tag).matches()) {
-                return Optional.empty();
-            }
-            String closeDelim = "[" + tag + "]\"\"\"";
-            if (!normalized.endsWith(closeDelim)) {
-                return Optional.empty();
-            }
-            int firstNewline = normalized.indexOf('\n', openCloseBracket + 1);
-            if (firstNewline < 0) {
-                return Optional.empty();
-            }
-            for (int i = openCloseBracket + 1; i < firstNewline; i++) {
-                char ch = normalized.charAt(i);
-                if (ch != ' ' && ch != '\t') {
-                    return Optional.empty();
-                }
-            }
-            int payloadStart = firstNewline + 1;
-            int payloadEnd = normalized.length() - closeDelim.length();
-            if (payloadStart > payloadEnd) {
-                return Optional.empty();
-            }
-            String body = normalized.substring(payloadStart, payloadEnd);
-            return Optional.of(preserveIndent ? body : trimCommonIndent(body));
-        }
-        if (rawLiteral.startsWith("\"") && rawLiteral.endsWith("\"") && !rawLiteral.startsWith("\"\"\"")) {
-            String inner = rawLiteral.substring(1, rawLiteral.length() - 1);
-            StringBuilder sb = new StringBuilder(inner.length());
-            for (int i = 0; i < inner.length(); i++) {
-                char c = inner.charAt(i);
-                if (c == '\\') {
-                    if (i + 1 >= inner.length()) {
-                        return Optional.empty();
-                    }
-                    char next = inner.charAt(++i);
-                    switch (next) {
-                        case '"' -> sb.append('"');
-                        case '\\' -> sb.append('\\');
-                        case '/' -> sb.append('/');
-                        case 'b' -> sb.append('\b');
-                        case 'f' -> sb.append('\f');
-                        case 'n' -> sb.append('\n');
-                        case 'r' -> sb.append('\r');
-                        case 't' -> sb.append('\t');
-                        case 'u' -> {
-                            if (i + 4 < inner.length()) {
-                                int codeUnit = 0;
-                                for (int k = 1; k <= 4; k++) {
-                                    int digit = asciiHexValue(inner.charAt(i + k));
-                                    if (digit < 0) {
-                                        return Optional.empty();
-                                    }
-                                    codeUnit = (codeUnit << 4) | digit;
-                                }
-                                sb.append((char) codeUnit);
-                                i += 4;
-                            } else {
-                                return Optional.empty();
-                            }
-                        }
-                        default -> {
-                            return Optional.empty();
-                        }
-                    }
-                } else {
-                    if (c < 0x20 || c == '"') {
-                        return Optional.empty();
-                    }
-                    sb.append(c);
-                }
-            }
-            return Optional.of(sb.toString());
-        }
-        return Optional.empty();
-    }
-
-    private static int asciiHexValue(char c) {
-        if (c >= '0' && c <= '9') {
-            return c - '0';
-        }
-        if (c >= 'a' && c <= 'f') {
-            return 10 + (c - 'a');
-        }
-        if (c >= 'A' && c <= 'F') {
-            return 10 + (c - 'A');
-        }
-        return -1;
+        return StvnStringLiteralCodec.decodeStringLiteral(rawLiteral, preserveIndent);
     }
 
     /**
@@ -534,40 +439,10 @@ public final class StvnPsiLiteralEvaluator {
      * preserving verbatim horizontal tabs ({@code 0x09}) per STVN 2.0.0 Rule {@code STR-04}.
      *
      * @param text LF-normalized fenced string payload
-     * @return dedented string payload matching {@code StvnPayloadLowerer.trimCommonIndent} 1:1
+     * @return dedented string payload per STVN 2.0.0 Rule {@code STR-04}
      */
     public static String trimCommonIndent(String text) {
-        if (text.isEmpty()) {
-            return text;
-        }
-        String[] lines = text.split("\n", -1);
-        int minIndent = Integer.MAX_VALUE;
-        for (String line : lines) {
-            if (isAsciiSpacesOnly(line)) {
-                continue;
-            }
-            int indent = 0;
-            while (indent < line.length() && line.charAt(indent) == ' ') {
-                indent++;
-            }
-            if (indent < minIndent) {
-                minIndent = indent;
-            }
-        }
-        if (minIndent == Integer.MAX_VALUE) {
-            minIndent = 0;
-        }
-        StringBuilder out = new StringBuilder(text.length());
-        for (int i = 0; i < lines.length; i++) {
-            if (i > 0) {
-                out.append('\n');
-            }
-            String line = lines[i];
-            if (!isAsciiSpacesOnly(line)) {
-                out.append(minIndent <= line.length() ? line.substring(minIndent) : "");
-            }
-        }
-        return out.toString();
+        return StvnStringLiteralCodec.trimCommonIndent(text);
     }
 
     /**
@@ -579,15 +454,7 @@ public final class StvnPsiLiteralEvaluator {
      * @return {@code true} when fenced string emission is triggered and round-trip lossless
      */
     public static boolean shouldEmitFencedPretty(String decoded, boolean preserveIndent) {
-        if (!containsSimpleEscapeTrigger(decoded) || containsForbiddenFencedControlChar(decoded)) {
-            return false;
-        }
-        if (preserveIndent) {
-            return true;
-        }
-        return !isAsciiSpacesOnly(decoded)
-            && !hasNonEmptyAsciiSpaceOnlyLine(decoded)
-            && trimCommonIndent(decoded).equals(decoded);
+        return StvnStringLiteralCodec.shouldEmitFencedPretty(decoded, preserveIndent);
     }
 
     /**
@@ -654,35 +521,6 @@ public final class StvnPsiLiteralEvaluator {
             || localName.endsWith(StvnVocabulary.FENCE_TAG_REGEX);
     }
 
-    private static boolean containsSimpleEscapeTrigger(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '\\' || c == '"' || c == '\n' || c == '\t') {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsForbiddenFencedControlChar(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c < 0x20 && c != '\n' && c != '\t') {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isAsciiSpacesOnly(String line) {
-        for (int i = 0; i < line.length(); i++) {
-            if (line.charAt(i) != ' ') {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * Formats a decoded UTF-8 string as a canonical single-line STVN simple string literal {@code "..."}.
      *
@@ -690,28 +528,6 @@ public final class StvnPsiLiteralEvaluator {
      * @return canonically escaped STVN quoted string literal
      */
     public static String formatCanonicalQuotedString(String decoded) {
-        StringBuilder sb = new StringBuilder(decoded.length() + 4);
-        sb.append('"');
-        for (int i = 0; i < decoded.length(); i++) {
-            char c = decoded.charAt(i);
-            switch (c) {
-                case '\\' -> sb.append("\\\\");
-                case '"' -> sb.append("\\\"");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                case '\b' -> sb.append("\\b");
-                case '\f' -> sb.append("\\f");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        sb.append('"');
-        return sb.toString();
+        return StvnStringLiteralCodec.formatCanonicalQuotedString(decoded);
     }
 }
