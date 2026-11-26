@@ -38,18 +38,20 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
 
         var actions = myFixture.filterAvailableIntentions("Sort variants to match root enum declaration order");
         assertFalse("Expected 'Sort variants to match root enum declaration order' quick-fix to be available", actions.isEmpty());
-        myFixture.launchAction(actions.get(0));
-
-        myFixture.checkResult("""
+        String expectedSorted = """
                 {
                   :defs {
                     :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-                    :InvalidOrder { #filterIncl [ #MEDIUM #HIGH ] } :Priority
+                    :InvalidOrder { #filterIncl [#MEDIUM #HIGH] } :Priority
                   }
                   :type :InvalidOrder
                   :body #HIGH
                 }
-                """);
+                """;
+        assertEquals(expectedSorted, myFixture.getIntentionPreviewText(actions.get(0)));
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult(expectedSorted);
     }
 
     public void testTransitiveReorderQuickFix() {
@@ -71,19 +73,21 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
 
         var actions = myFixture.filterAvailableIntentions("Sort variants to match root enum declaration order");
         assertFalse("Expected quick-fix in transitive chain", actions.isEmpty());
-        myFixture.launchAction(actions.get(0));
-
-        myFixture.checkResult("""
+        String expectedTransitive = """
                 {
                   :defs {
                     :Status :Enum [ #Pending #Active #Suspended #Deleted ]
                     :WorkingStatus { #filterExcl [ #Deleted ] } :Status
-                    :ImmediateStatus { #filterIncl [ #Active #Suspended ] } :WorkingStatus
+                    :ImmediateStatus { #filterIncl [#Active #Suspended] } :WorkingStatus
                   }
                   :type :ImmediateStatus
                   :body #Active
                 }
-                """);
+                """;
+        assertEquals(expectedTransitive, myFixture.getIntentionPreviewText(actions.get(0)));
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult(expectedTransitive);
     }
 
     public void testEnumSubsetExcludedPayloadVariantOffersReplaceWithExemplarQuickFix() {
@@ -140,18 +144,20 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
 
         var actions = myFixture.filterAvailableIntentions("Remove duplicate variant '#LOW'");
         assertFalse("Expected \"Remove duplicate variant '#LOW'\" quick-fix to be available", actions.isEmpty());
-        myFixture.launchAction(actions.get(0));
-
-        myFixture.checkResult("""
+        String expectedDeduped = """
                 {
                   :defs {
                     :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-                    :DuplicateFilterTrap { #filterIncl [#LOW #HIGH] } :Priority
+                    :DuplicateFilterTrap { #filterIncl [ #LOW #HIGH ] } :Priority
                   }
                   :type :DuplicateFilterTrap
                   :body #LOW
                 }
-                """);
+                """;
+        assertEquals(expectedDeduped, myFixture.getIntentionPreviewText(actions.get(0)));
+        myFixture.launchAction(actions.get(0));
+
+        myFixture.checkResult(expectedDeduped);
     }
 
     public void testStage5ConstantWithFilterEmitsSingleDeduplicatedE008AndRemoveInvalidFacetQuickFix() {

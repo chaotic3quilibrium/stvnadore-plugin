@@ -82,6 +82,7 @@ import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
+import org.stvnadore.psi.VariantList;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -1262,6 +1263,23 @@ public final class StvnExternalAnnotator
                     }
                 }
 
+                // Pass A E015-ENUM_SUBSET_ORDER_VIOLATION quick-fix
+                if (DiagnosticBag.ERR_ENUM_SUBSET_ORDER_VIOLATION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(
+                            diagnosticId,
+                            StvnDiagnosticCodes.ERR_ENUM_SUBSET_ORDER_VIOLATION
+                        )
+                        || "ENUM_SUBSET_ORDER_VIOLATION".equals(diagnosticId)
+                        || "E015".equals(canonicalCode)) {
+                    var targetElem = file.findElementAt(range.getStartOffset());
+                    var vList = targetElem instanceof VariantList directVList
+                        ? directVList
+                        : PsiTreeUtil.getParentOfType(targetElem, VariantList.class, false);
+                    if (vList != null) {
+                        annotationBuilder = annotationBuilder.withFix(new StvnReorderEnumFilterVariantsQuickFix(vList));
+                    }
+                }
+
                 // Pass A E016 (empty filter list / complete exclusion) & E008 (prohibited filter attachment) quick-fixes
                 if (boundEntry != null
                         && boundEntry.getMetadataFilter() != null
@@ -1831,19 +1849,26 @@ public final class StvnExternalAnnotator
             }
             int checkOffset = s;
             int limitOffset = Math.max(s + 1, e);
+            boolean sawComment = false;
+            boolean sawNonCommentCodeLeaf = false;
             while (checkOffset < limitOffset && checkOffset < textLength) {
                 var leaf = file.findElementAt(checkOffset);
                 if (leaf == null) {
                     break;
                 }
                 if (leaf instanceof PsiComment || PsiTreeUtil.getParentOfType(leaf, PsiComment.class, false) != null) {
-                    return true;
+                    sawComment = true;
+                } else if (!(leaf instanceof com.intellij.psi.PsiWhiteSpace) && !leaf.getText().isBlank()) {
+                    sawNonCommentCodeLeaf = true;
                 }
                 var nextOffset = leaf.getTextRange().getEndOffset();
                 if (nextOffset <= checkOffset) {
                     break;
                 }
                 checkOffset = nextOffset;
+            }
+            if (sawComment && !sawNonCommentCodeLeaf) {
+                return true;
             }
         }
 

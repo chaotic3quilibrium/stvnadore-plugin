@@ -11,6 +11,7 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnDefinitionsFile;
 import org.stvnadore.plugin.StvnDefsIncludeFile;
+import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.psi.StvnSchemaFormatter;
 import org.stvnadore.plugin.reference.StvnConstantReference;
@@ -19,9 +20,11 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.CollectionValue;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.DefsEntry;
+import org.stvnadore.psi.EnumDef;
 import org.stvnadore.psi.ExplicitEitherValue;
 import org.stvnadore.psi.ExplicitOptionValue;
 import org.stvnadore.psi.ExplicitUnionValue;
@@ -32,9 +35,11 @@ import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.PackageEnclosure;
+import org.stvnadore.psi.ProductType;
 import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
+import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TupleLiteral;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.TypeEntry;
@@ -47,10 +52,13 @@ import org.stvnadore.psi.ValueKeyword;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -164,6 +172,7 @@ public final class StvnNamespaceSymbolCollector {
     private static List<StvnNamespaceSymbolEntry> collectPreludeSymbolsInternal(Project project) {
         var preludeFile = StvnPreludeBridge.getPreludeFile(project);
         var results = new ArrayList<StvnNamespaceSymbolEntry>();
+        Map<PsiElement, Integer> preludeGroundingMemo = new IdentityHashMap<>();
         for (var def : PsiTreeUtil.findChildrenOfType(preludeFile, TypeDefinition.class)) {
             ProgressManager.checkCanceled();
             var kw = def.getTypeKeyword();
@@ -172,12 +181,13 @@ public final class StvnNamespaceSymbolCollector {
                 var source = StvnPreludeBridge.getPreludePackagePath(def);
                 var fqni = fullText.contains("/") ? fullText : source + "/" + stripColon(fullText);
                 String resolvedType = resolveFormattedTypeStructure(def, new HashSet<>());
+                int depth = computeVopGroundingDepthForDeclaration(def, preludeGroundingMemo);
                 results.add(new StvnNamespaceSymbolEntry(
                     fqni,
                     source,
                     StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                     resolvedType,
-                    0,
+                    depth,
                     kw,
                     true,
                     kw.getTextOffset(),
@@ -193,12 +203,13 @@ public final class StvnNamespaceSymbolCollector {
                 var source = StvnPreludeBridge.getPreludePackagePath(cDef);
                 var fqni = buildConstantFqni(source, fullText);
                 String resolvedType = formatConstantResolvedType(cDef, preludeFile);
+                int depth = computeVopGroundingDepthForDeclaration(cDef, preludeGroundingMemo);
                 results.add(new StvnNamespaceSymbolEntry(
                     fqni,
                     source,
                     StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                     resolvedType,
-                    0,
+                    depth,
                     kw,
                     true,
                     kw.getTextOffset(),
@@ -331,6 +342,7 @@ public final class StvnNamespaceSymbolCollector {
         var results = new ArrayList<StvnNamespaceSymbolEntry>();
         var fileName = file.getName();
         var processedNames = new HashSet<String>();
+        Map<PsiElement, Integer> groundingMemo = new IdentityHashMap<>();
 
         boolean hasRootDeclsOrDirectives = false;
 
@@ -346,7 +358,7 @@ public final class StvnNamespaceSymbolCollector {
                 String name = kw.getText().trim();
                 if (processedNames.add(name)) {
                     String resolvedType = resolveFormattedTypeStructure(def, new HashSet<>());
-                    int depth = computeAliasHopCount(def, new HashSet<>());
+                    int depth = computeVopGroundingDepthForDeclaration(def, groundingMemo);
                     results.add(new StvnNamespaceSymbolEntry(
                         name,
                         fileName,
@@ -374,12 +386,13 @@ public final class StvnNamespaceSymbolCollector {
                 String name = kw.getText().trim();
                 if (processedNames.add(name)) {
                     String resolvedType = formatConstantResolvedType(def, file);
+                    int depth = computeVopGroundingDepthForDeclaration(def, groundingMemo);
                     results.add(new StvnNamespaceSymbolEntry(
                         name,
                         fileName,
                         StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                         resolvedType,
-                        0,
+                        depth,
                         kw,
                         false,
                         kw.getTextOffset(),
@@ -418,12 +431,16 @@ public final class StvnNamespaceSymbolCollector {
                                 String upstreamFqni = qualifyTypeWithPackage(targetPkg, remoteKw.getText().trim());
                                 if (processedNames.add(localName)) {
                                     String resolvedType = resolveImportedTypeStructure(file, upstreamFqni);
+                                    TypeDefinition upstreamTd = resolveUpstreamTypeForUseAlias(file, remoteKw, upstreamFqni);
+                                    int aliasDepth = upstreamTd != null
+                                        ? computeVopGroundingDepthForDeclaration(upstreamTd, groundingMemo)
+                                        : 0;
                                     results.add(new StvnNamespaceSymbolEntry(
                                         localName,
                                         targetPkg,
                                         upstreamFqni,
                                         resolvedType,
-                                        1,
+                                        aliasDepth,
                                         localKw,
                                         false,
                                         localKw.getTextOffset(),
@@ -444,12 +461,20 @@ public final class StvnNamespaceSymbolCollector {
                                 String upstreamConstFqni = buildConstantFqni(targetPkg, remoteKw.getText().trim());
                                 if (processedNames.add(localName)) {
                                     String resolvedType = resolveImportedConstantType(file, targetPkg, remoteKw.getText().trim());
+                                    ConstantDefinition upstreamCd = resolveUpstreamConstForUseAlias(
+                                        file,
+                                        remoteKw,
+                                        upstreamConstFqni
+                                    );
+                                    int constDepth = upstreamCd != null
+                                        ? computeVopGroundingDepthForDeclaration(upstreamCd, groundingMemo)
+                                        : 0;
                                     results.add(new StvnNamespaceSymbolEntry(
                                         localName,
                                         targetPkg,
                                         upstreamConstFqni,
                                         resolvedType,
-                                        1,
+                                        constDepth,
                                         localKw,
                                         false,
                                         localKw.getTextOffset(),
@@ -464,7 +489,7 @@ public final class StvnNamespaceSymbolCollector {
                     var scopedProcessed = new HashSet<>(processedNames);
                     scopedProcessed.addAll(evictedRawNames);
                     int before = results.size();
-                    collectStrippedPackageSymbols(file, targetPkg, scopedProcessed, results, useElem);
+                    collectStrippedPackageSymbols(file, targetPkg, scopedProcessed, results, useElem, groundingMemo);
                     for (int i = before; i < results.size(); i++) {
                         processedNames.add(results.get(i).name());
                     }
@@ -491,7 +516,7 @@ public final class StvnNamespaceSymbolCollector {
                         includeSource,
                         StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                         resolveFormattedTypeStructure(rDef, new HashSet<>()),
-                        1,
+                        computeVopGroundingDepthForDeclaration(rDef, groundingMemo),
                         kw,
                         false,
                         kw.getTextOffset(),
@@ -511,7 +536,7 @@ public final class StvnNamespaceSymbolCollector {
                         includeSource,
                         StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                         formatConstantResolvedType(rConst, targetFile),
-                        1,
+                        computeVopGroundingDepthForDeclaration(rConst, groundingMemo),
                         kw,
                         false,
                         kw.getTextOffset(),
@@ -543,7 +568,7 @@ public final class StvnNamespaceSymbolCollector {
                                 pathText,
                                 StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                                 resolveFormattedTypeStructure(pkgTypeDef, new HashSet<>()),
-                                0,
+                                computeVopGroundingDepthForDeclaration(pkgTypeDef, groundingMemo),
                                 kw,
                                 false,
                                 kw.getTextOffset(),
@@ -561,7 +586,7 @@ public final class StvnNamespaceSymbolCollector {
                                 pathText,
                                 StvnNamespaceSymbolEntry.LOCAL_UPSTREAM_DASH,
                                 formatConstantResolvedType(pkgConstDef, file),
-                                0,
+                                computeVopGroundingDepthForDeclaration(pkgConstDef, groundingMemo),
                                 kw,
                                 false,
                                 kw.getTextOffset(),
@@ -1614,37 +1639,316 @@ public final class StvnNamespaceSymbolCollector {
             || text.contains(StvnVocabulary.FACET_KW_FILTER_EXCL);
     }
 
-    private static int computeAliasHopCount(TypeDefinition def, Set<PsiElement> visited) {
-        if (!visited.add(def)) {
-            return 0;
+    private static @Nullable TypeDefinition resolveUpstreamTypeForUseAlias(
+        PsiFile file,
+        TypeKeyword remoteKw,
+        String upstreamFqni
+    ) {
+        PsiElement resolved = new StvnTypeReference(remoteKw).resolve();
+        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        if (td != null) {
+            return td;
         }
-        var schemaType = def.getSchemaType();
-        if (schemaType == null || schemaType.getTypeKeyword() == null) {
-            return 0;
+        PsiElement byFqni = StvnTypeReference.resolveTypeInFile(file, upstreamFqni, new HashSet<>());
+        td = StvnPsiUtils.resolveTargetTypeDefinition(byFqni);
+        if (td != null) {
+            return td;
         }
-        var nextKw = schemaType.getTypeKeyword();
-        String nextText = nextKw.getText().trim();
-        if (StvnVocabulary.isBaseScalarType(nextText)
-                || StvnTypeReference.EXACT_TERMINAL_TYPE_NAMES.contains(nextText)) {
-            return 0;
+        if (!file.getProject().isDisposed()) {
+            return StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), upstreamFqni);
         }
-        var resolved = new StvnTypeReference(nextKw).resolve();
-        if (resolved instanceof TypeKeyword rKw && rKw.getParent() instanceof UseMapAlias ua) {
-            var list = ua.getTypeKeywordList();
-            if (!list.isEmpty() && list.get(0) != null) {
-                var upstream = new StvnTypeReference(list.get(0)).resolve();
-                var upstreamDef = StvnPsiUtils.resolveTargetTypeDefinition(upstream);
-                if (upstreamDef != null) {
-                    return 2 + computeAliasHopCount(upstreamDef, visited);
+        return null;
+    }
+
+    private static @Nullable ConstantDefinition resolveUpstreamConstForUseAlias(
+        PsiFile file,
+        ValueKeyword remoteKw,
+        String upstreamConstFqni
+    ) {
+        PsiElement resolved = StvnConstantReference.resolveConstantWithContext(remoteKw);
+        ConstantDefinition cd = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+        if (cd != null) {
+            return cd;
+        }
+        PsiElement byFqni = StvnConstantReference.resolveConstantInFile(file, upstreamConstFqni, new HashSet<>());
+        cd = StvnPsiUtils.resolveTargetConstantDefinition(byFqni);
+        if (cd != null) {
+            return cd;
+        }
+        if (!file.getProject().isDisposed()) {
+            return StvnPreludeBridge.resolvePreludeConstantDefinition(file.getProject(), upstreamConstFqni);
+        }
+        return null;
+    }
+
+    private static int computeVopGroundingDepthForDeclaration(
+        PsiElement rootDecl,
+        Map<PsiElement, Integer> sharedDepthMemo
+    ) {
+        Integer cached = sharedDepthMemo.get(rootDecl);
+        if (cached != null) {
+            return cached;
+        }
+
+        Map<PsiElement, List<PsiElement>> adj = new IdentityHashMap<>();
+        Deque<PsiElement> worklist = new ArrayDeque<>();
+        worklist.add(rootDecl);
+        while (!worklist.isEmpty()) {
+            PsiElement u = worklist.poll();
+            if (adj.containsKey(u) || sharedDepthMemo.containsKey(u)) {
+                continue;
+            }
+            List<PsiElement> deps = collectDirectDeclarationDependencies(u);
+            adj.put(u, deps);
+            for (PsiElement v : deps) {
+                if (!adj.containsKey(v) && !sharedDepthMemo.containsKey(v)) {
+                    worklist.add(v);
                 }
             }
-            return 2;
         }
-        var parentDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (parentDef != null) {
-            return 1 + computeAliasHopCount(parentDef, visited);
+
+        Map<PsiElement, Integer> dfn = new IdentityHashMap<>();
+        Map<PsiElement, Integer> low = new IdentityHashMap<>();
+        Set<PsiElement> onStack = Collections.newSetFromMap(new IdentityHashMap<>());
+        Deque<PsiElement> tarjanStack = new ArrayDeque<>();
+        Map<PsiElement, Integer> sccIdOf = new IdentityHashMap<>();
+        List<List<PsiElement>> sccs = new ArrayList<>();
+        int[] timer = {0};
+
+        for (PsiElement node : adj.keySet()) {
+            if (!dfn.containsKey(node)) {
+                runTarjanDfs(node, adj, sharedDepthMemo, dfn, low, onStack, tarjanStack, sccIdOf, sccs, timer);
+            }
         }
-        return 1;
+
+        for (int sccIdx = 0; sccIdx < sccs.size(); sccIdx++) {
+            List<PsiElement> component = sccs.get(sccIdx);
+            int depth = 0;
+            for (PsiElement u : component) {
+                for (PsiElement v : adj.getOrDefault(u, List.of())) {
+                    Integer precomputed = sharedDepthMemo.get(v);
+                    if (precomputed != null) {
+                        Integer vScc = sccIdOf.get(v);
+                        if (vScc == null || vScc != sccIdx) {
+                            depth = Math.max(depth, 1 + precomputed);
+                        }
+                    }
+                }
+            }
+            for (PsiElement u : component) {
+                sharedDepthMemo.put(u, depth);
+            }
+        }
+
+        return sharedDepthMemo.getOrDefault(rootDecl, 0);
+    }
+
+    private static void runTarjanDfs(
+        PsiElement u,
+        Map<PsiElement, List<PsiElement>> adj,
+        Map<PsiElement, Integer> sharedDepthMemo,
+        Map<PsiElement, Integer> dfn,
+        Map<PsiElement, Integer> low,
+        Set<PsiElement> onStack,
+        Deque<PsiElement> tarjanStack,
+        Map<PsiElement, Integer> sccIdOf,
+        List<List<PsiElement>> sccs,
+        int[] timer
+    ) {
+        int id = timer[0]++;
+        dfn.put(u, id);
+        low.put(u, id);
+        tarjanStack.push(u);
+        onStack.add(u);
+
+        for (PsiElement v : adj.getOrDefault(u, List.of())) {
+            if (sharedDepthMemo.containsKey(v)) {
+                continue;
+            }
+            Integer vDfn = dfn.get(v);
+            if (vDfn == null) {
+                runTarjanDfs(v, adj, sharedDepthMemo, dfn, low, onStack, tarjanStack, sccIdOf, sccs, timer);
+                low.put(u, Math.min(low.get(u), low.get(v)));
+            } else if (onStack.contains(v)) {
+                low.put(u, Math.min(low.get(u), vDfn));
+            }
+        }
+
+        if (low.get(u).equals(dfn.get(u))) {
+            int sccIndex = sccs.size();
+            List<PsiElement> component = new ArrayList<>();
+            while (true) {
+                PsiElement w = tarjanStack.pop();
+                onStack.remove(w);
+                sccIdOf.put(w, sccIndex);
+                component.add(w);
+                if (w == u) {
+                    break;
+                }
+            }
+            sccs.add(component);
+        }
+    }
+
+    private static List<PsiElement> collectDirectDeclarationDependencies(PsiElement decl) {
+        Set<PsiElement> deps = Collections.newSetFromMap(new IdentityHashMap<>());
+        if (decl instanceof TypeDefinition td) {
+            collectMetadataMapSymbolDeps(td.getMetadataMap(), deps);
+            collectSchemaTypeSymbolDeps(td.getSchemaType(), deps);
+        } else if (decl instanceof ConstantDefinition cd) {
+            collectSchemaTypeSymbolDeps(cd.getSchemaType(), deps);
+            collectValueConstantDeps(cd.getValue(), deps);
+        }
+        deps.remove(decl);
+        return new ArrayList<>(deps);
+    }
+
+    private static void collectSchemaTypeSymbolDeps(@Nullable SchemaType schemaType, Set<PsiElement> deps) {
+        if (schemaType == null) {
+            return;
+        }
+        collectMetadataMapSymbolDeps(schemaType.getMetadataMap(), deps);
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null) {
+            TypeDefinition targetTd = resolveReferencedTypeDefinitionForGrounding(kw);
+            if (targetTd != null) {
+                deps.add(targetTd);
+            }
+        }
+        SchemaConstructor ctor = schemaType.getSchemaConstructor();
+        if (ctor != null) {
+            ProductType prod = ctor.getProductType();
+            if (prod != null) {
+                for (SchemaType child : prod.getSchemaTypeList()) {
+                    collectSchemaTypeSymbolDeps(child, deps);
+                }
+            }
+            CollectionType coll = ctor.getCollectionType();
+            if (coll != null) {
+                for (SchemaType child : coll.getSchemaTypeList()) {
+                    collectSchemaTypeSymbolDeps(child, deps);
+                }
+            }
+            SumType sum = ctor.getSumType();
+            if (sum != null && sum.getEnumDef() == null) {
+                for (SchemaType child : PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class)) {
+                    collectSchemaTypeSymbolDeps(child, deps);
+                }
+            }
+        }
+    }
+
+    private static void collectMetadataMapSymbolDeps(@Nullable MetadataMap metaMap, Set<PsiElement> deps) {
+        if (metaMap == null) {
+            return;
+        }
+        for (var entry : metaMap.getMetadataEntryList()) {
+            if (entry.getMetadataFilter() != null) {
+                continue;
+            }
+            for (var vkw : PsiTreeUtil.findChildrenOfType(entry, ValueKeyword.class)) {
+                ConstantDefinition cd = resolveReferencedConstantDefinitionForGrounding(vkw);
+                if (cd != null) {
+                    deps.add(cd);
+                }
+            }
+        }
+    }
+
+    private static void collectValueConstantDeps(@Nullable Value value, Set<PsiElement> deps) {
+        if (value == null) {
+            return;
+        }
+        for (var vkw : PsiTreeUtil.findChildrenOfType(value, ValueKeyword.class)) {
+            String text = vkw.getText().trim();
+            if (StvnPsiUtils.isConstructorTag(text)
+                    || StvnVocabulary.VAL_TRUE.equals(text)
+                    || StvnVocabulary.VAL_TRUE_SHORT.equals(text)
+                    || StvnVocabulary.VAL_FALSE.equals(text)
+                    || StvnVocabulary.VAL_FALSE_SHORT.equals(text)) {
+                continue;
+            }
+            var ref = vkw.getReference();
+            if (ref != null) {
+                PsiElement resolved = ref.resolve();
+                if (resolved != null && PsiTreeUtil.getParentOfType(resolved, EnumDef.class, false) != null) {
+                    continue;
+                }
+                ConstantDefinition viaRef = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+                if (viaRef != null) {
+                    deps.add(viaRef);
+                    continue;
+                }
+            }
+            ConstantDefinition cd = resolveReferencedConstantDefinitionForGrounding(vkw);
+            if (cd != null) {
+                deps.add(cd);
+            }
+        }
+    }
+
+    private static @Nullable TypeDefinition resolveReferencedTypeDefinitionForGrounding(TypeKeyword kw) {
+        PsiFile file = kw.getContainingFile();
+        String name = kw.getText().trim();
+        if (file == null
+                || !name.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                || StvnVocabulary.isBaseScalarType(name)) {
+            return null;
+        }
+        PsiElement resolved = new StvnTypeReference(kw).resolve();
+        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        if (td != null) {
+            return td;
+        }
+        PackageEnclosure pkg = PsiTreeUtil.getParentOfType(kw, PackageEnclosure.class);
+        if (pkg != null && pkg.getPackagePath() != null && !name.substring(1).contains("/")) {
+            for (var elem : pkg.getPackageElementList()) {
+                var candidate = elem.getTypeDefinition();
+                if (candidate != null && candidate.getTypeKeyword() != null
+                        && name.equals(candidate.getTypeKeyword().getText().trim())) {
+                    return candidate;
+                }
+            }
+        }
+        PsiElement inFile = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
+        td = StvnPsiUtils.resolveTargetTypeDefinition(inFile);
+        if (td != null) {
+            return td;
+        }
+        if (!file.getProject().isDisposed()) {
+            return StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), name);
+        }
+        return null;
+    }
+
+    private static @Nullable ConstantDefinition resolveReferencedConstantDefinitionForGrounding(ValueKeyword vkw) {
+        String name = vkw.getText().trim();
+        if (!name.startsWith(StvnVocabulary.SIGIL_VALUE)
+                || StvnVocabulary.VAL_TRUE.equals(name)
+                || StvnVocabulary.VAL_TRUE_SHORT.equals(name)
+                || StvnVocabulary.VAL_FALSE.equals(name)
+                || StvnVocabulary.VAL_FALSE_SHORT.equals(name)
+                || StvnPsiUtils.isConstructorTag(name)) {
+            return null;
+        }
+        PsiElement withCtx = StvnConstantReference.resolveConstantWithContext(vkw);
+        if (withCtx != null && PsiTreeUtil.getParentOfType(withCtx, EnumDef.class, false) == null) {
+            ConstantDefinition cd = StvnPsiUtils.resolveTargetConstantDefinition(withCtx);
+            if (cd != null) {
+                return cd;
+            }
+        }
+        PackageEnclosure pkg = PsiTreeUtil.getParentOfType(vkw, PackageEnclosure.class);
+        if (pkg != null && pkg.getPackagePath() != null && !name.substring(1).contains("/")) {
+            for (var elem : pkg.getPackageElementList()) {
+                var cd = elem.getConstantDefinition();
+                if (cd != null && cd.getValueKeyword() != null
+                        && name.equals(cd.getValueKeyword().getText().trim())) {
+                    return cd;
+                }
+            }
+        }
+        return StvnPsiLiteralEvaluator.resolveConstantDefinition(vkw, name);
     }
 
     private static void collectStrippedPackageSymbols(
@@ -1652,7 +1956,8 @@ public final class StvnNamespaceSymbolCollector {
         String targetPackagePath,
         Set<String> processedNames,
         List<StvnNamespaceSymbolEntry> results,
-        @Nullable PsiElement originElement
+        @Nullable PsiElement originElement,
+        Map<PsiElement, Integer> groundingMemo
     ) {
         List<PsiFile> candidateFiles = new ArrayList<>();
         candidateFiles.add(file);
@@ -1665,7 +1970,7 @@ public final class StvnNamespaceSymbolCollector {
                 if (!StvnPsiUtils.hasIllegalTrailingSlash(pkg)
                         && path != null
                         && targetPackagePath.equals(path.getText().trim())) {
-                    collectStrippedElements(file, pkg, targetPackagePath, processedNames, results, originElement);
+                    collectStrippedElements(file, pkg, targetPackagePath, processedNames, results, originElement, groundingMemo);
                 }
             }
         }
@@ -1677,7 +1982,8 @@ public final class StvnNamespaceSymbolCollector {
         String targetPackagePath,
         Set<String> processedNames,
         List<StvnNamespaceSymbolEntry> results,
-        @Nullable PsiElement originElement
+        @Nullable PsiElement originElement,
+        Map<PsiElement, Integer> groundingMemo
     ) {
         for (var elem : pkg.getPackageElementList()) {
             var typeDef = elem.getTypeDefinition();
@@ -1692,7 +1998,7 @@ public final class StvnNamespaceSymbolCollector {
                         targetPackagePath,
                         fqni,
                         resolveFormattedTypeStructure(typeDef, new HashSet<>()),
-                        1,
+                        computeVopGroundingDepthForDeclaration(typeDef, groundingMemo),
                         navElement,
                         false,
                         navElement.getTextOffset(),
@@ -1712,7 +2018,7 @@ public final class StvnNamespaceSymbolCollector {
                         targetPackagePath,
                         fqni,
                         formatConstantResolvedType(constDef, activeRootFile),
-                        1,
+                        computeVopGroundingDepthForDeclaration(constDef, groundingMemo),
                         navElement,
                         false,
                         navElement.getTextOffset(),

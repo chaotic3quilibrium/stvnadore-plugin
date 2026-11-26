@@ -1179,9 +1179,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
                     var endOffset = info.getEndOffset();
                     var matchedText = text.substring(startOffset, endOffset);
                     
-                    // Assert the range matches the empty array or empty map delimiter specifically, NOT the parent tuple bounds.
-                    assertTrue("Offending range must target empty array/map delimiter ('[]', '{}', ']', or '}'), got: " + matchedText,
-                            matchedText.equals("[]") || matchedText.equals("{}") || matchedText.equals("]") || matchedText.equals("}"));
+                    // Assert the range matches the full empty array or empty map delimiter pair, NOT a single closing delimiter or parent tuple bounds.
+                    assertTrue("Offending range must target full empty array/map delimiter pair ('[]' or '{}'), got: " + matchedText,
+                            matchedText.equals("[]") || matchedText.equals("{}"));
                 }
             }
         }

@@ -1,27 +1,37 @@
 package org.stvnadore.plugin.validation;
 
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
+import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.plugin.psi.StvnElementFactory;
+import org.stvnadore.plugin.psi.StvnPsiUtils;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.ValueKeyword;
 import org.stvnadore.psi.VariantList;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * In-place AST rewrite quick-fix sorting filter facet variants according to
- * the declaration order of the root :Enum.
+ * In-place AST and document rewrite quick-fix sorting filter facet variants according to
+ * the declaration order of the root {@code :Enum} with zero bracket padding on single-line lists
+ * and layout/comment preservation on multi-line lists.
  */
 @NullMarked
 public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
@@ -66,42 +76,106 @@ public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAn
             @NotNull PsiElement endElement
     ) {
         var variantList = PsiTreeUtil.getNonStrictParentOfType(startElement, VariantList.class);
-        if (variantList == null) return;
-
-        var typeDef = PsiTreeUtil.getParentOfType(variantList, TypeDefinition.class);
-        if (typeDef == null || typeDef.getSchemaType() == null) return;
-
-        var subset = StvnTypeResolver.resolveEnumSubset(typeDef.getSchemaType());
-        List<String> rootVariants;
-        if (subset != null) {
-            rootVariants = subset.rootVariants();
-        } else {
-            var resolved = StvnTypeResolver.resolveNominalSchema(typeDef.getSchemaType());
-            if (resolved == null || resolved.getSchemaConstructor() == null ||
-                resolved.getSchemaConstructor().getSumType() == null ||
-                resolved.getSchemaConstructor().getSumType().getEnumDef() == null) {
-                return;
-            }
-            rootVariants = resolved.getSchemaConstructor().getSumType().getEnumDef()
-                .getValueKeywordList().stream().map(ValueKeyword::getText).toList();
+        if (variantList == null || !variantList.isValid()) {
+            return;
         }
 
-        var currentKeywords = variantList.getValueKeywordList();
-        var sorted = currentKeywords.stream()
+        List<String> rootVariants = resolveRootVariants(variantList);
+        if (rootVariants.isEmpty()) {
+            return;
+        }
+
+        List<ValueKeyword> currentKeywords = new ArrayList<>(variantList.getValueKeywordList());
+        if (currentKeywords.size() < 2) {
+            return;
+        }
+
+        List<String> sortedTexts = currentKeywords.stream()
             .sorted(Comparator.comparingInt(k -> {
-                int idx = rootVariants.indexOf(k.getText());
+                int idx = rootVariants.indexOf(k.getText().trim());
                 return idx >= 0 ? idx : Integer.MAX_VALUE;
             }))
+            .map(k -> k.getText().trim())
             .toList();
 
-        var replacementText = "[ " + sorted.stream().map(ValueKeyword::getText).collect(Collectors.joining(" ")) + " ]";
-
-        var docManager = PsiDocumentManager.getInstance(project);
+        boolean multiLine = variantList.getText().contains("\n") || variantList.getText().contains("\r");
         var doc = file.getViewProvider().getDocument();
         if (doc != null) {
-            var range = variantList.getTextRange();
-            doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacementText);
-            docManager.commitDocument(doc);
+            if (multiLine) {
+                for (int i = currentKeywords.size() - 1; i >= 0; i--) {
+                    var kwRange = currentKeywords.get(i).getTextRange();
+                    doc.replaceString(kwRange.getStartOffset(), kwRange.getEndOffset(), sortedTexts.get(i));
+                }
+            } else {
+                String canonicalList = StvnVocabulary.DELIM_OPEN_BRACKET
+                    + sortedTexts.stream().collect(Collectors.joining(" "))
+                    + StvnVocabulary.DELIM_CLOSE_BRACKET;
+                var range = variantList.getTextRange();
+                doc.replaceString(range.getStartOffset(), range.getEndOffset(), canonicalList);
+            }
+            if (file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(startElement)) {
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+            }
+            return;
         }
+
+        if (multiLine) {
+            for (int i = currentKeywords.size() - 1; i >= 0; i--) {
+                ValueKeyword targetKw = currentKeywords.get(i);
+                String newTokenText = sortedTexts.get(i);
+                var firstLeaf = targetKw.getNode() != null ? targetKw.getNode().getFirstChildNode() : null;
+                if (firstLeaf instanceof LeafPsiElement leafPsi) {
+                    leafPsi.replaceWithText(newTokenText);
+                } else {
+                    targetKw.replace(StvnElementFactory.createValueKeyword(project, newTokenText));
+                }
+            }
+        } else {
+            String canonicalList = StvnVocabulary.DELIM_OPEN_BRACKET
+                + String.join(" ", sortedTexts)
+                + StvnVocabulary.DELIM_CLOSE_BRACKET;
+            variantList.replace(StvnElementFactory.createVariantList(project, canonicalList));
+        }
+    }
+
+    private static List<String> resolveRootVariants(VariantList variantList) {
+        SchemaType governingSchema = PsiTreeUtil.getParentOfType(variantList, SchemaType.class);
+        if (governingSchema == null) {
+            var typeDef = PsiTreeUtil.getParentOfType(variantList, TypeDefinition.class);
+            governingSchema = typeDef != null ? typeDef.getSchemaType() : null;
+        }
+        if (governingSchema == null) {
+            return List.of();
+        }
+
+        var subset = StvnTypeResolver.resolveEnumSubset(governingSchema);
+        if (subset != null && !subset.rootVariants().isEmpty()) {
+            return subset.rootVariants();
+        }
+
+        var resolved = StvnTypeResolver.resolveNominalSchema(governingSchema);
+        if (resolved != null
+                && resolved.getSchemaConstructor() != null
+                && resolved.getSchemaConstructor().getSumType() != null
+                && resolved.getSchemaConstructor().getSumType().getEnumDef() != null) {
+            return resolved.getSchemaConstructor().getSumType().getEnumDef()
+                .getValueKeywordList().stream()
+                .map(vk -> vk.getText().trim())
+                .toList();
+        }
+
+        var kw = governingSchema.getTypeKeyword();
+        var file = variantList.getContainingFile();
+        if (kw != null && file != null) {
+            var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
+            var targetTd = StvnPsiUtils.resolveTargetTypeDefinition(target);
+            if (targetTd != null) {
+                var tdSubset = StvnTypeResolver.resolveEnumSubset(targetTd);
+                if (tdSubset != null && !tdSubset.rootVariants().isEmpty()) {
+                    return tdSubset.rootVariants();
+                }
+            }
+        }
+        return List.of();
     }
 }

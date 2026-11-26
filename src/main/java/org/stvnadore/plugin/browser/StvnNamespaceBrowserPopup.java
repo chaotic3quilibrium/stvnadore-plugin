@@ -34,6 +34,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.ui.DocumentAdapter;
+import com.intellij.ui.ScreenUtil;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
@@ -65,13 +66,18 @@ import javax.swing.JComponent;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JScrollBar;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
+import javax.swing.table.JTableHeader;
 import javax.swing.text.BadLocationException;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Insets;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -123,33 +129,69 @@ public final class StvnNamespaceBrowserPopup {
     public static final String FILTER_FIELD_TOOLTIP =
         StvnBundle.message("stvn.browser.filter.tooltip");
 
+    private static final int MIN_POPUP_WIDTH_PX = 620;
+    private static final int MIN_POPUP_HEIGHT_PX = 260;
+    private static final int SCREEN_FIT_MARGIN_PX = 24;
+    private static final int DEFAULT_SCROLLBAR_RESERVE_PX = 16;
+
     private StvnNamespaceBrowserPopup() {
+    }
+
+    /**
+     * Testable abstraction over {@link JBPopup} screen geometry for deterministic window fitting.
+     */
+    public interface PopupWindowBridge {
+        /**
+         * Returns the popup's current screen rectangle, or {@code null} if unavailable.
+         *
+         * @return current popup bounds in screen coordinates, or {@code null}
+         */
+        @Nullable Rectangle getCurrentBounds();
+
+        /**
+         * Returns the usable monitor work area (excluding OS taskbars and docks) containing {@code anchorScreenPoint}.
+         *
+         * @param anchorScreenPoint reference point in screen coordinates
+         * @return usable screen work rectangle
+         */
+        Rectangle getUsableScreenBounds(Point anchorScreenPoint);
+
+        /**
+         * Moves and resizes the popup window to {@code targetBounds}.
+         *
+         * @param targetBounds clamped target bounds in screen coordinates
+         */
+        void applyBounds(Rectangle targetBounds);
     }
 
     /**
      * Encapsulates the constructed Swing components, live scope buttons, filter input,
      * column manager, popup-scoped shortcuts, navigation callback, and async snapshot future.
      *
-     * @param panel                    outer popup container panel
-     * @param table                    5-column symbol table
-     * @param showPreludeCheckBox      prelude toggle checkbox
-     * @param filterField              live symbol filter field
-     * @param scopeButtons             radio buttons keyed by {@link StvnNamespaceScope}
-     * @param activeScopeRef           mutable reference tracking the currently selected scope
-     * @param tableModel               underlying 5-column {@link StvnNamespaceTableModel}
-     * @param filePrefixLabel          Row 1 bold {@code File:} prefix label aligned at {@code x = 0}
-     * @param fileLabel                Row 1 plain {@code <filename>} value label carrying relative-path tooltip
-     * @param scopeSummaryPrefixLabel  Row 2 bold {@code Scope:} prefix label aligned at {@code x = 0}
-     * @param headerLabel              Row 2 plain dynamic scope and count summary value label
-     * @param scopeSelectorPrefixLabel Row 3 bold {@code Scope:} prefix label aligned at {@code x = 0}
-     * @param columnManager            spreadsheet column sizing and width-lock manager
-     * @param scopeShortcutActions     popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
-     * @param filterFocusAction        popup-scoped {@code Alt+F} / {@code Ctrl+F} / {@code Meta+F} filter focus action
-     * @param rightSizeAllUnlockedAction popup-scoped {@code Alt+R} action right-sizing all unlocked columns
-     * @param navigationHandlerRef     mutable callback invoked on {@code Enter} from {@code table} or {@code filterField}
-     * @param popupTitle               static window caption ({@code STVN Namespace Dependencies})
-     * @param loadingPanel             asynchronous loading wrapper panel
-     * @param analysisFuture           completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
+     * @param panel                      outer popup container panel
+     * @param table                      5-column symbol table
+     * @param showPreludeCheckBox        prelude toggle checkbox
+     * @param filterField                live symbol filter field
+     * @param scopeButtons               radio buttons keyed by {@link StvnNamespaceScope}
+     * @param activeScopeRef             mutable reference tracking the currently selected scope
+     * @param tableModel                 underlying 5-column {@link StvnNamespaceTableModel}
+     * @param filePrefixLabel            Row 1 bold {@code File:} prefix label aligned at {@code x = 0}
+     * @param fileLabel                  Row 1 plain {@code <filename>} value label carrying relative-path tooltip
+     * @param scopeSummaryPrefixLabel    Row 2 bold {@code Scope:} prefix label aligned at {@code x = 0}
+     * @param headerLabel                Row 2 plain dynamic scope and count summary value label
+     * @param scopeSelectorPrefixLabel   Row 3 bold {@code Scope:} prefix label aligned at {@code x = 0}
+     * @param columnManager              spreadsheet column sizing and width-lock manager
+     * @param scopeShortcutActions       popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
+     * @param filterFocusAction          popup-scoped {@code Alt+F} / {@code Ctrl+F} / {@code Meta+F} filter focus action
+     * @param rightSizeAllUnlockedAction popup-scoped 2-stage {@code Alt+R} action right-sizing columns then fitting window
+     * @param fitWindowToContentAction   popup-scoped 1-step {@code Alt+Shift+R} action fitting window to rows and columns
+     * @param popupWindowBridgeRef       mutable reference to the active {@link PopupWindowBridge}
+     * @param northPanel                 structured 3-row header container panel
+     * @param scrollPane                 scrollable viewport wrapping {@code table}
+     * @param navigationHandlerRef       mutable callback invoked on {@code Enter} from {@code table} or {@code filterField}
+     * @param popupTitle                 static window caption ({@code STVN Namespace Dependencies})
+     * @param loadingPanel               asynchronous loading wrapper panel
+     * @param analysisFuture             completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
      */
     public record BrowserContent(
         JPanel panel,
@@ -168,6 +210,10 @@ public final class StvnNamespaceBrowserPopup {
         Map<StvnNamespaceScope, AnAction> scopeShortcutActions,
         AnAction filterFocusAction,
         AnAction rightSizeAllUnlockedAction,
+        AnAction fitWindowToContentAction,
+        AtomicReference<@Nullable PopupWindowBridge> popupWindowBridgeRef,
+        JPanel northPanel,
+        JBScrollPane scrollPane,
         AtomicReference<Runnable> navigationHandlerRef,
         String popupTitle,
         JBLoadingPanel loadingPanel,
@@ -189,6 +235,134 @@ public final class StvnNamespaceBrowserPopup {
          */
         public String fullScopeSummaryText() {
             return scopeSummaryPrefixLabel.getText() + " " + headerLabel.getText();
+        }
+
+        /**
+         * Executes the 2-stage progressive {@code Alt+R} workflow once async snapshot loading is complete:
+         * Stage 1 right-sizes unlocked columns in place when any unlocked column differs from its target width;
+         * Stage 2 fits the popup window to visible rows and columns when all unlocked columns are already right-sized
+         * (or when zero columns are unlocked).
+         */
+        public void invokeProgressiveRightSizeOrFitWindow() {
+            if (!analysisFuture.isDone() || analysisFuture.isCompletedExceptionally()) {
+                return;
+            }
+            if (columnManager.hasAnyUnlockedColumn() && !columnManager.areAllUnlockedColumnsRightSized()) {
+                columnManager.rightSizeAllUnlockedColumns();
+                return;
+            }
+            fitPopupWindowToRowsAndColumns();
+        }
+
+        /**
+         * Right-sizes all unlocked columns and fits the popup window to display all visible columns and rows
+         * within the active monitor's usable work area (strict no-op while initial async snapshot loading is running).
+         */
+        public void fitPopupWindowToRowsAndColumns() {
+            if (!analysisFuture.isDone() || analysisFuture.isCompletedExceptionally()) {
+                return;
+            }
+            if (columnManager.hasAnyUnlockedColumn()) {
+                columnManager.rightSizeAllUnlockedColumns();
+            }
+            PopupWindowBridge bridge = popupWindowBridgeRef.get();
+            if (bridge == null) {
+                return;
+            }
+            Rectangle currentBounds = bridge.getCurrentBounds();
+            if (currentBounds == null) {
+                return;
+            }
+            Point anchor = new Point(
+                currentBounds.x + Math.max(0, currentBounds.width / 2),
+                currentBounds.y + Math.max(0, currentBounds.height / 2)
+            );
+            Rectangle usableScreenRect = bridge.getUsableScreenBounds(anchor);
+            Rectangle fittedBounds = computeFittedPopupBounds(currentBounds, usableScreenRect);
+            bridge.applyBounds(fittedBounds);
+            panel.revalidate();
+            panel.repaint();
+            table.revalidate();
+            table.repaint();
+        }
+
+        /**
+         * Computes the screen-clamped target popup bounds for the current table columns, visible rows,
+         * and 3-row header bar, shifting {@code (x, y)} left/up if expansion would overflow usable monitor edges.
+         *
+         * @param currentPopupBounds current popup screen rectangle
+         * @param usableScreenRect   active monitor usable work area (excluding OS taskbar/dock)
+         * @return clamped and origin-shifted target popup bounds
+         */
+        public Rectangle computeFittedPopupBounds(Rectangle currentPopupBounds, Rectangle usableScreenRect) {
+            int margin = JBUI.scale(SCREEN_FIT_MARGIN_PX);
+            int availX = usableScreenRect.x + margin;
+            int availY = usableScreenRect.y + margin;
+            int availW = Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), usableScreenRect.width - 2 * margin);
+            int availH = Math.max(JBUI.scale(MIN_POPUP_HEIGHT_PX), usableScreenRect.height - 2 * margin);
+
+            Insets panelInsets = panel.getInsets();
+            Insets scrollInsets = scrollPane.getInsets();
+            int panelChromeW = panelInsets != null ? panelInsets.left + panelInsets.right : 0;
+            int panelChromeH = panelInsets != null ? panelInsets.top + panelInsets.bottom : 0;
+            int scrollChromeW = scrollInsets != null ? scrollInsets.left + scrollInsets.right : 0;
+            int scrollChromeH = scrollInsets != null ? scrollInsets.top + scrollInsets.bottom : 0;
+            int borderGapY = panel.getLayout() instanceof BorderLayout bl ? bl.getVgap() : JBUI.scale(6);
+
+            int northPrefWidth = northPanel.getPreferredSize().width + panelChromeW;
+            int northHeight = Math.max(northPanel.getHeight(), northPanel.getPreferredSize().height);
+            JTableHeader header = table.getTableHeader();
+            int headerHeight = header != null
+                ? Math.max(header.getHeight(), header.getPreferredSize().height)
+                : 0;
+            int rowHeight = Math.max(1, table.getRowHeight());
+            int rowsHeight = table.getRowCount() * rowHeight;
+            int columnsWidth = columnManager.computeTotalColumnsWidth();
+
+            JScrollBar vBar = scrollPane.getVerticalScrollBar();
+            JScrollBar hBar = scrollPane.getHorizontalScrollBar();
+            int vBarReserve = (vBar != null && vBar.getPreferredSize().width > 0)
+                ? vBar.getPreferredSize().width
+                : JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX);
+            int hBarReserve = (hBar != null && hBar.getPreferredSize().height > 0)
+                ? hBar.getPreferredSize().height
+                : JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX);
+
+            int baseIdealWidth = columnsWidth + panelChromeW + scrollChromeW;
+            int baseIdealHeight = northHeight + borderGapY + headerHeight + rowsHeight + panelChromeH + scrollChromeH;
+
+            boolean needsVerticalScroll = baseIdealHeight > availH;
+            int idealWidthWithVScroll = baseIdealWidth + (needsVerticalScroll ? vBarReserve : 0);
+            boolean needsHorizontalScroll = idealWidthWithVScroll > availW;
+            int idealHeightWithHScroll = baseIdealHeight + (needsHorizontalScroll ? hBarReserve : 0);
+            if (!needsVerticalScroll && idealHeightWithHScroll > availH) {
+                idealWidthWithVScroll = baseIdealWidth + vBarReserve;
+            }
+
+            int minFloorWidth = Math.min(availW, Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), northPrefWidth));
+            int minFloorHeight = Math.min(availH, JBUI.scale(MIN_POPUP_HEIGHT_PX));
+
+            int targetWidth = Math.max(minFloorWidth, Math.min(availW, idealWidthWithVScroll));
+            int targetHeight = Math.max(minFloorHeight, Math.min(availH, idealHeightWithHScroll));
+
+            int targetX = currentPopupBounds.x;
+            int targetY = currentPopupBounds.y;
+            int maxAllowedX = availX + availW - targetWidth;
+            int maxAllowedY = availY + availH - targetHeight;
+            if (targetX > maxAllowedX) {
+                targetX = maxAllowedX;
+            }
+            if (targetX < availX) {
+                targetX = availX;
+            }
+            if (targetY > maxAllowedY) {
+                targetY = maxAllowedY;
+            }
+            if (targetY < availY) {
+                targetY = availY;
+            }
+
+            return new Rectangle(targetX, targetY, targetWidth, targetHeight);
         }
 
         /**
@@ -243,8 +417,24 @@ public final class StvnNamespaceBrowserPopup {
         Disposable parentDisposable
     ) {
         var tableModel = new StvnNamespaceTableModel(new ArrayList<>());
+        var activeScopeRef = new AtomicReference<>(initialScope);
+        var snapshotRef = new AtomicReference<StvnNamespaceSymbolCollector.@Nullable StvnNamespaceSnapshot>(null);
+        var popupWindowBridgeRef = new AtomicReference<@Nullable PopupWindowBridge>(null);
         var columnManagerHolder = new StvnNamespaceColumnManager[1];
         var table = new JBTable(tableModel) {
+            @Override
+            protected @NotNull JTableHeader createDefaultTableHeader() {
+                return new JTableHeader(columnModel) {
+                    @Override
+                    public @Nullable String getToolTipText(MouseEvent event) {
+                        var mgr = columnManagerHolder[0];
+                        return mgr != null
+                            ? mgr.resolveHeaderTooltip(event.getPoint(), activeScopeRef.get())
+                            : super.getToolTipText(event);
+                    }
+                };
+            }
+
             @Override
             public @Nullable String getToolTipText(@NotNull MouseEvent event) {
                 var mgr = columnManagerHolder[0];
@@ -262,9 +452,6 @@ public final class StvnNamespaceBrowserPopup {
         var panel = new JPanel(new BorderLayout(0, JBUI.scale(6)));
         panel.setBorder(JBUI.Borders.empty(8));
         panel.setPreferredSize(new Dimension(JBUI.scale(920), JBUI.scale(440)));
-
-        var activeScopeRef = new AtomicReference<>(initialScope);
-        var snapshotRef = new AtomicReference<StvnNamespaceSymbolCollector.@Nullable StvnNamespaceSnapshot>(null);
 
         var northPanel = new JPanel();
         northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
@@ -440,12 +627,41 @@ public final class StvnNamespaceBrowserPopup {
             registerScopeShortcut(panel, parentDisposable, KeyEvent.VK_3, StvnNamespaceScope.BODY, scopeButtons, trySwitchScope)
         );
 
+        var contentHolder = new BrowserContent[1];
+        Runnable progressiveAltRRunnable = () -> {
+            if (snapshotRef.get() == null) {
+                return;
+            }
+            var bc = contentHolder[0];
+            if (bc != null) {
+                bc.invokeProgressiveRightSizeOrFitWindow();
+            }
+        };
+        Runnable directFitWindowRunnable = () -> {
+            if (snapshotRef.get() == null) {
+                return;
+            }
+            var bc = contentHolder[0];
+            if (bc != null) {
+                bc.fitPopupWindowToRowsAndColumns();
+            }
+        };
+        columnManager.setFitWindowAction(directFitWindowRunnable, () -> snapshotRef.get() != null);
+
         AnAction filterFocusAction = registerFilterFocusShortcut(panel, parentDisposable, filterField);
-        AnAction rightSizeAllUnlockedAction = registerRightSizeAllUnlockedShortcut(
+        AnAction rightSizeAllUnlockedAction = registerPopupKeyShortcut(
             panel,
             parentDisposable,
-            snapshotRef,
-            columnManager
+            KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.ALT_DOWN_MASK),
+            "stvn.browser.columns.rightSizeAllUnlocked",
+            progressiveAltRRunnable
+        );
+        AnAction fitWindowToContentAction = registerPopupKeyShortcut(
+            panel,
+            parentDisposable,
+            KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+            "stvn.browser.window.fitToRowsAndColumns",
+            directFitWindowRunnable
         );
 
         AtomicReference<Runnable> navigationHandlerRef = new AtomicReference<>(() -> {
@@ -520,7 +736,7 @@ public final class StvnNamespaceBrowserPopup {
 
         promise.onError(analysisFuture::completeExceptionally);
 
-        return new BrowserContent(
+        var builtContent = new BrowserContent(
             panel,
             table,
             showPreludeCheckBox,
@@ -537,11 +753,17 @@ public final class StvnNamespaceBrowserPopup {
             Map.copyOf(scopeShortcutActions),
             filterFocusAction,
             rightSizeAllUnlockedAction,
+            fitWindowToContentAction,
+            popupWindowBridgeRef,
+            northPanel,
+            scrollPane,
             navigationHandlerRef,
             resolvePopupTitle(),
             loadingPanel,
             analysisFuture
         );
+        contentHolder[0] = builtContent;
+        return builtContent;
     }
 
     private static JBLabel createBoldPrefixLabel(String text) {
@@ -705,24 +927,17 @@ public final class StvnNamespaceBrowserPopup {
         return action;
     }
 
-    private static AnAction registerRightSizeAllUnlockedShortcut(
+    private static AnAction registerPopupKeyShortcut(
         JPanel rootPanel,
         Disposable parentDisposable,
-        AtomicReference<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> snapshotRef,
-        StvnNamespaceColumnManager columnManager
+        KeyStroke keyStroke,
+        String actionKey,
+        Runnable handler
     ) {
-        KeyStroke altR = KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.ALT_DOWN_MASK);
-        Runnable tryRightSizeAllUnlocked = () -> {
-            if (snapshotRef.get() == null || !columnManager.hasAnyUnlockedColumn()) {
-                return;
-            }
-            columnManager.rightSizeAllUnlockedColumns();
-        };
-
         var action = new DumbAwareAction() {
             @Override
             public void update(@NotNull AnActionEvent e) {
-                // Keep enabled inside popup so Alt+R never leaks to IntelliJ's top-level Run menu
+                // Keep enabled inside popup so Alt+R / Alt+Shift+R never leak to global IDE Run/Refactor actions
                 e.getPresentation().setEnabled(true);
             }
 
@@ -733,17 +948,16 @@ public final class StvnNamespaceBrowserPopup {
 
             @Override
             public void actionPerformed(@NotNull AnActionEvent e) {
-                tryRightSizeAllUnlocked.run();
+                handler.run();
             }
         };
-        action.registerCustomShortcutSet(new CustomShortcutSet(altR), rootPanel, parentDisposable);
+        action.registerCustomShortcutSet(new CustomShortcutSet(keyStroke), rootPanel, parentDisposable);
 
-        String actionKey = "stvn.browser.columns.rightSizeAllUnlocked";
-        rootPanel.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(altR, actionKey);
+        rootPanel.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(keyStroke, actionKey);
         rootPanel.getActionMap().put(actionKey, new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                tryRightSizeAllUnlocked.run();
+                handler.run();
             }
         });
         return action;
@@ -854,7 +1068,7 @@ public final class StvnNamespaceBrowserPopup {
             public void keyTyped(KeyEvent e) {
                 if ((e.getModifiersEx() & InputEvent.ALT_DOWN_MASK) != 0) {
                     char ch = e.getKeyChar();
-                    if (ch == 'r' || ch == 'R' || ch == '\u00AE') {
+                    if (ch == 'r' || ch == 'R' || ch == '\u00AE' || ch == '\u2030') {
                         e.consume();
                     }
                 }
@@ -1089,6 +1303,33 @@ public final class StvnNamespaceBrowserPopup {
 
         Disposer.register(popup, popupDisposable);
         popupRef[0] = popup;
+        content.popupWindowBridgeRef().set(new PopupWindowBridge() {
+            @Override
+            public @Nullable Rectangle getCurrentBounds() {
+                if (popup.isDisposed() || !panel.isShowing()) {
+                    return null;
+                }
+                Point loc = popup.getLocationOnScreen();
+                Dimension sz = popup.getSize();
+                if (sz.width <= 0 || sz.height <= 0) {
+                    sz = panel.getSize();
+                }
+                return new Rectangle(loc.x, loc.y, sz.width, sz.height);
+            }
+
+            @Override
+            public Rectangle getUsableScreenBounds(Point anchorScreenPoint) {
+                return ScreenUtil.getScreenRectangle(anchorScreenPoint);
+            }
+
+            @Override
+            public void applyBounds(Rectangle targetBounds) {
+                if (!popup.isDisposed()) {
+                    popup.setLocation(targetBounds.getLocation());
+                    popup.setSize(targetBounds.getSize());
+                }
+            }
+        });
         popup.showInFocusCenter();
     }
 

@@ -439,15 +439,19 @@ public final class StvnNamespaceBrowserUxAndDepthParityTest extends BasePlatform
 
             // 4. Requirement 3C: Header right-click width lock context menu (Option A)
             var depthMenu = colMgr.buildHeaderContextMenu(4);
+            assertEquals(4, depthMenu.getComponentCount());
             var depthLockItem = (JCheckBoxMenuItem) depthMenu.getComponent(0);
             var depthRightSizeItem = (JMenuItem) depthMenu.getComponent(1);
             var depthRightSizeAllItem = (JMenuItem) depthMenu.getComponent(2);
+            var depthFitWindowItem = (JMenuItem) depthMenu.getComponent(3);
             assertEquals("Lock Column Width", depthLockItem.getText());
             assertTrue(depthLockItem.isSelected());
             assertEquals("Right-Size Column", depthRightSizeItem.getText());
             assertFalse("Right-Size Column must be disabled when column is locked", depthRightSizeItem.isEnabled());
             assertEquals("Right-Size All Unlocked Columns (Alt+R)", depthRightSizeAllItem.getText());
             assertTrue(depthRightSizeAllItem.isEnabled());
+            assertEquals("Fit Window to Rows & Columns (Alt+Shift+R)", depthFitWindowItem.getText());
+            assertTrue(depthFitWindowItem.isEnabled());
 
             // Lock Column 0 (Name) at custom width 195 via header context menu
             col0.setPreferredWidth(195);

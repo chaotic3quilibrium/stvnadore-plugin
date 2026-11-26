@@ -5,24 +5,21 @@ import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.psi.ValueKeyword;
 import org.stvnadore.psi.VariantList;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Objects;
 
 /**
- * In-place AST rewrite quick-fix and intention action that removes a duplicate
- * enum variant from a {@code #filterIncl} or {@code #filterExcl} filter list.
+ * Surgical quick-fix and intention action that removes a duplicate enum variant plus strictly its
+ * single separating whitespace slice from a {@code #filterIncl} or {@code #filterExcl} filter list.
  */
 @NullMarked
 public final class StvnRemoveDuplicateFilterVariantQuickFix
@@ -69,7 +66,7 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
             return false;
         }
         var variantList = PsiTreeUtil.getNonStrictParentOfType(startElement, VariantList.class);
-        return variantList != null && variantList.isValid();
+        return variantList != null && variantList.isValid() && variantList.getValueKeywordList().size() >= 2;
     }
 
     @Override
@@ -81,42 +78,29 @@ public final class StvnRemoveDuplicateFilterVariantQuickFix
             @NotNull PsiElement endElement
     ) {
         var variantList = PsiTreeUtil.getNonStrictParentOfType(startElement, VariantList.class);
-        if (variantList == null) {
+        if (variantList == null || !variantList.isValid()) {
             return;
         }
 
         var targetVkw = PsiTreeUtil.getNonStrictParentOfType(startElement, ValueKeyword.class);
         var currentKeywords = variantList.getValueKeywordList();
-        var kept = new ArrayList<String>(currentKeywords.size());
+        ValueKeyword resolvedDuplicate = null;
 
         if (targetVkw != null && currentKeywords.contains(targetVkw)) {
-            for (var k : currentKeywords) {
-                if (k != targetVkw) {
-                    kept.add(k.getText());
-                }
-            }
+            resolvedDuplicate = targetVkw;
         } else {
             var seen = new HashSet<String>();
-            boolean removedTarget = false;
             for (var k : currentKeywords) {
-                var text = k.getText();
-                if (!seen.add(text) && !removedTarget && text.equals(variantText)) {
-                    removedTarget = true;
-                    continue;
+                var text = k.getText().trim();
+                if (!seen.add(text) && text.equals(variantText.trim())) {
+                    resolvedDuplicate = k;
+                    break;
                 }
-                kept.add(text);
             }
         }
 
-        var replacementText = kept.isEmpty()
-            ? StvnVocabulary.DELIM_OPEN_BRACKET + StvnVocabulary.DELIM_CLOSE_BRACKET
-            : StvnVocabulary.DELIM_OPEN_BRACKET + String.join(" ", kept) + StvnVocabulary.DELIM_CLOSE_BRACKET;
-        var docManager = PsiDocumentManager.getInstance(project);
-        var doc = file.getViewProvider().getDocument();
-        if (doc != null) {
-            var range = variantList.getTextRange();
-            doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacementText);
-            docManager.commitDocument(doc);
+        if (resolvedDuplicate != null) {
+            StvnRemoveFilterVariantQuickFix.deleteSingleVariantSlice(project, file, variantList, resolvedDuplicate);
         }
     }
 

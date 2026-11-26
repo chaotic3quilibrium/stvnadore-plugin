@@ -17,6 +17,7 @@ import org.stvnadore.psi.TypeEntry;
 import org.stvnadore.psi.TypeKeyword;
 import org.stvnadore.psi.Value;
 import org.stvnadore.psi.ValueKeyword;
+import org.stvnadore.psi.VariantList;
 
 @NullMarked
 public final class StvnElementFactory {
@@ -130,5 +131,28 @@ public final class StvnElementFactory {
             return lit;
         }
         throw new IllegalStateException("Failed to create StringLiteral from text: " + text);
+    }
+
+    /**
+     * Creates a standalone {@link VariantList} PSI subtree preserving exact interior whitespace and comments.
+     *
+     * @param project         active IntelliJ project
+     * @param variantListText bracketed variant list text (for example, {@code "[#LOCKED #DEGRADED]"})
+     * @return parsed {@link VariantList} PSI element
+     */
+    public static VariantList createVariantList(Project project, String variantListText) {
+        var map = createMetadataMap(
+            project,
+            StvnVocabulary.DELIM_OPEN_BRACE + " "
+                + StvnVocabulary.FACET_KW_FILTER_INCL + " "
+                + variantListText + " "
+                + StvnVocabulary.DELIM_CLOSE_BRACE
+        );
+        for (var entry : map.getMetadataEntryList()) {
+            if (entry.getMetadataFilter() != null && entry.getMetadataFilter().getVariantList() != null) {
+                return entry.getMetadataFilter().getVariantList();
+            }
+        }
+        throw new IllegalStateException("Failed to create VariantList from text: " + variantListText);
     }
 }

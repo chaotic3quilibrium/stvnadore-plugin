@@ -5848,15 +5848,15 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 for (var entry : metaMap.getMetadataEntryList()) {
                     var txt = entry.getText().trim();
                     if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                        var parts = txt.split("\\s+");
+                        var parts = txt.split("\\s+", 2);
                         if (parts.length >= 2) {
-                            var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
+                            var parsed = resolveFacetBigIntegerInContext(entry, parts[1].trim());
                             if (parsed != null) minSize = parsed;
                         }
                     } else if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MAX_SIZE)) {
-                        var parts = txt.split("\\s+");
+                        var parts = txt.split("\\s+", 2);
                         if (parts.length >= 2) {
-                            var parsed = StvnPsiLiteralEvaluator.parseBigInteger(parts[1]).orElse(null);
+                            var parsed = resolveFacetBigIntegerInContext(entry, parts[1].trim());
                             if (parsed != null) maxSize = parsed;
                         }
                     }
@@ -5879,7 +5879,21 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<b>Document Payload Authoring Rules:</b><br/>");
         sb.append("&bull; Body clause (<code>:body</code>) must supply root payload matching this schema.<br/>");
         sb.append("&bull; Collections enforce delimiter matching: <code>[ ... ]</code> for sequences and sets, <code>{ ... }</code> for maps.<br/>");
-        sb.append("&bull; Empty payload representation: <code>[]</code>.");
+        StvnSchema rootIr = unwrapPoisonedSchema(StvnTypeResolver.resolveIrSchema(rootSchema));
+        BigInteger rootEffectiveMinSize = resolveEffectiveCollectionMinSize(rootSchema, rootIr);
+        if (rootEffectiveMinSize.compareTo(BigInteger.ONE) < 0) {
+            boolean isMapRoot = rootIr instanceof StvnSchema.MapSchema
+                || resolveTerminalCollectionKeyword(rootSchema, StvnVocabulary.TYPE_MAP);
+            boolean isSeqOrSetRoot = rootIr instanceof StvnSchema.SeqSchema
+                || rootIr instanceof StvnSchema.SetSchema
+                || resolveTerminalCollectionKeyword(rootSchema, StvnVocabulary.TYPE_SEQ)
+                || resolveTerminalCollectionKeyword(rootSchema, StvnVocabulary.TYPE_SET);
+            if (isMapRoot) {
+                sb.append("&bull; Empty payload representation: <code>{}</code>.");
+            } else if (isSeqOrSetRoot || rootIr == null) {
+                sb.append("&bull; Empty payload representation: <code>[]</code>.");
+            }
+        }
         sb.append("</div>");
         return sb.toString();
     }
@@ -7621,9 +7635,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 }
             } else if (irSchema == null && containerCtor != null && containerCtor.getCollectionType() != null) {
                 var lineageMeta = StvnExemplarValueGenerator.extractLineageMetadata(schemaType);
-                BigInteger psiMinSize = lineageMeta.containsKey(StvnVocabulary.FACET_KW_MIN_SIZE)
-                    ? StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(value, lineageMeta.get(StvnVocabulary.FACET_KW_MIN_SIZE)).orElse(BigInteger.ZERO)
-                    : BigInteger.ZERO;
+                BigInteger psiMinSize = resolveEffectiveCollectionMinSize(schemaType, null);
                 BigInteger psiMaxSize = lineageMeta.containsKey(StvnVocabulary.FACET_KW_MAX_SIZE)
                     ? StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(value, lineageMeta.get(StvnVocabulary.FACET_KW_MAX_SIZE)).orElse(StvnVocabulary.DEFAULT_MAX_SIZE)
                     : StvnVocabulary.DEFAULT_MAX_SIZE;
@@ -7806,10 +7818,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return List.of("Positional Product Literal: <code>(" + slotsRepr + ")</code>");
         }
 
+        BigInteger effectiveMinSize = resolveEffectiveCollectionMinSize(schemaType, irSchema);
+        boolean allowEmptyLiteral = effectiveMinSize.compareTo(BigInteger.ONE) < 0;
+
         if (irSchema instanceof StvnSchema.SeqSchema
                 || irSchema instanceof StvnSchema.SetSchema
                 || baseType.startsWith(StvnVocabulary.TYPE_SEQ)
                 || baseType.startsWith(StvnVocabulary.TYPE_SET)) {
+            if (!allowEmptyLiteral) {
+                return List.of("Bracketed Collection Literal: <code>[&lt;elem1&gt; &lt;elem2&gt; ...]</code>");
+            }
             return List.of(
                 "Bracketed Collection Literal: <code>[&lt;elem1&gt; &lt;elem2&gt; ...]</code>",
                 "Empty Collection Literal: <code>[]</code>"
@@ -7819,6 +7837,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (irSchema instanceof StvnSchema.MapSchema
                 || baseType.startsWith(StvnVocabulary.TYPE_MAP)
                 || (ctor != null && ctor.getCollectionType() != null)) {
+            if (!allowEmptyLiteral) {
+                return List.of("Braced Key-Value Map Literal: <code>{ &lt;key1&gt; &lt;val1&gt; ... }</code>");
+            }
             return List.of(
                 "Braced Key-Value Map Literal: <code>{ &lt;key1&gt; &lt;val1&gt; ... }</code>",
                 "Empty Map Literal: <code>{}</code>"
@@ -7827,6 +7848,134 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         String fallbackLabel = StvnSchemaFormatter.formatSchema(schemaType);
         return List.of("Schema-Typed Value: <code>" + escapeHtmlBody(fallbackLabel) + "</code>");
+    }
+
+    private static boolean resolveTerminalCollectionKeyword(@Nullable SchemaType schemaType, String expectedKeyword) {
+        if (schemaType == null) {
+            return false;
+        }
+        SchemaType terminal = StvnExemplarValueGenerator.resolveTerminalSchemaType(schemaType);
+        var ctor = terminal.getSchemaConstructor();
+        if (ctor == null || ctor.getCollectionType() == null) {
+            return false;
+        }
+        return ctor.getCollectionType().getText().trim().startsWith(expectedKeyword);
+    }
+
+    private static BigInteger resolveEffectiveCollectionMinSize(
+        @Nullable SchemaType schemaType,
+        @Nullable StvnSchema irSchema
+    ) {
+        StvnSchema cleanIr = unwrapPoisonedSchema(irSchema);
+        if (cleanIr == null && schemaType != null) {
+            cleanIr = unwrapPoisonedSchema(StvnTypeResolver.resolveIrSchema(schemaType));
+        }
+        BigInteger resolved = BigInteger.ZERO;
+        if (cleanIr instanceof StvnSchema.SeqSchema sq) {
+            resolved = sq.minSize();
+        } else if (cleanIr instanceof StvnSchema.SetSchema st) {
+            resolved = st.minSize();
+        } else if (cleanIr instanceof StvnSchema.MapSchema mp) {
+            resolved = mp.minSize();
+        }
+        BigInteger psiMin = resolvePsiLineageMinSize(schemaType);
+        if (psiMin != null && psiMin.compareTo(resolved) > 0) {
+            resolved = psiMin;
+        }
+        return resolved;
+    }
+
+    private static @Nullable BigInteger resolvePsiLineageMinSize(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return null;
+        }
+        Set<PsiElement> visited = new HashSet<>();
+        SchemaType curr = schemaType;
+        while (curr != null && visited.add(curr)) {
+            BigInteger direct = extractMinSizeFromMetadataMap(curr.getMetadataMap());
+            if (direct != null) {
+                return direct;
+            }
+            TypeDefinition enclosingTd = PsiTreeUtil.getParentOfType(curr, TypeDefinition.class);
+            if (enclosingTd != null && enclosingTd.getSchemaType() == curr) {
+                BigInteger tdMin = extractMinSizeFromMetadataMap(enclosingTd.getMetadataMap());
+                if (tdMin != null) {
+                    return tdMin;
+                }
+            }
+            var kw = curr.getTypeKeyword();
+            var file = curr.getContainingFile();
+            if (kw == null || file == null) {
+                break;
+            }
+            String alias = kw.getText().trim();
+            var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+            if (target == null) {
+                target = new StvnTypeReference(kw).resolve();
+            }
+            TypeDefinition nextTd = StvnPsiUtils.resolveTargetTypeDefinition(target);
+            if (nextTd == null && !file.getProject().isDisposed()) {
+                nextTd = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), alias);
+            }
+            if (nextTd == null || !visited.add(nextTd)) {
+                break;
+            }
+            BigInteger nextTdMin = extractMinSizeFromMetadataMap(nextTd.getMetadataMap());
+            if (nextTdMin != null) {
+                return nextTdMin;
+            }
+            curr = nextTd.getSchemaType();
+        }
+        return null;
+    }
+
+    private static @Nullable BigInteger extractMinSizeFromMetadataMap(@Nullable MetadataMap metaMap) {
+        if (metaMap == null) {
+            return null;
+        }
+        for (var entry : metaMap.getMetadataEntryList()) {
+            String txt = entry.getText().trim();
+            if (hasExactFacetTag(txt, StvnVocabulary.FACET_KW_MIN_SIZE)) {
+                String[] parts = txt.split("\\s+", 2);
+                if (parts.length >= 2) {
+                    BigInteger val = resolveFacetBigIntegerInContext(entry, parts[1].trim());
+                    if (val != null) {
+                        return val;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable BigInteger resolveFacetBigIntegerInContext(PsiElement context, String rawArg) {
+        Optional<BigInteger> resolved = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, rawArg);
+        if (resolved.isPresent()) {
+            return resolved.get();
+        }
+        if (rawArg.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+            for (var vkw : PsiTreeUtil.findChildrenOfType(context, ValueKeyword.class)) {
+                if (rawArg.equals(vkw.getText().trim())) {
+                    PsiElement constElem = StvnConstantReference.resolveConstantWithContext(vkw);
+                    ConstantDefinition cd = StvnPsiUtils.resolveTargetConstantDefinition(constElem);
+                    if (cd != null && cd.getValue() != null) {
+                        Optional<BigInteger> fromCd = StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(
+                            cd.getValue(),
+                            cd.getValue().getText()
+                        );
+                        if (fromCd.isPresent()) {
+                            return fromCd.get();
+                        }
+                    }
+                }
+            }
+            PackageEnclosure pkg = PsiTreeUtil.getParentOfType(context, PackageEnclosure.class);
+            if (pkg != null && pkg.getPackagePath() != null && !rawArg.substring(1).contains("/")) {
+                String fqni = StvnConstantReference.buildPackageConstantFqni(pkg.getPackagePath().getText().trim(), rawArg);
+                return StvnPsiLiteralEvaluator.resolveBigIntegerOrConst(context, fqni).orElse(null);
+            }
+        }
+        return null;
     }
 
     /**

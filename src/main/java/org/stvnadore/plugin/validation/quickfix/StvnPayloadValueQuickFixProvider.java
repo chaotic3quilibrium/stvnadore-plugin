@@ -62,11 +62,13 @@ import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
 import org.stvnadore.plugin.validation.StvnSuspiciousEpochMagnitudeInspection;
 import org.stvnadore.psi.BodyEntry;
+import org.stvnadore.psi.CollectionValue;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.ListLiteral;
 import org.stvnadore.psi.MapLiteral;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.SchemaType;
+import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TupleLiteral;
 import org.stvnadore.psi.Value;
 
@@ -312,9 +314,11 @@ public final class StvnPayloadValueQuickFixProvider {
         }
 
         // 5. Container #maxSize excess element / entry removal (CAPACITY_OVERFLOW / E012)
-        if ((DiagnosticBag.ERR_CAPACITY_OVERFLOW.equals(code) || "E012".equals(code))
+        if ((DiagnosticBag.ERR_CAPACITY_OVERFLOW.equals(code)
+                    || ("E012".equals(code) && !rawMessage.startsWith("Constraint violation (")))
                 && rawMessage.contains("outside allowable range [")
-                && !rawMessage.contains("String ")) {
+                && !rawMessage.contains("String ")
+                && !isContainerMinSizeUnderflowMessage(rawMessage)) {
             Matcher maxMatcher = ALLOWABLE_RANGE_MAX_PATTERN.matcher(rawMessage);
             String maxSizeStr = maxMatcher.find() ? maxMatcher.group(1) : "";
             String suffix = !maxSizeStr.isEmpty()
@@ -410,7 +414,18 @@ public final class StvnPayloadValueQuickFixProvider {
         }
         if (baseType == null) {
             if (rawSchema != null) {
-                String exemplar = StvnExemplarValueGenerator.generateExemplar(rawSchema, irSchema, clock);
+                SchemaType targetSchema = rawSchema;
+                StvnSchema targetIr = irSchema;
+                if (value.getCollectionValue() != null) {
+                    ContainerTargetPair unwrapped = unwrapEmptyContainerTargetSchema(
+                        value.getCollectionValue(),
+                        rawSchema,
+                        irSchema
+                    );
+                    targetSchema = unwrapped.schemaType();
+                    targetIr = unwrapped.irSchema();
+                }
+                String exemplar = StvnExemplarValueGenerator.generateExemplar(targetSchema, targetIr, clock);
                 if (exemplar != null && !exemplar.equals(rawValueText)) {
                     return List.of(
                         new PayloadValueQuickFix(
@@ -1137,7 +1152,128 @@ public final class StvnPayloadValueQuickFixProvider {
                 return ir;
             }
         }
-        return null;
+        StvnSchema directIr = StvnTypeResolver.resolveIrSchema(schemaType);
+        while (directIr instanceof StvnSchema.PoisonedSchema p) {
+            directIr = p.bestEffortFallback().orElse(null);
+        }
+        return directIr;
+    }
+
+    private record ContainerTargetPair(@Nullable SchemaType schemaType, @Nullable StvnSchema irSchema) {}
+
+    private static ContainerTargetPair unwrapEmptyContainerTargetSchema(
+        CollectionValue collVal,
+        SchemaType rawSchema,
+        @Nullable StvnSchema irSchema
+    ) {
+        SchemaType curPsi = rawSchema;
+        StvnSchema curIr = irSchema;
+        Set<PsiElement> visited = new HashSet<>();
+        while (curPsi != null && visited.add(curPsi)) {
+            SchemaType terminal = StvnExemplarValueGenerator.resolveTerminalSchemaType(curPsi);
+            var ctor = terminal.getSchemaConstructor();
+            SumType sum = ctor != null ? ctor.getSumType() : null;
+            if (sum == null) {
+                break;
+            }
+            List<SchemaType> branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+            String sumText = sum.getText().trim();
+            if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && !branches.isEmpty()) {
+                curPsi = branches.get(0);
+                curIr = curIr instanceof StvnSchema.OptionSchema opt
+                    ? unwrapPoison(opt.valueSchema())
+                    : resolveLeafIrSchema(curPsi);
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() >= 2) {
+                curPsi = branches.get(1);
+                curIr = curIr instanceof StvnSchema.EitherSchema eith
+                    ? unwrapPoison(eith.rightSchema())
+                    : resolveLeafIrSchema(curPsi);
+            } else if (sumText.startsWith(StvnVocabulary.TYPE_UNION) && !branches.isEmpty()) {
+                SchemaType matchedPsi = null;
+                StvnSchema matchedIr = null;
+                int matchCount = 0;
+                for (int i = 0; i < branches.size(); i++) {
+                    SchemaType bPsi = branches.get(i);
+                    StvnSchema bIr = (curIr instanceof StvnSchema.UnionSchema un && i < un.branchSchemas().size())
+                        ? unwrapPoison(un.branchSchemas().get(i))
+                        : resolveLeafIrSchema(bPsi);
+                    if (matchesCollectionValueKind(collVal, bPsi, bIr)) {
+                        matchedPsi = bPsi;
+                        matchedIr = bIr;
+                        matchCount++;
+                    }
+                }
+                if (matchCount == 1 && matchedPsi != null) {
+                    curPsi = matchedPsi;
+                    curIr = matchedIr;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        return new ContainerTargetPair(curPsi, curIr);
+    }
+
+    private static @Nullable StvnSchema unwrapPoison(@Nullable StvnSchema s) {
+        StvnSchema cur = s;
+        while (cur instanceof StvnSchema.PoisonedSchema p) {
+            cur = p.bestEffortFallback().orElse(null);
+        }
+        return cur;
+    }
+
+    private static boolean matchesCollectionValueKind(
+        CollectionValue collVal,
+        SchemaType branchPsi,
+        @Nullable StvnSchema branchIr
+    ) {
+        if (collVal.getTupleLiteral() != null) {
+            if (branchIr instanceof StvnSchema.TupleSchema) {
+                return true;
+            }
+            SchemaType term = StvnExemplarValueGenerator.resolveTerminalSchemaType(branchPsi);
+            return term.getSchemaConstructor() != null && term.getSchemaConstructor().getProductType() != null;
+        }
+        if (collVal.getMapLiteral() != null) {
+            if (branchIr instanceof StvnSchema.MapSchema) {
+                return true;
+            }
+            SchemaType term = StvnExemplarValueGenerator.resolveTerminalSchemaType(branchPsi);
+            return term.getSchemaConstructor() != null
+                && term.getSchemaConstructor().getCollectionType() != null
+                && term.getSchemaConstructor().getCollectionType().getText().trim().startsWith(StvnVocabulary.TYPE_MAP);
+        }
+        if (collVal.getListLiteral() != null) {
+            if (branchIr instanceof StvnSchema.SeqSchema || branchIr instanceof StvnSchema.SetSchema) {
+                return true;
+            }
+            SchemaType term = StvnExemplarValueGenerator.resolveTerminalSchemaType(branchPsi);
+            if (term.getSchemaConstructor() != null && term.getSchemaConstructor().getCollectionType() != null) {
+                String t = term.getSchemaConstructor().getCollectionType().getText().trim();
+                return t.startsWith(StvnVocabulary.TYPE_SEQ) || t.startsWith(StvnVocabulary.TYPE_SET);
+            }
+        }
+        return false;
+    }
+
+    private static boolean isContainerMinSizeUnderflowMessage(String rawMessage) {
+        int sizeIdx = rawMessage.indexOf("Size ");
+        int outsideIdx = rawMessage.indexOf(" outside allowable range [");
+        if (sizeIdx < 0 || outsideIdx <= sizeIdx + 5) {
+            return false;
+        }
+        String actualStr = rawMessage.substring(sizeIdx + 5, outsideIdx).trim();
+        int rangeStart = outsideIdx + " outside allowable range [".length();
+        int commaIdx = rawMessage.indexOf(',', rangeStart);
+        if (commaIdx <= rangeStart) {
+            return false;
+        }
+        String minStr = rawMessage.substring(rangeStart, commaIdx).trim();
+        BigInteger actual = StvnPsiLiteralEvaluator.parseBigInteger(actualStr).orElse(null);
+        BigInteger min = StvnPsiLiteralEvaluator.parseBigInteger(minStr).orElse(null);
+        return actual != null && min != null && actual.compareTo(min) < 0;
     }
 
     private static @Nullable String extractBaseType(SchemaType terminalSchema, @Nullable StvnSchema irSchema) {
@@ -2079,7 +2215,12 @@ public final class StvnPayloadValueQuickFixProvider {
         if (code.startsWith("TEMPORAL_")
                 || code.startsWith("DATETIME_")
                 || code.equals("ERR_TYPE_MISMATCH")
+                || code.equals(DiagnosticBag.ERR_TUPLE_ARITY_MISMATCH)
+                || code.equals("TUPLE_ARITY_MISMATCH")
                 || code.equals("E028")
+                || code.equals(DiagnosticBag.ERR_COLLECTION_EMPTY_VIOLATION)
+                || code.equals("COLLECTION_EMPTY_VIOLATION")
+                || code.equals("E017")
                 || code.equals("ERR_CONSTRAINT_VIOLATION")
                 || code.equals(DiagnosticBag.ERR_CAPACITY_OVERFLOW)
                 || code.equals("E012")
@@ -2100,6 +2241,8 @@ public final class StvnPayloadValueQuickFixProvider {
             return true;
         }
         return message.contains("Type mismatch")
+            || message.contains("Tuple arity mismatch")
+            || message.contains("is marked as non-empty")
             || message.contains("Constraint violation")
             || message.contains("Rule E Violation")
             || message.contains("explicit #Left tag is required")
@@ -2289,7 +2432,8 @@ public final class StvnPayloadValueQuickFixProvider {
         Value parentVal = PsiTreeUtil.getParentOfType(elem, Value.class, false);
         if (parentVal != null
                 && parentVal.getCollectionValue() != null
-                && parentVal.getTextRange().getStartOffset() < startOffset) {
+                && (parentVal.getTextRange().getStartOffset() != startOffset
+                    || parentVal.getTextRange().getEndOffset() != endOffset)) {
             return null;
         }
         return parentVal;
@@ -2472,6 +2616,12 @@ public final class StvnPayloadValueQuickFixProvider {
             String replacementText = dynamicReplacementSupplier != null
                 ? dynamicReplacementSupplier.get()
                 : fallbackReplacement;
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null) {
+                var range = copyTarget.getTextRange();
+                doc.replaceString(range.getStartOffset(), range.getEndOffset(), replacementText);
+                return IntentionPreviewInfo.DIFF;
+            }
             Value newValue = StvnElementFactory.createValue(project, replacementText);
             copyTarget.replace(newValue);
             return IntentionPreviewInfo.DIFF;

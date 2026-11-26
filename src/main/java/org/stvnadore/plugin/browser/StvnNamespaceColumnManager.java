@@ -36,6 +36,7 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.function.BooleanSupplier;
 
 /**
  * Spreadsheet-style column sizing, per-column width locking, divider double-click right-sizing,
@@ -45,7 +46,7 @@ import java.awt.event.MouseEvent;
 public final class StvnNamespaceColumnManager {
 
     static final int DIVIDER_HIT_TOLERANCE_PX = 4;
-    static final int MAX_RIGHT_SIZED_COLUMN_WIDTH_PX = 1200;
+    static final int MAX_RIGHT_SIZED_COLUMN_WIDTH_PX = 4096;
     private static final int INITIAL_TARGET_VIEWPORT_WIDTH_PX = 900;
 
     private final JBTable table;
@@ -56,6 +57,8 @@ public final class StvnNamespaceColumnManager {
     private final int exactUseDepthHeaderWidth;
     private boolean userCustomizedWidths;
     private boolean initialContentWidthsApplied;
+    private @Nullable Runnable fitWindowAction;
+    private BooleanSupplier fitWindowEnabledSupplier = () -> true;
 
     StvnNamespaceColumnManager(JBTable table, JBScrollPane scrollPane, StvnNamespaceTableModel tableModel) {
         this.table = table;
@@ -118,6 +121,17 @@ public final class StvnNamespaceColumnManager {
     }
 
     /**
+     * Binds the popup window-fit callback and readiness predicate invoked by the header context menu.
+     *
+     * @param fitWindowAction          callback fitting unlocked columns and popup window bounds
+     * @param fitWindowEnabledSupplier readiness predicate returning {@code true} once async snapshot loading completes
+     */
+    public void setFitWindowAction(@Nullable Runnable fitWindowAction, BooleanSupplier fitWindowEnabledSupplier) {
+        this.fitWindowAction = fitWindowAction;
+        this.fitWindowEnabledSupplier = fitWindowEnabledSupplier;
+    }
+
+    /**
      * Returns whether at least one column in the table model is currently unlocked.
      *
      * @return {@code true} if any column is unlocked
@@ -129,6 +143,40 @@ public final class StvnNamespaceColumnManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Returns {@code true} when every unlocked column is already within {@code ±1px} of its target
+     * right-sized pixel width (or when zero columns are unlocked).
+     *
+     * @return {@code true} if no unlocked column requires horizontal right-sizing
+     */
+    public boolean areAllUnlockedColumnsRightSized() {
+        TableColumnModel cm = table.getColumnModel();
+        for (int viewCol = 0; viewCol < cm.getColumnCount(); viewCol++) {
+            if (!isViewColumnLocked(viewCol)) {
+                TableColumn col = cm.getColumn(viewCol);
+                int targetWidth = computeRightSizedWidth(viewCol);
+                if (Math.abs(col.getWidth() - targetWidth) > 1) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Computes the sum of all visible column pixel widths in {@code table}.
+     *
+     * @return total pixel width across all columns
+     */
+    public int computeTotalColumnsWidth() {
+        TableColumnModel cm = table.getColumnModel();
+        int total = 0;
+        for (int viewCol = 0; viewCol < cm.getColumnCount(); viewCol++) {
+            total += cm.getColumn(viewCol).getWidth();
+        }
+        return total;
     }
 
     void setViewColumnLocked(int viewCol, boolean locked) {
@@ -270,6 +318,32 @@ public final class StvnNamespaceColumnManager {
     }
 
     /**
+     * Resolves the dynamic scope-aware header tooltip when hovering the {@code Use Depth} column
+     * header ({@link StvnNamespaceTableModel#COL_USE_DEPTH}), returning {@code null} for all other headers.
+     *
+     * @param headerPoint point in {@link JTableHeader} coordinates
+     * @param activeScope active namespace browser scope ({@code :defs}, {@code :type}, or {@code :body})
+     * @return localized STE tooltip for {@code Use Depth}, or {@code null}
+     */
+    public @Nullable String resolveHeaderTooltip(Point headerPoint, StvnNamespaceScope activeScope) {
+        JTableHeader header = table.getTableHeader();
+        if (header == null) {
+            return null;
+        }
+        int viewCol = header.columnAtPoint(headerPoint);
+        if (viewCol < 0 || viewCol >= table.getColumnCount()) {
+            return null;
+        }
+        int modelCol = table.convertColumnIndexToModel(viewCol);
+        if (modelCol != StvnNamespaceTableModel.COL_USE_DEPTH) {
+            return null;
+        }
+        return activeScope == StvnNamespaceScope.DEFS
+            ? StvnBundle.message("stvn.browser.column.useDepth.tooltip.defs")
+            : StvnBundle.message("stvn.browser.column.useDepth.tooltip.reachability");
+    }
+
+    /**
      * Builds the header right-click context menu for {@code viewCol}.
      *
      * @param viewCol view column index
@@ -295,6 +369,17 @@ public final class StvnNamespaceColumnManager {
         rightSizeAll.setEnabled(hasAnyUnlockedColumn());
         rightSizeAll.addActionListener(e -> rightSizeAllUnlockedColumns());
         menu.add(rightSizeAll);
+
+        var fitWindowItem = new JMenuItem(
+            StvnBundle.message("stvn.browser.header.menu.fitWindowToContent").replace("\u001B", "")
+        );
+        fitWindowItem.setEnabled(fitWindowAction != null && fitWindowEnabledSupplier.getAsBoolean());
+        fitWindowItem.addActionListener(e -> {
+            if (fitWindowAction != null && fitWindowEnabledSupplier.getAsBoolean()) {
+                fitWindowAction.run();
+            }
+        });
+        menu.add(fitWindowItem);
 
         return menu;
     }

@@ -132,14 +132,14 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals("fmt_probe_02_constants_meta_use_and_maps.core_test.stvn", manifoldReport.source());
         assertEquals("\u2014", manifoldReport.upstreamTarget());
         assertEquals(":Tuple(:ValveMode :LoopTempC :Int :Boolean :ZoneFlowMap)", manifoldReport.resolvedType());
-        assertEquals(0, manifoldReport.useDepth());
+        assertEquals(2, manifoldReport.useDepth());
 
         var valveMode = findEntryByName(defsEntries, ":ValveMode");
         assertNotNull(valveMode);
         assertEquals(":cooling/manifold", valveMode.source());
         assertEquals(":cooling/manifold/CoolantValveMode", valveMode.upstreamTarget());
         assertEquals(":Enum[#CLOSED #THROTTLED #OPEN]", valveMode.resolvedType());
-        assertEquals(1, valveMode.useDepth());
+        assertEquals(0, valveMode.useDepth());
 
         var initValve = findEntryByName(defsEntries, "#INIT_VALVE_MODE");
         assertNotNull(initValve);
@@ -195,7 +195,9 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertNotNull("Dead root type :AppConfig must be included in :defs scope", findEntryByName(defs, ":AppConfig"));
         var deepAlias = findEntryByName(defs, ":DeepAlias");
         assertNotNull(deepAlias);
-        assertTrue(deepAlias.useDepth() >= 2);
+        assertEquals(1, deepAlias.useDepth());
+        assertEquals(1, findEntryByName(defs, ":BoundedAmount").useDepth());
+        assertEquals(1, findEntryByName(defs, "#DEFAULT_PORT").useDepth());
 
         var typeClosure = StvnNamespaceSymbolCollector.collectSymbols(payloadFile, StvnNamespaceScope.TYPE);
         assertNotNull(findEntryByName(typeClosure, ":LocalTx"));
@@ -379,13 +381,14 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         assertEquals(":neutrino/optics", photo.source());
         assertEquals(":neutrino/optics/Photoelectrons", photo.upstreamTarget());
         assertEquals("{ #unsigned #size 32 } :Int", photo.resolvedType());
-        assertEquals(1, photo.useDepth());
+        assertEquals(0, photo.useDepth());
 
         var calib = findEntryByName(entries, "#CALIB_DOM_HIT");
         assertNotNull(calib);
         assertEquals(":neutrino/optics", calib.source());
         assertEquals("#neutrino/optics/CALIB_DOM_HIT", calib.upstreamTarget());
         assertEquals(":ArrayDomHit (-> :neutrino/optics/DomHitTuple -> :Tuple)", calib.resolvedType());
+        assertEquals(2, calib.useDepth());
     }
 
     public void testPackagedModuleWithoutRootDefinitionsReturnsExactCanonicalFqnis() throws Exception {
@@ -402,7 +405,10 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             assertTrue(entry.name().startsWith(":org/ietf/rfc8259/json/"));
             assertEquals(":org/ietf/rfc8259/json", entry.source());
             assertEquals("\u2014", entry.upstreamTarget());
-            assertEquals(0, entry.useDepth());
+            boolean recursiveJsonComposite = entry.name().endsWith("/JsonObject")
+                || entry.name().endsWith("/JsonArray")
+                || entry.name().endsWith("/JsonValue");
+            assertEquals(recursiveJsonComposite ? 1 : 0, entry.useDepth());
         }
         assertNull(findEntryByName(entries, ":JsonNull"));
         assertNotNull(findEntryByName(entries, ":org/ietf/rfc8259/json/JsonNull"));
@@ -502,6 +508,15 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
         var docKind = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnDocumentKind");
         assertNotNull(docKind);
         assertEquals(":Enum[#BODY #DEFS #BODY_INCLUDE #DEFS_INCLUDE]", docKind.resolvedType());
+        assertEquals(0, docKind.useDepth());
+
+        var posixIdType = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnPosixId64");
+        assertNotNull(posixIdType);
+        assertEquals(1, posixIdType.useDepth());
+
+        var docMetaType = findEntryByName(preludeEntries, ":org/stvnadore/prelude/meta/StvnDocumentMeta");
+        assertNotNull(docMetaType);
+        assertEquals(2, docMetaType.useDepth());
 
         var stripFile = myFixture.configureByText("prelude_strip.stvn", """
             {
@@ -521,7 +536,7 @@ public final class StvnNamespaceBrowserTest extends BasePlatformTestCase {
             assertEquals(":org/stvnadore/prelude", barePort.source());
             assertEquals(":org/stvnadore/prelude/Port", barePort.upstreamTarget());
             assertEquals("{ #unsigned #size 16 #minIncl 1 } :Int", barePort.resolvedType());
-            assertEquals(1, barePort.useDepth());
+            assertEquals(0, barePort.useDepth());
 
             var bareRegex = findEntryByName(initialEntries, "#POSIX_ID_REGEX");
             assertNotNull(bareRegex);
