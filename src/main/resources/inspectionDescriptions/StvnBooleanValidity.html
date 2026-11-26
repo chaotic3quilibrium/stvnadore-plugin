@@ -8,10 +8,11 @@
     <li><b>Short-form:</b> <code>#T</code>, <code>#F</code></li>
 </ul>
 
-<p>Common casing near-misses such as <code>#True</code>, <code>#False</code>, <code>#true</code>, or <code>#false</code>, as well as unquoted identifiers or invalid tokens placed in boolean slots, are reported as errors.</p>
+<p>Un-sigiled bare identifiers (<code>true</code>, <code>false</code>, <code>True</code>, <code>False</code>, <code>TRUE</code>, <code>FALSE</code>) across <code>:body</code>, <code>#CONST</code> values, and boolean metadata facets (<code>#preserveIndent</code>, <code>#equatable</code>, <code>#comparable</code>), as well as sigiled casing near-misses (<code>#True</code>, <code>#False</code>, <code>#true</code>, <code>#false</code>), are reported as errors while preserving slash-separated namespace segments (<code>:org/true/demo</code>).</p>
 
 <p><b>Quick-Fixes Available:</b></p>
 <ul>
+    <li><b>Replace '&lt;raw&gt;' with '#TRUE' / '#FALSE' / '#T' / '#F':</b> Replaces bare un-sigiled boolean tokens in place ordered by the project sum-type form preference.</li>
     <li><b>Change tag to #TRUE / #FALSE / #T / #F:</b> Instantly corrects near-miss casing errors to the project-preferred canonical form.</li>
     <li><b>Change to boolean literal:</b> Replaces invalid tokens with a valid boolean literal placeholder.</li>
 </ul>

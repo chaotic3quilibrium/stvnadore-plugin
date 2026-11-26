@@ -908,6 +908,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
     private static boolean checkIncompleteTraitEntry(MetadataEntry entry, ProblemsHolder holder) {
         var trait = entry.getMetadataTrait();
         if (trait != null && trait.getMetadataValue() == null) {
+            if (hasRecoveredInvalidTraitToken(trait)) {
+                return true;
+            }
             var fixes = CompleteTraitFacetQuickFix.createFixes(trait);
             holder.registerProblem(
                 trait,
@@ -925,6 +928,9 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
 
         var boolFacet = entry.getMetadataBool();
         if (boolFacet != null && boolFacet.getMetadataValue() == null) {
+            if (hasRecoveredInvalidTraitToken(boolFacet)) {
+                return true;
+            }
             String kw = boolFacet.getNode().findChildByType(StvnTypes.KW_EQUATABLE) != null
                 ? StvnVocabulary.FACET_KW_EQUATABLE
                 : StvnVocabulary.FACET_KW_COMPARABLE;
@@ -940,6 +946,25 @@ public final class StvnMetadataFacetInspection extends LocalInspectionTool {
                 fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
             );
             return true;
+        }
+        return false;
+    }
+
+    private static boolean hasRecoveredInvalidTraitToken(PsiElement traitOrBoolFacet) {
+        PsiElement firstChild = traitOrBoolFacet.getFirstChild();
+        int afterKeywordOffset = firstChild != null
+            ? firstChild.getTextRange().getEndOffset()
+            : traitOrBoolFacet.getTextRange().getStartOffset();
+        for (PsiElement child = traitOrBoolFacet.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (child.getTextRange().getEndOffset() <= afterKeywordOffset) {
+                continue;
+            }
+            if (child instanceof com.intellij.psi.PsiWhiteSpace || child instanceof com.intellij.psi.PsiComment) {
+                continue;
+            }
+            if (!child.getText().replace("\t", "").trim().isEmpty()) {
+                return true;
+            }
         }
         return false;
     }

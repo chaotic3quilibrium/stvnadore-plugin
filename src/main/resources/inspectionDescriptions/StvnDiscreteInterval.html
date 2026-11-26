@@ -5,8 +5,8 @@
 <p><b>Discrete Half-Open Interval Invariant (ERR_DISCRETE_BOUND_KIND_PROHIBITED):</b></p>
 <ul>
     <li>Discrete domains (<code>:Int</code>, <code>{ #exact } :Float</code>, <code>:TimeEpoch</code>, and <code>:DateTime</code>) require half-open intervals [minIncl, maxExcl).</li>
-    <li>Closed upper bound <code>#maxIncl &lt;N&gt;</code> is rejected; use half-open bound <code>#maxExcl</code> instead.</li>
-    <li>Open lower bound <code>#minExcl &lt;N&gt;</code> is rejected; use closed bound <code>#minIncl</code> instead.</li>
+    <li>Closed upper bound <code>#maxIncl</code> and open lower bound <code>#minExcl</code> are pinned strictly to the 8-character facet keyword so bound <code>#CONST</code> references retain clean hover documentation.</li>
+    <li>Column-preserving quick-fixes replace <code>#maxIncl</code> &rarr; <code>#maxExcl</code> or <code>#minExcl</code> &rarr; <code>#minIncl</code> (and shift integer bounds <code>&lt;N&gt; &rarr; &lt;N+1&gt;</code>) in place without disturbing multi-space alignment or trailing comments.</li>
 </ul>
 
 <p><b>Interval Ordering and Empty Domain Governance (ERR_INVERTED_RANGE, ERR_EMPTY_INTERVAL_DOMAIN):</b></p>

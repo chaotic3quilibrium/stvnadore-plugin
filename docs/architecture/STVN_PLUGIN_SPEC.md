@@ -469,7 +469,7 @@ flowchart LR
 - **Google-Sheets-Style Column Sizing, Default-Locked `Use Depth` & Header Context Menu (`NBUX-03`):**
   - `StvnNamespaceColumnManager` configures `JTable.AUTO_RESIZE_OFF`, `autoCreateColumnsFromModel = false`, and `HORIZONTAL_SCROLLBAR_AS_NEEDED`, paired with `StvnNamespaceTableModel.updateView(...)` (`fireTableDataChanged()`) and `initialContentWidthsApplied` / `userCustomizedWidths` guards so manual widths and per-column lock states (`lockedByModelColumn`) persist across all view updates.
   - `StvnHeaderRenderer` delegates to the native platform header renderer and composes `DualHeaderIcon(headerLockIcon, gap, sortIcon)` on locked columns; Column `4` (`Use Depth`, right-aligned cells) initializes locked (`minWidth = maxWidth = preferredWidth = width = exactUseDepthHeaderWidth`, `setResizable(false)`), and `resolveTruncatedCellTooltip` renders full-value hover tooltips strictly when cell text overflows column width.
-  - `StvnDividerGuardedRowSorter` suppresses `toggleSortOrder` during `±JBUI.scale(4)` divider clicks/double-clicks (`resetting suppressSortToggle = false` after click/release), right-sizing unlocked columns on divider double-click (strict no-op when locked), while `PopupHandler` on `JTableHeader` exposes `Lock Column Width`, `Right-Size Column`, and `Right-Size All Unlocked Columns`.
+  - `StvnDividerGuardedRowSorter` suppresses `toggleSortOrder` during `±JBUI.scale(4)` divider clicks/double-clicks (`resetting suppressSortToggle = false` after click/release), right-sizing unlocked columns on divider double-click (strict no-op when locked), while `PopupHandler` on `JTableHeader` exposes `Lock Column Width`, `Right-Size Column`, and `Right-Size All Unlocked Columns (Alt+R)` paired with a popup-scoped `Alt+R` `DumbAwareAction` (`ActionUpdateThread.EDT`).
 - **Shortest-Path Symbol-Hop `Use Depth` Closure (`NBUX-04`):**
   - `StvnNamespaceSymbolCollector` evaluates `:type` and `:body` closures over a Dijkstra-ordered `PriorityQueue<ClosureTask>` keyed by `(nextSymbolDepth, seq)` with `bestSchemaDepth` / `bestDeclDepth` relaxation maps and schema-guided `collectBodyConstantSeeds`. Inline anonymous constructors (`:Tuple`, `:Seq`, `:Set`, `:Map`, `:Option`, `:Either`, `:Union`) and inline `MetadataMap` blocks traverse at **`+0` hop cost**, incrementing `Use Depth` by **`+1` strictly when crossing into a named `:Type` or `#CONST`** (`0 -> 1 -> 2` across Probes 1, 2, and 3; `1 -> 2` when root `:type` is an inline constructor without a nominal wrapper).
 
@@ -521,6 +521,27 @@ flowchart LR
     Lit --> EscHov["StvnStringEscapeHoverSupport (Glyph, UAX #29 ZWJ, UTF-8)"]
     Lit --> HiLex["StvnSimpleStringHighlightingLexer (Paired vs Unpaired Surrogates)"]
     CoreE001["Core Pass 1 E001 (Forbidden Raw and Unpaired Surrogate)"] --> Deconf["StvnDiagnosticAnnotatorMapping (Ungoverned: Count == 1)"]
+```
+
+### 4.36 Keyword-Only `E011` Pinning, Column-Preserving Bound Quick-Fixes, Bare Boolean `E002` Governance, Bootstrap Label Parity & Popup-Scoped `Alt+R`
+- **8-Character `E011` Keyword Pinning & Zero-Shift Leaf-Range Quick-Fixes (`StvnDiscreteIntervalInspection` & `StvnPayloadValueQuickFixProvider`):**
+  - Pins `E011-ERR_DISCRETE_BOUND_KIND_PROHIBITED` strictly to `StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(entry)` (`#maxIncl` / `#minExcl`, length `8`), matching Core Track A `[kw.startOffset, kw.endOffset)` 1:1 and isolating `#CONST` bound references (`#MAX_PUMP_MA_EXCL`) from `E011` hover pollution.
+  - `ConvertMaxInclToMaxExclQuickFix`, `ConvertMinExclToMinInclQuickFix`, `ReplaceBoundKeywordQuickFix`, and `SwapInvertedBoundsQuickFix` replace strictly leaf token `TextRange`s on `Document` (and `LeafPsiElement.replaceWithText` on non-physical `IntentionPreviewInfo.DIFF` copies), preserving multi-space horizontal alignment (`#maxIncl  35.0`) and aligned trailing `//` comments.
+- **Unicode `[0, ∞)` `W003` Domain Parity (`StvnRedundantFacetOverrideInspection`):**
+  - Emits `"bounds the domain to [0, \u221E)"` (`[0, ∞)`) on local `#unsigned` + `#minIncl 0`, matching Core Track A `W003` prose 1:1.
+- **Bare Boolean (`true` / `false`) Governance, Quick-Fixes & Deconfliction (`StvnBooleanValidityInspection`, `StvnMetadataFacetInspection`, `StvnDiagnosticAnnotatorMapping`, `StvnExternalAnnotator`):**
+  - Registers `StvnDiagnosticCodes.ERR_BARE_BOOLEAN_PROHIBITED = "E002-" + StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED`.
+  - Detects un-sigiled `StvnTypes.IDENTIFIER` leaves matching `(?i)^(true|false)$` (not preceded by `StvnTypes.FSLASH`) across primary `BodyEntry` (after `:body`), `ConstantDefinition` RHS (after `schemaType`), and `MetadataTrait` / `MetadataBool`, offering toggle-ordered `Replace '<raw>' with '#TRUE'|'#FALSE'` and `Replace '<raw>' with '#T'|'#F'` quick-fixes (`IntentionPreviewInfo.DIFF`), while extending sigiled near-miss `#true`/`#false` quick-fixes to `MetadataTrait` / `MetadataBool`.
+  - `StvnMetadataFacetInspection.checkIncompleteTraitEntry` suppresses stacked `ERR_INCOMPLETE_TRAIT_FACET` when a boolean trait entry contains an inline recovered error token, and `StvnDiagnosticAnnotatorMapping.isDiagnosticGovernedAndActive` gates `ERR_BARE_BOOLEAN_PROHIBITED` and sigiled near-miss diagnostics strictly by offset (`Pass A == 1` and `Pass B == 1` everywhere, keeping structural `:defs { true :Int }` rendered by `StvnExternalAnnotator`).
+- **Bootstrap Intention Label Parity & Popup-Scoped `Alt+R` (`StvnBootstrapDocumentIntentionAction` & `StvnNamespaceBrowserPopup`):**
+  - `StvnBootstrapDocumentIntentionAction.getText()` returns `"Initialize STVN document structure"` matching `getFamilyName()` 1:1.
+  - `StvnNamespaceBrowserPopup` updates `stvn.browser.header.menu.rightSizeAllUnlocked` to `"Right-Size All Unlocked Columns (Alt+R)"` and registers a popup-scoped `Alt+R` `DumbAwareAction` (`ActionUpdateThread.EDT`, `setEnabled(true)`) + `WHEN_ANCESTOR_OF_FOCUSED_COMPONENT` binding that invokes `columnManager.rightSizeAllUnlockedColumns()` when `!loading && columnManager.hasAnyUnlockedColumn()`, acting as a strict leak-free no-op otherwise and consuming `Alt+R` key-typed input in `SearchTextField`.
+
+```mermaid
+flowchart LR
+    KwPin["E011 Keyword Leaf Pinning (8 Chars)"] --> ZeroShift["Leaf-Range / LeafPsiElement Quick-Fixes (Zero Column Shift)"]
+    BareBool["Bare Boolean IDENTIFIER (Body, #CONST RHS, Boolean Facets)"] --> BoolDeconf["Offset-Gated Deconfliction (Pass A == 1 and Pass B == 1)"]
+    PopupAltR["Popup Alt+R Action (Presentation Enabled)"] --> ColFit["rightSizeAllUnlockedColumns (Preserves Locked Use Depth)"]
 ```
 
 ---

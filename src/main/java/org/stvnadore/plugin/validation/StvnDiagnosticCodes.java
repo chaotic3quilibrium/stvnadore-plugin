@@ -2,6 +2,7 @@ package org.stvnadore.plugin.validation;
 
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.validation.DiagnosticBag;
 
 import java.util.regex.Pattern;
@@ -42,6 +43,8 @@ public final class StvnDiagnosticCodes {
     public static final String ERR_FENCE_BLOCK_UNCLOSED = "E025-ERR_FENCE_BLOCK_UNCLOSED";
     public static final String ERR_TRAILING_SLASH_PROHIBITED = "E002-ERR_TRAILING_SLASH_PROHIBITED";
     public static final String ERR_NESTED_PACKAGE_PROHIBITED = "E002-ERR_NESTED_PACKAGE_PROHIBITED";
+    /** Error code emitted when an un-sigiled bare boolean identifier ('true' / 'false') appears in STVN syntax (SPEC § 7.3, E002). */
+    public static final String ERR_BARE_BOOLEAN_PROHIBITED = "E002-" + StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED;
     public static final String ERR_MODULE_IMPORT = "E005-" + DiagnosticBag.ERR_MODULE_IMPORT;
     public static final String ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT = "E005-ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT";
     /** Error code emitted when a scoped {@code :use} in a hermetic document targets an external package (SPEC § 3.9, E035). */
@@ -196,6 +199,7 @@ public final class StvnDiagnosticCodes {
             return fromCore.get();
         }
         return switch (bareId) {
+            case StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED -> "E002";
             case "ERR_METADATA_FACET_ON_CONSTANT",
                  "ERR_STRIP_ON_TYPE_DEF",
                  "ERR_TEMPORAL_SCALE_MUTUALLY_EXCLUSIVE",

@@ -404,6 +404,31 @@ public final class StvnDiagnosticAnnotatorMapping {
         var canon = diag.canonicalCode().orElse(null);
         var err = diag.errorCode().orElse(null);
 
+        if (StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED.equals(sym)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_BARE_BOOLEAN_PROHIBITED)
+                || StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED.equals(err)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(err, StvnDiagnosticCodes.ERR_BARE_BOOLEAN_PROHIBITED)
+                || message.startsWith("STVN Syntax Error: Bare boolean literal '")) {
+            if (!StvnBooleanValidityInspection.isGovernedBareBooleanOffset(file, diag.startOffset())) {
+                return false;
+            }
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnBooleanValidity");
+        }
+
+        if ((message.startsWith("Invalid boolean literal casing:")
+                || DiagnosticBag.ERR_UNDEFINED_CONSTANT.equals(sym)
+                || "E030".equals(canon)
+                || DiagnosticBag.ERR_UNDEFINED_CONSTANT.equals(err))
+                && StvnBooleanValidityInspection.isGovernedSigiledBooleanOffset(file, diag.startOffset())) {
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnBooleanValidity");
+        }
+
         if (DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(sym)
                 || "E012".equals(canon)
                 || DiagnosticBag.ERR_CONSTRAINT_VIOLATION.equals(err)) {

@@ -138,8 +138,8 @@ public final class StvnAddMetaBlockIntentionTest extends BasePlatformTestCase {
         var metaActionsBefore = myFixture.filterAvailableIntentions("Add root :meta header");
         assertTrue("Add root :meta header must not be available initially", metaActionsBefore.isEmpty());
 
-        var bootstrapAction = myFixture.findSingleIntention("Bootstrap STVN Document");
-        assertNotNull("Bootstrap STVN Document must be available on 0-byte file", bootstrapAction);
+        var bootstrapAction = myFixture.findSingleIntention("Initialize STVN document structure");
+        assertNotNull("Initialize STVN document structure must be available on 0-byte file", bootstrapAction);
 
         // Step 2: Bootstrap document
         myFixture.launchAction(bootstrapAction);

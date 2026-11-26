@@ -447,7 +447,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                         + " 0' is redundant; ancestor '" + ctx.parentAlias() + "' already establishes '"
                         + StvnVocabulary.FACET_KW_UNSIGNED + "'"
                     : "Constraint violation (" + ctx.ownerLabel() + "): facet '" + StvnVocabulary.FACET_KW_MIN_INCL
-                        + " 0' is redundant; '" + StvnVocabulary.FACET_KW_UNSIGNED + "' already bounds the domain to [0, \\infty)";
+                        + " 0' is redundant; '" + StvnVocabulary.FACET_KW_UNSIGNED + "' already bounds the domain to [0, \u221E)";
                 registerCoreAlignedW003(entry, msg, holder);
             } else if (!effectiveUnsigned && isExactSignedMinBound(val, effectiveBitWidth)) {
                 registerCoreAlignedW003(

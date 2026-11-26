@@ -1835,7 +1835,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         String[] extensions = { "order.stvn", "order.stvn_i", "order.stvn_d", "order.stvn_di" };
         for (var ext : extensions) {
             myFixture.configureByText(ext, "");
-            var intention = myFixture.findSingleIntention("Bootstrap STVN Document");
+            var intention = myFixture.findSingleIntention("Initialize STVN document structure");
             assertNotNull("Intention must be available on 0-byte " + ext, intention);
             myFixture.launchAction(intention);
 
@@ -1887,7 +1887,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      */
     public void testBootstrapDocumentIntentionOnCompoundStem() {
         myFixture.configureByText("order.finance.stvn_d", "");
-        var intention = myFixture.findSingleIntention("Bootstrap STVN Document");
+        var intention = myFixture.findSingleIntention("Initialize STVN document structure");
         assertNotNull("Intention must be available on 0-byte compound file", intention);
         myFixture.launchAction(intention);
 
@@ -1956,11 +1956,11 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
      */
     public void testBootstrapIntentionSuppressedOnLayer1InvalidFiles() {
         myFixture.configureByText("prelude.stvn_core.stvn_d", "");
-        var reservedIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
+        var reservedIntention = myFixture.filterAvailableIntentions("Initialize STVN document structure");
         assertTrue("Bootstrap intention must be unavailable on prelude.stvn_core.stvn_d", reservedIntention.isEmpty());
 
         myFixture.configureByText("test.stvn_unknown", "");
-        var unrecognizedIntention = myFixture.filterAvailableIntentions("Bootstrap STVN Document");
+        var unrecognizedIntention = myFixture.filterAvailableIntentions("Initialize STVN document structure");
         assertTrue("Bootstrap intention must be unavailable on test.stvn_unknown", unrecognizedIntention.isEmpty());
     }
 
@@ -3191,10 +3191,10 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
         var errors = highlights.stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.ERROR)
             .toList();
-        assertEquals("Expected strictly 3 ERRORs (E011 on #minExcl 10, E040 on #unsigned, E012 on 5000; 0 errors on poisoned slots 15 and 999): " + errors,
+        assertEquals("Expected strictly 3 ERRORs (E011 on #minExcl keyword, E040 on #unsigned, E012 on 5000; 0 errors on poisoned slots 15 and 999): " + errors,
             3, errors.size());
-        assertTrue("Expected E011 at [149, 160]: " + errors,
-            errors.stream().anyMatch(e -> e.getStartOffset() == 149 && e.getEndOffset() == 160));
+        assertTrue("Expected E011 at [149, 157]: " + errors,
+            errors.stream().anyMatch(e -> e.getStartOffset() == 149 && e.getEndOffset() == 157));
         assertTrue("Expected E040 at [205, 214]: " + errors,
             errors.stream().anyMatch(e -> e.getStartOffset() == 205 && e.getEndOffset() == 214
                 && e.getDescription() != null && e.getDescription().contains("E040-ERR_NON_OVERRIDABLE_FACET")));

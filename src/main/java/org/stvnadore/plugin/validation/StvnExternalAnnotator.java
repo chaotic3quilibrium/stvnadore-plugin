@@ -647,6 +647,7 @@ public final class StvnExternalAnnotator
                 // Undefined type or constant quick-fixes
                 if (rawMessage.contains("Undefined type: ")
                         || rawMessage.contains("Unresolved type alias: ")
+                        || rawMessage.startsWith("Undefined constant '")
                         || rawMessage.contains("Undefined constant: ")
                         || rawMessage.contains("Unresolved constant: ")
                         || rawMessage.contains("Undeclared value keyword or constant: ")) {
@@ -677,6 +678,11 @@ public final class StvnExternalAnnotator
                             }
                         }
                         if (offendingValKw != null && offendingValKw.getText().startsWith(StvnVocabulary.SIGIL_VALUE)) {
+                            if (StvnBooleanValidityInspection.isGovernedSigiledBooleanOffset(file, s)) {
+                                annotationBuilder = annotationBuilder.withFix(
+                                    StvnBooleanValidityInspection.createSigiledNearMissQuickFix(offendingValKw, file.getProject())
+                                );
+                            }
                             annotationBuilder = annotationBuilder.withFix(
                                 new StvnDeclareConstantQuickFix(offendingValKw, StvnVocabulary.TYPE_INT, "0")
                             );
@@ -691,6 +697,28 @@ public final class StvnExternalAnnotator
                         || StvnVocabulary.SIGIL_VALUE.equals(file.getText().substring(s, e).trim())) {
                     if (elemAtStart != null) {
                         annotationBuilder = attachCompleteSumVariantQuickFixes(annotationBuilder, elemAtStart);
+                    }
+                }
+
+                // Bare un-sigiled boolean ('true' / 'false') and Pass-A sigiled boolean near-miss quick-fixes
+                if ((StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_BARE_BOOLEAN_PROHIBITED)
+                        || rawMessage.startsWith("STVN Syntax Error: Bare boolean literal '"))
+                        && elemAtStart != null
+                        && StvnBooleanValidityInspection.isGovernedBareBooleanOffset(file, s)) {
+                    for (var bareFix : StvnBooleanValidityInspection.createBareBooleanQuickFixes(elemAtStart, file.getProject())) {
+                        annotationBuilder = annotationBuilder.withFix(bareFix);
+                    }
+                } else if (rawMessage.startsWith("Invalid boolean literal casing:")
+                        && elemAtStart != null
+                        && StvnBooleanValidityInspection.isGovernedSigiledBooleanOffset(file, s)) {
+                    var vk = elemAtStart instanceof ValueKeyword vkw
+                        ? vkw
+                        : PsiTreeUtil.getParentOfType(elemAtStart, ValueKeyword.class, false);
+                    if (vk != null) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            StvnBooleanValidityInspection.createSigiledNearMissQuickFix(vk, file.getProject())
+                        );
                     }
                 }
 

@@ -30,7 +30,7 @@ public final class StvnBootstrapDocumentIntentionAction implements IntentionActi
 
     @Override
     public @NotNull String getText() {
-        return "Bootstrap STVN Document";
+        return "Initialize STVN document structure";
     }
 
     @Override

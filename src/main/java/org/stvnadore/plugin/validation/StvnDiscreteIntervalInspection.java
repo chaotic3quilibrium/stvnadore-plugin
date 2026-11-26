@@ -2,6 +2,7 @@ package org.stvnadore.plugin.validation;
 
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
@@ -15,6 +16,7 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,6 +33,7 @@ import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.MetadataValue;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeDefinition;
@@ -185,17 +188,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MAX_INCL) != null) {
                 if (discrete) {
-                    var replaceKwFix = new ReplaceBoundKeywordQuickFix(
-                        StvnVocabulary.FACET_KW_MAX_INCL,
-                        StvnVocabulary.FACET_KW_MAX_EXCL,
-                        "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
-                            + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
-                    );
-                    var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMaxInclToMaxExclQuickFix(), replaceKwFix}
-                        : new LocalQuickFix[]{replaceKwFix};
+                    var kwPsi = StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(entry);
+                    var quickFixes = createDiscreteBoundQuickFixes(entry, true);
                     holder.registerProblem(
-                        entry,
+                        kwPsi,
                         StvnDiagnosticFormatter.formatPlugin(
                             discreteDesc + " prohibits bound '"
                                 + StvnVocabulary.FACET_KW_MAX_INCL
@@ -204,7 +200,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(entry, quickFixes)
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(kwPsi, quickFixes)
                     );
                 }
                 if (firstValidUpper != null) {
@@ -248,17 +244,10 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
                     || entry.getNode().findChildByType(StvnTypes.KW_MIN_EXCL) != null) {
                 if (discrete) {
-                    var replaceKwFix = new ReplaceBoundKeywordQuickFix(
-                        StvnVocabulary.FACET_KW_MIN_EXCL,
-                        StvnVocabulary.FACET_KW_MIN_INCL,
-                        "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
-                            + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
-                    );
-                    var quickFixes = canIncrementBound(entry)
-                        ? new LocalQuickFix[]{new ConvertMinExclToMinInclQuickFix(), replaceKwFix}
-                        : new LocalQuickFix[]{replaceKwFix};
+                    var kwPsi = StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(entry);
+                    var quickFixes = createDiscreteBoundQuickFixes(entry, false);
                     holder.registerProblem(
-                        entry,
+                        kwPsi,
                         StvnDiagnosticFormatter.formatPlugin(
                             discreteDesc + " prohibits bound '"
                                 + StvnVocabulary.FACET_KW_MIN_EXCL
@@ -267,7 +256,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                             StvnDiagnosticCodes.ERR_DISCRETE_BOUND_KIND_PROHIBITED
                         ),
                         ProblemHighlightType.GENERIC_ERROR,
-                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(entry, quickFixes)
+                        StvnMetadataOrderInspection.appendReorderFixIfDisordered(kwPsi, quickFixes)
                     );
                 }
                 if (firstValidLower != null) {
@@ -1045,7 +1034,139 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             .orElse(valText);
     }
 
-    private static final class ConvertMaxInclToMaxExclQuickFix implements LocalQuickFix {
+    /**
+     * Builds the ordered column-preserving quick-fixes for a prohibited discrete bound entry
+     * ({@code #maxIncl} or {@code #minExcl}), shared across Pass B ({@link StvnDiscreteIntervalInspection})
+     * and Pass A ({@code StvnPayloadValueQuickFixProvider}).
+     *
+     * @param entry     enclosing metadata bound entry
+     * @param isMaxIncl {@code true} when converting {@code #maxIncl} to {@code #maxExcl};
+     *                  {@code false} when converting {@code #minExcl} to {@code #minIncl}
+     * @return ordered array of quick-fixes implementing both {@link LocalQuickFix} and
+     *         {@link com.intellij.codeInsight.intention.IntentionAction}
+     */
+    public static LocalQuickFixAndIntentionActionOnPsiElement[] createDiscreteBoundQuickFixes(
+            MetadataEntry entry,
+            boolean isMaxIncl
+    ) {
+        if (isMaxIncl) {
+            var replaceKwFix = new ReplaceBoundKeywordQuickFix(
+                entry,
+                StvnVocabulary.FACET_KW_MAX_INCL,
+                StvnVocabulary.FACET_KW_MAX_EXCL,
+                "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
+                    + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
+            );
+            return canIncrementBound(entry)
+                ? new LocalQuickFixAndIntentionActionOnPsiElement[]{
+                    new ConvertMaxInclToMaxExclQuickFix(entry),
+                    replaceKwFix
+                }
+                : new LocalQuickFixAndIntentionActionOnPsiElement[]{replaceKwFix};
+        }
+        var replaceKwFix = new ReplaceBoundKeywordQuickFix(
+            entry,
+            StvnVocabulary.FACET_KW_MIN_EXCL,
+            StvnVocabulary.FACET_KW_MIN_INCL,
+            "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
+                + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
+        );
+        return canIncrementBound(entry)
+            ? new LocalQuickFixAndIntentionActionOnPsiElement[]{
+                new ConvertMinExclToMinInclQuickFix(entry),
+                replaceKwFix
+            }
+            : new LocalQuickFixAndIntentionActionOnPsiElement[]{replaceKwFix};
+    }
+
+    private static void replacePreviewElementText(Project project, PsiElement target, String newText) {
+        if (target instanceof LeafPsiElement leaf) {
+            leaf.replaceWithText(newText);
+            return;
+        }
+        PsiElement firstLeaf = PsiTreeUtil.getDeepestFirst(target);
+        PsiElement lastLeaf = PsiTreeUtil.getDeepestLast(target);
+        if (firstLeaf == lastLeaf && firstLeaf instanceof LeafPsiElement singleLeaf) {
+            singleLeaf.replaceWithText(newText);
+            return;
+        }
+        var dummyEntry = StvnElementFactory.createMetadataEntry(
+            project,
+            StvnVocabulary.FACET_KW_MIN_INCL + " " + newText
+        );
+        if (target instanceof MetadataValue && dummyEntry.getMetadataValue() != null) {
+            target.replace(dummyEntry.getMetadataValue());
+        }
+    }
+
+    private static void replaceBoundTokensInPlace(
+            Project project,
+            PsiFile file,
+            MetadataEntry entry,
+            String oldKw,
+            String newKw,
+            @Nullable String replacementValueText
+    ) {
+        if (!entry.isValid()) {
+            return;
+        }
+        var kwPsi = StvnMetadataOrderInspection.resolveMetadataEntryKeywordPsi(entry);
+        var valPsi = entry.getMetadataValue();
+        if (IntentionPreviewUtils.isPreviewElement(entry)) {
+            if (replacementValueText != null && valPsi != null) {
+                replacePreviewElementText(project, valPsi, replacementValueText);
+            }
+            if (kwPsi != entry || entry.getText().trim().equals(oldKw)) {
+                replacePreviewElementText(project, kwPsi, newKw);
+            } else {
+                PsiElement firstLeaf = PsiTreeUtil.getDeepestFirst(entry);
+                if (firstLeaf instanceof LeafPsiElement leaf && oldKw.equals(leaf.getText())) {
+                    leaf.replaceWithText(newKw);
+                }
+            }
+            return;
+        }
+        var doc = file.getViewProvider().getDocument();
+        if (doc != null) {
+            if (replacementValueText != null && valPsi != null) {
+                var valRange = valPsi.getTextRange();
+                doc.replaceString(valRange.getStartOffset(), valRange.getEndOffset(), replacementValueText);
+            }
+            if (kwPsi != entry || entry.getText().trim().equals(oldKw)) {
+                var kwRange = kwPsi.getTextRange();
+                doc.replaceString(kwRange.getStartOffset(), kwRange.getEndOffset(), newKw);
+            } else {
+                var entryRange = entry.getTextRange();
+                String rawEntry = doc.getText(entryRange);
+                if (rawEntry.startsWith(oldKw)) {
+                    doc.replaceString(entryRange.getStartOffset(), entryRange.getStartOffset() + oldKw.length(), newKw);
+                }
+            }
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+            return;
+        }
+        String fallbackVal = replacementValueText != null
+            ? replacementValueText
+            : (valPsi != null ? valPsi.getText().trim() : null);
+        String fallbackEntryText = fallbackVal != null
+            ? newKw + " " + fallbackVal
+            : entry.getText().trim().replaceFirst("^" + java.util.regex.Pattern.quote(oldKw), newKw);
+        entry.replace(StvnElementFactory.createMetadataEntry(project, fallbackEntryText));
+    }
+
+    private static final class ConvertMaxInclToMaxExclQuickFix
+            extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+
+        ConvertMaxInclToMaxExclQuickFix(MetadataEntry entry) {
+            super(entry);
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return getFamilyName();
+        }
+
         @Override
         public @NotNull String getFamilyName() {
             return "Convert '" + StvnVocabulary.FACET_KW_MAX_INCL + " <N>' to '"
@@ -1053,24 +1174,49 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var elem = descriptor.getPsiElement();
-            var entry = elem instanceof MetadataEntry me
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            var entry = startElement instanceof MetadataEntry me
                 ? me
-                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+                : PsiTreeUtil.getParentOfType(startElement, MetadataEntry.class, false);
             if (entry == null || !entry.isValid()) return;
             var val = entry.getMetadataValue();
             var valText = val != null ? val.getText().trim() : "0";
             var nextVal = incrementBound(valText);
-            var replacement = StvnElementFactory.createMetadataEntry(
+            replaceBoundTokensInPlace(
                 project,
-                StvnVocabulary.FACET_KW_MAX_EXCL + " " + nextVal
+                file,
+                entry,
+                StvnVocabulary.FACET_KW_MAX_INCL,
+                StvnVocabulary.FACET_KW_MAX_EXCL,
+                nextVal
             );
-            entry.replace(replacement);
         }
     }
 
-    private static final class ConvertMinExclToMinInclQuickFix implements LocalQuickFix {
+    private static final class ConvertMinExclToMinInclQuickFix
+            extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
+
+        ConvertMinExclToMinInclQuickFix(MetadataEntry entry) {
+            super(entry);
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return getFamilyName();
+        }
+
         @Override
         public @NotNull String getFamilyName() {
             return "Convert '" + StvnVocabulary.FACET_KW_MIN_EXCL + " <N>' to '"
@@ -1078,24 +1224,39 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var elem = descriptor.getPsiElement();
-            var entry = elem instanceof MetadataEntry me
+        public @NotNull Priority getPriority() {
+            return Priority.TOP;
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            var entry = startElement instanceof MetadataEntry me
                 ? me
-                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+                : PsiTreeUtil.getParentOfType(startElement, MetadataEntry.class, false);
             if (entry == null || !entry.isValid()) return;
             var val = entry.getMetadataValue();
             var valText = val != null ? val.getText().trim() : "0";
             var nextVal = incrementBound(valText);
-            var replacement = StvnElementFactory.createMetadataEntry(
+            replaceBoundTokensInPlace(
                 project,
-                StvnVocabulary.FACET_KW_MIN_INCL + " " + nextVal
+                file,
+                entry,
+                StvnVocabulary.FACET_KW_MIN_EXCL,
+                StvnVocabulary.FACET_KW_MIN_INCL,
+                nextVal
             );
-            entry.replace(replacement);
         }
     }
 
-    private static final class ReplaceBoundKeywordQuickFix implements LocalQuickFix {
+    private static final class ReplaceBoundKeywordQuickFix
+            extends LocalQuickFixAndIntentionActionOnPsiElement
+            implements PriorityAction {
         @SafeFieldForPreview
         private final String oldKw;
         @SafeFieldForPreview
@@ -1103,14 +1264,15 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         @SafeFieldForPreview
         private final String label;
 
-        ReplaceBoundKeywordQuickFix(String oldKw, String newKw, String label) {
+        ReplaceBoundKeywordQuickFix(MetadataEntry entry, String oldKw, String newKw, String label) {
+            super(entry);
             this.oldKw = oldKw;
             this.newKw = newKw;
             this.label = label;
         }
 
         @Override
-        public @NotNull String getName() {
+        public @NotNull String getText() {
             return label;
         }
 
@@ -1120,24 +1282,23 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         }
 
         @Override
-        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            var elem = descriptor.getPsiElement();
-            var entry = elem instanceof MetadataEntry me
+        public @NotNull Priority getPriority() {
+            return Priority.HIGH;
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                @NotNull PsiFile file,
+                @Nullable Editor editor,
+                @NotNull PsiElement startElement,
+                @NotNull PsiElement endElement
+        ) {
+            var entry = startElement instanceof MetadataEntry me
                 ? me
-                : PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
+                : PsiTreeUtil.getParentOfType(startElement, MetadataEntry.class, false);
             if (entry == null || !entry.isValid()) return;
-            var val = entry.getMetadataValue();
-            if (val != null) {
-                var replacement = StvnElementFactory.createMetadataEntry(
-                    project,
-                    newKw + " " + val.getText().trim()
-                );
-                entry.replace(replacement);
-            } else {
-                var text = entry.getText().trim().replaceFirst("^" + java.util.regex.Pattern.quote(oldKw), newKw);
-                var replacement = StvnElementFactory.createMetadataEntry(project, text);
-                entry.replace(replacement);
-            }
+            replaceBoundTokensInPlace(project, file, entry, oldKw, newKw, null);
         }
     }
 
@@ -1246,10 +1407,35 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
             if (lower == null || upper == null) {
                 return;
             }
+            var lowerValPsi = lower.getMetadataValue();
+            var upperValPsi = upper.getMetadataValue();
+            if (IntentionPreviewUtils.isPreviewElement(targetMap) && lowerValPsi != null && upperValPsi != null) {
+                if (lowerValPsi.getTextRange().getStartOffset() < upperValPsi.getTextRange().getStartOffset()) {
+                    replacePreviewElementText(project, upperValPsi, lowerValText);
+                    replacePreviewElementText(project, lowerValPsi, upperValText);
+                } else {
+                    replacePreviewElementText(project, lowerValPsi, upperValText);
+                    replacePreviewElementText(project, upperValPsi, lowerValText);
+                }
+                return;
+            }
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null && lowerValPsi != null && upperValPsi != null && !IntentionPreviewUtils.isPreviewElement(targetMap)) {
+                var lowerValRange = lowerValPsi.getTextRange();
+                var upperValRange = upperValPsi.getTextRange();
+                if (lowerValRange.getStartOffset() < upperValRange.getStartOffset()) {
+                    doc.replaceString(upperValRange.getStartOffset(), upperValRange.getEndOffset(), lowerValText);
+                    doc.replaceString(lowerValRange.getStartOffset(), lowerValRange.getEndOffset(), upperValText);
+                } else {
+                    doc.replaceString(lowerValRange.getStartOffset(), lowerValRange.getEndOffset(), upperValText);
+                    doc.replaceString(upperValRange.getStartOffset(), upperValRange.getEndOffset(), lowerValText);
+                }
+                PsiDocumentManager.getInstance(project).commitDocument(doc);
+                return;
+            }
             String lowerReplacementText = lowerKw + " " + upperValText;
             String upperReplacementText = upperKw + " " + lowerValText;
-            var doc = file.getViewProvider().getDocument();
-            if (doc != null) {
+            if (doc != null && !IntentionPreviewUtils.isPreviewElement(targetMap)) {
                 var lowerRange = lower.getTextRange();
                 var upperRange = upper.getTextRange();
                 if (lowerRange.getStartOffset() < upperRange.getStartOffset()) {

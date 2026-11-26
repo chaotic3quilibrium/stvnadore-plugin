@@ -260,29 +260,21 @@ public final class StvnPayloadValueQuickFixProvider {
             if (DiagnosticBag.ERR_DISCRETE_BOUND_KIND_PROHIBITED.equals(code)
                     || "E011".equals(code)
                     || rawMessage.contains("Discrete types reject")
-                    || rawMessage.contains("prohibited on discrete")) {
+                    || rawMessage.contains("prohibited on discrete")
+                    || rawMessage.contains("prohibits bound '" + StvnVocabulary.FACET_KW_MAX_INCL + "'")
+                    || rawMessage.contains("prohibits bound '" + StvnVocabulary.FACET_KW_MIN_EXCL + "'")) {
                 String entryText = metaEntry.getText().trim();
-                String valText = metaEntry.getMetadataValue() != null
-                    ? metaEntry.getMetadataValue().getText().trim()
-                    : "0";
-                if (entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)) {
-                    return builder.withFix(
-                        new MetadataEntryReplacementQuickFix(
-                            metaEntry,
-                            StvnVocabulary.FACET_KW_MAX_EXCL + " " + valText,
-                            "Replace '" + StvnVocabulary.FACET_KW_MAX_INCL
-                                + "' with half-open bound '" + StvnVocabulary.FACET_KW_MAX_EXCL + "'"
-                        )
-                    );
-                } else if (entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)) {
-                    return builder.withFix(
-                        new MetadataEntryReplacementQuickFix(
-                            metaEntry,
-                            StvnVocabulary.FACET_KW_MIN_INCL + " " + valText,
-                            "Replace '" + StvnVocabulary.FACET_KW_MIN_EXCL
-                                + "' with closed bound '" + StvnVocabulary.FACET_KW_MIN_INCL + "'"
-                        )
-                    );
+                boolean isMaxIncl = entryText.startsWith(StvnVocabulary.FACET_KW_MAX_INCL)
+                    || metaEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.KW_MAX_INCL) != null;
+                boolean isMinExcl = entryText.startsWith(StvnVocabulary.FACET_KW_MIN_EXCL)
+                    || metaEntry.getNode().findChildByType(org.stvnadore.psi.StvnTypes.KW_MIN_EXCL) != null;
+                if (isMaxIncl || isMinExcl) {
+                    var current = builder;
+                    for (var fix : org.stvnadore.plugin.validation.StvnDiscreteIntervalInspection
+                            .createDiscreteBoundQuickFixes(metaEntry, isMaxIncl)) {
+                        current = current.withFix(fix);
+                    }
+                    return current;
                 }
             }
         }

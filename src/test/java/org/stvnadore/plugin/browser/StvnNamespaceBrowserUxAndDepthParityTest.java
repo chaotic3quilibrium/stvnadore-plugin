@@ -446,7 +446,7 @@ public final class StvnNamespaceBrowserUxAndDepthParityTest extends BasePlatform
             assertTrue(depthLockItem.isSelected());
             assertEquals("Right-Size Column", depthRightSizeItem.getText());
             assertFalse("Right-Size Column must be disabled when column is locked", depthRightSizeItem.isEnabled());
-            assertEquals("Right-Size All Unlocked Columns", depthRightSizeAllItem.getText());
+            assertEquals("Right-Size All Unlocked Columns (Alt+R)", depthRightSizeAllItem.getText());
             assertTrue(depthRightSizeAllItem.isEnabled());
 
             // Lock Column 0 (Name) at custom width 195 via header context menu

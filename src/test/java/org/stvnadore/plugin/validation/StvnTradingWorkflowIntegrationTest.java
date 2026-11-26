@@ -124,8 +124,9 @@ public final class StvnTradingWorkflowIntegrationTest extends BasePlatformTestCa
         var boundErrors = highlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_DISCRETE_BOUND_KIND_PROHIBITED"))
             .toList();
-        assertEquals("Expected ERR_DISCRETE_BOUND_KIND_PROHIBITED on #maxIncl 50", 1, boundErrors.size());
+        assertEquals("Expected ERR_DISCRETE_BOUND_KIND_PROHIBITED on #maxIncl keyword", 1, boundErrors.size());
         assertEquals(text.indexOf("#maxIncl"), boundErrors.get(0).getStartOffset());
+        assertEquals(text.indexOf("#maxIncl") + 8, boundErrors.get(0).getEndOffset());
 
         var rangeErrors = highlights.stream()
             .filter(h -> h.getDescription() != null && h.getDescription().contains("ERR_INVERTED_RANGE"))

@@ -42,7 +42,7 @@ import java.awt.event.MouseEvent;
  * sort-toggle deconfliction, and truncated-cell tooltip controller for {@link StvnNamespaceBrowserPopup}.
  */
 @NullMarked
-final class StvnNamespaceColumnManager {
+public final class StvnNamespaceColumnManager {
 
     static final int DIVIDER_HIT_TOLERANCE_PX = 4;
     static final int MAX_RIGHT_SIZED_COLUMN_WIDTH_PX = 1200;
@@ -104,14 +104,25 @@ final class StvnNamespaceColumnManager {
         return modelCol >= 0 && modelCol < lockedByModelColumn.length && lockedByModelColumn[modelCol];
     }
 
-    boolean isViewColumnLocked(int viewCol) {
+    /**
+     * Returns whether the column at {@code viewCol} currently has its width locked.
+     *
+     * @param viewCol view column index
+     * @return {@code true} if the column width is locked
+     */
+    public boolean isViewColumnLocked(int viewCol) {
         if (viewCol < 0 || viewCol >= table.getColumnCount()) {
             return false;
         }
         return isModelColumnLocked(table.convertColumnIndexToModel(viewCol));
     }
 
-    boolean hasAnyUnlockedColumn() {
+    /**
+     * Returns whether at least one column in the table model is currently unlocked.
+     *
+     * @return {@code true} if any column is unlocked
+     */
+    public boolean hasAnyUnlockedColumn() {
         for (boolean locked : lockedByModelColumn) {
             if (!locked) {
                 return true;
@@ -152,7 +163,11 @@ final class StvnNamespaceColumnManager {
         return true;
     }
 
-    void rightSizeAllUnlockedColumns() {
+    /**
+     * Right-sizes every unlocked column in the table to fit its header and visible cell contents,
+     * leaving all locked columns at their exact pixel widths.
+     */
+    public void rightSizeAllUnlockedColumns() {
         boolean changed = false;
         for (int viewCol = 0; viewCol < table.getColumnCount(); viewCol++) {
             if (!isViewColumnLocked(viewCol)) {
@@ -254,7 +269,13 @@ final class StvnNamespaceColumnManager {
         return Math.min(JBUI.scale(MAX_RIGHT_SIZED_COLUMN_WIDTH_PX), raw);
     }
 
-    JBPopupMenu buildHeaderContextMenu(int viewCol) {
+    /**
+     * Builds the header right-click context menu for {@code viewCol}.
+     *
+     * @param viewCol view column index
+     * @return constructed {@link JBPopupMenu}
+     */
+    public JBPopupMenu buildHeaderContextMenu(int viewCol) {
         var menu = new JBPopupMenu();
         boolean currentlyLocked = isViewColumnLocked(viewCol);
 

@@ -145,12 +145,13 @@ public final class StvnNamespaceBrowserPopup {
      * @param columnManager            spreadsheet column sizing and width-lock manager
      * @param scopeShortcutActions     popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
      * @param filterFocusAction        popup-scoped {@code Alt+F} / {@code Ctrl+F} / {@code Meta+F} filter focus action
+     * @param rightSizeAllUnlockedAction popup-scoped {@code Alt+R} action right-sizing all unlocked columns
      * @param navigationHandlerRef     mutable callback invoked on {@code Enter} from {@code table} or {@code filterField}
      * @param popupTitle               static window caption ({@code STVN Namespace Dependencies})
      * @param loadingPanel             asynchronous loading wrapper panel
      * @param analysisFuture           completion future resolving to {@link StvnNamespaceSymbolCollector.StvnNamespaceSnapshot}
      */
-    record BrowserContent(
+    public record BrowserContent(
         JPanel panel,
         JBTable table,
         JBCheckBox showPreludeCheckBox,
@@ -166,13 +167,14 @@ public final class StvnNamespaceBrowserPopup {
         StvnNamespaceColumnManager columnManager,
         Map<StvnNamespaceScope, AnAction> scopeShortcutActions,
         AnAction filterFocusAction,
+        AnAction rightSizeAllUnlockedAction,
         AtomicReference<Runnable> navigationHandlerRef,
         String popupTitle,
         JBLoadingPanel loadingPanel,
         CompletableFuture<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> analysisFuture
     ) {
         /**
-         * Returns the combined plain-text representation of Row 1 ({@code "File: <filename>"}).
+         * Returns the combined plain-text representation of Row 1 ({@code "File: filename"}).
          *
          * @return combined Row 1 file header text
          */
@@ -181,7 +183,7 @@ public final class StvnNamespaceBrowserPopup {
         }
 
         /**
-         * Returns the combined plain-text representation of Row 2 ({@code "Scope: <summary>"}).
+         * Returns the combined plain-text representation of Row 2 ({@code "Scope: summary"}).
          *
          * @return combined Row 2 scope summary text
          */
@@ -213,11 +215,28 @@ public final class StvnNamespaceBrowserPopup {
         }
     }
 
-    static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
+    /**
+     * Constructs the interactive {@code STVN Namespace Dependencies} browser UI model with a fresh disposable.
+     *
+     * @param project active IntelliJ project
+     * @param file    source STVN file under inspection
+     * @param scope   requested initial scope
+     * @return constructed {@link BrowserContent} UI bundle
+     */
+    public static BrowserContent createBrowserContent(Project project, PsiFile file, StvnNamespaceScope scope) {
         return createBrowserContent(project, file, scope, Disposer.newDisposable());
     }
 
-    static BrowserContent createBrowserContent(
+    /**
+     * Constructs the interactive {@code STVN Namespace Dependencies} browser UI model bound to {@code parentDisposable}.
+     *
+     * @param project          active IntelliJ project
+     * @param file             source STVN file under inspection
+     * @param initialScope     requested initial scope
+     * @param parentDisposable disposable governing popup-scoped actions and background read actions
+     * @return constructed {@link BrowserContent} UI bundle
+     */
+    public static BrowserContent createBrowserContent(
         Project project,
         PsiFile file,
         StvnNamespaceScope initialScope,
@@ -422,6 +441,12 @@ public final class StvnNamespaceBrowserPopup {
         );
 
         AnAction filterFocusAction = registerFilterFocusShortcut(panel, parentDisposable, filterField);
+        AnAction rightSizeAllUnlockedAction = registerRightSizeAllUnlockedShortcut(
+            panel,
+            parentDisposable,
+            snapshotRef,
+            columnManager
+        );
 
         AtomicReference<Runnable> navigationHandlerRef = new AtomicReference<>(() -> {
             int visualRow = table.getSelectedRow();
@@ -511,6 +536,7 @@ public final class StvnNamespaceBrowserPopup {
             columnManager,
             Map.copyOf(scopeShortcutActions),
             filterFocusAction,
+            rightSizeAllUnlockedAction,
             navigationHandlerRef,
             resolvePopupTitle(),
             loadingPanel,
@@ -679,6 +705,50 @@ public final class StvnNamespaceBrowserPopup {
         return action;
     }
 
+    private static AnAction registerRightSizeAllUnlockedShortcut(
+        JPanel rootPanel,
+        Disposable parentDisposable,
+        AtomicReference<StvnNamespaceSymbolCollector.StvnNamespaceSnapshot> snapshotRef,
+        StvnNamespaceColumnManager columnManager
+    ) {
+        KeyStroke altR = KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.ALT_DOWN_MASK);
+        Runnable tryRightSizeAllUnlocked = () -> {
+            if (snapshotRef.get() == null || !columnManager.hasAnyUnlockedColumn()) {
+                return;
+            }
+            columnManager.rightSizeAllUnlockedColumns();
+        };
+
+        var action = new DumbAwareAction() {
+            @Override
+            public void update(@NotNull AnActionEvent e) {
+                // Keep enabled inside popup so Alt+R never leaks to IntelliJ's top-level Run menu
+                e.getPresentation().setEnabled(true);
+            }
+
+            @Override
+            public @NotNull ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.EDT;
+            }
+
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent e) {
+                tryRightSizeAllUnlocked.run();
+            }
+        };
+        action.registerCustomShortcutSet(new CustomShortcutSet(altR), rootPanel, parentDisposable);
+
+        String actionKey = "stvn.browser.columns.rightSizeAllUnlocked";
+        rootPanel.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(altR, actionKey);
+        rootPanel.getActionMap().put(actionKey, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                tryRightSizeAllUnlocked.run();
+            }
+        });
+        return action;
+    }
+
     static void focusAndSelectFilterField(SearchTextField filterField) {
         if (!filterField.isEnabled()) {
             return;
@@ -781,7 +851,22 @@ public final class StvnNamespaceBrowserPopup {
 
         editor.addKeyListener(new KeyAdapter() {
             @Override
+            public void keyTyped(KeyEvent e) {
+                if ((e.getModifiersEx() & InputEvent.ALT_DOWN_MASK) != 0) {
+                    char ch = e.getKeyChar();
+                    if (ch == 'r' || ch == 'R' || ch == '\u00AE') {
+                        e.consume();
+                    }
+                }
+            }
+
+            @Override
             public void keyPressed(KeyEvent e) {
+                if (!e.isConsumed()
+                        && (e.getModifiersEx() & InputEvent.ALT_DOWN_MASK) != 0
+                        && e.getKeyCode() == KeyEvent.VK_R) {
+                    return;
+                }
                 if (e.isConsumed() || !hasNoCommandModifiers(e)) {
                     return;
                 }
