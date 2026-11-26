@@ -2,6 +2,7 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.ui.JBPopupMenu;
+import com.intellij.ui.ComponentWithExpandableItems;
 import com.intellij.ui.PopupHandler;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
@@ -13,6 +14,7 @@ import org.stvnadore.plugin.StvnBundle;
 
 import javax.swing.Icon;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JTable;
@@ -37,6 +39,7 @@ import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 /**
  * Spreadsheet-style column sizing, per-column width locking, divider double-click right-sizing,
@@ -59,6 +62,7 @@ public final class StvnNamespaceColumnManager {
     private boolean initialContentWidthsApplied;
     private @Nullable Runnable fitWindowAction;
     private BooleanSupplier fitWindowEnabledSupplier = () -> true;
+    private Supplier<StvnNamespaceScope> activeScopeSupplier = () -> StvnNamespaceScope.DEFS;
 
     StvnNamespaceColumnManager(JBTable table, JBScrollPane scrollPane, StvnNamespaceTableModel tableModel) {
         this.table = table;
@@ -80,6 +84,9 @@ public final class StvnNamespaceColumnManager {
         scrollPane.getViewport().setBackground(table.getBackground());
 
         JTableHeader header = table.getTableHeader();
+        if (header instanceof ComponentWithExpandableItems<?> expandableHeader) {
+            expandableHeader.setExpandableItemsEnabled(false);
+        }
         this.delegateHeaderRenderer = header.getDefaultRenderer();
         header.setDefaultRenderer(new StvnHeaderRenderer());
 
@@ -93,6 +100,10 @@ public final class StvnNamespaceColumnManager {
 
         initializeDefaultColumnWidths();
         installHeaderDividerAndContextMenuListeners(header);
+    }
+
+    void setActiveScopeSupplier(Supplier<StvnNamespaceScope> activeScopeSupplier) {
+        this.activeScopeSupplier = activeScopeSupplier;
     }
 
     int getExactUseDepthHeaderWidth() {
@@ -166,17 +177,19 @@ public final class StvnNamespaceColumnManager {
     }
 
     /**
-     * Computes the sum of all visible column pixel widths in {@code table}.
+     * Computes the authoritative total pixel width required across all visible columns in {@code table},
+     * taking the maximum of summed {@link TableColumn#getWidth()}, {@link TableColumnModel#getTotalColumnWidth()},
+     * and {@link JTable#getPreferredSize()}{@code .width}.
      *
      * @return total pixel width across all columns
      */
     public int computeTotalColumnsWidth() {
         TableColumnModel cm = table.getColumnModel();
-        int total = 0;
+        int summedWidths = 0;
         for (int viewCol = 0; viewCol < cm.getColumnCount(); viewCol++) {
-            total += cm.getColumn(viewCol).getWidth();
+            summedWidths += cm.getColumn(viewCol).getWidth();
         }
-        return total;
+        return Math.max(table.getPreferredSize().width, Math.max(summedWidths, cm.getTotalColumnWidth()));
     }
 
     void setViewColumnLocked(int viewCol, boolean locked) {
@@ -338,6 +351,10 @@ public final class StvnNamespaceColumnManager {
         if (modelCol != StvnNamespaceTableModel.COL_USE_DEPTH) {
             return null;
         }
+        return resolveUseDepthHeaderTooltip(activeScope);
+    }
+
+    static String resolveUseDepthHeaderTooltip(StvnNamespaceScope activeScope) {
         return activeScope == StvnNamespaceScope.DEFS
             ? StvnBundle.message("stvn.browser.column.useDepth.tooltip.defs")
             : StvnBundle.message("stvn.browser.column.useDepth.tooltip.reachability");
@@ -508,7 +525,7 @@ public final class StvnNamespaceColumnManager {
         int headerReq = computeRequiredHeaderWidth(viewCol, true, true);
         var sampleCell = new StvnNamespaceCellRenderer();
         Component sampleComp = sampleCell.getTableCellRendererComponent(table, 999, false, false, 0, viewCol);
-        int sampleCellReq = sampleComp.getPreferredSize().width + JBUI.scale(4);
+        int sampleCellReq = sampleComp.getPreferredSize().width + JBUI.scale(6);
         return Math.max(headerReq, sampleCellReq);
     }
 
@@ -521,21 +538,26 @@ public final class StvnNamespaceColumnManager {
         Component comp = delegateHeaderRenderer.getTableCellRendererComponent(
             table, headerValue, false, false, -1, viewCol
         );
+        int modelCol = table.convertColumnIndexToModel(viewCol);
         if (comp instanceof JLabel label) {
             Icon sortReserve = includeSortReserve ? createSortReserveIcon() : null;
             Icon combined = composeHeaderIcons(includeLockIcon ? headerLockIcon : null, sortReserve);
+            label.setHorizontalAlignment(
+                modelCol == StvnNamespaceTableModel.COL_USE_DEPTH ? SwingConstants.RIGHT : SwingConstants.LEFT
+            );
             label.setHorizontalTextPosition(SwingConstants.LEADING);
             label.setIconTextGap(combined != null ? JBUI.scale(4) : 0);
             label.setIcon(combined);
         }
-        return comp.getPreferredSize().width + JBUI.scale(4);
+        return comp.getPreferredSize().width + JBUI.scale(6);
     }
 
     private Icon createSortReserveIcon() {
         Icon asc = UIManager.getIcon("Table.ascendingSortIcon");
         Icon desc = UIManager.getIcon("Table.descendingSortIcon");
+        int arrowWidth = AllIcons.General.ArrowUp.getIconWidth();
         int w = Math.max(
-            JBUI.scale(10),
+            Math.max(JBUI.scale(12), arrowWidth),
             Math.max(asc != null ? asc.getIconWidth() : 0, desc != null ? desc.getIconWidth() : 0)
         );
         int h = Math.max(JBUI.scale(10), headerLockIcon.getIconHeight());
@@ -618,16 +640,23 @@ public final class StvnNamespaceColumnManager {
             Component comp = delegateHeaderRenderer.getTableCellRendererComponent(
                 tbl, value, isSelected, hasFocus, row, column
             );
+            int modelCol = tbl.convertColumnIndexToModel(column);
+            boolean isUseDepth = modelCol == StvnNamespaceTableModel.COL_USE_DEPTH;
             if (comp instanceof JLabel label) {
                 Icon sortIcon = label.getIcon();
-                int modelCol = tbl.convertColumnIndexToModel(column);
+                label.setHorizontalAlignment(isUseDepth ? SwingConstants.RIGHT : SwingConstants.LEFT);
+                label.setHorizontalTextPosition(SwingConstants.LEADING);
                 if (isModelColumnLocked(modelCol)) {
-                    label.setHorizontalTextPosition(SwingConstants.LEADING);
-                    label.setIconTextGap(JBUI.scale(4));
-                    label.setIcon(composeHeaderIcons(headerLockIcon, sortIcon));
+                    Icon combined = composeHeaderIcons(headerLockIcon, sortIcon);
+                    label.setIconTextGap(combined != null ? JBUI.scale(4) : 0);
+                    label.setIcon(combined);
                 } else {
+                    label.setIconTextGap(sortIcon != null ? JBUI.scale(4) : 0);
                     label.setIcon(sortIcon);
                 }
+            }
+            if (comp instanceof JComponent jc) {
+                jc.setToolTipText(isUseDepth ? resolveUseDepthHeaderTooltip(activeScopeSupplier.get()) : null);
             }
             return comp;
         }
@@ -648,7 +677,7 @@ public final class StvnNamespaceColumnManager {
             setHorizontalAlignment(
                 modelCol == StvnNamespaceTableModel.COL_USE_DEPTH ? SwingConstants.RIGHT : SwingConstants.LEFT
             );
-            setBorder(JBUI.Borders.empty(0, 6));
+            setBorder(JBUI.Borders.empty(0, 8));
             return comp;
         }
     }

@@ -2,6 +2,7 @@ package org.stvnadore.plugin.browser;
 
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -15,6 +16,7 @@ import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
@@ -67,8 +69,11 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollBar;
+import javax.swing.JViewport;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.table.JTableHeader;
 import javax.swing.text.BadLocationException;
@@ -78,6 +83,7 @@ import java.awt.Dimension;
 import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.Window;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -129,10 +135,16 @@ public final class StvnNamespaceBrowserPopup {
     public static final String FILTER_FIELD_TOOLTIP =
         StvnBundle.message("stvn.browser.filter.tooltip");
 
+    /** Popup-scoped shortcut toggling {@code Show Standard Library Prelude} ({@code Alt+P} / {@code ⌥P}). */
+    public static final KeyStroke PRELUDE_TOGGLE_KEYSTROKE =
+        KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.ALT_DOWN_MASK);
+
     private static final int MIN_POPUP_WIDTH_PX = 620;
     private static final int MIN_POPUP_HEIGHT_PX = 260;
     private static final int SCREEN_FIT_MARGIN_PX = 24;
     private static final int DEFAULT_SCROLLBAR_RESERVE_PX = 16;
+    private static final int HIDPI_VIEWPORT_SAFETY_CUSHION_PX = 6;
+    private static final int CLOSED_LOOP_SHORTFALL_CUSHION_PX = 2;
 
     private StvnNamespaceBrowserPopup() {
     }
@@ -183,6 +195,7 @@ public final class StvnNamespaceBrowserPopup {
      * @param columnManager              spreadsheet column sizing and width-lock manager
      * @param scopeShortcutActions       popup-scoped {@code Alt+1..3} {@link AnAction}s keyed by scope
      * @param filterFocusAction          popup-scoped {@code Alt+F} / {@code Ctrl+F} / {@code Meta+F} filter focus action
+     * @param togglePreludeAction        popup-scoped {@code Alt+P} action toggling {@code showPreludeCheckBox}
      * @param rightSizeAllUnlockedAction popup-scoped 2-stage {@code Alt+R} action right-sizing columns then fitting window
      * @param fitWindowToContentAction   popup-scoped 1-step {@code Alt+Shift+R} action fitting window to rows and columns
      * @param popupWindowBridgeRef       mutable reference to the active {@link PopupWindowBridge}
@@ -209,6 +222,7 @@ public final class StvnNamespaceBrowserPopup {
         StvnNamespaceColumnManager columnManager,
         Map<StvnNamespaceScope, AnAction> scopeShortcutActions,
         AnAction filterFocusAction,
+        AnAction togglePreludeAction,
         AnAction rightSizeAllUnlockedAction,
         AnAction fitWindowToContentAction,
         AtomicReference<@Nullable PopupWindowBridge> popupWindowBridgeRef,
@@ -279,7 +293,69 @@ public final class StvnNamespaceBrowserPopup {
             );
             Rectangle usableScreenRect = bridge.getUsableScreenBounds(anchor);
             Rectangle fittedBounds = computeFittedPopupBounds(currentBounds, usableScreenRect);
+
+            Dimension panelSizeBefore = panel.getSize();
+            JViewport viewport = scrollPane.getViewport();
+            Dimension extentBefore = viewport != null ? viewport.getExtentSize() : new Dimension();
+
             bridge.applyBounds(fittedBounds);
+            validatePopupHierarchy();
+
+            if (viewport != null) {
+                Dimension extentAfter = viewport.getExtentSize();
+                boolean hierarchyResponded = scrollPane.isShowing()
+                    || !panel.getSize().equals(panelSizeBefore)
+                    || !extentAfter.equals(extentBefore);
+                if (hierarchyResponded && extentAfter.width > 0 && extentAfter.height > 0) {
+                    int margin = JBUI.scale(SCREEN_FIT_MARGIN_PX);
+                    int availX = usableScreenRect.x + margin;
+                    int availY = usableScreenRect.y + margin;
+                    int availW = Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), usableScreenRect.width - 2 * margin);
+                    int availH = Math.max(JBUI.scale(MIN_POPUP_HEIGHT_PX), usableScreenRect.height - 2 * margin);
+
+                    int requiredColsWidth = columnManager.computeTotalColumnsWidth();
+                    int requiredRowsHeight = computeRequiredRowsHeight();
+                    int scrollChromeW = computeScrollChromeWidth();
+                    int vBarReserve = computeVerticalScrollBarReserve();
+
+                    boolean verticalScrollActive = requiredRowsHeight > extentAfter.height;
+                    boolean usesOverlayVerticalScrollBar = scrollPane.getWidth() > 0
+                        && extentAfter.width >= scrollPane.getWidth() - scrollChromeW - 2;
+                    int requiredEffectiveViewportWidth = (verticalScrollActive && usesOverlayVerticalScrollBar)
+                        ? requiredColsWidth + vBarReserve
+                        : requiredColsWidth;
+
+                    int shortfallW = requiredEffectiveViewportWidth - extentAfter.width;
+                    int shortfallH = requiredRowsHeight - extentAfter.height;
+
+                    boolean growW = shortfallW > 0 && fittedBounds.width < availW;
+                    boolean growH = shortfallH > 0 && fittedBounds.height < availH;
+                    if (growW || growH) {
+                        int cushion = JBUI.scale(CLOSED_LOOP_SHORTFALL_CUSHION_PX);
+                        int correctedWidth = growW
+                            ? Math.min(availW, fittedBounds.width + shortfallW + cushion)
+                            : fittedBounds.width;
+                        int correctedHeight = growH
+                            ? Math.min(availH, fittedBounds.height + shortfallH + cushion)
+                            : fittedBounds.height;
+                        Rectangle correctedBounds = clampPopupOrigin(
+                            fittedBounds.x,
+                            fittedBounds.y,
+                            correctedWidth,
+                            correctedHeight,
+                            availX,
+                            availY,
+                            availW,
+                            availH
+                        );
+                        if (!correctedBounds.equals(fittedBounds)) {
+                            bridge.applyBounds(correctedBounds);
+                            validatePopupHierarchy();
+                        }
+                    }
+                }
+            }
+
             panel.revalidate();
             panel.repaint();
             table.revalidate();
@@ -287,8 +363,9 @@ public final class StvnNamespaceBrowserPopup {
         }
 
         /**
-         * Computes the screen-clamped target popup bounds for the current table columns, visible rows,
-         * and 3-row header bar, shifting {@code (x, y)} left/up if expansion would overflow usable monitor edges.
+         * Computes the screen-clamped target popup bounds for the current outer popup chrome, 3-row header bar,
+         * table column headers, and visible rows, shifting {@code (x, y)} left/up if expansion would overflow
+         * usable monitor edges.
          *
          * @param currentPopupBounds current popup screen rectangle
          * @param usableScreenRect   active monitor usable work area (excluding OS taskbar/dock)
@@ -301,35 +378,26 @@ public final class StvnNamespaceBrowserPopup {
             int availW = Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), usableScreenRect.width - 2 * margin);
             int availH = Math.max(JBUI.scale(MIN_POPUP_HEIGHT_PX), usableScreenRect.height - 2 * margin);
 
-            Insets panelInsets = panel.getInsets();
-            Insets scrollInsets = scrollPane.getInsets();
-            int panelChromeW = panelInsets != null ? panelInsets.left + panelInsets.right : 0;
-            int panelChromeH = panelInsets != null ? panelInsets.top + panelInsets.bottom : 0;
-            int scrollChromeW = scrollInsets != null ? scrollInsets.left + scrollInsets.right : 0;
-            int scrollChromeH = scrollInsets != null ? scrollInsets.top + scrollInsets.bottom : 0;
-            int borderGapY = panel.getLayout() instanceof BorderLayout bl ? bl.getVgap() : JBUI.scale(6);
+            int outerWidthOverhead = computeOuterWidthOverhead(currentPopupBounds);
+            int outerAndHeaderHeightOverhead = computeOuterAndHeaderHeightOverhead(currentPopupBounds);
+            int scrollChromeW = computeScrollChromeWidth();
+            int scrollChromeH = computeScrollChromeHeight();
 
-            int northPrefWidth = northPanel.getPreferredSize().width + panelChromeW;
-            int northHeight = Math.max(northPanel.getHeight(), northPanel.getPreferredSize().height);
-            JTableHeader header = table.getTableHeader();
-            int headerHeight = header != null
-                ? Math.max(header.getHeight(), header.getPreferredSize().height)
-                : 0;
-            int rowHeight = Math.max(1, table.getRowHeight());
-            int rowsHeight = table.getRowCount() * rowHeight;
+            JViewport colHeaderViewport = scrollPane.getColumnHeader();
+            JTableHeader tableHeader = table.getTableHeader();
+            int colHeaderHeight = Math.max(
+                colHeaderViewport != null ? colHeaderViewport.getHeight() : 0,
+                tableHeader != null ? Math.max(tableHeader.getHeight(), tableHeader.getPreferredSize().height) : 0
+            );
+            int rowsHeight = computeRequiredRowsHeight();
             int columnsWidth = columnManager.computeTotalColumnsWidth();
+            int safetyCushion = JBUI.scale(HIDPI_VIEWPORT_SAFETY_CUSHION_PX);
 
-            JScrollBar vBar = scrollPane.getVerticalScrollBar();
-            JScrollBar hBar = scrollPane.getHorizontalScrollBar();
-            int vBarReserve = (vBar != null && vBar.getPreferredSize().width > 0)
-                ? vBar.getPreferredSize().width
-                : JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX);
-            int hBarReserve = (hBar != null && hBar.getPreferredSize().height > 0)
-                ? hBar.getPreferredSize().height
-                : JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX);
+            int vBarReserve = computeVerticalScrollBarReserve();
+            int hBarReserve = computeHorizontalScrollBarReserve();
 
-            int baseIdealWidth = columnsWidth + panelChromeW + scrollChromeW;
-            int baseIdealHeight = northHeight + borderGapY + headerHeight + rowsHeight + panelChromeH + scrollChromeH;
+            int baseIdealWidth = outerWidthOverhead + scrollChromeW + columnsWidth + safetyCushion;
+            int baseIdealHeight = outerAndHeaderHeightOverhead + scrollChromeH + colHeaderHeight + rowsHeight + safetyCushion;
 
             boolean needsVerticalScroll = baseIdealHeight > availH;
             int idealWidthWithVScroll = baseIdealWidth + (needsVerticalScroll ? vBarReserve : 0);
@@ -339,14 +407,115 @@ public final class StvnNamespaceBrowserPopup {
                 idealWidthWithVScroll = baseIdealWidth + vBarReserve;
             }
 
+            int northPrefWidth = northPanel.getPreferredSize().width + outerWidthOverhead;
             int minFloorWidth = Math.min(availW, Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), northPrefWidth));
             int minFloorHeight = Math.min(availH, JBUI.scale(MIN_POPUP_HEIGHT_PX));
 
             int targetWidth = Math.max(minFloorWidth, Math.min(availW, idealWidthWithVScroll));
             int targetHeight = Math.max(minFloorHeight, Math.min(availH, idealHeightWithHScroll));
 
-            int targetX = currentPopupBounds.x;
-            int targetY = currentPopupBounds.y;
+            return clampPopupOrigin(
+                currentPopupBounds.x,
+                currentPopupBounds.y,
+                targetWidth,
+                targetHeight,
+                availX,
+                availY,
+                availW,
+                availH
+            );
+        }
+
+        private int computeOuterWidthOverhead(Rectangle currentPopupBounds) {
+            Insets panelInsets = panel.getInsets();
+            int fallbackChromeW = panelInsets != null ? panelInsets.left + panelInsets.right : 0;
+            if (scrollPane.getWidth() > 0
+                    && (scrollPane.isShowing()
+                        || currentPopupBounds.width >= Math.max(panel.getWidth(), scrollPane.getWidth()))) {
+                return Math.max(fallbackChromeW, currentPopupBounds.width - scrollPane.getWidth());
+            }
+            return fallbackChromeW;
+        }
+
+        private int computeOuterAndHeaderHeightOverhead(Rectangle currentPopupBounds) {
+            Insets panelInsets = panel.getInsets();
+            int panelChromeH = panelInsets != null ? panelInsets.top + panelInsets.bottom : 0;
+            int borderGapY = panel.getLayout() instanceof BorderLayout bl ? bl.getVgap() : JBUI.scale(6);
+            int northHeight = Math.max(northPanel.getHeight(), northPanel.getPreferredSize().height);
+            int fallbackChromeH = northHeight + borderGapY + panelChromeH;
+            if (scrollPane.getHeight() > 0
+                    && (scrollPane.isShowing()
+                        || currentPopupBounds.height >= Math.max(panel.getHeight(), scrollPane.getHeight()))) {
+                return Math.max(fallbackChromeH, currentPopupBounds.height - scrollPane.getHeight());
+            }
+            return fallbackChromeH;
+        }
+
+        private int computeScrollChromeWidth() {
+            Insets scrollInsets = scrollPane.getInsets();
+            Border vpBorder = scrollPane.getViewportBorder();
+            Insets vpInsets = vpBorder != null ? vpBorder.getBorderInsets(scrollPane) : null;
+            return (scrollInsets != null ? scrollInsets.left + scrollInsets.right : 0)
+                + (vpInsets != null ? vpInsets.left + vpInsets.right : 0);
+        }
+
+        private int computeScrollChromeHeight() {
+            Insets scrollInsets = scrollPane.getInsets();
+            Border vpBorder = scrollPane.getViewportBorder();
+            Insets vpInsets = vpBorder != null ? vpBorder.getBorderInsets(scrollPane) : null;
+            return (scrollInsets != null ? scrollInsets.top + scrollInsets.bottom : 0)
+                + (vpInsets != null ? vpInsets.top + vpInsets.bottom : 0);
+        }
+
+        private int computeVerticalScrollBarReserve() {
+            JScrollBar vBar = scrollPane.getVerticalScrollBar();
+            return Math.max(
+                JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX),
+                vBar != null ? Math.max(vBar.getWidth(), vBar.getPreferredSize().width) : 0
+            );
+        }
+
+        private int computeHorizontalScrollBarReserve() {
+            JScrollBar hBar = scrollPane.getHorizontalScrollBar();
+            return Math.max(
+                JBUI.scale(DEFAULT_SCROLLBAR_RESERVE_PX),
+                hBar != null ? Math.max(hBar.getHeight(), hBar.getPreferredSize().height) : 0
+            );
+        }
+
+        int computeRequiredRowsHeight() {
+            int rowCount = table.getRowCount();
+            if (rowCount <= 0) {
+                return 0;
+            }
+            int rowHeight = Math.max(1, table.getRowHeight());
+            Rectangle lastRowRect = table.getCellRect(rowCount - 1, 0, true);
+            int lastRowBottom = lastRowRect.y + lastRowRect.height;
+            return Math.max(table.getPreferredSize().height, Math.max(rowCount * rowHeight, lastRowBottom));
+        }
+
+        private void validatePopupHierarchy() {
+            Window ancestorWindow = SwingUtilities.getWindowAncestor(panel);
+            if (ancestorWindow != null) {
+                ancestorWindow.validate();
+            } else {
+                panel.validate();
+            }
+            scrollPane.validate();
+        }
+
+        private static Rectangle clampPopupOrigin(
+            int currentX,
+            int currentY,
+            int targetWidth,
+            int targetHeight,
+            int availX,
+            int availY,
+            int availW,
+            int availH
+        ) {
+            int targetX = currentX;
+            int targetY = currentY;
             int maxAllowedX = availX + availW - targetWidth;
             int maxAllowedY = availY + availH - targetHeight;
             if (targetX > maxAllowedX) {
@@ -361,7 +530,6 @@ public final class StvnNamespaceBrowserPopup {
             if (targetY < availY) {
                 targetY = availY;
             }
-
             return new Rectangle(targetX, targetY, targetWidth, targetHeight);
         }
 
@@ -424,15 +592,35 @@ public final class StvnNamespaceBrowserPopup {
         var table = new JBTable(tableModel) {
             @Override
             protected @NotNull JTableHeader createDefaultTableHeader() {
-                return new JTableHeader(columnModel) {
+                var jbHeader = new JBTableHeader() {
                     @Override
-                    public @Nullable String getToolTipText(MouseEvent event) {
+                    public @Nullable String getToolTipText(@NotNull MouseEvent event) {
                         var mgr = columnManagerHolder[0];
-                        return mgr != null
-                            ? mgr.resolveHeaderTooltip(event.getPoint(), activeScopeRef.get())
-                            : super.getToolTipText(event);
+                        if (mgr != null) {
+                            String customTooltip = mgr.resolveHeaderTooltip(event.getPoint(), activeScopeRef.get());
+                            if (customTooltip != null) {
+                                return customTooltip;
+                            }
+                        }
+                        return super.getToolTipText(event);
+                    }
+
+                    @Override
+                    protected void packColumn(int column) {
+                        var mgr = columnManagerHolder[0];
+                        if (mgr != null) {
+                            try {
+                                mgr.rightSizeViewColumnIfUnlocked(column);
+                            } finally {
+                                mgr.getRowSorter().setSuppressSortToggle(false);
+                            }
+                            return;
+                        }
+                        super.packColumn(column);
                     }
                 };
+                jbHeader.setExpandableItemsEnabled(false);
+                return jbHeader;
             }
 
             @Override
@@ -447,6 +635,7 @@ public final class StvnNamespaceBrowserPopup {
 
         var scrollPane = new JBScrollPane(table);
         var columnManager = new StvnNamespaceColumnManager(table, scrollPane, tableModel);
+        columnManager.setActiveScopeSupplier(activeScopeRef::get);
         columnManagerHolder[0] = columnManager;
 
         var panel = new JPanel(new BorderLayout(0, JBUI.scale(6)));
@@ -478,8 +667,12 @@ public final class StvnNamespaceBrowserPopup {
         fileHeaderPanel.add(fileLabel);
         fileRow.add(fileHeaderPanel, BorderLayout.WEST);
 
-        var showPreludeCheckBox = new JBCheckBox(StvnBundle.message("stvn.browser.prelude.checkbox"), false);
+        var showPreludeCheckBox = new JBCheckBox(resolvePreludeCheckboxText(), false);
+        showPreludeCheckBox.putClientProperty("html.disable", Boolean.TRUE);
+        showPreludeCheckBox.putClientProperty(MnemonicHelper.DISABLE_MNEMONIC_PROCESSING, Boolean.TRUE);
         showPreludeCheckBox.setFont(JBFont.label().asPlain());
+        showPreludeCheckBox.setMnemonic(0);
+        showPreludeCheckBox.setToolTipText(resolvePreludeCheckboxTooltip());
         showPreludeCheckBox.setEnabled(false);
         fileRow.add(showPreludeCheckBox, BorderLayout.EAST);
         northPanel.add(fileRow);
@@ -648,7 +841,21 @@ public final class StvnNamespaceBrowserPopup {
         };
         columnManager.setFitWindowAction(directFitWindowRunnable, () -> snapshotRef.get() != null);
 
+        Runnable togglePreludeRunnable = () -> {
+            if (snapshotRef.get() == null || !showPreludeCheckBox.isEnabled()) {
+                return;
+            }
+            showPreludeCheckBox.doClick(0);
+        };
+
         AnAction filterFocusAction = registerFilterFocusShortcut(panel, parentDisposable, filterField);
+        AnAction togglePreludeAction = registerPopupKeyShortcut(
+            panel,
+            parentDisposable,
+            PRELUDE_TOGGLE_KEYSTROKE,
+            "stvn.browser.prelude.toggle",
+            togglePreludeRunnable
+        );
         AnAction rightSizeAllUnlockedAction = registerPopupKeyShortcut(
             panel,
             parentDisposable,
@@ -752,6 +959,7 @@ public final class StvnNamespaceBrowserPopup {
             columnManager,
             Map.copyOf(scopeShortcutActions),
             filterFocusAction,
+            togglePreludeAction,
             rightSizeAllUnlockedAction,
             fitWindowToContentAction,
             popupWindowBridgeRef,
@@ -788,6 +996,35 @@ public final class StvnNamespaceBrowserPopup {
 
     static String resolvePopupTitle() {
         return StvnBundle.message("stvn.browser.title");
+    }
+
+    /**
+     * Returns the platform-formatted shortcut text for {@link #PRELUDE_TOGGLE_KEYSTROKE}
+     * (for example {@code "Alt+P"} on Windows/Linux or {@code "⌥P"} on macOS).
+     *
+     * @return non-empty shortcut label
+     */
+    public static String resolvePreludeShortcutText() {
+        String text = KeymapUtil.getKeystrokeText(PRELUDE_TOGGLE_KEYSTROKE);
+        return text.isEmpty() ? "Alt+P" : text;
+    }
+
+    /**
+     * Returns the localized checkbox caption including the platform-formatted {@code Alt+P} shortcut hint.
+     *
+     * @return checkbox caption text
+     */
+    public static String resolvePreludeCheckboxText() {
+        return StvnBundle.message("stvn.browser.prelude.checkbox", resolvePreludeShortcutText());
+    }
+
+    /**
+     * Returns the localized STE hover tooltip for the {@code Show Standard Library Prelude} checkbox.
+     *
+     * @return checkbox hover tooltip text
+     */
+    public static String resolvePreludeCheckboxTooltip() {
+        return StvnBundle.message("stvn.browser.prelude.tooltip", resolvePreludeShortcutText());
     }
 
     static String resolveFileTooltipPath(Project project, PsiFile file) {
@@ -1068,7 +1305,8 @@ public final class StvnNamespaceBrowserPopup {
             public void keyTyped(KeyEvent e) {
                 if ((e.getModifiersEx() & InputEvent.ALT_DOWN_MASK) != 0) {
                     char ch = e.getKeyChar();
-                    if (ch == 'r' || ch == 'R' || ch == '\u00AE' || ch == '\u2030') {
+                    if (ch == 'r' || ch == 'R' || ch == '\u00AE' || ch == '\u2030'
+                            || ch == 'p' || ch == 'P' || ch == '\u03C0' || ch == '\u220F') {
                         e.consume();
                     }
                 }
@@ -1078,7 +1316,7 @@ public final class StvnNamespaceBrowserPopup {
             public void keyPressed(KeyEvent e) {
                 if (!e.isConsumed()
                         && (e.getModifiersEx() & InputEvent.ALT_DOWN_MASK) != 0
-                        && e.getKeyCode() == KeyEvent.VK_R) {
+                        && (e.getKeyCode() == KeyEvent.VK_R || e.getKeyCode() == KeyEvent.VK_P)) {
                     return;
                 }
                 if (e.isConsumed() || !hasNoCommandModifiers(e)) {
@@ -1309,6 +1547,10 @@ public final class StvnNamespaceBrowserPopup {
                 if (popup.isDisposed() || !panel.isShowing()) {
                     return null;
                 }
+                Window window = SwingUtilities.getWindowAncestor(panel);
+                if (window != null && window.isShowing() && window.getWidth() > 0 && window.getHeight() > 0) {
+                    return window.getBounds();
+                }
                 Point loc = popup.getLocationOnScreen();
                 Dimension sz = popup.getSize();
                 if (sz.width <= 0 || sz.height <= 0) {
@@ -1324,9 +1566,30 @@ public final class StvnNamespaceBrowserPopup {
 
             @Override
             public void applyBounds(Rectangle targetBounds) {
-                if (!popup.isDisposed()) {
-                    popup.setLocation(targetBounds.getLocation());
-                    popup.setSize(targetBounds.getSize());
+                if (popup.isDisposed()) {
+                    return;
+                }
+                JComponent popupContent = popup.getContent();
+                Insets contentInsets = popupContent.getInsets();
+                int insetLeft = contentInsets != null ? contentInsets.left : 0;
+                int insetRight = contentInsets != null ? contentInsets.right : 0;
+                int insetTop = contentInsets != null ? contentInsets.top : 0;
+                int insetBottom = contentInsets != null ? contentInsets.bottom : 0;
+
+                Point contentLoc = new Point(targetBounds.x + insetLeft, targetBounds.y + insetTop);
+                Dimension contentBoxSize = new Dimension(
+                    Math.max(1, targetBounds.width - insetLeft - insetRight),
+                    Math.max(1, targetBounds.height - insetTop - insetBottom)
+                );
+                popup.setLocation(contentLoc);
+                popup.setSize(contentBoxSize);
+
+                Window window = SwingUtilities.getWindowAncestor(panel);
+                if (window != null && window.isShowing()) {
+                    if (!window.getBounds().equals(targetBounds)) {
+                        window.setBounds(targetBounds);
+                    }
+                    window.validate();
                 }
             }
         });

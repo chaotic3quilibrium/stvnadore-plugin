@@ -177,7 +177,7 @@ public final class StvnFacetAllowlistAndCoreDiagnosticParityTest extends BasePla
 
         var result = myFixture.getFile().getText();
         assertTrue("Reordered list must match canonical declaration order:\n" + result,
-            result.contains("[#REJECTED #CANCELLED #FILLED]"));
+            result.contains("[ #REJECTED #CANCELLED #FILLED ]"));
     }
 
     /**

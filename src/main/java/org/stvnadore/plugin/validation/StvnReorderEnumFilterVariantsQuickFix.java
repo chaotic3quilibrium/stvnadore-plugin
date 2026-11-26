@@ -12,7 +12,6 @@ import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnElementFactory;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnTypeReference;
@@ -26,12 +25,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * In-place AST and document rewrite quick-fix sorting filter facet variants according to
- * the declaration order of the root {@code :Enum} with zero bracket padding on single-line lists
- * and layout/comment preservation on multi-line lists.
+ * In-place token-only rewrite quick-fix sorting filter facet variants according to
+ * the declaration order of the root {@code :Enum} by replacing strictly individual
+ * {@link ValueKeyword} token ranges right-to-left with an exact {@code 0}-character width delta,
+ * preserving all authored bracket spacing, column alignment, and comments.
  */
 @NullMarked
 public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAndIntentionActionOnPsiElement {
@@ -98,43 +97,30 @@ public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAn
             .map(k -> k.getText().trim())
             .toList();
 
-        boolean multiLine = variantList.getText().contains("\n") || variantList.getText().contains("\r");
-        var doc = file.getViewProvider().getDocument();
-        if (doc != null) {
-            if (multiLine) {
+        boolean isPreview = !file.isPhysical()
+            || IntentionPreviewUtils.isPreviewElement(startElement)
+            || IntentionPreviewUtils.isIntentionPreviewActive();
+        if (!isPreview) {
+            var doc = file.getViewProvider().getDocument();
+            if (doc != null) {
                 for (int i = currentKeywords.size() - 1; i >= 0; i--) {
                     var kwRange = currentKeywords.get(i).getTextRange();
                     doc.replaceString(kwRange.getStartOffset(), kwRange.getEndOffset(), sortedTexts.get(i));
                 }
-            } else {
-                String canonicalList = StvnVocabulary.DELIM_OPEN_BRACKET
-                    + sortedTexts.stream().collect(Collectors.joining(" "))
-                    + StvnVocabulary.DELIM_CLOSE_BRACKET;
-                var range = variantList.getTextRange();
-                doc.replaceString(range.getStartOffset(), range.getEndOffset(), canonicalList);
-            }
-            if (file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(startElement)) {
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
+                return;
             }
-            return;
         }
 
-        if (multiLine) {
-            for (int i = currentKeywords.size() - 1; i >= 0; i--) {
-                ValueKeyword targetKw = currentKeywords.get(i);
-                String newTokenText = sortedTexts.get(i);
-                var firstLeaf = targetKw.getNode() != null ? targetKw.getNode().getFirstChildNode() : null;
-                if (firstLeaf instanceof LeafPsiElement leafPsi) {
-                    leafPsi.replaceWithText(newTokenText);
-                } else {
-                    targetKw.replace(StvnElementFactory.createValueKeyword(project, newTokenText));
-                }
+        for (int i = currentKeywords.size() - 1; i >= 0; i--) {
+            ValueKeyword targetKw = currentKeywords.get(i);
+            String newTokenText = sortedTexts.get(i);
+            var firstLeaf = targetKw.getNode() != null ? targetKw.getNode().getFirstChildNode() : null;
+            if (firstLeaf instanceof LeafPsiElement leafPsi) {
+                leafPsi.replaceWithText(newTokenText);
+            } else {
+                targetKw.replace(StvnElementFactory.createValueKeyword(project, newTokenText));
             }
-        } else {
-            String canonicalList = StvnVocabulary.DELIM_OPEN_BRACKET
-                + String.join(" ", sortedTexts)
-                + StvnVocabulary.DELIM_CLOSE_BRACKET;
-            variantList.replace(StvnElementFactory.createVariantList(project, canonicalList));
         }
     }
 

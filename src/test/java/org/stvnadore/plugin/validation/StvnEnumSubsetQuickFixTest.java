@@ -42,7 +42,7 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
                 {
                   :defs {
                     :Priority :Enum [ #LOW #MEDIUM #HIGH #CRITICAL ]
-                    :InvalidOrder { #filterIncl [#MEDIUM #HIGH] } :Priority
+                    :InvalidOrder { #filterIncl [ #MEDIUM #HIGH ] } :Priority
                   }
                   :type :InvalidOrder
                   :body #HIGH
@@ -78,7 +78,7 @@ public final class StvnEnumSubsetQuickFixTest extends BasePlatformTestCase {
                   :defs {
                     :Status :Enum [ #Pending #Active #Suspended #Deleted ]
                     :WorkingStatus { #filterExcl [ #Deleted ] } :Status
-                    :ImmediateStatus { #filterIncl [#Active #Suspended] } :WorkingStatus
+                    :ImmediateStatus { #filterIncl [ #Active #Suspended ] } :WorkingStatus
                   }
                   :type :ImmediateStatus
                   :body #Active
