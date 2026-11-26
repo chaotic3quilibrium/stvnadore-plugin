@@ -477,9 +477,10 @@ Under STVN 2.0.0 Specification § 5.3 (**Rule `STR-04`**):
 ```
 
 * **Enter-Key Auto-Closing:** Pressing `Enter` after `"""[SQL]` inserts the matching `[SQL]"""` closing delimiter using your configured **Fenced string Enter-key auto-closing style** (`EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE`).
-* **Simple & Escaped String Conversion Intentions (`Alt+Enter`):**
-  * On a standard `"..."` simple string literal that can round-trip losslessly under `StvnStringCharacterPolicy.canRepresentVerbatimInFencedString`, invoke **Convert to Fenced String Block** (`StvnCreateFencedStringIntention`) to convert into `"""[RAW]...[RAW]"""` (or `"""[REGEX]...[REGEX]"""` on `#regex` facets and `*REGEX` constants) with automatic collision-safe tag escalation (`RAW_1`, `REGEX_1`).
-  * On an escaped `"..."` string containing `\n`, `\t`, `\"`, `\\`, or printable Unicode / emoji escapes (`"🚀\n👨‍💻"`), invoke **Convert escaped string to fenced string** (`StvnConvertEscapedStringToFencedIntention`). Strings containing `\r` (`\r` or `\u000D`), hazardous control/bidi/invisible scalars, unpaired surrogates, or unpreserved leading spaces are cleanly excluded from fenced conversion.
+* **Symmetric Simple, Escaped & Fenced String Conversion Intentions (`Alt+Enter`, `Priority.TOP`):**
+  * On an escape-free `"..."` simple string literal (or incomplete fenced opener) that round-trips losslessly under `StvnStringCharacterPolicy.canRepresentVerbatimInFencedString`, invoke **Convert string literal to fenced string block** (`StvnCreateFencedStringIntention`) to convert into `"""[RAW]...[RAW]"""` (or `"""[REGEX]...[REGEX]"""` on `#regex` facets and `*REGEX` constants) with automatic collision-safe tag escalation (`RAW_1`, `REGEX_1`).
+  * On an escaped `"..."` string containing `\"`, `\\`, `\/`, `\n`, `\t`, or printable `\uXXXX` / emoji escapes (`"🚀\n👨‍💻"`), invoke **Convert escaped string to fenced string** (`StvnConvertEscapedStringToFencedIntention`). The two forward fencing intentions are strictly mutually exclusive, exclude all `:DateTime`, `:meta`, and `:include` literals, and reject strings containing `\r` (`\r` or `\u000D`), hazardous control/bidi/invisible scalars, unpaired surrogates, or unpreserved leading spaces.
+  * On any valid `"""[TAG]...[TAG]"""` fenced string block, invoke **Convert fenced string to escaped string** (`StvnConvertFencedStringToSimpleIntention`) to decode the fenced body using context-sensitive `#preserveIndent` rules (always stripping common leading ASCII spaces on inline `#regex` and string bound facets per § 5.3 item 6) and emit a canonically escaped `"..."` literal. Leaf string conversion intentions rank #1 (`Priority.TOP`) ahead of enclosing container expand/collapse actions.
 * **Synchronized Tag Rename (`Shift+F6`):** Renames both `"""[TAG]` and `[TAG]"""` simultaneously with payload collision protection.
 
 ---
@@ -649,8 +650,8 @@ flowchart TD
 | **Focus Browser Symbol Filter**     | Focus & select symbol filter inside popup           | `Alt+F` / `Ctrl+F`      | `⌥F` / `⌘F`               |
 | **Right-Size Browser Columns**      | `Right-Size All Unlocked Columns (Alt+R)` in popup  | `Alt+R`                 | `⌥R`                       |
 | **Initialize Document Structure**   | Initialize STVN document structure                  | `Alt+Enter`             | `⌥Enter`                   |
-| **Scaffold Data Skeleton**          | Generate STVN data skeleton                         | `Alt+Enter`             | `⌥Enter`                   |
-| **Convert String to Fenced Block**  | Convert to Fenced String Block / Escaped to Fenced  | `Alt+Enter`             | `⌥Enter`                   |
+| **Scaffold Data Skeleton**          | Generate schema data skeleton                       | `Alt+Enter`             | `⌥Enter`                   |
+| **Convert Simple / Fenced String**  | Convert string literal / escaped / fenced string    | `Alt+Enter`             | `⌥Enter`                   |
 | **Expand / Collapse Container**     | Expand or collapse single/multi-line container      | `Alt+Enter`             | `⌥Enter`                   |
 | **Heal Flat Map List**              | Convert flat list to canonical map literal          | `Alt+Enter`             | `⌥Enter`                   |
 | **Reorder Metadata / Enum Variants**| Canonical facet or enum filter reordering           | `Alt+Enter`             | `⌥Enter`                   |

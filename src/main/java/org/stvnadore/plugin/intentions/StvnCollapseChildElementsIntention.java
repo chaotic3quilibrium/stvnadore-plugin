@@ -1,5 +1,7 @@
 package org.stvnadore.plugin.intentions;
 
+import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.openapi.editor.Editor;
@@ -19,17 +21,27 @@ import org.stvnadore.plugin.StvnLanguage;
  * @since 2.0.0
  */
 @NullMarked
-public final class StvnCollapseChildElementsIntention extends PsiElementBaseIntentionAction {
+public final class StvnCollapseChildElementsIntention
+        extends PsiElementBaseIntentionAction
+        implements PriorityAction {
 
     /**
      * Canonical user-facing action text and family name.
      */
     public static final String TEXT = "Collapse child elements to single lines";
 
+    @SafeFieldForPreview
+    private volatile Priority currentPriority = Priority.NORMAL;
+
     /**
      * Constructs a new {@code StvnCollapseChildElementsIntention}.
      */
     public StvnCollapseChildElementsIntention() {
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return currentPriority;
     }
 
     @Override
@@ -48,7 +60,12 @@ public final class StvnCollapseChildElementsIntention extends PsiElementBaseInte
         if (editor == null || file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return false;
         }
-        return StvnContainerLayoutUtil.findCollapseChildrenOperation(file, editor.getCaretModel().getOffset()) != null;
+        var op = StvnContainerLayoutUtil.findCollapseChildrenOperation(file, editor.getCaretModel().getOffset());
+        if (op == null) {
+            return false;
+        }
+        this.currentPriority = op.priority();
+        return true;
     }
 
     @Override

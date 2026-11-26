@@ -21,7 +21,7 @@
             <li>Unified renamed <code>UseMapAlias</code> head-hop inlay hints and per-hop <code>Ctrl+Click</code> navigation across scalar, <code>:Enum</code>, temporal, algebraic sum, and composite <code>:body</code> slots in both Clean Pass 3 and Pass-3-Suspended states.</li>
             <li>Upgraded <code>STVN Namespace Dependencies</code> (<code>Ctrl+Alt+N</code>) with a live <code>:defs</code> / <code>:type</code> / <code>:body</code> scope switcher, live symbol search filter, disabled-section tooltips, and a 5-column STVN 2.0.0 schema view.</li>
             <li>Added <code>StvnStringEscapeScrutiny</code> inspection (#27) with default-on shorthand <code>\r</code> scrutiny and <code>\u000D</code> quick-fixes, escape-sequence glyph and ZWJ emoji hover previews, 3-case fenced line-ending parity, and Pass 1 <code>E001</code> character hygiene parity.</li>
-            <li>Aligned all 8 intention actions, 27 inspection descriptions, code style and color scheme samples, settings labels, and authoring documentation with STVN 2.0.0.</li>
+            <li>Aligned all 9 intention actions (including symmetric Rule <code>STR-04</code> fenced-to-escaped round-trip conversion and caret-proximity priority ordering), 27 inspection descriptions, code style and color scheme samples, settings labels, and authoring documentation with STVN 2.0.0.</li>
           </ul>
         </li>
       </ul>
@@ -513,7 +513,7 @@
             <className>org.stvnadore.plugin.actions.StvnCreateFencedStringIntention</className>
             <category>STVN</category>
             <descriptionDirectoryName>StvnCreateFencedStringIntention</descriptionDirectoryName>
-            <description>Converts a simple string literal into a canonical STVN 2.0.0 fenced string block</description>
+            <description>Convert string literal to fenced string block</description>
         </intentionAction>
 
         <!-- 13e. Intention Action for Escaped String to Fenced String Block -->
@@ -522,6 +522,14 @@
             <category>STVN</category>
             <descriptionDirectoryName>StvnConvertEscapedStringToFencedIntention</descriptionDirectoryName>
             <description>Convert escaped string to fenced string</description>
+        </intentionAction>
+
+        <!-- 13f. Intention Action for Fenced String Block to Escaped Simple String -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnConvertFencedStringToSimpleIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnConvertFencedStringToSimpleIntention</descriptionDirectoryName>
+            <description>Convert fenced string to escaped string</description>
         </intentionAction>
 
         <!-- 14. Schema-Driven Skeleton Generator Intention Action -->

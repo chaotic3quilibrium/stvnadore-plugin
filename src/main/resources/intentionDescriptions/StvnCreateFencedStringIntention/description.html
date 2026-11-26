@@ -1,8 +1,8 @@
 <html>
 <body>
-Converts a double-quoted simple string literal (<code>"..."</code>) into a canonical STVN 2.0.0 fenced verbatim string block (<code>"""[RAW]...[RAW]"""</code> or <code>"""[REGEX]...[REGEX]"""</code>) governed by Rule <code>STR-04</code> (STVN Specification &sect; 5.3).
+Converts an escape-free double-quoted simple string literal (<code>"..."</code>) or incomplete fenced opener into a canonical STVN 2.0.0 fenced verbatim string block (<code>"""[RAW]...[RAW]"""</code> or <code>"""[REGEX]...[REGEX]"""</code>) governed by Rule <code>STR-04</code> (STVN Specification &sect; 5.3).
 <p>
-Decodes simple string escape sequences into verbatim UTF-8 body lines and selects a collision-free uppercase discriminator tag so the closing fence <code>[TAG]"""</code> matches the opening fence <code>"""[TAG]</code>.
+Preserves UTF-8 text verbatim and selects a collision-free uppercase discriminator tag so the closing fence <code>[TAG]"""</code> matches the opening fence <code>"""[TAG]</code>.
 </p>
 </body>
 </html>

@@ -1,5 +1,7 @@
 package org.stvnadore.plugin.intentions;
 
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
@@ -65,11 +67,24 @@ public final class StvnContainerLayoutUtil {
      *
      * @param range       half-open document character range to replace
      * @param replacement canonical single-line or multi-line STVN replacement text
+     * @param priority    caret-proximity intention priority ({@link PriorityAction.Priority#NORMAL} on container
+     *                    delimiters/whitespace, {@link PriorityAction.Priority#LOW} inside inner leaf tokens)
      */
     public record LayoutOperation(
         TextRange range,
-        String replacement
-    ) {}
+        String replacement,
+        PriorityAction.Priority priority
+    ) {
+        /**
+         * Constructs a {@link LayoutOperation} with default {@link PriorityAction.Priority#NORMAL} priority.
+         *
+         * @param range       half-open document character range to replace
+         * @param replacement canonical single-line or multi-line STVN replacement text
+         */
+        public LayoutOperation(TextRange range, String replacement) {
+            this(range, replacement, PriorityAction.Priority.NORMAL);
+        }
+    }
 
     private record MapEntrySlice(
         ASTNode lbrack,
@@ -96,11 +111,14 @@ public final class StvnContainerLayoutUtil {
             return;
         }
         PsiDocumentManager docManager = PsiDocumentManager.getInstance(project);
-        if (file.isPhysical()) {
+        boolean commitPhysical = file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(file);
+        if (commitPhysical) {
             docManager.doPostponedOperationsAndUnblockDocument(document);
         }
         document.replaceString(op.range().getStartOffset(), op.range().getEndOffset(), op.replacement());
-        docManager.commitDocument(document);
+        if (commitPhysical) {
+            docManager.commitDocument(document);
+        }
     }
 
     /**
@@ -148,7 +166,11 @@ public final class StvnContainerLayoutUtil {
                 return null;
             }
             TextRange targetRange = replacementRangeForContainer(candidate);
-            return new LayoutOperation(targetRange, expanded);
+            return new LayoutOperation(
+                targetRange,
+                expanded,
+                computeCaretProximityPriority(file, caretOffset, candidate, open, close)
+            );
         }
         return null;
     }
@@ -177,7 +199,13 @@ public final class StvnContainerLayoutUtil {
                         return null;
                     }
                     String collapsedSlice = renderCollapsedMapEntry(enclosingSlice);
-                    return new LayoutOperation(enclosingSlice.textRange(), collapsedSlice);
+                    return new LayoutOperation(
+                        enclosingSlice.textRange(),
+                        collapsedSlice,
+                        computeCaretProximityPriority(
+                            file, caretOffset, mapLit, enclosingSlice.lbrack(), enclosingSlice.rbrack()
+                        )
+                    );
                 }
             }
             PsiElement candidate = normalizeEnumCandidate(cur);
@@ -199,7 +227,11 @@ public final class StvnContainerLayoutUtil {
             if (collapsed == null) {
                 return null;
             }
-            return new LayoutOperation(replacementRangeForContainer(candidate), collapsed);
+            return new LayoutOperation(
+                replacementRangeForContainer(candidate),
+                collapsed,
+                computeCaretProximityPriority(file, caretOffset, candidate, open, close)
+            );
         }
         return null;
     }
@@ -240,9 +272,62 @@ public final class StvnContainerLayoutUtil {
                 int relEnd = childOp.range().getEndOffset() - baseStart;
                 rebuilt.replace(relStart, relEnd, childOp.replacement());
             }
-            return new LayoutOperation(parentRange, rebuilt.toString());
+            return new LayoutOperation(
+                parentRange,
+                rebuilt.toString(),
+                computeCaretProximityPriority(file, caretOffset, cur, open, close)
+            );
         }
         return null;
+    }
+
+    static PriorityAction.Priority computeCaretProximityPriority(
+            PsiFile file,
+            int caretOffset,
+            PsiElement targetContainer,
+            ASTNode openDelim,
+            ASTNode closeDelim
+    ) {
+        int len = file.getTextLength();
+        int clamped = Math.max(0, Math.min(caretOffset, len));
+        PsiElement at = clamped < len ? file.findElementAt(clamped) : null;
+        PsiElement prev = clamped > 0 ? file.findElementAt(clamped - 1) : null;
+
+        if (at != null && at.getNode() != null) {
+            ASTNode atNode = at.getNode();
+            IElementType atType = atNode.getElementType();
+            if (atNode == openDelim || atNode == closeDelim) {
+                return PriorityAction.Priority.NORMAL;
+            }
+            if (targetContainer instanceof MapLiteral
+                    && at.getParent() == targetContainer
+                    && (atType == StvnTypes.LBRACK || atType == StvnTypes.RBRACK)) {
+                return PriorityAction.Priority.NORMAL;
+            }
+            if (atType == TokenType.WHITE_SPACE) {
+                if (prev != null && prev.getNode() != null) {
+                    IElementType prevType = prev.getNode().getElementType();
+                    if (prevType == StvnTypes.LITERAL_STRING_SIMPLE
+                            || prevType == StvnTypes.LITERAL_STRING_FENCED) {
+                        return PriorityAction.Priority.LOW;
+                    }
+                    if (prev.getNode() == openDelim || prev.getNode() == closeDelim) {
+                        return PriorityAction.Priority.NORMAL;
+                    }
+                }
+                return at.getParent() == targetContainer
+                    ? PriorityAction.Priority.NORMAL
+                    : PriorityAction.Priority.LOW;
+            }
+            if (prev != null && prev.getNode() == closeDelim) {
+                return PriorityAction.Priority.NORMAL;
+            }
+            return PriorityAction.Priority.LOW;
+        }
+        if (prev != null && prev.getNode() == closeDelim) {
+            return PriorityAction.Priority.NORMAL;
+        }
+        return PriorityAction.Priority.LOW;
     }
 
     private static List<LayoutOperation> collectCollapsibleDirectChildOps(PsiElement parent, CharSequence chars) {

@@ -118,12 +118,12 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
         var root = findProjectRoot().toPath();
         var violations = new ArrayList<String>();
 
-        // 1. All 24 intentionDescriptions files (.html and .template)
+        // 1. All 27 intentionDescriptions files (.html and .template)
         var intentionDir = root.resolve("src/main/resources/intentionDescriptions");
         assertTrue("Intention descriptions directory must exist: " + intentionDir, Files.exists(intentionDir));
         try (Stream<Path> walk = Files.walk(intentionDir)) {
             var files = walk.filter(Files::isRegularFile).sorted().toList();
-            assertEquals("Expected 24 files across 8 intention description directories", 24, files.size());
+            assertEquals("Expected 27 files across 9 intention description directories", 27, files.size());
             for (Path file : files) {
                 String relName = root.relativize(file).toString().replace('\\', '/');
                 String content = Files.readString(file, StandardCharsets.UTF_8);
@@ -203,9 +203,9 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
             .newDocumentBuilder()
             .parse(pluginXmlPath.toFile());
 
-        // 1. Verify all 8 <intentionAction> entries, STE family names, and 1:1 intentionDescriptions/ folders
+        // 1. Verify all 9 <intentionAction> entries, STE family names, and 1:1 intentionDescriptions/ folders
         NodeList intentionNodes = xmlDoc.getElementsByTagName("intentionAction");
-        assertEquals("Expected 8 registered <intentionAction> elements in plugin.xml", 8, intentionNodes.getLength());
+        assertEquals("Expected 9 registered <intentionAction> elements in plugin.xml", 9, intentionNodes.getLength());
 
         Set<String> seenFamilyNames = new HashSet<>();
         for (int i = 0; i < intentionNodes.getLength(); i++) {
@@ -222,6 +222,11 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
             assertNotNull(className + " familyName must not be null", familyName);
             assertFalse(className + " familyName must not be blank", familyName.isBlank());
             assertFalse(className + " must not use generic 'STVN' familyName", "STVN".equals(familyName.trim()));
+            assertEquals(
+                className + " must maintain 1:1 getText() == getFamilyName() parity",
+                familyName,
+                action.getText()
+            );
 
             String firstWord = familyName.trim().split("\\s+")[0];
             assertTrue(

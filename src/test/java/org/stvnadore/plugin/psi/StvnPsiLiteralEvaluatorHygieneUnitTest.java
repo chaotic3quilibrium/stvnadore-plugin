@@ -65,4 +65,25 @@ public final class StvnPsiLiteralEvaluatorHygieneUnitTest {
         assertFalse(StvnStringLiteralCodec.shouldEmitFencedPretty("  indented\n  text", false));
         assertTrue(StvnStringLiteralCodec.shouldEmitFencedPretty("  indented\n  text", true));
     }
+
+    @Test
+    public void testFencedAndCanonicalQuotedStringRoundTripClosure() {
+        String ipv4Quoted = "\"^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])\\\\.?\\\\b){4}$\"";
+        String ipv4Decoded = StvnStringLiteralCodec.decodeStringLiteral(ipv4Quoted, false).orElseThrow();
+        String ipv4Fenced = "\"\"\"[RAW]\n        ^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])\\.?\\b){4}$[RAW]\"\"\"";
+        assertEquals(ipv4Decoded, StvnStringLiteralCodec.decodeStringLiteral(ipv4Fenced, false).orElseThrow());
+        assertEquals(ipv4Quoted, StvnStringLiteralCodec.formatCanonicalQuotedString(ipv4Decoded));
+
+        String jsonQuoted = "\"{\\n  \\\"service\\\": \\\"stvn\\\\\\\\core\\\",\\n  \\\"tabs\\\": \\\"a\\tb\\\"\\n}\\n\"";
+        String jsonDecoded = StvnStringLiteralCodec.decodeStringLiteral(jsonQuoted, false).orElseThrow();
+        String jsonFenced = "\"\"\"[RAW]\n        {\n          \"service\": \"stvn\\\\core\",\n          \"tabs\": \"a\tb\"\n        }\n      [RAW]\"\"\"";
+        assertEquals(jsonDecoded, StvnStringLiteralCodec.decodeStringLiteral(jsonFenced, false).orElseThrow());
+        assertEquals(jsonQuoted, StvnStringLiteralCodec.formatCanonicalQuotedString(jsonDecoded));
+
+        String preserveQuoted = "\"  lead_two\\n\\tsecond_line\"";
+        String preserveDecoded = StvnStringLiteralCodec.decodeStringLiteral(preserveQuoted, true).orElseThrow();
+        String preserveFenced = "\"\"\"[RAW]\n  lead_two\n\tsecond_line[RAW]\"\"\"";
+        assertEquals(preserveDecoded, StvnStringLiteralCodec.decodeStringLiteral(preserveFenced, true).orElseThrow());
+        assertEquals(preserveQuoted, StvnStringLiteralCodec.formatCanonicalQuotedString(preserveDecoded));
+    }
 }

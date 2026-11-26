@@ -7,14 +7,24 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.core.StvnVocabulary;
+import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.core.ir.StvnValue;
 import org.stvnadore.plugin.reference.StvnConstantReference;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
+import org.stvnadore.psi.AtomicType;
+import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.ConstantDefinition;
+import org.stvnadore.psi.IncludeStmt;
+import org.stvnadore.psi.MetaEntry;
+import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
+import org.stvnadore.psi.SchemaConstructor;
 import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
+import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeDefinition;
 import org.stvnadore.psi.UseElement;
 import org.stvnadore.psi.UseMapAlias;
@@ -250,9 +260,19 @@ public final class StvnPsiLiteralEvaluator {
         if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
             String alias = schemaType.getTypeKeyword().getText().trim();
             if (visited.add(alias)) {
-                var target = StvnTypeReference.resolveTypeInFile(
-                    schemaType.getContainingFile(), alias, new HashSet<>());
-                var parentDef = StvnPsiUtils.getParentTypeDefinition(target);
+                var parentDef = StvnTypeResolver.findTypeDefinition(
+                    schemaType.getContainingFile(), alias, schemaType.getTypeKeyword());
+                if (parentDef == null) {
+                    var target = new StvnTypeReference(schemaType.getTypeKeyword()).resolve();
+                    if (target == null) {
+                        target = StvnTypeReference.resolveTypeInFile(
+                            schemaType.getContainingFile(), alias, new HashSet<>());
+                    }
+                    parentDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
+                }
+                if (parentDef == null && !schemaType.getProject().isDisposed()) {
+                    parentDef = StvnPreludeBridge.resolvePreludeTypeDefinition(schemaType.getProject(), alias);
+                }
                 if (parentDef != null) {
                     if (parentDef.getMetadataMap() != null) {
                         for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
@@ -272,6 +292,327 @@ public final class StvnPsiLiteralEvaluator {
             }
         }
         return false;
+    }
+
+    /**
+     * Resolves the effective {@code #preserveIndent} flag governing a PSI string literal or leaf element.
+     * <p>
+     * Per STVN 2.0.0 Specification Section 5.3 item 6, inline string metadata facets
+     * ({@code #regex}, {@code #minIncl}, {@code #minExcl}, {@code #maxIncl}, {@code #maxExcl})
+     * always strip common leading ASCII-space indentation ({@code false}), even when the owning
+     * {@code :String} declaration specifies {@code #preserveIndent #TRUE}.
+     *
+     * @param element PSI {@link StringLiteral} or enclosed leaf token
+     * @return {@code true} if {@code #preserveIndent #TRUE} governs this literal; {@code false} otherwise
+     */
+    public static boolean resolvePreserveIndentForStringLiteral(@Nullable PsiElement element) {
+        if (element == null) {
+            return false;
+        }
+        StringLiteral strLit = element instanceof StringLiteral sl
+            ? sl
+            : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
+        PsiElement anchor = strLit != null ? strLit : element;
+
+        if (PsiTreeUtil.getParentOfType(anchor, MetadataEntry.class, false) != null
+                || PsiTreeUtil.getParentOfType(anchor, MetaEntry.class, false) != null
+                || PsiTreeUtil.getParentOfType(anchor, IncludeStmt.class, false) != null) {
+            return false;
+        }
+
+        Value enclosingValue = PsiTreeUtil.getParentOfType(anchor, Value.class, false);
+        if (enclosingValue == null) {
+            return false;
+        }
+        ConstantDefinition constDef = PsiTreeUtil.getParentOfType(enclosingValue, ConstantDefinition.class, false);
+        boolean inBody = PsiTreeUtil.getParentOfType(enclosingValue, BodyEntry.class, false) != null;
+        if (constDef == null && !inBody) {
+            return false;
+        }
+        if (constDef != null && (constDef.getValue() == null || !PsiTreeUtil.isAncestor(constDef.getValue(), enclosingValue, false))) {
+            return false;
+        }
+
+        StvnValue coreVal = unwrapSumIrValue(StvnTypeResolver.resolveCoreValue(enclosingValue));
+        if (coreVal instanceof StvnValue.StvnString stvnStr
+                && unwrapPoisonedIrSchema(stvnStr.schema()) instanceof StvnSchema.StringSchema ss) {
+            return ss.preserveIndent();
+        }
+        if (coreVal instanceof StvnValue.StvnErrorValue errVal
+                && unwrapPoisonedIrSchema(errVal.schema()) instanceof StvnSchema.StringSchema ss) {
+            return ss.preserveIndent();
+        }
+
+        SchemaType govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(enclosingValue);
+        if (govSchema == null) {
+            return false;
+        }
+        Boolean fromIr = resolveStringPreserveIndentFromIr(resolveEffectiveIrSchema(govSchema));
+        if (fromIr != null) {
+            if (!fromIr && govSchema.getMetadataMap() != null && extractPreserveIndentFromSchema(govSchema)) {
+                return true;
+            }
+            return fromIr;
+        }
+        return resolvePreserveIndentFromPsiWithImplicitSums(govSchema, new HashSet<>());
+    }
+
+    /**
+     * Determines whether a PSI string literal or leaf element is governed by a {@code :DateTime}
+     * schema (including {@code MetadataEntry} bounds, multi-hop nominal aliases, {@code :use}
+     * {@code UseMapAlias} imports, composite slots, and explicit or implicit sum branches).
+     *
+     * @param element PSI {@link StringLiteral} or enclosed leaf token
+     * @return {@code true} when {@code :DateTime} governs this literal and fenced strings are prohibited
+     */
+    public static boolean isDateTimeGovernedStringLiteral(@Nullable PsiElement element) {
+        if (element == null) {
+            return false;
+        }
+        StringLiteral strLit = element instanceof StringLiteral sl
+            ? sl
+            : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
+        PsiElement anchor = strLit != null ? strLit : element;
+
+        MetadataEntry metaEntry = PsiTreeUtil.getParentOfType(anchor, MetadataEntry.class, false);
+        if (metaEntry != null) {
+            SchemaType enclosingSchema = PsiTreeUtil.getParentOfType(metaEntry, SchemaType.class, false);
+            return isDateTimeSchemaType(enclosingSchema);
+        }
+
+        Value enclosingValue = PsiTreeUtil.getParentOfType(anchor, Value.class, false);
+        if (enclosingValue == null) {
+            return false;
+        }
+        StvnValue coreVal = unwrapSumIrValue(StvnTypeResolver.resolveCoreValue(enclosingValue));
+        if (coreVal instanceof StvnValue.StvnDateTime) {
+            return true;
+        }
+        if (coreVal instanceof StvnValue.StvnString) {
+            return false;
+        }
+        if (coreVal instanceof StvnValue.StvnErrorValue errVal) {
+            StvnSchema errSchema = unwrapPoisonedIrSchema(errVal.schema());
+            if (errSchema instanceof StvnSchema.DateTimeSchema) {
+                return true;
+            }
+            if (errSchema instanceof StvnSchema.StringSchema) {
+                return false;
+            }
+        }
+
+        SchemaType govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(enclosingValue);
+        return isDateTimeSchemaOrImplicitSumTarget(govSchema);
+    }
+
+    private static @Nullable StvnValue unwrapSumIrValue(@Nullable StvnValue value) {
+        StvnValue cur = value;
+        while (cur != null) {
+            if (cur instanceof StvnValue.StvnOption opt && opt.value().isPresent()) {
+                cur = opt.value().get();
+            } else if (cur instanceof StvnValue.StvnEither eith) {
+                cur = eith.value();
+            } else if (cur instanceof StvnValue.StvnUnion un) {
+                cur = un.value();
+            } else {
+                break;
+            }
+        }
+        return cur;
+    }
+
+    private static @Nullable StvnSchema unwrapPoisonedIrSchema(@Nullable StvnSchema schema) {
+        StvnSchema cur = schema;
+        while (cur instanceof StvnSchema.PoisonedSchema p) {
+            cur = p.bestEffortFallback().orElse(null);
+        }
+        return cur;
+    }
+
+    private static @Nullable StvnSchema resolveEffectiveIrSchema(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return null;
+        }
+        StvnSchema direct = unwrapPoisonedIrSchema(StvnTypeResolver.resolveIrSchema(schemaType));
+        if (direct != null) {
+            return direct;
+        }
+        if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
+            return unwrapPoisonedIrSchema(
+                StvnTypeResolver.resolveIrSchemaByAlias(
+                    schemaType.getContainingFile(),
+                    schemaType.getTypeKeyword().getText().trim()
+                )
+            );
+        }
+        return null;
+    }
+
+    private static @Nullable Boolean resolveStringPreserveIndentFromIr(@Nullable StvnSchema rawSchema) {
+        StvnSchema schema = unwrapPoisonedIrSchema(rawSchema);
+        if (schema instanceof StvnSchema.StringSchema ss) {
+            return ss.preserveIndent();
+        }
+        if (schema instanceof StvnSchema.DateTimeSchema) {
+            return false;
+        }
+        if (schema instanceof StvnSchema.OptionSchema opt) {
+            return resolveStringPreserveIndentFromIr(opt.valueSchema());
+        }
+        if (schema instanceof StvnSchema.EitherSchema eith) {
+            Boolean right = resolveStringPreserveIndentFromIr(eith.rightSchema());
+            return right != null ? right : resolveStringPreserveIndentFromIr(eith.leftSchema());
+        }
+        if (schema instanceof StvnSchema.UnionSchema un) {
+            Boolean uniqueMatch = null;
+            int stringBranches = 0;
+            for (StvnSchema branch : un.branchSchemas()) {
+                Boolean cand = resolveStringPreserveIndentFromIr(branch);
+                if (cand != null && !containsDateTimeIrBranch(branch)) {
+                    uniqueMatch = cand;
+                    stringBranches++;
+                }
+            }
+            return stringBranches == 1 ? uniqueMatch : null;
+        }
+        return null;
+    }
+
+    private static boolean containsDateTimeIrBranch(@Nullable StvnSchema rawSchema) {
+        StvnSchema s = unwrapPoisonedIrSchema(rawSchema);
+        if (s instanceof StvnSchema.DateTimeSchema) {
+            return true;
+        }
+        if (s instanceof StvnSchema.OptionSchema opt) {
+            return containsDateTimeIrBranch(opt.valueSchema());
+        }
+        if (s instanceof StvnSchema.EitherSchema eith) {
+            return containsDateTimeIrBranch(eith.rightSchema());
+        }
+        if (s instanceof StvnSchema.UnionSchema un) {
+            return un.branchSchemas().stream().anyMatch(StvnPsiLiteralEvaluator::containsDateTimeIrBranch);
+        }
+        return false;
+    }
+
+    private static boolean isDateTimeSchemaType(@Nullable SchemaType schemaType) {
+        if (schemaType == null) {
+            return false;
+        }
+        StvnSchema ir = resolveEffectiveIrSchema(schemaType);
+        if (ir instanceof StvnSchema.DateTimeSchema) {
+            return true;
+        }
+        if (ir instanceof StvnSchema.StringSchema) {
+            return false;
+        }
+        SchemaType terminal = StvnTypeResolver.unwrapNominalSchemaChain(schemaType);
+        SchemaType check = terminal != null ? terminal : schemaType;
+        SchemaConstructor ctor = check.getSchemaConstructor();
+        AtomicType atom = ctor != null ? ctor.getAtomicType() : null;
+        return atom != null && StvnVocabulary.TYPE_DATE_TIME.equals(atom.getText().trim());
+    }
+
+    private static boolean isDateTimeSchemaOrImplicitSumTarget(@Nullable SchemaType govSchema) {
+        if (govSchema == null) {
+            return false;
+        }
+        StvnSchema ir = resolveEffectiveIrSchema(govSchema);
+        if (ir != null) {
+            return isIrUntaggedStringTargetingDateTime(ir);
+        }
+        return isPsiUntaggedStringTargetingDateTime(govSchema, new HashSet<>());
+    }
+
+    private static boolean isIrUntaggedStringTargetingDateTime(@Nullable StvnSchema rawSchema) {
+        StvnSchema s = unwrapPoisonedIrSchema(rawSchema);
+        if (s instanceof StvnSchema.DateTimeSchema) {
+            return true;
+        }
+        if (s instanceof StvnSchema.OptionSchema opt) {
+            return isIrUntaggedStringTargetingDateTime(opt.valueSchema());
+        }
+        if (s instanceof StvnSchema.EitherSchema eith) {
+            return isIrUntaggedStringTargetingDateTime(eith.rightSchema());
+        }
+        if (s instanceof StvnSchema.UnionSchema un) {
+            return un.branchSchemas().stream().anyMatch(StvnPsiLiteralEvaluator::isIrUntaggedStringTargetingDateTime);
+        }
+        return false;
+    }
+
+    private static boolean isPsiUntaggedStringTargetingDateTime(SchemaType schema, Set<PsiElement> visited) {
+        if (!visited.add(schema)) {
+            return false;
+        }
+        if (isDateTimeSchemaType(schema)) {
+            return true;
+        }
+        SchemaType terminal = StvnTypeResolver.unwrapNominalSchemaChain(schema);
+        SchemaConstructor ctor = terminal != null ? terminal.getSchemaConstructor() : schema.getSchemaConstructor();
+        SumType sum = ctor != null ? ctor.getSumType() : null;
+        if (sum == null) {
+            return false;
+        }
+        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+        String sumText = sum.getText().trim();
+        if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && !branches.isEmpty()) {
+            return isPsiUntaggedStringTargetingDateTime(branches.get(0), visited);
+        }
+        if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() >= 2) {
+            return isPsiUntaggedStringTargetingDateTime(branches.get(1), visited);
+        }
+        if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+            for (SchemaType b : branches) {
+                if (isPsiUntaggedStringTargetingDateTime(b, visited)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean resolvePreserveIndentFromPsiWithImplicitSums(SchemaType schema, Set<PsiElement> visited) {
+        if (!visited.add(schema)) {
+            return false;
+        }
+        if (extractPreserveIndentFromSchema(schema)) {
+            return true;
+        }
+        SchemaType terminal = StvnTypeResolver.unwrapNominalSchemaChain(schema);
+        SchemaConstructor ctor = terminal != null ? terminal.getSchemaConstructor() : schema.getSchemaConstructor();
+        SumType sum = ctor != null ? ctor.getSumType() : null;
+        if (sum == null) {
+            return false;
+        }
+        var branches = PsiTreeUtil.getChildrenOfTypeAsList(sum, SchemaType.class);
+        String sumText = sum.getText().trim();
+        if (sumText.startsWith(StvnVocabulary.TYPE_OPTION) && !branches.isEmpty()) {
+            return resolvePreserveIndentFromPsiWithImplicitSums(branches.get(0), visited);
+        }
+        if (sumText.startsWith(StvnVocabulary.TYPE_EITHER) && branches.size() >= 2) {
+            return resolvePreserveIndentFromPsiWithImplicitSums(branches.get(1), visited);
+        }
+        if (sumText.startsWith(StvnVocabulary.TYPE_UNION)) {
+            Boolean uniqueStringPreserve = null;
+            int stringCount = 0;
+            for (SchemaType b : branches) {
+                if (isPsiStringBranch(b)) {
+                    uniqueStringPreserve = resolvePreserveIndentFromPsiWithImplicitSums(b, visited);
+                    stringCount++;
+                }
+            }
+            return stringCount == 1 && Boolean.TRUE.equals(uniqueStringPreserve);
+        }
+        return false;
+    }
+
+    private static boolean isPsiStringBranch(SchemaType schema) {
+        SchemaType terminal = StvnTypeResolver.unwrapNominalSchemaChain(schema);
+        SchemaType check = terminal != null ? terminal : schema;
+        SchemaConstructor ctor = check.getSchemaConstructor();
+        AtomicType atom = ctor != null ? ctor.getAtomicType() : null;
+        return atom != null && StvnVocabulary.TYPE_STRING.equals(atom.getText().trim());
     }
 
     /**

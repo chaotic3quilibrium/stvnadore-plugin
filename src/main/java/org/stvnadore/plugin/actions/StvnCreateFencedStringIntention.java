@@ -1,49 +1,60 @@
 package org.stvnadore.plugin.actions;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.plugin.StvnFile;
+import org.stvnadore.plugin.StvnBundle;
+import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.intentions.StvnConvertEscapedStringToFencedIntention;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 
 /**
- * Intention action that converts a double-quoted simple string literal (or an incomplete opening
- * triple-quote recovery token) into a canonical STVN 2.0.0 Rule {@code STR-04} fenced string block.
+ * Intention action that converts an escape-free double-quoted simple string literal (or an incomplete
+ * opening triple-quote recovery token) into a canonical STVN 2.0.0 Rule {@code STR-04} fenced string block.
  */
 @NullMarked
-public final class StvnCreateFencedStringIntention extends PsiElementBaseIntentionAction {
+public final class StvnCreateFencedStringIntention
+        extends PsiElementBaseIntentionAction
+        implements PriorityAction {
 
-    private static final String INTENTION_TEXT = "Convert to Fenced String Block";
-    private static final String FAMILY_NAME = "Convert string literal to fenced string block";
     private static final String DEFAULT_RECOVERY_TAG = "FENCE";
 
     /**
      * Constructs a new {@code StvnCreateFencedStringIntention} instance.
      */
     public StvnCreateFencedStringIntention() {
-        setText(INTENTION_TEXT);
+        setText(StvnBundle.message("stvn.intention.convert.string.to.fenced.text"));
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return Priority.TOP;
     }
 
     @Override
     public @NotNull String getText() {
-        return INTENTION_TEXT;
+        return StvnBundle.message("stvn.intention.convert.string.to.fenced.text");
     }
 
     @Override
     public @NotNull String getFamilyName() {
-        return FAMILY_NAME;
+        return StvnBundle.message("stvn.intention.convert.string.to.fenced.text");
     }
 
     @Override
@@ -52,13 +63,15 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
             return false;
         }
         var file = element.getContainingFile();
-        if (!(file instanceof StvnFile)) {
+        if (file == null
+                || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)
+                || StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
             return false;
         }
-        if (StvnConvertEscapedStringToFencedIntention.canConvertAnySimpleStringToFenced(element)) {
+        if (StvnConvertEscapedStringToFencedIntention.canConvertUnescapedSimpleStringToFenced(element, editor)) {
             return true;
         }
-        if (isSimpleStringElement(element)) {
+        if (isSimpleOrFencedStringElement(element, editor, file)) {
             return false;
         }
         if (editor == null) {
@@ -102,7 +115,12 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
             @NotNull Editor editor,
             @NotNull PsiFile file
     ) {
-        var element = getElement(editor, file);
+        PsiElement element = StvnConvertEscapedStringToFencedIntention.findSimpleStringElementAtOrBeforeCaret(
+            file, editor.getCaretModel().getOffset()
+        );
+        if (element == null) {
+            element = getElement(editor, file);
+        }
         if (element == null || !isAvailable(project, editor, element)) {
             return IntentionPreviewInfo.EMPTY;
         }
@@ -121,14 +139,17 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
             return;
         }
 
-        if (StvnConvertEscapedStringToFencedIntention.invokeAnySimpleStringToFenced(project, editor, element)) {
+        if (StvnConvertEscapedStringToFencedIntention.invokeUnescapedSimpleStringToFenced(project, editor, element)) {
             return;
         }
-        if (isSimpleStringElement(element)) {
+        if (isSimpleOrFencedStringElement(element, editor, file)) {
             return;
         }
 
-        var doc = editor.getDocument();
+        Document doc = file.getViewProvider().getDocument();
+        if (doc == null) {
+            doc = editor.getDocument();
+        }
         int offset = editor.getCaretModel().getOffset();
         int lineNum = doc.getLineNumber(offset);
         int lineStart = doc.getLineStartOffset(lineNum);
@@ -157,18 +178,47 @@ public final class StvnCreateFencedStringIntention extends PsiElementBaseIntenti
         int insertOffset = lineStart + tripleIdx + 3;
         String insertion = tagToken + lineSep + innerIndent + lineSep + baseIndent + tagToken + "\"\"\"";
         doc.insertString(insertOffset, insertion);
-        PsiDocumentManager.getInstance(project).commitDocument(doc);
+        if (file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(file)) {
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
+        }
 
         int caretPos = insertOffset + tagToken.length() + lineSep.length() + innerIndent.length();
         editor.getCaretModel().moveToOffset(caretPos);
     }
 
-    private static boolean isSimpleStringElement(PsiElement element) {
-        if (element.getNode() != null && element.getNode().getElementType() == StvnTypes.LITERAL_STRING_SIMPLE) {
+    private static boolean isSimpleOrFencedStringElement(
+            PsiElement element,
+            @Nullable Editor editor,
+            PsiFile file
+    ) {
+        if (isSimpleOrFencedNode(element)) {
             return true;
         }
-        return element instanceof StringLiteral sl
+        if (editor != null) {
+            int offset = editor.getCaretModel().getOffset();
+            if (offset > 0 && offset <= file.getTextLength()) {
+                PsiElement prev = file.findElementAt(offset - 1);
+                if (prev != null && prev.getTextRange().getEndOffset() == offset && isSimpleOrFencedNode(prev)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isSimpleOrFencedNode(PsiElement element) {
+        var node = element.getNode();
+        if (node != null
+                && (node.getElementType() == StvnTypes.LITERAL_STRING_SIMPLE
+                    || node.getElementType() == StvnTypes.LITERAL_STRING_FENCED)) {
+            return true;
+        }
+        StringLiteral sl = element instanceof StringLiteral s
+            ? s
+            : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
+        return sl != null
             && sl.getNode() != null
-            && sl.getNode().findChildByType(StvnTypes.LITERAL_STRING_SIMPLE) != null;
+            && (sl.getNode().findChildByType(StvnTypes.LITERAL_STRING_SIMPLE) != null
+                || sl.getNode().findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null);
     }
 }

@@ -11,22 +11,13 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnStringCharacterPolicy;
-import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnSchema;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
-import org.stvnadore.plugin.reference.StvnTypeResolver;
-import org.stvnadore.plugin.validation.quickfix.StvnPayloadValueQuickFixProvider;
-import org.stvnadore.psi.MetadataEntry;
-import org.stvnadore.psi.SchemaType;
-import org.stvnadore.psi.Value;
 
 /**
  * Intention action that converts untagged triple-quoted strings (both multi-line and single-line inline)
@@ -255,31 +246,7 @@ public final class ConvertToFencedStringIntentionAction implements IntentionActi
      * @return {@code true} if {@code #preserveIndent #TRUE} applies; {@code false} otherwise
      */
     public static boolean resolveEffectivePreserveIndent(PsiFile file, int offset) {
-        PsiElement elem = file.findElementAt(offset);
-        if (elem == null) {
-            return false;
-        }
-        MetadataEntry metaEntry = PsiTreeUtil.getParentOfType(elem, MetadataEntry.class, false);
-        if (metaEntry != null) {
-            String kw = StvnMetadataOrderInspection.extractFacetKeyword(metaEntry);
-            if (StvnVocabulary.FACET_KW_REGEX.equals(kw)) {
-                return false;
-            }
-            SchemaType enclosingSchema = PsiTreeUtil.getParentOfType(metaEntry, SchemaType.class);
-            return enclosingSchema != null && StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(enclosingSchema);
-        }
-        Value val = PsiTreeUtil.getParentOfType(elem, Value.class, false);
-        if (val != null) {
-            SchemaType govSchema = StvnPayloadValueQuickFixProvider.resolveGoverningSchemaForValue(val);
-            if (govSchema != null) {
-                StvnSchema ir = StvnTypeResolver.resolveIrSchema(govSchema);
-                if (ir instanceof StvnSchema.StringSchema ss) {
-                    return ss.preserveIndent();
-                }
-                return StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(govSchema);
-            }
-        }
-        return false;
+        return StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(file.findElementAt(offset));
     }
 
     @Override

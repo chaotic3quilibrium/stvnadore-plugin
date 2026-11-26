@@ -1,0 +1,10 @@
+{
+  :meta {
+    #name   "sample"
+    #domain "domain"
+    #kind   #BODY
+  }
+  :type :String
+  :body <spot>"""[REGEX]
+    ^((25[0-5]|(2[0-4]|1[0-9]|[1-9]|)[0-9])\.?\b){4}$[REGEX]"""</spot>
+}

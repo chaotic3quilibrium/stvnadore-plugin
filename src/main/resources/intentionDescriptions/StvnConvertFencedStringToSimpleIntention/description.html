@@ -1,0 +1,8 @@
+<html>
+<body>
+Converts a valid STVN 2.0.0 Rule <code>STR-04</code> fenced string block (<code>"""[TAG]...[TAG]"""</code>) into a canonically escaped single-line double-quoted string literal (<code>"..."</code>).
+<p>
+Decodes the fenced string body using context-sensitive <code>#preserveIndent</code> rules (always stripping common leading ASCII-space indentation on inline <code>#regex</code> and string bound facets per STVN Specification &sect; 5.3) and escapes quotes, backslashes, tabs, and line breaks for lossless round-trip closure.
+</p>
+</body>
+</html>

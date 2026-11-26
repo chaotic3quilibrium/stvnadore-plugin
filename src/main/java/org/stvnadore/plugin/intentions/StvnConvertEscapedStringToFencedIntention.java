@@ -1,6 +1,9 @@
 package org.stvnadore.plugin.intentions;
 
+import com.intellij.codeInsight.intention.PriorityAction;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -12,14 +15,14 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
-import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.jspecify.annotations.Nullable;
+import org.stvnadore.core.StvnStringCharacterPolicy;
 import org.stvnadore.core.StvnVocabulary;
-import org.stvnadore.core.ir.StvnSchema;
+import org.stvnadore.plugin.StvnBundle;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
-import org.stvnadore.plugin.reference.StvnTypeResolver;
+import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.ConstantDefinition;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.ListLiteral;
@@ -28,7 +31,6 @@ import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetadataEntry;
 import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.MetadataValue;
-import org.stvnadore.psi.SchemaType;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TupleLiteral;
@@ -40,14 +42,13 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Intention action that converts an escaped simple string literal into a canonical Rule STR-04
+ * Intention action that converts an escaped simple string literal into a canonical Rule {@code STR-04}
  * fenced string literal when lossless round-trip soundness holds.
  */
 @NullMarked
-public final class StvnConvertEscapedStringToFencedIntention extends PsiElementBaseIntentionAction {
-
-    private static final String INTENTION_TEXT = "Convert escaped string to fenced string";
-    private static final String FAMILY_NAME = "Convert escaped string to fenced string";
+public final class StvnConvertEscapedStringToFencedIntention
+        extends PsiElementBaseIntentionAction
+        implements PriorityAction {
 
     private static final Set<String> ALLOWED_STRING_FACETS = Set.of(
         StvnVocabulary.FACET_KW_REGEX,
@@ -57,30 +58,43 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         StvnVocabulary.FACET_KW_MAX_EXCL
     );
 
+    private enum EscapeFilter {
+        ESCAPED_ONLY,
+        UNESCAPED_ONLY
+    }
+
     /**
      * Constructs a new {@code StvnConvertEscapedStringToFencedIntention}.
      */
     public StvnConvertEscapedStringToFencedIntention() {
-        setText(INTENTION_TEXT);
+        setText(StvnBundle.message("stvn.intention.convert.escaped.to.fenced.text"));
+    }
+
+    @Override
+    public @NotNull Priority getPriority() {
+        return Priority.TOP;
     }
 
     @Override
     public @NotNull String getFamilyName() {
-        return FAMILY_NAME;
+        return StvnBundle.message("stvn.intention.convert.escaped.to.fenced.text");
     }
 
     @Override
     public @NotNull String getText() {
-        return INTENTION_TEXT;
+        return StvnBundle.message("stvn.intention.convert.escaped.to.fenced.text");
     }
 
     @Override
     public boolean isAvailable(@NotNull Project project, @Nullable Editor editor, @NotNull PsiElement element) {
+        if (!element.isValid()) {
+            return false;
+        }
         PsiFile file = element.getContainingFile();
         if (file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return false;
         }
-        return resolveConversionSpec(element, true) != null;
+        return resolveConversionSpec(element, editor, EscapeFilter.ESCAPED_ONLY) != null;
     }
 
     @Override
@@ -89,39 +103,61 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         if (editor == null) {
             return;
         }
-        ConversionSpec spec = resolveConversionSpec(element, true);
+        ConversionSpec spec = resolveConversionSpec(element, editor, EscapeFilter.ESCAPED_ONLY);
         if (spec == null) {
             return;
         }
         applyConversionSpec(project, editor, spec);
     }
 
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull Editor editor,
+            @NotNull PsiFile file
+    ) {
+        PsiElement element = findSimpleStringElementAtOrBeforeCaret(file, editor.getCaretModel().getOffset());
+        if (element == null) {
+            element = getElement(editor, file);
+        }
+        if (element == null || !isAvailable(project, editor, element)) {
+            return IntentionPreviewInfo.EMPTY;
+        }
+        invoke(project, editor, element);
+        return IntentionPreviewInfo.DIFF;
+    }
+
     /**
-     * Checks whether {@code element} resides inside a simple double-quoted STVN string literal
-     * (escaped or escape-free) that can convert losslessly into a Rule {@code STR-04} fenced string.
+     * Checks whether {@code element} (or the simple string ending at the editor caret) is an
+     * escape-free double-quoted STVN string literal that converts losslessly into a Rule {@code STR-04}
+     * fenced string block.
      *
      * @param element PSI element under the editor caret
-     * @return {@code true} when lossless simple-to-fenced conversion is available
+     * @param editor  optional active editor for trailing-quote boundary resolution
+     * @return {@code true} when lossless unescaped simple-to-fenced conversion is available
      */
-    public static boolean canConvertAnySimpleStringToFenced(PsiElement element) {
+    public static boolean canConvertUnescapedSimpleStringToFenced(PsiElement element, @Nullable Editor editor) {
+        if (!element.isValid()) {
+            return false;
+        }
         PsiFile file = element.getContainingFile();
         if (file == null || !file.getLanguage().isKindOf(StvnLanguage.INSTANCE)) {
             return false;
         }
-        return resolveConversionSpec(element, false) != null;
+        return resolveConversionSpec(element, editor, EscapeFilter.UNESCAPED_ONLY) != null;
     }
 
     /**
-     * Converts the simple double-quoted STVN string literal enclosing {@code element} into a
-     * canonical Rule {@code STR-04} fenced string block when lossless round-trip soundness holds.
+     * Converts the escape-free simple double-quoted STVN string literal enclosing {@code element}
+     * into a canonical Rule {@code STR-04} fenced string block when lossless round-trip soundness holds.
      *
      * @param project active IntelliJ project
      * @param editor  active text editor
      * @param element PSI element under the editor caret
-     * @return {@code true} if a simple string literal was converted, or {@code false} otherwise
+     * @return {@code true} if an escape-free simple string literal was converted, or {@code false} otherwise
      */
-    public static boolean invokeAnySimpleStringToFenced(Project project, Editor editor, PsiElement element) {
-        ConversionSpec spec = resolveConversionSpec(element, false);
+    public static boolean invokeUnescapedSimpleStringToFenced(Project project, Editor editor, PsiElement element) {
+        ConversionSpec spec = resolveConversionSpec(element, editor, EscapeFilter.UNESCAPED_ONLY);
         if (spec == null) {
             return false;
         }
@@ -129,10 +165,47 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         return true;
     }
 
+    /**
+     * Finds a {@code LITERAL_STRING_SIMPLE} leaf token at {@code caretOffset} or ending immediately at
+     * {@code caretOffset}.
+     *
+     * @param file        enclosing STVN PSI file
+     * @param caretOffset 0-based editor caret offset
+     * @return matching simple string leaf token, or {@code null}
+     */
+    public static @Nullable PsiElement findSimpleStringElementAtOrBeforeCaret(PsiFile file, int caretOffset) {
+        int len = file.getTextLength();
+        if (caretOffset >= 0 && caretOffset < len) {
+            PsiElement at = file.findElementAt(caretOffset);
+            if (at != null && at.getNode() != null && at.getNode().getElementType() == StvnTypes.LITERAL_STRING_SIMPLE) {
+                return at;
+            }
+        }
+        if (caretOffset > 0 && caretOffset <= len) {
+            PsiElement prev = file.findElementAt(caretOffset - 1);
+            if (prev != null
+                    && prev.getNode() != null
+                    && prev.getNode().getElementType() == StvnTypes.LITERAL_STRING_SIMPLE
+                    && prev.getTextRange().getEndOffset() == caretOffset) {
+                return prev;
+            }
+        }
+        return null;
+    }
+
     private static void applyConversionSpec(Project project, Editor editor, ConversionSpec spec) {
-        Document document = editor.getDocument();
+        PsiFile file = spec.stringLiteral().getContainingFile();
+        Document document = file != null ? file.getViewProvider().getDocument() : null;
+        if (document == null) {
+            document = editor.getDocument();
+        }
         PsiDocumentManager docManager = PsiDocumentManager.getInstance(project);
-        docManager.doPostponedOperationsAndUnblockDocument(document);
+        boolean commitPhysical = file != null
+            && file.isPhysical()
+            && !IntentionPreviewUtils.isPreviewElement(spec.stringLiteral());
+        if (commitPhysical) {
+            docManager.doPostponedOperationsAndUnblockDocument(document);
+        }
 
         MetadataEntry metaEntry = PsiTreeUtil.getParentOfType(spec.stringLiteral(), MetadataEntry.class);
         if (metaEntry != null) {
@@ -149,7 +222,9 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
             replacePayloadOrConstantString(document, spec);
         }
 
-        docManager.commitDocument(document);
+        if (commitPhysical) {
+            docManager.commitDocument(document);
+        }
     }
 
     private record ConversionSpec(
@@ -159,20 +234,30 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         String tag
     ) {}
 
-    private static @Nullable ConversionSpec resolveConversionSpec(PsiElement element, boolean requireEscapeTrigger) {
-        StringLiteral strLit = element instanceof StringLiteral sl
-            ? sl
-            : PsiTreeUtil.getParentOfType(element, StringLiteral.class, false);
-        if (strLit == null || strLit.getNode().findChildByType(StvnTypes.LITERAL_STRING_SIMPLE) == null) {
+    private static @Nullable ConversionSpec resolveConversionSpec(
+            PsiElement element,
+            @Nullable Editor editor,
+            EscapeFilter escapeFilter
+    ) {
+        StringLiteral strLit = resolveSimpleStringLiteral(element, editor);
+        if (strLit == null || StvnMetaTemplateUtil.isInSecondaryRootSection(strLit)) {
             return null;
         }
-
         if (PsiTreeUtil.getParentOfType(strLit, MetaEntry.class) != null
                 || PsiTreeUtil.getParentOfType(strLit, IncludeStmt.class) != null) {
             return null;
         }
 
-        Optional<String> decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(strLit.getText(), false);
+        String rawText = strLit.getText();
+        boolean hasEscapeSequence = rawText.indexOf('\\') >= 0;
+        if (escapeFilter == EscapeFilter.ESCAPED_ONLY && !hasEscapeSequence) {
+            return null;
+        }
+        if (escapeFilter == EscapeFilter.UNESCAPED_ONLY && hasEscapeSequence) {
+            return null;
+        }
+
+        Optional<String> decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(rawText, false);
         if (decodedOpt.isEmpty()) {
             return null;
         }
@@ -186,20 +271,15 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
                 return null;
             }
             String facetName = facetToken.getText().trim();
-            if (!ALLOWED_STRING_FACETS.contains(facetName)) {
-                return null;
-            }
-            SchemaType enclosingSchema = PsiTreeUtil.getParentOfType(metaEntry, SchemaType.class);
-            if (!StvnVocabulary.FACET_KW_REGEX.equals(facetName) && isDateTimeSchema(enclosingSchema)) {
+            if (!ALLOWED_STRING_FACETS.contains(facetName)
+                    || StvnPsiLiteralEvaluator.isDateTimeGovernedStringLiteral(strLit)) {
                 return null;
             }
             String baseTag = StvnVocabulary.FACET_KW_REGEX.equals(facetName)
                 ? StvnVocabulary.FENCE_TAG_REGEX
                 : StvnVocabulary.FENCE_TAG_RAW;
             String safeTag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(decoded, baseTag);
-            if (requireEscapeTrigger
-                    ? !StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, false)
-                    : !isRoundTripLosslessFencedString(decoded, safeTag, false)) {
+            if (!isRoundTripLosslessFencedString(decoded, safeTag, false)) {
                 return null;
             }
             return new ConversionSpec(strLit, decoded, false, safeTag);
@@ -215,27 +295,48 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         if (constDef == null && !inBody) {
             return null;
         }
-        if (constDef != null && !PsiTreeUtil.isAncestor(constDef.getValue(), enclosingValue, false)) {
+        if (constDef != null && (constDef.getValue() == null || !PsiTreeUtil.isAncestor(constDef.getValue(), enclosingValue, false))) {
+            return null;
+        }
+        if (StvnPsiLiteralEvaluator.isDateTimeGovernedStringLiteral(strLit)) {
             return null;
         }
 
-        SchemaResolution schemaRes = resolveEffectiveStringSchema(enclosingValue, constDef);
-        if (schemaRes.isDateTime()) {
-            return null;
-        }
-        boolean preserveIndent = schemaRes.preserveIndent();
+        boolean preserveIndent = StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(strLit);
         String baseTag = (constDef != null
                 && constDef.getValueKeyword() != null
                 && StvnPsiLiteralEvaluator.isRegexConstantIdentifier(constDef.getValueKeyword().getText().trim()))
             ? StvnVocabulary.FENCE_TAG_REGEX
             : StvnVocabulary.FENCE_TAG_RAW;
         String safeTag = StvnPsiLiteralEvaluator.chooseSafeFenceTag(decoded, baseTag);
-        if (requireEscapeTrigger
-                ? !StvnPsiLiteralEvaluator.shouldEmitFencedPretty(decoded, preserveIndent)
-                : !isRoundTripLosslessFencedString(decoded, safeTag, preserveIndent)) {
+        if (!isRoundTripLosslessFencedString(decoded, safeTag, preserveIndent)) {
             return null;
         }
         return new ConversionSpec(strLit, decoded, preserveIndent, safeTag);
+    }
+
+    private static @Nullable StringLiteral resolveSimpleStringLiteral(PsiElement element, @Nullable Editor editor) {
+        StringLiteral direct = extractSimpleStringLiteral(element);
+        if (direct != null) {
+            return direct;
+        }
+        PsiFile file = element.getContainingFile();
+        if (editor != null && file != null) {
+            PsiElement atOrBefore = findSimpleStringElementAtOrBeforeCaret(file, editor.getCaretModel().getOffset());
+            return atOrBefore != null ? extractSimpleStringLiteral(atOrBefore) : null;
+        }
+        return null;
+    }
+
+    private static @Nullable StringLiteral extractSimpleStringLiteral(PsiElement candidate) {
+        StringLiteral strLit = candidate instanceof StringLiteral sl
+            ? sl
+            : PsiTreeUtil.getParentOfType(candidate, StringLiteral.class, false);
+        return (strLit != null
+                && strLit.getNode() != null
+                && strLit.getNode().findChildByType(StvnTypes.LITERAL_STRING_SIMPLE) != null)
+            ? strLit
+            : null;
     }
 
     private static boolean isRoundTripLosslessFencedString(String decoded, String safeTag, boolean preserveIndent) {
@@ -246,58 +347,6 @@ public final class StvnConvertEscapedStringToFencedIntention extends PsiElementB
         return StvnPsiLiteralEvaluator.decodeStringLiteral(sampleRendered, preserveIndent)
             .filter(decoded::equals)
             .isPresent();
-    }
-
-    private record SchemaResolution(boolean isDateTime, boolean preserveIndent) {}
-
-    private static SchemaResolution resolveEffectiveStringSchema(
-            Value enclosingValue,
-            @Nullable ConstantDefinition constDef
-    ) {
-        if (constDef != null && constDef.getValue() == enclosingValue && constDef.getSchemaType() != null) {
-            SchemaType declaredSchema = constDef.getSchemaType();
-            StvnSchema irSchema = StvnTypeResolver.resolveIrSchema(declaredSchema);
-            if (irSchema instanceof StvnSchema.DateTimeSchema) {
-                return new SchemaResolution(true, false);
-            }
-            if (irSchema instanceof StvnSchema.StringSchema ss) {
-                return new SchemaResolution(false, ss.preserveIndent());
-            }
-            if (isDateTimeSchema(declaredSchema)) {
-                return new SchemaResolution(true, false);
-            }
-            return new SchemaResolution(false, StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(declaredSchema));
-        }
-
-        var baseInfo = StvnTypeResolver.resolveBaseTypeInfo(enclosingValue);
-        if (baseInfo != null) {
-            SchemaType slotSchema = baseInfo.getSchema();
-            if (baseInfo.getLabel().endsWith(StvnVocabulary.TYPE_DATE_TIME) || isDateTimeSchema(slotSchema)) {
-                return new SchemaResolution(true, false);
-            }
-            StvnSchema irSchema = StvnTypeResolver.resolveIrSchema(slotSchema);
-            if (irSchema instanceof StvnSchema.DateTimeSchema) {
-                return new SchemaResolution(true, false);
-            }
-            if (irSchema instanceof StvnSchema.StringSchema ss) {
-                return new SchemaResolution(false, ss.preserveIndent());
-            }
-            return new SchemaResolution(false, StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(slotSchema));
-        }
-        return new SchemaResolution(false, false);
-    }
-
-    private static boolean isDateTimeSchema(@Nullable SchemaType schemaType) {
-        if (schemaType == null) {
-            return false;
-        }
-        StvnSchema ir = StvnTypeResolver.resolveIrSchema(schemaType);
-        if (ir instanceof StvnSchema.DateTimeSchema) {
-            return true;
-        }
-        SchemaType unwrapped = StvnTypeResolver.resolveNominalSchema(schemaType);
-        SchemaType toCheck = unwrapped != null ? unwrapped : schemaType;
-        return toCheck.getText().endsWith(StvnVocabulary.TYPE_DATE_TIME);
     }
 
     private static void replaceSingleLineMetadataMap(

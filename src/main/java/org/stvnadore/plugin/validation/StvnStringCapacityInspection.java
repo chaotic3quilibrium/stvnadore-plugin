@@ -528,7 +528,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     return;
                 }
 
-                boolean preserveIndent = StvnPsiLiteralEvaluator.extractPreserveIndentFromSchema(schemaType);
+                boolean preserveIndent = StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(literal);
                 var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(literal.getText(), preserveIndent);
                 if (decodedOpt.isEmpty()) {
                     return;

@@ -85,8 +85,10 @@ public final class StvnStringCharacterHygieneParityTest extends BasePlatformTest
         myFixture.getEditor().getCaretModel().moveToOffset(validOffset);
         var validElem = myFixture.getFile().findElementAt(validOffset);
         assertNotNull(validElem);
-        assertTrue(createIntention.isAvailable(getProject(), myFixture.getEditor(), validElem));
-        assertTrue(convertIntention.isAvailable(getProject(), myFixture.getEditor(), validElem));
+        assertFalse("Escaped emoji literal must not offer plain simple-string intention",
+            createIntention.isAvailable(getProject(), myFixture.getEditor(), validElem));
+        assertTrue("Escaped emoji literal must offer escaped-to-fenced intention",
+            convertIntention.isAvailable(getProject(), myFixture.getEditor(), validElem));
 
         var availableConvert = myFixture.filterAvailableIntentions(convertIntention.getText());
         assertEquals(1, availableConvert.size());
@@ -94,6 +96,27 @@ public final class StvnStringCharacterHygieneParityTest extends BasePlatformTest
         String converted = myFixture.getEditor().getDocument().getText();
         assertTrue("Converted fenced string must contain verbatim emojis: " + converted,
             converted.contains("\"\"\"[RAW]\n    \uD83D\uDE80\n    \uD83D\uDC68\u200D\uD83D\uDCBB[RAW]\"\"\""));
+
+        String plainEmojiDoc = """
+            {
+              :meta {
+                #name "plain_emoji"
+                #domain "hygiene"
+                #kind #BODY
+              }
+              :type :String
+              :body "\uD83D\uDE80\uD83D\uDC68\u200D\uD83D\uDCBB"
+            }
+            """;
+        myFixture.configureByText("plain_emoji.hygiene.stvn", plainEmojiDoc);
+        int plainOffset = plainEmojiDoc.indexOf("\uD83D\uDE80") + 1;
+        myFixture.getEditor().getCaretModel().moveToOffset(plainOffset);
+        var plainElem = myFixture.getFile().findElementAt(plainOffset);
+        assertNotNull(plainElem);
+        assertTrue("Escape-free emoji literal must offer plain simple-string intention",
+            createIntention.isAvailable(getProject(), myFixture.getEditor(), plainElem));
+        assertFalse("Escape-free emoji literal must not offer escaped-to-fenced intention",
+            convertIntention.isAvailable(getProject(), myFixture.getEditor(), plainElem));
         assertEquals(
             "\"a\\r\\n\\u202e\\ufeff\"",
             StvnPsiLiteralEvaluator.formatCanonicalQuotedString("a\r\n\u202E\uFEFF")

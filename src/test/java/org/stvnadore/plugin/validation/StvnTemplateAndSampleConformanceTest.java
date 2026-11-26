@@ -36,7 +36,8 @@ import java.util.stream.Stream;
 @NullMarked
 public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTestCase {
 
-    private static final String CREATE_FENCED_INTENTION_TEXT = "Convert to Fenced String Block";
+    private static final String CREATE_FENCED_INTENTION_TEXT = "Convert string literal to fenced string block";
+    private static final String CONVERT_ESCAPED_INTENTION_TEXT = "Convert escaped string to fenced string";
 
     private static final Set<String> SYNTAX_AND_FENCE_ERROR_CODES = Set.of(
         "E001", "E002", "E003", "E004", "E006", "E007", "E010", "E025"
@@ -55,7 +56,7 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
                 .sorted()
                 .toList();
         }
-        assertEquals("Expected 16 .stvn.template files across 8 intentions", 16, templateFiles.size());
+        assertEquals("Expected 18 .stvn.template files across 9 intentions", 18, templateFiles.size());
 
         for (Path templatePath : templateFiles) {
             String relPath = root.relativize(templatePath).toString().replace('\\', '/');
@@ -199,13 +200,17 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
 
         PsiFile psiFile = myFixture.configureByText("fenced_simple_conversion.core.stvn", source);
 
-        // 1. Escape-free simple SQL string: verify IntentionPreviewInfo.DIFF + conversion to """[RAW]...[RAW]"""
+        // 1. Escape-free simple SQL string: verify strict mutual exclusion, IntentionPreviewInfo.DIFF, and [RAW] conversion
         int sqlOffset = psiFile.getText().indexOf("SELECT id, status") + 4;
         myFixture.getEditor().getCaretModel().moveToOffset(sqlOffset);
         List<IntentionAction> sqlActions = myFixture.filterAvailableIntentions(CREATE_FENCED_INTENTION_TEXT);
-        assertEquals("Expected 'Convert to Fenced String Block' on escape-free simple string", 1, sqlActions.size());
+        assertEquals("Expected 'Convert string literal to fenced string block' on escape-free simple string", 1, sqlActions.size());
+        assertTrue(
+            "Escaped-string intention must be suppressed on escape-free simple string",
+            myFixture.filterAvailableIntentions(CONVERT_ESCAPED_INTENTION_TEXT).isEmpty()
+        );
         assertEquals(
-            "Convert string literal to fenced string block",
+            CREATE_FENCED_INTENTION_TEXT,
             sqlActions.get(0).getFamilyName()
         );
         String preview = myFixture.getIntentionPreviewText(sqlActions.get(0));
@@ -222,11 +227,15 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
             )
         );
 
-        // 2. Escaped simple string with \n, \t, \", \\, and \u0041 -> exact round-trip decoding parity
+        // 2. Escaped simple string with \n, \t, \", \\, and \u0041 -> strictly Convert escaped string to fenced string
         String expectedEscapedDecoded = "line1\nline2\t\"quoted\"\\pathA";
         int escapedOffset = myFixture.getFile().getText().indexOf("line1\\nline2") + 3;
         myFixture.getEditor().getCaretModel().moveToOffset(escapedOffset);
-        IntentionAction escapedAction = myFixture.findSingleIntention(CREATE_FENCED_INTENTION_TEXT);
+        assertTrue(
+            "Plain-string intention must be suppressed on escaped string",
+            myFixture.filterAvailableIntentions(CREATE_FENCED_INTENTION_TEXT).isEmpty()
+        );
+        IntentionAction escapedAction = myFixture.findSingleIntention(CONVERT_ESCAPED_INTENTION_TEXT);
         myFixture.launchAction(escapedAction);
         assertTrue(
             myFixture.getFile().getText().contains(
@@ -241,10 +250,14 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
             ).orElseThrow()
         );
 
-        // 3. #preserveIndent #TRUE retains leading spaces with 0-margin body
+        // 3. #preserveIndent #TRUE with escape sequences retains leading spaces with 0-margin body
         int verbatimOffset = myFixture.getFile().getText().indexOf("verbatim_leading") + 2;
         myFixture.getEditor().getCaretModel().moveToOffset(verbatimOffset);
-        IntentionAction verbatimAction = myFixture.findSingleIntention(CREATE_FENCED_INTENTION_TEXT);
+        assertTrue(
+            "Plain-string intention must be suppressed on escaped #preserveIndent string",
+            myFixture.filterAvailableIntentions(CREATE_FENCED_INTENTION_TEXT).isEmpty()
+        );
+        IntentionAction verbatimAction = myFixture.findSingleIntention(CONVERT_ESCAPED_INTENTION_TEXT);
         myFixture.launchAction(verbatimAction);
         assertTrue(
             myFixture.getFile().getText().contains(
@@ -252,9 +265,13 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
             )
         );
 
-        // 4. *REGEX constant selects [REGEX] even without escape triggers
+        // 4. Escape-free *REGEX constant selects [REGEX] via Convert string literal to fenced string block
         int regexOffset = myFixture.getFile().getText().indexOf("/api/v[0-9]+") + 2;
         myFixture.getEditor().getCaretModel().moveToOffset(regexOffset);
+        assertTrue(
+            "Escaped-string intention must be suppressed on escape-free *REGEX string",
+            myFixture.filterAvailableIntentions(CONVERT_ESCAPED_INTENTION_TEXT).isEmpty()
+        );
         IntentionAction regexAction = myFixture.findSingleIntention(CREATE_FENCED_INTENTION_TEXT);
         myFixture.launchAction(regexAction);
         assertTrue(
@@ -263,10 +280,14 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
             )
         );
 
-        // 5. Payload containing [RAW]""" escalates automatically to [RAW_1]
+        // 5. Escaped payload containing [RAW]\"\"\" escalates automatically to [RAW_1]
         int collideOffset = myFixture.getFile().getText().indexOf("prefix [RAW]") + 2;
         myFixture.getEditor().getCaretModel().moveToOffset(collideOffset);
-        IntentionAction collideAction = myFixture.findSingleIntention(CREATE_FENCED_INTENTION_TEXT);
+        assertTrue(
+            "Plain-string intention must be suppressed on escaped collision string",
+            myFixture.filterAvailableIntentions(CREATE_FENCED_INTENTION_TEXT).isEmpty()
+        );
+        IntentionAction collideAction = myFixture.findSingleIntention(CONVERT_ESCAPED_INTENTION_TEXT);
         myFixture.launchAction(collideAction);
         assertTrue(
             myFixture.getFile().getText().contains(
@@ -285,8 +306,12 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
         for (int suppressedOffset : suppressedOffsets) {
             myFixture.getEditor().getCaretModel().moveToOffset(suppressedOffset);
             assertTrue(
-                "Intention must be suppressed at offset " + suppressedOffset,
+                "Plain fencing intention must be suppressed at offset " + suppressedOffset,
                 myFixture.filterAvailableIntentions(CREATE_FENCED_INTENTION_TEXT).isEmpty()
+            );
+            assertTrue(
+                "Escaped fencing intention must be suppressed at offset " + suppressedOffset,
+                myFixture.filterAvailableIntentions(CONVERT_ESCAPED_INTENTION_TEXT).isEmpty()
             );
         }
 

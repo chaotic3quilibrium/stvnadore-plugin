@@ -409,8 +409,8 @@ public final class StvnFencedStringInspectionTest extends BasePlatformTestCase {
     public void testCreateFencedStringIntentionExecution() {
         String code = "{\n  :type :String\n  :body \"\"\"<caret>\n}\n";
         myFixture.configureByText("convert_intention.stvn", code);
-        var intention = myFixture.findSingleIntention("Convert to Fenced String Block");
-        assertNotNull("Expected 'Convert to Fenced String Block' intention", intention);
+        var intention = myFixture.findSingleIntention("Convert string literal to fenced string block");
+        assertNotNull("Expected 'Convert string literal to fenced string block' intention", intention);
         myFixture.launchAction(intention);
         String expected = "{\n  :type :String\n  :body \"\"\"[FENCE]\n    \n  [FENCE]\"\"\"\n}\n";
         myFixture.checkResult(expected);
