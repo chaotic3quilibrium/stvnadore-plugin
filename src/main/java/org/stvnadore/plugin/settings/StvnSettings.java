@@ -82,6 +82,9 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public static final String DEFAULT_TEMPLATE_STVN_I = "{\n  :meta {\n    #name \"payload\"\n    #domain \"domain\"\n    #kind #BODY_INCLUDE\n  }\n  :defs {\n    :include [ \"models.domain.stvn_di\" ]\n\n    :Type :String\n  }\n  :type :Type\n  :body \"\"\n}\n";
         public static final String DEFAULT_TEMPLATE_STVN_D = "{\n  :meta {\n    #name \"schema\"\n    #domain \"domain\"\n    #kind #DEFS\n  }\n  :defs {\n    :Type :String\n  }\n}\n";
         public static final String DEFAULT_TEMPLATE_STVN_DI = "{\n  :meta {\n    #name \"module\"\n    #domain \"domain\"\n    #kind #DEFS_INCLUDE\n  }\n  :defs {\n    :include [ \"primitives.common.stvn_d\" ]\n\n    :Type :String\n  }\n}\n";
+        public static final int DEFAULT_BROWSER_PRESERVED_SUFFIX_CHARS = 12;
+        public static final int MIN_BROWSER_PRESERVED_SUFFIX_CHARS = 4;
+        public static final int MAX_BROWSER_PRESERVED_SUFFIX_CHARS = 32;
 
         /**
          * Constructs a new State instance with default editor settings.
@@ -102,6 +105,10 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public NestedContainerWrapPolicy schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
         /** Nested container wrapping policy for body payloads and constant values. */
         public NestedContainerWrapPolicy payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        /** Cell ellipsis placement mode in the Namespace Dependencies Browser. */
+        public NamespaceEllipsisMode browserEllipsisMode = NamespaceEllipsisMode.MIDDLE;
+        /** Trailing suffix code-point count preserved under {@link NamespaceEllipsisMode#MIDDLE}. */
+        public int browserPreservedSuffixChars = DEFAULT_BROWSER_PRESERVED_SUFFIX_CHARS;
         /** Canonical bootstrap template for hermetic payload documents ({@code .stvn}). */
         public String bootstrapTemplateStvn = DEFAULT_TEMPLATE_STVN;
         /** Canonical bootstrap template for modular payload documents ({@code .stvn_i}). */
@@ -144,8 +151,45 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         if (state.payloadNestedWrapPolicy == null) {
             state.payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
         }
+        if (state.browserEllipsisMode == null) {
+            state.browserEllipsisMode = NamespaceEllipsisMode.MIDDLE;
+        }
+        state.browserPreservedSuffixChars = Math.clamp(
+            state.browserPreservedSuffixChars,
+            State.MIN_BROWSER_PRESERVED_SUFFIX_CHARS,
+            State.MAX_BROWSER_PRESERVED_SUFFIX_CHARS
+        );
         synchronized (lock) {
             myState = state;
+        }
+    }
+
+    /**
+     * Returns the active non-null {@link NamespaceEllipsisMode} for the Namespace Dependencies Browser.
+     *
+     * @return configured ellipsis mode, defaulting to {@link NamespaceEllipsisMode#MIDDLE}
+     */
+    public NamespaceEllipsisMode getBrowserEllipsisMode() {
+        synchronized (lock) {
+            return myState.browserEllipsisMode != null
+                ? myState.browserEllipsisMode
+                : NamespaceEllipsisMode.MIDDLE;
+        }
+    }
+
+    /**
+     * Returns the clamped preserved suffix length in Unicode code points ({@code [4, 32]})
+     * for {@link NamespaceEllipsisMode#MIDDLE}.
+     *
+     * @return preserved suffix length clamped to {@code [4, 32]}
+     */
+    public int getBrowserPreservedSuffixChars() {
+        synchronized (lock) {
+            return Math.clamp(
+                myState.browserPreservedSuffixChars,
+                State.MIN_BROWSER_PRESERVED_SUFFIX_CHARS,
+                State.MAX_BROWSER_PRESERVED_SUFFIX_CHARS
+            );
         }
     }
 

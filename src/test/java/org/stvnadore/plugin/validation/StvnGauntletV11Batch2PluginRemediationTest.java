@@ -839,10 +839,16 @@ public final class StvnGauntletV11Batch2PluginRemediationTest extends BasePlatfo
             assertTrue("Alt+Shift+R presentation must stay enabled inside popup",
                 isPopupActionPresentationEnabled(ui.fitWindowToContentAction()));
             firePopupAction(ui.fitWindowToContentAction());
-            assertTrue("Alt+Shift+R must right-size unlocked columns in 1 step",
+            assertTrue("Alt+Shift+R must expand Column 3 from 180px to water-filled screen cap",
+                ui.table().getColumnModel().getColumn(3).getWidth() > 500);
+            assertFalse("When water-fill-capped on 1920x1040, unlocked Column 3 remains narrower than unconstrained natural width",
                 ui.columnManager().areAllUnlockedColumnsRightSized());
             assertEquals("Alt+Shift+R must also fit popup window in the same single step", 2, applyBoundsCount.get());
             assertEquals(afterPress2.width, simulatedPopupBounds.get().width);
+            // Subsequent Alt+R expands water-filled Column 3 out to full unconstrained natural width
+            firePopupAction(ui.rightSizeAllUnlockedAction());
+            assertTrue("Pressing Alt+R after water-filled Alt+Shift+R must expand to unconstrained natural width",
+                ui.columnManager().areAllUnlockedColumnsRightSized());
 
             // 4. SearchTextField Alt+Shift+R key-typed consume guard ('R' and macOS Option+Shift+R '\u2030')
             var filterEditor = ui.filterField().getTextEditor();

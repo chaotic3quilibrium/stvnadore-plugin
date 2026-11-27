@@ -5,12 +5,15 @@ import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
+import com.intellij.ui.JBIntSpinner;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.core.printer.NestedContainerWrapPolicy;
+import org.stvnadore.plugin.StvnBundle;
 
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -48,6 +51,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
     private @Nullable JComboBox<StvnSettings.ReformatDelegationMode> reformatDelegationModeComboBox;
     private @Nullable ComboBox<NestedContainerWrapPolicy> schemaNestedWrapPolicyComboBox;
     private @Nullable ComboBox<NestedContainerWrapPolicy> payloadNestedWrapPolicyComboBox;
+    private @Nullable ComboBox<NamespaceEllipsisMode> browserEllipsisModeComboBox;
+    private @Nullable JBIntSpinner browserSuffixLengthSpinner;
+    private @Nullable JLabel browserSuffixLengthLabel;
     private @Nullable JTextArea templateStvnArea;
     private @Nullable JTextArea templateStvnIArea;
     private @Nullable JTextArea templateStvnDArea;
@@ -215,6 +221,63 @@ public final class StvnConfigurable implements SearchableConfigurable {
         panel.add(epochBorderPanel);
 
         panel.add(javax.swing.Box.createVerticalStrut(15));
+        var browserBorderPanel = new JPanel();
+        browserBorderPanel.setLayout(new javax.swing.BoxLayout(browserBorderPanel, javax.swing.BoxLayout.Y_AXIS));
+        browserBorderPanel.setBorder(
+            BorderFactory.createTitledBorder(StvnBundle.message("stvn.settings.browser.group.title"))
+        );
+        browserBorderPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+
+        var ellipsisLabel = new JLabel(StvnBundle.message("stvn.settings.browser.ellipsis.label"));
+        ellipsisLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        browserBorderPanel.add(ellipsisLabel);
+
+        var ellipsisCombo = new ComboBox<>(NamespaceEllipsisMode.values());
+        ellipsisCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(
+                    javax.swing.JList<?> list,
+                    Object value,
+                    int index,
+                    boolean isSelected,
+                    boolean cellHasFocus
+            ) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof NamespaceEllipsisMode mode) {
+                    setText(StvnBundle.message(mode.getBundleKey()).replace("\u001B", ""));
+                }
+                return this;
+            }
+        });
+        ellipsisCombo.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        ellipsisCombo.setMaximumSize(new Dimension(Integer.MAX_VALUE, ellipsisCombo.getPreferredSize().height));
+        browserBorderPanel.add(ellipsisCombo);
+        browserBorderPanel.add(javax.swing.Box.createVerticalStrut(JBUI.scale(6)));
+
+        var suffixSpinnerRow = new JPanel();
+        suffixSpinnerRow.setLayout(new javax.swing.BoxLayout(suffixSpinnerRow, javax.swing.BoxLayout.X_AXIS));
+        suffixSpinnerRow.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        var suffixLabel = new JLabel(StvnBundle.message("stvn.settings.browser.suffixLength.label"));
+        var suffixSpinner = new JBIntSpinner(
+            StvnSettings.State.DEFAULT_BROWSER_PRESERVED_SUFFIX_CHARS,
+            StvnSettings.State.MIN_BROWSER_PRESERVED_SUFFIX_CHARS,
+            StvnSettings.State.MAX_BROWSER_PRESERVED_SUFFIX_CHARS,
+            1
+        );
+        suffixSpinner.setMaximumSize(suffixSpinner.getPreferredSize());
+        suffixSpinnerRow.add(suffixLabel);
+        suffixSpinnerRow.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)));
+        suffixSpinnerRow.add(suffixSpinner);
+        suffixSpinnerRow.add(javax.swing.Box.createHorizontalGlue());
+        browserBorderPanel.add(suffixSpinnerRow);
+        ellipsisCombo.addActionListener(e -> {
+            boolean middle = ellipsisCombo.getSelectedItem() == NamespaceEllipsisMode.MIDDLE;
+            suffixLabel.setEnabled(middle);
+            suffixSpinner.setEnabled(middle);
+        });
+        panel.add(browserBorderPanel);
+
+        panel.add(javax.swing.Box.createVerticalStrut(15));
         var templateBorderPanel = new JPanel(new BorderLayout());
         templateBorderPanel.setBorder(BorderFactory.createTitledBorder("Bootstrap Templates"));
         templateBorderPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
@@ -251,6 +314,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         reformatDelegationModeComboBox = reformatModeCombo;
         schemaNestedWrapPolicyComboBox = schemaWrapCombo;
         payloadNestedWrapPolicyComboBox = payloadWrapCombo;
+        browserEllipsisModeComboBox = ellipsisCombo;
+        browserSuffixLengthSpinner = suffixSpinner;
+        browserSuffixLengthLabel = suffixLabel;
         templateStvnArea = areaStvn;
         templateStvnIArea = areaStvnI;
         templateStvnDArea = areaStvnD;
@@ -276,10 +342,13 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var refCombo = reformatDelegationModeComboBox;
         var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
         var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
+        var ellipsisCombo = browserEllipsisModeComboBox;
+        var suffixSpinner = browserSuffixLengthSpinner;
 
         if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
                 || combo == null || aliasCombo == null || epCombo == null || epWarn == null
-                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null
+                || ellipsisCombo == null || suffixSpinner == null) {
             return false;
         }
 
@@ -297,6 +366,12 @@ public final class StvnConfigurable implements SearchableConfigurable {
                 !a3.getText().equals(settings.getState().bootstrapTemplateStvnD) ||
                 !a4.getText().equals(settings.getState().bootstrapTemplateStvnDi));
 
+        int clampedSpinnerVal = Math.clamp(
+            suffixSpinner.getNumber(),
+            StvnSettings.State.MIN_BROWSER_PRESERVED_SUFFIX_CHARS,
+            StvnSettings.State.MAX_BROWSER_PRESERVED_SUFFIX_CHARS
+        );
+
         return templatesModified ||
                cb1.isSelected() != settings.getState().useLongFormSumTypes ||
                cb2.isSelected() != projSettings.getState().showTypeHints ||
@@ -311,6 +386,8 @@ public final class StvnConfigurable implements SearchableConfigurable {
                refCombo.getSelectedItem() != settings.getState().reformatDelegationMode ||
                schemaWrapCombo.getSelectedItem() != settings.getState().schemaNestedWrapPolicy ||
                payloadWrapCombo.getSelectedItem() != settings.getState().payloadNestedWrapPolicy ||
+               ellipsisCombo.getSelectedItem() != settings.getBrowserEllipsisMode() ||
+               clampedSpinnerVal != settings.getBrowserPreservedSuffixChars() ||
                aliasCombo.getSelectedItem() != projSettings.getState().aliasExpansionMode;
     }
 
@@ -330,10 +407,13 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var refCombo = reformatDelegationModeComboBox;
         var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
         var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
+        var ellipsisCombo = browserEllipsisModeComboBox;
+        var suffixSpinner = browserSuffixLengthSpinner;
 
         if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
                 || combo == null || aliasCombo == null || epCombo == null || epWarn == null
-                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null
+                || ellipsisCombo == null || suffixSpinner == null) {
             return;
         }
 
@@ -369,6 +449,15 @@ public final class StvnConfigurable implements SearchableConfigurable {
         if (selectedPayloadWrap != null) {
             settings.getState().payloadNestedWrapPolicy = selectedPayloadWrap;
         }
+        var selectedEllipsisMode = (NamespaceEllipsisMode) ellipsisCombo.getSelectedItem();
+        if (selectedEllipsisMode != null) {
+            settings.getState().browserEllipsisMode = selectedEllipsisMode;
+        }
+        settings.getState().browserPreservedSuffixChars = Math.clamp(
+            suffixSpinner.getNumber(),
+            StvnSettings.State.MIN_BROWSER_PRESERVED_SUFFIX_CHARS,
+            StvnSettings.State.MAX_BROWSER_PRESERVED_SUFFIX_CHARS
+        );
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -400,10 +489,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         var refCombo = reformatDelegationModeComboBox;
         var schemaWrapCombo = schemaNestedWrapPolicyComboBox;
         var payloadWrapCombo = payloadNestedWrapPolicyComboBox;
+        var ellipsisCombo = browserEllipsisModeComboBox;
+        var suffixSpinner = browserSuffixLengthSpinner;
+        var suffixLabel = browserSuffixLengthLabel;
 
         if (cb1 == null || cb2 == null || cb3 == null || cb4 == null || cb5 == null || cb6 == null || cb7 == null
                 || combo == null || aliasCombo == null || epCombo == null || epWarn == null
-                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null) {
+                || refCombo == null || schemaWrapCombo == null || payloadWrapCombo == null
+                || ellipsisCombo == null || suffixSpinner == null) {
             return;
         }
 
@@ -424,6 +517,14 @@ public final class StvnConfigurable implements SearchableConfigurable {
         refCombo.setSelectedItem(settings.getState().reformatDelegationMode);
         schemaWrapCombo.setSelectedItem(settings.getState().schemaNestedWrapPolicy);
         payloadWrapCombo.setSelectedItem(settings.getState().payloadNestedWrapPolicy);
+        NamespaceEllipsisMode activeEllipsis = settings.getBrowserEllipsisMode();
+        ellipsisCombo.setSelectedItem(activeEllipsis);
+        suffixSpinner.setNumber(settings.getBrowserPreservedSuffixChars());
+        boolean middle = activeEllipsis == NamespaceEllipsisMode.MIDDLE;
+        suffixSpinner.setEnabled(middle);
+        if (suffixLabel != null) {
+            suffixLabel.setEnabled(middle);
+        }
 
         var a1 = templateStvnArea;
         var a2 = templateStvnIArea;
@@ -454,6 +555,9 @@ public final class StvnConfigurable implements SearchableConfigurable {
         reformatDelegationModeComboBox = null;
         schemaNestedWrapPolicyComboBox = null;
         payloadNestedWrapPolicyComboBox = null;
+        browserEllipsisModeComboBox = null;
+        browserSuffixLengthSpinner = null;
+        browserSuffixLengthLabel = null;
         templateStvnArea = null;
         templateStvnIArea = null;
         templateStvnDArea = null;

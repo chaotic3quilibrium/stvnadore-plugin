@@ -11,6 +11,7 @@ import com.intellij.util.ui.JBUI;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.StvnBundle;
+import org.stvnadore.plugin.settings.NamespaceEllipsisMode;
 
 import javax.swing.Icon;
 import javax.swing.JCheckBoxMenuItem;
@@ -22,6 +23,9 @@ import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.border.Border;
+import javax.swing.border.CompoundBorder;
+import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.TableColumnModelEvent;
@@ -33,12 +37,15 @@ import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.Component;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
+import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -50,19 +57,31 @@ public final class StvnNamespaceColumnManager {
 
     static final int DIVIDER_HIT_TOLERANCE_PX = 4;
     static final int MAX_RIGHT_SIZED_COLUMN_WIDTH_PX = 4096;
+    static final int MIN_WATERFILL_COLUMN_WIDTH_PX = 56;
+    private static final int HEADER_ANTI_CLIP_GUARD_PX = 4;
+    private static final int CELL_RIGHT_SIZE_GUARD_PX = 4;
+    private static final int HEADER_LOCK_ICON_SIZE_PX = 11;
+    private static final int HEADER_DUAL_ICON_GAP_PX = 2;
+    private static final int HEADER_ICON_TEXT_GAP_PX = 3;
+    private static final int USE_DEPTH_LEFT_INSET_PX = 6;
+    private static final int CELL_HORIZONTAL_INSET_PX = 8;
     private static final int INITIAL_TARGET_VIEWPORT_WIDTH_PX = 900;
 
     private final JBTable table;
     private final StvnDividerGuardedRowSorter rowSorter;
     private final TableCellRenderer delegateHeaderRenderer;
+    private final StvnNamespaceCellRenderer cellRenderer;
     private final Icon headerLockIcon;
     private final boolean[] lockedByModelColumn;
     private final int exactUseDepthHeaderWidth;
     private boolean userCustomizedWidths;
     private boolean initialContentWidthsApplied;
+    private boolean measuringUnconstrainedPreferredWidth;
     private @Nullable Runnable fitWindowAction;
     private BooleanSupplier fitWindowEnabledSupplier = () -> true;
     private Supplier<StvnNamespaceScope> activeScopeSupplier = () -> StvnNamespaceScope.DEFS;
+    private Supplier<NamespaceEllipsisMode> ellipsisModeSupplier = () -> NamespaceEllipsisMode.MIDDLE;
+    private IntSupplier preservedSuffixLengthSupplier = () -> StvnCellTextEllipsizer.DEFAULT_SUFFIX_CODE_POINTS;
 
     StvnNamespaceColumnManager(JBTable table, JBScrollPane scrollPane, StvnNamespaceTableModel tableModel) {
         this.table = table;
@@ -70,7 +89,9 @@ public final class StvnNamespaceColumnManager {
         this.lockedByModelColumn[StvnNamespaceTableModel.COL_USE_DEPTH] = true;
 
         Icon rawLock = AllIcons.Ide.Readonly;
-        float scaleFactor = rawLock.getIconWidth() > 0 ? 12.0f / rawLock.getIconWidth() : 0.75f;
+        float scaleFactor = rawLock.getIconWidth() > 0
+            ? (float) JBUI.scale(HEADER_LOCK_ICON_SIZE_PX) / rawLock.getIconWidth()
+            : 0.7f;
         this.headerLockIcon = IconUtil.scale(rawLock, null, scaleFactor);
 
         this.rowSorter = new StvnDividerGuardedRowSorter(tableModel);
@@ -90,9 +111,9 @@ public final class StvnNamespaceColumnManager {
         this.delegateHeaderRenderer = header.getDefaultRenderer();
         header.setDefaultRenderer(new StvnHeaderRenderer());
 
-        var cellRenderer = new StvnNamespaceCellRenderer();
-        table.setDefaultRenderer(String.class, cellRenderer);
-        table.setDefaultRenderer(Integer.class, cellRenderer);
+        this.cellRenderer = new StvnNamespaceCellRenderer();
+        table.setDefaultRenderer(String.class, this.cellRenderer);
+        table.setDefaultRenderer(Integer.class, this.cellRenderer);
         table.setAutoCreateColumnsFromModel(false);
 
         int useDepthViewCol = table.convertColumnIndexToView(StvnNamespaceTableModel.COL_USE_DEPTH);
@@ -104,6 +125,14 @@ public final class StvnNamespaceColumnManager {
 
     void setActiveScopeSupplier(Supplier<StvnNamespaceScope> activeScopeSupplier) {
         this.activeScopeSupplier = activeScopeSupplier;
+    }
+
+    void setEllipsisSettingsSuppliers(
+        Supplier<NamespaceEllipsisMode> ellipsisModeSupplier,
+        IntSupplier preservedSuffixLengthSupplier
+    ) {
+        this.ellipsisModeSupplier = ellipsisModeSupplier;
+        this.preservedSuffixLengthSupplier = preservedSuffixLengthSupplier;
     }
 
     int getExactUseDepthHeaderWidth() {
@@ -245,6 +274,49 @@ public final class StvnNamespaceColumnManager {
         }
     }
 
+    /**
+     * Fits unlocked columns to {@code maxColsBudget} via bounded water-filling cap compression:
+     * applies full unconstrained natural widths when {@code sum <= maxColsBudget}, or caps only the
+     * widest unlocked column(s) to fit within {@code maxColsBudget} while preserving all locked columns.
+     *
+     * @param maxColsBudget maximum total horizontal pixel budget available across all visible columns
+     */
+    public void fitUnlockedColumnsToBudget(int maxColsBudget) {
+        TableColumnModel cm = table.getColumnModel();
+        int colCount = cm.getColumnCount();
+        if (colCount <= 0) {
+            return;
+        }
+        int[] naturalWidths = new int[colCount];
+        boolean[] locked = new boolean[colCount];
+        int[] minFloors = new int[colCount];
+        for (int viewCol = 0; viewCol < colCount; viewCol++) {
+            TableColumn col = cm.getColumn(viewCol);
+            locked[viewCol] = isViewColumnLocked(viewCol);
+            naturalWidths[viewCol] = locked[viewCol] ? col.getWidth() : computeRightSizedWidth(viewCol);
+            minFloors[viewCol] = locked[viewCol] ? col.getWidth() : computeMinHeaderFloorWidth(viewCol);
+        }
+        int[] fittedWidths = StvnColumnWaterFillSolver.solveFittedColumnWidths(
+            naturalWidths,
+            locked,
+            minFloors,
+            JBUI.scale(MIN_WATERFILL_COLUMN_WIDTH_PX),
+            maxColsBudget
+        );
+        boolean changed = false;
+        for (int viewCol = 0; viewCol < colCount; viewCol++) {
+            if (!locked[viewCol]) {
+                TableColumn col = cm.getColumn(viewCol);
+                applyUnlockedWidth(col, fittedWidths[viewCol], minFloors[viewCol]);
+                changed = true;
+            }
+        }
+        if (changed) {
+            userCustomizedWidths = true;
+            refreshTableAndHeaderLayout();
+        }
+    }
+
     void applyInitialContentWidthsIfUnmodified() {
         if (userCustomizedWidths || initialContentWidthsApplied || table.getRowCount() == 0) {
             return;
@@ -317,15 +389,20 @@ public final class StvnNamespaceColumnManager {
 
     int computeRightSizedWidth(int viewCol) {
         int modelCol = table.convertColumnIndexToModel(viewCol);
-        int headerReq = computeRequiredHeaderWidth(viewCol, isModelColumnLocked(modelCol), true);
+        int headerReq = measureHeaderWidth(viewCol, isModelColumnLocked(modelCol), true);
         int maxCellReq = 0;
-        for (int row = 0; row < table.getRowCount(); row++) {
-            TableCellRenderer renderer = table.getCellRenderer(row, viewCol);
-            Component comp = table.prepareRenderer(renderer, row, viewCol);
-            maxCellReq = Math.max(maxCellReq, comp.getPreferredSize().width);
+        measuringUnconstrainedPreferredWidth = true;
+        try {
+            for (int row = 0; row < table.getRowCount(); row++) {
+                TableCellRenderer renderer = table.getCellRenderer(row, viewCol);
+                Component comp = table.prepareRenderer(renderer, row, viewCol);
+                maxCellReq = Math.max(maxCellReq, comp.getPreferredSize().width);
+            }
+        } finally {
+            measuringUnconstrainedPreferredWidth = false;
         }
         int floor = computeMinHeaderFloorWidth(viewCol);
-        int paddedCellWidth = maxCellReq > 0 ? maxCellReq + JBUI.scale(8) : 0;
+        int paddedCellWidth = maxCellReq > 0 ? maxCellReq + JBUI.scale(CELL_RIGHT_SIZE_GUARD_PX) : 0;
         int raw = Math.max(floor, Math.max(headerReq, paddedCellWidth));
         return Math.min(JBUI.scale(MAX_RIGHT_SIZED_COLUMN_WIDTH_PX), raw);
     }
@@ -408,18 +485,9 @@ public final class StvnNamespaceColumnManager {
         if (row < 0 || col < 0) {
             return null;
         }
-        Object val = table.getValueAt(row, col);
-        if (val == null) {
-            return null;
-        }
-        String text = val.toString();
-        if (text.isEmpty()) {
-            return null;
-        }
         TableCellRenderer renderer = table.getCellRenderer(row, col);
         Component comp = table.prepareRenderer(renderer, row, col);
-        int availableWidth = table.getCellRect(row, col, false).width;
-        return comp.getPreferredSize().width > availableWidth ? text : null;
+        return comp instanceof JComponent jc ? jc.getToolTipText() : null;
     }
 
     private void initializeDefaultColumnWidths() {
@@ -522,44 +590,93 @@ public final class StvnNamespaceColumnManager {
     }
 
     private int computeExactUseDepthHeaderWidth(int viewCol) {
-        int headerReq = computeRequiredHeaderWidth(viewCol, true, true);
-        var sampleCell = new StvnNamespaceCellRenderer();
-        Component sampleComp = sampleCell.getTableCellRendererComponent(table, 999, false, false, 0, viewCol);
-        int sampleCellReq = sampleComp.getPreferredSize().width + JBUI.scale(6);
+        int headerReq = measureHeaderWidth(viewCol, true, true);
+        Component sampleComp = cellRenderer.getTableCellRendererComponent(table, 999, false, false, -1, viewCol);
+        int sampleCellReq = sampleComp.getPreferredSize().width + JBUI.scale(HEADER_ANTI_CLIP_GUARD_PX);
         return Math.max(headerReq, sampleCellReq);
     }
 
     int computeMinHeaderFloorWidth(int viewCol) {
-        return computeRequiredHeaderWidth(viewCol, false, false);
+        return measureHeaderWidth(viewCol, false, false);
     }
 
-    int computeRequiredHeaderWidth(int viewCol, boolean includeLockIcon, boolean includeSortReserve) {
+    int measureHeaderWidth(int viewCol, boolean includeLockIcon, boolean includeSortReserve) {
         Object headerValue = table.getColumnModel().getColumn(viewCol).getHeaderValue();
         Component comp = delegateHeaderRenderer.getTableCellRendererComponent(
             table, headerValue, false, false, -1, viewCol
         );
         int modelCol = table.convertColumnIndexToModel(viewCol);
+        boolean isUseDepth = modelCol == StvnNamespaceTableModel.COL_USE_DEPTH;
+        Icon sortReserve = includeSortReserve ? createSortReserveIcon() : null;
+        configureHeaderComponent(comp, isUseDepth, includeLockIcon, sortReserve);
+        return comp.getPreferredSize().width + JBUI.scale(HEADER_ANTI_CLIP_GUARD_PX);
+    }
+
+    private void configureHeaderComponent(
+        Component comp,
+        boolean isUseDepth,
+        boolean includeLockIcon,
+        @Nullable Icon sortIcon
+    ) {
+        if (comp instanceof JComponent jc) {
+            normalizeHeaderHorizontalBorder(jc, isUseDepth);
+        }
         if (comp instanceof JLabel label) {
-            Icon sortReserve = includeSortReserve ? createSortReserveIcon() : null;
-            Icon combined = composeHeaderIcons(includeLockIcon ? headerLockIcon : null, sortReserve);
-            label.setHorizontalAlignment(
-                modelCol == StvnNamespaceTableModel.COL_USE_DEPTH ? SwingConstants.RIGHT : SwingConstants.LEFT
-            );
+            Icon combined = composeHeaderIcons(includeLockIcon ? headerLockIcon : null, sortIcon);
+            label.setHorizontalAlignment(isUseDepth ? SwingConstants.RIGHT : SwingConstants.LEFT);
             label.setHorizontalTextPosition(SwingConstants.LEADING);
-            label.setIconTextGap(combined != null ? JBUI.scale(4) : 0);
+            label.setIconTextGap(combined != null ? JBUI.scale(HEADER_ICON_TEXT_GAP_PX) : 0);
             label.setIcon(combined);
         }
-        return comp.getPreferredSize().width + JBUI.scale(6);
+    }
+
+    private static void normalizeHeaderHorizontalBorder(JComponent comp, boolean isUseDepth) {
+        Border border = comp.getBorder();
+        int targetLeft = JBUI.scale(isUseDepth ? USE_DEPTH_LEFT_INSET_PX : CELL_HORIZONTAL_INSET_PX);
+        int targetRight = JBUI.scale(CELL_HORIZONTAL_INSET_PX);
+        if (border instanceof CompoundBorder cb) {
+            Border outer = cb.getOutsideBorder();
+            Border inner = cb.getInsideBorder();
+            Insets outerIns = outer != null ? outer.getBorderInsets(comp) : JBUI.emptyInsets();
+            Insets innerIns = inner != null ? inner.getBorderInsets(comp) : JBUI.emptyInsets();
+            if (outer instanceof EmptyBorder && inner instanceof EmptyBorder) {
+                comp.setBorder(JBUI.Borders.empty(
+                    outerIns.top + innerIns.top,
+                    targetLeft,
+                    outerIns.bottom + innerIns.bottom,
+                    targetRight
+                ));
+                return;
+            }
+            if (outer instanceof EmptyBorder && inner != null) {
+                int extraLeft = Math.max(0, targetLeft - innerIns.left);
+                int extraRight = Math.max(0, targetRight - innerIns.right);
+                comp.setBorder(new CompoundBorder(
+                    JBUI.Borders.empty(outerIns.top, extraLeft, outerIns.bottom, extraRight),
+                    inner
+                ));
+                return;
+            }
+            if (inner instanceof EmptyBorder && outer != null) {
+                int extraLeft = Math.max(0, targetLeft - outerIns.left);
+                int extraRight = Math.max(0, targetRight - outerIns.right);
+                comp.setBorder(new CompoundBorder(
+                    outer,
+                    JBUI.Borders.empty(innerIns.top, extraLeft, innerIns.bottom, extraRight)
+                ));
+                return;
+            }
+        } else if (border instanceof EmptyBorder eb) {
+            Insets ins = eb.getBorderInsets(comp);
+            comp.setBorder(JBUI.Borders.empty(ins.top, targetLeft, ins.bottom, targetRight));
+        }
     }
 
     private Icon createSortReserveIcon() {
         Icon asc = UIManager.getIcon("Table.ascendingSortIcon");
         Icon desc = UIManager.getIcon("Table.descendingSortIcon");
-        int arrowWidth = AllIcons.General.ArrowUp.getIconWidth();
-        int w = Math.max(
-            Math.max(JBUI.scale(12), arrowWidth),
-            Math.max(asc != null ? asc.getIconWidth() : 0, desc != null ? desc.getIconWidth() : 0)
-        );
+        int actualSortW = Math.max(asc != null ? asc.getIconWidth() : 0, desc != null ? desc.getIconWidth() : 0);
+        int w = actualSortW > 0 ? actualSortW : JBUI.scale(10);
         int h = Math.max(JBUI.scale(10), headerLockIcon.getIconHeight());
         return new EmptyReserveIcon(w, h);
     }
@@ -571,7 +688,7 @@ public final class StvnNamespaceColumnManager {
         if (second == null) {
             return first;
         }
-        return new DualHeaderIcon(first, JBUI.scale(3), second);
+        return new DualHeaderIcon(first, JBUI.scale(HEADER_DUAL_ICON_GAP_PX), second);
     }
 
     private static void applyLockedWidth(TableColumn col, int width) {
@@ -585,7 +702,8 @@ public final class StvnNamespaceColumnManager {
     }
 
     private static void applyUnlockedWidth(TableColumn col, int width, int minFloor) {
-        int safeFloor = Math.max(JBUI.scale(32), Math.min(width, minFloor));
+        int dragFloor = Math.min(minFloor, JBUI.scale(MIN_WATERFILL_COLUMN_WIDTH_PX));
+        int safeFloor = Math.max(JBUI.scale(32), Math.min(width, Math.max(dragFloor, JBUI.scale(MIN_WATERFILL_COLUMN_WIDTH_PX))));
         col.setMinWidth(safeFloor);
         col.setMaxWidth(Integer.MAX_VALUE);
         col.setPreferredWidth(width);
@@ -642,19 +760,8 @@ public final class StvnNamespaceColumnManager {
             );
             int modelCol = tbl.convertColumnIndexToModel(column);
             boolean isUseDepth = modelCol == StvnNamespaceTableModel.COL_USE_DEPTH;
-            if (comp instanceof JLabel label) {
-                Icon sortIcon = label.getIcon();
-                label.setHorizontalAlignment(isUseDepth ? SwingConstants.RIGHT : SwingConstants.LEFT);
-                label.setHorizontalTextPosition(SwingConstants.LEADING);
-                if (isModelColumnLocked(modelCol)) {
-                    Icon combined = composeHeaderIcons(headerLockIcon, sortIcon);
-                    label.setIconTextGap(combined != null ? JBUI.scale(4) : 0);
-                    label.setIcon(combined);
-                } else {
-                    label.setIconTextGap(sortIcon != null ? JBUI.scale(4) : 0);
-                    label.setIcon(sortIcon);
-                }
-            }
+            Icon sortIcon = comp instanceof JLabel label ? label.getIcon() : null;
+            configureHeaderComponent(comp, isUseDepth, isModelColumnLocked(modelCol), sortIcon);
             if (comp instanceof JComponent jc) {
                 jc.setToolTipText(isUseDepth ? resolveUseDepthHeaderTooltip(activeScopeSupplier.get()) : null);
             }
@@ -662,7 +769,7 @@ public final class StvnNamespaceColumnManager {
         }
     }
 
-    private static final class StvnNamespaceCellRenderer extends DefaultTableCellRenderer {
+    private final class StvnNamespaceCellRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(
             JTable tbl,
@@ -677,7 +784,41 @@ public final class StvnNamespaceColumnManager {
             setHorizontalAlignment(
                 modelCol == StvnNamespaceTableModel.COL_USE_DEPTH ? SwingConstants.RIGHT : SwingConstants.LEFT
             );
-            setBorder(JBUI.Borders.empty(0, 8));
+            setBorder(JBUI.Borders.empty(0, CELL_HORIZONTAL_INSET_PX));
+
+            String fullText = value == null ? "" : value.toString();
+            if (measuringUnconstrainedPreferredWidth
+                    || row < 0
+                    || column < 0
+                    || column >= tbl.getColumnCount()
+                    || fullText.isEmpty()) {
+                setText(fullText);
+                setToolTipText(null);
+                return comp;
+            }
+
+            int cellWidth = tbl.getCellRect(row, column, false).width;
+            if (cellWidth <= 0) {
+                cellWidth = tbl.getColumnModel().getColumn(column).getWidth() - tbl.getIntercellSpacing().width;
+            }
+            if (cellWidth <= 0) {
+                setText(fullText);
+                setToolTipText(null);
+                return comp;
+            }
+
+            Insets insets = getInsets();
+            int availableTextWidth = Math.max(0, cellWidth - insets.left - insets.right);
+            FontMetrics fm = getFontMetrics(getFont());
+            StvnCellTextEllipsizer.EllipsisResult ellipsized = StvnCellTextEllipsizer.ellipsize(
+                fullText,
+                availableTextWidth,
+                fm::stringWidth,
+                ellipsisModeSupplier.get(),
+                preservedSuffixLengthSupplier.getAsInt()
+            );
+            setText(ellipsized.displayText());
+            setToolTipText(ellipsized.truncated() ? fullText : null);
             return comp;
         }
     }

@@ -618,6 +618,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnNamespaceBrowserUxAndDepthParityTest*.class")
     exclude("**/StvnNamespaceBrowserTypographyFilterFocusAndFacetOrderTest*.class")
     exclude("**/StvnNamespaceBrowserWindowFitPreludeShortcutAndEnumSortPolishTest*.class")
+    exclude("**/StvnNamespaceBrowserEllipsisCompactUseDepthAndWaterFillTest*.class")
     exclude("**/StvnUseMapAliasInlayUnificationTest*.class")
     exclude("**/StvnTemplateAndSampleConformanceTest*.class")
     exclude("**/StvnDualGrammarDifferentialTest*.class")

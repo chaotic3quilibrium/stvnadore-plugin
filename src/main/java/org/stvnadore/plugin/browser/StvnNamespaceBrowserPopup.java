@@ -54,6 +54,7 @@ import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.StvnBundle;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.psi.DefsEntry;
 import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.StvnTypes;
@@ -276,9 +277,6 @@ public final class StvnNamespaceBrowserPopup {
             if (!analysisFuture.isDone() || analysisFuture.isCompletedExceptionally()) {
                 return;
             }
-            if (columnManager.hasAnyUnlockedColumn()) {
-                columnManager.rightSizeAllUnlockedColumns();
-            }
             PopupWindowBridge bridge = popupWindowBridgeRef.get();
             if (bridge == null) {
                 return;
@@ -292,6 +290,10 @@ public final class StvnNamespaceBrowserPopup {
                 currentBounds.y + Math.max(0, currentBounds.height / 2)
             );
             Rectangle usableScreenRect = bridge.getUsableScreenBounds(anchor);
+            if (columnManager.hasAnyUnlockedColumn()) {
+                int maxColsBudget = computeMaxColumnsViewportBudget(currentBounds, usableScreenRect);
+                columnManager.fitUnlockedColumnsToBudget(maxColsBudget);
+            }
             Rectangle fittedBounds = computeFittedPopupBounds(currentBounds, usableScreenRect);
 
             Dimension panelSizeBefore = panel.getSize();
@@ -353,6 +355,20 @@ public final class StvnNamespaceBrowserPopup {
                             validatePopupHierarchy();
                         }
                     }
+
+                    Dimension finalExtent = viewport.getExtentSize();
+                    boolean finalVerticalScroll = requiredRowsHeight > finalExtent.height;
+                    boolean finalOverlayVBar = scrollPane.getWidth() > 0
+                        && finalExtent.width >= scrollPane.getWidth() - scrollChromeW - 2;
+                    int exactViewportColsBudget = finalExtent.width
+                        - ((finalVerticalScroll && finalOverlayVBar) ? vBarReserve : 0)
+                        - JBUI.scale(CLOSED_LOOP_SHORTFALL_CUSHION_PX);
+                    if (columnManager.hasAnyUnlockedColumn()
+                            && exactViewportColsBudget > 0
+                            && columnManager.computeTotalColumnsWidth() > exactViewportColsBudget) {
+                        columnManager.fitUnlockedColumnsToBudget(exactViewportColsBudget);
+                        validatePopupHierarchy();
+                    }
                 }
             }
 
@@ -383,12 +399,7 @@ public final class StvnNamespaceBrowserPopup {
             int scrollChromeW = computeScrollChromeWidth();
             int scrollChromeH = computeScrollChromeHeight();
 
-            JViewport colHeaderViewport = scrollPane.getColumnHeader();
-            JTableHeader tableHeader = table.getTableHeader();
-            int colHeaderHeight = Math.max(
-                colHeaderViewport != null ? colHeaderViewport.getHeight() : 0,
-                tableHeader != null ? Math.max(tableHeader.getHeight(), tableHeader.getPreferredSize().height) : 0
-            );
+            int colHeaderHeight = computeColumnHeaderHeight();
             int rowsHeight = computeRequiredRowsHeight();
             int columnsWidth = columnManager.computeTotalColumnsWidth();
             int safetyCushion = JBUI.scale(HIDPI_VIEWPORT_SAFETY_CUSHION_PX);
@@ -423,6 +434,33 @@ public final class StvnNamespaceBrowserPopup {
                 availY,
                 availW,
                 availH
+            );
+        }
+
+        int computeMaxColumnsViewportBudget(Rectangle currentPopupBounds, Rectangle usableScreenRect) {
+            int margin = JBUI.scale(SCREEN_FIT_MARGIN_PX);
+            int availW = Math.max(JBUI.scale(MIN_POPUP_WIDTH_PX), usableScreenRect.width - 2 * margin);
+            int availH = Math.max(JBUI.scale(MIN_POPUP_HEIGHT_PX), usableScreenRect.height - 2 * margin);
+            int outerWidthOverhead = computeOuterWidthOverhead(currentPopupBounds);
+            int outerAndHeaderHeightOverhead = computeOuterAndHeaderHeightOverhead(currentPopupBounds);
+            int scrollChromeW = computeScrollChromeWidth();
+            int scrollChromeH = computeScrollChromeHeight();
+            int colHeaderHeight = computeColumnHeaderHeight();
+            int rowsHeight = computeRequiredRowsHeight();
+            int safetyCushion = JBUI.scale(HIDPI_VIEWPORT_SAFETY_CUSHION_PX);
+            int vBarReserve = computeVerticalScrollBarReserve();
+            int baseIdealHeight = outerAndHeaderHeightOverhead + scrollChromeH + colHeaderHeight + rowsHeight + safetyCushion;
+            boolean needsVerticalScroll = baseIdealHeight > availH;
+            return availW - outerWidthOverhead - scrollChromeW - safetyCushion
+                - (needsVerticalScroll ? vBarReserve : 0);
+        }
+
+        private int computeColumnHeaderHeight() {
+            JViewport colHeaderViewport = scrollPane.getColumnHeader();
+            JTableHeader tableHeader = table.getTableHeader();
+            return Math.max(
+                colHeaderViewport != null ? colHeaderViewport.getHeight() : 0,
+                tableHeader != null ? Math.max(tableHeader.getHeight(), tableHeader.getPreferredSize().height) : 0
             );
         }
 
@@ -636,6 +674,11 @@ public final class StvnNamespaceBrowserPopup {
         var scrollPane = new JBScrollPane(table);
         var columnManager = new StvnNamespaceColumnManager(table, scrollPane, tableModel);
         columnManager.setActiveScopeSupplier(activeScopeRef::get);
+        var stvnSettings = StvnSettings.getInstance(project);
+        columnManager.setEllipsisSettingsSuppliers(
+            stvnSettings::getBrowserEllipsisMode,
+            stvnSettings::getBrowserPreservedSuffixChars
+        );
         columnManagerHolder[0] = columnManager;
 
         var panel = new JPanel(new BorderLayout(0, JBUI.scale(6)));
