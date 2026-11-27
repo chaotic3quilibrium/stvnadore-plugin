@@ -115,7 +115,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
         Set<String> prettyNames = listRegularFileNames(PRETTY_DIR);
         Set<String> compactNames = listRegularFileNames(COMPACT_DIR);
 
-        assertEquals("Expected 23 mirrored golden formatter quartets", 23, inputNames.size());
+        assertEquals("Expected 24 mirrored golden formatter quartets", 24, inputNames.size());
         assertEquals("input/ and source_pretty/ inventories must match", inputNames, sourcePrettyNames);
         assertEquals("input/ and pretty/ inventories must match", inputNames, prettyNames);
         assertEquals("input/ and compact/ inventories must match", inputNames, compactNames);
@@ -331,7 +331,7 @@ public final class StvnGoldenFormatterPluginConformanceTest extends BasePlatform
 
         try {
             List<Path> inputPaths = listSortedFiles(INPUT_DIR);
-            assertEquals("Expected 23 golden input files", 23, inputPaths.size());
+            assertEquals("Expected 24 golden input files", 24, inputPaths.size());
 
             for (NestedContainerWrapPolicy schemaPolicy : NestedContainerWrapPolicy.values()) {
                 for (NestedContainerWrapPolicy payloadPolicy : NestedContainerWrapPolicy.values()) {

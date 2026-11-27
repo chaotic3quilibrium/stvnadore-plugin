@@ -552,6 +552,7 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         record RhsClaim(TypeKeyword localKw, @Nullable String remoteText) {}
         var rhsClaims = new ArrayList<RhsClaim>();
         var rawClaims = new ArrayList<PsiElement>();
+        var seenValidTargets = new HashSet<String>();
 
         for (var use : useStmts) {
             for (var useElem : use.getUseElementList()) {
@@ -560,9 +561,16 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     continue;
                 }
                 var prefix = useTarget.getText().trim();
+                if (prefix.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(prefix)) {
+                    continue;
+                }
+                if (isStructurallyValidUseElementForDedup(useElem) && !seenValidTargets.add(prefix)) {
+                    continue;
+                }
                 var fqni = prefix + "/" + targetName.substring(1);
 
                 boolean lhsRenamedInThisUse = false;
+                var seenCanonicalPairs = new HashSet<String>();
                 var aliasBlock = useElem.getUseAliasBlock();
                 if (aliasBlock != null) {
                     for (var alias : aliasBlock.getUseMapAliasList()) {
@@ -570,14 +578,25 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                         if (list.size() >= 2) {
                             var remoteKw = list.get(0);
                             var localKw = list.get(1);
-                            if (remoteKw != null) {
+                            if (remoteKw != null && localKw != null) {
                                 var remoteText = remoteKw.getText().trim();
-                                if (remoteText.equals(targetName) || remoteText.equals(fqni)) {
+                                var localText = localKw.getText().trim();
+                                var canonicalLhs = remoteText.indexOf('/') >= 0
+                                    ? remoteText
+                                    : (prefix + "/" + remoteText.substring(1));
+                                if (!seenCanonicalPairs.add(canonicalLhs + "=>" + localText)) {
+                                    continue;
+                                }
+                                int slash = remoteText.lastIndexOf('/');
+                                String bareRemote = slash >= 0
+                                    ? (StvnVocabulary.SIGIL_TYPIC + remoteText.substring(slash + 1))
+                                    : remoteText;
+                                if (bareRemote.equals(targetName) || remoteText.equals(fqni)) {
                                     lhsRenamedInThisUse = true;
                                 }
-                            }
-                            if (localKw != null && localKw.getText().trim().equals(targetName)) {
-                                rhsClaims.add(new RhsClaim(localKw, remoteKw != null ? remoteKw.getText().trim() : null));
+                                if (localText.equals(targetName)) {
+                                    rhsClaims.add(new RhsClaim(localKw, remoteText));
+                                }
                             }
                         }
                     }
@@ -608,6 +627,37 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             return new UseScopeResolution(rawClaims.get(0), false);
         }
         return new UseScopeResolution(null, false);
+    }
+
+    /**
+     * Determines whether {@code useElem} is structurally well-formed so duplicate same-scope
+     * {@code :use} entries ({@code E005}) can be deduplicated without counting fault-isolated
+     * empty ({@code E004}) or malformed ({@code E008} / {@code E002}) directive blocks.
+     *
+     * @param useElem candidate {@code :use} element
+     * @return {@code true} when structurally valid
+     */
+    public static boolean isStructurallyValidUseElementForDedup(org.stvnadore.psi.UseElement useElem) {
+        var useTarget = useElem.getUseTarget();
+        if (useTarget == null
+                || useTarget.getUseTargetIllegal() != null
+                || org.stvnadore.plugin.validation.StvnTrailingSlashInspection.hasTrailingSlash(useTarget)
+                || PsiTreeUtil.hasErrorElements(useElem)) {
+            return false;
+        }
+        String pkg = useTarget.getText().trim();
+        if (pkg.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(pkg)) {
+            return false;
+        }
+        var optBlock = useElem.getUseOptionsBlock();
+        var aliasBlock = useElem.getUseAliasBlock();
+        if (optBlock == null && aliasBlock == null) {
+            return false;
+        }
+        if (optBlock != null && !StvnPsiUtils.hasValidStripOption(optBlock)) {
+            return false;
+        }
+        return aliasBlock == null || !aliasBlock.getUseMapAliasList().isEmpty();
     }
 
     static boolean areSameDeclarationTarget(PsiElement a, PsiElement b) {

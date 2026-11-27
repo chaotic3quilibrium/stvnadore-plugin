@@ -1618,15 +1618,24 @@ public final class StvnPsiFormatContext {
                 emitted = true;
 
                 advanceOverAtomic(entry.lbrack());
-                emitHorizontalSpaces(0, entry.keyVal());
-                if (!simulateValue(entry.keyVal(), indent + 1)) {
-                    return false;
-                }
-                int keyStopLine = lineIndex.lineOf(Math.max(0, entry.keyVal().getTextRange().getEndOffset() - 1));
-                int valStartLine = lineIndex.lineOf(entry.valVal().getStartOffset());
-                boolean valueOnNewLine = valStartLine > keyStopLine
-                    || hasUnconsumedCommentBefore(entry.valVal().getStartOffset());
-                if (valueOnNewLine) {
+                int lbrackLine = lineIndex.lineOf(entry.lbrack().getStartOffset());
+                int rbrackStopLine = lineIndex.lineOf(
+                    Math.max(entry.lbrack().getStartOffset(), entry.rbrack().getTextRange().getEndOffset() - 1)
+                );
+                boolean entryMultiLine = lbrackLine < rbrackStopLine
+                    || hasUnconsumedCommentBefore(entry.rbrack().getStartOffset())
+                    || willValueSpanMultipleLines(entry.keyVal())
+                    || willValueSpanMultipleLines(entry.valVal());
+                if (entryMultiLine) {
+                    lastEmittedInputLine = lbrackLine;
+                    appendTrailingCommentIfOnLine(lbrackLine, entry.keyVal().getStartOffset(), null);
+                    flushStandaloneCommentsBefore(entry.keyVal().getStartOffset(), indent + 2, true);
+                    emitNewLine(indent + 2, false, entry.keyVal());
+                    markLineAnchor(entry.keyVal());
+                    if (!simulateValue(entry.keyVal(), indent + 2)) {
+                        return false;
+                    }
+                    int keyStopLine = lineIndex.lineOf(Math.max(0, entry.keyVal().getTextRange().getEndOffset() - 1));
                     lastEmittedInputLine = keyStopLine;
                     appendTrailingCommentIfOnLine(keyStopLine, entry.valVal().getStartOffset(), null);
                     flushStandaloneCommentsBefore(entry.valVal().getStartOffset(), indent + 2, true);
@@ -1642,6 +1651,10 @@ public final class StvnPsiFormatContext {
                     markLineAnchor(entry.rbrack());
                     advanceOverAtomic(entry.rbrack());
                 } else {
+                    emitHorizontalSpaces(0, entry.keyVal());
+                    if (!simulateValue(entry.keyVal(), indent + 1)) {
+                        return false;
+                    }
                     emitAlignableSpace(entry.keyVal(), entry.valVal());
                     if (!simulateValue(entry.valVal(), indent + 1)) {
                         return false;
@@ -1659,6 +1672,38 @@ public final class StvnPsiFormatContext {
             advanceOverAtomic(close);
             lastEmittedInputLine = lineIndex.lineOf(close.getStartOffset());
             return true;
+        }
+
+        private boolean willValueSpanMultipleLines(@Nullable ASTNode valNode) {
+            if (valNode == null) {
+                return false;
+            }
+            if (containsFencedString(valNode)) {
+                return true;
+            }
+            ASTNode cur = valNode;
+            while (cur != null) {
+                ASTNode coll = cur.findChildByType(StvnTypes.COLLECTION_VALUE);
+                if (coll != null) {
+                    for (ASTNode c = coll.getFirstChildNode(); c != null; c = c.getTreeNext()) {
+                        IElementType ct = c.getElementType();
+                        if ((ct == StvnTypes.MAP_LITERAL || ct == StvnTypes.LIST_LITERAL || ct == StvnTypes.TUPLE_LITERAL)
+                                && multiLine.contains(c)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                ASTNode wrapped = cur.findChildByType(StvnTypes.EXPLICIT_OPTION_VALUE);
+                if (wrapped == null) {
+                    wrapped = cur.findChildByType(StvnTypes.EXPLICIT_EITHER_VALUE);
+                }
+                if (wrapped == null) {
+                    wrapped = cur.findChildByType(StvnTypes.EXPLICIT_UNION_VALUE);
+                }
+                cur = wrapped != null ? wrapped.findChildByType(StvnTypes.VALUE) : null;
+            }
+            return false;
         }
 
         private @Nullable List<MapEntrySlice> collectMapEntrySlices(ASTNode mapLit, ASTNode open, ASTNode close) {

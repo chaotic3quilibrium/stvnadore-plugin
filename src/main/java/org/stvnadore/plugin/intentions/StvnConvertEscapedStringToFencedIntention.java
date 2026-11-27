@@ -386,10 +386,78 @@ public final class StvnConvertEscapedStringToFencedIntention
             document.replaceString(seqRange.getStartOffset(), seqRange.getEndOffset(), expanded);
             return;
         }
+        SingleLineMapEntryBounds mapEntryBounds = findEnclosingSingleLineMapEntryBounds(strLit);
+        if (mapEntryBounds != null) {
+            int entryIndent = computeLineLeadingSpaces(document, mapEntryBounds.lbrackOffset());
+            int slotIndent = entryIndent + 2;
+            String slotPrefix = " ".repeat(slotIndent);
+            String keyRendered = PsiTreeUtil.isAncestor(mapEntryBounds.keyVal(), strLit, false)
+                ? renderExpandedValue(mapEntryBounds.keyVal(), strLit, spec, slotIndent)
+                : mapEntryBounds.keyVal().getText().trim();
+            String valRendered = PsiTreeUtil.isAncestor(mapEntryBounds.entryVal(), strLit, false)
+                ? renderExpandedValue(mapEntryBounds.entryVal(), strLit, spec, slotIndent)
+                : mapEntryBounds.entryVal().getText().trim();
+            String symmetricEntry = StvnVocabulary.DELIM_OPEN_BRACKET
+                + "\n" + slotPrefix + keyRendered
+                + "\n" + slotPrefix + valRendered
+                + "\n" + " ".repeat(entryIndent) + StvnVocabulary.DELIM_CLOSE_BRACKET;
+            document.replaceString(mapEntryBounds.lbrackOffset(), mapEntryBounds.rbrackEndOffset(), symmetricEntry);
+            return;
+        }
         int ownerIndent = computeLineLeadingSpaces(document, strLit.getTextRange().getStartOffset());
         String fenced = renderFencedLiteral(spec.decoded(), spec.tag(), spec.preserveIndent(), ownerIndent);
         TextRange litRange = strLit.getTextRange();
         document.replaceString(litRange.getStartOffset(), litRange.getEndOffset(), fenced);
+    }
+
+    private record SingleLineMapEntryBounds(int lbrackOffset, int rbrackEndOffset, Value keyVal, Value entryVal) {}
+
+    private static @Nullable SingleLineMapEntryBounds findEnclosingSingleLineMapEntryBounds(StringLiteral strLit) {
+        for (PsiElement cur = strLit.getParent(); cur != null; cur = cur.getParent()) {
+            if (cur instanceof Value topVal && topVal.getParent() instanceof MapLiteral mapLit) {
+                PsiElement child = mapLit.getFirstChild();
+                while (child != null) {
+                    if (child.getNode() != null && child.getNode().getElementType() == StvnTypes.LBRACK) {
+                        PsiElement lbrack = child;
+                        PsiElement kElem = nextNonWsCommentPsiSibling(lbrack);
+                        PsiElement vElem = kElem != null ? nextNonWsCommentPsiSibling(kElem) : null;
+                        PsiElement rbrack = vElem != null ? nextNonWsCommentPsiSibling(vElem) : null;
+                        if (kElem instanceof Value kVal
+                                && vElem instanceof Value vVal
+                                && rbrack != null
+                                && rbrack.getNode() != null
+                                && rbrack.getNode().getElementType() == StvnTypes.RBRACK) {
+                            if (kVal == topVal || vVal == topVal) {
+                                CharSequence fileChars = mapLit.getContainingFile().getViewProvider().getContents();
+                                int start = lbrack.getTextRange().getStartOffset();
+                                int end = rbrack.getTextRange().getEndOffset();
+                                for (int idx = start; idx < end; idx++) {
+                                    if (fileChars.charAt(idx) == '\n') {
+                                        return null;
+                                    }
+                                }
+                                return new SingleLineMapEntryBounds(start, end, kVal, vVal);
+                            }
+                            child = rbrack.getNextSibling();
+                            continue;
+                        }
+                    }
+                    child = child.getNextSibling();
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement nextNonWsCommentPsiSibling(PsiElement element) {
+        PsiElement cur = element.getNextSibling();
+        while (cur != null
+                && (cur instanceof com.intellij.psi.PsiWhiteSpace
+                    || cur instanceof com.intellij.psi.PsiComment)) {
+            cur = cur.getNextSibling();
+        }
+        return cur;
     }
 
     private static @Nullable PsiElement findOutermostSingleLinePayloadContainer(PsiElement start) {
@@ -416,20 +484,30 @@ public final class StvnConvertEscapedStringToFencedIntention
         String childPrefix = " ".repeat(childIndent);
 
         if (container instanceof MapLiteral && elements.size() % 2 == 0) {
+            int slotIndent = childIndent + 2;
+            String slotPrefix = " ".repeat(slotIndent);
             StringBuilder sb = new StringBuilder();
             sb.append(StvnVocabulary.DELIM_OPEN_BRACE);
             for (int i = 0; i < elements.size(); i += 2) {
                 Value keyVal = elements.get(i);
                 Value entryVal = elements.get(i + 1);
-                sb.append('\n').append(childPrefix).append(StvnVocabulary.DELIM_OPEN_BRACKET).append(' ');
-                sb.append(PsiTreeUtil.isAncestor(keyVal, targetLiteral, false)
-                    ? renderExpandedValue(keyVal, targetLiteral, spec, childIndent)
-                    : keyVal.getText().trim());
-                sb.append(' ');
-                sb.append(PsiTreeUtil.isAncestor(entryVal, targetLiteral, false)
-                    ? renderExpandedValue(entryVal, targetLiteral, spec, childIndent)
-                    : entryVal.getText().trim());
-                sb.append(' ').append(StvnVocabulary.DELIM_CLOSE_BRACKET);
+                boolean targetInKey = PsiTreeUtil.isAncestor(keyVal, targetLiteral, false);
+                boolean targetInVal = PsiTreeUtil.isAncestor(entryVal, targetLiteral, false);
+                sb.append('\n').append(childPrefix).append(StvnVocabulary.DELIM_OPEN_BRACKET);
+                if (targetInKey || targetInVal) {
+                    sb.append('\n').append(slotPrefix).append(
+                        targetInKey ? renderExpandedValue(keyVal, targetLiteral, spec, slotIndent) : keyVal.getText().trim()
+                    );
+                    sb.append('\n').append(slotPrefix).append(
+                        targetInVal ? renderExpandedValue(entryVal, targetLiteral, spec, slotIndent) : entryVal.getText().trim()
+                    );
+                    sb.append('\n').append(childPrefix).append(StvnVocabulary.DELIM_CLOSE_BRACKET);
+                } else {
+                    sb.append(keyVal.getText().trim())
+                        .append(' ')
+                        .append(entryVal.getText().trim())
+                        .append(StvnVocabulary.DELIM_CLOSE_BRACKET);
+                }
             }
             sb.append('\n').append(" ".repeat(containerIndent)).append(StvnVocabulary.DELIM_CLOSE_BRACE);
             return sb.toString();

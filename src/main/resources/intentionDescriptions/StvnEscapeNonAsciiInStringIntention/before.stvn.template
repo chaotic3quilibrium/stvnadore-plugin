@@ -1,0 +1,9 @@
+{
+  :meta {
+    #name   "sample"
+    #domain "domain"
+    #kind   #BODY
+  }
+  :type :String
+  :body <spot>"Café — 🚀"</spot>
+}

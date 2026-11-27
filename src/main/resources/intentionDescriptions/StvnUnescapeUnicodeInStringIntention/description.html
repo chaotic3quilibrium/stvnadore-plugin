@@ -1,0 +1,8 @@
+<html>
+<body>
+Decodes lexically safe <code>\uXXXX</code> escape sequences inside a single-line STVN simple string literal (<code>"..."</code>) to raw UTF-8 characters.
+<p>
+Decodes paired UTF-16 surrogate escapes (such as <code>\uD83D\uDE80</code>), Zero-Width Joiners (<code>\u200D</code>), variation selectors (<code>\uFE0F</code>), and printable Unicode scalars atomically while keeping lone surrogates, control characters, line separators, quotes (<code>\u0022</code>), backslashes (<code>\u005C</code>), and forbidden bidirectional or invisible format scalars safely escaped.
+</p>
+</body>
+</html>

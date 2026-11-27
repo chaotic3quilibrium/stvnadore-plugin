@@ -1,0 +1,9 @@
+{
+  :meta {
+    #name   "sample"
+    #domain "domain"
+    #kind   #BODY
+  }
+  :type :String
+  :body <spot>"Caf\u00E9 \u2014 \uD83D\uDE80"</spot>
+}

@@ -46,7 +46,11 @@ public final class StvnDiagnosticCodes {
     /** Error code emitted when an un-sigiled bare boolean identifier ('true' / 'false') appears in STVN syntax (SPEC § 7.3, E002). */
     public static final String ERR_BARE_BOOLEAN_PROHIBITED = "E002-" + StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED;
     public static final String ERR_MODULE_IMPORT = "E005-" + DiagnosticBag.ERR_MODULE_IMPORT;
+    /** Error code emitted when a {@code :use} target or identical alias pair is duplicated in the same scope (SPEC § 3.9, E005). */
+    public static final String ERR_DUPLICATE_MODULE_IMPORT = "E005-" + DiagnosticBag.ERR_DUPLICATE_MODULE_IMPORT;
     public static final String ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT = "E005-ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT";
+    /** Error code emitted when {@code :use} or unpackaged {@code :include} introduces a namespace collision (SPEC § 4.2, E006). */
+    public static final String ERR_NAMESPACE_COLLISION = "E006-" + DiagnosticBag.ERR_NAMESPACE_COLLISION;
     /** Error code emitted when a scoped {@code :use} in a hermetic document targets an external package (SPEC § 3.9, E035). */
     public static final String ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT = "E035-ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT";
 

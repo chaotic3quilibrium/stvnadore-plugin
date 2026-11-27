@@ -495,6 +495,7 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
         }
         var rhsClaims = new java.util.ArrayList<ValueKeyword>();
         var rawClaims = new java.util.ArrayList<PsiElement>();
+        var seenValidTargets = new HashSet<String>();
         for (var use : useStmts) {
             for (var useElem : use.getUseElementList()) {
                 var target = useElem.getUseTarget();
@@ -502,8 +503,15 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                     continue;
                 }
                 var prefix = target.getText().trim();
+                if (prefix.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(prefix)) {
+                    continue;
+                }
+                if (StvnTypeReference.isStructurallyValidUseElementForDedup(useElem) && !seenValidTargets.add(prefix)) {
+                    continue;
+                }
                 var fqni = buildPackageConstantFqni(prefix, canonicalName);
                 boolean lhsRenamedInThisUse = false;
+                var seenCanonicalPairs = new HashSet<String>();
 
                 var aliasBlock = useElem.getUseAliasBlock();
                 if (aliasBlock != null) {
@@ -512,14 +520,25 @@ public final class StvnConstantReference extends PsiReferenceBase<ValueKeyword> 
                         if (list.size() >= 2) {
                             var remoteKw = list.get(0);
                             var localKw = list.get(1);
-                            if (remoteKw != null) {
+                            if (remoteKw != null && localKw != null) {
                                 var remoteNorm = canonicalizeConstantQuery(remoteKw.getText().trim());
-                                if (remoteNorm.equals(canonicalName) || remoteNorm.equals(fqni)) {
+                                var localText = localKw.getText().trim();
+                                var canonicalLhs = remoteNorm.indexOf('/') >= 0
+                                    ? remoteNorm
+                                    : buildPackageConstantFqni(prefix, remoteNorm);
+                                if (!seenCanonicalPairs.add(canonicalLhs + "=>" + localText)) {
+                                    continue;
+                                }
+                                int slash = remoteNorm.lastIndexOf('/');
+                                String bareRemote = slash >= 0
+                                    ? (StvnVocabulary.SIGIL_VALUE + remoteNorm.substring(slash + 1))
+                                    : remoteNorm;
+                                if (bareRemote.equals(canonicalName) || remoteNorm.equals(fqni)) {
                                     lhsRenamedInThisUse = true;
                                 }
-                            }
-                            if (localKw != null && localKw.getText().trim().equals(canonicalName)) {
-                                rhsClaims.add(localKw);
+                                if (localText.equals(canonicalName)) {
+                                    rhsClaims.add(localKw);
+                                }
                             }
                         }
                     }

@@ -324,8 +324,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               :defs {
                 :include [ "undef_primitives.stvn_di" ]
                 :package :com/nyse/events {
-                  :use [ :com/nyse/primitives { #strip } ]
-                  :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
+                  :use [ :com/nyse/primitives { #strip } { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
                 }
               }
             }
@@ -447,8 +446,7 @@ public final class StvnExternalAnnotatorTest extends BasePlatformTestCase {
               :defs {
                 :include [ "clean_primitives.stvn_di" ]
                 :package :com/nyse/events {
-                  :use [ :com/nyse/primitives { #strip } ]
-                  :use [ :com/nyse/primitives { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
+                  :use [ :com/nyse/primitives { #strip } { #DEFAULT_MIC #PRIMARY_EXCHANGE } ]
                 }
               }
             }

@@ -84,7 +84,13 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         };
     }
 
-    static boolean hasTrailingSlash(@NotNull PsiElement targetElement) {
+    /**
+     * Determines whether {@code targetElement} carries a prohibited trailing slash ({@code /}).
+     *
+     * @param targetElement {@code :use} target or {@code :package} path PSI element
+     * @return {@code true} when a trailing slash is present
+     */
+    public static boolean hasTrailingSlash(@NotNull PsiElement targetElement) {
         if (targetElement instanceof UseTarget useTarget && useTarget.getUseTargetIllegal() != null) {
             return true;
         }
@@ -109,7 +115,13 @@ public final class StvnTrailingSlashInspection extends LocalInspectionTool {
         return siblingText.startsWith("/") && !siblingText.startsWith("//") && !siblingText.startsWith("/*");
     }
 
-    static @NotNull String extractNonCommentText(@NotNull PsiElement element) {
+    /**
+     * Extracts the concatenated non-comment, non-whitespace text of {@code element}.
+     *
+     * @param element target PSI element
+     * @return stripped code text
+     */
+    public static @NotNull String extractNonCommentText(@NotNull PsiElement element) {
         StringBuilder sb = new StringBuilder();
         for (PsiElement child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (!(child instanceof PsiComment) && !(child instanceof PsiWhiteSpace)) {

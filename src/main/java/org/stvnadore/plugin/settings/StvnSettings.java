@@ -105,6 +105,8 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
         public NestedContainerWrapPolicy schemaNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
         /** Nested container wrapping policy for body payloads and constant values. */
         public NestedContainerWrapPolicy payloadNestedWrapPolicy = NestedContainerWrapPolicy.PRESERVE_AUTHORED;
+        /** If true, encodes characters {@code > 0x7F} as uppercase {@code \u005CuXXXX} when converting fenced strings to simple strings. */
+        public boolean escapeNonAsciiInSimpleStrings = false;
         /** Cell ellipsis placement mode in the Namespace Dependencies Browser. */
         public NamespaceEllipsisMode browserEllipsisMode = NamespaceEllipsisMode.MIDDLE;
         /** Trailing suffix code-point count preserved under {@link NamespaceEllipsisMode#MIDDLE}. */
@@ -137,6 +139,18 @@ public final class StvnSettings implements PersistentStateComponent<StvnSettings
     public State getState() {
         synchronized (lock) {
             return myState;
+        }
+    }
+
+    /**
+     * Returns whether non-ASCII characters ({@code > 0x7F}) are escaped as uppercase
+     * {@code \u005CuXXXX} sequences when converting fenced strings to simple strings.
+     *
+     * @return {@code true} when {@code \u005CuXXXX} escaping is enabled; {@code false} by default
+     */
+    public boolean isEscapeNonAsciiInSimpleStrings() {
+        synchronized (lock) {
+            return myState.escapeNonAsciiInSimpleStrings;
         }
     }
 

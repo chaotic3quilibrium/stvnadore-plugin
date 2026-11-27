@@ -1138,6 +1138,62 @@ public final class StvnExternalAnnotator
                     );
                 }
 
+                // Target 4: Illegal modifier inside ':include' quick-fix (E002-STVN_SYNTAX_ERROR)
+                if (rawMessage.contains("'" + StvnVocabulary.KEYWORD_INCLUDE + "' accepts only module path string literals")) {
+                    var incLeaf = file.findElementAt(range.getStartOffset());
+                    var incStmt = incLeaf instanceof org.stvnadore.psi.IncludeStmt directInc
+                        ? directInc
+                        : PsiTreeUtil.getParentOfType(incLeaf, org.stvnadore.psi.IncludeStmt.class, false);
+                    if (incStmt != null) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new org.stvnadore.plugin.validation.quickfix.StvnRemoveIllegalIncludeModifierQuickFix(incStmt, range)
+                        );
+                    }
+                }
+
+                // Target 2: Duplicate ':use' package target or duplicate (LHS, RHS) alias pair quick-fixes (E005-DUPLICATE_MODULE_IMPORT)
+                if (DiagnosticBag.ERR_DUPLICATE_MODULE_IMPORT.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_DUPLICATE_MODULE_IMPORT)
+                        || rawMessage.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_USE + "' ")) {
+                    var dupLeaf = file.findElementAt(range.getStartOffset());
+                    if (rawMessage.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_USE + "' alias mapping")) {
+                        var dupAlias = dupLeaf instanceof org.stvnadore.psi.UseMapAlias directAlias
+                            ? directAlias
+                            : PsiTreeUtil.getParentOfType(dupLeaf, org.stvnadore.psi.UseMapAlias.class, false);
+                        if (dupAlias != null) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new org.stvnadore.plugin.validation.quickfix.StvnRemoveDuplicateUseAliasQuickFix(dupAlias)
+                            );
+                        }
+                    } else if (rawMessage.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_USE + "' target")) {
+                        var dupElem = dupLeaf instanceof org.stvnadore.psi.UseElement directElem
+                            ? directElem
+                            : PsiTreeUtil.getParentOfType(dupLeaf, org.stvnadore.psi.UseElement.class, false);
+                        if (dupElem != null) {
+                            annotationBuilder = annotationBuilder.withFix(
+                                new org.stvnadore.plugin.validation.quickfix.StvnRemoveDuplicateUseEntryQuickFix(dupElem)
+                            );
+                        }
+                    }
+                }
+
+                // Target 1: '#strip' namespace collision disambiguation quick-fix (E006-NAMESPACE_COLLISION)
+                if (DiagnosticBag.ERR_NAMESPACE_COLLISION.equals(diagnosticId)
+                        || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(diagnosticId, StvnDiagnosticCodes.ERR_NAMESPACE_COLLISION)
+                        || rawMessage.startsWith("Namespace collision(s) in '" + StvnVocabulary.KEYWORD_USE + "':")) {
+                    var colLeaf = file.findElementAt(range.getStartOffset());
+                    var colElem = colLeaf instanceof org.stvnadore.psi.UseElement directUe
+                        ? directUe
+                        : PsiTreeUtil.getParentOfType(colLeaf, org.stvnadore.psi.UseElement.class, false);
+                    if (colElem != null
+                            && colElem.getTextRange().equals(range)
+                            && StvnPsiUtils.hasValidStripOption(colElem.getUseOptionsBlock())) {
+                        annotationBuilder = annotationBuilder.withFix(
+                            new org.stvnadore.plugin.validation.quickfix.StvnReplaceStripWithExplicitAliasesQuickFix(colElem)
+                        );
+                    }
+                }
+
                 TextRange deferredEarlierSwapRange = null;
                 StvnDiscreteIntervalInspection.SwapInvertedBoundsQuickFix deferredEarlierSwapFix = null;
 

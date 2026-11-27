@@ -685,6 +685,7 @@ val unitTest = tasks.register<Test>("unitTest") {
     exclude("**/StvnGauntletV11Batch1PluginRemediationTest*.class")
     exclude("**/StvnGauntletV11Batch2PluginRemediationTest*.class")
     exclude("**/StvnGauntletV11Batch3PackageScopeAndNominalTypeTest*.class")
+    exclude("**/StvnGauntletV11PostBatch3PluginSyncAndUnicodeTest*.class")
     exclude("**/StvnFencedStringRoundTripAndIntentionPriorityTest*.class")
     
     classpath = sourceSets.test.get().runtimeClasspath.filter { file ->

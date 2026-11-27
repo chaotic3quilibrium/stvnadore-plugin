@@ -345,12 +345,12 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Outer map entry must be indented at 4 spaces:\n" + text,
-            text.contains("    [\"outer\" {\n"));
-        assertTrue("Inner map entry must be indented at 6 spaces:\n" + text,
-            text.contains("      [\"inner\" 99]\n"));
-        assertTrue("Inner map closing brace must be indented at 4 spaces:\n" + text,
-            text.contains("    }]\n"));
+        assertTrue("Outer map entry must use 4-slot bracket symmetry (4/6/6/4):\n" + text,
+            text.contains("    [\n      \"outer\"\n      {\n"));
+        assertTrue("Inner map entry must be indented at 8 spaces (+2 inside value map at 6):\n" + text,
+            text.contains("        [\"inner\" 99]\n"));
+        assertTrue("Inner map closing brace must be indented at 6 spaces and outer ']' at 4 spaces:\n" + text,
+            text.contains("      }\n    ]\n"));
         assertTrue("Outer map closing brace must be indented at 2 spaces:\n" + text,
             text.contains("  }\n"));
     }
@@ -757,10 +757,10 @@ public final class StvnFormatterTest extends BasePlatformTestCase {
         });
 
         var text = psiFile.getText();
-        assertTrue("Nested list payload on dedicated line must indent by 6 spaces (+2 relative to '['):\n" + text,
-            text.contains("    [\"features\"\n      [\"auth\" \"logging\"]\n    ]"));
+        assertTrue("Multi-line map entry must use 4-slot bracket symmetry (+2 for both key and value):\n" + text,
+            text.contains("    [\n      \"features\"\n      [\"auth\" \"logging\"]\n    ]"));
         assertFalse("Nested list must not align flush with entry bracket:\n" + text,
-            text.contains("    [\"features\"\n    [\"auth\""));
+            text.contains("    [\n    \"features\""));
 
         // Mathematical AST equivalence verification
         var docOriginal = StvnCompiler.compile(unformatted).document().orElseThrow();

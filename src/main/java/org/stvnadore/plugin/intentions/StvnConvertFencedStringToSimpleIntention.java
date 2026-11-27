@@ -19,6 +19,8 @@ import org.jspecify.annotations.Nullable;
 import org.stvnadore.plugin.StvnBundle;
 import org.stvnadore.plugin.StvnLanguage;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
+import org.stvnadore.plugin.psi.StvnUnicodeEscapeCodec;
+import org.stvnadore.plugin.settings.StvnSettings;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
@@ -89,6 +91,9 @@ public final class StvnConvertFencedStringToSimpleIntention
             return;
         }
         String quoted = StvnPsiLiteralEvaluator.formatCanonicalQuotedString(decodedOpt.get());
+        if (StvnSettings.getInstance(project).isEscapeNonAsciiInSimpleStrings()) {
+            quoted = StvnUnicodeEscapeCodec.escapeNonAsciiInSimpleStringLiteral(quoted).orElse(quoted);
+        }
         PsiFile file = target.getContainingFile();
         Document document = file != null ? file.getViewProvider().getDocument() : null;
         if (document == null && editor != null) {

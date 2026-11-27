@@ -77,7 +77,9 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
         "Add",
         "Initialize",
         "Expand",
-        "Collapse"
+        "Collapse",
+        "Escape",
+        "Unescape"
     );
 
     public void testInspectionHtmlDescriptionsHygiene() throws IOException {
@@ -118,12 +120,12 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
         var root = findProjectRoot().toPath();
         var violations = new ArrayList<String>();
 
-        // 1. All 27 intentionDescriptions files (.html and .template)
+        // 1. All 33 intentionDescriptions files (.html and .template)
         var intentionDir = root.resolve("src/main/resources/intentionDescriptions");
         assertTrue("Intention descriptions directory must exist: " + intentionDir, Files.exists(intentionDir));
         try (Stream<Path> walk = Files.walk(intentionDir)) {
             var files = walk.filter(Files::isRegularFile).sorted().toList();
-            assertEquals("Expected 27 files across 9 intention description directories", 27, files.size());
+            assertEquals("Expected 33 files across 11 intention description directories", 33, files.size());
             for (Path file : files) {
                 String relName = root.relativize(file).toString().replace('\\', '/');
                 String content = Files.readString(file, StandardCharsets.UTF_8);
@@ -203,9 +205,9 @@ public final class StvnInspectionDescriptionHygieneTest extends TestCase {
             .newDocumentBuilder()
             .parse(pluginXmlPath.toFile());
 
-        // 1. Verify all 9 <intentionAction> entries, STE family names, and 1:1 intentionDescriptions/ folders
+        // 1. Verify all 11 <intentionAction> entries, STE family names, and 1:1 intentionDescriptions/ folders
         NodeList intentionNodes = xmlDoc.getElementsByTagName("intentionAction");
-        assertEquals("Expected 9 registered <intentionAction> elements in plugin.xml", 9, intentionNodes.getLength());
+        assertEquals("Expected 11 registered <intentionAction> elements in plugin.xml", 11, intentionNodes.getLength());
 
         Set<String> seenFamilyNames = new HashSet<>();
         for (int i = 0; i < intentionNodes.getLength(); i++) {

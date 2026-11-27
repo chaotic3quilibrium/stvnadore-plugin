@@ -166,6 +166,10 @@ public final class StvnDiagnosticAnnotatorMapping {
         // 13. Flat Document Include Inspection
         map.put(DiagnosticBag.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");
         putDual(map, StvnDiagnosticCodes.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");
+        map.put(DiagnosticBag.ERR_DUPLICATE_MODULE_IMPORT, "StvnFlatDocumentInclude");
+        putDual(map, StvnDiagnosticCodes.ERR_DUPLICATE_MODULE_IMPORT, "StvnFlatDocumentInclude");
+        map.put(DiagnosticBag.ERR_NAMESPACE_COLLISION, "StvnFlatDocumentInclude");
+        putDual(map, StvnDiagnosticCodes.ERR_NAMESPACE_COLLISION, "StvnFlatDocumentInclude");
         map.put(DiagnosticBag.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT, "StvnFlatDocumentInclude");
         putDual(map, StvnDiagnosticCodes.ERR_UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT, "StvnFlatDocumentInclude");
         map.put("UNRESOLVED_PACKAGE_IN_HERMETIC_DOCUMENT", "StvnFlatDocumentInclude");
@@ -333,7 +337,6 @@ public final class StvnDiagnosticAnnotatorMapping {
             || StvnStringCharacterPolicy.ERR_UNPAIRED_SURROGATE.equals(code)
             || DiagnosticBag.ERR_DUPLICATE_DEF.equals(code)
             || "DUPLICATE_TYPE_DEFINITION".equals(code)
-            || "E006".equals(code)
             || DiagnosticBag.ERR_CIRCULAR_TYPE.equals(code)
             || "CIRCULAR_TYPE_DEFINITION".equals(code)
             || "E007".equals(code)
@@ -403,6 +406,49 @@ public final class StvnDiagnosticAnnotatorMapping {
         var sym = diag.symbolicId().orElse(null);
         var canon = diag.canonicalCode().orElse(null);
         var err = diag.errorCode().orElse(null);
+
+        if ("E006".equals(canon) && sym == null && !message.startsWith("Namespace collision(s) ")) {
+            return false;
+        }
+
+        if (("STVN_SYNTAX_ERROR".equals(sym)
+                || "E002-STVN_SYNTAX_ERROR".equals(sym)
+                || "E002".equals(canon))
+                && message.contains("'" + StvnVocabulary.KEYWORD_INCLUDE + "' accepts only module path string literals")) {
+            if (!StvnFlatDocumentIncludeInspection.isGovernedIllegalIncludeModifierOffset(file, diag.startOffset())) {
+                return false;
+            }
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnFlatDocumentInclude");
+        }
+
+        if (DiagnosticBag.ERR_DUPLICATE_MODULE_IMPORT.equals(sym)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_DUPLICATE_MODULE_IMPORT)
+                || DiagnosticBag.ERR_DUPLICATE_MODULE_IMPORT.equals(err)
+                || message.startsWith("Duplicate '" + StvnVocabulary.KEYWORD_USE + "' ")) {
+            if (!StvnFlatDocumentIncludeInspection.isGovernedDuplicateModuleImportOffset(file, diag.startOffset())) {
+                return false;
+            }
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnFlatDocumentInclude");
+        }
+
+        if (DiagnosticBag.ERR_NAMESPACE_COLLISION.equals(sym)
+                || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_NAMESPACE_COLLISION)
+                || DiagnosticBag.ERR_NAMESPACE_COLLISION.equals(err)
+                || message.startsWith("Namespace collision(s) ")) {
+            if (!StvnFlatDocumentIncludeInspection.isGovernedNamespaceCollisionOffset(file, diag.startOffset())) {
+                return false;
+            }
+            if (!ApplicationManager.getApplication().isUnitTestMode()) {
+                return true;
+            }
+            return isInspectionActive(file, "StvnFlatDocumentInclude");
+        }
 
         if (StvnVocabulary.ERR_BARE_BOOLEAN_PROHIBITED.equals(sym)
                 || StvnDiagnosticCodes.matchesSymbolicOrPrefixed(sym, StvnDiagnosticCodes.ERR_BARE_BOOLEAN_PROHIBITED)

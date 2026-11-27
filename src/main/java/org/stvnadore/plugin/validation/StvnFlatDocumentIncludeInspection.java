@@ -11,12 +11,16 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.TokenType;
+import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -27,9 +31,14 @@ import org.stvnadore.plugin.psi.StvnNamespaceRules;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
 import org.stvnadore.plugin.psi.StvnPsiUtils;
 import org.stvnadore.plugin.reference.StvnPreludeBridge;
+import org.stvnadore.plugin.reference.StvnTypeReference;
 import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.plugin.validation.quickfix.StvnConvertToModularQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRemoveDuplicateUseAliasQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRemoveDuplicateUseEntryQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnRemoveIllegalIncludeModifierQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnRemoveUnresolvedUsePackageQuickFix;
+import org.stvnadore.plugin.validation.quickfix.StvnReplaceStripWithExplicitAliasesQuickFix;
 import org.stvnadore.plugin.validation.quickfix.StvnUnresolvedUsePackageQuickFixProvider;
 import org.stvnadore.psi.BodyEntry;
 import org.stvnadore.psi.DefsElement;
@@ -38,30 +47,43 @@ import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.IncludeStmt;
 import org.stvnadore.psi.MetaEntry;
 import org.stvnadore.psi.MetaKindFacet;
+import org.stvnadore.psi.PackageElement;
+import org.stvnadore.psi.PackageEnclosure;
 import org.stvnadore.psi.StringLiteral;
 import org.stvnadore.psi.StvnTypes;
 import org.stvnadore.psi.TypeEntry;
+import org.stvnadore.psi.UseAliasBlock;
 import org.stvnadore.psi.UseElement;
+import org.stvnadore.psi.UseMapAlias;
+import org.stvnadore.psi.UseStmt;
 import org.stvnadore.psi.UseTarget;
 import org.stvnadore.psi.Visitor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * Validates hermetic compilation-unit isolation rules under STVN 2.0.0 Specification § 1.2 and § 3.9:
+ * Validates module {@code :include} and lexical {@code :use} directives under STVN 2.0.0
+ * Specification § 1.2, § 3.9, and § 4.2:
  * <ul>
  *   <li>Prohibits {@code :include} statements inside hermetic documents ({@code E005}).</li>
+ *   <li>Flags illegal modifier blocks ({@code { #strip }}, {@code { :A :B }}, {@code {}}) inside {@code :include [...]} ({@code E002}).</li>
  *   <li>Prohibits scoped {@code :use} directives targeting external unloaded packages inside hermetic documents ({@code E035}).</li>
+ *   <li>Flags duplicate same-scope {@code :use} package targets and duplicate {@code (LHS, RHS)} alias pairs ({@code E005}).</li>
+ *   <li>Flags coordinate-pinned {@code :use} and unpackaged {@code :include} namespace collisions ({@code E006}).</li>
  * </ul>
  */
 @NullMarked
 public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool {
 
     /**
-     * Constructs a new StvnFlatDocumentIncludeInspection instance.
+     * Constructs a new {@code StvnFlatDocumentIncludeInspection} instance.
      */
     public StvnFlatDocumentIncludeInspection() {
     }
@@ -75,7 +97,39 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                     return;
                 }
                 PsiFile file = stmt.getContainingFile();
-                if (file != null && prohibitsIncludeStatements(file)) {
+                if (file == null || StvnPreludeBridge.isPreludeFile(file)) {
+                    return;
+                }
+
+                int stmtBase = stmt.getTextRange().getStartOffset();
+                String illegalIncludeModProse = "STVN Syntax Error: '"
+                    + StvnVocabulary.KEYWORD_INCLUDE
+                    + "' accepts only module path string literals; use '"
+                    + StvnVocabulary.KEYWORD_PACKAGE
+                    + "' and '"
+                    + StvnVocabulary.KEYWORD_USE
+                    + "' for '"
+                    + StvnVocabulary.FACET_KW_STRIP
+                    + "' or symbol aliasing";
+                for (TextRange modSpan : findIllegalIncludeModifierSpans(stmt)) {
+                    TextRange relSpan = new TextRange(
+                        modSpan.getStartOffset() - stmtBase,
+                        modSpan.getEndOffset() - stmtBase
+                    );
+                    holder.registerProblem(
+                        stmt,
+                        StvnDiagnosticFormatter.formatCore(
+                            illegalIncludeModProse,
+                            "E002",
+                            "STVN_SYNTAX_ERROR"
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        relSpan,
+                        new StvnRemoveIllegalIncludeModifierQuickFix(stmt, modSpan)
+                    );
+                }
+
+                if (prohibitsIncludeStatements(file)) {
                     List<LocalQuickFix> fixes = new ArrayList<>(2);
                     fixes.add(new RemoveIncludeStatementQuickFix(extractSingleIncludeTargetPath(stmt)));
                     if (StvnConvertToModularQuickFix.canConvertToModular(file)) {
@@ -95,6 +149,30 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
             }
 
             @Override
+            public void visitDefsEntry(@NotNull DefsEntry defsEntry) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(defsEntry)) {
+                    return;
+                }
+                PsiFile file = defsEntry.getContainingFile();
+                if (file == null || StvnPreludeBridge.isPreludeFile(file)) {
+                    return;
+                }
+                validateRootDefsScope(file, defsEntry, holder);
+            }
+
+            @Override
+            public void visitPackageEnclosure(@NotNull PackageEnclosure pkgEnclosure) {
+                if (StvnMetaTemplateUtil.isInSecondaryRootSection(pkgEnclosure)) {
+                    return;
+                }
+                PsiFile file = pkgEnclosure.getContainingFile();
+                if (file == null || StvnPreludeBridge.isPreludeFile(file)) {
+                    return;
+                }
+                validatePackageScope(file, pkgEnclosure, holder);
+            }
+
+            @Override
             public void visitUseElement(@NotNull UseElement element) {
                 if (StvnMetaTemplateUtil.isInSecondaryRootSection(element)) {
                     return;
@@ -109,6 +187,9 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
                 }
                 String target = StvnTrailingSlashInspection.extractNonCommentText(useTarget).trim();
                 if (target.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(target)) {
+                    return;
+                }
+                if (isDuplicateValidUseElementInScope(element, target)) {
                     return;
                 }
                 if (StvnPrelude.isPreludePackageTarget(target)) {
@@ -140,9 +221,507 @@ public final class StvnFlatDocumentIncludeInspection extends LocalInspectionTool
     }
 
     /**
-     * Determines whether {@code file} prohibits {@code :include} statements ({@code E005}),
-     * matching {@code StvnDefsLowerer.prohibitsIncludeStatements()} 1:1 across physical hermetic
-     * extensions ({@code .stvn}, {@code .stvn_d}, {@code .stvn_b}, {@code .stvn_bd}) and explicit
+     * Collects absolute document {@link TextRange} spans for illegal modifier blocks
+     * (such as {@code { #strip }}, {@code { :A :B }}, or {@code {}}) inside {@code :include [...]}.
+     *
+     * @param stmt target {@code :include} statement
+     * @return ordered list of offending modifier ranges
+     */
+    public static List<TextRange> findIllegalIncludeModifierSpans(IncludeStmt stmt) {
+        List<TextRange> spans = new ArrayList<>();
+        ASTNode stmtNode = stmt.getNode();
+        ASTNode lbrack = stmtNode.findChildByType(StvnTypes.LBRACK);
+        ASTNode rbrack = stmtNode.findChildByType(StvnTypes.RBRACK);
+        if (lbrack == null) {
+            return spans;
+        }
+        int limitOffset = rbrack != null ? rbrack.getStartOffset() : stmt.getTextRange().getEndOffset();
+
+        for (PsiElement child = lbrack.getPsi().getNextSibling();
+             child != null && child.getTextRange().getStartOffset() < limitOffset;
+             child = child.getNextSibling()) {
+            if (child instanceof IncludeElement || child instanceof PsiWhiteSpace || child instanceof PsiComment) {
+                continue;
+            }
+            if (child instanceof PsiErrorElement errElem) {
+                collectModifierSpansFromErrorElement(errElem, spans);
+            } else if (child.getNode() != null && child.getNode().getElementType() != StvnTypes.RBRACK) {
+                spans.add(child.getTextRange());
+            }
+        }
+        return spans;
+    }
+
+    private static void collectModifierSpansFromErrorElement(PsiErrorElement errElem, List<TextRange> outSpans) {
+        ASTNode cur = errElem.getNode().getFirstChildNode();
+        while (cur != null) {
+            IElementType type = cur.getElementType();
+            if (type == TokenType.WHITE_SPACE || type == StvnTypes.COMMENT) {
+                cur = cur.getTreeNext();
+                continue;
+            }
+            if (type == StvnTypes.LBRACE) {
+                int start = cur.getStartOffset();
+                int end = cur.getTextRange().getEndOffset();
+                int depth = 1;
+                cur = cur.getTreeNext();
+                while (cur != null && depth > 0) {
+                    IElementType innerType = cur.getElementType();
+                    if (innerType == StvnTypes.LBRACE) {
+                        depth++;
+                    } else if (innerType == StvnTypes.RBRACE) {
+                        depth--;
+                    }
+                    end = cur.getTextRange().getEndOffset();
+                    cur = cur.getTreeNext();
+                }
+                outSpans.add(new TextRange(start, end));
+            } else {
+                int start = cur.getStartOffset();
+                int end = cur.getTextRange().getEndOffset();
+                cur = cur.getTreeNext();
+                while (cur != null) {
+                    IElementType nextType = cur.getElementType();
+                    if (nextType == TokenType.WHITE_SPACE
+                            || nextType == StvnTypes.COMMENT
+                            || nextType == StvnTypes.LBRACE) {
+                        break;
+                    }
+                    end = cur.getTextRange().getEndOffset();
+                    cur = cur.getTreeNext();
+                }
+                outSpans.add(new TextRange(start, end));
+            }
+        }
+    }
+
+    /**
+     * Determines whether {@code offset} in {@code file} matches an illegal modifier span inside
+     * a primary {@code :include} statement governed by {@link StvnFlatDocumentIncludeInspection}.
+     *
+     * @param file   target PSI file
+     * @param offset document start offset of the diagnostic
+     * @return {@code true} if governed
+     */
+    public static boolean isGovernedIllegalIncludeModifierOffset(PsiFile file, int offset) {
+        if (offset < 0 || offset >= file.getTextLength() || StvnPreludeBridge.isPreludeFile(file)) {
+            return false;
+        }
+        PsiElement leaf = file.findElementAt(offset);
+        IncludeStmt stmt = leaf instanceof IncludeStmt inc
+            ? inc
+            : PsiTreeUtil.getParentOfType(leaf, IncludeStmt.class, false);
+        if (stmt == null || StvnMetaTemplateUtil.isInSecondaryRootSection(stmt)) {
+            return false;
+        }
+        for (TextRange span : findIllegalIncludeModifierSpans(stmt)) {
+            if (span.getStartOffset() == offset) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether {@code offset} in {@code file} points to a duplicate {@code :use}
+     * target or duplicate {@code UseMapAlias} entry governed by {@link StvnFlatDocumentIncludeInspection}.
+     *
+     * @param file   target PSI file
+     * @param offset document start offset of the diagnostic
+     * @return {@code true} if governed
+     */
+    public static boolean isGovernedDuplicateModuleImportOffset(PsiFile file, int offset) {
+        if (offset < 0 || offset >= file.getTextLength() || StvnPreludeBridge.isPreludeFile(file)) {
+            return false;
+        }
+        PsiElement leaf = file.findElementAt(offset);
+        if (leaf == null || StvnMetaTemplateUtil.isInSecondaryRootSection(leaf)) {
+            return false;
+        }
+        return PsiTreeUtil.getParentOfType(leaf, UseElement.class, false) != null
+            || leaf instanceof UseElement;
+    }
+
+    /**
+     * Determines whether {@code offset} in {@code file} points to a {@code :use} or unpackaged
+     * {@code :include} namespace collision governed by {@link StvnFlatDocumentIncludeInspection},
+     * leaving local {@code TypeDefinition} / {@code ConstantDefinition} duplicates ungoverned.
+     *
+     * @param file   target PSI file
+     * @param offset document start offset of the diagnostic
+     * @return {@code true} if governed
+     */
+    public static boolean isGovernedNamespaceCollisionOffset(PsiFile file, int offset) {
+        if (offset < 0 || offset >= file.getTextLength() || StvnPreludeBridge.isPreludeFile(file)) {
+            return false;
+        }
+        PsiElement leaf = file.findElementAt(offset);
+        if (leaf == null || StvnMetaTemplateUtil.isInSecondaryRootSection(leaf)) {
+            return false;
+        }
+        IncludeElement incElem = leaf instanceof IncludeElement ie
+            ? ie
+            : PsiTreeUtil.getParentOfType(leaf, IncludeElement.class, false);
+        if (incElem != null && incElem.getStringLiteral() != null) {
+            return !prohibitsIncludeStatements(file)
+                && StvnTypeReference.resolveIncludeFile(incElem.getStringLiteral()) != null;
+        }
+        UseMapAlias mapAlias = leaf instanceof UseMapAlias ua
+            ? ua
+            : PsiTreeUtil.getParentOfType(leaf, UseMapAlias.class, false);
+        if (mapAlias != null) {
+            PsiElement rhs = StvnReplaceStripWithExplicitAliasesQuickFix.extractAliasRhsElement(mapAlias);
+            return rhs != null && rhs.getTextRange().getStartOffset() == offset;
+        }
+        UseElement useElem = leaf instanceof UseElement ue
+            ? ue
+            : PsiTreeUtil.getParentOfType(leaf, UseElement.class, false);
+        return useElem != null
+            && useElem.getTextRange().getStartOffset() == offset
+            && StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())
+            && useElem.getUseTarget() != null;
+    }
+
+    private record PsiScopeClaim(boolean rawStripImport, PsiElement anchor, String originKey) {}
+
+    private static void validateRootDefsScope(PsiFile file, DefsEntry defsEntry, ProblemsHolder holder) {
+        Set<String> localRootNames = new LinkedHashSet<>();
+        StvnReplaceStripWithExplicitAliasesQuickFix.collectUnpackagedRootDeclarations(file, localRootNames);
+
+        Map<String, String> unpackagedOwnerBySymbol = new HashMap<>();
+        Set<String> loadedCanonicalModuleKeys = new HashSet<>();
+        loadedCanonicalModuleKeys.add(StvnReplaceStripWithExplicitAliasesQuickFix.canonicalFileKey(file));
+
+        if (!prohibitsIncludeStatements(file)) {
+            for (DefsElement elem : defsEntry.getDefsElementList()) {
+                IncludeStmt incStmt = elem.getIncludeStmt();
+                if (incStmt == null) {
+                    continue;
+                }
+                for (IncludeElement incElem : incStmt.getIncludeElementList()) {
+                    StringLiteral lit = incElem.getStringLiteral();
+                    if (lit == null || StvnPsiLiteralEvaluator.decodeStringLiteral(lit.getText(), true).isEmpty()) {
+                        continue;
+                    }
+                    PsiFile resolvedDirect = StvnTypeReference.resolveIncludeFile(lit);
+                    if (resolvedDirect == null) {
+                        continue;
+                    }
+                    List<PsiFile> branchOrder = new ArrayList<>();
+                    StvnReplaceStripWithExplicitAliasesQuickFix.collectIncludedFilesInOrder(
+                        resolvedDirect,
+                        branchOrder,
+                        new HashSet<>()
+                    );
+                    if (!branchOrder.contains(resolvedDirect)) {
+                        branchOrder.add(resolvedDirect);
+                    }
+
+                    Set<String> collidingInInclude = new LinkedHashSet<>();
+                    for (PsiFile modFile : branchOrder) {
+                        String modKey = StvnReplaceStripWithExplicitAliasesQuickFix.canonicalFileKey(modFile);
+                        if (!loadedCanonicalModuleKeys.add(modKey)) {
+                            continue;
+                        }
+                        Set<String> modSymbols = new LinkedHashSet<>();
+                        StvnReplaceStripWithExplicitAliasesQuickFix.collectUnpackagedRootDeclarations(modFile, modSymbols);
+                        for (String sym : modSymbols) {
+                            if (localRootNames.contains(sym)) {
+                                continue;
+                            }
+                            String prevOwner = unpackagedOwnerBySymbol.putIfAbsent(sym, modKey);
+                            if (prevOwner != null && !prevOwner.equals(modKey)) {
+                                collidingInInclude.add(sym);
+                            }
+                        }
+                    }
+
+                    if (!collidingInInclude.isEmpty()) {
+                        String incColMsg = "Namespace collision(s) detected: "
+                            + StvnVocabulary.DELIM_OPEN_BRACKET
+                            + String.join(", ", collidingInInclude)
+                            + StvnVocabulary.DELIM_CLOSE_BRACKET
+                            + "; enclose module declarations in '"
+                            + StvnVocabulary.KEYWORD_PACKAGE
+                            + "' and disambiguate local symbols with '"
+                            + StvnVocabulary.KEYWORD_USE
+                            + "'";
+                        holder.registerProblem(
+                            lit,
+                            StvnDiagnosticFormatter.formatCore(
+                                incColMsg,
+                                StvnDiagnosticCodes.ERR_NAMESPACE_COLLISION
+                            ),
+                            ProblemHighlightType.GENERIC_ERROR
+                        );
+                    }
+                }
+            }
+        }
+
+        List<UseStmt> rootUseStmts = new ArrayList<>();
+        for (DefsElement elem : defsEntry.getDefsElementList()) {
+            if (elem.getUseStmt() != null) {
+                rootUseStmts.add(elem.getUseStmt());
+            }
+        }
+        validateScopeUseStatements(file, rootUseStmts, localRootNames, holder);
+    }
+
+    private static void validatePackageScope(PsiFile file, PackageEnclosure pkgEnclosure, ProblemsHolder holder) {
+        if (pkgEnclosure.getPackagePath() == null
+                || StvnTrailingSlashInspection.hasTrailingSlash(pkgEnclosure.getPackagePath())) {
+            return;
+        }
+        String pkgPath = StvnTrailingSlashInspection.extractNonCommentText(pkgEnclosure.getPackagePath()).trim();
+        if (pkgPath.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(pkgPath)
+                || StvnNamespaceRules.isReservedPackage(pkgPath)) {
+            return;
+        }
+        Set<String> packageLocalDeclared = new LinkedHashSet<>();
+        List<UseStmt> pkgUseStmts = new ArrayList<>();
+        for (PackageElement pe : pkgEnclosure.getPackageElementList()) {
+            if (pe.getUseStmt() != null) {
+                pkgUseStmts.add(pe.getUseStmt());
+            } else if (pe.getTypeDefinition() != null && pe.getTypeDefinition().getTypeDefTarget() != null) {
+                packageLocalDeclared.add(pe.getTypeDefinition().getTypeDefTarget().getText().trim());
+            } else if (pe.getConstantDefinition() != null && pe.getConstantDefinition().getValueKeyword() != null) {
+                packageLocalDeclared.add(pe.getConstantDefinition().getValueKeyword().getText().trim());
+            }
+        }
+        validateScopeUseStatements(file, pkgUseStmts, packageLocalDeclared, holder);
+    }
+
+    private static void validateScopeUseStatements(
+            PsiFile file,
+            List<UseStmt> useStmts,
+            Set<String> localDeclaredNames,
+            ProblemsHolder holder
+    ) {
+        Set<String> seenValidTargets = new HashSet<>();
+        Map<String, List<PsiScopeClaim>> typeClaimsBySymbol = new LinkedHashMap<>();
+        Map<String, List<PsiScopeClaim>> constClaimsBySymbol = new LinkedHashMap<>();
+
+        for (UseStmt useStmt : useStmts) {
+            for (UseElement ue : useStmt.getUseElementList()) {
+                UseTarget useTarget = ue.getUseTarget();
+                if (useTarget == null
+                        || useTarget.getUseTargetIllegal() != null
+                        || StvnTrailingSlashInspection.hasTrailingSlash(useTarget)) {
+                    continue;
+                }
+                String pkg = StvnTrailingSlashInspection.extractNonCommentText(useTarget).trim();
+                if (pkg.isEmpty() || StvnVocabulary.SIGIL_TYPIC.equals(pkg)) {
+                    continue;
+                }
+                if (StvnTypeReference.isStructurallyValidUseElementForDedup(ue) && !seenValidTargets.add(pkg)) {
+                    String dupTargetMsg = "Duplicate '"
+                        + StvnVocabulary.KEYWORD_USE
+                        + "' target '"
+                        + pkg
+                        + "' in the same scope; consolidate bindings into a single '"
+                        + StvnVocabulary.KEYWORD_USE
+                        + "' entry";
+                    holder.registerProblem(
+                        ue,
+                        StvnDiagnosticFormatter.formatCore(
+                            dupTargetMsg,
+                            StvnDiagnosticCodes.ERR_DUPLICATE_MODULE_IMPORT
+                        ),
+                        ProblemHighlightType.GENERIC_ERROR,
+                        new StvnRemoveDuplicateUseEntryQuickFix(ue)
+                    );
+                    continue;
+                }
+
+                Set<String> evictedSimpleNames = new HashSet<>();
+                Set<String> seenCanonicalPairs = new HashSet<>();
+                UseAliasBlock aliasBlock = ue.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (UseMapAlias alias : aliasBlock.getUseMapAliasList()) {
+                        String rawLhs = StvnReplaceStripWithExplicitAliasesQuickFix.extractAliasLhsText(alias);
+                        String rawRhs = StvnReplaceStripWithExplicitAliasesQuickFix.extractAliasRhsText(alias);
+                        PsiElement rhsElem = StvnReplaceStripWithExplicitAliasesQuickFix.extractAliasRhsElement(alias);
+                        if (rawLhs == null || rawRhs == null || rhsElem == null) {
+                            continue;
+                        }
+                        String canonicalLhs = canonicalizeUseAliasLhs(pkg, rawLhs);
+                        if (!seenCanonicalPairs.add(canonicalLhs + "=>" + rawRhs)) {
+                            String dupPairMsg = "Duplicate '"
+                                + StvnVocabulary.KEYWORD_USE
+                                + "' alias mapping '"
+                                + rawLhs + " " + rawRhs
+                                + "' in '"
+                                + pkg
+                                + "'; remove the redundant alias entry";
+                            holder.registerProblem(
+                                alias,
+                                StvnDiagnosticFormatter.formatCore(
+                                    dupPairMsg,
+                                    StvnDiagnosticCodes.ERR_DUPLICATE_MODULE_IMPORT
+                                ),
+                                ProblemHighlightType.GENERIC_ERROR,
+                                new StvnRemoveDuplicateUseAliasQuickFix(alias)
+                            );
+                            continue;
+                        }
+
+                        evictedSimpleNames.add(StvnReplaceStripWithExplicitAliasesQuickFix.toSimpleSymbolName(rawLhs));
+                        Map<String, List<PsiScopeClaim>> targetMap = rawRhs.startsWith(StvnVocabulary.SIGIL_VALUE)
+                            ? constClaimsBySymbol
+                            : typeClaimsBySymbol;
+                        targetMap.computeIfAbsent(rawRhs, k -> new ArrayList<>())
+                            .add(new PsiScopeClaim(false, rhsElem, ""));
+                    }
+                }
+
+                if (StvnPsiUtils.hasValidStripOption(ue.getUseOptionsBlock())) {
+                    List<String> exported = StvnReplaceStripWithExplicitAliasesQuickFix
+                        .collectExportedPackageSymbolsInOrder(file, pkg);
+                    for (String sym : exported) {
+                        if (evictedSimpleNames.contains(sym)) {
+                            continue;
+                        }
+                        Map<String, List<PsiScopeClaim>> targetMap = sym.startsWith(StvnVocabulary.SIGIL_VALUE)
+                            ? constClaimsBySymbol
+                            : typeClaimsBySymbol;
+                        targetMap.computeIfAbsent(sym, k -> new ArrayList<>())
+                            .add(new PsiScopeClaim(true, ue, pkg + "::" + sym));
+                    }
+                }
+            }
+        }
+
+        Map<PsiElement, LinkedHashSet<String>> collisionsByAnchor = new LinkedHashMap<>();
+        resolvePsiScopeClaims(typeClaimsBySymbol, localDeclaredNames, collisionsByAnchor);
+        resolvePsiScopeClaims(constClaimsBySymbol, localDeclaredNames, collisionsByAnchor);
+
+        for (var colEntry : collisionsByAnchor.entrySet()) {
+            PsiElement anchor = colEntry.getKey();
+            List<String> collidingSymbols = new ArrayList<>(colEntry.getValue());
+            String formattedMsg = StvnDiagnosticFormatter.formatCore(
+                formatUseCollisionMessage(collidingSymbols),
+                StvnDiagnosticCodes.ERR_NAMESPACE_COLLISION
+            );
+            if (anchor instanceof UseElement ue) {
+                holder.registerProblem(
+                    ue,
+                    formattedMsg,
+                    ProblemHighlightType.GENERIC_ERROR,
+                    new StvnReplaceStripWithExplicitAliasesQuickFix(ue)
+                );
+            } else {
+                holder.registerProblem(anchor, formattedMsg, ProblemHighlightType.GENERIC_ERROR);
+            }
+        }
+    }
+
+    private static void resolvePsiScopeClaims(
+            Map<String, List<PsiScopeClaim>> claimsBySymbol,
+            Set<String> localDeclaredNames,
+            Map<PsiElement, LinkedHashSet<String>> collisionsByAnchorOut
+    ) {
+        for (var entry : claimsBySymbol.entrySet()) {
+            String sym = entry.getKey();
+            List<PsiScopeClaim> claims = entry.getValue();
+            if (localDeclaredNames.contains(sym)) {
+                for (PsiScopeClaim c : claims) {
+                    if (!c.rawStripImport()) {
+                        collisionsByAnchorOut.computeIfAbsent(c.anchor(), k -> new LinkedHashSet<>()).add(sym);
+                    }
+                }
+                continue;
+            }
+            List<PsiScopeClaim> activeClaims = new ArrayList<>();
+            Set<String> seenRawOrigins = new HashSet<>();
+            for (PsiScopeClaim c : claims) {
+                if (!c.rawStripImport()) {
+                    activeClaims.add(c);
+                } else if (seenRawOrigins.add(c.originKey())) {
+                    activeClaims.add(c);
+                }
+            }
+            if (activeClaims.size() > 1) {
+                activeClaims.sort(
+                    java.util.Comparator
+                        .comparingInt((PsiScopeClaim c) -> c.anchor().getTextRange().getStartOffset())
+                        .thenComparingInt(c -> c.anchor().getTextRange().getEndOffset())
+                );
+                for (int i = 1; i < activeClaims.size(); i++) {
+                    collisionsByAnchorOut.computeIfAbsent(activeClaims.get(i).anchor(), k -> new LinkedHashSet<>())
+                        .add(sym);
+                }
+            }
+        }
+    }
+
+    private static String formatUseCollisionMessage(List<String> collidingSymbols) {
+        return "Namespace collision(s) in '"
+            + StvnVocabulary.KEYWORD_USE
+            + "': "
+            + StvnVocabulary.DELIM_OPEN_BRACKET
+            + String.join(", ", collidingSymbols)
+            + StvnVocabulary.DELIM_CLOSE_BRACKET
+            + "; replace '"
+            + StvnVocabulary.FACET_KW_STRIP
+            + "' with explicit symbol aliases or rename colliding '"
+            + StvnVocabulary.KEYWORD_USE
+            + "' aliases";
+    }
+
+    private static String canonicalizeUseAliasLhs(String pkg, String rawLhs) {
+        if (rawLhs.indexOf('/') >= 0) {
+            return rawLhs;
+        }
+        if (rawLhs.startsWith(StvnVocabulary.SIGIL_VALUE)) {
+            return StvnVocabulary.SIGIL_VALUE + pkg.substring(1) + "/" + rawLhs.substring(1);
+        }
+        return pkg + "/" + rawLhs.substring(1);
+    }
+
+    private static boolean isDuplicateValidUseElementInScope(UseElement targetElem, String targetPkg) {
+        if (!StvnTypeReference.isStructurallyValidUseElementForDedup(targetElem)) {
+            return false;
+        }
+        PackageEnclosure pkgEnc = PsiTreeUtil.getParentOfType(targetElem, PackageEnclosure.class);
+        List<UseStmt> scopeStmts = new ArrayList<>();
+        if (pkgEnc != null) {
+            for (PackageElement pe : pkgEnc.getPackageElementList()) {
+                if (pe.getUseStmt() != null) {
+                    scopeStmts.add(pe.getUseStmt());
+                }
+            }
+        } else {
+            DefsEntry defs = PsiTreeUtil.getParentOfType(targetElem, DefsEntry.class);
+            if (defs != null) {
+                for (DefsElement de : defs.getDefsElementList()) {
+                    if (de.getUseStmt() != null) {
+                        scopeStmts.add(de.getUseStmt());
+                    }
+                }
+            }
+        }
+        for (UseStmt stmt : scopeStmts) {
+            for (UseElement ue : stmt.getUseElementList()) {
+                if (ue == targetElem) {
+                    return false;
+                }
+                if (!StvnTypeReference.isStructurallyValidUseElementForDedup(ue) || ue.getUseTarget() == null) {
+                    continue;
+                }
+                String pkg = StvnTrailingSlashInspection.extractNonCommentText(ue.getUseTarget()).trim();
+                if (targetPkg.equals(pkg)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether {@code file} prohibits {@code :include} statements ({@code E005})
+     * under STVN 2.0.0 Specification § 1.2 across physical hermetic extensions
+     * ({@code .stvn}, {@code .stvn_d}, {@code .stvn_b}, {@code .stvn_bd}) and explicit
      * {@code #kind #BODY} or {@code #kind #DEFS} headers.
      *
      * @param file target PSI file, or {@code null}

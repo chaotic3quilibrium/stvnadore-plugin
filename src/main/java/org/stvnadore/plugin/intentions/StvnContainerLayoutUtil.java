@@ -136,6 +136,28 @@ public final class StvnContainerLayoutUtil {
         }
         CharSequence chars = file.getViewProvider().getContents();
         for (PsiElement cur = leaf; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
+            if (cur instanceof MapLiteral mapLit) {
+                ASTNode mapOpen = findOpenDelim(mapLit);
+                ASTNode mapClose = findCloseDelim(mapLit);
+                if (mapOpen != null && mapClose != null && !isSingleLineSpan(chars, mapOpen, mapClose)) {
+                    MapEntrySlice enclosingSlice = findEnclosingMapEntrySlice(mapLit, caretOffset);
+                    if (enclosingSlice != null && isSingleLineSpan(chars, enclosingSlice.lbrack(), enclosingSlice.rbrack())) {
+                        if (PsiTreeUtil.hasErrorElements(enclosingSlice.keyValue())
+                                || PsiTreeUtil.hasErrorElements(enclosingSlice.entryValue())) {
+                            return null;
+                        }
+                        String sliceIndent = lineIndentOfOffset(chars, enclosingSlice.lbrack().getStartOffset());
+                        String expandedSlice = renderExpandedMapEntrySlice(enclosingSlice, sliceIndent);
+                        return new LayoutOperation(
+                            enclosingSlice.textRange(),
+                            expandedSlice,
+                            computeCaretProximityPriority(
+                                file, caretOffset, mapLit, enclosingSlice.lbrack(), enclosingSlice.rbrack()
+                            )
+                        );
+                    }
+                }
+            }
             PsiElement candidate = normalizeEnumCandidate(cur);
             if (!isExpandableContainerKind(candidate)) {
                 continue;
@@ -534,7 +556,15 @@ public final class StvnContainerLayoutUtil {
             }
             StringBuilder sb = new StringBuilder(StvnVocabulary.DELIM_OPEN_BRACE);
             for (MapEntrySlice slice : slices) {
-                sb.append('\n').append(childIndent).append(renderCollapsedMapEntry(slice));
+                boolean sliceCollapsible = isRangeSafeToCollapse(map.getNode(), slice.lbrack(), slice.rbrack())
+                    && isSingleLineSpan(chars, slice.keyValue().getNode(), slice.keyValue().getNode())
+                    && isSingleLineSpan(chars, slice.entryValue().getNode(), slice.entryValue().getNode());
+                sb.append('\n').append(childIndent);
+                if (sliceCollapsible) {
+                    sb.append(renderCollapsedMapEntry(slice));
+                } else {
+                    sb.append(renderExpandedMapEntrySlice(slice, childIndent));
+                }
             }
             sb.append('\n').append(baseIndent).append(StvnVocabulary.DELIM_CLOSE_BRACE);
             return sb.toString();
@@ -905,6 +935,40 @@ public final class StvnContainerLayoutUtil {
             + " "
             + renderCollapsedValue(slice.entryValue())
             + StvnVocabulary.DELIM_CLOSE_BRACKET;
+    }
+
+    private static String renderExpandedMapEntrySlice(MapEntrySlice slice, String sliceIndent) {
+        String slotIndent = sliceIndent + INDENT_STEP;
+        String keyRendered = isSubtreeSafeToCollapse(slice.keyValue().getNode())
+            ? renderCollapsedValue(slice.keyValue())
+            : reindentMultiLineValueText(slice.keyValue(), slotIndent);
+        String valRendered = isSubtreeSafeToCollapse(slice.entryValue().getNode())
+            ? renderCollapsedValue(slice.entryValue())
+            : reindentMultiLineValueText(slice.entryValue(), slotIndent);
+        return StvnVocabulary.DELIM_OPEN_BRACKET
+            + "\n" + slotIndent + keyRendered
+            + "\n" + slotIndent + valRendered
+            + "\n" + sliceIndent + StvnVocabulary.DELIM_CLOSE_BRACKET;
+    }
+
+    private static String reindentMultiLineValueText(Value val, String targetSlotIndent) {
+        PsiElement strChild = val.getStringLiteral();
+        if (strChild != null && strChild.getNode().findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
+            boolean preserve = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(strChild);
+            var decodedOpt = org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator.decodeStringLiteral(strChild.getText(), preserve);
+            String raw = strChild.getText();
+            int closeBrack = raw.indexOf(StvnVocabulary.DELIM_CLOSE_BRACKET, 4);
+            if (decodedOpt.isPresent() && raw.startsWith("\"\"\"" + StvnVocabulary.DELIM_OPEN_BRACKET) && closeBrack > 4) {
+                String tag = raw.substring(4, closeBrack);
+                return org.stvnadore.plugin.intentions.StvnConvertEscapedStringToFencedIntention.renderFencedLiteral(
+                    decodedOpt.get(),
+                    tag,
+                    preserve,
+                    targetSlotIndent.length()
+                );
+            }
+        }
+        return val.getText().trim();
     }
 
     private static TextRange replacementRangeForContainer(PsiElement container) {

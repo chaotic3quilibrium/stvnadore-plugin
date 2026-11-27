@@ -2,7 +2,7 @@
 <body>
 Converts a valid STVN 2.0.0 Rule <code>STR-04</code> fenced string block (<code>"""[TAG]...[TAG]"""</code>) into a canonically escaped single-line double-quoted string literal (<code>"..."</code>).
 <p>
-Decodes the fenced string body using context-sensitive <code>#preserveIndent</code> rules (always stripping common leading ASCII-space indentation on inline <code>#regex</code> and string bound facets per STVN Specification &sect; 5.3) and escapes quotes, backslashes, tabs, and line breaks for lossless round-trip closure.
+Decodes the fenced string body using context-sensitive <code>#preserveIndent</code> rules (always stripping common leading ASCII-space indentation on inline <code>#regex</code> and string bound facets per STVN Specification &sect; 5.3) and escapes quotes, backslashes, tabs, and line breaks for lossless round-trip closure. When <b>Escape non-ASCII characters as \uXXXX when converting to simple strings</b> is enabled in <b>Settings | Languages &amp; Frameworks | STVN</b>, characters above <code>0x7F</code> are encoded as uppercase 4-hex <code>\uXXXX</code> sequences.
 </p>
 </body>
 </html>

@@ -532,6 +532,22 @@
             <description>Convert fenced string to escaped string</description>
         </intentionAction>
 
+        <!-- 13g. Intention Action for Escaping Non-ASCII Characters as \uXXXX in Simple Strings -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnEscapeNonAsciiInStringIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnEscapeNonAsciiInStringIntention</descriptionDirectoryName>
+            <description>Escape non-ASCII characters as \uXXXX</description>
+        </intentionAction>
+
+        <!-- 13h. Intention Action for Unescaping Safe \uXXXX Sequences to UTF-8 in Simple Strings -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnUnescapeUnicodeInStringIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnUnescapeUnicodeInStringIntention</descriptionDirectoryName>
+            <description>Unescape \uXXXX sequences to UTF-8</description>
+        </intentionAction>
+
         <!-- 14. Schema-Driven Skeleton Generator Intention Action -->
         <intentionAction>
             <className>org.stvnadore.plugin.actions.StvnSchemaSkeletonIntentionAction</className>

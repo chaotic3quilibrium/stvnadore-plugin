@@ -242,6 +242,9 @@ public final class StvnNamespaceSymbolCollector {
         String rawShort = StvnVocabulary.SIGIL_TYPIC + fqni.substring(lastSlash + 1);
 
         ProjectedBinding strippedCandidate = null;
+        List<ProjectedBinding> aliasMatches = new ArrayList<>();
+        Set<String> distinctLocalNames = new HashSet<>();
+        Set<String> seenValidTargets = new HashSet<>();
         for (var use : PsiTreeUtil.findChildrenOfType(file, UseStmt.class)) {
             if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null
                     || StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
@@ -249,7 +252,14 @@ public final class StvnNamespaceSymbolCollector {
             }
             for (var useElem : use.getUseElementList()) {
                 var target = useElem.getUseTarget();
-                if (target == null || target.getUseTargetIllegal() != null || !target.getText().trim().equals(pkgPath)) {
+                if (target == null || target.getUseTargetIllegal() != null) {
+                    continue;
+                }
+                String elemPkg = target.getText().trim();
+                if (StvnTypeReference.isStructurallyValidUseElementForDedup(useElem) && !seenValidTargets.add(elemPkg)) {
+                    continue;
+                }
+                if (!elemPkg.equals(pkgPath)) {
                     continue;
                 }
                 boolean evictedInThisElem = false;
@@ -265,12 +275,15 @@ public final class StvnNamespaceSymbolCollector {
                                 if (remoteText.equals(rawShort) || remoteText.equals(fqni)) {
                                     evictedInThisElem = true;
                                     if (localKw != null) {
-                                        return new ProjectedBinding(
-                                            localKw.getText().trim(),
-                                            pkgPath,
-                                            fqni,
-                                            localKw
-                                        );
+                                        String localText = localKw.getText().trim();
+                                        if (distinctLocalNames.add(localText)) {
+                                            aliasMatches.add(new ProjectedBinding(
+                                                localText,
+                                                pkgPath,
+                                                fqni,
+                                                localKw
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -281,6 +294,12 @@ public final class StvnNamespaceSymbolCollector {
                     strippedCandidate = new ProjectedBinding(rawShort, pkgPath, fqni, useElem);
                 }
             }
+        }
+        if (aliasMatches.size() == 1) {
+            return aliasMatches.get(0);
+        }
+        if (!aliasMatches.isEmpty()) {
+            return null;
         }
         return strippedCandidate;
     }
@@ -295,6 +314,9 @@ public final class StvnNamespaceSymbolCollector {
         String rawShort = StvnVocabulary.SIGIL_VALUE + constFqni.substring(lastSlash + 1);
 
         ProjectedBinding strippedCandidate = null;
+        List<ProjectedBinding> aliasMatches = new ArrayList<>();
+        Set<String> distinctLocalNames = new HashSet<>();
+        Set<String> seenValidTargets = new HashSet<>();
         for (var use : PsiTreeUtil.findChildrenOfType(file, UseStmt.class)) {
             if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null
                     || StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
@@ -302,7 +324,14 @@ public final class StvnNamespaceSymbolCollector {
             }
             for (var useElem : use.getUseElementList()) {
                 var target = useElem.getUseTarget();
-                if (target == null || target.getUseTargetIllegal() != null || !target.getText().trim().equals(pkgPath)) {
+                if (target == null || target.getUseTargetIllegal() != null) {
+                    continue;
+                }
+                String elemPkg = target.getText().trim();
+                if (StvnTypeReference.isStructurallyValidUseElementForDedup(useElem) && !seenValidTargets.add(elemPkg)) {
+                    continue;
+                }
+                if (!elemPkg.equals(pkgPath)) {
                     continue;
                 }
                 boolean evictedInThisElem = false;
@@ -318,12 +347,15 @@ public final class StvnNamespaceSymbolCollector {
                                 if (remoteText.equals(rawShort) || remoteText.equals(constFqni)) {
                                     evictedInThisElem = true;
                                     if (localKw != null) {
-                                        return new ProjectedBinding(
-                                            localKw.getText().trim(),
-                                            pkgPath,
-                                            constFqni,
-                                            localKw
-                                        );
+                                        String localText = localKw.getText().trim();
+                                        if (distinctLocalNames.add(localText)) {
+                                            aliasMatches.add(new ProjectedBinding(
+                                                localText,
+                                                pkgPath,
+                                                constFqni,
+                                                localKw
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -334,6 +366,12 @@ public final class StvnNamespaceSymbolCollector {
                     strippedCandidate = new ProjectedBinding(rawShort, pkgPath, constFqni, useElem);
                 }
             }
+        }
+        if (aliasMatches.size() == 1) {
+            return aliasMatches.get(0);
+        }
+        if (!aliasMatches.isEmpty()) {
+            return null;
         }
         return strippedCandidate;
     }
@@ -403,6 +441,7 @@ public final class StvnNamespaceSymbolCollector {
         }
 
         // 3. Root-level :use projections (enforcing STVN § 4.2 eviction; un-imported :package internals excluded)
+        var seenRootUseTargets = new HashSet<String>();
         for (var use : PsiTreeUtil.findChildrenOfType(file, UseStmt.class)) {
             if (PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) != null
                     || StvnMetaTemplateUtil.isInSecondaryRootSection(use)) {
@@ -415,7 +454,11 @@ public final class StvnNamespaceSymbolCollector {
                     continue;
                 }
                 String targetPkg = target.getText().trim();
+                if (StvnTypeReference.isStructurallyValidUseElementForDedup(useElem) && !seenRootUseTargets.add(targetPkg)) {
+                    continue;
+                }
                 var evictedRawNames = new HashSet<String>();
+                var seenPairs = new HashSet<String>();
                 var aliasBlock = useElem.getUseAliasBlock();
                 if (aliasBlock != null) {
                     for (var alias : aliasBlock.getUseMapAliasList()) {
@@ -423,12 +466,17 @@ public final class StvnNamespaceSymbolCollector {
                         if (typeList.size() >= 2) {
                             var remoteKw = typeList.get(0);
                             var localKw = typeList.get(1);
-                            if (remoteKw != null) {
-                                evictedRawNames.add(remoteKw.getText().trim());
-                            }
                             if (localKw != null && remoteKw != null) {
+                                String rawRemote = remoteKw.getText().trim();
                                 String localName = localKw.getText().trim();
-                                String upstreamFqni = qualifyTypeWithPackage(targetPkg, remoteKw.getText().trim());
+                                String upstreamFqni = qualifyTypeWithPackage(targetPkg, rawRemote);
+                                if (!seenPairs.add(upstreamFqni + "=>" + localName)) {
+                                    continue;
+                                }
+                                int slash = rawRemote.lastIndexOf('/');
+                                evictedRawNames.add(slash >= 0
+                                    ? (StvnVocabulary.SIGIL_TYPIC + rawRemote.substring(slash + 1))
+                                    : rawRemote);
                                 if (processedNames.add(localName)) {
                                     String resolvedType = resolveImportedTypeStructure(file, upstreamFqni);
                                     TypeDefinition upstreamTd = resolveUpstreamTypeForUseAlias(file, remoteKw, upstreamFqni);
@@ -453,14 +501,19 @@ public final class StvnNamespaceSymbolCollector {
                         if (valList.size() >= 2) {
                             var remoteKw = valList.get(0);
                             var localKw = valList.get(1);
-                            if (remoteKw != null) {
-                                evictedRawNames.add(remoteKw.getText().trim());
-                            }
                             if (localKw != null && remoteKw != null) {
+                                String rawRemote = remoteKw.getText().trim();
                                 String localName = localKw.getText().trim();
-                                String upstreamConstFqni = buildConstantFqni(targetPkg, remoteKw.getText().trim());
+                                String upstreamConstFqni = buildConstantFqni(targetPkg, rawRemote);
+                                if (!seenPairs.add(upstreamConstFqni + "=>" + localName)) {
+                                    continue;
+                                }
+                                int slash = rawRemote.lastIndexOf('/');
+                                evictedRawNames.add(slash >= 0
+                                    ? (StvnVocabulary.SIGIL_VALUE + rawRemote.substring(slash + 1))
+                                    : rawRemote);
                                 if (processedNames.add(localName)) {
-                                    String resolvedType = resolveImportedConstantType(file, targetPkg, remoteKw.getText().trim());
+                                    String resolvedType = resolveImportedConstantType(file, targetPkg, rawRemote);
                                     ConstantDefinition upstreamCd = resolveUpstreamConstForUseAlias(
                                         file,
                                         remoteKw,
@@ -1389,7 +1442,29 @@ public final class StvnNamespaceSymbolCollector {
         boolean isPrelude = defFile != null && StvnPreludeBridge.isPreludeFile(defFile);
         String canonicalFqni = buildCanonicalTypeDefFqni(targetDef);
         String resolvedSchemaText = resolveFormattedTypeStructure(targetDef, new HashSet<>());
-        String identityKey = (defFile != null ? defFile.getName() : "") + "::" + canonicalFqni;
+        String baseIdentityPrefix = (defFile != null ? defFile.getName() : "") + "::" + canonicalFqni;
+
+        if (directUseAlias != null
+                && directUseAlias.getTypeKeywordList().size() >= 2
+                && PsiTreeUtil.getParentOfType(directUseAlias, PackageEnclosure.class) == null
+                && directUseAlias.getContainingFile() == rootFile) {
+            TypeKeyword localKw = directUseAlias.getTypeKeywordList().get(1);
+            UseElement parentUseElem = PsiTreeUtil.getParentOfType(directUseAlias, UseElement.class);
+            if (localKw != null && parentUseElem != null && parentUseElem.getUseTarget() != null) {
+                String localName = localKw.getText().trim();
+                String sourcePkg = parentUseElem.getUseTarget().getText().trim();
+                return new ResolvedTypeSymbol(
+                    baseIdentityPrefix + "::local=" + localName,
+                    localName,
+                    sourcePkg,
+                    canonicalFqni,
+                    resolvedSchemaText,
+                    localKw,
+                    targetDef,
+                    false
+                );
+            }
+        }
 
         ProjectedBinding rootBinding = findRootUseBindingForTypeFqni(rootFile, canonicalFqni);
         if (rootBinding != null) {
@@ -1397,7 +1472,7 @@ public final class StvnNamespaceSymbolCollector {
                 ? rootBinding.localBindingElement()
                 : defKw;
             return new ResolvedTypeSymbol(
-                identityKey,
+                baseIdentityPrefix + "::local=" + rootBinding.localName(),
                 rootBinding.localName(),
                 rootBinding.sourcePackage(),
                 canonicalFqni,
@@ -1407,6 +1482,8 @@ public final class StvnNamespaceSymbolCollector {
                 false
             );
         }
+
+        String identityKey = baseIdentityPrefix + "::local=" + canonicalFqni;
 
         if (isPrelude) {
             String preludePkg = StvnPreludeBridge.getPreludePackagePath(targetDef);
@@ -1459,11 +1536,35 @@ public final class StvnNamespaceSymbolCollector {
         PsiFile defFile = constDef.getContainingFile();
         boolean isPrelude = defFile != null && StvnPreludeBridge.isPreludeFile(defFile);
         String canonicalConstFqni = buildCanonicalConstantDefFqni(constDef);
+        String baseIdentityPrefix = (defFile != null ? defFile.getName() : "") + "::" + canonicalConstFqni;
+
+        if (directReferenceTarget instanceof ValueKeyword directLocalKw
+                && directLocalKw.getParent() instanceof UseMapAlias directUseAlias
+                && PsiTreeUtil.getParentOfType(directUseAlias, PackageEnclosure.class) == null
+                && directUseAlias.getContainingFile() == rootFile) {
+            UseElement parentUseElem = PsiTreeUtil.getParentOfType(directUseAlias, UseElement.class);
+            if (parentUseElem != null && parentUseElem.getUseTarget() != null) {
+                String localName = directLocalKw.getText().trim();
+                String sourcePkg = parentUseElem.getUseTarget().getText().trim();
+                String resolvedConstType = formatConstantResolvedType(constDef, rootFile, true);
+                return new ResolvedConstantSymbol(
+                    baseIdentityPrefix + "::local=" + localName,
+                    localName,
+                    sourcePkg,
+                    canonicalConstFqni,
+                    resolvedConstType,
+                    directLocalKw,
+                    false
+                );
+            }
+        }
+
         ProjectedBinding rootBinding = findRootUseBindingForConstantFqni(rootFile, canonicalConstFqni);
         boolean applyRootProjection = rootBinding != null
             || (!isPrelude && PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class) == null);
         String resolvedConstType = formatConstantResolvedType(constDef, rootFile, applyRootProjection);
-        String identityKey = (defFile != null ? defFile.getName() : "") + "::" + canonicalConstFqni;
+        String identityKey = baseIdentityPrefix + "::local="
+            + (rootBinding != null ? rootBinding.localName() : canonicalConstFqni);
 
         if (rootBinding != null) {
             PsiElement navTarget = rootBinding.localBindingElement() instanceof ValueKeyword

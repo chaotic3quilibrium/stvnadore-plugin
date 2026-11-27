@@ -1,0 +1,8 @@
+<html>
+<body>
+Encodes raw non-ASCII characters (<code>&gt; 0x7F</code>) inside a single-line STVN simple string literal (<code>"..."</code>) as uppercase 4-hex <code>\uXXXX</code> escape sequences.
+<p>
+Preserves all existing escape sequences (<code>\n</code>, <code>\r</code>, <code>\t</code>, <code>\"</code>, <code>\\</code>, <code>\b</code>, <code>\f</code>, and existing <code>\uXXXX</code> sequences) verbatim while encoding BMP and supplementary UTF-16 surrogate pairs (such as emoji and ZWJ sequences) in canonical uppercase hexadecimal form.
+</p>
+</body>
+</html>
