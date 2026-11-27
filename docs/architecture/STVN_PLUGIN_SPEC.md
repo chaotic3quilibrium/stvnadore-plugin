@@ -607,6 +607,21 @@ flowchart LR
     WaterSolver --> CycleFit["Alt+Shift+R Fitted (100% Use Depth Visible) and Alt+R Unconstrained Cycle"]
 ```
 
+### 4.40 Repo-Wide `:package` Lexical Scope Isolation & Derived Nominal `Resolved Type` Lineage
+- **Centralized Context-Sensitive `:Type` & `#CONST` Lexical Resolution (`Target 1`):**
+  - `StvnTypeReference.resolveTypeAtContext` / `resolveTypeDefinitionAtContext`, `StvnConstantReference.resolveConstantAtContext` / `resolveConstantDefinitionAtContext`, `StvnValueKeywordReference.findEnumDeclarationAtContext`, and `StvnTypeResolver.resolveIrSchemaAtContext` / `isDegradedNominalAlias(PsiElement, String)` enforce STVN 2.0.0 § 3.9 & § 4.2 lexical scoping uniformly across all 27 local inspections, quick-fix providers, `StvnPsiLiteralEvaluator`, `StvnExemplarValueGenerator`, completion contributors, hover documentation, and Namespace Browser collectors.
+  - Inside `PackageEnclosure` (`:package :p/q`), unqualified symbols resolve with strict local precedence (`co-located :p/q declarations -> merged :p/q declarations across :include modules -> package-local :use directives -> unshadowed root fallback`), eliminating sibling `:package` leakage, preventing root `:use { #strip }` bindings from overriding co-located `:package` declarations, failing closed on `:use` collisions, and purging cross-package raw/suffix catalog fallbacks from `StvnTypeResolver.resolveNominalIrSchema`.
+- **5-Tier Nominal Override Facet Merging & Uniform Parent Lineage in `StvnNamespaceSymbolCollector` (`Target 2`):**
+  - `StvnSchemaFormatter.formatMergedPsiMetadataMaps` merges nominal scalar/collection facet chains from base ancestor to derived child, evicting overridden keywords and same-mutex-group bounds/modes (`StvnMetadataOrderInspection.getMutexGroupId`) and sorting surviving facets in canonical § 6.1 5-tier order (`1.1.1` through `5.0`); `formatMergedEnumSubsetPsiMetadataMaps` preserves inherited explicit Tier-2 `#equatable` / `#comparable` overrides alongside child `#filterIncl` / `#filterExcl` filters.
+  - `StvnNamespaceSymbolCollector` renders derived nominal `TypeDefinition` rows as `[mergedFacets ]<DirectParent> (-> <Ancestor>... -> <BaseCtor>)` (for example, `{ #unsigned #size 16 #minIncl 100 #maxExcl 500 } :RepeaterId (-> :Int)` and `{ #filterIncl [#LOCKED #DEGRADED] } :PoweredLaserState (-> :LaserState -> :Enum)`) while preserving direct primitive, `:Enum[...]`, and composite constructor signatures unchanged.
+
+```mermaid
+flowchart LR
+    CtxSite["PSI Context Site (:package vs Root :defs)"] --> ScopeIso["Context-Aware Type, Constant, Enum and Pure-IR Resolution"]
+    ScopeIso --> ZeroFalsePos["0 False E012 Violations and Package-Accurate Clamp Quick-Fixes"]
+    DerivedDef["Derived Nominal TypeDefinition"] --> MergeFmt["5-Tier Mutex-Aware Facet Merge + (-> ... -> :Base) Parent Lineage"]
+```
+
 ---
 
 ## 5. Benchmarking & Quality Assurance Gates

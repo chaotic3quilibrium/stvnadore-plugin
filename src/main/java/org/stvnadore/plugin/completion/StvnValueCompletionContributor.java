@@ -130,14 +130,14 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
                                 // Terminal inferable leaf payload emission
                                 populateEnumVariants(pathTargetSchema, schemaToPopulate, label, targetResult);
                                 populateBooleanLiterals(schemaToPopulate, label, targetResult);
-                                populateMatchingConstants(file, schemaToPopulate, label, targetResult);
+                                populateMatchingConstants(position, schemaToPopulate, label, targetResult);
                                 populateDynamicGenerators(cleanSchemaText, label, targetResult);
                             }
                         }
                     }
 
                     // 6. Matching Defined Constants (#CONST in :defs / :include)
-                    populateMatchingConstants(file, targetSchema, typeLabel, targetResult);
+                    populateMatchingConstants(position, targetSchema, typeLabel, targetResult);
 
                     // 7. Dynamic Temporal & Prelude Generators
                     populateDynamicGenerators(schemaText, typeLabel, targetResult);
@@ -468,12 +468,12 @@ public final class StvnValueCompletionContributor extends CompletionContributor 
     }
 
     private static void populateMatchingConstants(
-        PsiFile file,
+        PsiElement contextSite,
         SchemaType expectedSchema,
         String typeLabel,
         CompletionResultSet result
     ) {
-        var constants = StvnTypeResolver.findAssignableConstants(file, expectedSchema);
+        var constants = StvnTypeResolver.findAssignableConstants(contextSite, expectedSchema);
         for (var constDef : constants) {
             var kw = constDef.getValueKeyword();
             if (kw == null) continue;

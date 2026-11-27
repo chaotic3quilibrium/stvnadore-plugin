@@ -146,17 +146,12 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
             if (!StvnVocabulary.isBaseScalarType(candidate)
                     && !StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(candidate)) {
                 parentAlias = candidate;
-                var resolvedParentElem = StvnTypeReference.resolveTypeInFile(
-                    metaMap.getContainingFile(),
-                    candidate,
-                    new HashSet<>()
-                );
-                var parentTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedParentElem);
+                var parentTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(targetKw, candidate);
                 if (parentTypeDef != null && parentTypeDef != enclosingTypeDef) {
                     parentIr = StvnTypeResolver.resolveNominalIrSchema(parentTypeDef);
                 }
                 if (parentIr == null) {
-                    parentIr = StvnTypeResolver.resolveIrSchemaByAlias(metaMap.getContainingFile(), candidate);
+                    parentIr = StvnTypeResolver.resolveIrSchemaAtContext(targetKw, candidate);
                 }
                 if (parentIr instanceof StvnSchema.PoisonedSchema poisonedParent) {
                     parentIr = poisonedParent.bestEffortFallback().orElse(null);
@@ -882,11 +877,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 return false;
             }
             try {
-                var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
-                if (targetDef == null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new HashSet<>());
-                    targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                }
+                var targetDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, typeName);
                 if (targetDef != null) {
                     var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
                     if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
@@ -894,7 +885,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                     }
                     return resolveFallbackTypeDefEquatable(targetDef, visited);
                 }
-                var aliasIr = StvnTypeResolver.resolveIrSchemaByAlias(field.getContainingFile(), typeName);
+                var aliasIr = StvnTypeResolver.resolveIrSchemaAtContext(kw, typeName);
                 if (aliasIr != null && !(aliasIr instanceof StvnSchema.PoisonedSchema)) {
                     return aliasIr.traits().equatable();
                 }
@@ -975,11 +966,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                 return false;
             }
             try {
-                var targetDef = StvnTypeResolver.findTypeDefinition(field.getContainingFile(), typeName, kw);
-                if (targetDef == null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(field.getContainingFile(), typeName, new HashSet<>());
-                    targetDef = StvnPsiUtils.getParentTypeDefinition(resolved);
-                }
+                var targetDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, typeName);
                 if (targetDef != null) {
                     var targetIr = StvnTypeResolver.resolveNominalIrSchema(targetDef);
                     if (targetIr != null && !(targetIr instanceof StvnSchema.PoisonedSchema)) {
@@ -987,7 +974,7 @@ public final class StvnRedundantFacetOverrideInspection extends LocalInspectionT
                     }
                     return resolveFallbackTypeDefComparable(targetDef, visited);
                 }
-                var aliasIr = StvnTypeResolver.resolveIrSchemaByAlias(field.getContainingFile(), typeName);
+                var aliasIr = StvnTypeResolver.resolveIrSchemaAtContext(kw, typeName);
                 if (aliasIr != null && !(aliasIr instanceof StvnSchema.PoisonedSchema)) {
                     return aliasIr.traits().comparable();
                 }

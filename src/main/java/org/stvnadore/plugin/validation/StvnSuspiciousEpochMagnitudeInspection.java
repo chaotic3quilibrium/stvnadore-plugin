@@ -368,9 +368,10 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
     private static @Nullable String resolveTimeEpochScaleFlag(SchemaType schemaType) {
         StvnSchema irSchema = StvnTypeResolver.resolveIrSchema(schemaType);
         if (irSchema == null && schemaType.getTypeKeyword() != null) {
-            String alias = schemaType.getTypeKeyword().getText().trim();
+            var kw = schemaType.getTypeKeyword();
+            String alias = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(alias)) {
-                irSchema = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), alias);
+                irSchema = StvnTypeResolver.resolveIrSchemaAtContext(kw, alias);
             }
         }
         if (irSchema instanceof StvnSchema.PoisonedSchema) {
@@ -383,9 +384,10 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
             return null;
         }
         if (schemaType.getTypeKeyword() != null) {
-            String alias = schemaType.getTypeKeyword().getText().trim();
+            var kw = schemaType.getTypeKeyword();
+            String alias = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(alias)
-                    && StvnTypeResolver.isDegradedNominalAlias(schemaType.getContainingFile(), alias)) {
+                    && StvnTypeResolver.isDegradedNominalAlias(kw, alias)) {
                 return null;
             }
         }
@@ -750,23 +752,6 @@ public final class StvnSuspiciousEpochMagnitudeInspection extends LocalInspectio
 
     private static @Nullable TypeDefinition resolveTargetTypeDef(SchemaType context, String aliasText) {
         var kw = context.getTypeKeyword();
-        if (kw != null) {
-            var ref = kw.getReference();
-            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-            TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-            if (td != null) {
-                return td;
-            }
-        }
-        var file = context.getContainingFile();
-        if (file != null) {
-            var resolved = StvnTypeReference.resolveTypeInFile(file, aliasText, new HashSet<>());
-            TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-            if (td != null) {
-                return td;
-            }
-            return StvnPsiUtils.getParentTypeDefinition(resolved);
-        }
-        return null;
+        return StvnTypeReference.resolveTypeDefinitionAtContext(kw != null ? kw : context, aliasText);
     }
 }

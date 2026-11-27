@@ -151,10 +151,8 @@ public final class StvnReorderEnumFilterVariantsQuickFix extends LocalQuickFixAn
         }
 
         var kw = governingSchema.getTypeKeyword();
-        var file = variantList.getContainingFile();
-        if (kw != null && file != null) {
-            var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-            var targetTd = StvnPsiUtils.resolveTargetTypeDefinition(target);
+        if (kw != null) {
+            var targetTd = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
             if (targetTd != null) {
                 var tdSubset = StvnTypeResolver.resolveEnumSubset(targetTd);
                 if (tdSubset != null && !tdSubset.rootVariants().isEmpty()) {

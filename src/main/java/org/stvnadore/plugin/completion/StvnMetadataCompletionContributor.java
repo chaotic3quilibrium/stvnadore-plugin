@@ -660,16 +660,10 @@ public final class StvnMetadataCompletionContributor extends CompletionContribut
 
     String targetBaseType = resolveTargetBaseTypeFromKeyword(nextText);
     if (targetBaseType.isEmpty()) {
-      var baseName = nextText.replaceAll("[^A-Za-z0-9_:]", "");
-      var file = position.getContainingFile();
-      if (file != null) {
-        var resolved = StvnTypeReference.resolveTypeInFile(file, baseName, new HashSet<>());
-        if (resolved != null) {
-          var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-          if (parentDef != null && parentDef.getSchemaType() != null) {
-            targetBaseType = resolveTargetBaseType(parentDef.getSchemaType());
-          }
-        }
+      var baseName = nextText.replaceAll("[^A-Za-z0-9_:/]", "");
+      var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(position, baseName);
+      if (parentDef != null && parentDef.getSchemaType() != null) {
+        targetBaseType = resolveTargetBaseType(parentDef.getSchemaType());
       }
     }
     if (targetBaseType.isEmpty()) {

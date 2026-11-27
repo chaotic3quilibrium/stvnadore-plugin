@@ -390,15 +390,16 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
 
         if ((localLowerEntry != null && localUpperEntry == null)
                 || (localLowerEntry == null && localUpperEntry != null)) {
-            var kw = schemaType.getTypeKeyword();
-            var file = schemaType.getContainingFile();
-            if (kw != null && file != null) {
-                var visited = new HashSet<String>();
-                String parentAlias = kw.getText().trim();
-                while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC) && visited.add(parentAlias)) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
-                    var parentDef = resolved != null ? PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class, false) : null;
-                    if (parentDef == null) {
+            var currKw = schemaType.getTypeKeyword();
+            if (currKw != null && schemaType.getContainingFile() != null) {
+                var visited = new HashSet<PsiElement>();
+                while (currKw != null) {
+                    String parentAlias = currKw.getText().trim();
+                    if (!parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+                        break;
+                    }
+                    var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(currKw, parentAlias);
+                    if (parentDef == null || !visited.add(parentDef)) {
                         break;
                     }
                     var parentMeta = parentDef.getMetadataMap() != null
@@ -443,9 +444,7 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
                         break;
                     }
                     var parentSchema = parentDef.getSchemaType();
-                    parentAlias = (parentSchema != null && parentSchema.getTypeKeyword() != null)
-                        ? parentSchema.getTypeKeyword().getText().trim()
-                        : null;
+                    currKw = parentSchema != null ? parentSchema.getTypeKeyword() : null;
                 }
             }
         }
@@ -839,8 +838,14 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         return false;
     }
 
-    private static boolean hasExactFacet(@NotNull SchemaType schemaType, Set<String> visited) {
+    private static boolean hasExactFacet(@NotNull SchemaType schemaType, Set<PsiElement> visited) {
+        if (!visited.add(schemaType)) {
+            return false;
+        }
         var metaMap = schemaType.getMetadataMap();
+        if (metaMap == null && schemaType.getParent() instanceof TypeDefinition td) {
+            metaMap = td.getMetadataMap();
+        }
         if (metaMap != null) {
             for (var e : metaMap.getMetadataEntryList()) {
                 if (e.getText().startsWith(StvnVocabulary.FACET_KW_EXACT)
@@ -852,27 +857,14 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
             var text = kw.getText().trim();
-            if (!visited.add(text)) {
-                return false;
-            }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return hasExactFacet(parentDef.getSchemaType(), visited);
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return hasExactFacet(parentDef.getSchemaType(), visited);
             }
         }
         var resolvedNominal = StvnTypeResolver.resolveNominalSchema(schemaType);
         if (resolvedNominal != null && resolvedNominal != schemaType) {
-            var resKw = resolvedNominal.getTypeKeyword();
-            String resText = resKw != null ? resKw.getText().trim() : resolvedNominal.getText().trim();
-            if (visited.add(resText)) {
-                return hasExactFacet(resolvedNominal, visited);
-            }
+            return hasExactFacet(resolvedNominal, visited);
         }
         return false;
     }
@@ -982,6 +974,13 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
     }
 
     private static String resolveBaseTypeString(SchemaType schemaType) {
+        return resolveBaseTypeString(schemaType, new HashSet<>());
+    }
+
+    private static String resolveBaseTypeString(SchemaType schemaType, Set<PsiElement> visited) {
+        if (!visited.add(schemaType)) {
+            return schemaType.getText().trim();
+        }
         var constructor = schemaType.getSchemaConstructor();
         if (constructor != null) {
             var atomic = constructor.getAtomicType();
@@ -992,15 +991,9 @@ public final class StvnDiscreteIntervalInspection extends LocalInspectionTool {
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
             var text = kw.getText().trim();
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType());
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveBaseTypeString(parentDef.getSchemaType(), visited);
             }
             return text;
         }

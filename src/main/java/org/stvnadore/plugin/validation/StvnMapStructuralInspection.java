@@ -110,15 +110,11 @@ public final class StvnMapStructuralInspection extends LocalInspectionTool {
         if (schema == null) return false;
         var kw = schema.getTypeKeyword();
         if (kw != null) {
-            var file = schema.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, kw.getText(), new HashSet<>());
-                var typeDef = org.stvnadore.plugin.psi.StvnPsiUtils.getParentTypeDefinition(resolved);
-                if (typeDef != null && typeDef.getMetadataMap() != null) {
-                    for (var entry : typeDef.getMetadataMap().getMetadataEntryList()) {
-                        if (entry.getText().startsWith(StvnVocabulary.FACET_KW_INVERTIBLE) || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
-                            return true;
-                        }
+            var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
+            if (typeDef != null && typeDef.getMetadataMap() != null) {
+                for (var entry : typeDef.getMetadataMap().getMetadataEntryList()) {
+                    if (entry.getText().startsWith(StvnVocabulary.FACET_KW_INVERTIBLE) || entry.getNode().findChildByType(StvnTypes.KW_INVERTIBLE) != null) {
+                        return true;
                     }
                 }
             }

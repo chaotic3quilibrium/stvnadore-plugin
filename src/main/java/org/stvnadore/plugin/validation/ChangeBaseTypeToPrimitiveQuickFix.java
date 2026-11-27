@@ -91,7 +91,7 @@ public final class ChangeBaseTypeToPrimitiveQuickFix extends LocalQuickFixAndInt
             return null;
         }
 
-        SchemaConstructor rootConstructor = resolveRootSchemaConstructor(file, nominalAlias);
+        SchemaConstructor rootConstructor = resolveRootSchemaConstructor(targetTypeKeyword, nominalAlias);
         if (rootConstructor == null) {
             return null;
         }
@@ -136,16 +136,15 @@ public final class ChangeBaseTypeToPrimitiveQuickFix extends LocalQuickFixAndInt
     }
 
     private static @Nullable SchemaConstructor resolveRootSchemaConstructor(
-            @NotNull PsiFile startFile,
+            @NotNull PsiElement startContext,
             @NotNull String startAlias
     ) {
         Set<PsiElement> visitedDefs = new HashSet<>();
-        PsiFile currentFile = startFile;
+        PsiElement currentContext = startContext;
         String currentAlias = startAlias;
 
         for (int hop = 0; hop < 32; hop++) {
-            var resolved = StvnTypeReference.resolveTypeInFile(currentFile, currentAlias, new HashSet<>());
-            var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+            var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(currentContext, currentAlias);
             if (typeDef == null || !visitedDefs.add(typeDef)) {
                 return null;
             }
@@ -165,16 +164,16 @@ public final class ChangeBaseTypeToPrimitiveQuickFix extends LocalQuickFixAndInt
             }
 
             String nextAlias = nextKw.getText().trim();
-            if (nextAlias.isEmpty() || nextAlias.equals(currentAlias)) {
+            if (nextAlias.isEmpty()) {
                 return null;
             }
 
             if (StvnVocabulary.isBaseScalarType(nextAlias)) {
-                var dummySchema = StvnElementFactory.createSchemaType(startFile.getProject(), nextAlias);
+                var dummySchema = StvnElementFactory.createSchemaType(startContext.getProject(), nextAlias);
                 return dummySchema.getSchemaConstructor();
             }
 
-            currentFile = typeDef.getContainingFile() != null ? typeDef.getContainingFile() : currentFile;
+            currentContext = nextKw;
             currentAlias = nextAlias;
         }
         return null;

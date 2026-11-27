@@ -243,15 +243,9 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
         if (kw != null) {
             var text = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(text)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    if (resolved != null) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return resolveFloatBitWidth(parentDef.getSchemaType());
-                        }
-                    }
+                var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+                if (parentDef != null && parentDef.getSchemaType() != null && parentDef.getSchemaType() != schemaType) {
+                    return resolveFloatBitWidth(parentDef.getSchemaType());
                 }
             }
         }
@@ -259,6 +253,17 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
     }
 
     private static boolean isExactActive(@Nullable MetadataMap metaMap, @NotNull SchemaType schemaType) {
+        return isExactActive(metaMap, schemaType, new HashSet<>());
+    }
+
+    private static boolean isExactActive(
+            @Nullable MetadataMap metaMap,
+            @NotNull SchemaType schemaType,
+            java.util.Set<com.intellij.psi.PsiElement> visited
+    ) {
+        if (!visited.add(schemaType)) {
+            return false;
+        }
         if (hasLocalExactFacet(metaMap)) {
             return true;
         }
@@ -266,15 +271,12 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
         if (kw != null) {
             var text = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(text)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    if (resolved != null) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return isExactActive(parentDef.getSchemaType().getMetadataMap(), parentDef.getSchemaType());
-                        }
-                    }
+                var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+                if (parentDef != null && parentDef.getSchemaType() != null) {
+                    var parentMeta = parentDef.getMetadataMap() != null
+                        ? parentDef.getMetadataMap()
+                        : parentDef.getSchemaType().getMetadataMap();
+                    return isExactActive(parentMeta, parentDef.getSchemaType(), visited);
                 }
             }
         }
@@ -331,15 +333,9 @@ public final class StvnFloatPrecisionLossInspection extends LocalInspectionTool 
             if (!visited.add(text)) {
                 return null;
             }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType(), visited);
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveBaseTypeString(parentDef.getSchemaType(), visited);
             }
         }
         return null;

@@ -662,10 +662,9 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         if (StvnVocabulary.TYPE_SEQ.equals(anchorText) || StvnVocabulary.TYPE_SET.equals(anchorText)) {
             return false;
         }
-        var file = schemaType.getContainingFile();
-        if (file != null && schemaType.getTypeKeyword() != null && visited.add(anchorText)) {
-            var resolved = StvnTypeReference.resolveTypeInFile(file, anchorText, new HashSet<>());
-            var parentDef = resolved != null ? PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class) : null;
+        var kw = schemaType.getTypeKeyword();
+        if (kw != null && visited.add(anchorText)) {
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, anchorText);
             if (parentDef != null && parentDef.getSchemaType() != null && parentDef.getSchemaType() != schemaType) {
                 return isMapCollection(parentDef.getSchemaType(), visited);
             }
@@ -1177,10 +1176,8 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
 
             var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
             if (parentDef == null && schemaType.getTypeKeyword() != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, schemaType.getTypeKeyword().getText().trim(), new java.util.HashSet<>());
-                if (resolved != null) {
-                    parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                }
+                var kw = schemaType.getTypeKeyword();
+                parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
             }
             if (parentDef != null) {
                 var metaMap = parentDef.getMetadataMap();

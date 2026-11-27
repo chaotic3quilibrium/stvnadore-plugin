@@ -357,6 +357,7 @@ Please email: <jim.oflaherty.jr+sprml@gmail.com>, letting us know what license y
 ## Release Notes
 
 ### 2.0.0-SNAPSHOT (Clean-Sheet Pure-IR Baseline)
+- **Repo-Wide `:package` Lexical Scope Isolation & Nominal `Resolved Type` Lineage:** Centralizes context-sensitive `:Type`, `#CONST`, `:Enum`, and Pure-IR schema resolution across all 27 inspections, quick-fixes, literal evaluators, hover cards, and completion contributors (`0` sibling `:package` or root `#strip` leakage), and renders merged 5-tier narrowed facets plus `(-> ... -> :Base)` parent lineage on derived nominal types in `STVN Namespace Dependencies` (`Ctrl+Alt+N`).
 - **Unified `:use` Alias Inlay Hints & 3-Scope Namespace Browser:** Prepends renamed `UseMapAlias` head hops with independent per-hop `Ctrl+Click` navigation across all `:body` inlay slots (`State A` and `State B`) and upgrades `STVN Namespace Dependencies` (`Ctrl+Alt+N`) with a live `:defs` / `:type` / `:body` scope switcher, live symbol filter, disabled-section tooltips, and a 5-column zero-bracket-padded STVN 2.0.0 schema view.
 - **Pure-IR Architecture:** Coupled exclusively to `stvnadore-core:2.0.0-SNAPSHOT` immutable `org.stvnadore.core.ir.*` records (`StvnDocument`, `StvnDefsCatalog`, `StvnSchema`, `StvnValue`) via `StvnCompiledDocumentCache` with zero ANTLR CST coupling.
 - **Canonical 6-File Taxonomy:** Supports `.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, and `.stvn_bd` documents plus reserved multi-part system substrates (`*.stvn_ir.*`, `*.stvn_cas.*`).

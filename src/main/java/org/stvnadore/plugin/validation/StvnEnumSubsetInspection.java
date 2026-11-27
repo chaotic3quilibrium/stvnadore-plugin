@@ -711,19 +711,16 @@ public final class StvnEnumSubsetInspection extends LocalInspectionTool {
             return false;
         }
         var hops = new ArrayList<TypeDefinition>();
-        var visited = new HashSet<String>();
+        var visited = new HashSet<PsiElement>();
         SchemaType current = schemaType;
         while (current != null && current.getTypeKeyword() != null) {
-            String name = current.getTypeKeyword().getText().trim();
-            if (!visited.add(name)) {
+            var kw = current.getTypeKeyword();
+            String name = kw.getText().trim();
+            if (StvnTypeResolver.isDegradedNominalAlias(kw, name)) {
                 return true;
             }
-            if (StvnTypeResolver.isDegradedNominalAlias(file, name)) {
-                return true;
-            }
-            var target = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
-            var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
-            if (typeDef == null) {
+            var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, name);
+            if (typeDef == null || !visited.add(typeDef)) {
                 return true;
             }
             hops.add(typeDef);

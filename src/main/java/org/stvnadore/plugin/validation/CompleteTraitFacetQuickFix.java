@@ -291,18 +291,16 @@ public final class CompleteTraitFacetQuickFix extends LocalQuickFixAndIntentionA
     }
 
     private static @Nullable StvnSchema resolveParentIr(PsiElement context, String parentAlias) {
-        var file = context.getContainingFile();
-        if (file == null) {
+        if (context.getContainingFile() == null) {
             return null;
         }
         StvnSchema parentIr = null;
-        var resolvedParent = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
-        var parentTypeDef = StvnPsiUtils.getParentTypeDefinition(resolvedParent);
+        var parentTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(context, parentAlias);
         if (parentTypeDef != null) {
             parentIr = StvnTypeResolver.resolveNominalIrSchema(parentTypeDef);
         }
         if (parentIr == null) {
-            parentIr = StvnTypeResolver.resolveIrSchemaByAlias(file, parentAlias);
+            parentIr = StvnTypeResolver.resolveIrSchemaAtContext(context, parentAlias);
         }
         return parentIr;
     }

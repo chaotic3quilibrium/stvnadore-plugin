@@ -272,15 +272,9 @@ public final class StvnMetadataFacetAllowlist {
                 return text;
             }
             if (!visitedTypeNames.add(text)) return null;
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveUnderlyingBaseType(parentDef.getSchemaType(), visitedTypeNames);
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveUnderlyingBaseType(parentDef.getSchemaType(), visitedTypeNames);
             }
             return null;
         }
@@ -297,15 +291,9 @@ public final class StvnMetadataFacetAllowlist {
                 return rawText;
             }
             if (!visitedTypeNames.add(rawText)) return null;
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, rawText, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveUnderlyingBaseType(parentDef.getSchemaType(), visitedTypeNames);
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(schemaType, rawText);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveUnderlyingBaseType(parentDef.getSchemaType(), visitedTypeNames);
             }
         }
         return null;
@@ -319,6 +307,17 @@ public final class StvnMetadataFacetAllowlist {
      * @return true if exact float is active; false otherwise
      */
     public static boolean isExactActive(@Nullable MetadataMap metaMap, SchemaType schemaType) {
+        return isExactActive(metaMap, schemaType, new HashSet<>());
+    }
+
+    private static boolean isExactActive(
+            @Nullable MetadataMap metaMap,
+            SchemaType schemaType,
+            Set<SchemaType> visited
+    ) {
+        if (!visited.add(schemaType)) {
+            return false;
+        }
         if (metaMap != null) {
             for (var entry : metaMap.getMetadataEntryList()) {
                 var bare = entry.getMetadataBareFlag();
@@ -331,15 +330,12 @@ public final class StvnMetadataFacetAllowlist {
         if (kw != null) {
             var text = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(text)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    if (resolved != null) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return isExactActive(parentDef.getSchemaType().getMetadataMap(), parentDef.getSchemaType());
-                        }
-                    }
+                var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+                if (parentDef != null && parentDef.getSchemaType() != null) {
+                    var parentMeta = parentDef.getMetadataMap() != null
+                        ? parentDef.getMetadataMap()
+                        : parentDef.getSchemaType().getMetadataMap();
+                    return isExactActive(parentMeta, parentDef.getSchemaType(), visited);
                 }
             }
         }

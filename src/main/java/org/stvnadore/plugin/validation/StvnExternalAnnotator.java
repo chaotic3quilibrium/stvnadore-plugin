@@ -1566,17 +1566,16 @@ public final class StvnExternalAnnotator
             var typeKeywords = PsiTreeUtil.findChildrenOfType(typeEntry, TypeKeyword.class);
             for (var typeKw : typeKeywords) {
                 var aliasName = typeKw.getText();
-                var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasName);
+                var irSchema = StvnTypeResolver.resolveIrSchemaAtContext(typeKw, aliasName);
                 boolean isTraitPoisoned = irSchema instanceof StvnSchema.PoisonedSchema p
                     && DiagnosticBag.ERR_TRAIT_VIOLATION.equals(p.primaryDiagnosticCode());
-                boolean isDegraded = StvnTypeResolver.isDegradedNominalAlias(file, aliasName);
+                boolean isDegraded = StvnTypeResolver.isDegradedNominalAlias(typeKw, aliasName);
                 if (isDegraded || hasCrossFileInvertibleError || isTraitPoisoned) {
                     @Nullable String fallbackBase = null;
                     if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isGrounded()) {
                         fallbackBase = StvnSchemaFormatter.formatDegradedUnderlyingBaseIr(poisoned.bestEffortFallback().get());
                     } else if (!(irSchema instanceof StvnSchema.PoisonedSchema)) {
-                        var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
-                        var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
+                        var td = StvnTypeReference.resolveTypeDefinitionAtContext(typeKw, aliasName);
                         if (td != null && td.getSchemaType() != null) {
                             var resolved = StvnTypeResolver.resolveNominalSchema(td.getSchemaType());
                             if (resolved != null && resolved.getSchemaConstructor() != null) {

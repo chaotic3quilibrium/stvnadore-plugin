@@ -822,6 +822,92 @@ public final class StvnSchemaFormatter {
         return StvnVocabulary.DELIM_OPEN_BRACE + " " + String.join(" ", list) + " " + StvnVocabulary.DELIM_CLOSE_BRACE;
     }
 
+    /**
+     * Merges an ordered list of {@link MetadataMap} blocks from root ancestor to leaf child,
+     * allowing child overrides to replace matching keywords and mutually exclusive bound or mode
+     * facets ({@link StvnMetadataOrderInspection#getMutexGroupId(String)}) before sorting
+     * surviving facets into strict § 6.1 5-tier decimal order ({@code 1.1.1} through {@code 5.0}).
+     *
+     * @param rootToChildMaps metadata maps ordered from base ancestor to derived child
+     * @return compact zero-bracket-padded {@code "{ ... }"} facet string, or {@code ""} when empty
+     */
+    public static @NotNull String formatMergedPsiMetadataMaps(List<MetadataMap> rootToChildMaps) {
+        List<MetadataEntry> effectiveEntries = new ArrayList<>();
+        for (MetadataMap map : rootToChildMaps) {
+            appendMergedEntriesFromMap(map, false, effectiveEntries);
+        }
+        return formatSortedCompactFacetEntries(effectiveEntries);
+    }
+
+    /**
+     * Formats the effective metadata block for an {@code :EnumSubset} derivation, inheriting
+     * non-overridden explicit Tier-2 trait overrides ({@code #equatable}, {@code #comparable})
+     * from {@code rootToParentMaps} while keeping strictly {@code childMap}'s declared subset filter.
+     *
+     * @param rootToParentMaps ancestor metadata maps ordered from root {@code :Enum} to immediate parent
+     * @param childMap         metadata map declared on the child {@code :EnumSubset}, or {@code null}
+     * @return compact zero-bracket-padded {@code "{ ... }"} facet string, or {@code ""} when empty
+     */
+    public static @NotNull String formatMergedEnumSubsetPsiMetadataMaps(
+            List<MetadataMap> rootToParentMaps,
+            @Nullable MetadataMap childMap
+    ) {
+        List<MetadataEntry> effectiveEntries = new ArrayList<>();
+        for (MetadataMap ancestorMap : rootToParentMaps) {
+            appendMergedEntriesFromMap(ancestorMap, true, effectiveEntries);
+        }
+        if (childMap != null) {
+            appendMergedEntriesFromMap(childMap, false, effectiveEntries);
+        }
+        return formatSortedCompactFacetEntries(effectiveEntries);
+    }
+
+    private static void appendMergedEntriesFromMap(
+            MetadataMap map,
+            boolean traitsOnly,
+            List<MetadataEntry> effectiveEntries
+    ) {
+        for (MetadataEntry incoming : map.getMetadataEntryList()) {
+            String incomingKw = StvnMetadataOrderInspection.extractFacetKeyword(incoming);
+            if (incomingKw.isEmpty()) {
+                continue;
+            }
+            if (traitsOnly
+                    && !StvnVocabulary.FACET_KW_EQUATABLE.equals(incomingKw)
+                    && !StvnVocabulary.FACET_KW_COMPARABLE.equals(incomingKw)) {
+                continue;
+            }
+            int incomingMutex = StvnMetadataOrderInspection.getMutexGroupId(incomingKw);
+            effectiveEntries.removeIf(existing -> {
+                String existingKw = StvnMetadataOrderInspection.extractFacetKeyword(existing);
+                if (incomingKw.equals(existingKw)) {
+                    return true;
+                }
+                return incomingMutex > 0
+                    && incomingMutex == StvnMetadataOrderInspection.getMutexGroupId(existingKw);
+            });
+            effectiveEntries.add(incoming);
+        }
+    }
+
+    private static String formatSortedCompactFacetEntries(List<MetadataEntry> effectiveEntries) {
+        if (effectiveEntries.isEmpty()) {
+            return "";
+        }
+        effectiveEntries.sort(Comparator.comparingInt(StvnSchemaFormatter::resolveEntryFacetRank));
+        List<String> formatted = new ArrayList<>(effectiveEntries.size());
+        for (MetadataEntry entry : effectiveEntries) {
+            String clean = formatSanitizedMetadataEntry(entry, true);
+            if (!clean.isEmpty()) {
+                formatted.add(clean);
+            }
+        }
+        if (formatted.isEmpty()) {
+            return "";
+        }
+        return StvnVocabulary.DELIM_OPEN_BRACE + " " + String.join(" ", formatted) + " " + StvnVocabulary.DELIM_CLOSE_BRACE;
+    }
+
     private static String formatCompactPsiConstructor(SchemaConstructor ctor) {
         var atomic = ctor.getAtomicType();
         if (atomic != null) {

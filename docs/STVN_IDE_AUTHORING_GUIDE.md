@@ -433,7 +433,7 @@ Press **`Ctrl+Alt+N`** (macOS: **`Cmd+Alt+N`**) or click any section gutter icon
   1. **`Name`**: In-scope local identifier (`:ValveMode`, `#INIT_VALVE`, `:ManifoldReport`).
   2. **`Source`**: Origin module, `:package` enclave (`:cooling/manifold`), or Prelude.
   3. **`Upstream Target`**: Canonical upstream FQNI (`:cooling/manifold/CoolantValveMode`), or `—` for local root `:defs` declarations.
-  4. **`Resolved Type`**: Zero-bracket-padded STVN 2.0.0 schema signature (`:Enum[#OPEN #BYPASS #CLOSED]`, `{ #minSize 4 #maxSize 24 #minIncl "PKT-0000" #maxIncl "PKT-ZZZZ" #preserveIndent #TRUE #regex "^PKT-[A-Z0-9-]+$" } :String`) rendered strictly in § 6.1 5-tier decimal facet order (`1.1.1` through `5.0`).
+  4. **`Resolved Type`**: Zero-bracket-padded STVN 2.0.0 schema signature (`:Enum[#OPEN #BYPASS #CLOSED]`, `{ #minSize 4 #maxSize 24 #minIncl "PKT-0000" #maxIncl "PKT-ZZZZ" #preserveIndent #TRUE #regex "^PKT-[A-Z0-9-]+$" } :String`) rendered strictly in § 6.1 5-tier decimal facet order (`1.1.1` through `5.0`), with derived nominal `TypeDefinition`s merging inherited and overridden facets and preserving full nominal parent lineage (`{ #unsigned #size 16 #minIncl 100 #maxExcl 500 } :RepeaterId (-> :Int)`, `{ #filterIncl [#LOCKED #DEGRADED] } :PoweredLaserState (-> :LaserState -> :Enum)`).
   5. **`Use Depth`**: Scope-aware symbol depth — **Bottom-Up VOP Grounding Depth** in `:defs` (`0` when grounded on built-in primitives or root `:Enum`; `1 + max(referenced symbol depths)` across derived types, subsets, composites, and constants via Tarjan SCC condensation) and **Top-Down Root Reachability Depth** in `:type` and `:body` (`0` for root `:type`; shortest-path named `:Type` or `#CONST` hops from `:type` / `:body`).
 
 ---

@@ -339,6 +339,13 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
     }
 
     private static String resolveBaseTypeString(SchemaType schemaType) {
+        return resolveBaseTypeString(schemaType, new java.util.HashSet<>());
+    }
+
+    private static String resolveBaseTypeString(SchemaType schemaType, java.util.Set<com.intellij.psi.PsiElement> visited) {
+        if (!visited.add(schemaType)) {
+            return schemaType.getText().trim();
+        }
         var constructor = schemaType.getSchemaConstructor();
         if (constructor != null) {
             var atomic = constructor.getAtomicType();
@@ -349,15 +356,9 @@ public final class StvnStringCardinalityInspection extends LocalInspectionTool {
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
             var text = kw.getText().trim();
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, text, new java.util.HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType());
-                    }
-                }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveBaseTypeString(parentDef.getSchemaType(), visited);
             }
             return text;
         }

@@ -965,8 +965,7 @@ public final class StvnTraitViolationQuickFixProvider {
             var typeKw = schemaType.getTypeKeyword();
             if (typeKw != null) {
                 var typeName = typeKw.getText().trim();
-                var resolved = StvnTypeReference.resolveTypeInFile(element.getContainingFile(), typeName, new java.util.HashSet<>());
-                var resolvedTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                var resolvedTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(typeKw, typeName);
                 if (resolvedTypeDef != null) {
                     var e = findExplicitTraitEntry(resolvedTypeDef, StvnVocabulary.FACET_KW_INVERTIBLE);
                     if (e != null) return e;
@@ -1792,22 +1791,7 @@ public final class StvnTraitViolationQuickFixProvider {
         PsiFile file,
         String typeName
     ) {
-        if (schemaKw != null) {
-            var refResolved = new StvnTypeReference(schemaKw).resolve();
-            var refTargetDef = StvnPsiUtils.resolveTargetTypeDefinition(refResolved);
-            if (refTargetDef != null) {
-                return refTargetDef;
-            }
-        }
-        var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        var targetDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (targetDef != null) {
-            return targetDef;
-        }
-        if (!file.getProject().isDisposed()) {
-            return StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), typeName);
-        }
-        return null;
+        return StvnTypeReference.resolveTypeDefinitionAtContext(schemaKw != null ? schemaKw : file, typeName);
     }
 
     private static boolean hasInvertibleInLineage(TypeDefinition rootDef, SchemaType schemaType) {

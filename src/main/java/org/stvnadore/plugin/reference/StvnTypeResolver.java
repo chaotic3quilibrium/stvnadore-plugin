@@ -179,24 +179,7 @@ public final class StvnTypeResolver {
             : StvnCompiledDocumentCache.getSnapshot(file).catalog();
 
         var found = catalog.findType(fqniKey);
-        if (found.isPresent()) {
-            return found.get();
-        }
-        var byRaw = catalog.findType(typeName);
-        if (byRaw.isPresent()) {
-            return byRaw.get();
-        }
-        String localSuffix = "/" + (typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? typeName.substring(1) : typeName);
-        StvnSchema singleMatch = null;
-        for (var entry : catalog.nominalTypes().entrySet()) {
-            if (entry.getKey().endsWith(localSuffix)) {
-                if (singleMatch != null) {
-                    return null;
-                }
-                singleMatch = entry.getValue();
-            }
-        }
-        return singleMatch;
+        return found.orElse(null);
     }
 
     /**
@@ -218,20 +201,40 @@ public final class StvnTypeResolver {
      * @return resolved pure-IR {@link StvnSchema}, or {@code null} if unresolvable
      */
     public static @Nullable StvnSchema resolveIrSchemaByAlias(@Nullable PsiFile file, @Nullable String aliasName) {
-        if (file == null || aliasName == null || aliasName.isEmpty()) {
+        return resolveIrSchemaAtContext(file, aliasName);
+    }
+
+    /**
+     * Resolves a nominal pure-IR {@link StvnSchema} by alias identifier at {@code contextSite},
+     * honoring enclosing {@link PackageEnclosure} lexical isolation before consulting root catalog bindings.
+     *
+     * @param contextSite originating PSI element (or {@link PsiFile} for root-scope queries)
+     * @param aliasName   local, imported, or fully qualified nominal alias identifier
+     * @return resolved pure-IR {@link StvnSchema}, or {@code null} if unresolvable
+     */
+    public static @Nullable StvnSchema resolveIrSchemaAtContext(@Nullable PsiElement contextSite, @Nullable String aliasName) {
+        if (contextSite == null || aliasName == null || aliasName.isEmpty()) {
             return null;
         }
-        var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
-        var direct = catalog.findType(aliasName);
-        if (direct.isPresent()) {
-            return direct.get();
+        PsiFile file = contextSite instanceof PsiFile pf ? pf : contextSite.getContainingFile();
+        if (file == null) {
+            return null;
         }
-        var targetElem = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
-        var typeDef = resolveUnderlyingTypeDefinition(targetElem);
+        var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(contextSite, aliasName);
         if (typeDef != null) {
             var resolved = resolveNominalIrSchema(typeDef);
             if (resolved != null) {
                 return resolved;
+            }
+        }
+        var enclosingPkg = contextSite instanceof PsiFile
+            ? null
+            : PsiTreeUtil.getParentOfType(contextSite, PackageEnclosure.class, false);
+        if (enclosingPkg == null || aliasName.contains("/")) {
+            var catalog = StvnCompiledDocumentCache.getSnapshot(file).catalog();
+            var direct = catalog.findType(aliasName);
+            if (direct.isPresent()) {
+                return direct.get();
             }
         }
         var preludeCatalog = StvnPreludeBridge.getPreludeCatalog();
@@ -240,10 +243,13 @@ public final class StvnTypeResolver {
             return preludeDirect.get();
         }
         if (aliasName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !aliasName.substring(1).contains("/")) {
-            var preludeFqni = ":org/stvnadore/prelude/" + aliasName.substring(1);
-            var preludeShort = preludeCatalog.findType(preludeFqni);
-            if (preludeShort.isPresent()) {
-                return preludeShort.get();
+            var preludePrefix = StvnVocabulary.PRELUDE_TYPE_POSIX_ID.substring(
+                0,
+                StvnVocabulary.PRELUDE_TYPE_POSIX_ID.lastIndexOf('/') + 1
+            );
+            var preludeFqni = preludePrefix + aliasName.substring(1);
+            if (enclosingPkg == null || StvnTypeReference.resolveTypeAtContext(contextSite, aliasName) == null) {
+                return preludeCatalog.findType(preludeFqni).orElse(null);
             }
         }
         return null;
@@ -295,7 +301,7 @@ public final class StvnTypeResolver {
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null && schemaType.getMetadataMap() == null) {
-            return resolveIrSchemaByAlias(file, kw.getText().trim());
+            return resolveIrSchemaAtContext(kw, kw.getText().trim());
         }
         return null;
     }
@@ -386,12 +392,28 @@ public final class StvnTypeResolver {
      * @return {@code true} if degraded, {@code false} otherwise
      */
     public static boolean isDegradedNominalAlias(@Nullable PsiFile file, @Nullable String aliasName) {
-        if (file == null || aliasName == null || aliasName.isEmpty()) {
+        return isDegradedNominalAlias((PsiElement) file, aliasName);
+    }
+
+    /**
+     * Determines whether the specified nominal alias name refers to a degraded or poisoned schema definition
+     * when resolved from {@code contextSite}.
+     *
+     * @param contextSite originating PSI element (or {@link PsiFile} for root-scope queries)
+     * @param aliasName   the nominal alias identifier to test
+     * @return {@code true} if degraded, {@code false} otherwise
+     */
+    public static boolean isDegradedNominalAlias(@Nullable PsiElement contextSite, @Nullable String aliasName) {
+        if (contextSite == null || aliasName == null || aliasName.isEmpty()) {
+            return false;
+        }
+        PsiFile file = contextSite instanceof PsiFile pf ? pf : contextSite.getContainingFile();
+        if (file == null) {
             return false;
         }
 
         // 1. Authoritative pure-IR PoisonedSchema check
-        var irSchema = resolveIrSchemaByAlias(file, aliasName);
+        var irSchema = resolveIrSchemaAtContext(contextSite, aliasName);
         if (irSchema instanceof StvnSchema.PoisonedSchema poisoned
                 && ((!"RECURSIVE_BACK_EDGE".equals(poisoned.primaryDiagnosticCode())
                         && !"INTERNAL_RECURSIVE_NOMINAL_REF".equals(poisoned.primaryDiagnosticCode()))
@@ -400,8 +422,7 @@ public final class StvnTypeResolver {
         }
 
         // 2. Direct PSI check on the TypeDefinition metadata map for in-flight buffers
-        var targetDef = StvnTypeReference.resolveTypeInFile(file, aliasName, new HashSet<>());
-        var typeDef = resolveUnderlyingTypeDefinition(targetDef);
+        var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(contextSite, aliasName);
         if (typeDef != null) {
             var defIr = resolveNominalIrSchema(typeDef);
             if (defIr instanceof StvnSchema.PoisonedSchema poisonedDef
@@ -413,7 +434,8 @@ public final class StvnTypeResolver {
             var metaMap = typeDef.getMetadataMap() != null
                 ? typeDef.getMetadataMap()
                 : (typeDef.getSchemaType() != null ? typeDef.getSchemaType().getMetadataMap() : null);
-            if (metaMap != null && hasDegradedMetadataConstraints(file, typeDef.getSchemaType(), metaMap)) {
+            PsiFile tdFile = typeDef.getContainingFile() != null ? typeDef.getContainingFile() : file;
+            if (metaMap != null && hasDegradedMetadataConstraints(tdFile, typeDef.getSchemaType(), metaMap)) {
                 return true;
             }
         }
@@ -495,7 +517,7 @@ public final class StvnTypeResolver {
         var kw = schemaType.getTypeKeyword();
         var inlineMap = schemaType.getMetadataMap();
         if (kw != null) {
-            if (isDegradedNominalAlias(ctxFile, kw.getText().trim())) {
+            if (isDegradedNominalAlias(kw, kw.getText().trim())) {
                 return true;
             }
             if (inlineMap == null) {
@@ -777,15 +799,15 @@ public final class StvnTypeResolver {
         }
 
         if ((minVal != null && maxVal == null) || (minVal == null && maxVal != null)) {
-            var visitedAncestors = new HashSet<String>();
-            String parentAlias = (schemaType != null && schemaType.getTypeKeyword() != null)
-                ? schemaType.getTypeKeyword().getText().trim()
-                : null;
-            while (parentAlias != null && parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)
-                    && visitedAncestors.add(parentAlias)) {
-                var parentTarget = StvnTypeReference.resolveTypeInFile(file, parentAlias, new HashSet<>());
-                var parentDef = resolveUnderlyingTypeDefinition(parentTarget);
-                if (parentDef == null) {
+            var visitedAncestors = new HashSet<PsiElement>();
+            TypeKeyword parentKw = schemaType != null ? schemaType.getTypeKeyword() : null;
+            while (parentKw != null) {
+                String parentAlias = parentKw.getText().trim();
+                if (!parentAlias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+                    break;
+                }
+                var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(parentKw, parentAlias);
+                if (parentDef == null || !visitedAncestors.add(parentDef)) {
                     break;
                 }
                 var parentMeta = parentDef.getMetadataMap();
@@ -809,9 +831,7 @@ public final class StvnTypeResolver {
                     break;
                 }
                 var nextSt = parentDef.getSchemaType();
-                parentAlias = (nextSt != null && nextSt.getTypeKeyword() != null)
-                    ? nextSt.getTypeKeyword().getText().trim()
-                    : null;
+                parentKw = nextSt != null ? nextSt.getTypeKeyword() : null;
             }
         }
         if (minVal != null && maxVal != null) {
@@ -838,12 +858,15 @@ public final class StvnTypeResolver {
         if (schemaType == null) {
             return null;
         }
-        var visited = new HashSet<String>();
-        String alias = schemaType.getTypeKeyword() != null ? schemaType.getTypeKeyword().getText().trim() : null;
-        while (alias != null && alias.startsWith(StvnVocabulary.SIGIL_TYPIC) && visited.add(alias)) {
-            var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-            var parentDef = resolveUnderlyingTypeDefinition(target);
-            if (parentDef == null) {
+        var visited = new HashSet<PsiElement>();
+        TypeKeyword currKw = schemaType.getTypeKeyword();
+        while (currKw != null) {
+            String alias = currKw.getText().trim();
+            if (!alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
+                break;
+            }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(currKw, alias);
+            if (parentDef == null || !visited.add(parentDef)) {
                 break;
             }
             var parentMeta = parentDef.getMetadataMap() != null
@@ -858,9 +881,7 @@ public final class StvnTypeResolver {
                 }
             }
             var nextSt = parentDef.getSchemaType();
-            alias = (nextSt != null && nextSt.getTypeKeyword() != null)
-                ? nextSt.getTypeKeyword().getText().trim()
-                : null;
+            currKw = nextSt != null ? nextSt.getTypeKeyword() : null;
         }
         return null;
     }
@@ -1341,8 +1362,8 @@ public final class StvnTypeResolver {
                 return compConstLabel;
             }
             if (slotKw != null && value.getCollectionValue() != null) {
-                var isDegradedSlot = isDegradedNominalAlias(file, slotKw.getText().trim())
-                    || (rootAliasOpt.isPresent() && isDegradedNominalAlias(file, rootAliasOpt.get()));
+                var isDegradedSlot = isDegradedNominalAlias(slotKw, slotKw.getText().trim())
+                    || (rootAliasOpt.isPresent() && isDegradedNominalAlias(value, rootAliasOpt.get()));
                 var prefix = isDegradedSlot ? "\u26A0 " : "";
                 var baseHops = StvnTypeReference.extractClickableResolutionHops(slotKw, false);
                 if (baseHops.size() >= 2) {
@@ -1357,8 +1378,8 @@ public final class StvnTypeResolver {
         // 1. Nominal Type & Nominal Sum Handling
         if (rootAliasOpt.isPresent()) {
             var rootAlias = rootAliasOpt.get();
-            var isDegraded = isDegradedNominalAlias(file, rootAlias)
-                || (slotKw != null && isDegradedNominalAlias(file, slotKw.getText().trim()));
+            var isDegraded = isDegradedNominalAlias(value, rootAlias)
+                || (slotKw != null && isDegradedNominalAlias(slotKw, slotKw.getText().trim()));
             var prefix = isDegraded ? "\u26A0 " : "";
 
             if (StvnSumTrajectory.isSumValue(resolvedNode)) {
@@ -1405,7 +1426,7 @@ public final class StvnTypeResolver {
             if (shortPrelude != null) {
                 return prefix + shortPrelude;
             }
-            var kw = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
+            var kw = StvnTypeReference.resolveTypeAtContext(value, alias);
             var typeKw = kw instanceof TypeDefinition td ? td.getTypeKeyword()
                 : kw instanceof TypeKeyword k ? k : null;
             if (typeKw != null && !isCompositeOrCollectionIrValue(resolvedNode)) {
@@ -2195,11 +2216,11 @@ public final class StvnTypeResolver {
         if (info.getSchema() != null && info.getSchema().getTypeKeyword() != null) {
             var slotKw = info.getSchema().getTypeKeyword();
             var governingAlias = slotKw.getText().trim();
-            var governingIr = resolveIrSchemaByAlias(value.getContainingFile(), governingAlias);
+            var governingIr = resolveIrSchemaAtContext(slotKw, governingAlias);
             if (governingIr == null) {
-                var canonicalAlias = resolveCanonicalBrandForAliasInFile(value.getContainingFile(), governingAlias);
+                var canonicalAlias = resolveCanonicalBrandForAliasAtContext(slotKw, governingAlias);
                 if (canonicalAlias != null) {
-                    governingIr = resolveIrSchemaByAlias(value.getContainingFile(), canonicalAlias);
+                    governingIr = resolveIrSchemaAtContext(slotKw, canonicalAlias);
                 }
             }
             if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
@@ -2224,7 +2245,7 @@ public final class StvnTypeResolver {
             }
             var compSlotKw = info.getSchema().getTypeKeyword();
             if (compSlotKw != null && value.getCollectionValue() != null) {
-                boolean isDegradedComp = isDegradedNominalAlias(value.getContainingFile(), compSlotKw.getText().trim());
+                boolean isDegradedComp = isDegradedNominalAlias(compSlotKw, compSlotKw.getText().trim());
                 String compPrefix = isDegradedComp ? "\u26A0 " : "";
                 var baseHops = StvnTypeReference.extractClickableResolutionHops(compSlotKw, false);
                 if (baseHops.size() >= 2) {
@@ -2241,7 +2262,7 @@ public final class StvnTypeResolver {
             if (sumType != null) {
                 var degradedSum = info.getSchema() != null
                     && info.getSchema().getTypeKeyword() != null
-                    && isDegradedNominalAlias(value.getContainingFile(), info.getSchema().getTypeKeyword().getText().trim());
+                    && isDegradedNominalAlias(info.getSchema().getTypeKeyword(), info.getSchema().getTypeKeyword().getText().trim());
                 var baseLabel = (degradedSum ? "\u26A0 " : "") + info.getLabel();
                 var useLong = useLongFormSumTypes(value.getProject());
                 if (sumType.getEnumDef() == null) {
@@ -2306,7 +2327,7 @@ public final class StvnTypeResolver {
         }
 
         var keyword = info.getSchema().getTypeKeyword();
-        var isDegraded = keyword != null && isDegradedNominalAlias(value.getContainingFile(), keyword.getText());
+        var isDegraded = keyword != null && isDegradedNominalAlias(keyword, keyword.getText());
         if (keyword != null) {
             var trace = StvnTypeReference.extractResolutionTrace(keyword);
             if (trace.size() > 1 && (isDegraded || matchesSchemaPattern(value, info.getSchema()))) {
@@ -2901,8 +2922,9 @@ public final class StvnTypeResolver {
             return false;
         }
         if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
-            var aliasName = schemaType.getTypeKeyword().getText().trim();
-            var irSchema = resolveIrSchemaByAlias(schemaType.getContainingFile(), aliasName);
+            var kw = schemaType.getTypeKeyword();
+            var aliasName = kw.getText().trim();
+            var irSchema = resolveIrSchemaAtContext(kw, aliasName);
             if (irSchema instanceof StvnSchema.PoisonedSchema poisoned) {
                 return poisoned.isUngrounded();
             }
@@ -2948,14 +2970,7 @@ public final class StvnTypeResolver {
      * @return the resolved {@link ConstantDefinition}, or {@code null} if unresolved
      */
     public static @Nullable ConstantDefinition resolveContextAwareConstantDefinition(ValueKeyword valKw) {
-        var resolved = StvnConstantReference.resolveConstantWithContext(valKw);
-        if (resolved != null) {
-            var target = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
-            if (target != null) {
-                return target;
-            }
-        }
-        return findConstantDefinition(valKw.getContainingFile(), valKw.getText().trim());
+        return StvnConstantReference.resolveConstantDefinitionAtContext(valKw, valKw.getText().trim());
     }
 
     /**
@@ -3503,27 +3518,22 @@ public final class StvnTypeResolver {
                 || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(rawName)) {
             return null;
         }
-        var ref = kw.getReference();
-        var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-        if (resolved == null && kw.getContainingFile() != null) {
-            resolved = StvnTypeReference.resolveTypeInFile(kw.getContainingFile(), rawName, new HashSet<>());
-        }
-        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (td == null && !kw.getProject().isDisposed()) {
-            td = StvnPreludeBridge.resolvePreludeTypeDefinition(kw.getProject(), rawName);
-        }
+        var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, rawName);
         return extractCanonicalTypeDefFqni(td);
     }
 
     private static @Nullable String resolveCanonicalBrandForAliasInFile(@Nullable PsiFile file, @Nullable String alias) {
-        if (file == null || alias == null || alias.isEmpty()) {
+        return resolveCanonicalBrandForAliasAtContext(file, alias);
+    }
+
+    private static @Nullable String resolveCanonicalBrandForAliasAtContext(
+        @Nullable PsiElement contextSite,
+        @Nullable String alias
+    ) {
+        if (contextSite == null || alias == null || alias.isEmpty()) {
             return null;
         }
-        var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (td == null && !file.getProject().isDisposed()) {
-            td = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), alias);
-        }
+        TypeDefinition td = StvnTypeReference.resolveTypeDefinitionAtContext(contextSite, alias);
         return extractCanonicalTypeDefFqni(td);
     }
 
@@ -4019,7 +4029,7 @@ public final class StvnTypeResolver {
         String fullChain;
         var slotKw = slotSchema.getTypeKeyword();
         if (slotKw != null) {
-            boolean isDegraded = isDegradedNominalAlias(value.getContainingFile(), slotKw.getText().trim());
+            boolean isDegraded = isDegradedNominalAlias(slotKw, slotKw.getText().trim());
             String prefix = isDegraded ? "\u26A0 " : "";
             var hops = StvnTypeReference.extractClickableResolutionHops(slotKw, true);
             if (!hops.isEmpty()) {
@@ -4749,12 +4759,11 @@ public final class StvnTypeResolver {
         var kw = schemaType.getTypeKeyword();
         if (kw == null) return null;
 
-        var resolvedTarget = new StvnTypeReference(kw).resolve();
-        var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
+        var targetDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
         if (targetDef != null) {
             return resolveEnumSubsetFromTypeDef(targetDef, kw.getText(), visited);
         }
-        return resolveEnumSubsetInternal(kw.getContainingFile(), kw.getText(), visited);
+        return null;
     }
 
     /**
@@ -4785,12 +4794,11 @@ public final class StvnTypeResolver {
         if (typeKeyword.getParent() instanceof UseMapAlias uma) {
             return resolveEnumSubset(uma);
         }
-        var resolvedTarget = new StvnTypeReference(typeKeyword).resolve();
-        var targetDef = resolveUnderlyingTypeDefinition(resolvedTarget);
+        var targetDef = StvnTypeReference.resolveTypeDefinitionAtContext(typeKeyword, typeKeyword.getText().trim());
         if (targetDef != null) {
             return resolveEnumSubsetFromTypeDef(targetDef, typeKeyword.getText(), new HashSet<>());
         }
-        return resolveEnumSubsetInternal(typeKeyword.getContainingFile(), typeKeyword.getText(), new HashSet<>());
+        return null;
     }
 
     /**
@@ -4809,7 +4817,7 @@ public final class StvnTypeResolver {
         if (targetDef != null) {
             return resolveEnumSubsetFromTypeDef(targetDef, localKw.getText(), new HashSet<>());
         }
-        return resolveEnumSubsetInternal(localKw.getContainingFile(), localKw.getText(), new HashSet<>());
+        return resolveEnumSubsetInternal(localKw, localKw.getText(), new HashSet<>());
     }
 
     /**
@@ -4828,14 +4836,11 @@ public final class StvnTypeResolver {
     }
 
     private static @Nullable StvnEnumSubsetInfo resolveEnumSubsetInternal(
-        PsiFile file,
+        PsiElement contextSite,
         String typeName,
         Set<String> visited
     ) {
-        var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        if (targetDef == null) return null;
-
-        TypeDefinition typeDef = resolveUnderlyingTypeDefinition(targetDef);
+        var typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(contextSite, typeName);
         if (typeDef == null) {
             return null;
         }
@@ -5471,37 +5476,157 @@ public final class StvnTypeResolver {
      * @return list of assignable constant definitions
      */
     public static List<ConstantDefinition> findAssignableConstants(PsiFile file, SchemaType targetSchema) {
+        return findAssignableConstants((PsiElement) file, targetSchema);
+    }
+
+    /**
+     * Collects assignable {@link ConstantDefinition}s that are lexically visible from {@code contextSite},
+     * excluding un-imported declarations inside sibling or private {@link PackageEnclosure} blocks.
+     *
+     * @param contextSite  originating PSI element (or {@link PsiFile} for root-scope queries)
+     * @param targetSchema expected target schema type
+     * @return list of lexically visible, assignable constant definitions
+     */
+    public static List<ConstantDefinition> findAssignableConstants(
+        PsiElement contextSite,
+        SchemaType targetSchema
+    ) {
+        PsiFile file = contextSite instanceof PsiFile pf ? pf : contextSite.getContainingFile();
+        if (file == null) {
+            return List.of();
+        }
+        var enclosingPkg = contextSite instanceof PsiFile
+            ? null
+            : PsiTreeUtil.getParentOfType(contextSite, PackageEnclosure.class, false);
+        String activePkgPath = enclosingPkg != null
+                && !StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg)
+                && enclosingPkg.getPackagePath() != null
+            ? enclosingPkg.getPackagePath().getText().trim()
+            : null;
         var list = new ArrayList<ConstantDefinition>();
-        var visitedFiles = new HashSet<PsiFile>();
-        collectConstantsRecursive(file, targetSchema, list, visitedFiles);
+        var seen = new HashSet<PsiElement>();
+        collectConstantsRecursive(file, targetSchema, activePkgPath, enclosingPkg, list, seen, new HashSet<>());
         return list;
     }
 
     private static void collectConstantsRecursive(
         PsiFile file,
         SchemaType targetSchema,
+        @Nullable String activePkgPath,
+        @Nullable PackageEnclosure activePkg,
         List<ConstantDefinition> list,
+        Set<PsiElement> seenDefs,
         Set<PsiFile> visited
     ) {
         if (!visited.add(file)) {
             return;
         }
 
-        var localConstants = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
-        for (var constDef : localConstants) {
+        for (var constDef : PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class)) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(constDef)) {
+                continue;
+            }
+            var defPkg = PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class);
+            if (defPkg != null) {
+                boolean samePackage = activePkg == defPkg
+                    || (activePkgPath != null
+                        && !StvnPsiUtils.hasIllegalTrailingSlash(defPkg)
+                        && defPkg.getPackagePath() != null
+                        && activePkgPath.equals(defPkg.getPackagePath().getText().trim()));
+                if (!samePackage) {
+                    continue;
+                }
+            }
             var constSchema = constDef.getSchemaType();
-            if (constSchema != null && isSchemaAssignable(targetSchema, constSchema)) {
+            if (constSchema != null && isSchemaAssignable(targetSchema, constSchema) && seenDefs.add(constDef)) {
                 list.add(constDef);
+            }
+        }
+
+        for (var useStmt : PsiTreeUtil.findChildrenOfType(file, UseStmt.class)) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(useStmt)) {
+                continue;
+            }
+            var usePkg = PsiTreeUtil.getParentOfType(useStmt, PackageEnclosure.class);
+            if (usePkg != null && usePkg != activePkg) {
+                continue;
+            }
+            for (var useElem : useStmt.getUseElementList()) {
+                var target = useElem.getUseTarget();
+                if (target == null || target.getUseTargetIllegal() != null) {
+                    continue;
+                }
+                String pkgPrefix = target.getText().trim();
+                var aliasBlock = useElem.getUseAliasBlock();
+                if (aliasBlock != null) {
+                    for (var alias : aliasBlock.getUseMapAliasList()) {
+                        var vKws = alias.getValueKeywordList();
+                        if (vKws.size() >= 2 && vKws.get(0) != null) {
+                            String fqni = StvnConstantReference.buildPackageConstantFqni(pkgPrefix, vKws.get(0).getText());
+                            var resolved = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>(), false);
+                            var cd = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
+                            if (cd != null && cd.getSchemaType() != null
+                                    && isSchemaAssignable(targetSchema, cd.getSchemaType())
+                                    && seenDefs.add(cd)) {
+                                list.add(cd);
+                            }
+                        }
+                    }
+                }
+                if (StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                    collectStrippedAssignableConstants(file, pkgPrefix, targetSchema, list, seenDefs, new HashSet<>());
+                }
             }
         }
 
         var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
         for (var incl : includes) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(incl)) {
+                continue;
+            }
             var strLit = incl.getStringLiteral();
             if (strLit != null) {
                 var targetFile = StvnTypeReference.resolveIncludeFile(strLit);
                 if (targetFile != null) {
-                    collectConstantsRecursive(targetFile, targetSchema, list, visited);
+                    collectConstantsRecursive(targetFile, targetSchema, activePkgPath, null, list, seenDefs, visited);
+                }
+            }
+        }
+    }
+
+    private static void collectStrippedAssignableConstants(
+        PsiFile file,
+        String pkgPrefix,
+        SchemaType targetSchema,
+        List<ConstantDefinition> list,
+        Set<PsiElement> seenDefs,
+        Set<PsiFile> visited
+    ) {
+        if (!visited.add(file)) {
+            return;
+        }
+        for (var pkg : PsiTreeUtil.findChildrenOfType(file, PackageEnclosure.class)) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(pkg)
+                    || StvnPsiUtils.hasIllegalTrailingSlash(pkg)
+                    || pkg.getPackagePath() == null
+                    || !pkgPrefix.equals(pkg.getPackagePath().getText().trim())) {
+                continue;
+            }
+            for (var elem : pkg.getPackageElementList()) {
+                var cd = elem.getConstantDefinition();
+                if (cd != null && cd.getSchemaType() != null
+                        && isSchemaAssignable(targetSchema, cd.getSchemaType())
+                        && seenDefs.add(cd)) {
+                    list.add(cd);
+                }
+            }
+        }
+        for (var incl : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            var strLit = incl.getStringLiteral();
+            if (strLit != null) {
+                var targetFile = StvnTypeReference.resolveIncludeFile(strLit);
+                if (targetFile != null) {
+                    collectStrippedAssignableConstants(targetFile, pkgPrefix, targetSchema, list, seenDefs, visited);
                 }
             }
         }
@@ -5524,34 +5649,7 @@ public final class StvnTypeResolver {
         if (file == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
-        if (context != null) {
-            var enclosingPkg = PsiTreeUtil.getParentOfType(context, PackageEnclosure.class);
-            if (enclosingPkg != null && (!typeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !typeName.substring(1).contains("/"))) {
-                var pkgUseStmts = new ArrayList<UseStmt>();
-                for (var elem : enclosingPkg.getPackageElementList()) {
-                    var typeDef = elem.getTypeDefinition();
-                    if (typeDef != null) {
-                        var kw = typeDef.getTypeKeyword();
-                        if (kw != null && kw.getText().equals(typeName)) {
-                            return typeDef;
-                        }
-                    }
-                    var useStmt = elem.getUseStmt();
-                    if (useStmt != null) {
-                        pkgUseStmts.add(useStmt);
-                    }
-                }
-                var pkgUseOutcome = StvnTypeReference.resolveFromUseStmts(file, pkgUseStmts, typeName, null);
-                if (pkgUseOutcome.collisionOrEvicted()) {
-                    return null;
-                }
-                if (pkgUseOutcome.resolved() != null) {
-                    return StvnPsiUtils.resolveTargetTypeDefinition(pkgUseOutcome.resolved());
-                }
-            }
-        }
-        var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-        return StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+        return StvnTypeReference.resolveTypeDefinitionAtContext(context != null ? context : file, typeName);
     }
 
     /**
@@ -5592,31 +5690,33 @@ public final class StvnTypeResolver {
     }
 
     /**
-     * Resolves a named constant definition within the specified PSI file.
+     * Resolves a named constant definition within the root scope of the specified PSI file.
      *
      * @param file the PSI file containing definitions
      * @param name the constant name including leading sigil {@code #}
      * @return the {@link ConstantDefinition} PSI node, or {@code null} if not found
      */
     public static @Nullable ConstantDefinition findConstantDefinition(@Nullable PsiFile file, String name) {
-        if (file == null) {
+        return findConstantDefinition(file, name, file);
+    }
+
+    /**
+     * Resolves a named constant definition within the lexical scope of {@code context}.
+     *
+     * @param file    the PSI file containing definitions
+     * @param name    the constant name including leading sigil {@code #}
+     * @param context optional PSI context element determining the active lexical scope
+     * @return the {@link ConstantDefinition} PSI node, or {@code null} if not found
+     */
+    public static @Nullable ConstantDefinition findConstantDefinition(
+        @Nullable PsiFile file,
+        @Nullable String name,
+        @Nullable PsiElement context
+    ) {
+        if (file == null || name == null || name.isBlank()) {
             return null;
         }
-        var resolved = StvnConstantReference.resolveConstantInFile(file, name, new HashSet<>());
-        if (resolved != null) {
-            var target = StvnPsiUtils.resolveTargetConstantDefinition(resolved);
-            if (target != null) {
-                return target;
-            }
-        }
-        var constDefs = PsiTreeUtil.findChildrenOfType(file, ConstantDefinition.class);
-        for (var def : constDefs) {
-            var kw = def.getValueKeyword();
-            if (kw != null && name.equals(kw.getText())) {
-                return def;
-            }
-        }
-        return null;
+        return StvnConstantReference.resolveConstantDefinitionAtContext(context != null ? context : file, name);
     }
 
     /**

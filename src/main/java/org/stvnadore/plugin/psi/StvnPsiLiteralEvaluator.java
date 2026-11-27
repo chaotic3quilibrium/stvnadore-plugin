@@ -236,8 +236,8 @@ public final class StvnPsiLiteralEvaluator {
         return extractPreserveIndentFromSchema(schemaType, new HashSet<>());
     }
 
-    private static boolean extractPreserveIndentFromSchema(@Nullable SchemaType schemaType, Set<String> visited) {
-        if (schemaType == null) {
+    private static boolean extractPreserveIndentFromSchema(@Nullable SchemaType schemaType, Set<PsiElement> visited) {
+        if (schemaType == null || !visited.add(schemaType)) {
             return false;
         }
         MetadataMap metaMap = schemaType.getMetadataMap();
@@ -259,36 +259,22 @@ public final class StvnPsiLiteralEvaluator {
         }
         if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
             String alias = schemaType.getTypeKeyword().getText().trim();
-            if (visited.add(alias)) {
-                var parentDef = StvnTypeResolver.findTypeDefinition(
-                    schemaType.getContainingFile(), alias, schemaType.getTypeKeyword());
-                if (parentDef == null) {
-                    var target = new StvnTypeReference(schemaType.getTypeKeyword()).resolve();
-                    if (target == null) {
-                        target = StvnTypeReference.resolveTypeInFile(
-                            schemaType.getContainingFile(), alias, new HashSet<>());
-                    }
-                    parentDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                }
-                if (parentDef == null && !schemaType.getProject().isDisposed()) {
-                    parentDef = StvnPreludeBridge.resolvePreludeTypeDefinition(schemaType.getProject(), alias);
-                }
-                if (parentDef != null) {
-                    if (parentDef.getMetadataMap() != null) {
-                        for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
-                            String text = entry.getText().trim();
-                            if (text.equals(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
-                                return true;
-                            }
-                            if (text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
-                                    && Character.isWhitespace(text.charAt(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()))) {
-                                String arg = text.substring(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()).trim();
-                                return resolveBooleanOrConst(entry, arg).orElse(false);
-                            }
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(schemaType.getTypeKeyword(), alias);
+            if (parentDef != null && visited.add(parentDef)) {
+                if (parentDef.getMetadataMap() != null) {
+                    for (var entry : parentDef.getMetadataMap().getMetadataEntryList()) {
+                        String text = entry.getText().trim();
+                        if (text.equals(StvnVocabulary.FACET_KW_PRESERVE_INDENT)) {
+                            return true;
+                        }
+                        if (text.startsWith(StvnVocabulary.FACET_KW_PRESERVE_INDENT)
+                                && Character.isWhitespace(text.charAt(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()))) {
+                            String arg = text.substring(StvnVocabulary.FACET_KW_PRESERVE_INDENT.length()).trim();
+                            return resolveBooleanOrConst(entry, arg).orElse(false);
                         }
                     }
-                    return extractPreserveIndentFromSchema(parentDef.getSchemaType(), visited);
                 }
+                return extractPreserveIndentFromSchema(parentDef.getSchemaType(), visited);
             }
         }
         return false;
@@ -439,8 +425,8 @@ public final class StvnPsiLiteralEvaluator {
         }
         if (schemaType.getTypeKeyword() != null && schemaType.getContainingFile() != null) {
             return unwrapPoisonedIrSchema(
-                StvnTypeResolver.resolveIrSchemaByAlias(
-                    schemaType.getContainingFile(),
+                StvnTypeResolver.resolveIrSchemaAtContext(
+                    schemaType.getTypeKeyword(),
                     schemaType.getTypeKeyword().getText().trim()
                 )
             );
@@ -664,53 +650,7 @@ public final class StvnPsiLiteralEvaluator {
         if (context == null || !constName.startsWith(StvnVocabulary.SIGIL_VALUE)) {
             return null;
         }
-        PsiFile file = context.getContainingFile();
-        if (file == null) {
-            return null;
-        }
-        PsiElement resolvedElem = StvnConstantReference.resolveConstantInFile(file, constName, new HashSet<>());
-        if (resolvedElem != null) {
-            if (resolvedElem instanceof ConstantDefinition cd) {
-                return cd;
-            }
-            if (resolvedElem.getParent() instanceof ConstantDefinition cd) {
-                return cd;
-            }
-            if (resolvedElem.getParent() instanceof UseMapAlias alias) {
-                var kws = alias.getValueKeywordList();
-                if (!kws.isEmpty() && kws.get(0) != null) {
-                    var useElem = PsiTreeUtil.getParentOfType(alias, UseElement.class);
-                    String remoteName = kws.get(0).getText().trim();
-                    if (useElem != null && useElem.getUseTarget() != null) {
-                        String fqni = StvnConstantReference.buildPackageConstantFqni(
-                            useElem.getUseTarget().getText().trim(), remoteName);
-                        PsiElement hopped = StvnConstantReference.resolveConstantInFile(file, fqni, new HashSet<>());
-                        if (hopped instanceof ConstantDefinition cd) {
-                            return cd;
-                        }
-                        if (hopped != null && hopped.getParent() instanceof ConstantDefinition cd) {
-                            return cd;
-                        }
-                    }
-                    PsiElement hoppedShort = StvnConstantReference.resolveConstantInFile(file, remoteName, new HashSet<>());
-                    if (hoppedShort instanceof ConstantDefinition cd) {
-                        return cd;
-                    }
-                    if (hoppedShort != null && hoppedShort.getParent() instanceof ConstantDefinition cd) {
-                        return cd;
-                    }
-                }
-            }
-        }
-        ConstantDefinition local = StvnTypeResolver.findConstantDefinition(file, constName);
-        if (local != null) {
-            return local;
-        }
-        var project = file.getProject();
-        if (!project.isDisposed()) {
-            return StvnPreludeBridge.resolvePreludeConstantDefinition(project, constName);
-        }
-        return null;
+        return StvnConstantReference.resolveConstantDefinitionAtContext(context, constName);
     }
 
     /**

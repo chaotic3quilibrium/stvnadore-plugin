@@ -191,25 +191,101 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
         return resolveTypeKeywordWithContext(keyword, null, false);
     }
 
-    private static @Nullable PsiElement resolveTypeKeywordWithContext(
-            TypeKeyword keyword,
+    private record ScopedTypeLookup(@Nullable PsiElement resolved, boolean blockedByCollision) {}
+
+    /**
+     * Resolves a raw {@code :Type} identifier from an arbitrary PSI {@code contextSite},
+     * enforcing enclosing {@link PackageEnclosure} lexical isolation, package-local {@code :use}
+     * directives, and root {@code :defs} {@code #strip} eviction rules.
+     *
+     * @param contextSite originating PSI element (or {@link PsiFile} for root-scope queries)
+     * @param rawName     candidate raw or qualified type token
+     * @return resolved declaration PSI element, or {@code null} when unresolved
+     */
+    public static @Nullable PsiElement resolveTypeAtContext(
+            @Nullable PsiElement contextSite,
+            @Nullable String rawName
+    ) {
+        return resolveTypeAtContextInternal(contextSite, rawName, null, true).resolved();
+    }
+
+    /**
+     * Resolves the underlying {@link TypeDefinition} for {@code rawName} at {@code contextSite},
+     * unwrapping {@link org.stvnadore.psi.UseMapAlias} hops and Standard Library Prelude fallbacks
+     * while failing closed when a {@code :use} collision blocks resolution.
+     *
+     * @param contextSite originating PSI element (or {@link PsiFile} for root-scope queries)
+     * @param rawName     candidate raw or qualified type token
+     * @return resolved {@link TypeDefinition}, or {@code null} when unresolvable
+     */
+    public static @Nullable TypeDefinition resolveTypeDefinitionAtContext(
+            @Nullable PsiElement contextSite,
+            @Nullable String rawName
+    ) {
+        if (contextSite == null || rawName == null || rawName.isBlank()) {
+            return null;
+        }
+        String trimmed = rawName.trim();
+        var outcome = resolveTypeAtContextInternal(contextSite, trimmed, null, true);
+        if (outcome.blockedByCollision()) {
+            return null;
+        }
+        var td = StvnPsiUtils.resolveTargetTypeDefinition(outcome.resolved());
+        if (td != null) {
+            return td;
+        }
+        if (outcome.resolved() == null) {
+            var project = contextSite.getProject();
+            if (!project.isDisposed()) {
+                return StvnPreludeBridge.resolvePreludeTypeDefinition(project, trimmed);
+            }
+        }
+        return null;
+    }
+
+    private static ScopedTypeLookup resolveTypeAtContextInternal(
+            @Nullable PsiElement contextSite,
+            @Nullable String rawName,
             @Nullable List<String> trace,
             boolean allowImplicitPreludeFallback
     ) {
-        var containingFile = keyword.getContainingFile();
-        if (containingFile == null) {
-            return null;
+        if (contextSite == null || rawName == null || rawName.isBlank()) {
+            return new ScopedTypeLookup(null, false);
         }
-        var targetTypeName = keyword.getText().trim();
-        var enclosingPkg = PsiTreeUtil.getParentOfType(keyword, PackageEnclosure.class);
+        PsiFile containingFile = contextSite instanceof PsiFile pf ? pf : contextSite.getContainingFile();
+        if (containingFile == null) {
+            return new ScopedTypeLookup(null, false);
+        }
+        String targetTypeName = rawName.trim();
+        if (contextSite instanceof TypeKeyword kw
+                && kw.getParent() instanceof org.stvnadore.psi.UseMapAlias alias) {
+            var kws = alias.getTypeKeywordList();
+            if (!kws.isEmpty() && kws.get(0) == kw) {
+                var useElem = PsiTreeUtil.getParentOfType(alias, org.stvnadore.psi.UseElement.class);
+                if (useElem != null && useElem.getUseTarget() != null && useElem.getUseTarget().getUseTargetIllegal() == null) {
+                    var bare = targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                        ? targetTypeName.substring(1)
+                        : targetTypeName;
+                    var fqni = useElem.getUseTarget().getText().trim() + "/" + bare;
+                    return new ScopedTypeLookup(
+                        resolveTypeInFile(containingFile, fqni, new HashSet<>(), trace, false, allowImplicitPreludeFallback),
+                        false
+                    );
+                }
+            }
+        }
+
+        var enclosingPkg = contextSite instanceof PsiFile
+            ? null
+            : PsiTreeUtil.getParentOfType(contextSite, PackageEnclosure.class, false);
         if (enclosingPkg != null
                 && (!targetTypeName.startsWith(StvnVocabulary.SIGIL_TYPIC) || !targetTypeName.substring(1).contains("/"))) {
             for (var elem : enclosingPkg.getPackageElementList()) {
                 var typeDef = elem.getTypeDefinition();
                 if (typeDef != null) {
                     var defKw = typeDef.getTypeKeyword();
-                    if (defKw != null && defKw != keyword && defKw.getText().equals(targetTypeName)) {
-                        return defKw;
+                    if (defKw != null && defKw != contextSite && defKw.getText().trim().equals(targetTypeName)) {
+                        return new ScopedTypeLookup(defKw, false);
                     }
                 }
             }
@@ -219,9 +295,9 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
                     ? targetTypeName.substring(1)
                     : targetTypeName;
                 var fqni = pkgPath.getText().trim() + "/" + bare;
-                var resolvedSamePkg = resolveTypeInFile(containingFile, fqni, new HashSet<>(), null, false, allowImplicitPreludeFallback);
-                if (resolvedSamePkg != null && resolvedSamePkg != keyword) {
-                    return resolvedSamePkg;
+                var resolvedSamePkg = resolveTypeInFile(containingFile, fqni, new HashSet<>(), null, false, false);
+                if (resolvedSamePkg != null && resolvedSamePkg != contextSite) {
+                    return new ScopedTypeLookup(resolvedSamePkg, false);
                 }
             }
             var pkgUseStmts = new ArrayList<org.stvnadore.psi.UseStmt>();
@@ -232,13 +308,54 @@ public final class StvnTypeReference extends PsiReferenceBase<TypeKeyword> imple
             }
             var pkgUseResult = resolveFromUseStmts(containingFile, pkgUseStmts, targetTypeName, trace);
             if (pkgUseResult.collisionOrEvicted()) {
-                return null;
+                return new ScopedTypeLookup(null, true);
             }
             if (pkgUseResult.resolved() != null) {
-                return pkgUseResult.resolved();
+                return new ScopedTypeLookup(pkgUseResult.resolved(), false);
             }
         }
-        return resolveTypeInFile(containingFile, targetTypeName, new HashSet<>(), trace, false, allowImplicitPreludeFallback);
+
+        var rootResolved = resolveTypeInFile(
+            containingFile,
+            targetTypeName,
+            new HashSet<>(),
+            trace,
+            false,
+            allowImplicitPreludeFallback
+        );
+        if (rootResolved == null && hasRootUseCollision(containingFile, targetTypeName)) {
+            return new ScopedTypeLookup(null, true);
+        }
+        return new ScopedTypeLookup(rootResolved, false);
+    }
+
+    private static boolean hasRootUseCollision(PsiFile file, String targetName) {
+        if (!targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) || targetName.substring(1).contains("/")) {
+            return false;
+        }
+        for (var def : PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class)) {
+            if (StvnMetaTemplateUtil.isInSecondaryRootSection(def)
+                    || PsiTreeUtil.getParentOfType(def, PackageEnclosure.class) != null) {
+                continue;
+            }
+            var kw = def.getTypeKeyword();
+            if (kw != null && kw.getText().trim().equals(targetName)) {
+                return false;
+            }
+        }
+        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class).stream()
+            .filter(use -> PsiTreeUtil.getParentOfType(use, PackageEnclosure.class) == null)
+            .filter(use -> !StvnMetaTemplateUtil.isInSecondaryRootSection(use))
+            .toList();
+        return resolveFromUseStmts(file, useStmts, targetName, null).collisionOrEvicted();
+    }
+
+    private static @Nullable PsiElement resolveTypeKeywordWithContext(
+            TypeKeyword keyword,
+            @Nullable List<String> trace,
+            boolean allowImplicitPreludeFallback
+    ) {
+        return resolveTypeAtContextInternal(keyword, keyword.getText().trim(), trace, allowImplicitPreludeFallback).resolved();
     }
 
     /**

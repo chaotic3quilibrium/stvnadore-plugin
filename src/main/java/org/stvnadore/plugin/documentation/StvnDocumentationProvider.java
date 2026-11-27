@@ -130,7 +130,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var typeName = link.substring("TypeDefinition/".length()).trim();
             var file = context.getContainingFile();
             if (file != null) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
+                var resolved = StvnTypeReference.resolveTypeAtContext(context, typeName);
                 if (resolved != null) {
                     var typeDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
                     return (typeDef != null) ? typeDef : resolved;
@@ -278,17 +278,16 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             var kw = typeDef.getTypeKeyword();
             if (kw != null) {
                 var alias = kw.getText();
-                if (StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), alias)) {
+                if (StvnTypeResolver.isDegradedNominalAlias(kw, alias)) {
                     var ir = StvnTypeResolver.resolveNominalIrSchema(typeDef);
                     return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, typeDef));
                 }
             }
         } else if (target instanceof TypeKeyword typeKw) {
             var alias = typeKw.getText();
-            if (StvnTypeResolver.isDegradedNominalAlias(typeKw.getContainingFile(), alias)) {
-                var ir = StvnTypeResolver.resolveIrSchemaByAlias(typeKw.getContainingFile(), alias);
-                var targetDef = StvnTypeReference.resolveTypeInFile(typeKw.getContainingFile(), alias, new HashSet<>());
-                var td = StvnPsiUtils.resolveTargetTypeDefinition(targetDef);
+            if (StvnTypeResolver.isDegradedNominalAlias(typeKw, alias)) {
+                var ir = StvnTypeResolver.resolveIrSchemaAtContext(typeKw, alias);
+                var td = StvnTypeReference.resolveTypeDefinitionAtContext(typeKw, alias);
                 return new DegradedSchemaInfo(alias, resolveGroundedFallbackBase(ir, td));
             }
         } else if (target instanceof Value value) {
@@ -303,8 +302,8 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 var kw = schema.getTypeKeyword();
                 var alias = kw != null ? kw.getText() : null;
                 if (StvnTypeResolver.isDegradedOrUngroundedSchema(value.getContainingFile(), schema)) {
-                    var ir = (alias != null && schema.getMetadataMap() == null)
-                        ? StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), alias)
+                    var ir = (kw != null && alias != null && schema.getMetadataMap() == null)
+                        ? StvnTypeResolver.resolveIrSchemaAtContext(kw, alias)
                         : StvnTypeResolver.resolveIrSchema(schema);
                     var schemaLabel = (alias != null && schema.getMetadataMap() == null)
                         ? alias
@@ -320,7 +319,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                     var ancKw = ancSchema.getTypeKeyword();
                     var ancAlias = ancKw != null ? ancKw.getText() : ancSchema.getText().trim();
                     var ancIr = ancKw != null
-                        ? StvnTypeResolver.resolveIrSchemaByAlias(degradedAncestor.getContainingFile(), ancAlias)
+                        ? StvnTypeResolver.resolveIrSchemaAtContext(ancKw, ancAlias)
                         : StvnTypeResolver.resolveIrSchema(ancSchema);
                     return new DegradedSchemaInfo(ancAlias, resolveGroundedFallbackBase(ancIr, ancSchema));
                 }
@@ -1562,16 +1561,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(rawName)) {
             return null;
         }
-        var file = kw.getContainingFile();
-        var ref = kw.getReference();
-        var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-        if (resolved == null && file != null) {
-            resolved = StvnTypeReference.resolveTypeInFile(file, rawName, new HashSet<>());
-        }
-        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (td == null && !kw.getProject().isDisposed()) {
-            td = StvnPreludeBridge.resolvePreludeTypeDefinition(kw.getProject(), rawName);
-        }
+        TypeDefinition td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, rawName);
         if (td != null && td.getTypeKeyword() != null) {
             String localName = td.getTypeKeyword().getText().trim();
             if (localName.length() > 1 && localName.substring(1).contains("/")) {
@@ -1996,16 +1986,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var kw = schemaType.getTypeKeyword();
         if (kw != null) {
-            var ref = kw.getReference();
-            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-            var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-            if (td == null) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var fallback = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                    td = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
-                }
-            }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
             if (td != null) {
                 if (td.getMetadataMap() != null) {
                     for (var entry : td.getMetadataMap().getMetadataEntryList()) {
@@ -2042,16 +2023,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             if (!visited.add(text)) {
                 return null;
             }
-            var ref = kw.getReference();
-            var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-            var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-            if (td == null) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var fallback = StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    td = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
-                }
-            }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
             if (td != null && td.getSchemaType() != null) {
                 return resolveBaseTypeString(td.getSchemaType(), visited);
             }
@@ -2123,25 +2095,22 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
     }
 
     private static @Nullable StvnSchema resolveNearestNonPoisonedAncestorIr(TypeDefinition startDef) {
-        var visited = new HashSet<String>();
+        var visited = new HashSet<PsiElement>();
         TypeDefinition cursor = startDef;
-        while (cursor != null) {
+        while (cursor != null && visited.add(cursor)) {
             var schemaType = cursor.getSchemaType();
             if (schemaType == null || schemaType.getTypeKeyword() == null) {
                 return null;
             }
-            String parentAlias = schemaType.getTypeKeyword().getText().trim();
-            if (!visited.add(parentAlias)
-                    || StvnVocabulary.isBaseScalarType(parentAlias)
+            var kw = schemaType.getTypeKeyword();
+            String parentAlias = kw.getText().trim();
+            if (StvnVocabulary.isBaseScalarType(parentAlias)
                     || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(parentAlias)) {
                 return null;
             }
-            var resolved = StvnTypeReference.resolveTypeInFile(cursor.getContainingFile(), parentAlias, new HashSet<>());
-            var parentDef = resolved instanceof TypeDefinition td
-                ? td
-                : PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
+            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, parentAlias);
             if (parentDef == null || parentDef == cursor) {
-                var byAlias = StvnTypeResolver.resolveIrSchemaByAlias(cursor.getContainingFile(), parentAlias);
+                var byAlias = StvnTypeResolver.resolveIrSchemaAtContext(kw, parentAlias);
                 if (byAlias instanceof StvnSchema.PoisonedSchema p) {
                     return p.bestEffortFallback().orElse(null);
                 }
@@ -2613,12 +2582,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         var file = typeDef.getContainingFile();
         if (schemaType.getSchemaConstructor() == null && schemaType.getTypeKeyword() != null && file != null) {
             var aliasKw = schemaType.getTypeKeyword();
-            var resolved = new StvnTypeReference(aliasKw).resolve();
-            var aliasDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-            if (aliasDef == null) {
-                var fallback = StvnTypeReference.resolveTypeInFile(file, aliasKw.getText().trim(), new HashSet<>());
-                aliasDef = StvnPsiUtils.resolveTargetTypeDefinition(fallback);
-            }
+            var aliasDef = StvnTypeReference.resolveTypeDefinitionAtContext(aliasKw, aliasKw.getText().trim());
             if (aliasDef != null && aliasDef != typeDef) {
                 return hasIntrinsicContainerTraitViolation(aliasDef, visited, invertibleActive);
             }
@@ -2992,8 +2956,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         for (int i = 1; i < trace.size(); i++) {
             var alias = trace.get(i);
             if (alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                var ancestorTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(rootTypeDef, alias);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
                     return true;
                 }
@@ -3034,8 +2997,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         for (int i = 1; i < trace.size(); i++) {
             var alias = trace.get(i);
             if (file != null && alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
-                var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                var ancestorTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(rootTypeDef, alias);
                 if (ancestorTypeDef != null && hasExplicitFacetInPsi(ancestorTypeDef, facetKey)) {
                     String aliasWithSigil = alias.startsWith(StvnVocabulary.SIGIL_TYPIC)
                         ? alias
@@ -5118,7 +5080,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         sb.append("<b>Underlying Structure:</b> ").append(underlying);
         var lhsIrSchema = StvnTypeResolver.resolveNominalIrSchema(typeDef);
         boolean lhsDegraded = (lhsIrSchema instanceof StvnSchema.PoisonedSchema)
-            || (keyword != null && StvnTypeResolver.isDegradedNominalAlias(typeDef.getContainingFile(), keyword.getText().trim()))
+            || (keyword != null && StvnTypeResolver.isDegradedNominalAlias(keyword, keyword.getText().trim()))
             || (schemaType != null && StvnTypeResolver.isDegradedOrUngroundedSchema(typeDef.getContainingFile(), schemaType));
         var lhsExemplar = (lhsDegraded || usageBanner != null)
             ? null
@@ -5796,11 +5758,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         TypeDefinition typeDef = null;
         var kw = rootSchema.getTypeKeyword();
         if (kw != null) {
-            var file = rootSchema.getContainingFile();
-            if (file != null) {
-                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                typeDef = StvnPsiUtils.resolveTargetTypeDefinition(target);
-            }
+            typeDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
         }
 
         // Zone 1: Identity & Structural Trace
@@ -6481,7 +6439,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             return false;
         }
         var aliasText = typeKw.getText().trim();
-        var ir = StvnTypeResolver.resolveIrSchemaByAlias(file, aliasText);
+        var ir = StvnTypeResolver.resolveIrSchemaAtContext(typeKw, aliasText);
         return ir instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded();
     }
 
@@ -7909,14 +7867,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 break;
             }
             String alias = kw.getText().trim();
-            var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-            if (target == null) {
-                target = new StvnTypeReference(kw).resolve();
-            }
-            TypeDefinition nextTd = StvnPsiUtils.resolveTargetTypeDefinition(target);
-            if (nextTd == null && !file.getProject().isDisposed()) {
-                nextTd = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), alias);
-            }
+            TypeDefinition nextTd = StvnTypeReference.resolveTypeDefinitionAtContext(kw, alias);
             if (nextTd == null || !visited.add(nextTd)) {
                 break;
             }
@@ -8264,16 +8215,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (kw != null) {
             var alias = kw.getText().trim();
             if (visited.add(alias)) {
-                var ref = kw.getReference();
-                var resolved = ref != null ? ref.resolve() : new StvnTypeReference(kw).resolve();
-                var td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-                if (td == null) {
-                    var file = schemaType.getContainingFile();
-                    if (file != null) {
-                        var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                        td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                    }
-                }
+                var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, alias);
                 if (td != null) {
                     if (td.getMetadataMap() != null) {
                         for (var entry : td.getMetadataMap().getMetadataEntryList()) {
@@ -8315,13 +8257,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         if (kw != null) {
             var alias = kw.getText().trim();
             if (visited.add(alias)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                    var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-                    if (td != null && td.getSchemaType() != null) {
-                        return extractStringMetadataBound(td.getSchemaType(), facetKw, visited);
-                    }
+                var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, alias);
+                if (td != null && td.getSchemaType() != null) {
+                    return extractStringMetadataBound(td.getSchemaType(), facetKw, visited);
                 }
             }
         }
@@ -8377,14 +8315,10 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
                 return trace;
             }
             visited.add(typeName);
-            var file = rootSchema.getContainingFile();
-            if (file != null) {
-                var targetDef = StvnTypeReference.resolveTypeInFile(file, typeName, new HashSet<>());
-                var td = PsiTreeUtil.getParentOfType(targetDef, TypeDefinition.class);
-                if (td != null && td.getSchemaType() != null) {
-                    var childTrace = extractRootStructuralTrace(td.getSchemaType(), depth + 1, new HashSet<>(visited));
-                    trace.addAll(childTrace);
-                }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, typeName);
+            if (td != null && td.getSchemaType() != null) {
+                var childTrace = extractRootStructuralTrace(td.getSchemaType(), depth + 1, new HashSet<>(visited));
+                trace.addAll(childTrace);
             }
             return trace;
         }
@@ -8416,13 +8350,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
         }
         var kw = schema.getTypeKeyword();
         if (kw != null) {
-            var file = schema.getContainingFile();
-            if (file != null) {
-                var target = StvnTypeReference.resolveTypeInFile(file, kw.getText().trim(), new HashSet<>());
-                var td = PsiTreeUtil.getParentOfType(target, TypeDefinition.class);
-                if (td != null && td.getMetadataMap() != null) {
-                    collectedEntries.addAll(td.getMetadataMap().getMetadataEntryList());
-                }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
+            if (td != null && td.getMetadataMap() != null) {
+                collectedEntries.addAll(td.getMetadataMap().getMetadataEntryList());
             }
         }
         if (collectedEntries.isEmpty()) {
@@ -8453,8 +8383,7 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
             for (int i = 1; i < trace.size(); i++) {
                 var alias = trace.get(i);
                 if (alias.startsWith(StvnVocabulary.SIGIL_TYPIC)) {
-                    var resolved = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-                    var ancestorTypeDef = StvnPsiUtils.getParentTypeDefinition(resolved);
+                    var ancestorTypeDef = StvnTypeReference.resolveTypeDefinitionAtContext(typeDef, alias);
                     if (ancestorTypeDef != null) {
                         collectDeclaredFacetTagsFromTypeDef(ancestorTypeDef, tags);
                     }
@@ -8652,8 +8581,9 @@ public final class StvnDocumentationProvider implements DocumentationProvider {
 
         var unionSchema = info.getSchema();
         if (unionSchema.getTypeKeyword() != null && outerVal.getContainingFile() != null) {
-            var governingAlias = unionSchema.getTypeKeyword().getText().trim();
-            var governingIr = StvnTypeResolver.resolveIrSchemaByAlias(outerVal.getContainingFile(), governingAlias);
+            var kw = unionSchema.getTypeKeyword();
+            var governingAlias = kw.getText().trim();
+            var governingIr = StvnTypeResolver.resolveIrSchemaAtContext(kw, governingAlias);
             if (governingIr instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
                 return null;
             }

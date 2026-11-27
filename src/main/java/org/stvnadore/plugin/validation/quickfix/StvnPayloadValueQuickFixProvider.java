@@ -1135,15 +1135,7 @@ public final class StvnPayloadValueQuickFixProvider {
         var kw = schemaType.getTypeKeyword();
         if (kw != null && schemaType.getContainingFile() != null) {
             String aliasName = kw.getText().trim();
-            var target = StvnTypeReference.resolveTypeInFile(
-                schemaType.getContainingFile(),
-                aliasName,
-                new HashSet<>()
-            );
-            var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-            if (td == null && !schemaType.getProject().isDisposed()) {
-                td = StvnPreludeBridge.resolvePreludeTypeDefinition(schemaType.getProject(), aliasName);
-            }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, aliasName);
             if (td != null) {
                 StvnSchema ir = StvnTypeResolver.resolveNominalIrSchema(td);
                 while (ir instanceof StvnSchema.PoisonedSchema p) {

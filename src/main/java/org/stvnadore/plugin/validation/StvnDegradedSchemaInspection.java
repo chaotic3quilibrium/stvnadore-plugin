@@ -78,8 +78,8 @@ public final class StvnDegradedSchemaInspection extends LocalInspectionTool {
                     var schema = info.getSchema();
                     var kw = schema.getTypeKeyword();
                     var aliasName = kw != null ? kw.getText() : null;
-                    if (aliasName != null && StvnTypeResolver.isDegradedNominalAlias(value.getContainingFile(), aliasName)) {
-                        var irSchema = StvnTypeResolver.resolveIrSchemaByAlias(value.getContainingFile(), aliasName);
+                    if (kw != null && aliasName != null && StvnTypeResolver.isDegradedNominalAlias(kw, aliasName)) {
+                        var irSchema = StvnTypeResolver.resolveIrSchemaAtContext(kw, aliasName);
                         String rawMessage;
                         if (irSchema instanceof StvnSchema.PoisonedSchema poisoned && poisoned.isUngrounded()) {
                             rawMessage = "Value bound to degraded schema '" + aliasName

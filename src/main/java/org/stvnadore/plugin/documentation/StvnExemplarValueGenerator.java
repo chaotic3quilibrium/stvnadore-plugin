@@ -117,8 +117,8 @@ public final class StvnExemplarValueGenerator {
         if (irSchema instanceof StvnSchema.PoisonedSchema poisoned) {
             if (isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode()) && poisoned.aliasName().isPresent()) {
                 if (schemaType != null && schemaType.getContainingFile() != null) {
-                    StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaByAlias(
-                        schemaType.getContainingFile(),
+                    StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaAtContext(
+                        schemaType,
                         poisoned.aliasName().get()
                     );
                     if (catalogIr != null && !(catalogIr instanceof StvnSchema.PoisonedSchema)) {
@@ -136,7 +136,7 @@ public final class StvnExemplarValueGenerator {
             if (schemaType.getParent() instanceof TypeDefinition parentTd
                     && parentTd.getSchemaType() == schemaType
                     && parentTd.getTypeKeyword() != null
-                    && StvnTypeResolver.isDegradedNominalAlias(file, parentTd.getTypeKeyword().getText().trim())) {
+                    && StvnTypeResolver.isDegradedNominalAlias(parentTd.getTypeKeyword(), parentTd.getTypeKeyword().getText().trim())) {
                 return true;
             }
         }
@@ -149,8 +149,8 @@ public final class StvnExemplarValueGenerator {
         }
         if (isRecursiveBackEdgeCode(poisoned.primaryDiagnosticCode()) && poisoned.aliasName().isPresent()) {
             if (context != null && context.getContainingFile() != null) {
-                StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaByAlias(
-                    context.getContainingFile(),
+                StvnSchema catalogIr = StvnTypeResolver.resolveIrSchemaAtContext(
+                    context,
                     poisoned.aliasName().get()
                 );
                 if (catalogIr != null && !(catalogIr instanceof StvnSchema.PoisonedSchema)) {
@@ -201,8 +201,8 @@ public final class StvnExemplarValueGenerator {
                     return null;
                 }
                 if (schemaType.getContainingFile() != null) {
-                    StvnSchema lhsIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), lhsAlias);
-                    if (isPoisonedIrSchema(lhsIr, schemaType)) {
+                    StvnSchema lhsIr = StvnTypeResolver.resolveNominalIrSchema(parentTd);
+                    if (isPoisonedIrSchema(lhsIr, parentTd)) {
                         return null;
                     }
                 }
@@ -210,13 +210,14 @@ public final class StvnExemplarValueGenerator {
                 nextPsiElements.add(parentTd);
             }
             if (schemaType.getTypeKeyword() != null) {
-                String kwAlias = schemaType.getTypeKeyword().getText().trim();
+                var kw = schemaType.getTypeKeyword();
+                String kwAlias = kw.getText().trim();
                 if (visitedIrAliases.contains(kwAlias)) {
                     return null;
                 }
                 if (schemaType.getContainingFile() != null) {
-                    StvnSchema kwIr = StvnTypeResolver.resolveIrSchemaByAlias(schemaType.getContainingFile(), kwAlias);
-                    if (isPoisonedIrSchema(kwIr, schemaType)) {
+                    StvnSchema kwIr = StvnTypeResolver.resolveIrSchemaAtContext(kw, kwAlias);
+                    if (isPoisonedIrSchema(kwIr, kw)) {
                         return null;
                     }
                 }
@@ -230,8 +231,8 @@ public final class StvnExemplarValueGenerator {
                 && poisoned.aliasName().isPresent()
                 && schemaType != null
                 && schemaType.getContainingFile() != null) {
-            effectiveIr = StvnTypeResolver.resolveIrSchemaByAlias(
-                schemaType.getContainingFile(),
+            effectiveIr = StvnTypeResolver.resolveIrSchemaAtContext(
+                schemaType,
                 poisoned.aliasName().get()
             );
         }
@@ -1001,8 +1002,8 @@ public final class StvnExemplarValueGenerator {
                 && poisoned.aliasName().isPresent()
                 && schemaType != null
                 && schemaType.getContainingFile() != null) {
-            effectiveIr = StvnTypeResolver.resolveIrSchemaByAlias(
-                schemaType.getContainingFile(),
+            effectiveIr = StvnTypeResolver.resolveIrSchemaAtContext(
+                schemaType,
                 poisoned.aliasName().get()
             );
         }
@@ -1927,9 +1928,9 @@ public final class StvnExemplarValueGenerator {
      */
     public static Map<String, String> extractLineageMetadata(SchemaType schemaType) {
         List<MetadataMap> mapsHighestToLowest = new ArrayList<>();
-        Set<String> visited = new HashSet<>();
+        Set<PsiElement> visited = new HashSet<>();
         SchemaType curr = schemaType;
-        while (curr != null) {
+        while (curr != null && visited.add(curr)) {
             if (curr.getMetadataMap() != null) {
                 mapsHighestToLowest.add(curr.getMetadataMap());
             }
@@ -1942,18 +1943,7 @@ public final class StvnExemplarValueGenerator {
                 break;
             }
             String alias = kw.getText().trim();
-            if (!visited.add(alias)) {
-                break;
-            }
-            var file = curr.getContainingFile();
-            if (file == null) {
-                break;
-            }
-            var target = StvnTypeReference.resolveTypeInFile(file, alias, new HashSet<>());
-            var td = StvnPsiUtils.resolveTargetTypeDefinition(target);
-            if (td == null && !file.getProject().isDisposed()) {
-                td = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), alias);
-            }
+            var td = StvnTypeReference.resolveTypeDefinitionAtContext(kw, alias);
             if (td == null) {
                 break;
             }
@@ -2049,8 +2039,9 @@ public final class StvnExemplarValueGenerator {
                 return null;
             }
             if (curr.getContainingFile() != null) {
-                StvnSchema stepIr = StvnTypeResolver.resolveIrSchemaByAlias(curr.getContainingFile(), alias);
-                if (isPoisonedIrSchema(stepIr, curr)) {
+                PsiElement stepCtx = curr.getTypeKeyword() != null ? curr.getTypeKeyword() : curr;
+                StvnSchema stepIr = StvnTypeResolver.resolveIrSchemaAtContext(stepCtx, alias);
+                if (isPoisonedIrSchema(stepIr, stepCtx)) {
                     return null;
                 }
             }

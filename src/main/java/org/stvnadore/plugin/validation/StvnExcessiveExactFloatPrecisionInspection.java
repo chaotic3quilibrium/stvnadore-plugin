@@ -179,6 +179,17 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
     }
 
     private static boolean isExactActive(@Nullable MetadataMap metaMap, @NotNull SchemaType schemaType) {
+        return isExactActive(metaMap, schemaType, new HashSet<>());
+    }
+
+    private static boolean isExactActive(
+            @Nullable MetadataMap metaMap,
+            @NotNull SchemaType schemaType,
+            Set<SchemaType> visited
+    ) {
+        if (!visited.add(schemaType)) {
+            return false;
+        }
         if (hasLocalExactFacet(metaMap)) {
             return true;
         }
@@ -186,18 +197,13 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
         if (kw != null) {
             var text = kw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(text)) {
-                var file = schemaType.getContainingFile();
-                if (file != null) {
-                    var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                    if (resolved != null) {
-                        var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                        if (parentDef != null && parentDef.getSchemaType() != null) {
-                            return isExactActive(
-                                parentDef.getMetadataMap() != null ? parentDef.getMetadataMap() : parentDef.getSchemaType().getMetadataMap(),
-                                parentDef.getSchemaType()
-                            );
-                        }
-                    }
+                var parentDef = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+                if (parentDef != null && parentDef.getSchemaType() != null) {
+                    return isExactActive(
+                        parentDef.getMetadataMap() != null ? parentDef.getMetadataMap() : parentDef.getSchemaType().getMetadataMap(),
+                        parentDef.getSchemaType(),
+                        visited
+                    );
                 }
             }
         }
@@ -232,15 +238,9 @@ public final class StvnExcessiveExactFloatPrecisionInspection extends LocalInspe
             if (!visited.add(text)) {
                 return null;
             }
-            var file = schemaType.getContainingFile();
-            if (file != null) {
-                var resolved = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeInFile(file, text, new HashSet<>());
-                if (resolved != null) {
-                    var parentDef = PsiTreeUtil.getParentOfType(resolved, TypeDefinition.class);
-                    if (parentDef != null && parentDef.getSchemaType() != null) {
-                        return resolveBaseTypeString(parentDef.getSchemaType(), visited);
-                    }
-                }
+            var parentDef = org.stvnadore.plugin.reference.StvnTypeReference.resolveTypeDefinitionAtContext(kw, text);
+            if (parentDef != null && parentDef.getSchemaType() != null) {
+                return resolveBaseTypeString(parentDef.getSchemaType(), visited);
             }
         }
         return null;

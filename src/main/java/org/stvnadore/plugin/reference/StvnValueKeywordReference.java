@@ -144,7 +144,7 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
                     ? StvnTypeResolver.resolveGoverningEnumVariant(valKw)
                     : null;
                 if (enumVariant == null) {
-                    enumVariant = findEnumDeclaration(file, tokenText, new HashSet<>());
+                    enumVariant = findEnumDeclarationAtContext(element, tokenText);
                 }
                 if (enumVariant != null) {
                     return enumVariant;
@@ -163,14 +163,287 @@ public final class StvnValueKeywordReference extends PsiReferenceBase<PsiElement
                 return contextualEnumVariant;
             }
         } else {
-            var constDef = StvnConstantReference.resolveConstantInFile(file, tokenText, new HashSet<>());
+            var constDef = StvnConstantReference.resolveConstantAtContext(element, tokenText);
             if (constDef != null) {
                 return constDef;
             }
         }
 
-        // Fallback to file-wide Enum Declaration if constant or contextual enum was not found
-        return findEnumDeclaration(file, tokenText, new HashSet<>());
+        // Fallback to lexically visible Enum Declaration if constant or contextual enum was not found
+        return findEnumDeclarationAtContext(element, tokenText);
+    }
+
+    /**
+     * Finds an {@code :Enum} variant declaration matching {@code tokenText} that is lexically visible
+     * from {@code contextSite} (co-located {@code :package} enums, merged same-package enums, and
+     * package-local {@code :use} imports before root {@code :defs} and root {@code :use} imports,
+     * without leaking un-imported sibling packages).
+     *
+     * @param contextSite originating PSI element
+     * @param tokenText   variant token text starting with {@code #}
+     * @return matching variant {@link ValueKeyword}, or {@code null} when not visible in scope
+     */
+    public static @Nullable PsiElement findEnumDeclarationAtContext(@Nullable PsiElement contextSite, String tokenText) {
+        if (contextSite == null) {
+            return null;
+        }
+        var file = contextSite instanceof PsiFile pf ? pf : contextSite.getContainingFile();
+        if (file == null) {
+            return null;
+        }
+        var enclosingPkg = contextSite instanceof PsiFile
+            ? null
+            : PsiTreeUtil.getParentOfType(contextSite, org.stvnadore.psi.PackageEnclosure.class, false);
+        if (enclosingPkg != null) {
+            var localTypeNames = new HashSet<String>();
+            for (var pkgElem : enclosingPkg.getPackageElementList()) {
+                var td = pkgElem.getTypeDefinition();
+                if (td != null && td.getTypeKeyword() != null) {
+                    localTypeNames.add(td.getTypeKeyword().getText().trim());
+                }
+                var match = matchEnumVariantInTypeDef(td, tokenText);
+                if (match != null) {
+                    return match;
+                }
+            }
+            if (!org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(enclosingPkg)
+                    && enclosingPkg.getPackagePath() != null) {
+                var pkgPathText = enclosingPkg.getPackagePath().getText().trim();
+                var samePkgMatch = findMergedPackageEnumVariant(file, pkgPathText, tokenText, localTypeNames, new HashSet<>());
+                if (samePkgMatch != null) {
+                    return samePkgMatch;
+                }
+            }
+            for (var pkgElem : enclosingPkg.getPackageElementList()) {
+                if (pkgElem.getUseStmt() != null) {
+                    var match = findEnumVariantViaUseStmt(file, pkgElem.getUseStmt(), tokenText, localTypeNames);
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+        }
+        return findRootVisibleEnumDeclaration(file, tokenText, new HashSet<>());
+    }
+
+    private static @Nullable PsiElement findMergedPackageEnumVariant(
+            PsiFile file,
+            String pkgPathText,
+            String tokenText,
+            Set<String> localTypeNames,
+            Set<PsiFile> visited
+    ) {
+        if (!visited.add(file)) {
+            return null;
+        }
+        for (var pkg : PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class)) {
+            if (org.stvnadore.plugin.util.StvnMetaTemplateUtil.isInSecondaryRootSection(pkg)
+                    || org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg)
+                    || pkg.getPackagePath() == null
+                    || !pkgPathText.equals(pkg.getPackagePath().getText().trim())) {
+                continue;
+            }
+            for (var elem : pkg.getPackageElementList()) {
+                var td = elem.getTypeDefinition();
+                if (td != null && td.getTypeKeyword() != null) {
+                    localTypeNames.add(td.getTypeKeyword().getText().trim());
+                }
+                var match = matchEnumVariantInTypeDef(td, tokenText);
+                if (match != null) {
+                    return match;
+                }
+            }
+        }
+        for (var incl : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            var stringLit = incl.getStringLiteral();
+            if (stringLit != null) {
+                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                if (targetFile != null) {
+                    var match = findMergedPackageEnumVariant(targetFile, pkgPathText, tokenText, localTypeNames, visited);
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement findRootVisibleEnumDeclaration(
+            PsiFile file,
+            String tokenText,
+            Set<PsiFile> visited
+    ) {
+        if (!visited.add(file)) {
+            return null;
+        }
+        var rootDeclaredNames = new HashSet<String>();
+        for (var def : PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class)) {
+            if (org.stvnadore.plugin.util.StvnMetaTemplateUtil.isInSecondaryRootSection(def)
+                    || PsiTreeUtil.getParentOfType(def, org.stvnadore.psi.PackageEnclosure.class) != null) {
+                continue;
+            }
+            if (def.getTypeKeyword() != null) {
+                rootDeclaredNames.add(def.getTypeKeyword().getText().trim());
+            }
+            var match = matchEnumVariantInTypeDef(def, tokenText);
+            if (match != null) {
+                return match;
+            }
+        }
+        for (var useStmt : PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class)) {
+            if (org.stvnadore.plugin.util.StvnMetaTemplateUtil.isInSecondaryRootSection(useStmt)
+                    || PsiTreeUtil.getParentOfType(useStmt, org.stvnadore.psi.PackageEnclosure.class) != null) {
+                continue;
+            }
+            var match = findEnumVariantViaUseStmt(file, useStmt, tokenText, rootDeclaredNames);
+            if (match != null) {
+                return match;
+            }
+        }
+        for (var incl : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            if (org.stvnadore.plugin.util.StvnMetaTemplateUtil.isInSecondaryRootSection(incl)) {
+                continue;
+            }
+            var stringLit = incl.getStringLiteral();
+            if (stringLit != null) {
+                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                if (targetFile != null) {
+                    var resolved = findRootVisibleEnumDeclaration(targetFile, tokenText, visited);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement findEnumVariantViaUseStmt(
+            PsiFile file,
+            org.stvnadore.psi.UseStmt useStmt,
+            String tokenText,
+            Set<String> localEvictingTypeNames
+    ) {
+        for (var useElem : useStmt.getUseElementList()) {
+            var target = useElem.getUseTarget();
+            if (target == null || target.getUseTargetIllegal() != null) {
+                continue;
+            }
+            String pkgPrefix = target.getText().trim();
+            var renamedLhs = new HashSet<String>();
+            var aliasBlock = useElem.getUseAliasBlock();
+            if (aliasBlock != null) {
+                for (var alias : aliasBlock.getUseMapAliasList()) {
+                    var typeKws = alias.getTypeKeywordList();
+                    if (typeKws.size() >= 2 && typeKws.get(0) != null && typeKws.get(1) != null) {
+                        String remoteText = typeKws.get(0).getText().trim();
+                        String localText = typeKws.get(1).getText().trim();
+                        renamedLhs.add(remoteText);
+                        if (!localEvictingTypeNames.contains(localText)) {
+                            String bare = remoteText.startsWith(StvnVocabulary.SIGIL_TYPIC)
+                                ? remoteText.substring(1)
+                                : remoteText;
+                            var resolved = StvnTypeReference.resolveTypeInFile(file, pkgPrefix + "/" + bare, new HashSet<>());
+                            var td = org.stvnadore.plugin.psi.StvnPsiUtils.resolveTargetTypeDefinition(resolved);
+                            var match = matchEnumVariantInTypeDef(td, tokenText);
+                            if (match != null) {
+                                return match;
+                            }
+                        }
+                    }
+                }
+            }
+            if (org.stvnadore.plugin.psi.StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
+                var match = findStrippedEnumVariantInPackage(
+                    file,
+                    pkgPrefix,
+                    tokenText,
+                    localEvictingTypeNames,
+                    renamedLhs,
+                    new HashSet<>()
+                );
+                if (match != null) {
+                    return match;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement findStrippedEnumVariantInPackage(
+            PsiFile file,
+            String pkgPrefix,
+            String tokenText,
+            Set<String> localEvictingTypeNames,
+            Set<String> renamedLhs,
+            Set<PsiFile> visited
+    ) {
+        if (!visited.add(file)) {
+            return null;
+        }
+        for (var pkg : PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.PackageEnclosure.class)) {
+            if (org.stvnadore.plugin.util.StvnMetaTemplateUtil.isInSecondaryRootSection(pkg)
+                    || org.stvnadore.plugin.psi.StvnPsiUtils.hasIllegalTrailingSlash(pkg)
+                    || pkg.getPackagePath() == null
+                    || !pkgPrefix.equals(pkg.getPackagePath().getText().trim())) {
+                continue;
+            }
+            for (var elem : pkg.getPackageElementList()) {
+                var td = elem.getTypeDefinition();
+                if (td != null && td.getTypeKeyword() != null) {
+                    String bareName = td.getTypeKeyword().getText().trim();
+                    if (localEvictingTypeNames.contains(bareName) || renamedLhs.contains(bareName)) {
+                        continue;
+                    }
+                    var match = matchEnumVariantInTypeDef(td, tokenText);
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+        }
+        for (var incl : PsiTreeUtil.findChildrenOfType(file, IncludeElement.class)) {
+            var stringLit = incl.getStringLiteral();
+            if (stringLit != null) {
+                var targetFile = StvnTypeReference.resolveIncludeFile(stringLit);
+                if (targetFile != null) {
+                    var match = findStrippedEnumVariantInPackage(
+                        targetFile,
+                        pkgPrefix,
+                        tokenText,
+                        localEvictingTypeNames,
+                        renamedLhs,
+                        visited
+                    );
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable PsiElement matchEnumVariantInTypeDef(
+            @Nullable TypeDefinition def,
+            String tokenText
+    ) {
+        if (def == null) {
+            return null;
+        }
+        var schema = def.getSchemaType();
+        if (schema != null && schema.getSchemaConstructor() != null) {
+            var sum = schema.getSchemaConstructor().getSumType();
+            if (sum != null && sum.getEnumDef() != null) {
+                for (var kw : sum.getEnumDef().getValueKeywordList()) {
+                    if (kw.getText().equals(tokenText)) {
+                        return kw;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**

@@ -1342,7 +1342,7 @@ public final class StvnNamespaceSymbolCollector {
     ) {
         PsiElement resolved = new StvnTypeReference(referenceKw).resolve();
         if (resolved == null) {
-            resolved = StvnTypeReference.resolveTypeInFile(contextFile, referenceKw.getText().trim(), new HashSet<>());
+            resolved = StvnTypeReference.resolveTypeAtContext(referenceKw, referenceKw.getText().trim());
         }
         if (resolved == null) {
             var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(rootFile.getProject(), referenceKw.getText().trim());
@@ -1459,10 +1459,12 @@ public final class StvnNamespaceSymbolCollector {
         PsiFile defFile = constDef.getContainingFile();
         boolean isPrelude = defFile != null && StvnPreludeBridge.isPreludeFile(defFile);
         String canonicalConstFqni = buildCanonicalConstantDefFqni(constDef);
-        String resolvedConstType = formatConstantResolvedType(constDef, rootFile);
+        ProjectedBinding rootBinding = findRootUseBindingForConstantFqni(rootFile, canonicalConstFqni);
+        boolean applyRootProjection = rootBinding != null
+            || (!isPrelude && PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class) == null);
+        String resolvedConstType = formatConstantResolvedType(constDef, rootFile, applyRootProjection);
         String identityKey = (defFile != null ? defFile.getName() : "") + "::" + canonicalConstFqni;
 
-        ProjectedBinding rootBinding = findRootUseBindingForConstantFqni(rootFile, canonicalConstFqni);
         if (rootBinding != null) {
             PsiElement navTarget = rootBinding.localBindingElement() instanceof ValueKeyword
                 ? rootBinding.localBindingElement()
@@ -1518,6 +1520,16 @@ public final class StvnNamespaceSymbolCollector {
     }
 
     private static String formatConstantResolvedType(ConstantDefinition constDef, PsiFile activeRootFile) {
+        boolean applyRootUseProjection = !StvnPreludeBridge.isPreludeFile(constDef.getContainingFile())
+            && PsiTreeUtil.getParentOfType(constDef, PackageEnclosure.class) == null;
+        return formatConstantResolvedType(constDef, activeRootFile, applyRootUseProjection);
+    }
+
+    private static String formatConstantResolvedType(
+        ConstantDefinition constDef,
+        PsiFile activeRootFile,
+        boolean applyRootUseProjection
+    ) {
         var schemaType = constDef.getSchemaType();
         if (schemaType == null) {
             return "";
@@ -1527,13 +1539,15 @@ public final class StvnNamespaceSymbolCollector {
             var hops = StvnTypeReference.extractClickableResolutionHops(typeKw, true);
             if (!hops.isEmpty()) {
                 List<String> labels = new ArrayList<>(hops.stream().map(StvnTypeReference.TraceHop::displayLabel).toList());
-                String firstHop = labels.get(0);
-                ProjectedBinding rootBinding = findRootUseBindingForTypeFqni(activeRootFile, firstHop);
-                if (rootBinding != null && !rootBinding.localName().equals(firstHop)) {
-                    String localSimple = StvnTypeReference.extractSimpleTypeName(rootBinding.localName());
-                    String remoteSimple = StvnTypeReference.extractSimpleTypeName(firstHop);
-                    if (!localSimple.equals(remoteSimple)) {
-                        labels.add(0, rootBinding.localName());
+                if (applyRootUseProjection) {
+                    String firstHop = labels.get(0);
+                    ProjectedBinding rootBinding = findRootUseBindingForTypeFqni(activeRootFile, firstHop);
+                    if (rootBinding != null && !rootBinding.localName().equals(firstHop)) {
+                        String localSimple = StvnTypeReference.extractSimpleTypeName(rootBinding.localName());
+                        String remoteSimple = StvnTypeReference.extractSimpleTypeName(firstHop);
+                        if (!localSimple.equals(remoteSimple)) {
+                            labels.add(0, rootBinding.localName());
+                        }
                     }
                 }
                 if (labels.size() == 1) {
@@ -1562,7 +1576,7 @@ public final class StvnNamespaceSymbolCollector {
         String constFqni = buildConstantFqni(targetPkg, remoteConstText);
         ConstantDefinition found = findPackagedConstantDefinition(file, targetPkg, remoteConstText);
         if (found != null) {
-            return formatConstantResolvedType(found, file);
+            return formatConstantResolvedType(found, file, true);
         }
         return constFqni;
     }
@@ -1610,24 +1624,173 @@ public final class StvnNamespaceSymbolCollector {
         if (schemaType == null) {
             return def.getTypeKeyword() != null ? def.getTypeKeyword().getText().trim() : "";
         }
-        boolean hasSubsetFilter = hasEnumSubsetFacet(def.getMetadataMap()) || hasEnumSubsetFacet(schemaType.getMetadataMap());
-        if (schemaType.getTypeKeyword() != null && !hasSubsetFilter) {
-            String nextRaw = schemaType.getTypeKeyword().getText().trim();
+        TypeKeyword parentKw = schemaType.getTypeKeyword();
+        if (parentKw != null) {
+            String nextRaw = parentKw.getText().trim();
             if (!StvnVocabulary.isBaseScalarType(nextRaw)
-                    && StvnTypeReference.toShortPreludeTerminal(nextRaw) == null) {
-                var resolved = new StvnTypeReference(schemaType.getTypeKeyword()).resolve();
-                var parentDef = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-                if (parentDef != null) {
-                    String parentStruct = resolveFormattedTypeStructure(parentDef, visited);
-                    var ownMeta = def.getMetadataMap() != null ? def.getMetadataMap() : schemaType.getMetadataMap();
-                    if (ownMeta != null && !parentStruct.startsWith(StvnVocabulary.DELIM_OPEN_BRACE)) {
-                        return StvnSchemaFormatter.formatCompactCanonicalPsiSchema(ownMeta) + " " + parentStruct;
-                    }
-                    return parentStruct;
+                    && !StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(nextRaw)) {
+                TypeDefinition parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(parentKw, nextRaw);
+                if (parentDef != null && parentDef != def) {
+                    return formatDerivedNominalTypeStructure(def, schemaType, parentKw, parentDef);
                 }
             }
         }
         return StvnSchemaFormatter.formatCompactCanonicalPsiSchema(def);
+    }
+
+    private static String formatDerivedNominalTypeStructure(
+        TypeDefinition def,
+        SchemaType schemaType,
+        TypeKeyword parentKw,
+        TypeDefinition firstParentDef
+    ) {
+        List<MetadataMap> ancestorMapsChildToRoot = new ArrayList<>();
+        Set<PsiElement> chainVisited = new HashSet<>();
+        chainVisited.add(def);
+        TypeDefinition terminalDef = firstParentDef;
+        TypeDefinition curr = firstParentDef;
+        while (curr != null && chainVisited.add(curr)) {
+            terminalDef = curr;
+            appendTypeDefinitionMetadataMaps(curr, ancestorMapsChildToRoot);
+            SchemaType currSt = curr.getSchemaType();
+            TypeKeyword nextKw = currSt != null ? currSt.getTypeKeyword() : null;
+            if (nextKw == null || StvnVocabulary.isBaseScalarType(nextKw.getText().trim())) {
+                break;
+            }
+            curr = StvnTypeReference.resolveTypeDefinitionAtContext(nextKw, nextKw.getText().trim());
+        }
+
+        boolean isSubset = hasEnumSubsetFacet(def.getMetadataMap()) || hasEnumSubsetFacet(schemaType.getMetadataMap());
+        String facetBlock;
+        if (isSubset) {
+            List<MetadataMap> rootToParentMaps = new ArrayList<>(ancestorMapsChildToRoot.size());
+            for (int i = ancestorMapsChildToRoot.size() - 1; i >= 0; i--) {
+                rootToParentMaps.add(ancestorMapsChildToRoot.get(i));
+            }
+            MetadataMap ownMeta = def.getMetadataMap() != null ? def.getMetadataMap() : schemaType.getMetadataMap();
+            facetBlock = StvnSchemaFormatter.formatMergedEnumSubsetPsiMetadataMaps(rootToParentMaps, ownMeta);
+        } else {
+            List<MetadataMap> childToRootMaps = new ArrayList<>();
+            appendTypeDefinitionMetadataMaps(def, childToRootMaps);
+            childToRootMaps.addAll(ancestorMapsChildToRoot);
+            List<MetadataMap> rootToChildMaps = new ArrayList<>(childToRootMaps.size());
+            for (int i = childToRootMaps.size() - 1; i >= 0; i--) {
+                rootToChildMaps.add(childToRootMaps.get(i));
+            }
+            facetBlock = StvnSchemaFormatter.formatMergedPsiMetadataMaps(rootToChildMaps);
+        }
+
+        List<String> lineageLabels = extractNominalTypeLineageLabels(parentKw, terminalDef, !facetBlock.isEmpty());
+        String directParent = lineageLabels.isEmpty() ? parentKw.getText().trim() : lineageLabels.get(0);
+        String prefix = facetBlock.isEmpty() ? "" : facetBlock + " ";
+        String suffix = lineageLabels.size() > 1
+            ? " (-> " + String.join(" -> ", lineageLabels.subList(1, lineageLabels.size())) + ")"
+            : "";
+        return prefix + directParent + suffix;
+    }
+
+    private static void appendTypeDefinitionMetadataMaps(TypeDefinition td, List<MetadataMap> childToRootTarget) {
+        if (td.getMetadataMap() != null) {
+            childToRootTarget.add(td.getMetadataMap());
+        }
+        if (td.getSchemaType() != null && td.getSchemaType().getMetadataMap() != null) {
+            childToRootTarget.add(td.getSchemaType().getMetadataMap());
+        }
+    }
+
+    private static List<String> extractNominalTypeLineageLabels(
+        TypeKeyword parentKw,
+        TypeDefinition terminalDef,
+        boolean normalizeTemporalTerminal
+    ) {
+        var rawHops = StvnTypeReference.extractClickableResolutionHops(parentKw, true);
+        List<String> labels = new ArrayList<>(rawHops.size() + 1);
+        for (var hop : rawHops) {
+            String label = hop.displayLabel();
+            if (labels.isEmpty() || !labels.get(labels.size() - 1).equals(label)) {
+                labels.add(label);
+            }
+        }
+        if (labels.isEmpty()) {
+            labels.add(parentKw.getText().trim());
+        }
+
+        String lastLabel = labels.get(labels.size() - 1);
+        if (!isConstructorOrScalarTerminalLabel(lastLabel)) {
+            String terminalCtor = extractTerminalConstructorKeyword(terminalDef);
+            if (terminalCtor != null && !terminalCtor.equals(lastLabel)) {
+                labels.add(terminalCtor);
+            }
+        }
+
+        if (normalizeTemporalTerminal && labels.size() > 1) {
+            int lastIdx = labels.size() - 1;
+            labels.set(lastIdx, stripInlineTemporalFlagPrefix(labels.get(lastIdx)));
+        }
+        return labels;
+    }
+
+    private static boolean isConstructorOrScalarTerminalLabel(String label) {
+        if (StvnVocabulary.isBaseScalarType(label) || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(label)) {
+            return true;
+        }
+        return label.startsWith(StvnVocabulary.DELIM_OPEN_BRACE)
+            && (label.endsWith(" " + StvnVocabulary.TYPE_TIME_EPOCH)
+                || label.endsWith(" " + StvnVocabulary.TYPE_DATE_TIME));
+    }
+
+    private static String stripInlineTemporalFlagPrefix(String label) {
+        if (label.startsWith(StvnVocabulary.DELIM_OPEN_BRACE)) {
+            if (label.endsWith(" " + StvnVocabulary.TYPE_TIME_EPOCH)) {
+                return StvnVocabulary.TYPE_TIME_EPOCH;
+            }
+            if (label.endsWith(" " + StvnVocabulary.TYPE_DATE_TIME)) {
+                return StvnVocabulary.TYPE_DATE_TIME;
+            }
+        }
+        return label;
+    }
+
+    private static @Nullable String extractTerminalConstructorKeyword(TypeDefinition terminalDef) {
+        SchemaType st = terminalDef.getSchemaType();
+        if (st == null) {
+            return null;
+        }
+        if (st.getTypeKeyword() != null) {
+            String kwText = st.getTypeKeyword().getText().trim();
+            if (StvnVocabulary.isBaseScalarType(kwText) || StvnVocabulary.COMPOSITE_CONSTRUCTOR_TYPES.contains(kwText)) {
+                return kwText;
+            }
+        }
+        SchemaConstructor ctor = st.getSchemaConstructor();
+        if (ctor == null) {
+            return null;
+        }
+        if (ctor.getAtomicType() != null) {
+            return ctor.getAtomicType().getText().trim();
+        }
+        if (ctor.getProductType() != null) {
+            return StvnVocabulary.TYPE_TUPLE;
+        }
+        if (ctor.getCollectionType() != null && ctor.getCollectionType().getFirstChild() != null) {
+            return ctor.getCollectionType().getFirstChild().getText().trim();
+        }
+        if (ctor.getSumType() != null) {
+            SumType sum = ctor.getSumType();
+            if (sum.getEnumDef() != null) {
+                return StvnVocabulary.TYPE_ENUM;
+            }
+            if (sum.getNode().findChildByType(StvnTypes.KW_OPTION) != null) {
+                return StvnVocabulary.TYPE_OPTION;
+            }
+            if (sum.getNode().findChildByType(StvnTypes.KW_EITHER) != null) {
+                return StvnVocabulary.TYPE_EITHER;
+            }
+            if (sum.getNode().findChildByType(StvnTypes.KW_UNION) != null) {
+                return StvnVocabulary.TYPE_UNION;
+            }
+        }
+        return null;
     }
 
     private static boolean hasEnumSubsetFacet(@Nullable MetadataMap metaMap) {
@@ -1895,30 +2058,7 @@ public final class StvnNamespaceSymbolCollector {
                 || StvnVocabulary.isBaseScalarType(name)) {
             return null;
         }
-        PsiElement resolved = new StvnTypeReference(kw).resolve();
-        TypeDefinition td = StvnPsiUtils.resolveTargetTypeDefinition(resolved);
-        if (td != null) {
-            return td;
-        }
-        PackageEnclosure pkg = PsiTreeUtil.getParentOfType(kw, PackageEnclosure.class);
-        if (pkg != null && pkg.getPackagePath() != null && !name.substring(1).contains("/")) {
-            for (var elem : pkg.getPackageElementList()) {
-                var candidate = elem.getTypeDefinition();
-                if (candidate != null && candidate.getTypeKeyword() != null
-                        && name.equals(candidate.getTypeKeyword().getText().trim())) {
-                    return candidate;
-                }
-            }
-        }
-        PsiElement inFile = StvnTypeReference.resolveTypeInFile(file, name, new HashSet<>());
-        td = StvnPsiUtils.resolveTargetTypeDefinition(inFile);
-        if (td != null) {
-            return td;
-        }
-        if (!file.getProject().isDisposed()) {
-            return StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), name);
-        }
-        return null;
+        return StvnTypeReference.resolveTypeDefinitionAtContext(kw, name);
     }
 
     private static @Nullable ConstantDefinition resolveReferencedConstantDefinitionForGrounding(ValueKeyword vkw) {
@@ -2017,7 +2157,7 @@ public final class StvnNamespaceSymbolCollector {
                         bareName,
                         targetPackagePath,
                         fqni,
-                        formatConstantResolvedType(constDef, activeRootFile),
+                        formatConstantResolvedType(constDef, activeRootFile, true),
                         computeVopGroundingDepthForDeclaration(constDef, groundingMemo),
                         navElement,
                         false,
