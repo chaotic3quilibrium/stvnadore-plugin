@@ -1,0 +1,13 @@
+{
+  :type :Map(:String :String)
+  :body {
+    [
+      "room_title"
+      "The Clockwork Observatory"
+    ]
+    [
+      "difficulty"
+      "expert"
+    ]
+  }
+}

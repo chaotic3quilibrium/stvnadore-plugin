@@ -248,10 +248,15 @@ Transitive subset derivations resolve back to the root `:Enum` declaration autom
 
 * **Prohibited Numeric Underscore Removal (`E002`):** Strips `_` separators from numeric literals (`Remove prohibited underscores from numeric literal '...'`).
 * **Exact Decimal Precision Rounding & Truncation (`E012`):** On `{ #exact #maxSize N } :Float` overflow, offers `Round value to #maxSize N significant digits '...'` (`Priority.TOP`) and `Truncate value to #maxSize N significant digits '...'` (`Priority.HIGH`).
-* **Container Layout Intentions (`Alt+Enter`):**
-  * **Expand container to multi-line** (`StvnExpandContainerIntention`)
+* **Container & Map-Entry Layout Intentions (`Alt+Enter`):**
+  * **Expand container to multiple lines** (`StvnExpandContainerIntention`)
   * **Collapse container to single line** (`StvnCollapseContainerIntention`)
-  * **Collapse child elements to single line each** (`StvnCollapseChildElementsIntention`)
+  * **Collapse child elements to single lines** (`StvnCollapseChildElementsIntention`)
+  * **Expand map entry to multiple lines** (`StvnExpandMapEntryIntention` — expands `[key value]` into 4-slot symmetry)
+  * **Collapse map entry to single line** (`StvnCollapseMapEntryIntention`)
+  * **Expand all map entries to multiple lines** (`StvnExpandAllMapEntriesIntention` — expands every single-line `[key value]` entry in a `:Map` into 4-slot symmetry while preserving comments)
+  * **Collapse all map entries to single lines** (`StvnCollapseAllMapEntriesIntention`)
+  * Fencing a plain or escaped `"..."` key or value inside a `:Map` entry automatically expands the enclosing entry into canonical 4-slot symmetry with zero interior bracket padding on sibling entries.
 
 ---
 
@@ -403,11 +408,11 @@ Errors inside `:body` values never highlight root braces `{ ... }`, `:meta`, `:d
 
 ### 4.4 STVN 2.0.0 Structural, Validity & Governance Inspections
 
-The plugin registers **27** real-time local inspections synchronized 1:1 with `stvnadore-core` diagnostic codes (`[stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]`), including:
+The plugin registers **30** real-time local inspections synchronized 1:1 with `stvnadore-core` diagnostic codes (`[stvn-(core|plugin):<CODE>-<SYMBOLIC_ID>]`), including:
 * **`StvnMetadataOrder` (`ERROR`):** Enforces 3-tier `:meta` ordering (`#name -> #domain -> #kind`) and 5-tier schema `MetadataMap` ordering (§ 6.1) with comment-preserving 1-click reordering.
 * **`StvnDiscreteInterval` (`ERROR`):** Enforces half-open discrete intervals `[#minIncl, #maxExcl)` on `:Int`, `{ #exact } :Float`, `:TimeEpoch`, and `:DateTime`, offering `#maxIncl N -> #maxExcl N+1` and bound-swap quick-fixes.
 * **`StvnTemporalMode` (`ERROR`):** Requires explicit scale flags (`#s`, `#ms`, `#us`, `#ns`) on `:TimeEpoch` and explicit mode flags (`#offset`, `#zoned`, `#audited`) on `:DateTime`.
-* **`StvnStringCardinality` & `StvnStringCapacity` (`ERROR` / `WARNING`):** Prohibits `#size` on `:String` (converting to `#maxSize` / `#minSize`) and governs explicit `#maxSize` bounds in Unicode Scalar Values.
+* **`StvnStringCardinality` & `STVN | Governance | Capacity` (`StvnMapCapacity`, `StvnSeqCapacity`, `StvnSetCapacity`, `StvnStringCapacity`):** Prohibits `#size` on `:String` (`ERROR`, converting to `#maxSize` / `#minSize`) and independently governs `:Map` (`entries`), `:Seq` (`elements`), `:Set` (`elements`), and `:String` (`characters`) capacity bounds (`WARNING`, with optional `:body` and `#CONST` literal overflow checks).
 * **`StvnStringEscapeScrutiny` (`WARNING`):** Flags hazardous control, bidirectional text-direction, and invisible format escapes (`PW007`) across `:meta`, `:include`, `:defs`, `:type`, and `:body`, and warns by default on shorthand `\r` escapes (`PW008`) with 1-click **`Replace '\r' with explicit '\u000D'`** quick-fixes while exempting explicit `\u000D`, emoji joiners (`\u200C`, `\u200D`), and printable escapes.
 * **`StvnFlatDocumentInclude` (`ERROR`):** Flags illegal `:include` statements (`E005`) and unresolved external `:use` packages (`E035`) in hermetic `.stvn` and `.stvn_d` documents, flags illegal modifier blocks inside `:include [...]` (`E002`, offering **`Remove illegal modifier from ':include'`**), flags same-scope duplicate `:use` package targets and duplicate `(LHS, RHS)` alias pairs (`E005`, offering **`Remove duplicate ':use' entry`** and **`Remove duplicate ':use' alias mapping`**), flags coordinate-pinned `:use` and unpackaged `:include` namespace collisions (`E006`, offering **`Replace '#strip' with explicit symbol aliases`** on colliding `{ #strip }` directives), and offers 3-tier `:use` package remediation (`Include '<path>'`, interactive package locator popup, or `:use` target removal) in modular `.stvn_i` and `.stvn_di` units.
 

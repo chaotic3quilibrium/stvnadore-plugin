@@ -1,0 +1,7 @@
+{
+  :type :Map(:String :String)
+  :body {
+    <spot>["room_title" "The Clockwork Observatory"]</spot>
+    ["difficulty" "expert"]
+  }
+}

@@ -155,13 +155,14 @@ public final class StvnDiagnosticAnnotatorMapping {
         // 11. Excessive Exact Float Precision Inspection
         putDual(map, StvnDiagnosticCodes.WARN_EXCESSIVE_EXACT_PRECISION, "StvnExcessiveExactFloatPrecision");
 
-        // 12. String Capacity Governance Inspection
+        // 12. Capacity Governance Inspections (String, Map, Sequence, Set)
         map.put(DiagnosticBag.ERR_CAPACITY_OVERFLOW, "StvnStringCapacity");
         map.put("CAPACITY_OVERFLOW", "StvnStringCapacity");
         putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED, "StvnStringCapacity");
-        putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED, "StvnMapCapacity");
         putDual(map, StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW, "StvnStringCapacity");
         putDual(map, StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW, "StvnStringCapacity");
+        putDual(map, StvnDiagnosticCodes.WARN_COLLECTION_LITERAL_CAPACITY_OVERFLOW, "StvnMapCapacity");
 
         // 13. Flat Document Include Inspection
         map.put(DiagnosticBag.ERR_INCLUDES_PROHIBITED_IN_FLAT_DOCUMENT, "StvnFlatDocumentInclude");

@@ -427,37 +427,53 @@ public final class StvnStringCapacityInspectionTest extends BasePlatformTestCase
             }
             """;
         myFixture.configureByText("deep_telemetry_matrix.stvn_i", text);
-        var warnings = myFixture.doHighlighting().stream()
+        // Orthogonality check: StvnStringCapacityInspection alone flags strictly the 3 :String slots
+        var stringOnlyWarnings = myFixture.doHighlighting().stream()
             .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
             .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
             .toList();
+        assertEquals("StvnStringCapacityInspection alone must flag strictly 3 :String slots", 3, stringOnlyWarnings.size());
 
-        assertEquals("Expected 6 unadorned warnings at depths d=4, 5, 8, 10, 12, 14", 6, warnings.size());
-        assertEquals(":Map", text.substring(warnings.get(0).getStartOffset(), warnings.get(0).getEndOffset()));
-        assertEquals(":String", text.substring(warnings.get(1).getStartOffset(), warnings.get(1).getEndOffset()));
-        assertEquals(":Seq", text.substring(warnings.get(2).getStartOffset(), warnings.get(2).getEndOffset()));
-        assertEquals(":String", text.substring(warnings.get(3).getStartOffset(), warnings.get(3).getEndOffset()));
-        assertEquals(":String", text.substring(warnings.get(4).getStartOffset(), warnings.get(4).getEndOffset()));
-        assertEquals(":Set", text.substring(warnings.get(5).getStartOffset(), warnings.get(5).getEndOffset()));
-
-        for (int step = 0; step < 6; step++) {
-            var currentWarnings = myFixture.doHighlighting().stream()
+        var mapInsp = new StvnMapCapacityInspection();
+        var seqInsp = new StvnSeqCapacityInspection();
+        var setInsp = new StvnSetCapacityInspection();
+        myFixture.enableInspections(mapInsp, seqInsp, setInsp);
+        try {
+            myFixture.configureByText("deep_telemetry_matrix_all.stvn_i", text);
+            var warnings = myFixture.doHighlighting().stream()
                 .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
                 .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
                 .toList();
-            myFixture.getEditor().getCaretModel().moveToOffset(currentWarnings.get(0).getStartOffset());
-            myFixture.doHighlighting();
-            var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
-            assertFalse("Expected 'Set nominal capacity to 4096' at step " + step, actions.isEmpty());
-            myFixture.launchAction(actions.get(0));
-        }
 
-        var remainingWarnings = myFixture.doHighlighting().stream()
-            .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
-            .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
-            .toList();
-        assertTrue("Expected zero remaining unadorned warnings after applying quick-fixes across all depths",
-            remainingWarnings.isEmpty());
+            assertEquals("Expected 6 unadorned warnings at depths d=4, 5, 8, 10, 12, 14", 6, warnings.size());
+            assertEquals(":Map", text.substring(warnings.get(0).getStartOffset(), warnings.get(0).getEndOffset()));
+            assertEquals(":String", text.substring(warnings.get(1).getStartOffset(), warnings.get(1).getEndOffset()));
+            assertEquals(":Seq", text.substring(warnings.get(2).getStartOffset(), warnings.get(2).getEndOffset()));
+            assertEquals(":String", text.substring(warnings.get(3).getStartOffset(), warnings.get(3).getEndOffset()));
+            assertEquals(":String", text.substring(warnings.get(4).getStartOffset(), warnings.get(4).getEndOffset()));
+            assertEquals(":Set", text.substring(warnings.get(5).getStartOffset(), warnings.get(5).getEndOffset()));
+
+            for (int step = 0; step < 6; step++) {
+                var currentWarnings = myFixture.doHighlighting().stream()
+                    .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+                    .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+                    .toList();
+                myFixture.getEditor().getCaretModel().moveToOffset(currentWarnings.get(0).getStartOffset());
+                myFixture.doHighlighting();
+                var actions = myFixture.filterAvailableIntentions("Set nominal capacity to 4096");
+                assertFalse("Expected 'Set nominal capacity to 4096' at step " + step, actions.isEmpty());
+                myFixture.launchAction(actions.get(0));
+            }
+
+            var remainingWarnings = myFixture.doHighlighting().stream()
+                .filter(h -> h.getSeverity() == HighlightSeverity.WARNING)
+                .filter(h -> h.getDescription() != null && h.getDescription().contains("unadorned"))
+                .toList();
+            assertTrue("Expected zero remaining unadorned warnings after applying quick-fixes across all depths",
+                remainingWarnings.isEmpty());
+        } finally {
+            myFixture.disableInspections(mapInsp, seqInsp, setInsp);
+        }
     }
 
     public void testConstantDefinitionInlineSchemaInspectionAndQuickFix() {

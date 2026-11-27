@@ -31,7 +31,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
     * [9. Byte 4 Wire Framing Awareness](#9-byte-4-wire-framing-awareness)
     * [10. Package Enclaves & Lexical Scoping (STVN 2.0)](#10-package-enclaves--lexical-scoping-stvn-20)
     * [11. Canonical 6-File Taxonomy (`.stvn`, `.stvn_i`, `.stvn_d`, `.stvn_di`, `.stvn_b`, `.stvn_bd`)](#11-canonical-6-file-taxonomy-stvn-stvn_i-stvn_d-stvn_di-stvn_b-stvn_bd)
-    * [12. String Capacity Governance (STVN 2.0)](#12-string-capacity-governance-stvn-20)
+    * [12. String & Collection Capacity Governance (STVN 2.0)](#12-string--collection-capacity-governance-stvn-20)
     * [13. Native Code Formatter & Dual Projections (STVN 2.0)](#13-native-code-formatter--dual-projections-stvn-20)
     * [14. First-Class Rename Refactoring (Shift+F6)](#14-first-class-rename-refactoring-shiftf6)
     * [15. Interactive Namespace Dependency Browser](#15-interactive-namespace-dependency-browser)
@@ -130,7 +130,7 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
   * Deterministically inserts missing closing delimiters directly on the next line without swallowing downstream tokens.
 * **Configurable Enter-Key Auto-Closing**: Automatically generates symmetrical `[TAG]"""` closing delimiters when pressing `Enter` after `"""[TAG]` under configurable `EXPANDED_THREE_LINE` or `TIGHT_TWO_LINE` shapes.
 * **Interactive Live Template Launch**: Typing `[` immediately after three double-quote characters launches the `fence` Live Template with synchronized dual-tag variables.
-* **Symmetric Simple, Escaped & Fenced String Conversion Intentions (`Alt+Enter`, `Priority.TOP` & `Priority.NORMAL`)**: Converts escape-free `"..."` literals (`Convert string literal to fenced string block`) and escaped `"..."` literals (`Convert escaped string to fenced string`) with strict mutual exclusion into canonical `"""[RAW]...[RAW]"""` or `"""[REGEX]...[REGEX]"""` blocks with collision-safe tags, converts valid `"""[TAG]...[TAG]"""` blocks back to canonically escaped `"..."` strings (`Convert fenced string to escaped string`) with context-sensitive `#preserveIndent` decoding and optional uppercase `\uXXXX` non-ASCII encoding, symmetrically escapes/unescapes non-ASCII characters inside simple strings (`Escape non-ASCII characters as \uXXXX` and `Unescape \uXXXX sequences to UTF-8`), heals incomplete opening fences into `"""[FENCE]...[FENCE]"""`, and ranks leaf string conversions #1 ahead of enclosing container layout actions.
+* **Symmetric Simple, Escaped & Fenced String Conversion Intentions (`Alt+Enter`, `Priority.TOP` & `Priority.NORMAL`)**: Converts escape-free `"..."` literals (`Convert string literal to fenced string block`) and escaped `"..."` literals (`Convert escaped string to fenced string`) with strict mutual exclusion into canonical `"""[RAW]...[RAW]"""` or `"""[REGEX]...[REGEX]"""` blocks with collision-safe tags (automatically expanding enclosing `:Map` `[key value]` entries into 4-slot multi-line symmetry with zero interior bracket padding on sibling entries), converts valid `"""[TAG]...[TAG]"""` blocks back to canonically escaped `"..."` strings (`Convert fenced string to escaped string`) with context-sensitive `#preserveIndent` decoding and optional uppercase `\uXXXX` non-ASCII encoding, symmetrically escapes/unescapes non-ASCII characters inside simple strings (`Escape non-ASCII characters as \uXXXX` and `Unescape \uXXXX sequences to UTF-8`), heals incomplete opening fences into `"""[FENCE]...[FENCE]"""`, and ranks leaf string conversions #1 ahead of enclosing container layout actions.
 * **Live Template (`fence`)**: Expands full fenced string templates with synchronized tag variables.
 * **In-Editor `Shift+F6` Synchronized Tag Renaming**: Place caret on opening or closing tag brackets and press `Shift+F6` to launch live linked editing across both delimiters.
 * **AST Fracture & Delimiter Collision Guard**: Rejects rename transactions colliding with delimiter sequences inside the payload (`[TAG]"""`, `"""[TAG]`) or violating the tag character class, preserving document integrity.
@@ -153,12 +153,12 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 * **Textual Definitions Schemas (`.stvn_d`, `.stvn_di`)**: First-class support for hermetic definitions schemas (`.stvn_d`, `#kind #DEFS`) and modular definitions schemas with `:include` directives (`.stvn_di`, `#kind #DEFS_INCLUDE`).
 * **Binary Payloads & Definitions (`.stvn_b`, `.stvn_bd`)**: Recognizes binary payload documents (`.stvn_b`) and binary definitions archives (`.stvn_bd`), plus reserved multi-part system substrates (`*.stvn_ir.*`, `*.stvn_cas.*`).
 
-### 12. String Capacity Governance (STVN 2.0)
+### 12. String & Collection Capacity Governance (STVN 2.0)
 
-* **Pure Facet Governance**: Governs string capacities via canonical metadata facets (`{ #minSize 1 #maxSize N } :String`).
-* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFix to apply configured threshold (`{ #minSize 1 #maxSize 4096 } :String`) and secondary QuickFix to apply default capacity (`{ #minSize 1 #maxSize 16777216 } :String`).
-* **Error Suppression Guard**: Under `ERROR` severity, suppresses the secondary default QuickFix to prevent re-triggering error conditions.
-* **Payload Scope Verification**: Optional inspection of `:body` string literals against active schema capacity bounds, offering atomic `Truncate` and `Widen` quick-fixes.
+* **4-Way Orthogonal Capacity Suite (`Settings | Editor | Inspections | STVN | Governance | Capacity`)**: Independently governs `:Map` (`StvnMapCapacity`, entries), `:Seq` (`StvnSeqCapacity`, elements), `:Set` (`StvnSetCapacity`, elements), and `:String` (`StvnStringCapacity`, characters) under a tri-state `Capacity` parent category with independent `OptPane` thresholds (`[1, 16,777,216]`, default `4,096`).
+* **Dual QuickFix Protocol**: In `WARNING` mode, provides primary QuickFixes to apply the configured threshold (`#maxSize N`, `0..N`, `1..N`) and secondary QuickFixes to apply the default allocation cap (`16,777,216`) at canonical 5-tier metadata rank.
+* **Error Suppression Guard**: Under `ERROR` severity, suppresses the `16,777,216` QuickFixes so applied fixes satisfy the active error threshold.
+* **Optional Payload & Constant Literal Scope**: Independently inspects `:body` and `#CONST` string, map, sequence, and set literals (`PW004`), offering atomic `Truncate` and `Widen` quick-fixes.
 
 ### 13. Native Code Formatter & Dual Projections (STVN 2.0)
 
@@ -218,13 +218,17 @@ Provides clean-sheet **STVN 2.0.0** language support, pure-IR compiler diagnosti
 | `StvnExpandContainerIntention`                                       | **Expand container to multiple lines**                 | Editor Intention                  | `Alt+Enter` on single-line container              |
 | `StvnCollapseContainerIntention`                                     | **Collapse container to single line**                  | Editor Intention                  | `Alt+Enter` on comment/fence-free container       |
 | `StvnCollapseChildElementsIntention`                                 | **Collapse child elements to single lines**            | Editor Intention                  | `Alt+Enter` on multi-line parent container        |
+| `StvnExpandMapEntryIntention`                                        | **Expand map entry to multiple lines**                 | Editor Intention                  | `Alt+Enter` on single-line `[key value]` entry    |
+| `StvnCollapseMapEntryIntention`                                      | **Collapse map entry to single line**                  | Editor Intention                  | `Alt+Enter` on multi-line `[key value]` entry     |
+| `StvnExpandAllMapEntriesIntention`                                   | **Expand all map entries to multiple lines**           | Editor Intention                  | `Alt+Enter` on `:Map` `{ ... }` literal           |
+| `StvnCollapseAllMapEntriesIntention`                                 | **Collapse all map entries to single lines**           | Editor Intention                  | `Alt+Enter` on multi-line `:Map` `{ ... }` literal|
 | `StvnReorderEnumFilterVariantsQuickFix`                              | **Sort variants to match root enum declaration order** | Quick-Fix Intention               | `Alt+Enter` on out-of-order filter list           |
 
 ---
 
 ## Inspection Registrations
 
-All **27** `<localInspection>` registrations declared in [`plugin.xml`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_plugin/src/main/resources/META-INF/plugin.xml):
+All **30** `<localInspection>` registrations declared in [`plugin.xml`](file:///c:/Projects/Java/stvnadore/ij_stvnadore_plugin/src/main/resources/META-INF/plugin.xml):
 
 | Inspection Class                              | Short Name                        | Display Name                                          | Group Path                      | Default Level  |
 |:----------------------------------------------|:----------------------------------|:------------------------------------------------------|:--------------------------------|:--------------:|
@@ -240,7 +244,10 @@ All **27** `<localInspection>` registrations declared in [`plugin.xml`](file:///
 | `StvnFlatDocumentIncludeInspection`           | `StvnFlatDocumentInclude`         | Flat document include inspection                      | `STVN / Structural`             |    `ERROR`     |
 | `StvnNestedPackageInspection`                 | `StvnNestedPackage`               | Nested package inspection                             | `STVN / Structural`             |    `ERROR`     |
 | `StvnTrailingSlashInspection`                 | `StvnTrailingSlash`               | Trailing slash inspection                             | `STVN / Syntax`                 |    `ERROR`     |
-| `StvnStringCapacityInspection`                | `StvnStringCapacity`              | String capacity governance inspection                 | `STVN / Governance`             |   `WARNING`    |
+| `StvnMapCapacityInspection`                   | `StvnMapCapacity`                 | Map capacity governance inspection                    | `STVN / Governance / Capacity`  |   `WARNING`    |
+| `StvnSeqCapacityInspection`                   | `StvnSeqCapacity`                 | Sequence capacity governance inspection               | `STVN / Governance / Capacity`  |   `WARNING`    |
+| `StvnSetCapacityInspection`                   | `StvnSetCapacity`                 | Set capacity governance inspection                    | `STVN / Governance / Capacity`  |   `WARNING`    |
+| `StvnStringCapacityInspection`                | `StvnStringCapacity`              | String capacity governance inspection                 | `STVN / Governance / Capacity`  |   `WARNING`    |
 | `StvnExcessiveExactFloatPrecisionInspection`  | `StvnExcessiveExactFloatPrecision`| Excessive exact float mantissa precision inspection   | `STVN / Governance`             |   `WARNING`    |
 | `StvnFloatPrecisionLossInspection`            | `StvnFloatPrecisionLoss`          | Continuous float precision loss inspection            | `STVN / Numeric & Floating-Point`|  `WARNING`    |
 | `StvnMetadataFacetInspection`                 | `StvnMetadataFacet`               | Metadata facet and block governance inspection        | `STVN / Governance`             |    `ERROR`     |

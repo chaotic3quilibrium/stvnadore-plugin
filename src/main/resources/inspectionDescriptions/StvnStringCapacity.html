@@ -1,16 +1,16 @@
 <html>
 <body>
-<p>Validates that nominal string and collection type declarations adhere to capacity governance policies by specifying explicit capacity facets within configured allocation limits (STVN Spec &sect; 5.1.5, &sect; 5.5.3, and &sect; 6.1).</p>
+<p>Validates that root <code>:String</code> schema declarations specify explicit capacity facets within configured character limits (STVN Spec &sect; 5.1.5 and &sect; 6.1).</p>
 <!-- tooltip end -->
 <p>
-  STVN defines a default allocation capacity of 16 MiB (16,777,216 characters or elements) for unadorned <code>:String</code>,
-  <code>:Seq</code>, <code>:Set</code>, and <code>:Map</code> types.
-  This inspection flags root constructor declarations lacking explicit capacity facets or exceeding the configured
-  threshold (default: 4,096 characters, elements, or entries). Derived nominal aliases (<code>:Child :ParentAlias</code>)
-  inherit locked Tier-1 capacity bounds from their root definition and are not flagged. Immutable compile-time
-  constant declarations (<code>#CONST :String "..."</code>, <code>#CONST :Seq(:Int) [...]</code>) omit unadorned warnings
-  because their value cardinality is statically fixed, while explicit <code>#maxSize</code> values exceeding the threshold
-  still report <code>PW003</code>. Quick-fixes insert <code>#minSize</code> and <code>#maxSize</code> at their canonical 5-tier position inside <code>{ ... }</code>.
+  STVN defines a default allocation capacity of 16,777,216 Unicode Scalar Values for unadorned <code>:String</code> types.
+  This inspection governs <code>:String</code> schemas exclusively under <b>STVN | Governance | Capacity</b> (peer collection
+  inspections govern <code>:Map</code>, <code>:Seq</code>, and <code>:Set</code> independently). It flags root
+  <code>:String</code> constructors lacking explicit capacity facets (<code>PW002</code>) or specifying <code>#maxSize</code>
+  above the configured threshold (default: 4,096 characters, <code>PW003</code>). Derived nominal aliases
+  (<code>:ChildStr :ParentStr</code>) inherit locked Tier-1 capacity bounds from their root constructor and are not flagged.
+  Immutable compile-time constant declarations (<code>#CONST :String "..."</code>) omit unadorned warnings while still
+  reporting <code>PW003</code> when explicit <code>#maxSize</code> exceeds the threshold.
 </p>
 
 <p><b>QuickFix Resolution Protocol:</b></p>
@@ -32,23 +32,22 @@
   </li>
 </ul>
 
-<p><b>Payload Scope (Optional):</b></p>
+<p><b>Payload and Constant Literal Scope (Optional):</b></p>
 <p>
-  When payload scanning is enabled in inspection settings, flags runtime string literals in <code>:body</code> blocks and constant definitions
-  whose text length exceeds the bound declared in the active schema. Provides quick-fixes to truncate the literal or widen the schema capacity.
+  When <b>Inspect string literals in body payloads and constants</b> is enabled, flags string literals in <code>:body</code>
+  blocks and <code>#CONST</code> definitions whose decoded Unicode code-point length exceeds the active bound (<code>PW004</code>),
+  providing quick-fixes to truncate the literal or widen the governing <code>:String</code> schema capacity.
 </p>
 
 <p><b>Example (Violation):</b></p>
 <pre><code>:defs {
   :Username :String
-  :Identifiers :Seq(:Int)
 }
 </code></pre>
 
 <p><b>Example (Compliant):</b></p>
 <pre><code>:defs {
-  :Username    { #minSize 1 #maxSize 64 } :String
-  :Identifiers { #maxSize 4096 }          :Seq(:Int)
+  :Username { #minSize 1 #maxSize 64 } :String
 }
 </code></pre>
 </body>

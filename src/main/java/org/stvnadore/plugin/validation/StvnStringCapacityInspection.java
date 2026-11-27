@@ -1,19 +1,14 @@
 package org.stvnadore.plugin.validation;
 
-import com.intellij.codeInsight.daemon.HighlightDisplayKey;
+import com.intellij.codeInsight.intention.FileModifier;
 import com.intellij.codeInsight.intention.FileModifier.SafeFieldForPreview;
 import com.intellij.codeInsight.intention.PriorityAction;
-import com.intellij.codeInspection.LocalInspectionTool;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewUtils;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
-import com.intellij.codeInspection.ProblemHighlightType;
-import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.project.Project;
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -21,73 +16,41 @@ import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NullMarked;
 import org.stvnadore.core.StvnVocabulary;
 import org.stvnadore.plugin.psi.StvnPsiLiteralEvaluator;
-import org.stvnadore.plugin.reference.StvnPreludeBridge;
 import org.stvnadore.plugin.reference.StvnTypeReference;
-import org.stvnadore.plugin.util.StvnMetaTemplateUtil;
 import org.stvnadore.psi.AtomicType;
-import org.stvnadore.psi.BodyEntry;
-import org.stvnadore.psi.CollectionType;
 import org.stvnadore.psi.ConstantDefinition;
-import org.stvnadore.psi.DefsEntry;
-import org.stvnadore.psi.IncludeElement;
 import org.stvnadore.psi.MetadataEntry;
-import org.stvnadore.psi.ProductType;
-import org.stvnadore.psi.SchemaConstructor;
+import org.stvnadore.psi.MetadataMap;
 import org.stvnadore.psi.SchemaType;
-import org.stvnadore.psi.StringLiteral;
-import org.stvnadore.psi.SumType;
 import org.stvnadore.psi.TypeDefinition;
-import org.stvnadore.psi.TypeEntry;
-import org.stvnadore.psi.Visitor;
+import org.stvnadore.psi.TypeKeyword;
 
-import javax.swing.JCheckBox;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JSpinner;
-import javax.swing.SpinnerNumberModel;
-import java.awt.FlowLayout;
 import java.math.BigInteger;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Validates STVN String Capacity Governance invariants.
+ * Validates STVN {@code :String} capacity governance invariants ({@code STVN | Governance | Capacity}).
  * <p>
- * Enforces explicit capacity dimensions on nominal string types in schema declarations
- * ({@code :defs} and {@code :type}) to prevent unbounded allocation overhead.
- * Flags unadorned {@code :String} declarations and capacities exceeding the configured
- * inspection threshold.
- * </p>
- * <p>
- * Provides dual QuickFixes (configured threshold vs default capacity) under
- * {@code WARNING} severity, while strictly suppressing the secondary default QuickFix
- * when configured as {@code ERROR}.
+ * Enforces explicit capacity dimensions on root {@code :String} schemas in {@code :defs} and {@code :type},
+ * flags capacities exceeding the configured character threshold, and optionally inspects {@code :body}
+ * and {@code #CONST} string literals.
  * </p>
  *
  * @since 1.3.0
  */
 @NullMarked
-public class StvnStringCapacityInspection extends LocalInspectionTool {
+public class StvnStringCapacityInspection extends AbstractStvnCapacityInspection {
 
-    /**
-     * Lexical fallback regex pattern matching capacity facets (#size, #maxSize, #minSize, etc.).
-     */
     private static final Pattern CAPACITY_LEXICAL_PATTERN =
         Pattern.compile("#[a-zA-Z0-9_]*size", Pattern.CASE_INSENSITIVE);
     private static final Pattern FENCED_STRING_SANITIZE_PATTERN =
         Pattern.compile("(?s)\"\"\"\\[([a-zA-Z0-9_-]{1,256})].*?\\[\\1]\"\"\"");
 
     /**
-     * Default capacity threshold in characters for schema and diagnostic analyzers (4,096 characters).
-     */
-    public static final int DEFAULT_INSPECTION_THRESHOLD = 4096;
-
-    /**
-     * Authoritative map of Standard Prelude string types to their canonical #maxSize character capacity.
+     * Authoritative map of Standard Prelude string types to their canonical {@code #maxSize} character capacity.
      */
     public static final Map<String, Integer> PRELUDE_STRING_CAPACITIES = Map.ofEntries(
         Map.entry(":UuidLowerCase", 36),
@@ -118,23 +81,26 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
 
     /**
      * Configured capacity threshold in characters (default: 4,096).
+     * Preserves legacy XML profile option name {@code thresholdCapacity}.
      */
     public int thresholdCapacity = DEFAULT_INSPECTION_THRESHOLD;
 
     /**
-     * Toggle enabling literal content length verification against schema bounds.
+     * Toggle enabling string literal length verification in {@code :body} payloads and {@code #CONST} values.
+     * Preserves legacy XML profile option name {@code inspectPayload}.
      */
     public boolean inspectPayload = false;
 
     /**
-     * Explicit severity string override used during automated tests.
+     * Explicit severity override used during automated tests.
      */
     public String configuredSeverity = "WARNING";
 
     /**
-     * Constructs a new StvnStringCapacityInspection instance.
+     * Constructs a new {@code StvnStringCapacityInspection} instance.
      */
     public StvnStringCapacityInspection() {
+        super(CapacityTargetKind.STRING);
     }
 
     @Override
@@ -148,467 +114,57 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     @Override
-    public @NotNull String getGroupDisplayName() {
-        return "STVN";
+    protected int getConfiguredThreshold() {
+        return thresholdCapacity;
     }
 
     @Override
-    public boolean isEnabledByDefault() {
-        return true;
+    protected boolean isInspectLiteralsEnabled() {
+        return inspectPayload;
     }
 
     @Override
-    public @Nullable JComponent createOptionsPanel() {
-        var panel = new JPanel();
-        panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-
-        var threshPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        threshPanel.add(new JLabel("Capacity threshold (characters):"));
-        var model = new SpinnerNumberModel(thresholdCapacity, 1, Integer.MAX_VALUE, 256);
-        var spinner = new JSpinner(model);
-        spinner.addChangeListener(e -> thresholdCapacity = (Integer) spinner.getValue());
-        threshPanel.add(spinner);
-        threshPanel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
-        panel.add(threshPanel);
-
-        var payloadCb = new JCheckBox("Inspect string literals in body payloads and constants", inspectPayload);
-        payloadCb.addActionListener(e -> inspectPayload = payloadCb.isSelected());
-        payloadCb.setAlignmentX(JComponent.LEFT_ALIGNMENT);
-        panel.add(payloadCb);
-
-        return panel;
+    protected String getConfiguredSeverityOverride() {
+        return configuredSeverity;
     }
 
     @Override
-    public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
-        return new Visitor() {
-            private void inspectTypeDefinition(@NotNull TypeDefinition typeDef) {
-                // 1. Enforce Schema Scope: inspect only elements inside :defs
-                boolean inSchema = PsiTreeUtil.getParentOfType(typeDef, DefsEntry.class) != null;
-                if (!inSchema) {
-                    return;
-                }
-
-                var target = typeDef.getTypeDefTarget();
-                var schemaType = typeDef.getSchemaType();
-                if (schemaType == null) {
-                    return;
-                }
-
-                inspectTopLevelTypeDefinition(typeDef, target, schemaType);
-                inspectCompositeChildSchemas(schemaType, false);
-            }
-
-            private void inspectTopLevelTypeDefinition(
-                @NotNull TypeDefinition typeDef,
-                @NotNull PsiElement target,
-                @NotNull SchemaType schemaType
-            ) {
-                // Tier-1 #minSize/#maxSize are permanently locked at the root constructor (STVN Spec § 6.1 & § 9.1.1);
-                // derived nominal aliases (:Child ... :ParentNominal) cannot re-declare them without fatal E040.
-                if (schemaType.getSchemaConstructor() == null) {
-                    return;
-                }
-                String declaredName = target.getText().trim();
-                var metaMap = schemaType.getMetadataMap() != null ? schemaType.getMetadataMap() : typeDef.getMetadataMap();
-
-                // 1. Guard against broken ASTs: abort inspection if metadata block contains error elements
-                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
-                    return;
-                }
-
-                boolean hasDirectCapacityFacet = false;
-                BigInteger directCapacity = null;
-                if (metaMap != null) {
-                    for (var entry : metaMap.getMetadataEntryList()) {
-                        var text = entry.getText();
-                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                            var metaVal = entry.getMetadataValue();
-                            if (metaVal != null) {
-                                directCapacity = StvnPsiLiteralEvaluator
-                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
-                                    .orElse(null);
-                            }
-                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                    if (!hasDirectCapacityFacet) {
-                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
-                        if (containsCapacityFacetLexically(sanitizedText)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                }
-
-                var resolvedInfo = resolveEffectiveTypeCapacity(schemaType, typeDef.getContainingFile(), new HashSet<>());
-                if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) {
-                    return;
-                }
-
-                boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
-                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
-                if (effectiveCapacity == null) {
-                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
-                }
-
-                boolean isUnadorned = !hasCapacityFacet;
-                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
-
-                if (isUnadorned || exceedsThreshold) {
-                    boolean isError = isErrorSeverity(holder);
-                    String category = resolvedInfo.isCollection ? "collection" : "string";
-                    String units = resolvedInfo.isCollection ? (isMapCollection(schemaType) ? "entries" : "elements") : "characters";
-                    String msg;
-                    String diagCode;
-                    if (isUnadorned) {
-                        msg = "Nominal " + category + " type '" + declaredName + "' is unadorned; default capacity is "
-                            + StvnVocabulary.DEFAULT_MAX_SIZE
-                            + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'.";
-                        diagCode = resolvedInfo.isCollection
-                            ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED
-                            : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED;
-                    } else {
-                        msg = "Nominal " + category + " type '" + declaredName + "' specifies capacity " + effectiveCapacity
-                            + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
-                        diagCode = StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
-                    }
-                    var formattedMsg = StvnDiagnosticFormatter.formatPlugin(msg, diagCode);
-
-                    // Blame Attribution Invariant: register problem strictly on LHS TypeDefTarget
-                    registerCapacityProblem(holder, target, formattedMsg, isError);
-                    PsiElement rhsAnchor = resolveHighlightAnchor(schemaType);
-                    if (isOnTheFly) {
-                        registerCapacityIntentions(holder, rhsAnchor, isError);
-                    }
-                }
-            }
-
-            private void inspectConstantDefinition(@NotNull ConstantDefinition constDef) {
-                boolean inSchema = PsiTreeUtil.getParentOfType(constDef, DefsEntry.class) != null;
-                if (!inSchema) {
-                    return;
-                }
-                var schemaType = constDef.getSchemaType();
-                if (schemaType == null) {
-                    return;
-                }
-                inspectInlineCompositeSlot(schemaType, true);
-                inspectCompositeChildSchemas(schemaType, true);
-            }
-
-            private void inspectTypeEntry(@NotNull TypeEntry typeEntry) {
-                var schemaType = typeEntry.getSchemaType();
-                if (schemaType == null) {
-                    return;
-                }
-                inspectTopLevelTypeEntry(typeEntry, schemaType);
-                inspectCompositeChildSchemas(schemaType, false);
-            }
-
-            private void inspectTopLevelTypeEntry(@NotNull TypeEntry typeEntry, @NotNull SchemaType schemaType) {
-                if (schemaType.getSchemaConstructor() == null) {
-                    return;
-                }
-                var resolvedInfo = resolveEffectiveTypeCapacity(schemaType, typeEntry.getContainingFile(), new HashSet<>());
-                if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) return;
-
-                boolean hasDirectCapacityFacet = false;
-                BigInteger directCapacity = null;
-                var metaMap = schemaType.getMetadataMap();
-
-                // 1. Guard against broken ASTs: abort inspection if metadata block contains error elements
-                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
-                    return;
-                }
-
-                if (metaMap != null) {
-                    for (var entry : metaMap.getMetadataEntryList()) {
-                        var text = entry.getText();
-                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                            var metaVal = entry.getMetadataValue();
-                            if (metaVal != null) {
-                                directCapacity = StvnPsiLiteralEvaluator
-                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
-                                    .orElse(null);
-                            }
-                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                    if (!hasDirectCapacityFacet) {
-                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
-                        if (containsCapacityFacetLexically(sanitizedText)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                }
-                boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
-                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
-                if (effectiveCapacity == null) {
-                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
-                }
-                boolean isUnadorned = !hasCapacityFacet;
-                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
-
-                if (isUnadorned || exceedsThreshold) {
-                    boolean isError = isErrorSeverity(holder);
-                    String typeName = resolveSchemaDisplayName(schemaType);
-                    String category = resolvedInfo.isCollection ? "collection" : "string";
-                    String units = resolvedInfo.isCollection ? (isMapCollection(schemaType) ? "entries" : "elements") : "characters";
-                    String msg = isUnadorned
-                        ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + StvnVocabulary.DEFAULT_MAX_SIZE + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
-                        : "Nominal " + category + " type '" + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
-                    String diagCode = isUnadorned
-                        ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
-                        : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
-                    PsiElement highlightTarget = resolveHighlightAnchor(schemaType);
-                    registerCapacityProblem(holder, highlightTarget, StvnDiagnosticFormatter.formatPlugin(msg, diagCode), isError);
-                }
-            }
-
-            private void inspectCompositeChildSchemas(
-                    @NotNull SchemaType parentSchema,
-                    boolean inConstantDefinition
-            ) {
-                SchemaConstructor constructor = parentSchema.getSchemaConstructor();
-                if (constructor == null) {
-                    return;
-                }
-                for (SchemaType childSlot : extractDirectChildSchemas(constructor)) {
-                    inspectInlineCompositeSlot(childSlot, inConstantDefinition);
-                    inspectCompositeChildSchemas(childSlot, inConstantDefinition);
-                }
-            }
-
-            private List<SchemaType> extractDirectChildSchemas(@NotNull SchemaConstructor constructor) {
-                CollectionType collectionType = constructor.getCollectionType();
-                if (collectionType != null) {
-                    return collectionType.getSchemaTypeList();
-                }
-                ProductType productType = constructor.getProductType();
-                if (productType != null) {
-                    return productType.getSchemaTypeList();
-                }
-                SumType sumType = constructor.getSumType();
-                if (sumType != null) {
-                    return PsiTreeUtil.getChildrenOfTypeAsList(sumType, SchemaType.class);
-                }
-                return List.of();
-            }
-
-            private void inspectInlineCompositeSlot(
-                    @NotNull SchemaType slotSchema,
-                    boolean inConstantDefinition
-            ) {
-                SchemaConstructor slotConstructor = slotSchema.getSchemaConstructor();
-                if (slotConstructor == null) {
-                    return;
-                }
-                var resolvedInfo = resolveEffectiveTypeCapacity(slotSchema, slotSchema.getContainingFile(), new HashSet<>());
-                if (resolvedInfo == null || (!resolvedInfo.isString && !resolvedInfo.isCollection)) {
-                    return;
-                }
-
-                boolean hasDirectCapacityFacet = false;
-                BigInteger directCapacity = null;
-                var metaMap = slotSchema.getMetadataMap();
-                if (metaMap != null && PsiTreeUtil.hasErrorElements(metaMap)) {
-                    return;
-                }
-                if (metaMap != null) {
-                    for (var entry : metaMap.getMetadataEntryList()) {
-                        var text = entry.getText();
-                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                            var metaVal = entry.getMetadataValue();
-                            if (metaVal != null) {
-                                directCapacity = StvnPsiLiteralEvaluator
-                                    .resolveBigIntegerOrConst(entry, metaVal.getText().trim())
-                                    .orElse(null);
-                            }
-                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                    if (!hasDirectCapacityFacet) {
-                        String sanitizedText = sanitizeMetadataText(metaMap.getText());
-                        if (containsCapacityFacetLexically(sanitizedText)) {
-                            hasDirectCapacityFacet = true;
-                        }
-                    }
-                }
-
-                boolean hasCapacityFacet = hasDirectCapacityFacet || resolvedInfo.hasExplicitCapacity;
-                BigInteger effectiveCapacity = hasDirectCapacityFacet ? directCapacity : resolvedInfo.capacity;
-                if (effectiveCapacity == null) {
-                    effectiveCapacity = StvnVocabulary.DEFAULT_MAX_SIZE;
-                }
-                boolean isUnadorned = !hasCapacityFacet;
-                if (inConstantDefinition && isUnadorned) {
-                    return;
-                }
-                boolean exceedsThreshold = effectiveCapacity.compareTo(BigInteger.valueOf(thresholdCapacity)) > 0;
-
-                if (isUnadorned || exceedsThreshold) {
-                    boolean isError = isErrorSeverity(holder);
-                    String typeName = resolveSchemaDisplayName(slotSchema);
-                    String category = resolvedInfo.isCollection ? "collection" : "string";
-                    String units = resolvedInfo.isCollection ? (isMapCollection(slotSchema) ? "entries" : "elements") : "characters";
-                    String ownerSubject = inConstantDefinition ? "Constant " + category + " schema '" : "Nominal " + category + " type '";
-                    String msg = isUnadorned
-                        ? "Nominal " + category + " type '" + typeName + "' is unadorned; default capacity is " + StvnVocabulary.DEFAULT_MAX_SIZE + " " + units + ". Specify explicit capacity facets '{ #minSize ... #maxSize ... }'."
-                        : ownerSubject + typeName + "' specifies capacity " + effectiveCapacity + ", exceeding configured threshold of " + thresholdCapacity + " " + units + ".";
-                    String diagCode = isUnadorned
-                        ? (resolvedInfo.isCollection ? StvnDiagnosticCodes.WARN_NOMINAL_COLLECTION_UNADORNED : StvnDiagnosticCodes.WARN_NOMINAL_STRING_UNADORNED)
-                        : StvnDiagnosticCodes.WARN_NOMINAL_STRING_CAPACITY_OVERFLOW;
-                    PsiElement highlightTarget = resolveHighlightAnchor(slotSchema);
-                    registerCapacityProblem(holder, highlightTarget, StvnDiagnosticFormatter.formatPlugin(msg, diagCode), isError);
-                }
-            }
-
-            @Override
-            public void visitTypeDefinition(@NotNull TypeDefinition typeDefinition) {
-                super.visitTypeDefinition(typeDefinition);
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeDefinition)) {
-                    return;
-                }
-                inspectTypeDefinition(typeDefinition);
-            }
-
-            @Override
-            public void visitConstantDefinition(@NotNull ConstantDefinition constantDefinition) {
-                super.visitConstantDefinition(constantDefinition);
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(constantDefinition)) {
-                    return;
-                }
-                inspectConstantDefinition(constantDefinition);
-            }
-
-            @Override
-            public void visitTypeEntry(@NotNull TypeEntry typeEntry) {
-                super.visitTypeEntry(typeEntry);
-                if (StvnMetaTemplateUtil.isInSecondaryRootSection(typeEntry)) {
-                    return;
-                }
-                inspectTypeEntry(typeEntry);
-            }
-
-            @Override
-            public void visitStringLiteral(@NotNull StringLiteral literal) {
-                super.visitStringLiteral(literal);
-                if (!inspectPayload || StvnMetaTemplateUtil.isInSecondaryRootSection(literal)) {
-                    return;
-                }
-
-                var constDef = PsiTreeUtil.getParentOfType(literal, ConstantDefinition.class);
-                var bodyEntry = PsiTreeUtil.getParentOfType(literal, BodyEntry.class);
-                if (constDef == null && bodyEntry == null) {
-                    return;
-                }
-
-                SchemaType schemaType = null;
-                if (constDef != null) {
-                    schemaType = constDef.getSchemaType();
-                } else {
-                    var typeEntry = PsiTreeUtil.findChildOfType(literal.getContainingFile(), TypeEntry.class);
-                    if (typeEntry != null) {
-                        schemaType = typeEntry.getSchemaType();
-                    }
-                }
-
-                if (schemaType == null) {
-                    return;
-                }
-
-                var capBI = resolveCapacityBoundBigInteger(schemaType, literal.getContainingFile());
-                if (capBI == null || capBI.signum() <= 0) {
-                    return;
-                }
-
-                boolean preserveIndent = StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(literal);
-                var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(literal.getText(), preserveIndent);
-                if (decodedOpt.isEmpty()) {
-                    return;
-                }
-                String decoded = decodedOpt.get();
-                int decodedLength = decoded.codePointCount(0, decoded.length());
-                var contentLenBI = BigInteger.valueOf(decodedLength);
-                if (contentLenBI.compareTo(capBI) > 0) {
-                    int capInt = capBI.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0 ? Integer.MAX_VALUE : capBI.intValue();
-                    holder.registerProblem(
-                        literal,
-                        StvnDiagnosticFormatter.formatPlugin(
-                            "String literal length (" + decodedLength + ") exceeds declared schema capacity (" + capBI + ")",
-                            StvnDiagnosticCodes.WARN_STRING_LITERAL_CAPACITY_OVERFLOW
-                        ),
-                        ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                        new TruncateStringLiteralQuickFix(capInt),
-                        new WidenSchemaCapacityQuickFix(schemaType, decodedLength)
-                    );
-                }
-            }
-        };
+    protected String getThresholdFieldName() {
+        return "thresholdCapacity";
     }
 
-    private void registerCapacityProblem(ProblemsHolder holder, PsiElement targetElem, String formattedMsg, boolean isError) {
-        if (isError) {
-            holder.registerProblem(
-                targetElem,
-                formattedMsg,
-                ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL)
-            );
-        } else {
-            holder.registerProblem(
-                targetElem,
-                formattedMsg,
-                ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnVocabulary.DEFAULT_MAX_SIZE + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.LOW),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM)
-            );
-        }
+    @Override
+    protected String getInspectLiteralsFieldName() {
+        return "inspectPayload";
     }
 
-    private void registerCapacityIntentions(ProblemsHolder holder, PsiElement targetElem, boolean isError) {
-        if (isError) {
-            holder.registerProblem(
-                targetElem,
-                "Set nominal capacity",
-                ProblemHighlightType.INFORMATION,
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL)
-            );
-        } else {
-            holder.registerProblem(
-                targetElem,
-                "Set nominal capacity",
-                ProblemHighlightType.INFORMATION,
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + thresholdCapacity, "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.TOP),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + thresholdCapacity + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.HIGH),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + thresholdCapacity + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + thresholdCapacity + " }", PriorityAction.Priority.NORMAL),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to " + StvnVocabulary.DEFAULT_MAX_SIZE + " (default allocation cap)", "{ " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.LOW),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 0.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (allow empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 0 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM),
-                new ApplyNominalCapacityQuickFix("Set nominal capacity to 1.." + StvnVocabulary.DEFAULT_MAX_SIZE + " (non-empty)", "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + StvnVocabulary.DEFAULT_MAX_SIZE + " }", PriorityAction.Priority.BOTTOM)
-            );
-        }
+    @Override
+    protected String getThresholdOptionLabel() {
+        return "Capacity threshold (characters):";
     }
 
+    @Override
+    protected String getInspectLiteralsOptionLabel() {
+        return "Inspect string literals in body payloads and constants";
+    }
+
+    /**
+     * Resolved capacity summary retained for caller compatibility.
+     */
     public static final class EffectiveTypeCapacity {
         public final boolean isString;
         public final boolean isCollection;
         public final BigInteger capacity;
         public final boolean hasExplicitCapacity;
 
+        /**
+         * Constructs an {@code EffectiveTypeCapacity} summary with a {@link BigInteger} capacity.
+         *
+         * @param isString            {@code true} when grounded in {@code :String}
+         * @param isCollection        {@code true} when grounded in {@code :Seq}, {@code :Set}, or {@code :Map}
+         * @param capacity            effective {@code #maxSize} bound
+         * @param hasExplicitCapacity {@code true} when an explicit capacity facet is present
+         */
         public EffectiveTypeCapacity(boolean isString, boolean isCollection, BigInteger capacity, boolean hasExplicitCapacity) {
             this.isString = isString;
             this.isCollection = isCollection;
@@ -616,66 +172,23 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             this.hasExplicitCapacity = hasExplicitCapacity;
         }
 
+        /**
+         * Constructs an {@code EffectiveTypeCapacity} summary with an {@code int} capacity.
+         *
+         * @param isString            {@code true} when grounded in {@code :String}
+         * @param isCollection        {@code true} when grounded in {@code :Seq}, {@code :Set}, or {@code :Map}
+         * @param capacity            effective {@code #maxSize} bound
+         * @param hasExplicitCapacity {@code true} when an explicit capacity facet is present
+         */
         public EffectiveTypeCapacity(boolean isString, boolean isCollection, int capacity, boolean hasExplicitCapacity) {
             this(isString, isCollection, BigInteger.valueOf(capacity), hasExplicitCapacity);
         }
     }
 
     /**
-     * Resolves the narrow token-level PSI element to highlight for a schema type,
-     * preventing multi-line collection subtrees from receiving full-block underlines.
-     */
-    private static @NotNull PsiElement resolveHighlightAnchor(@NotNull SchemaType schemaType) {
-        var constructor = schemaType.getSchemaConstructor();
-        if (constructor != null) {
-            var collectionType = constructor.getCollectionType();
-            if (collectionType != null) {
-                var firstChild = collectionType.getFirstChild();
-                return firstChild != null ? firstChild : collectionType;
-            }
-            var atomicType = constructor.getAtomicType();
-            if (atomicType != null) {
-                return atomicType;
-            }
-            return constructor;
-        }
-        var typeKw = schemaType.getTypeKeyword();
-        if (typeKw != null) {
-            return typeKw;
-        }
-        return schemaType;
-    }
-
-    private static @NotNull String resolveSchemaDisplayName(@NotNull SchemaType schemaType) {
-        return resolveHighlightAnchor(schemaType).getText().trim();
-    }
-
-    private static boolean isMapCollection(@NotNull SchemaType schemaType) {
-        return isMapCollection(schemaType, new HashSet<>());
-    }
-
-    private static boolean isMapCollection(@NotNull SchemaType schemaType, @NotNull Set<String> visited) {
-        var anchorText = resolveSchemaDisplayName(schemaType);
-        if (StvnVocabulary.TYPE_MAP.equals(anchorText)) {
-            return true;
-        }
-        if (StvnVocabulary.TYPE_SEQ.equals(anchorText) || StvnVocabulary.TYPE_SET.equals(anchorText)) {
-            return false;
-        }
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null && visited.add(anchorText)) {
-            var parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, anchorText);
-            if (parentDef != null && parentDef.getSchemaType() != null && parentDef.getSchemaType() != schemaType) {
-                return isMapCollection(parentDef.getSchemaType(), visited);
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Sanitizes metadata map text by stripping single-line comments and string literals.
+     * Sanitizes metadata map text by stripping fenced strings, single-line comments, and simple string literals.
      *
-     * @param rawText the raw metadata map text
+     * @param rawText raw metadata map text
      * @return sanitized text containing only active tokens
      */
     public static String sanitizeMetadataText(@Nullable String rawText) {
@@ -691,7 +204,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * Determines whether sanitized metadata text contains a capacity facet keyword.
      *
      * @param sanitizedText text free of comments and string literals
-     * @return true if a capacity facet keyword is detected
+     * @return {@code true} if a capacity facet keyword is detected
      */
     public static boolean containsCapacityFacetLexically(String sanitizedText) {
         return CAPACITY_LEXICAL_PATTERN.matcher(sanitizedText).find()
@@ -700,193 +213,83 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             || sanitizedText.contains(StvnVocabulary.FACET_KW_MIN_SIZE);
     }
 
-    public static @Nullable EffectiveTypeCapacity resolveEffectiveTypeCapacity(SchemaType schemaType, PsiFile file, Set<String> visited) {
-        var constructor = schemaType.getSchemaConstructor();
-        if (constructor != null) {
-            if (constructor.getCollectionType() != null) {
-                return new EffectiveTypeCapacity(false, true, StvnVocabulary.DEFAULT_MAX_SIZE, false);
-            }
-            if (constructor.getAtomicType() != null) {
-                String text = constructor.getAtomicType().getText().trim();
-                if (StvnVocabulary.TYPE_STRING.equals(text)) {
-                    return new EffectiveTypeCapacity(true, false, StvnVocabulary.DEFAULT_MAX_SIZE, false);
-                }
-                return null;
-            }
+    /**
+     * Resolves the effective capacity summary for {@code schemaType}.
+     *
+     * @param schemaType schema type AST node
+     * @param file       containing PSI file
+     * @param visited    caller-supplied visited name set (retained for API compatibility)
+     * @return resolved capacity summary, or {@code null}
+     */
+    public static @Nullable EffectiveTypeCapacity resolveEffectiveTypeCapacity(
+            SchemaType schemaType,
+            PsiFile file,
+            Set<String> visited
+    ) {
+        ResolvedCapacityProfile profile = resolveCapacityProfile(schemaType, file, new HashSet<>());
+        if (profile == null) {
+            return null;
         }
-        var kw = schemaType.getTypeKeyword();
-        if (kw != null) {
-            String typeName = kw.getText().trim();
-            return traceTypeHierarchy(file, typeName, visited);
-        }
-        return null;
+        return new EffectiveTypeCapacity(
+            profile.kind() == CapacityTargetKind.STRING,
+            profile.kind().isCollection(),
+            profile.capacity(),
+            profile.hasExplicitCapacity()
+        );
     }
 
-    public static @Nullable EffectiveTypeCapacity traceTypeHierarchy(PsiFile file, String targetName, Set<String> visited) {
+    /**
+     * Traces nominal type hierarchy from {@code file} for {@code targetName}.
+     *
+     * @param file       containing PSI file
+     * @param targetName target nominal type identifier
+     * @param visited    caller-supplied visited name set (retained for API compatibility)
+     * @return resolved capacity summary, or {@code null}
+     */
+    public static @Nullable EffectiveTypeCapacity traceTypeHierarchy(
+            PsiFile file,
+            String targetName,
+            Set<String> visited
+    ) {
         if (!visited.add(targetName)) {
             return null;
         }
-        if (StvnVocabulary.TYPE_STRING.equals(targetName)) {
-            return new EffectiveTypeCapacity(true, false, StvnVocabulary.DEFAULT_MAX_SIZE, false);
+        ResolvedCapacityProfile profile = traceNominalCapacityLineage(file, targetName, file, new HashSet<>());
+        if (profile == null) {
+            return null;
         }
-        if (StvnVocabulary.TYPE_SEQ.equals(targetName) || StvnVocabulary.TYPE_SET.equals(targetName) || StvnVocabulary.TYPE_MAP.equals(targetName)) {
-            return new EffectiveTypeCapacity(false, true, StvnVocabulary.DEFAULT_MAX_SIZE, false);
-        }
-        if (PRELUDE_STRING_CAPACITIES.containsKey(targetName)) {
-            return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(targetName), true);
-        }
-
-        // Trace :use imports
-        var useStmts = PsiTreeUtil.findChildrenOfType(file, org.stvnadore.psi.UseStmt.class);
-        for (var use : useStmts) {
-            for (var useElem : use.getUseElementList()) {
-                var aliasBlock = useElem.getUseAliasBlock();
-                if (aliasBlock != null) {
-                    for (var alias : aliasBlock.getUseMapAliasList()) {
-                        var list = alias.getTypeKeywordList();
-                        if (list.size() >= 2) {
-                            var remoteKw = list.get(0);
-                            var localKw = list.get(1);
-                            if (localKw != null && localKw.getText().equals(targetName) && remoteKw != null) {
-                                var target = useElem.getUseTarget();
-                                String remoteName = remoteKw.getText();
-                                if (target != null) {
-                                    String fqni = target.getText() + "/" + (remoteName.startsWith(StvnVocabulary.SIGIL_TYPIC) ? remoteName.substring(1) : remoteName);
-                                    if (PRELUDE_STRING_CAPACITIES.containsKey(fqni) || PRELUDE_STRING_CAPACITIES.containsKey(remoteName)) {
-                                        int cap = PRELUDE_STRING_CAPACITIES.getOrDefault(fqni, PRELUDE_STRING_CAPACITIES.get(remoteName));
-                                        return new EffectiveTypeCapacity(true, false, cap, true);
-                                    }
-                                    var res = traceTypeHierarchy(file, fqni, visited);
-                                    if (res != null) return res;
-                                }
-                                var res = traceTypeHierarchy(file, remoteName, visited);
-                                if (res != null) return res;
-                            }
-                        }
-                    }
-                }
-                if (org.stvnadore.plugin.psi.StvnPsiUtils.hasValidStripOption(useElem.getUseOptionsBlock())) {
-                    var target = useElem.getUseTarget();
-                    if (target != null && targetName.startsWith(StvnVocabulary.SIGIL_TYPIC) && !targetName.substring(1).contains("/")) {
-                        String fqni = target.getText() + "/" + targetName.substring(1);
-                        if (PRELUDE_STRING_CAPACITIES.containsKey(fqni)) {
-                            return new EffectiveTypeCapacity(true, false, PRELUDE_STRING_CAPACITIES.get(fqni), true);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Trace :include imports
-        var includes = PsiTreeUtil.findChildrenOfType(file, IncludeElement.class);
-
-        // Trace local definitions
-        var defs = PsiTreeUtil.findChildrenOfType(file, TypeDefinition.class);
-        for (var def : defs) {
-            var target = def.getTypeDefTarget();
-            if (target != null && target.getText().equals(targetName)) {
-                var metaMap = def.getMetadataMap() != null ? def.getMetadataMap() : (def.getSchemaType() != null ? def.getSchemaType().getMetadataMap() : null);
-                BigInteger explicitCap = null;
-                boolean hasCap = false;
-                if (metaMap != null) {
-                    for (var entry : metaMap.getMetadataEntryList()) {
-                        var text = entry.getText();
-                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                            hasCap = true;
-                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                            if (intLit != null) {
-                                explicitCap = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
-                            }
-                        } else if (text.startsWith(StvnVocabulary.FACET_KW_MIN_SIZE)) {
-                            hasCap = true;
-                        }
-                    }
-                }
-                if (def.getSchemaType() != null) {
-                    var downstream = resolveEffectiveTypeCapacity(def.getSchemaType(), file, visited);
-                    if (downstream != null) {
-                        if (hasCap) {
-                            return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : StvnVocabulary.DEFAULT_MAX_SIZE, true);
-                        }
-                        return downstream;
-                    }
-                }
-            }
-        }
-
-        // Trace Prelude Bridge
-        var preludeDef = StvnPreludeBridge.resolvePreludeTypeDefinition(file.getProject(), targetName);
-        if (preludeDef != null && preludeDef.getSchemaType() != null) {
-            var metaMap = preludeDef.getMetadataMap() != null ? preludeDef.getMetadataMap() : preludeDef.getSchemaType().getMetadataMap();
-            BigInteger explicitCap = null;
-            boolean hasCap = false;
-            if (metaMap != null) {
-                for (var entry : metaMap.getMetadataEntryList()) {
-                    var text = entry.getText();
-                    if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                        hasCap = true;
-                        var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                        if (intLit != null) {
-                            explicitCap = StvnPsiLiteralEvaluator.parseBigInteger(intLit.getText()).orElse(null);
-                        }
-                    }
-                }
-            }
-            var downstream = resolveEffectiveTypeCapacity(preludeDef.getSchemaType(), preludeDef.getContainingFile(), visited);
-            if (downstream != null) {
-                if (hasCap) {
-                    return new EffectiveTypeCapacity(downstream.isString, downstream.isCollection, explicitCap != null ? explicitCap : StvnVocabulary.DEFAULT_MAX_SIZE, true);
-                }
-                return downstream;
-            }
-        }
-
-        return null;
+        return new EffectiveTypeCapacity(
+            profile.kind() == CapacityTargetKind.STRING,
+            profile.kind().isCollection(),
+            profile.capacity(),
+            profile.hasExplicitCapacity()
+        );
     }
 
     /**
-     * Determines whether the active inspection context evaluates as ERROR severity.
+     * Resolves the effective capacity bound for {@code schemaType} as a {@link BigInteger}.
      *
-     * @param holder the current problems holder
-     * @return true if severity is ERROR, false otherwise
-     */
-    public boolean isErrorSeverity(ProblemsHolder holder) {
-        if ("ERROR".equalsIgnoreCase(configuredSeverity)) {
-            return true;
-        }
-        var key = HighlightDisplayKey.find("StvnStringCapacity");
-        if (key != null) {
-            var profile = InspectionProjectProfileManager.getInstance(holder.getProject()).getCurrentProfile();
-            var level = profile.getErrorLevel(key, holder.getFile());
-            if (level != null && HighlightSeverity.ERROR.equals(level.getSeverity())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Resolves the effective capacity bound for the given schema type element as a BigInteger.
-     *
-     * @param schemaType the schema type AST element
-     * @param file the containing PSI file
-     * @return the resolved capacity bound, or null if unresolvable
+     * @param schemaType schema type AST element
+     * @param file       containing PSI file
+     * @return resolved capacity bound, or {@code null} if unresolvable
      */
     public static @Nullable BigInteger resolveCapacityBoundBigInteger(SchemaType schemaType, PsiFile file) {
-        var info = resolveEffectiveTypeCapacity(schemaType, file, new HashSet<>());
-        return info != null ? info.capacity : null;
+        ResolvedCapacityProfile profile = resolveCapacityProfile(schemaType, file, new HashSet<>());
+        return profile != null ? profile.capacity() : null;
     }
 
     /**
-     * Resolves the effective capacity bound for the given schema type element.
+     * Resolves the effective capacity bound for {@code schemaType} clamped to {@code Integer.MAX_VALUE}.
      *
-     * @param schemaType the schema type AST element
-     * @param file the containing PSI file
-     * @return the resolved capacity bound, or -1 if unresolvable
+     * @param schemaType schema type AST element
+     * @param file       containing PSI file
+     * @return resolved capacity bound, or {@code -1} if unresolvable
      */
     public static int resolveCapacityBound(SchemaType schemaType, PsiFile file) {
         var cap = resolveCapacityBoundBigInteger(schemaType, file);
-        if (cap == null) return -1;
+        if (cap == null) {
+            return -1;
+        }
         if (cap.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
             return Integer.MAX_VALUE;
         }
@@ -894,10 +297,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * Extracts unescaped text content from an STVN string literal token.
+     * Extracts decoded text content from an STVN string literal token.
      *
-     * @param raw the raw token text
-     * @return unquoted string content
+     * @param raw raw token text
+     * @return decoded string content
      */
     public static String extractLiteralContent(String raw) {
         var decoded = StvnPsiLiteralEvaluator.decodeStringLiteral(raw, false);
@@ -908,21 +311,23 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             int firstNl = raw.indexOf('\n');
             int lastFence = raw.lastIndexOf("\"\"\"");
             if (firstNl >= 0 && lastFence > firstNl) {
-                int closeBracket = raw.lastIndexOf(']');
+                int closeBracket = raw.lastIndexOf(StvnVocabulary.DELIM_CLOSE_BRACKET.charAt(0));
                 if (closeBracket >= 0 && closeBracket < lastFence) {
-                    lastFence = raw.lastIndexOf('[', closeBracket);
+                    lastFence = raw.lastIndexOf(StvnVocabulary.DELIM_OPEN_BRACKET.charAt(0), closeBracket);
                 }
-                return raw.substring(firstNl + 1, lastFence);
+                if (lastFence > firstNl) {
+                    return raw.substring(firstNl + 1, lastFence);
+                }
             }
         }
         return "";
     }
 
     /**
-     * Truncates raw literal content to fit within the specified maximum capacity.
+     * Truncates raw string literal content to fit within {@code maxCapacity} characters.
      *
-     * @param raw the raw token text
-     * @param maxCapacity the maximum allowed character length
+     * @param raw         raw token text
+     * @param maxCapacity maximum allowed character length
      * @return truncated token text with preserved delimiter wrapping
      */
     public static String truncateLiteral(String raw, int maxCapacity) {
@@ -930,13 +335,28 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
             int firstNl = raw.indexOf('\n');
             int lastFence = raw.lastIndexOf("\"\"\"");
             if (firstNl >= 0 && lastFence > firstNl) {
+                int openCloseTag = raw.lastIndexOf(StvnVocabulary.DELIM_OPEN_BRACKET.charAt(0), lastFence);
+                int bodyEnd = (openCloseTag > firstNl) ? openCloseTag : lastFence;
                 String header = raw.substring(0, firstNl + 1);
-                String trailer = raw.substring(lastFence);
-                String body = raw.substring(firstNl + 1, lastFence);
-                String truncatedBody = body.length() > maxCapacity ? body.substring(0, maxCapacity) : body;
+                String trailer = raw.substring(bodyEnd);
+                String body = raw.substring(firstNl + 1, bodyEnd);
+                int cpCount = body.codePointCount(0, body.length());
+                String truncatedBody = cpCount > maxCapacity
+                    ? body.substring(0, body.offsetByCodePoints(0, maxCapacity))
+                    : body;
                 return header + truncatedBody + trailer;
             }
         } else if (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2) {
+            var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(raw, false);
+            if (decodedOpt.isPresent()) {
+                String decoded = decodedOpt.get();
+                int cpCount = decoded.codePointCount(0, decoded.length());
+                if (cpCount > maxCapacity) {
+                    String clamped = decoded.substring(0, decoded.offsetByCodePoints(0, maxCapacity));
+                    return StvnPsiLiteralEvaluator.formatCanonicalQuotedString(clamped);
+                }
+                return raw;
+            }
             String content = raw.substring(1, raw.length() - 1);
             String truncated = content.length() > maxCapacity ? content.substring(0, maxCapacity) : content;
             return "\"" + truncated + "\"";
@@ -945,7 +365,7 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
     }
 
     /**
-     * Structural QuickFix injecting explicit capacity facets immediately before the type constructor.
+     * Structural QuickFix injecting explicit capacity facets at canonical 5-tier rank.
      */
     public static class ApplyNominalCapacityQuickFix implements LocalQuickFix, PriorityAction {
         @SafeFieldForPreview
@@ -956,11 +376,11 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         private final Priority priority;
 
         /**
-         * Constructs a new ApplyNominalCapacityQuickFix with explicit intention priority.
+         * Constructs a new {@code ApplyNominalCapacityQuickFix} with explicit intention priority.
          *
-         * @param actionName the user-visible intention action name
-         * @param facetSnippet the metadata facet snippet (e.g. {@code { #maxSize 4096 }})
-         * @param priority the intention display priority
+         * @param actionName   user-visible intention action name
+         * @param facetSnippet metadata facet snippet
+         * @param priority     intention display priority
          */
         public ApplyNominalCapacityQuickFix(String actionName, String facetSnippet, Priority priority) {
             this.actionName = actionName;
@@ -969,10 +389,10 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         }
 
         /**
-         * Constructs a new ApplyNominalCapacityQuickFix with normal priority.
+         * Constructs a new {@code ApplyNominalCapacityQuickFix} with {@link Priority#NORMAL} priority.
          *
-         * @param actionName the user-visible intention action name
-         * @param facetSnippet the metadata facet snippet (e.g. {@code { #maxSize 4096 }})
+         * @param actionName   user-visible intention action name
+         * @param facetSnippet metadata facet snippet
          */
         public ApplyNominalCapacityQuickFix(String actionName, String facetSnippet) {
             this(actionName, facetSnippet, Priority.NORMAL);
@@ -1003,12 +423,19 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
-            if (element == null) return;
+            if (element == null) {
+                return;
+            }
             var file = element.getContainingFile();
-            if (file == null) return;
+            if (file == null) {
+                return;
+            }
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            if (doc == null) return;
+            if (doc == null) {
+                return;
+            }
+            boolean commitPhysical = file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(file);
 
             SchemaType targetSchema = element instanceof SchemaType st
                 ? st
@@ -1039,10 +466,12 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     .filter(ApplyNominalCapacityQuickFix::isCapacityFacet)
                     .toList();
                 if (hasLexicalCap && capacityEntries.isEmpty()) {
-                    // Capacity facet is already present lexically but degraded in AST; do not append duplicate facet
                     return;
                 }
-                String inner = facetSnippet.replace("{", "").replace("}", "").trim();
+                String inner = facetSnippet
+                    .replace(StvnVocabulary.DELIM_OPEN_BRACE, "")
+                    .replace(StvnVocabulary.DELIM_CLOSE_BRACE, "")
+                    .trim();
                 String[] tokens = inner.split("\\s+");
                 String minSizeVal = null;
                 String maxSizeVal = String.valueOf(StvnVocabulary.DEFAULT_MAX_SIZE);
@@ -1061,21 +490,18 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
                     minSizeVal == null
                 );
             } else {
-                // Unadorned type constructor: insert metadata map immediately before constructor
-                int startOffset;
-                if (targetSchema != null) {
-                    startOffset = targetSchema.getTextRange().getStartOffset();
-                } else {
-                    startOffset = element.getTextRange().getStartOffset();
-                }
+                int startOffset = targetSchema != null
+                    ? targetSchema.getTextRange().getStartOffset()
+                    : element.getTextRange().getStartOffset();
                 String prefix = doc.getText().substring(0, startOffset).trim();
-                if (prefix.endsWith("}")) {
-                    // Preceding metadata map exists: abort insertion to prevent adjacent duplicate blocks
+                if (prefix.endsWith(StvnVocabulary.DELIM_CLOSE_BRACE)) {
                     return;
                 }
                 doc.insertString(startOffset, facetSnippet + " ");
             }
-            docManager.commitDocument(doc);
+            if (commitPhysical) {
+                docManager.commitDocument(doc);
+            }
         }
     }
 
@@ -1083,26 +509,39 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
      * Canonical quick-fix alias conforming to specification naming directives.
      */
     public static class SetNominalCapacityQuickFix extends ApplyNominalCapacityQuickFix {
+        /**
+         * Constructs a new {@code SetNominalCapacityQuickFix} with explicit priority.
+         *
+         * @param actionName   user-visible action name
+         * @param facetSnippet metadata facet snippet
+         * @param priority     intention priority
+         */
         public SetNominalCapacityQuickFix(String actionName, String facetSnippet, Priority priority) {
             super(actionName, facetSnippet, priority);
         }
 
+        /**
+         * Constructs a new {@code SetNominalCapacityQuickFix} with {@link Priority#NORMAL} priority.
+         *
+         * @param actionName   user-visible action name
+         * @param facetSnippet metadata facet snippet
+         */
         public SetNominalCapacityQuickFix(String actionName, String facetSnippet) {
             super(actionName, facetSnippet, Priority.NORMAL);
         }
     }
 
     /**
-     * QuickFix truncating string literal values to declared schema capacity.
+     * QuickFix truncating string literal values to the active capacity bound.
      */
     public static final class TruncateStringLiteralQuickFix implements LocalQuickFix {
         @SafeFieldForPreview
         private final int maxCapacity;
 
         /**
-         * Constructs a new TruncateStringLiteralQuickFix.
+         * Constructs a new {@code TruncateStringLiteralQuickFix}.
          *
-         * @param maxCapacity the maximum capacity to enforce
+         * @param maxCapacity maximum character count to retain
          */
         public TruncateStringLiteralQuickFix(int maxCapacity) {
             this.maxCapacity = maxCapacity;
@@ -1121,34 +560,43 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             var element = descriptor.getPsiElement();
-            if (element == null) return;
+            if (element == null) {
+                return;
+            }
             var file = element.getContainingFile();
-            if (file == null) return;
+            if (file == null) {
+                return;
+            }
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            if (doc == null) return;
+            if (doc == null) {
+                return;
+            }
+            boolean commitPhysical = file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(file);
 
             String rawText = element.getText();
             String truncatedText = truncateLiteral(rawText, maxCapacity);
-
             var range = element.getTextRange();
             doc.replaceString(range.getStartOffset(), range.getEndOffset(), truncatedText);
-            docManager.commitDocument(doc);
+            if (commitPhysical) {
+                docManager.commitDocument(doc);
+            }
         }
     }
 
     /**
-     * QuickFix widening schema capacity to accommodate literal content length.
+     * QuickFix widening the governing {@code :String} root schema {@code #maxSize} to accommodate literal length.
      */
     public static final class WidenSchemaCapacityQuickFix implements LocalQuickFix {
         private final SchemaType schemaType;
+        @SafeFieldForPreview
         private final int requiredCapacity;
 
         /**
-         * Constructs a new WidenSchemaCapacityQuickFix.
+         * Constructs a new {@code WidenSchemaCapacityQuickFix}.
          *
-         * @param schemaType the governing schema type AST node
-         * @param requiredCapacity the required string capacity
+         * @param schemaType       governing schema type AST node
+         * @param requiredCapacity required minimum character capacity
          */
         public WidenSchemaCapacityQuickFix(SchemaType schemaType, int requiredCapacity) {
             this.schemaType = schemaType;
@@ -1166,52 +614,91 @@ public class StvnStringCapacityInspection extends LocalInspectionTool {
         }
 
         @Override
+        public @Nullable FileModifier getFileModifierForPreview(@NotNull PsiFile target) {
+            if (!schemaType.isValid() || schemaType.getContainingFile() != target.getOriginalFile()) {
+                return null;
+            }
+            return new WidenSchemaCapacityQuickFix(
+                PsiTreeUtil.findSameElementInCopy(schemaType, target),
+                requiredCapacity
+            );
+        }
+
+        @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            if (!schemaType.isValid()) return;
-            var file = schemaType.getContainingFile();
-            if (file == null) return;
+            SchemaType rootSchema = resolveEditableStringRootSchema(schemaType);
+            if (rootSchema == null || !rootSchema.isValid()) {
+                return;
+            }
+            var file = rootSchema.getContainingFile();
+            if (file == null) {
+                return;
+            }
             var docManager = PsiDocumentManager.getInstance(project);
             var doc = file.getViewProvider().getDocument();
-            if (doc == null) return;
+            if (doc == null) {
+                return;
+            }
+            boolean commitPhysical = file.isPhysical() && !IntentionPreviewUtils.isPreviewElement(file);
 
-            var parentDef = PsiTreeUtil.getParentOfType(schemaType, TypeDefinition.class);
-            if (parentDef == null && schemaType.getTypeKeyword() != null) {
-                var kw = schemaType.getTypeKeyword();
-                parentDef = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
+            MetadataMap metaMap = rootSchema.getMetadataMap();
+            if (metaMap == null && rootSchema.getParent() instanceof TypeDefinition td && td.getSchemaType() == rootSchema) {
+                metaMap = td.getMetadataMap();
             }
-            if (parentDef != null) {
-                var metaMap = parentDef.getMetadataMap();
-                if (metaMap != null) {
-                    for (var entry : metaMap.getMetadataEntryList()) {
-                        var text = entry.getText();
-                        if (text.startsWith(StvnVocabulary.FACET_KW_MAX_SIZE) || text.startsWith(StvnVocabulary.FACET_KW_SIZE)) {
-                            var intLit = PsiTreeUtil.findChildOfType(entry, org.stvnadore.psi.IntegerLiteral.class);
-                            if (intLit != null) {
-                                var range = intLit.getTextRange();
-                                doc.replaceString(range.getStartOffset(), range.getEndOffset(), String.valueOf(requiredCapacity));
-                                docManager.commitDocument(doc);
-                                return;
-                            }
-                        }
-                    }
+            if (metaMap != null) {
+                StvnMetadataFacetInsertionUtil.insertOrReplaceCapacityFacets(
+                    doc,
+                    metaMap,
+                    null,
+                    String.valueOf(requiredCapacity),
+                    true
+                );
+                if (commitPhysical) {
+                    docManager.commitDocument(doc);
                 }
+                return;
             }
-            var atomicType = PsiTreeUtil.findChildOfType(schemaType, AtomicType.class);
-            PsiElement targetElem = atomicType != null ? atomicType : schemaType.getTypeKeyword();
+            var atomicType = PsiTreeUtil.findChildOfType(rootSchema, AtomicType.class);
+            PsiElement targetElem = atomicType != null ? atomicType : rootSchema.getTypeKeyword();
             if (targetElem != null) {
-                String widened = "{ " + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 " + StvnVocabulary.FACET_KW_MAX_SIZE + " " + requiredCapacity + " } " + StvnVocabulary.TYPE_STRING;
+                String widened = StvnVocabulary.DELIM_OPEN_BRACE + " "
+                    + StvnVocabulary.FACET_KW_MIN_SIZE + " 1 "
+                    + StvnVocabulary.FACET_KW_MAX_SIZE + " " + requiredCapacity + " "
+                    + StvnVocabulary.DELIM_CLOSE_BRACE + " " + StvnVocabulary.TYPE_STRING;
                 var range = targetElem.getTextRange();
                 doc.replaceString(range.getStartOffset(), range.getEndOffset(), widened);
-                docManager.commitDocument(doc);
+                if (commitPhysical) {
+                    docManager.commitDocument(doc);
+                }
             }
+        }
+
+        private static @Nullable SchemaType resolveEditableStringRootSchema(SchemaType start) {
+            SchemaType cur = start;
+            Set<PsiElement> visited = new HashSet<>();
+            while (cur != null && visited.add(cur)) {
+                if (cur.getSchemaConstructor() != null) {
+                    return cur;
+                }
+                TypeKeyword kw = cur.getTypeKeyword();
+                if (kw == null) {
+                    return null;
+                }
+                TypeDefinition def = StvnTypeReference.resolveTypeDefinitionAtContext(kw, kw.getText().trim());
+                if (def == null || !visited.add(def)) {
+                    return null;
+                }
+                cur = def.getSchemaType();
+            }
+            return null;
         }
     }
 
     /**
-     * Inspects whether the specified type identifier represents an STVN nominal string type.
+     * Inspects whether {@code typeName} represents a built-in or Prelude STVN string type.
      *
-     * @param typeName the type identifier to inspect (e.g. {@code :String})
-     * @return true if the type identifier belongs to the STVN string taxonomy, false otherwise
+     * @param typeName type identifier to inspect
+     * @return {@code true} if {@code typeName} belongs to the STVN string taxonomy
      */
     public static boolean isNominalStringType(@Nullable String typeName) {
         if (typeName == null) {

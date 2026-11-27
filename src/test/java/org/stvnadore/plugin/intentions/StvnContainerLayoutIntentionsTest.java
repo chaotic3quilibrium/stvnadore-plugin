@@ -121,7 +121,7 @@ public final class StvnContainerLayoutIntentionsTest extends BasePlatformTestCas
                   }
                 }
                 """);
-            IntentionAction collapseSlice = myFixture.findSingleIntention(StvnCollapseContainerIntention.TEXT);
+            IntentionAction collapseSlice = myFixture.findSingleIntention(StvnCollapseMapEntryIntention.TEXT);
             myFixture.launchAction(collapseSlice);
             myFixture.checkResult("""
                 {

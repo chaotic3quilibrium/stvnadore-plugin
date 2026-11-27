@@ -481,7 +481,7 @@ public final class StvnRedundantFacetOverrideInspectionTest extends BasePlatform
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (LocalInspectionTool) ep.instantiateTool())
             .toArray(LocalInspectionTool[]::new);
-        assertEquals(27, allStvnInspections.length);
+        assertEquals(30, allStvnInspections.length);
 
         // Mode 1: All 26 inspections enabled -> strictly 1 [stvn-plugin:W003-...] per facet, 0 [stvn-core:...]
         myFixture.enableInspections(allStvnInspections);

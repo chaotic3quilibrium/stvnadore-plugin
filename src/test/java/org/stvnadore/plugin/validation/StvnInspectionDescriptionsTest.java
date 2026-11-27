@@ -28,7 +28,10 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
         Map.entry(StvnFlatDocumentIncludeInspection.class, List.of("hermetic", "document", "include")),
         Map.entry(StvnNestedPackageInspection.class, List.of("nested", "package")),
         Map.entry(StvnTrailingSlashInspection.class, List.of("trailing", "slash", ":use")),
-        Map.entry(StvnStringCapacityInspection.class, List.of("capacity", "threshold", ":String", "governance")),
+        Map.entry(StvnMapCapacityInspection.class, List.of("capacity", "threshold", ":Map", "entries")),
+        Map.entry(StvnSeqCapacityInspection.class, List.of("capacity", "threshold", ":Seq", "elements")),
+        Map.entry(StvnSetCapacityInspection.class, List.of("capacity", "threshold", ":Set", "elements")),
+        Map.entry(StvnStringCapacityInspection.class, List.of("capacity", "threshold", ":String", "characters")),
         Map.entry(StvnExcessiveExactFloatPrecisionInspection.class, List.of("precision", "mantissa", "exact", "threshold")),
         Map.entry(StvnMetadataFacetInspection.class, List.of("metadata", "facet", "empty", "governance", "#strip")),
         Map.entry(StvnStringCardinalityInspection.class, List.of("cardinality", "#size", "#minSize", "#maxSize")),
@@ -84,7 +87,7 @@ public final class StvnInspectionDescriptionsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .toList();
 
-        assertEquals("Expected exactly 27 registered STVN local inspections in plugin.xml", 27, stvnInspections.size());
+        assertEquals("Expected exactly 30 registered STVN local inspections in plugin.xml", 30, stvnInspections.size());
 
         for (var ep : stvnInspections) {
             var wrapper = new com.intellij.codeInspection.ex.LocalInspectionToolWrapper(ep);

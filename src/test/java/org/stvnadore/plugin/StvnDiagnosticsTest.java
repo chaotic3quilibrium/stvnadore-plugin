@@ -6741,6 +6741,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
         myFixture.configureByFile("metadata/invalid/map_constraints/inv_map_duplicate_key_and_set_cardinality_stage4.stvn_i");
         myFixture.enableInspections(
             new org.stvnadore.plugin.validation.StvnMapStructuralInspection(),
+            new org.stvnadore.plugin.validation.StvnMapCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnSeqCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnSetCapacityInspection(),
             new org.stvnadore.plugin.validation.StvnStringCapacityInspection(),
             new org.stvnadore.plugin.validation.StvnStringCardinalityInspection(),
             new org.stvnadore.plugin.validation.StvnMetadataFacetInspection()
@@ -6844,6 +6847,9 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             new org.stvnadore.plugin.validation.StvnDiscreteIntervalInspection(),
             new org.stvnadore.plugin.validation.StvnMetadataFacetInspection(),
             new org.stvnadore.plugin.validation.StvnExcessiveExactFloatPrecisionInspection(),
+            new org.stvnadore.plugin.validation.StvnMapCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnSeqCapacityInspection(),
+            new org.stvnadore.plugin.validation.StvnSetCapacityInspection(),
             new org.stvnadore.plugin.validation.StvnStringCapacityInspection(),
             new org.stvnadore.plugin.validation.StvnStringCardinalityInspection()
         );
@@ -7056,7 +7062,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
             .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 STVN local inspections registered in plugin.xml", 27, allStvnInspections.length);
+        assertEquals("Expected all 30 STVN local inspections registered in plugin.xml", 30, allStvnInspections.length);
         myFixture.enableInspections(allStvnInspections);
         try {
             for (String fixture : batch4Fixtures) {
@@ -7085,7 +7091,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
             .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 STVN local inspections registered in plugin.xml", 27, allStvnInspections.length);
+        assertEquals("Expected all 30 STVN local inspections registered in plugin.xml", 30, allStvnInspections.length);
         myFixture.enableInspections(allStvnInspections);
 
         assertDiagnosticContract("syntax/invalid/metadata/meta_omitted_domain_with_body_error.core_test.stvn_i");
@@ -7137,7 +7143,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
             .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 STVN local inspections registered in plugin.xml", 27, allStvnInspections.length);
+        assertEquals("Expected all 30 STVN local inspections registered in plugin.xml", 30, allStvnInspections.length);
         myFixture.enableInspections(allStvnInspections);
 
         for (String relativePath : GAUNTLET_V7_BATCH2_CONTRACT_FIXTURES) {
@@ -7209,7 +7215,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
             .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 STVN local inspections registered in plugin.xml", 27, allStvnInspections.length);
+        assertEquals("Expected all 30 STVN local inspections registered in plugin.xml", 30, allStvnInspections.length);
         myFixture.enableInspections(allStvnInspections);
         try {
             var tagPattern = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_-]+)\\]");
@@ -7314,7 +7320,7 @@ public final class StvnDiagnosticsTest extends BasePlatformTestCase {
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (com.intellij.codeInspection.LocalInspectionTool) ep.instantiateTool())
             .toArray(com.intellij.codeInspection.LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 STVN local inspections registered in plugin.xml", 27, allStvnInspections.length);
+        assertEquals("Expected all 30 STVN local inspections registered in plugin.xml", 30, allStvnInspections.length);
         myFixture.enableInspections(allStvnInspections);
         try {
             var tagPattern = Pattern.compile("\\[(stvn-core|stvn-plugin):([A-Z0-9_-]+)\\]");

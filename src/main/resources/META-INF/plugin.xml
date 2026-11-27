@@ -347,12 +347,39 @@
                          level="ERROR"
                          implementationClass="org.stvnadore.plugin.validation.StvnTrailingSlashInspection"/>
 
-        <!-- 12k. Local Inspection for String Capacity Governance -->
+        <!-- 12k. Local Inspections for Capacity Governance (Map, Sequence, Set, String) -->
+        <localInspection language="STVN"
+                         shortName="StvnMapCapacity"
+                         displayName="Map capacity governance inspection"
+                         groupPath="STVN,Governance"
+                         groupName="Capacity"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnMapCapacityInspection"/>
+
+        <localInspection language="STVN"
+                         shortName="StvnSeqCapacity"
+                         displayName="Sequence capacity governance inspection"
+                         groupPath="STVN,Governance"
+                         groupName="Capacity"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnSeqCapacityInspection"/>
+
+        <localInspection language="STVN"
+                         shortName="StvnSetCapacity"
+                         displayName="Set capacity governance inspection"
+                         groupPath="STVN,Governance"
+                         groupName="Capacity"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="org.stvnadore.plugin.validation.StvnSetCapacityInspection"/>
+
         <localInspection language="STVN"
                          shortName="StvnStringCapacity"
                          displayName="String capacity governance inspection"
-                         groupPath="STVN"
-                         groupName="Governance"
+                         groupPath="STVN,Governance"
+                         groupName="Capacity"
                          enabledByDefault="true"
                          level="WARNING"
                          implementationClass="org.stvnadore.plugin.validation.StvnStringCapacityInspection"/>
@@ -590,6 +617,32 @@
             <category>STVN</category>
             <descriptionDirectoryName>StvnCollapseChildElementsIntention</descriptionDirectoryName>
             <description>Collapses eligible multi-line direct child elements onto single lines</description>
+        </intentionAction>
+
+        <!-- 14e. Context Actions for Map Entry Layout (Per-Entry & Whole-Map 4-Slot Symmetry) -->
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnExpandMapEntryIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnExpandMapEntryIntention</descriptionDirectoryName>
+            <description>Expands a single-line map entry into 4-slot multiple-line layout</description>
+        </intentionAction>
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnCollapseMapEntryIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnCollapseMapEntryIntention</descriptionDirectoryName>
+            <description>Collapses a comment-free multi-line map entry onto a single line</description>
+        </intentionAction>
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnExpandAllMapEntriesIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnExpandAllMapEntriesIntention</descriptionDirectoryName>
+            <description>Expands all single-line map entries in a map literal onto multiple lines</description>
+        </intentionAction>
+        <intentionAction>
+            <className>org.stvnadore.plugin.intentions.StvnCollapseAllMapEntriesIntention</className>
+            <category>STVN</category>
+            <descriptionDirectoryName>StvnCollapseAllMapEntriesIntention</descriptionDirectoryName>
+            <description>Collapses all multi-line map entries in a map literal onto single lines</description>
         </intentionAction>
 
     </extensions>

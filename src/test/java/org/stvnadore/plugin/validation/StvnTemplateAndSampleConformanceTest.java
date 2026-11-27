@@ -56,7 +56,7 @@ public final class StvnTemplateAndSampleConformanceTest extends BasePlatformTest
                 .sorted()
                 .toList();
         }
-        assertEquals("Expected 22 .stvn.template files across 11 intentions", 22, templateFiles.size());
+        assertEquals("Expected 30 .stvn.template files across 15 intentions", 30, templateFiles.size());
 
         for (Path templatePath : templateFiles) {
             String relPath = root.relativize(templatePath).toString().replace('\\', '/');

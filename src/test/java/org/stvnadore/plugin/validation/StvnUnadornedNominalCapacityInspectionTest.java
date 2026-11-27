@@ -15,6 +15,9 @@ import java.util.List;
 public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatformTestCase {
 
     private StvnStringCapacityInspection inspection = new StvnStringCapacityInspection();
+    private StvnSeqCapacityInspection seqInspection = new StvnSeqCapacityInspection();
+    private StvnSetCapacityInspection setInspection = new StvnSetCapacityInspection();
+    private StvnMapCapacityInspection mapInspection = new StvnMapCapacityInspection();
 
     private static final List<String> EXPECTED_INTENTIONS = List.of(
         "Set nominal capacity to 4096",
@@ -29,7 +32,16 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
     protected void setUp() throws Exception {
         super.setUp();
         inspection = new StvnStringCapacityInspection();
-        myFixture.enableInspections(new InspectionProfileEntry[]{inspection, new StvnMetadataFacetInspection()});
+        seqInspection = new StvnSeqCapacityInspection();
+        setInspection = new StvnSetCapacityInspection();
+        mapInspection = new StvnMapCapacityInspection();
+        myFixture.enableInspections(new InspectionProfileEntry[]{
+            inspection,
+            seqInspection,
+            setInspection,
+            mapInspection,
+            new StvnMetadataFacetInspection()
+        });
     }
 
     public void testUnadornedNominalWarningsAcrossTypes() {
@@ -65,6 +77,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
             warnings.get(2).getDescription().contains("[stvn-plugin:PW001-WARN_NOMINAL_COLLECTION_UNADORNED]"));
 
         assertTrue(warnings.get(3).getDescription().contains("Nominal collection type ':MapAlias'"));
+        assertTrue(warnings.get(3).getDescription().contains("16777216 entries"));
         assertTrue("Map alias must emit WARN_NOMINAL_COLLECTION_UNADORNED tag",
             warnings.get(3).getDescription().contains("[stvn-plugin:PW001-WARN_NOMINAL_COLLECTION_UNADORNED]"));
 
@@ -330,6 +343,7 @@ public final class StvnUnadornedNominalCapacityInspectionTest extends BasePlatfo
 
     public void testSuppressionOfFixes4To6UnderErrorSeverity() {
         inspection.configuredSeverity = "ERROR";
+        seqInspection.configuredSeverity = "ERROR";
 
         var text = """
             {

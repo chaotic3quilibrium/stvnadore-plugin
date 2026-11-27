@@ -1,0 +1,40 @@
+<html>
+<body>
+<p>Validates that root <code>:Map</code> schema declarations specify explicit capacity facets within configured entry limits (STVN Spec &sect; 5.5.3 and &sect; 6.1).</p>
+<!-- tooltip end -->
+<p>
+  STVN defines a default allocation ceiling of 16,777,216 entries for unadorned <code>:Map</code> constructors.
+  This inspection governs <code>:Map</code> schemas exclusively under <b>STVN | Governance | Capacity</b>, flagging root
+  <code>:Map(...)</code> constructors lacking explicit capacity facets (<code>PW001</code>) or specifying
+  <code>#maxSize</code> above the configured threshold (default: 4,096 entries, <code>PW003</code>).
+  Derived nominal aliases (<code>:ChildMap :ParentMap</code>) inherit locked Tier-1 bounds from their root constructor
+  and are not flagged. Immutable constant declarations (<code>#CONST :Map(:String :Int) {...}</code>) omit unadorned
+  warnings while still reporting <code>PW003</code> when explicit <code>#maxSize</code> exceeds the threshold.
+</p>
+
+<p><b>QuickFix Resolution Protocol:</b></p>
+<ul>
+  <li><b>Under WARNING / WEAK WARNING severity:</b> Offers threshold quick-fixes (<code>#maxSize N</code>, <code>0..N</code>, <code>1..N</code>) and default allocation cap quick-fixes (<code>16777216</code>) inserted at canonical 5-tier metadata rank.</li>
+  <li><b>Under ERROR severity:</b> Suppresses the <code>16777216</code> quick-fixes so applied fixes satisfy the configured error threshold.</li>
+</ul>
+
+<p><b>Payload and Constant Literal Scope (Optional):</b></p>
+<p>
+  When <b>Inspect map literals in body payloads and constants</b> is enabled, flags <code>{ [key value] ... }</code> map literals
+  in <code>:body</code> and <code>#CONST</code> definitions whose entry count exceeds the active bound (<code>PW004</code>),
+  offering quick-fixes to truncate excess entries or widen the governing <code>:Map</code> schema <code>#maxSize</code>.
+</p>
+
+<p><b>Example (Violation):</b></p>
+<pre><code>:defs {
+  :ZoneFlowMap :Map(:String :Int)
+}
+</code></pre>
+
+<p><b>Example (Compliant):</b></p>
+<pre><code>:defs {
+  :ZoneFlowMap { #minSize 1 #maxSize 256 } :Map({ #minSize 1 #maxSize 64 } :String :Int)
+}
+</code></pre>
+</body>
+</html>

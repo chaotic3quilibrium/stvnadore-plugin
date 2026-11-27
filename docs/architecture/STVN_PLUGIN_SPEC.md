@@ -643,6 +643,23 @@ flowchart LR
     UniCodec["Pure-Java StvnUnicodeEscapeCodec + StvnConfigurable Toggle"] --> UniInt["Symmetric uXXXX Escape and Unescape Intentions"]
 ```
 
+### 4.42 4-Way `STVN | Governance | Capacity` Inspection Split, Dedicated Map-Entry Layout Intentions & 4-Slot Plain-String Fencing Auto-Expansion
+- **4-Way Orthogonal `STVN | Governance | Capacity` Engine (`Target 1`, `30` `<localInspection>` Registrations):**
+  - `AbstractStvnCapacityInspection` (`CapacityTargetKind.{STRING, SEQ, SET, MAP}`) centralizes root-constructor `PW001`/`PW002`/`PW003` schema governance, dynamic `HighlightDisplayKey.find(getShortName())` `ERROR`-severity detection, `PsiElement`-identity-keyed nominal/:package/:use/`#CONST` lineage tracing, 5-tier `ApplyNominalCapacityQuickFix` insertion, and opt-in `PW004` `:body` / `#CONST` literal capacity checks (`Truncate*` and `Widen*` quick-fixes).
+  - Four peer `<localInspection>` registrations under `groupPath="STVN,Governance"` and `groupName="Capacity"` expose independent tri-state checkboxes and `OptPane` controls (`[1, 16_777_216]`, default `4,096`): `StvnMapCapacityInspection` (`entries`), `StvnSeqCapacityInspection` (`elements`), `StvnSetCapacityInspection` (`elements`), and `StvnStringCapacityInspection` (`characters`, preserving `thresholdCapacity` and `inspectPayload` XML profile options).
+- **Dedicated Per-Entry & Whole-Map Entry Layout Intentions (`Target 2`, `15` `<intentionAction>` Registrations):**
+  - Registers four `STE-02`-compliant (`1:1 getText() == getFamilyName()`) `<intentionAction>` classes localized via `StvnBundle`: `StvnExpandMapEntryIntention`, `StvnCollapseMapEntryIntention`, `StvnExpandAllMapEntriesIntention`, and `StvnCollapseAllMapEntriesIntention`.
+  - Removes single-slice `MapEntrySlice` interception from `StvnExpandContainerIntention` and `StvnCollapseContainerIntention`, yields `StvnCollapseChildElementsIntention` on `MapLiteral` strictly when `areAllMapEntriesCollapsible` holds (retaining partial child collapse on mixed fenced/commented maps), and enforces the 4-zone `PriorityAction` hierarchy (`Priority.TOP` string fencing > `Priority.HIGH` targeted slice or outer braces > `Priority.NORMAL` enclosing whole-map/container > `Priority.LOW` inside `"..."` leaves).
+- **4-Slot `MapEntry` Auto-Expansion on String Fencing (`Target 3`):**
+  - `StvnConvertEscapedStringToFencedIntention` (`findOutermostNonFourSlotMapEntryBounds` + `StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue`) and `StvnCreateFencedStringIntention` (incomplete opening triple-quote recovery inside `:Map` entries) expand enclosing non-4-slot `[key value]` entries into canonical 4-slot symmetry (`[` at `+0`, `key` at `+2`, `value` at `+2`, `]` at `+0`) with zero interior bracket padding on unaffected sibling entries.
+
+```mermaid
+flowchart LR
+    CapTree["STVN | Governance | Capacity (4 Peer OptPane Inspections)"] --> CapBase["AbstractStvnCapacityInspection (PsiElement Cycle Guard + PW001..PW004)"]
+    MapCaret["4-Zone MapLiteral Caret Priority"] --> MapIntent["Single-Entry and Whole-Map 4-Slot Expand / Collapse Intentions"]
+    StrFence["Plain, Escaped, Nested, and Recovery String Fencing"] --> AutoFourSlot["4-Slot MapEntry Symmetry + Zero Sibling Bracket Padding"]
+```
+
 ---
 
 ## 5. Benchmarking & Quality Assurance Gates

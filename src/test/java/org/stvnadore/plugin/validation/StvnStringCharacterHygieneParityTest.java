@@ -164,7 +164,7 @@ public final class StvnStringCharacterHygieneParityTest extends BasePlatformTest
             .filter(ep -> "STVN".equals(ep.language))
             .map(ep -> (LocalInspectionTool) ep.instantiateTool())
             .toArray(LocalInspectionTool[]::new);
-        assertEquals("Expected all 27 registered STVN inspections", 27, all27.length);
+        assertEquals("Expected all 30 registered STVN inspections", 30, all27.length);
 
         String[] e001Cases = {
             // 1. Raw Trojan Source RLO U+202E

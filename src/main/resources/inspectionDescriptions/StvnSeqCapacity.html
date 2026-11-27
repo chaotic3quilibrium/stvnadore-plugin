@@ -1,0 +1,40 @@
+<html>
+<body>
+<p>Validates that root <code>:Seq</code> schema declarations specify explicit capacity facets within configured element limits (STVN Spec &sect; 5.5.3 and &sect; 6.1).</p>
+<!-- tooltip end -->
+<p>
+  STVN defines a default allocation ceiling of 16,777,216 elements for unadorned <code>:Seq</code> constructors.
+  This inspection governs <code>:Seq</code> schemas exclusively under <b>STVN | Governance | Capacity</b>, flagging root
+  <code>:Seq(...)</code> constructors lacking explicit capacity facets (<code>PW001</code>) or specifying
+  <code>#maxSize</code> above the configured threshold (default: 4,096 elements, <code>PW003</code>).
+  Derived nominal aliases (<code>:ChildSeq :ParentSeq</code>) inherit locked Tier-1 bounds from their root constructor
+  and are not flagged. Immutable constant declarations (<code>#CONST :Seq(:Int) [...]</code>) omit unadorned
+  warnings while still reporting <code>PW003</code> when explicit <code>#maxSize</code> exceeds the threshold.
+</p>
+
+<p><b>QuickFix Resolution Protocol:</b></p>
+<ul>
+  <li><b>Under WARNING / WEAK WARNING severity:</b> Offers threshold quick-fixes (<code>#maxSize N</code>, <code>0..N</code>, <code>1..N</code>) and default allocation cap quick-fixes (<code>16777216</code>) inserted at canonical 5-tier metadata rank.</li>
+  <li><b>Under ERROR severity:</b> Suppresses the <code>16777216</code> quick-fixes so applied fixes satisfy the configured error threshold.</li>
+</ul>
+
+<p><b>Payload and Constant Literal Scope (Optional):</b></p>
+<p>
+  When <b>Inspect sequence literals in body payloads and constants</b> is enabled, flags <code>[...]</code> sequence literals
+  governed by <code>:Seq</code> in <code>:body</code> and <code>#CONST</code> definitions whose element count exceeds the active bound (<code>PW004</code>),
+  offering quick-fixes to truncate excess elements or widen the governing <code>:Seq</code> schema <code>#maxSize</code>.
+</p>
+
+<p><b>Example (Violation):</b></p>
+<pre><code>:defs {
+  :SampleSeries :Seq(:Int)
+}
+</code></pre>
+
+<p><b>Example (Compliant):</b></p>
+<pre><code>:defs {
+  :SampleSeries { #minSize 1 #maxSize 1024 } :Seq(:Int)
+}
+</code></pre>
+</body>
+</html>

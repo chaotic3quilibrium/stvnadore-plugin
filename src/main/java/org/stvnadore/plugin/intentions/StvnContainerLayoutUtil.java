@@ -136,28 +136,6 @@ public final class StvnContainerLayoutUtil {
         }
         CharSequence chars = file.getViewProvider().getContents();
         for (PsiElement cur = leaf; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
-            if (cur instanceof MapLiteral mapLit) {
-                ASTNode mapOpen = findOpenDelim(mapLit);
-                ASTNode mapClose = findCloseDelim(mapLit);
-                if (mapOpen != null && mapClose != null && !isSingleLineSpan(chars, mapOpen, mapClose)) {
-                    MapEntrySlice enclosingSlice = findEnclosingMapEntrySlice(mapLit, caretOffset);
-                    if (enclosingSlice != null && isSingleLineSpan(chars, enclosingSlice.lbrack(), enclosingSlice.rbrack())) {
-                        if (PsiTreeUtil.hasErrorElements(enclosingSlice.keyValue())
-                                || PsiTreeUtil.hasErrorElements(enclosingSlice.entryValue())) {
-                            return null;
-                        }
-                        String sliceIndent = lineIndentOfOffset(chars, enclosingSlice.lbrack().getStartOffset());
-                        String expandedSlice = renderExpandedMapEntrySlice(enclosingSlice, sliceIndent);
-                        return new LayoutOperation(
-                            enclosingSlice.textRange(),
-                            expandedSlice,
-                            computeCaretProximityPriority(
-                                file, caretOffset, mapLit, enclosingSlice.lbrack(), enclosingSlice.rbrack()
-                            )
-                        );
-                    }
-                }
-            }
             PsiElement candidate = normalizeEnumCandidate(cur);
             if (!isExpandableContainerKind(candidate)) {
                 continue;
@@ -212,24 +190,6 @@ public final class StvnContainerLayoutUtil {
         }
         CharSequence chars = file.getViewProvider().getContents();
         for (PsiElement cur = leaf; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
-            if (cur instanceof MapLiteral mapLit) {
-                MapEntrySlice enclosingSlice = findEnclosingMapEntrySlice(mapLit, caretOffset);
-                if (enclosingSlice != null && !isSingleLineSpan(chars, enclosingSlice.lbrack(), enclosingSlice.rbrack())) {
-                    if (PsiTreeUtil.hasErrorElements(enclosingSlice.keyValue())
-                            || PsiTreeUtil.hasErrorElements(enclosingSlice.entryValue())
-                            || !isRangeSafeToCollapse(mapLit.getNode(), enclosingSlice.lbrack(), enclosingSlice.rbrack())) {
-                        return null;
-                    }
-                    String collapsedSlice = renderCollapsedMapEntry(enclosingSlice);
-                    return new LayoutOperation(
-                        enclosingSlice.textRange(),
-                        collapsedSlice,
-                        computeCaretProximityPriority(
-                            file, caretOffset, mapLit, enclosingSlice.lbrack(), enclosingSlice.rbrack()
-                        )
-                    );
-                }
-            }
             PsiElement candidate = normalizeEnumCandidate(cur);
             if (!isExpandableContainerKind(candidate)) {
                 continue;
@@ -259,6 +219,269 @@ public final class StvnContainerLayoutUtil {
     }
 
     /**
+     * Expands the single-line {@code [key value]} map entry enclosing {@code caretOffset} into
+     * canonical 4-slot multi-line symmetry ({@code [\n  key\n  value\n]}).
+     * <p>
+     * When the enclosing {@link MapLiteral} is itself single-line, expands the outer {@link MapLiteral}
+     * onto multiple lines while expanding only the targeted entry into 4-slot symmetry and keeping
+     * sibling entries as canonical single-line {@code [k v]} rows.
+     * </p>
+     *
+     * @param file        target STVN file
+     * @param caretOffset 0-based editor caret offset
+     * @return {@link LayoutOperation} if eligible, or {@code null}
+     */
+    public static @Nullable LayoutOperation findExpandMapEntryOperation(PsiFile file, int caretOffset) {
+        PsiElement leaf = findCaretLeaf(file, caretOffset);
+        if (leaf == null) {
+            return null;
+        }
+        CharSequence chars = file.getViewProvider().getContents();
+        MapLiteral mapLit = PsiTreeUtil.getParentOfType(leaf, MapLiteral.class, false);
+        if (mapLit == null) {
+            return null;
+        }
+        ASTNode mapOpen = findOpenDelim(mapLit);
+        ASTNode mapClose = findCloseDelim(mapLit);
+        if (mapOpen == null || mapClose == null) {
+            return null;
+        }
+        MapEntrySlice targetSlice = findEnclosingMapEntrySlice(mapLit, caretOffset);
+        if (targetSlice == null
+                || !isSingleLineSpan(chars, targetSlice.lbrack(), targetSlice.rbrack())
+                || PsiTreeUtil.hasErrorElements(targetSlice.keyValue())
+                || PsiTreeUtil.hasErrorElements(targetSlice.entryValue())
+                || !isRangeSafeToCollapse(mapLit.getNode(), targetSlice.lbrack(), targetSlice.rbrack())) {
+            return null;
+        }
+        PriorityAction.Priority priority = computeSingleMapEntryPriority(file, caretOffset, targetSlice);
+        if (isSingleLineSpan(chars, mapOpen, mapClose)) {
+            if (PsiTreeUtil.hasErrorElements(mapLit) || !isRangeSafeToCollapse(mapLit.getNode(), mapOpen, mapClose)) {
+                return null;
+            }
+            List<MapEntrySlice> slices = listMapEntrySlices(mapLit);
+            String baseIndent = lineIndentOfOffset(chars, mapLit.getTextRange().getStartOffset());
+            String childIndent = baseIndent + INDENT_STEP;
+            StringBuilder sb = new StringBuilder(StvnVocabulary.DELIM_OPEN_BRACE);
+            for (MapEntrySlice slice : slices) {
+                sb.append('\n').append(childIndent);
+                if (slice.lbrack() == targetSlice.lbrack()) {
+                    sb.append(renderExpandedMapEntrySlice(slice, childIndent));
+                } else {
+                    sb.append(renderCollapsedMapEntry(slice));
+                }
+            }
+            sb.append('\n').append(baseIndent).append(StvnVocabulary.DELIM_CLOSE_BRACE);
+            return new LayoutOperation(mapLit.getTextRange(), sb.toString(), priority);
+        }
+
+        boolean precededOnLine = hasNonWhitespaceBeforeOnSameLine(chars, targetSlice.lbrack().getStartOffset());
+        boolean followedOnLine = hasNonWhitespaceAfterOnSameLine(
+            chars,
+            targetSlice.rbrack().getTextRange().getEndOffset(),
+            mapClose.getStartOffset()
+        );
+        if (!precededOnLine && !followedOnLine) {
+            String sliceIndent = lineIndentOfOffset(chars, targetSlice.lbrack().getStartOffset());
+            return new LayoutOperation(
+                targetSlice.textRange(),
+                renderExpandedMapEntrySlice(targetSlice, sliceIndent),
+                priority
+            );
+        }
+        String entryIndent = lineIndentOfOffset(chars, mapLit.getTextRange().getStartOffset()) + INDENT_STEP;
+        int replaceStart = precededOnLine
+            ? retreatHorizontalSpaces(chars, targetSlice.lbrack().getStartOffset())
+            : targetSlice.lbrack().getStartOffset();
+        int replaceEnd = followedOnLine
+            ? advanceHorizontalSpaces(chars, targetSlice.rbrack().getTextRange().getEndOffset())
+            : targetSlice.rbrack().getTextRange().getEndOffset();
+        String expandedSlice = (precededOnLine ? "\n" + entryIndent : "")
+            + renderExpandedMapEntrySlice(targetSlice, entryIndent)
+            + (followedOnLine ? "\n" + entryIndent : "");
+        return new LayoutOperation(new TextRange(replaceStart, replaceEnd), expandedSlice, priority);
+    }
+
+    /**
+     * Collapses the comment-free, fenced-string-free multi-line {@code [key value]} map entry
+     * enclosing {@code caretOffset} onto a single canonical line ({@code [key value]}).
+     *
+     * @param file        target STVN file
+     * @param caretOffset 0-based editor caret offset
+     * @return {@link LayoutOperation} if eligible, or {@code null}
+     */
+    public static @Nullable LayoutOperation findCollapseMapEntryOperation(PsiFile file, int caretOffset) {
+        PsiElement leaf = findCaretLeaf(file, caretOffset);
+        if (leaf == null) {
+            return null;
+        }
+        CharSequence chars = file.getViewProvider().getContents();
+        MapLiteral mapLit = PsiTreeUtil.getParentOfType(leaf, MapLiteral.class, false);
+        if (mapLit == null) {
+            return null;
+        }
+        MapEntrySlice slice = findEnclosingMapEntrySlice(mapLit, caretOffset);
+        if (slice == null
+                || isSingleLineSpan(chars, slice.lbrack(), slice.rbrack())
+                || PsiTreeUtil.hasErrorElements(slice.keyValue())
+                || PsiTreeUtil.hasErrorElements(slice.entryValue())
+                || !isRangeSafeToCollapse(mapLit.getNode(), slice.lbrack(), slice.rbrack())) {
+            return null;
+        }
+        return new LayoutOperation(
+            slice.textRange(),
+            renderCollapsedMapEntry(slice),
+            computeSingleMapEntryPriority(file, caretOffset, slice)
+        );
+    }
+
+    /**
+     * Expands every single-line {@code [key value]} entry inside the innermost eligible {@link MapLiteral}
+     * enclosing {@code caretOffset} into canonical 4-slot multi-line symmetry, preserving all comments
+     * and already-multi-line entries.
+     *
+     * @param file        target STVN file
+     * @param caretOffset 0-based editor caret offset
+     * @return {@link LayoutOperation} if eligible, or {@code null}
+     */
+    public static @Nullable LayoutOperation findExpandAllMapEntriesOperation(PsiFile file, int caretOffset) {
+        PsiElement leaf = findCaretLeaf(file, caretOffset);
+        if (leaf == null) {
+            return null;
+        }
+        CharSequence chars = file.getViewProvider().getContents();
+        for (PsiElement cur = leaf; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
+            if (!(cur instanceof MapLiteral mapLit)) {
+                continue;
+            }
+            if (PsiTreeUtil.hasErrorElements(mapLit)) {
+                return null;
+            }
+            ASTNode open = findOpenDelim(mapLit);
+            ASTNode close = findCloseDelim(mapLit);
+            if (open == null || close == null) {
+                return null;
+            }
+            List<MapEntrySlice> slices = listMapEntrySlices(mapLit);
+            if (slices.isEmpty()) {
+                continue;
+            }
+            boolean hasExpandableSingleLineSlice = slices.stream()
+                .anyMatch(s -> isSingleLineSpan(chars, s.lbrack(), s.rbrack())
+                    && isRangeSafeToCollapse(mapLit.getNode(), s.lbrack(), s.rbrack()));
+            if (!hasExpandableSingleLineSlice) {
+                continue;
+            }
+            PriorityAction.Priority priority = computeWholeMapEntriesPriority(file, caretOffset, mapLit, open, close);
+            String baseIndent = lineIndentOfOffset(chars, mapLit.getTextRange().getStartOffset());
+            String childIndent = baseIndent + INDENT_STEP;
+
+            if (isSingleLineSpan(chars, open, close)) {
+                if (!isRangeSafeToCollapse(mapLit.getNode(), open, close)) {
+                    return null;
+                }
+                StringBuilder sb = new StringBuilder(StvnVocabulary.DELIM_OPEN_BRACE);
+                for (MapEntrySlice slice : slices) {
+                    sb.append('\n').append(childIndent).append(renderExpandedMapEntrySlice(slice, childIndent));
+                }
+                sb.append('\n').append(baseIndent).append(StvnVocabulary.DELIM_CLOSE_BRACE);
+                return new LayoutOperation(mapLit.getTextRange(), sb.toString(), priority);
+            }
+
+            StringBuilder rebuilt = new StringBuilder(mapLit.getText());
+            int mapStart = mapLit.getTextRange().getStartOffset();
+            for (int i = slices.size() - 1; i >= 0; i--) {
+                MapEntrySlice slice = slices.get(i);
+                if (!isSingleLineSpan(chars, slice.lbrack(), slice.rbrack())
+                        || !isRangeSafeToCollapse(mapLit.getNode(), slice.lbrack(), slice.rbrack())) {
+                    continue;
+                }
+                boolean splitBefore = hasNonWhitespaceBeforeOnSameLine(chars, slice.lbrack().getStartOffset());
+                String sliceIndent = splitBefore
+                    ? childIndent
+                    : lineIndentOfOffset(chars, slice.lbrack().getStartOffset());
+                String replacement = (splitBefore ? "\n" + sliceIndent : "")
+                    + renderExpandedMapEntrySlice(slice, sliceIndent);
+                int absStart = splitBefore
+                    ? retreatHorizontalSpaces(chars, slice.textRange().getStartOffset())
+                    : slice.textRange().getStartOffset();
+                int relStart = absStart - mapStart;
+                int relEnd = slice.textRange().getEndOffset() - mapStart;
+                rebuilt.replace(relStart, relEnd, replacement);
+            }
+            return new LayoutOperation(mapLit.getTextRange(), rebuilt.toString(), priority);
+        }
+        return null;
+    }
+
+    /**
+     * Collapses every multi-line {@code [key value]} entry inside the innermost eligible multi-line
+     * {@link MapLiteral} enclosing {@code caretOffset} onto single lines while preserving outer
+     * multi-line {@code { ... }} structure and any {@code //} comments between entries.
+     *
+     * @param file        target STVN file
+     * @param caretOffset 0-based editor caret offset
+     * @return {@link LayoutOperation} if eligible, or {@code null}
+     */
+    public static @Nullable LayoutOperation findCollapseAllMapEntriesOperation(PsiFile file, int caretOffset) {
+        PsiElement leaf = findCaretLeaf(file, caretOffset);
+        if (leaf == null) {
+            return null;
+        }
+        CharSequence chars = file.getViewProvider().getContents();
+        for (PsiElement cur = leaf; cur != null && !(cur instanceof PsiFile); cur = cur.getParent()) {
+            if (!(cur instanceof MapLiteral mapLit)) {
+                continue;
+            }
+            if (PsiTreeUtil.hasErrorElements(mapLit)) {
+                return null;
+            }
+            ASTNode open = findOpenDelim(mapLit);
+            ASTNode close = findCloseDelim(mapLit);
+            if (open == null || close == null || isSingleLineSpan(chars, open, close)) {
+                continue;
+            }
+            if (!areAllMapEntriesCollapsible(mapLit, chars)) {
+                continue;
+            }
+            List<MapEntrySlice> slices = listMapEntrySlices(mapLit);
+            StringBuilder rebuilt = new StringBuilder(mapLit.getText());
+            int mapStart = mapLit.getTextRange().getStartOffset();
+            for (int i = slices.size() - 1; i >= 0; i--) {
+                MapEntrySlice slice = slices.get(i);
+                if (isSingleLineSpan(chars, slice.lbrack(), slice.rbrack())) {
+                    continue;
+                }
+                int relStart = slice.textRange().getStartOffset() - mapStart;
+                int relEnd = slice.textRange().getEndOffset() - mapStart;
+                rebuilt.replace(relStart, relEnd, renderCollapsedMapEntry(slice));
+            }
+            PriorityAction.Priority priority = computeWholeMapEntriesPriority(file, caretOffset, mapLit, open, close);
+            return new LayoutOperation(mapLit.getTextRange(), rebuilt.toString(), priority);
+        }
+        return null;
+    }
+
+    private static boolean areAllMapEntriesCollapsible(MapLiteral mapLit, CharSequence chars) {
+        List<MapEntrySlice> slices = listMapEntrySlices(mapLit);
+        if (slices.isEmpty()) {
+            return false;
+        }
+        boolean hasMultiLine = false;
+        for (MapEntrySlice slice : slices) {
+            if (!isSingleLineSpan(chars, slice.lbrack(), slice.rbrack())) {
+                hasMultiLine = true;
+                if (PsiTreeUtil.hasErrorElements(slice.keyValue())
+                        || PsiTreeUtil.hasErrorElements(slice.entryValue())
+                        || !isRangeSafeToCollapse(mapLit.getNode(), slice.lbrack(), slice.rbrack())) {
+                    return false;
+                }
+            }
+        }
+        return hasMultiLine;
+    }
+
+    /**
      * Resolves a collapse-child-elements operation on the innermost eligible multi-line parent container
      * enclosing {@code caretOffset} that owns at least one collapsible multi-line direct child.
      *
@@ -279,6 +502,10 @@ public final class StvnContainerLayoutUtil {
             ASTNode open = findOpenDelim(cur);
             ASTNode close = findCloseDelim(cur);
             if (open == null || close == null || isSingleLineSpan(chars, open, close)) {
+                continue;
+            }
+            if (cur instanceof MapLiteral mapLit && areAllMapEntriesCollapsible(mapLit, chars)) {
+                // Deconflict with StvnCollapseAllMapEntriesIntention when every map entry is collapsible
                 continue;
             }
             List<LayoutOperation> childOps = collectCollapsibleDirectChildOps(cur, chars);
@@ -303,6 +530,97 @@ public final class StvnContainerLayoutUtil {
         return null;
     }
 
+    private static PriorityAction.Priority computeSingleMapEntryPriority(
+            PsiFile file,
+            int caretOffset,
+            MapEntrySlice slice
+    ) {
+        if (isCaretInsideOrImmediatelyAfterStringLeaf(file, caretOffset)) {
+            return PriorityAction.Priority.LOW;
+        }
+        int len = file.getTextLength();
+        int clamped = Math.max(0, Math.min(caretOffset, len));
+        PsiElement at = clamped < len ? file.findElementAt(clamped) : null;
+        PsiElement prev = clamped > 0 ? file.findElementAt(clamped - 1) : null;
+        if (at != null && at.getNode() != null) {
+            ASTNode atNode = at.getNode();
+            if (atNode == slice.lbrack() || atNode == slice.rbrack()) {
+                return PriorityAction.Priority.HIGH;
+            }
+            if (atNode.getElementType() == TokenType.WHITE_SPACE && at.getParent() instanceof MapLiteral) {
+                return PriorityAction.Priority.HIGH;
+            }
+        }
+        if (prev != null && prev.getNode() == slice.rbrack()) {
+            return PriorityAction.Priority.HIGH;
+        }
+        return PriorityAction.Priority.LOW;
+    }
+
+    private static PriorityAction.Priority computeWholeMapEntriesPriority(
+            PsiFile file,
+            int caretOffset,
+            MapLiteral mapLit,
+            ASTNode openBrace,
+            ASTNode closeBrace
+    ) {
+        if (isCaretInsideOrImmediatelyAfterStringLeaf(file, caretOffset)) {
+            return PriorityAction.Priority.LOW;
+        }
+        MapEntrySlice enclosingSlice = findEnclosingMapEntrySlice(mapLit, caretOffset);
+        int len = file.getTextLength();
+        int clamped = Math.max(0, Math.min(caretOffset, len));
+        PsiElement at = clamped < len ? file.findElementAt(clamped) : null;
+        PsiElement prev = clamped > 0 ? file.findElementAt(clamped - 1) : null;
+        if (enclosingSlice != null) {
+            if (at != null && at.getNode() != null) {
+                ASTNode atNode = at.getNode();
+                if (atNode == enclosingSlice.lbrack()
+                        || atNode == enclosingSlice.rbrack()
+                        || (atNode.getElementType() == TokenType.WHITE_SPACE && at.getParent() == mapLit)) {
+                    return PriorityAction.Priority.NORMAL;
+                }
+            }
+            if (prev != null && prev.getNode() == enclosingSlice.rbrack()) {
+                return PriorityAction.Priority.NORMAL;
+            }
+            return PriorityAction.Priority.LOW;
+        }
+        if (at != null && at.getNode() != null) {
+            ASTNode atNode = at.getNode();
+            if (atNode == openBrace || atNode == closeBrace
+                    || (atNode.getElementType() == TokenType.WHITE_SPACE && at.getParent() == mapLit)) {
+                return PriorityAction.Priority.HIGH;
+            }
+        }
+        if (prev != null && prev.getNode() == closeBrace) {
+            return PriorityAction.Priority.HIGH;
+        }
+        return PriorityAction.Priority.NORMAL;
+    }
+
+    private static boolean isCaretInsideOrImmediatelyAfterStringLeaf(PsiFile file, int caretOffset) {
+        int len = file.getTextLength();
+        int clamped = Math.max(0, Math.min(caretOffset, len));
+        PsiElement at = clamped < len ? file.findElementAt(clamped) : null;
+        if (at != null && at.getNode() != null) {
+            IElementType atType = at.getNode().getElementType();
+            if (atType == StvnTypes.LITERAL_STRING_SIMPLE || atType == StvnTypes.LITERAL_STRING_FENCED) {
+                return true;
+            }
+            if (atType == TokenType.WHITE_SPACE && clamped > 0) {
+                PsiElement prev = file.findElementAt(clamped - 1);
+                if (prev != null && prev.getNode() != null) {
+                    IElementType prevType = prev.getNode().getElementType();
+                    if (prevType == StvnTypes.LITERAL_STRING_SIMPLE || prevType == StvnTypes.LITERAL_STRING_FENCED) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     static PriorityAction.Priority computeCaretProximityPriority(
             PsiFile file,
             int caretOffset,
@@ -310,6 +628,9 @@ public final class StvnContainerLayoutUtil {
             ASTNode openDelim,
             ASTNode closeDelim
     ) {
+        if (targetContainer instanceof MapLiteral mapLit) {
+            return computeWholeMapEntriesPriority(file, caretOffset, mapLit, openDelim, closeDelim);
+        }
         int len = file.getTextLength();
         int clamped = Math.max(0, Math.min(caretOffset, len));
         PsiElement at = clamped < len ? file.findElementAt(clamped) : null;
@@ -319,11 +640,6 @@ public final class StvnContainerLayoutUtil {
             ASTNode atNode = at.getNode();
             IElementType atType = atNode.getElementType();
             if (atNode == openDelim || atNode == closeDelim) {
-                return PriorityAction.Priority.NORMAL;
-            }
-            if (targetContainer instanceof MapLiteral
-                    && at.getParent() == targetContainer
-                    && (atType == StvnTypes.LBRACK || atType == StvnTypes.RBRACK)) {
                 return PriorityAction.Priority.NORMAL;
             }
             if (atType == TokenType.WHITE_SPACE) {
@@ -929,6 +1245,21 @@ public final class StvnContainerLayoutUtil {
         return sb.toString();
     }
 
+    /**
+     * Renders {@code val} onto a single canonical line without interior delimiter padding when
+     * {@code val} is error-free and contains neither comments nor fenced strings; otherwise returns
+     * {@code val.getText().trim()}.
+     *
+     * @param val STVN value PSI node
+     * @return canonical single-line value text, or trimmed raw text when non-collapsible
+     */
+    public static String renderCollapsedOrTrimmedValue(Value val) {
+        if (!PsiTreeUtil.hasErrorElements(val) && isSubtreeSafeToCollapse(val.getNode())) {
+            return renderCollapsedValue(val);
+        }
+        return val.getText().trim();
+    }
+
     private static String renderCollapsedMapEntry(MapEntrySlice slice) {
         return StvnVocabulary.DELIM_OPEN_BRACKET
             + renderCollapsedValue(slice.keyValue())
@@ -1237,6 +1568,49 @@ public final class StvnContainerLayoutUtil {
             wsEnd++;
         }
         return chars.subSequence(lineStart, wsEnd).toString();
+    }
+
+    private static boolean hasNonWhitespaceBeforeOnSameLine(CharSequence chars, int offset) {
+        for (int i = offset - 1; i >= 0; i--) {
+            char c = chars.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return false;
+            }
+            if (c != ' ' && c != '\t') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasNonWhitespaceAfterOnSameLine(CharSequence chars, int startOffset, int limitOffset) {
+        int end = Math.min(chars.length(), limitOffset);
+        for (int i = Math.max(0, startOffset); i < end; i++) {
+            char c = chars.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return false;
+            }
+            if (c != ' ' && c != '\t') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int retreatHorizontalSpaces(CharSequence chars, int offset) {
+        int cur = Math.max(0, Math.min(offset, chars.length()));
+        while (cur > 0 && (chars.charAt(cur - 1) == ' ' || chars.charAt(cur - 1) == '\t')) {
+            cur--;
+        }
+        return cur;
+    }
+
+    private static int advanceHorizontalSpaces(CharSequence chars, int offset) {
+        int cur = Math.max(0, Math.min(offset, chars.length()));
+        while (cur < chars.length() && (chars.charAt(cur) == ' ' || chars.charAt(cur) == '\t')) {
+            cur++;
+        }
+        return cur;
     }
 
     private static @Nullable ASTNode findLastDirectAstChild(ASTNode parent, IElementType type) {

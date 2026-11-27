@@ -79,6 +79,9 @@ public final class StvnGauntletV11PostBatch3PluginSyncAndUnicodeTest extends Bas
             new StvnFlatDocumentIncludeInspection(),
             new StvnNestedPackageInspection(),
             new StvnTrailingSlashInspection(),
+            new StvnMapCapacityInspection(),
+            new StvnSeqCapacityInspection(),
+            new StvnSetCapacityInspection(),
             new StvnStringCapacityInspection(),
             new StvnExcessiveExactFloatPrecisionInspection(),
             new StvnFloatPrecisionLossInspection(),
@@ -436,14 +439,14 @@ public final class StvnGauntletV11PostBatch3PluginSyncAndUnicodeTest extends Bas
             // 2. Expand single-line ["mode" "strict"] slice inside multi-line MapLiteral -> 4-slot symmetry, then Collapse back
             int modeSliceOff = psiFmtFile.getText().indexOf("[\"mode\" \"strict\"]");
             myFixture.getEditor().getCaretModel().moveToOffset(modeSliceOff);
-            IntentionAction expandSlice = myFixture.findSingleIntention(EXPAND_CONTAINER_TEXT);
+            IntentionAction expandSlice = myFixture.findSingleIntention("Expand map entry to multiple lines");
             myFixture.launchAction(expandSlice);
             assertTrue("Expanded slice must use 4-slot symmetry:\n" + myFixture.getFile().getText(),
                 myFixture.getFile().getText().contains("    [\n      \"mode\"\n      \"strict\"\n    ]"));
 
             int expandedBrackOff = myFixture.getFile().getText().lastIndexOf("[\n      \"mode\"");
             myFixture.getEditor().getCaretModel().moveToOffset(expandedBrackOff);
-            IntentionAction collapseSlice = myFixture.findSingleIntention(COLLAPSE_CONTAINER_TEXT);
+            IntentionAction collapseSlice = myFixture.findSingleIntention("Collapse map entry to single line");
             myFixture.launchAction(collapseSlice);
             assertEquals(expectedFormatted, myFixture.getFile().getText());
 

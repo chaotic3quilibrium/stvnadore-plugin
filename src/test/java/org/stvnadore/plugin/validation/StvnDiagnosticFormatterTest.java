@@ -168,7 +168,9 @@ public final class StvnDiagnosticFormatterTest {
 
         try (Stream<Path> paths = Files.list(validationDir)) {
             for (Path file : paths.filter(p -> p.getFileName().toString().endsWith("Inspection.java")).toList()) {
-                inspectionCount++;
+                if (!file.getFileName().toString().startsWith("Abstract")) {
+                    inspectionCount++;
+                }
                 String src = Files.readString(file);
                 if (bareBagFormatCall.matcher(src).find()) {
                     violations.add(file.getFileName() + " still passes bare DiagnosticBag.* to formatPlugin");
@@ -176,7 +178,7 @@ public final class StvnDiagnosticFormatterTest {
             }
         }
 
-        assertEquals("Expected all 27 local inspection classes", 27, inspectionCount);
+        assertEquals("Expected all 30 local inspection classes", 30, inspectionCount);
         assertTrue("Zero inspections may pass bare DiagnosticBag.* to formatPlugin:\n"
             + String.join("\n", violations), violations.isEmpty());
     }

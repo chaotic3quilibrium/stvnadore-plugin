@@ -379,29 +379,35 @@ public final class StvnConvertEscapedStringToFencedIntention
     private static void replacePayloadOrConstantString(Document document, ConversionSpec spec) {
         StringLiteral strLit = spec.stringLiteral();
         PsiElement outermostSingleLineContainer = findOutermostSingleLinePayloadContainer(strLit);
+        NonFourSlotMapEntryBounds mapEntryBounds = findOutermostNonFourSlotMapEntryBounds(strLit);
+        if (mapEntryBounds != null
+                && (outermostSingleLineContainer == null
+                    || PsiTreeUtil.isAncestor(mapEntryBounds.mapLiteral(), outermostSingleLineContainer, true))) {
+            int entryIndent = mapEntryBounds.precededOnLine()
+                ? computeLineLeadingSpaces(document, mapEntryBounds.mapLiteral().getTextRange().getStartOffset()) + 2
+                : computeLineLeadingSpaces(document, mapEntryBounds.lbrackOffset());
+            int slotIndent = entryIndent + 2;
+            String slotPrefix = " ".repeat(slotIndent);
+            String keyRendered = PsiTreeUtil.isAncestor(mapEntryBounds.keyVal(), strLit, false)
+                ? renderExpandedValue(mapEntryBounds.keyVal(), strLit, spec, slotIndent)
+                : renderSiblingMapEntrySlot(mapEntryBounds.keyVal(), slotIndent);
+            String valRendered = PsiTreeUtil.isAncestor(mapEntryBounds.entryVal(), strLit, false)
+                ? renderExpandedValue(mapEntryBounds.entryVal(), strLit, spec, slotIndent)
+                : renderSiblingMapEntrySlot(mapEntryBounds.entryVal(), slotIndent);
+            String symmetricEntry = (mapEntryBounds.precededOnLine() ? "\n" + " ".repeat(entryIndent) : "")
+                + StvnVocabulary.DELIM_OPEN_BRACKET
+                + "\n" + slotPrefix + keyRendered
+                + "\n" + slotPrefix + valRendered
+                + "\n" + " ".repeat(entryIndent) + StvnVocabulary.DELIM_CLOSE_BRACKET
+                + (mapEntryBounds.followedOnLine() ? "\n" + " ".repeat(entryIndent) : "");
+            document.replaceString(mapEntryBounds.replaceStartOffset(), mapEntryBounds.replaceEndOffset(), symmetricEntry);
+            return;
+        }
         if (outermostSingleLineContainer != null) {
             int baseIndent = computeLineLeadingSpaces(document, outermostSingleLineContainer.getTextRange().getStartOffset());
             String expanded = expandPayloadContainer(outermostSingleLineContainer, strLit, spec, baseIndent);
             TextRange seqRange = outermostSingleLineContainer.getTextRange();
             document.replaceString(seqRange.getStartOffset(), seqRange.getEndOffset(), expanded);
-            return;
-        }
-        SingleLineMapEntryBounds mapEntryBounds = findEnclosingSingleLineMapEntryBounds(strLit);
-        if (mapEntryBounds != null) {
-            int entryIndent = computeLineLeadingSpaces(document, mapEntryBounds.lbrackOffset());
-            int slotIndent = entryIndent + 2;
-            String slotPrefix = " ".repeat(slotIndent);
-            String keyRendered = PsiTreeUtil.isAncestor(mapEntryBounds.keyVal(), strLit, false)
-                ? renderExpandedValue(mapEntryBounds.keyVal(), strLit, spec, slotIndent)
-                : mapEntryBounds.keyVal().getText().trim();
-            String valRendered = PsiTreeUtil.isAncestor(mapEntryBounds.entryVal(), strLit, false)
-                ? renderExpandedValue(mapEntryBounds.entryVal(), strLit, spec, slotIndent)
-                : mapEntryBounds.entryVal().getText().trim();
-            String symmetricEntry = StvnVocabulary.DELIM_OPEN_BRACKET
-                + "\n" + slotPrefix + keyRendered
-                + "\n" + slotPrefix + valRendered
-                + "\n" + " ".repeat(entryIndent) + StvnVocabulary.DELIM_CLOSE_BRACKET;
-            document.replaceString(mapEntryBounds.lbrackOffset(), mapEntryBounds.rbrackEndOffset(), symmetricEntry);
             return;
         }
         int ownerIndent = computeLineLeadingSpaces(document, strLit.getTextRange().getStartOffset());
@@ -410,44 +416,179 @@ public final class StvnConvertEscapedStringToFencedIntention
         document.replaceString(litRange.getStartOffset(), litRange.getEndOffset(), fenced);
     }
 
-    private record SingleLineMapEntryBounds(int lbrackOffset, int rbrackEndOffset, Value keyVal, Value entryVal) {}
+    private record NonFourSlotMapEntryBounds(
+        MapLiteral mapLiteral,
+        int lbrackOffset,
+        int replaceStartOffset,
+        int replaceEndOffset,
+        Value keyVal,
+        Value entryVal,
+        boolean precededOnLine,
+        boolean followedOnLine
+    ) {}
 
-    private static @Nullable SingleLineMapEntryBounds findEnclosingSingleLineMapEntryBounds(StringLiteral strLit) {
-        for (PsiElement cur = strLit.getParent(); cur != null; cur = cur.getParent()) {
-            if (cur instanceof Value topVal && topVal.getParent() instanceof MapLiteral mapLit) {
-                PsiElement child = mapLit.getFirstChild();
-                while (child != null) {
-                    if (child.getNode() != null && child.getNode().getElementType() == StvnTypes.LBRACK) {
-                        PsiElement lbrack = child;
-                        PsiElement kElem = nextNonWsCommentPsiSibling(lbrack);
-                        PsiElement vElem = kElem != null ? nextNonWsCommentPsiSibling(kElem) : null;
-                        PsiElement rbrack = vElem != null ? nextNonWsCommentPsiSibling(vElem) : null;
-                        if (kElem instanceof Value kVal
-                                && vElem instanceof Value vVal
-                                && rbrack != null
-                                && rbrack.getNode() != null
-                                && rbrack.getNode().getElementType() == StvnTypes.RBRACK) {
-                            if (kVal == topVal || vVal == topVal) {
-                                CharSequence fileChars = mapLit.getContainingFile().getViewProvider().getContents();
-                                int start = lbrack.getTextRange().getStartOffset();
-                                int end = rbrack.getTextRange().getEndOffset();
-                                for (int idx = start; idx < end; idx++) {
-                                    if (fileChars.charAt(idx) == '\n') {
-                                        return null;
-                                    }
-                                }
-                                return new SingleLineMapEntryBounds(start, end, kVal, vVal);
-                            }
-                            child = rbrack.getNextSibling();
-                            continue;
-                        }
-                    }
-                    child = child.getNextSibling();
-                }
-                return null;
+    private static String renderSiblingMapEntrySlot(Value slotVal, int slotIndent) {
+        PsiElement strChild = slotVal.getStringLiteral();
+        if (strChild != null
+                && strChild.getNode() != null
+                && strChild.getNode().findChildByType(StvnTypes.LITERAL_STRING_FENCED) != null) {
+            boolean preserve = StvnPsiLiteralEvaluator.resolvePreserveIndentForStringLiteral(strChild);
+            var decodedOpt = StvnPsiLiteralEvaluator.decodeStringLiteral(strChild.getText(), preserve);
+            String raw = strChild.getText();
+            int closeBrack = raw.indexOf(StvnVocabulary.DELIM_CLOSE_BRACKET, 4);
+            if (decodedOpt.isPresent()
+                    && raw.startsWith("\"\"\"" + StvnVocabulary.DELIM_OPEN_BRACKET)
+                    && closeBrack > 4) {
+                String tag = raw.substring(4, closeBrack);
+                return renderFencedLiteral(decodedOpt.get(), tag, preserve, slotIndent);
             }
         }
+        return StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(slotVal);
+    }
+
+    private static @Nullable NonFourSlotMapEntryBounds findOutermostNonFourSlotMapEntryBounds(StringLiteral strLit) {
+        NonFourSlotMapEntryBounds outermost = null;
+        for (PsiElement cur = strLit.getParent(); cur != null; cur = cur.getParent()) {
+            if (cur instanceof Value topVal && topVal.getParent() instanceof MapLiteral mapLit && mapLit.textContains('\n')) {
+                NonFourSlotMapEntryBounds candidate = resolveNonFourSlotSliceInMultiLineMap(mapLit, topVal);
+                if (candidate != null) {
+                    outermost = candidate;
+                }
+            }
+        }
+        return outermost;
+    }
+
+    private static @Nullable NonFourSlotMapEntryBounds resolveNonFourSlotSliceInMultiLineMap(
+            MapLiteral mapLit,
+            Value targetTopVal
+    ) {
+        PsiElement child = mapLit.getFirstChild();
+        while (child != null) {
+            if (child.getNode() != null && child.getNode().getElementType() == StvnTypes.LBRACK) {
+                PsiElement lbrack = child;
+                PsiElement kElem = nextNonWsCommentPsiSibling(lbrack);
+                PsiElement vElem = kElem != null ? nextNonWsCommentPsiSibling(kElem) : null;
+                PsiElement rbrack = vElem != null ? nextNonWsCommentPsiSibling(vElem) : null;
+                if (kElem instanceof Value kVal
+                        && vElem instanceof Value vVal
+                        && rbrack != null
+                        && rbrack.getNode() != null
+                        && rbrack.getNode().getElementType() == StvnTypes.RBRACK) {
+                    if (kVal == targetTopVal || vVal == targetTopVal) {
+                        if (hasCommentBetween(lbrack, rbrack)) {
+                            return null;
+                        }
+                        Value otherSlot = (kVal == targetTopVal) ? vVal : kVal;
+                        if (otherSlot.textContains('\n')
+                                && (otherSlot.getStringLiteral() == null
+                                    || otherSlot.getStringLiteral().getNode().findChildByType(StvnTypes.LITERAL_STRING_FENCED) == null)) {
+                            return null;
+                        }
+                        CharSequence chars = mapLit.getContainingFile().getViewProvider().getContents();
+                        int lbrackStart = lbrack.getTextRange().getStartOffset();
+                        int rbrackStart = rbrack.getTextRange().getStartOffset();
+                        int rbrackEnd = rbrack.getTextRange().getEndOffset();
+                        int kStart = kVal.getTextRange().getStartOffset();
+                        int kEnd = Math.max(kStart, kVal.getTextRange().getEndOffset() - 1);
+                        int vStart = vVal.getTextRange().getStartOffset();
+                        int vEnd = Math.max(vStart, vVal.getTextRange().getEndOffset() - 1);
+
+                        boolean alreadyFourSlot = lineOfOffset(chars, lbrackStart) < lineOfOffset(chars, kStart)
+                            && lineOfOffset(chars, kEnd) < lineOfOffset(chars, vStart)
+                            && lineOfOffset(chars, vEnd) < lineOfOffset(chars, rbrackStart);
+                        int mapCloseStart = mapLit.getTextRange().getEndOffset() - 1;
+                        boolean preceded = hasNonWsBeforeOnLine(chars, lbrackStart);
+                        boolean followed = hasNonWsAfterOnLine(chars, rbrackEnd, mapCloseStart);
+                        if (alreadyFourSlot && !preceded && !followed) {
+                            return null;
+                        }
+                        int replaceStart = preceded ? retreatHorizWs(chars, lbrackStart) : lbrackStart;
+                        int replaceEnd = followed ? advanceHorizWs(chars, rbrackEnd) : rbrackEnd;
+                        return new NonFourSlotMapEntryBounds(
+                            mapLit,
+                            lbrackStart,
+                            replaceStart,
+                            replaceEnd,
+                            kVal,
+                            vVal,
+                            preceded,
+                            followed
+                        );
+                    }
+                    child = rbrack.getNextSibling();
+                    continue;
+                }
+            }
+            child = child.getNextSibling();
+        }
         return null;
+    }
+
+    private static boolean hasCommentBetween(PsiElement openElem, PsiElement closeElem) {
+        int start = openElem.getTextRange().getEndOffset();
+        int end = closeElem.getTextRange().getStartOffset();
+        for (com.intellij.psi.PsiComment comment : PsiTreeUtil.findChildrenOfType(openElem.getParent(), com.intellij.psi.PsiComment.class)) {
+            TextRange r = comment.getTextRange();
+            if (r.getEndOffset() > start && r.getStartOffset() < end) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int lineOfOffset(CharSequence chars, int offset) {
+        int clamped = Math.max(0, Math.min(offset, chars.length()));
+        int line = 0;
+        for (int i = 0; i < clamped; i++) {
+            if (chars.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
+    }
+
+    private static boolean hasNonWsBeforeOnLine(CharSequence chars, int offset) {
+        for (int i = offset - 1; i >= 0; i--) {
+            char c = chars.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return false;
+            }
+            if (c != ' ' && c != '\t') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasNonWsAfterOnLine(CharSequence chars, int startOffset, int limitOffset) {
+        int end = Math.min(chars.length(), limitOffset);
+        for (int i = Math.max(0, startOffset); i < end; i++) {
+            char c = chars.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return false;
+            }
+            if (c != ' ' && c != '\t') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int retreatHorizWs(CharSequence chars, int offset) {
+        int cur = Math.max(0, Math.min(offset, chars.length()));
+        while (cur > 0 && (chars.charAt(cur - 1) == ' ' || chars.charAt(cur - 1) == '\t')) {
+            cur--;
+        }
+        return cur;
+    }
+
+    private static int advanceHorizWs(CharSequence chars, int offset) {
+        int cur = Math.max(0, Math.min(offset, chars.length()));
+        while (cur < chars.length() && (chars.charAt(cur) == ' ' || chars.charAt(cur) == '\t')) {
+            cur++;
+        }
+        return cur;
     }
 
     private static @Nullable PsiElement nextNonWsCommentPsiSibling(PsiElement element) {
@@ -496,16 +637,20 @@ public final class StvnConvertEscapedStringToFencedIntention
                 sb.append('\n').append(childPrefix).append(StvnVocabulary.DELIM_OPEN_BRACKET);
                 if (targetInKey || targetInVal) {
                     sb.append('\n').append(slotPrefix).append(
-                        targetInKey ? renderExpandedValue(keyVal, targetLiteral, spec, slotIndent) : keyVal.getText().trim()
+                        targetInKey
+                            ? renderExpandedValue(keyVal, targetLiteral, spec, slotIndent)
+                            : StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(keyVal)
                     );
                     sb.append('\n').append(slotPrefix).append(
-                        targetInVal ? renderExpandedValue(entryVal, targetLiteral, spec, slotIndent) : entryVal.getText().trim()
+                        targetInVal
+                            ? renderExpandedValue(entryVal, targetLiteral, spec, slotIndent)
+                            : StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(entryVal)
                     );
                     sb.append('\n').append(childPrefix).append(StvnVocabulary.DELIM_CLOSE_BRACKET);
                 } else {
-                    sb.append(keyVal.getText().trim())
+                    sb.append(StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(keyVal))
                         .append(' ')
-                        .append(entryVal.getText().trim())
+                        .append(StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(entryVal))
                         .append(StvnVocabulary.DELIM_CLOSE_BRACKET);
                 }
             }
@@ -523,7 +668,7 @@ public final class StvnConvertEscapedStringToFencedIntention
             if (PsiTreeUtil.isAncestor(val, targetLiteral, false)) {
                 sb.append(renderExpandedValue(val, targetLiteral, spec, childIndent));
             } else {
-                sb.append(val.getText().trim());
+                sb.append(StvnContainerLayoutUtil.renderCollapsedOrTrimmedValue(val));
             }
         }
         sb.append('\n').append(" ".repeat(containerIndent)).append(closeDelim);

@@ -204,12 +204,15 @@ public final class StvnFencedStringRoundTripAndIntentionPriorityTest extends Bas
         List<String> atEscapedTexts = atEscaped.stream().map(IntentionAction::getText).toList();
         int escIdx = atEscapedTexts.indexOf(ESCAPED_TO_FENCED_TEXT);
         int collapseIdx = atEscapedTexts.indexOf(COLLAPSE_CONTAINER_TEXT);
-        int collapseChildrenIdx = atEscapedTexts.indexOf(COLLAPSE_CHILDREN_TEXT);
+        int collapseEntryIdx = atEscapedTexts.indexOf(StvnCollapseMapEntryIntention.TEXT);
+        int collapseAllEntriesIdx = atEscapedTexts.indexOf(StvnCollapseAllMapEntriesIntention.TEXT);
         assertEquals("String conversion intention must rank #1 at index 0: " + atEscapedTexts, 0, escIdx);
         assertTrue("Expected Collapse container to single line to be present", collapseIdx > escIdx);
-        assertTrue("Expected Collapse child elements to single lines to be present", collapseChildrenIdx > escIdx);
+        assertTrue("Expected Collapse map entry to single line to be present", collapseEntryIdx > escIdx);
+        assertTrue("Expected Collapse all map entries to single lines to be present", collapseAllEntriesIdx > escIdx);
         assertEquals(PriorityAction.Priority.LOW, unwrapPriority(atEscaped.get(collapseIdx)));
-        assertEquals(PriorityAction.Priority.LOW, unwrapPriority(atEscaped.get(collapseChildrenIdx)));
+        assertEquals(PriorityAction.Priority.LOW, unwrapPriority(atEscaped.get(collapseEntryIdx)));
+        assertEquals(PriorityAction.Priority.LOW, unwrapPriority(atEscaped.get(collapseAllEntriesIdx)));
 
         // 2. Caret inside escape-free "regex" key -> Convert string literal to fenced string block is #1
         int keyOffset = file.getText().indexOf("\"regex\"") + 2;
@@ -218,20 +221,25 @@ public final class StvnFencedStringRoundTripAndIntentionPriorityTest extends Bas
         assertEquals(PLAIN_TO_FENCED_TEXT, atPlain.get(0).getText());
         assertFalse(atPlain.stream().map(IntentionAction::getText).toList().contains(ESCAPED_TO_FENCED_TEXT));
 
-        // 3. Caret directly on '[' delimiter of map entry -> container collapse intentions restore Priority.NORMAL
+        // 3. Caret directly on '[' delimiter of map entry -> single-entry HIGH, whole-map & outer container NORMAL
         int openBrackOffset = file.getText().indexOf("[\n");
         myFixture.getEditor().getCaretModel().moveToOffset(openBrackOffset);
         List<IntentionAction> atDelim = myFixture.getAvailableIntentions();
+        IntentionAction delimCollapseEntry = atDelim.stream()
+            .filter(a -> StvnCollapseMapEntryIntention.TEXT.equals(a.getText()))
+            .findFirst()
+            .orElseThrow();
         IntentionAction delimCollapse = atDelim.stream()
             .filter(a -> COLLAPSE_CONTAINER_TEXT.equals(a.getText()))
             .findFirst()
             .orElseThrow();
-        IntentionAction delimCollapseChildren = atDelim.stream()
-            .filter(a -> COLLAPSE_CHILDREN_TEXT.equals(a.getText()))
+        IntentionAction delimCollapseAllEntries = atDelim.stream()
+            .filter(a -> StvnCollapseAllMapEntriesIntention.TEXT.equals(a.getText()))
             .findFirst()
             .orElseThrow();
+        assertEquals(PriorityAction.Priority.HIGH, unwrapPriority(delimCollapseEntry));
         assertEquals(PriorityAction.Priority.NORMAL, unwrapPriority(delimCollapse));
-        assertEquals(PriorityAction.Priority.NORMAL, unwrapPriority(delimCollapseChildren));
+        assertEquals(PriorityAction.Priority.NORMAL, unwrapPriority(delimCollapseAllEntries));
 
         // 4. Single-line container expand priority: NORMAL on '(' delimiter vs LOW inside inner string leaf
         String singleLineTupleDoc = """
@@ -554,24 +562,30 @@ public final class StvnFencedStringRoundTripAndIntentionPriorityTest extends Bas
 
         assertTrue("Collapse container must be blocked while fenced string is present",
             myFixture.filterAvailableIntentions(COLLAPSE_CONTAINER_TEXT).isEmpty());
+        assertTrue("Collapse map entry must be blocked while fenced string is present",
+            myFixture.filterAvailableIntentions(StvnCollapseMapEntryIntention.TEXT).isEmpty());
+        assertTrue("Collapse all map entries must be blocked while fenced string is present",
+            myFixture.filterAvailableIntentions(StvnCollapseAllMapEntriesIntention.TEXT).isEmpty());
         assertTrue("Collapse child elements must be blocked while fenced string is present",
             myFixture.filterAvailableIntentions(COLLAPSE_CHILDREN_TEXT).isEmpty());
 
         // Convert fenced string -> simple escaped string
         myFixture.launchAction(myFixture.findSingleIntention(FENCED_TO_SIMPLE_TEXT));
 
-        // Immediately at the resulting caret position, both collapse intentions must be re-enabled (below #1 string action)
+        // Immediately at the resulting caret position, map-entry & container collapse intentions re-enable (below #1 string action)
         List<String> postConvertTexts = myFixture.getAvailableIntentions().stream()
             .map(IntentionAction::getText)
             .toList();
         assertEquals(0, postConvertTexts.indexOf(ESCAPED_TO_FENCED_TEXT));
         assertTrue("Collapse container must immediately re-enable: " + postConvertTexts,
             postConvertTexts.contains(COLLAPSE_CONTAINER_TEXT));
-        assertTrue("Collapse child elements must immediately re-enable: " + postConvertTexts,
-            postConvertTexts.contains(COLLAPSE_CHILDREN_TEXT));
+        assertTrue("Collapse map entry must immediately re-enable: " + postConvertTexts,
+            postConvertTexts.contains(StvnCollapseMapEntryIntention.TEXT));
+        assertTrue("Collapse all map entries must immediately re-enable: " + postConvertTexts,
+            postConvertTexts.contains(StvnCollapseAllMapEntriesIntention.TEXT));
 
-        // Launch Collapse container to single line on the [ "regex" "..." ] slice
-        myFixture.launchAction(myFixture.findSingleIntention(COLLAPSE_CONTAINER_TEXT));
+        // Launch Collapse map entry to single line on the [ "regex" "..." ] slice
+        myFixture.launchAction(myFixture.findSingleIntention(StvnCollapseMapEntryIntention.TEXT));
         String finalDoc = myFixture.getEditor().getDocument().getText();
         assertTrue(
             "Collapsed map entry must be canonical single-line:\n" + finalDoc,
